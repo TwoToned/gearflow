@@ -20,7 +20,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd ${{ vars.APP_DIR }}
-          npm ci --ignore-scripts
+          npm ci --ignore-scripts --legacy-peer-deps
 
       - name: Generate Prisma client
         run: |

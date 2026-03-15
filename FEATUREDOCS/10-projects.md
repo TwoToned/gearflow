@@ -26,6 +26,14 @@ Line items with `isSubhire: true` and `supplierId` reference third-party equipme
 - **SERVICE / LABOUR / TRANSPORT / MISC**: No asset link, just description + pricing
 - Service-linked line items are auto-created by `ProjectService` when `showOnDocuments: true`
 
+## Kit & Prep-Kit Line Items
+- Kit/prep-kit parent: `kitId` set, `isKitChild: false`
+- Children: `isKitChild: true`, `parentLineItemId` pointing to parent
+- Nested kits (kit inside prep-kit): child has its own `kitId` and `childLineItems`
+- Queries must include 2 levels of `childLineItems` with `kit: true` for nested rendering
+- Equipment list (`line-items-panel.tsx`) detects nested kits and renders with Container icon + Kit badge
+- See [Kits](./09-kits.md) and [Preps](./32-preps.md)
+
 ## Project Services
 Structured operational tasks attached to a project (deliveries, pickups, bump in/out, labour, misc).
 

@@ -13,7 +13,7 @@
 4. For serialized: `checkOutItems` assigns `assetId` to line item, sets asset status to `CHECKED_OUT`
 5. For bulk: increments `checkedOutQuantity` on line item, decrements `availableQuantity` on bulk asset
 6. For kit: `checkOutKit` atomically updates kit + all member assets + all child line items
-7. For prep container: `checkOutPrep` atomically deploys container + all packed items (see [Preps](./32-preps.md))
+7. For prep-kit: same `checkOutKit` flow — prep-kits share the kit deploy/return path
 
 ## Return Flow (Check In)
 1. User selects items to return, specifies condition per item
@@ -21,10 +21,32 @@
    - GOOD → asset status `AVAILABLE`, disconnects `assetId` from line item
    - DAMAGED → asset status `IN_MAINTENANCE`, disconnects
    - MISSING → asset status `LOST`, disconnects
-3. For kit: `checkInKit` atomically reverses deployment
+3. For kit/prep-kit: `checkInKit` atomically reverses deployment
 
-## Prep Container Detection
-`lookupAssetForScan` checks if a scanned asset is a prep container (`type: "prep_container"`) or a member of a prep (`type: "prep_member"`). Prep containers trigger atomic bulk checkout/return. Prep members prompt the user to scan the container instead.
+## Kit Verification
+Before deploying or returning a kit (or prep-kit) with unverified items:
+- Confirmation dialog shows "X/Y items verified — deploy/return anyway?"
+- Verification circles are **clickable** for manual toggle on all children and grandchildren
+- `verifiedKitItems` Set tracks confirmed asset IDs
+- Checked on all 4 code paths: checkbox deploy, checkbox return, scan deploy, scan return
+
+## Kit Groups in Deploy/Return Tabs
+Kits and prep-kits appear as expandable groups in the Deploy and Return tabs. Uses `kit-group` GroupEntry variant. Parent line item has `kitId` set, children have `isKitChild: true`. Checkbox selection routes to `kitCheckOutMutation`/`kitCheckInMutation`.
+
+### Nested Kit Rendering (`KitChildRows`)
+Children of a kit/prep-kit that are themselves kits render with:
+- Chevron expand/collapse toggle
+- Container icon + Kit badge
+- Their own indented children (grandchildren) at deeper indent level
+- Clickable verification circles on all levels
+
+### Asset Tag Display
+- Regular kits: show their asset tag
+- Prep-kits with case asset: show the case asset tag
+- Auto-generated `PREP-*` tags: hidden (display `—`)
+
+## Preps Tab
+Third tab on warehouse page (`?tab=preps`). Create prep-kits, scan items into them, deploy, return, dissolve. See [Preps](./32-preps.md) for full details.
 
 ## Conflict Detection
 `lookupAssetForScan` checks both line item status AND physical asset status. If asset is `CHECKED_OUT` on another project, returns error with project name/number.
@@ -36,11 +58,5 @@
 ## Documents
 The warehouse page has a "Documents" dropdown with access to all project PDFs (Pull Slip, Delivery Docket, Return Sheet, Quote, Invoice) — same documents available on the project detail page.
 
-## Prep Groups in Deploy/Return Tabs
-After checkout, preps appear as expandable groups in the Deploy and Return tabs — identical to how kits display. Uses `prep-group` GroupEntry variant with purple "Prep" badge. Parent line item has `prepId` set, children have `isPrepChild: true`. Checkbox selection routes to `prepCheckOutMutation`/`prepCheckInMutation`. See [Preps](./32-preps.md) for full architecture.
-
-## Preps Tab
-Third tab on warehouse page (`?tab=preps`). Create preps, scan items into them, mark packed, deploy, return, unpack. See [Preps](./32-preps.md) for full details.
-
 ## Online Pick List
-Dialog with full item list showing deployment status per line item. Mobile full-screen with safe area padding. Kit and prep groups show as expandable sections with children.
+Dialog with full item list showing deployment status per line item. Mobile full-screen with safe area padding. Kit and prep-kit groups show as expandable sections with children.

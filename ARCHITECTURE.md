@@ -37,11 +37,11 @@ Detailed docs for each system are in the [`FEATUREDOCS/`](./FEATUREDOCS/) folder
 | 06 | [Pages & Layouts](./FEATUREDOCS/06-pages-layouts.md) | All page routes, layout architecture |
 | 07 | [UI Components](./FEATUREDOCS/07-ui-components.md) | shadcn/ui conventions, custom components, gotchas |
 | 08 | [Assets](./FEATUREDOCS/08-assets.md) | Serialized/bulk assets, auto-incrementing tags, categories |
-| 09 | [Kits](./FEATUREDOCS/09-kits.md) | Kit system, pricing modes, warehouse ops |
+| 09 | [Kits](./FEATUREDOCS/09-kits.md) | Kit system, pricing modes, nested kits, verification |
 | 10 | [Projects](./FEATUREDOCS/10-projects.md) | Project management, line items, groups, templates, subhire |
 | 11 | [Availability](./FEATUREDOCS/11-availability.md) | Overbooking engine, reduced stock |
-| 12 | [Warehouse](./FEATUREDOCS/12-warehouse.md) | Checkout/checkin flows, conflict detection |
-| 13 | [PDFs](./FEATUREDOCS/13-pdfs.md) | Document generation, T&T reports |
+| 12 | [Warehouse](./FEATUREDOCS/12-warehouse.md) | Deploy/return flows, kit verification, conflict detection |
+| 13 | [PDFs](./FEATUREDOCS/13-pdfs.md) | Document generation, nested kit rendering, T&T reports |
 | 14 | [Test & Tag](./FEATUREDOCS/14-test-and-tag.md) | AS/NZS 3760:2022 compliance module |
 | 15 | [Maintenance](./FEATUREDOCS/15-maintenance.md) | Maintenance records, multi-asset |
 | 16 | [Search](./FEATUREDOCS/16-search.md) | Global search, command palette, @ navigation |
@@ -59,7 +59,7 @@ Detailed docs for each system are in the [`FEATUREDOCS/`](./FEATUREDOCS/) folder
 | 29 | [Integration Checklist](./FEATUREDOCS/29-integration-checklist.md) | What to update when adding new features |
 | 30 | [Maps Integration](./FEATUREDOCS/30-maps-integration.md) | Address autocomplete (Nominatim), Leaflet maps, coordinate fields |
 | 31 | [Crew Management](./FEATUREDOCS/31-crew-management.md) | Crew members, roles, skills, certifications |
-| 32 | [Preps](./FEATUREDOCS/32-preps.md) | Pre-packing, container scanning, atomic checkout |
+| 32 | [Preps](./FEATUREDOCS/32-preps.md) | Prep-kits (temporary kits), case assets, project staging |
 
 **When making changes**: Read the relevant feature doc(s) first, follow documented patterns, and update the relevant doc(s) after. If no doc exists for the feature you're working on, create a new numbered file in `FEATUREDOCS/` and add it to the table above.
 

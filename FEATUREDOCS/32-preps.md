@@ -1,147 +1,120 @@
-# Preps (Pre-Packing & Warehouse Staging)
+# Preps (Temporary Kits for Project Staging)
 
 ## Overview
-Preps allow warehouse staff to pre-allocate assets into physical containers before checkout. They work like temporary kits — items are scanned into a prep during packing, then at checkout a parent-child line item structure is created (mirroring how kits work). Scanning a container at checkout deploys all contents atomically. Preps are project-specific and dissolved on unpack.
+Preps are **temporary kits** used to pre-group assets for a specific project deployment. They are implemented as `Kit` records with `isPrep: true` — sharing the same line item parent-child structure, checkout/checkin flows, and PDF rendering as regular kits. Unlike permanent kits, prep-kits are project-scoped, created on-the-fly, and dissolved after use.
 
 ## Data Model
 
-### `Prep`
-- `id`, `organizationId`, `projectId`, `name`, `containerAssetId?` (unique, links to Asset)
-- `status`: `PACKING` | `PACKED` | `CHECKED_OUT` | `RETURNED` | `UNPACKED` | `CANCELLED`
-- `preparedById`, `preparedAt`, `checkedOutAt`, `returnedAt`, `unpackedAt`, `notes`
-- Relations: `items: PrepItem[]`, `lineItems: ProjectLineItem[]` (via `PrepLineItems`), `containerAsset: Asset?`, `project: Project`, `preparedBy: User?`
-- Indexes: `organizationId`, `projectId`, `containerAssetId`
+Preps reuse the existing `Kit` model:
 
-### `PrepItem`
-- `id`, `prepId`, `assetId?`, `bulkAssetId?`, `kitId?`, `quantity` (for bulk), `lineItemId?`
-- `addedAt`, `addedById`, `sortOrder`
-- Unique: `[prepId, assetId]` (each asset in at most one prep)
-- Relations: `prep: Prep`, `asset: Asset?`, `bulkAsset: BulkAsset?`, `kit: Kit?`, `lineItem: ProjectLineItem?`, `addedBy: User?`
-
-### `ProjectLineItem` — Prep Fields
-- `prepId: String?` — set on the parent line item, points to the Prep record
-- `isPrepChild: Boolean @default(false)` — true on child rows grouped under a prep parent
-- Uses shared `parentLineItemId` / `childLineItems` relation (same as kits)
-- Parent line item created at checkout time (not at pack time)
-
-## Two-Phase Lifecycle
-
-### Phase A: PACKING (PrepItem is source of truth)
 ```
-CREATE -> PACKING -> PACKED
+Kit (isPrep: true)
+├── assetTag: "PREP-{hash}" (auto-generated) or case asset tag
+├── name: user-defined
+├── status: AVAILABLE | CHECKED_OUT | IN_MAINTENANCE | RETIRED
+├── isPrep: true
+└── lineItems → ProjectLineItem (parent, isKitChild: false, kitId set)
+    └── childLineItems → ProjectLineItem[] (children, isKitChild: true)
 ```
-- Staff scan items into the prep, creating `PrepItem` records
-- Assets are pre-assigned to matched line items (`lineItem.assetId = asset.id`)
-- No parent line item exists yet — prep appears only in the Preps tab
 
-### Phase B: CHECKOUT onwards (ProjectLineItem parent-child structure)
-```
-CHECKED_OUT -> RETURNED -> UNPACKED
-```
-- `checkOutPrep` creates a parent `ProjectLineItem` with `prepId` set
-- Matched line items become children (`isPrepChild: true`, `parentLineItemId` set)
-- Prep groups now appear in Deploy/Return tabs (like kits)
-- `unpackPrep` dissolves the structure: children become standalone, parent deleted
+### Asset Tag
+- **With case asset**: Uses the case asset's existing tag (e.g., `CASE-001`)
+- **Without case**: Auto-generates `PREP-{timestamp}` (e.g., `PREP-ABCD1234`)
+- UI hides `PREP-*` tags and shows `—` instead; real asset tags display normally
 
-### Bulk Quantity Splitting
-When a prep takes a partial quantity (e.g., 4 of 8 battery chargers):
-- At checkout: original line item reduced to 4x, new child created for 4x under prep parent
-- At unpack: child merged back, original restored to 8x
+### Case Asset
+An optional physical container (from the org's "case" category). When provided:
+- The prep-kit uses the case asset's tag
+- The case asset becomes a child line item inside the prep-kit
+- Case child is excluded from removal UI (stays with the prep)
 
-## Server Actions (`src/server/preps.ts`)
+## Server Actions (`src/server/kits.ts`)
 
 ### CRUD
-- `createPrep(data)` — Creates prep with name, optional container asset
-- `updatePrep(id, data)` — Update name, notes
-- `deletePrep(id)` — Delete (only if not CHECKED_OUT)
-- `getProjectPreps(projectId)` — List preps for a project
-- `getPrepById(id)` — Get single prep with items
+- **`createPrepKit(projectId, name, caseAssetId?)`** — Creates `Kit` with `isPrep: true`, parent `ProjectLineItem` with `kitId`. If case asset provided, creates child line item for it.
+- **`dissolvePrepKit(kitId)`** — Un-parents all children (merges split bulk qtys back), deletes parent line item, deletes Kit record. Blocked if kit is `CHECKED_OUT`.
+- **`getProjectPrepKits(projectId)`** — Lists all prep-kits (`isPrep: true`) with 3-level nested child includes.
 
-### Packing
-- `addPrepItem(prepId, assetTag)` — Scan asset into prep. Auto-matches to unassigned line item on the project. Works for serialized assets, bulk assets, and kits.
-- `addBulkPrepItem(prepId, bulkAssetId, quantity)` — Add bulk asset with quantity
-- `removePrepItem(itemId)` — Remove item from prep (only when PACKING). Unassigns assetId from line item.
+### Adding Items
+- **`addItemToPrepKitByTag(prepKitId, assetTag, quantity?)`** — Scan-based add. Handles three types:
+  - **Kit scan**: Re-parents the kit's parent line item under the prep-kit
+  - **Serialized asset**: Finds/splits matching project line item, re-parents under prep-kit
+  - **Bulk asset**: Splits requested qty from project line item, re-parents under prep-kit. If no qty remaining on project, returns `{ needsProjectAdd: true }` to trigger add-to-project flow.
+  - If asset is inside a physical kit, rejects with "scan the kit instead"
 
-### Status Transitions
-- `markPrepPacked(id)` — PACKING -> PACKED
-- `reopenPrep(id)` — PACKED -> PACKING
-- `checkOutPrep(prepId)` — Atomic: creates parent line item, re-parents children, handles bulk splits, deploys container + all items
-- `checkInPrep(prepId, conditions?)` — Returns container + all items, updates prep parent line item to RETURNED. Children stay parented for Return tab display.
-- `unpackPrep(id)` — RETURNED -> UNPACKED. Dissolves parent-child structure, merges split bulk quantities.
+- **`addItemToPrepKit(prepKitId, lineItemId, quantity?)`** — Direct line item re-parenting (used by UI list selection)
 
-### Lookup
-- `lookupPrepByContainerScan(assetTag, projectId)` — Find prep by container asset tag
-- `lookupPrepByContainerAssetId(assetId)` — Find prep by container asset ID
+- **`addToPrepKitAndProject(prepKitId, opts)`** — Two-step: adds item to both the project AND the prep-kit. Used when scanned item isn't on the project. Handles mixed flow: decrements existing project line items for "on job" portion, creates new line items for excess.
 
-## Warehouse Integration
+- **`searchPrepKitItems(prepKitId, query)`** — Searches org-wide assets by name/tag/model. Returns availability info: `onProjectQty`, `availableQty`, `totalQty`, and whether item is already `onProject`.
 
-### Scanner Detection (`lookupAssetForScan`)
-- **`prep_container`**: Scanning a container asset returns `type: "prep_container"` with `prepId`, `prepItemCount`
-- **`prep_member`**: Scanning an asset inside a prep returns `type: "prep_member"` with prep info and message to scan the container instead
+### Removing Items
+- **`removeItemFromPrepKit(prepKitId, lineItemId, quantity?)`** — Un-parents child, merges split bulk quantities back to original line items.
 
-### Atomic Checkout (`checkOutPrep`)
-1. Creates prep parent line item (`prepId` set, `isPrepChild: false`, description = prep name)
-2. Re-parents matched line items as children (`isPrepChild: true`, `parentLineItemId` set)
-3. For partial bulk quantities: splits the line item (reduces original, creates child)
-4. Checks out the container asset itself (if tracked)
-5. Updates all asset statuses to `CHECKED_OUT`
-6. Creates scan log entry
-
-### Atomic Check-in (`checkInPrep`)
-1. Returns all assets, updates statuses based on condition
-2. Updates prep parent line item to `RETURNED`
-3. Children remain parented (visible as group in Return tab)
-
-### Unpack (`unpackPrep`)
-1. Merges split bulk quantities back to original line items
-2. Un-parents non-bulk children
-3. Deletes the prep parent line item
-4. Marks prep `UNPACKED`
+### Deploy / Return
+Prep-kits use the **same** `checkOutKit()` / `checkInKit()` as regular kits — no separate actions needed. The kit + all children are updated atomically.
 
 ## UI
 
-### Warehouse Page — Deploy/Return Tabs
-- Prep groups render like kit groups: expandable parent row with purple "Prep" badge, indented children
-- `GroupEntry` type includes `prep-group` variant alongside `kit-group`
-- `isPrepParent(item)` predicate: `!!item.prepId && !item.isPrepChild`
-- Checkbox selection routes to `prepCheckOutMutation` / `prepCheckInMutation`
+### Preps Tab (`src/components/warehouse/preps-tab.tsx`)
+Located on the warehouse page as a third tab (`?tab=preps`).
 
-### Warehouse Page — Preps Tab (`/warehouse/[projectId]?tab=preps`)
-- Component: `src/components/warehouse/preps-tab.tsx`
-- Lists preps with status badges, item counts, container info
-- "New Prep" button creates a prep for the project
-- Each prep card opens a detail dialog with scanner for packing
+- **List view**: Cards showing name, asset tag, item count, status badge
+- **Create dialog**: Optional case asset search + custom name
+- **Detail dialog**:
+  - Scan input for barcode scanning
+  - Debounced search with availability display: "X on job · Y available · Z total"
+  - Quantity picker for bulk items (max = total org inventory)
+  - Confirmation prompt when qty exceeds on-project amount
+  - Contents list with nested kit expansion, +/− qty controls, remove buttons
+  - Action buttons: Deploy, Return, Dissolve (context-dependent on status)
+
+### Deploy/Return Tabs
+Prep-kits appear identically to regular kits in the deploy/return tables:
+- Expandable parent row with indented children
+- `PREP-*` asset tags hidden (show `—`); real case asset tags shown
+- Nested kits inside prep-kits render with chevron expand, Container icon, Kit badge
+- Nested kit children render at deeper indent
+- Checkbox selection routes to `kitCheckOutMutation` / `kitCheckInMutation`
+
+### Kit Verification
+Before deploying or returning a kit/prep-kit with unverified items:
+- Confirmation dialog shows "X/Y items verified — deploy/return anyway?"
+- Verification circles are **clickable** (not scan-only) for all children and grandchildren
+- `verifiedKitItems` Set tracks confirmed asset IDs
+- Applies to both kits and prep-kits equally
 
 ### PDF Documents
-- Prep parent items show as group headers (like kit groups) with `[Prep]` prefix
-- Prep children render as indented sub-rows
-- Filters exclude `isPrepChild` items from top-level lists
+Prep-kit items render on all 5 PDFs (packing list, delivery docket, return sheet, quote, invoice):
+- Prep-kit parent shows as group header
+- Children indented below
+- Nested kits inside prep-kits show as `[Kit] Name` with their own indented children
+- `PREP-*` tags display as `"-"` on documents
 
-### Pull Sheet / Pick List
-- Pull sheet data annotates line items with `preppedIn` (prep name)
-- Pick list shows prep groups like kit groups with expandable children
-
-## Permissions
-- Uses `warehouse.prep` permission for CRUD and packing operations
-- Uses `warehouse.check_out` and `warehouse.check_in` for deploy/return
-- All roles with warehouse access get `prep` permission by default
-
-## Validation Schemas (`src/lib/validations/prep.ts`)
-- `createPrepSchema` — projectId, name, containerAssetId?, notes?
-- `updatePrepSchema` — name?, notes?
-- `addPrepItemSchema` — prepId, assetTag
-- `addBulkPrepItemSchema` — prepId, bulkAssetId, quantity
+### Project Equipment List
+Prep-kit groups render in `line-items-panel.tsx` with:
+- Parent row showing kit name and tag
+- Nested kits detected by `kitId` on children, rendered with Container icon and Kit badge
+- Nested kit children at deeper indent with muted styling
 
 ## Prep vs Kit
-| | Kit | Prep |
+
+| | Regular Kit | Prep-Kit |
 |---|---|---|
-| Purpose | Permanent physical container | Temporary project-specific packing |
-| Lifecycle | Created once, reused across projects | Created per project, dissolved on unpack |
-| Contents | Fixed membership (KitSerializedItem, KitBulkItem) | Dynamic (PrepItem, packed for one job) |
-| Container | Kit IS the container (has own asset tag) | Container is optional (any tracked asset) |
-| Partial qty | Not supported (whole kit) | Supported (split bulk line items) |
-| Line items | Created when kit added to project | Created at checkout time |
-| On documents | Kit group header with children | Prep group header with children |
-| Parent field | `kitId` on ProjectLineItem | `prepId` on ProjectLineItem |
-| Child field | `isKitChild` | `isPrepChild` |
-| Shared | `parentLineItemId`, `childLineItems` relation | Same |
+| `isPrep` | `false` | `true` |
+| Purpose | Permanent physical container | Temporary project-specific grouping |
+| Lifecycle | Org-scoped, reused across projects | Project-scoped, dissolved after use |
+| Asset tag | Custom or auto-incremented | `PREP-{hash}` or case asset tag |
+| Container | Kit IS the container | Optional case asset becomes child |
+| Contents | Fixed (`KitSerializedItem`, `KitBulkItem`) | Dynamic (re-parented `ProjectLineItem`s) |
+| Adding items | Kit management page | Warehouse preps tab (scan/search) |
+| Removal | Unpack kit | `dissolvePrepKit()` — un-parents all, deletes Kit |
+| Deploy/Return | `checkOutKit` / `checkInKit` | Same functions (shared) |
+| Line item parent | `kitId` on parent, `isKitChild` on children | Same fields (shared) |
+| On documents | Kit group header with children | Same rendering (shared) |
+| Verification | Clickable circles + scan | Same flow (shared) |
+
+## Permissions
+- Uses existing `warehouse.check_out` / `warehouse.check_in` for deploy/return
+- Kit CRUD permissions apply to prep-kit creation/dissolution
+- All roles with warehouse access can manage prep-kits

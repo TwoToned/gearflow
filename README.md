@@ -1,4 +1,5 @@
 # GearFlow
+[![Deploy GearFlow](https://github.com/TwoToned/gearflow/actions/workflows/main.yml/badge.svg)](https://github.com/TwoToned/gearflow/actions/workflows/main.yml)
 
 Professional asset and rental management for AV, theatre, and production companies.
 

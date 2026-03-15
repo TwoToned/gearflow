@@ -117,7 +117,7 @@ export function generateVCalendar(
   }
 
   addLine(lines, "END:VCALENDAR");
-  return lines.join("\r\n");
+  return lines.join("\r\n") + "\r\n";
 }
 
 /**

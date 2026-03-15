@@ -77,8 +77,13 @@ async function buildProjectsFeed(
         ? null
         : p.eventEndTime;
 
-    const dtstart = buildDateTime(startDate, startTime);
-    const dtend = buildDateTime(endDate || startDate, endTime);
+    let dtstart = buildDateTime(startDate, startTime);
+    let dtend = buildDateTime(endDate || startDate, endTime);
+
+    // Ensure dtend >= dtstart (can happen when end date/time is missing)
+    if (dtend.getTime() < dtstart.getTime()) {
+      dtend = new Date(dtstart);
+    }
 
     const location = [p.location?.name, p.location?.address]
       .filter(Boolean)
@@ -218,8 +223,7 @@ async function buildMaintenanceFeed(
     if (!r.scheduledDate) continue;
 
     const dtstart = buildDateTime(r.scheduledDate);
-    const dtend = new Date(dtstart);
-    dtend.setHours(23, 59, 0, 0);
+    const dtend = new Date(dtstart); // Same day, midnight — triggers all-day format
 
     const assetNames = r.assets
       .map(
@@ -250,8 +254,7 @@ async function buildMaintenanceFeed(
     // Add a separate event for nextDueDate if set
     if (r.nextDueDate) {
       const dueStart = buildDateTime(r.nextDueDate);
-      const dueEnd = new Date(dueStart);
-      dueEnd.setHours(23, 59, 0, 0);
+      const dueEnd = new Date(dueStart); // Same day, midnight — triggers all-day format
 
       events.push({
         uid: `maintenance-due-${r.id}@gearflow`,
@@ -340,10 +343,15 @@ async function buildCrewOverviewFeed(
       }
     } else {
       const dtstart = buildDateTime(a.startDate || new Date(), a.startTime);
-      const dtend = buildDateTime(
+      let dtend = buildDateTime(
         a.endDate || a.startDate || new Date(),
-        a.endTime || a.startTime || "23:59"
+        a.endTime || a.startTime
       );
+
+      // Ensure dtend >= dtstart
+      if (dtend.getTime() <= dtstart.getTime()) {
+        dtend = new Date(dtstart);
+      }
 
       events.push({
         uid: `crew-assignment-${a.id}@gearflow`,

@@ -107,7 +107,7 @@ export function generateVCalendar(
   const lines: string[] = [];
   addLine(lines, "BEGIN:VCALENDAR");
   addLine(lines, "VERSION:2.0");
-  addLine(lines, "PRODID:-//GearFlow//Crew Calendar//EN");
+  addLine(lines, "PRODID:-//GearFlow//Calendar//EN");
   addLine(lines, "CALSCALE:GREGORIAN");
   addLine(lines, "METHOD:PUBLISH");
   addLine(lines, `X-WR-CALNAME:${escapeICalText(calName)}`);

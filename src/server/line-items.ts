@@ -371,8 +371,8 @@ export async function removeLineItem(id: string) {
   }
 
   // If this is a kit parent, cascade delete children
-  const hasChildren = item.kitId && !item.isKitChild;
-  if (hasChildren) {
+  const hasKitChildren = item.kitId && !item.isKitChild;
+  if (hasKitChildren) {
     await prisma.projectLineItem.deleteMany({
       where: { parentLineItemId: item.id, organizationId },
     });

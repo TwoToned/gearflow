@@ -29,7 +29,13 @@ export async function getProjectForWarehouse(projectId: string) {
           kit: true,
           childLineItems: {
             orderBy: { sortOrder: "asc" },
-            include: { model: true, asset: true, bulkAsset: true },
+            include: {
+              model: true, asset: true, bulkAsset: true, kit: true,
+              childLineItems: {
+                orderBy: { sortOrder: "asc" },
+                include: { model: true, asset: true, bulkAsset: true, kit: true },
+              },
+            },
           },
         },
       },
@@ -58,7 +64,7 @@ export async function lookupAssetForScan(
 ) {
   const { organizationId } = await getOrgContext();
 
-  // Look up the asset tag in all three tables: serialized, bulk, and kits
+  // Look up the asset tag in all tables: serialized, bulk, kits
   const [asset, bulkAsset, kit] = await Promise.all([
     prisma.asset.findUnique({
       where: { organizationId_assetTag: { organizationId, assetTag } },
@@ -142,7 +148,8 @@ export async function lookupAssetForScan(
         projectId,
         organizationId,
         modelId,
-        status: { notIn: ["CANCELLED"] },
+        isKitChild: false,
+        status: { notIn: ["CANCELLED", ...(mode === "checkout" ? ["CHECKED_OUT" as const] : [])] },
         // For checkout, don't match a line item that already has a different asset assigned
         ...(asset ? { assetId: null } : {}),
       },
@@ -875,6 +882,16 @@ export async function getProjectPullSheet(projectId: string) {
               model: { include: { category: true } },
               asset: { include: { location: true } },
               bulkAsset: true,
+              kit: true,
+              childLineItems: {
+                where: { status: { not: "CANCELLED" } },
+                orderBy: { sortOrder: "asc" },
+                include: {
+                  model: { include: { category: true } },
+                  asset: { include: { location: true } },
+                  bulkAsset: true,
+                },
+              },
             },
           },
         },

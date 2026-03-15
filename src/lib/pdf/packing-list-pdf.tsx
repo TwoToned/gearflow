@@ -18,7 +18,7 @@ interface LineItem {
   } | null;
   asset: { assetTag: string } | null;
   bulkAsset: { assetTag: string } | null;
-  kit?: { assetTag: string; name: string } | null;
+  kit?: { assetTag: string; name: string; isPrep?: boolean } | null;
   notes: string | null;
   isOverbooked?: boolean;
   overbookedInherited?: boolean;
@@ -127,7 +127,8 @@ export function PullSlipPDF({ org, project }: PullSlipPDFProps) {
               )}
               {items.map((item, idx) => {
                 const isKit = !!item.kitId && !item.isKitChild;
-                const children = isKit ? (item.childLineItems || []) : [];
+                const isGroup = isKit;
+                const children = isGroup ? (item.childLineItems || []) : [];
                 return (
                   <View key={item.id}>
                     <View style={idx % 2 === 0 ? s.tableRow : s.tableRowAlt}>
@@ -136,9 +137,9 @@ export function PullSlipPDF({ org, project }: PullSlipPDFProps) {
                       </View>
                       <View style={{ flex: 3 }}>
                         <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                          <Text style={[s.td, { fontFamily: isKit ? "Helvetica-Bold" : "Helvetica" }]}>
+                          <Text style={[s.td, { fontFamily: isGroup ? "Helvetica-Bold" : "Helvetica" }]}>
                             {isKit
-                              ? `[Kit] ${item.description || item.kit?.name || "Kit"}`
+                              ? `[${item.kit?.isPrep ? "Prep" : "Kit"}] ${item.description || item.kit?.name || "Kit"}`
                               : item.model
                                 ? `${item.model.name}${item.model.modelNumber ? ` (${item.model.modelNumber})` : ""}`
                                 : item.description || "-"}
@@ -160,16 +161,16 @@ export function PullSlipPDF({ org, project }: PullSlipPDFProps) {
                         )}
                       </View>
                       <Text style={[s.td, { width: 30, textAlign: "center" }]}>
-                        {isKit ? children.length : item.quantity}
+                        {isGroup ? children.length : item.quantity}
                       </Text>
                       <Text style={[s.td, { width: 80, fontSize: 8, fontFamily: "Courier" }]}>
-                        {isKit ? (item.kit?.assetTag || "-") : (item.asset?.assetTag || item.bulkAsset?.assetTag || "-")}
+                        {isKit ? (item.kit?.isPrep && item.kit.assetTag.startsWith("PREP-") ? "-" : (item.kit?.assetTag || "-")) : (item.asset?.assetTag || item.bulkAsset?.assetTag || "-")}
                       </Text>
                       <Text style={[s.td, { width: 70, fontSize: 8, color: "#888" }]}>
                         {item.model?.category?.name || "-"}
                       </Text>
                     </View>
-                    {!isKit && item.quantity > 1 && (() => {
+                    {!isGroup && item.quantity > 1 && (() => {
                       const shortName = item.model
                         ? item.model.name
                         : (item.description || "Item");
@@ -186,6 +187,8 @@ export function PullSlipPDF({ org, project }: PullSlipPDFProps) {
                     })()}
                     {children.map((child) => {
                       const childName = child.model?.name || child.description || "-";
+                      const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
+                      const nestedChildren = child.childLineItems || [];
                       return (
                         <View key={child.id}>
                           <View style={s.tableRow}>
@@ -194,8 +197,8 @@ export function PullSlipPDF({ org, project }: PullSlipPDFProps) {
                             </View>
                             <View style={{ flex: 3, paddingLeft: 12 }}>
                               <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                                <Text style={[s.td, { fontSize: 8, color: "#555" }]}>
-                                  {childName}
+                                <Text style={[s.td, { fontSize: 8, color: "#555", fontFamily: isNestedKit ? "Helvetica-Bold" : "Helvetica" }]}>
+                                  {isNestedKit ? `[Kit] ${childName}` : childName}
                                 </Text>
                                 {child.isOverbooked && (
                                   <Text style={{ fontSize: 6, color: child.overbookedReducedOnly ? "#7c3aed" : "#dc2626", backgroundColor: child.overbookedReducedOnly ? "#ede9fe" : "#fee2e2", paddingHorizontal: 3, paddingVertical: 1, borderRadius: 2, fontFamily: "Helvetica-Bold" }}>{child.overbookedReducedOnly ? "REDUCED STOCK" : "OVERBOOKED"}</Text>
@@ -203,16 +206,16 @@ export function PullSlipPDF({ org, project }: PullSlipPDFProps) {
                               </View>
                             </View>
                             <Text style={[s.td, { width: 30, textAlign: "center", fontSize: 8 }]}>
-                              {child.quantity}
+                              {isNestedKit ? nestedChildren.length : child.quantity}
                             </Text>
                             <Text style={[s.td, { width: 80, fontSize: 7, fontFamily: "Courier", color: "#555" }]}>
-                              {child.asset?.assetTag || child.bulkAsset?.assetTag || "-"}
+                              {child.asset?.assetTag || child.bulkAsset?.assetTag || (isNestedKit ? (child.kit?.assetTag || "-") : "-")}
                             </Text>
                             <Text style={[s.td, { width: 70, fontSize: 7, color: "#aaa" }]}>
                               {child.model?.category?.name || ""}
                             </Text>
                           </View>
-                          {child.quantity > 1 && (
+                          {!isNestedKit && child.quantity > 1 && (
                             <View style={{ paddingLeft: 38, paddingRight: 6, paddingBottom: 4 }}>
                               {Array.from({ length: child.quantity }).map((_, i) => (
                                 <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingVertical: 1 }}>
@@ -222,6 +225,26 @@ export function PullSlipPDF({ org, project }: PullSlipPDFProps) {
                               ))}
                             </View>
                           )}
+                          {isNestedKit && nestedChildren.map((nested) => {
+                            const nestedName = nested.model?.name || nested.description || "-";
+                            return (
+                              <View key={nested.id}>
+                                <View style={s.tableRow}>
+                                  <View style={[s.td, { width: 20, alignItems: "center", justifyContent: "center" }]}>
+                                    <View style={{ width: 7, height: 7, borderWidth: 0.75, borderColor: "#333", borderRadius: 1 }} />
+                                  </View>
+                                  <View style={{ flex: 3, paddingLeft: 24 }}>
+                                    <Text style={[s.td, { fontSize: 7, color: "#777" }]}>{nestedName}</Text>
+                                  </View>
+                                  <Text style={[s.td, { width: 30, textAlign: "center", fontSize: 7 }]}>{nested.quantity}</Text>
+                                  <Text style={[s.td, { width: 80, fontSize: 7, fontFamily: "Courier", color: "#777" }]}>
+                                    {nested.asset?.assetTag || nested.bulkAsset?.assetTag || "-"}
+                                  </Text>
+                                  <Text style={[s.td, { width: 70, fontSize: 7, color: "#aaa" }]}>{nested.model?.category?.name || ""}</Text>
+                                </View>
+                              </View>
+                            );
+                          })}
                         </View>
                       );
                     })}

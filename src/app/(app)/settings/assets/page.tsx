@@ -11,10 +11,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   getOrganization,
   updateOrganization,
   type OrgSettings,
 } from "@/server/settings";
+import { getCategories } from "@/server/categories";
 import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";
 
@@ -39,6 +47,18 @@ export default function AssetsSettingsPage() {
     }
   }, [org]);
 
+  const { data: categories } = useQuery({
+    queryKey: ["categories", orgId],
+    queryFn: getCategories,
+  });
+
+  const allCategories = (categories || []) as Array<{
+    id: string;
+    name: string;
+    parentId: string | null;
+    parent: { name: string } | null;
+  }>;
+
   const updateMutation = useMutation({
     mutationFn: () => updateOrganization({ name, settings }),
     onSuccess: () => {
@@ -48,7 +68,7 @@ export default function AssetsSettingsPage() {
     onError: (e) => toast.error(e.message),
   });
 
-  const updateSetting = (key: keyof OrgSettings, value: string | number) => {
+  const updateSetting = (key: keyof OrgSettings, value: string | number | null) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -102,6 +122,52 @@ export default function AssetsSettingsPage() {
           <p className="text-xs text-muted-foreground">
             Next tag: <span className="font-mono font-medium">{(settings.assetTagPrefix || "")}{String((settings.assetTagCounter ?? 0) + 1).padStart(settings.assetTagDigits ?? 4, "0")}</span>
           </p>
+          {canEdit && (
+            <div className="flex justify-end">
+              <Button
+                onClick={() => updateMutation.mutate()}
+                disabled={updateMutation.isPending}
+              >
+                {updateMutation.isPending ? "Saving..." : "Save Changes"}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Prep-Kit Cases</CardTitle>
+          <CardDescription>
+            Select which category contains your cases and containers. Assets in this category
+            (and its subcategories) can be used as prep-kit containers.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="prepKitCategory">Case Category</Label>
+            <Select
+              value={settings.prepKitCategoryId || "none"}
+              onValueChange={(value) => updateSetting("prepKitCategoryId", value === "none" ? "" : value)}
+              disabled={!canEdit}
+            >
+              <SelectTrigger id="prepKitCategory" className="w-full sm:w-64">
+                <SelectValue>
+                  {settings.prepKitCategoryId
+                    ? allCategories.find((c) => c.id === settings.prepKitCategoryId)?.name || "Select category"
+                    : "None (custom names only)"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None (custom names only)</SelectItem>
+                {allCategories.map((cat) => (
+                  <SelectItem key={cat.id} value={cat.id}>
+                    {cat.parent ? `${cat.parent.name} / ${cat.name}` : cat.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           {canEdit && (
             <div className="flex justify-end">
               <Button

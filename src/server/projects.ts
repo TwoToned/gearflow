@@ -194,7 +194,13 @@ export async function getProject(id: string) {
           kit: true,
           supplier: true,
           childLineItems: {
-            include: { model: true, asset: true, bulkAsset: true },
+            include: {
+              model: true, asset: true, bulkAsset: true, kit: true,
+              childLineItems: {
+                include: { model: true, asset: true, bulkAsset: true },
+                orderBy: { sortOrder: "asc" },
+              },
+            },
             orderBy: { sortOrder: "asc" },
           },
         },

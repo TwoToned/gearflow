@@ -606,6 +606,7 @@ model Kit {
   purchasePrice       Decimal?       @db.Decimal(10, 2)
   customFieldValues   Json?
   tags                String[]       @default([])
+  isPrep              Boolean        @default(false)
   isActive            Boolean        @default(true)
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
@@ -1829,3 +1830,6 @@ model ServiceTemplate {
   @@index([organizationId])
   @@map("service_template")
 }
+
+// ─── Prep System (Pre-Packing / Staging) ─────────────────────────────────────
+

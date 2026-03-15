@@ -49,6 +49,7 @@ export interface OrgSettings {
   testTag?: TestTagSettings;
   icalToken?: string;
   icalEnabled?: boolean;
+  prepKitCategoryId?: string;
 }
 
 export async function getOrganization() {

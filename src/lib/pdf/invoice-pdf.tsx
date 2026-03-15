@@ -25,7 +25,7 @@ interface LineItem {
   isSubhire?: boolean;
   showSubhireOnDocs?: boolean;
   model: { name: string; modelNumber?: string | null } | null;
-  kit?: { assetTag: string; name: string } | null;
+  kit?: { assetTag: string; name: string; isPrep?: boolean } | null;
   childLineItems?: LineItem[];
 }
 
@@ -160,7 +160,8 @@ export function InvoicePDF({ org, project }: InvoicePDFProps) {
                 )}
                 {items.map((item, idx) => {
                   const isKit = !!item.kitId && !item.isKitChild;
-                  const isItemized = isKit && item.pricingMode === "ITEMIZED";
+                  const isGroup = isKit;
+                  const isItemized = isGroup && item.pricingMode === "ITEMIZED";
                   const children = isItemized ? (item.childLineItems || []) : [];
                   return (
                     <View key={item.id}>
@@ -205,32 +206,52 @@ export function InvoicePDF({ org, project }: InvoicePDFProps) {
                           {isItemized ? "-" : formatCurrency(item.lineTotal)}
                         </Text>
                       </View>
-                      {children.map((child) => (
-                        <View key={child.id} style={s.tableRow}>
-                          <View style={{ flex: 3, paddingLeft: 12 }}>
-                            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                              <Text style={[s.td, { fontSize: 8, color: "#555" }]}>
-                                {child.model?.name || child.description || "-"}
+                      {children.map((child) => {
+                        const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
+                        const nestedChildren = child.childLineItems || [];
+                        const childName = child.model?.name || child.description || "-";
+                        return (
+                          <View key={child.id}>
+                            <View style={s.tableRow}>
+                              <View style={{ flex: 3, paddingLeft: 12 }}>
+                                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                                  <Text style={[s.td, { fontSize: 8, color: "#555", fontFamily: isNestedKit ? "Helvetica-Bold" : "Helvetica" }]}>
+                                    {isNestedKit ? `[Kit] ${childName}` : childName}
+                                  </Text>
+                                  {child.isOverbooked && (
+                                    <Text style={{ fontSize: 6, color: child.overbookedReducedOnly ? "#7c3aed" : "#dc2626", backgroundColor: child.overbookedReducedOnly ? "#ede9fe" : "#fee2e2", paddingHorizontal: 3, paddingVertical: 1, borderRadius: 2, fontFamily: "Helvetica-Bold" }}>{child.overbookedReducedOnly ? "REDUCED STOCK" : "OVERBOOKED"}</Text>
+                                  )}
+                                </View>
+                              </View>
+                              <Text style={[s.td, { width: 30, textAlign: "center", fontSize: 8 }]}>
+                                {isNestedKit ? nestedChildren.length : child.quantity}
                               </Text>
-                              {child.isOverbooked && (
-                                <Text style={{ fontSize: 6, color: child.overbookedReducedOnly ? "#7c3aed" : "#dc2626", backgroundColor: child.overbookedReducedOnly ? "#ede9fe" : "#fee2e2", paddingHorizontal: 3, paddingVertical: 1, borderRadius: 2, fontFamily: "Helvetica-Bold" }}>{child.overbookedReducedOnly ? "REDUCED STOCK" : "OVERBOOKED"}</Text>
-                              )}
+                              <Text style={[s.tdRight, { width: 60, fontSize: 8 }]}>
+                                {child.unitPrice != null ? formatCurrency(child.unitPrice) : "-"}
+                              </Text>
+                              <Text style={[s.td, { width: 30, textAlign: "center", fontSize: 8 }]}>
+                                {child.duration}
+                              </Text>
+                              <Text style={[s.tdRight, { width: 60, fontSize: 8 }]}>
+                                {formatCurrency(child.lineTotal)}
+                              </Text>
                             </View>
+                            {isNestedKit && nestedChildren.map((nested) => (
+                              <View key={nested.id} style={s.tableRow}>
+                                <View style={{ flex: 3, paddingLeft: 24 }}>
+                                  <Text style={[s.td, { fontSize: 7, color: "#777" }]}>{nested.model?.name || nested.description || "-"}</Text>
+                                </View>
+                                <Text style={[s.td, { width: 30, textAlign: "center", fontSize: 7 }]}>{nested.quantity}</Text>
+                                <Text style={[s.tdRight, { width: 60, fontSize: 7, color: "#777" }]}>
+                                  {nested.unitPrice != null ? formatCurrency(nested.unitPrice) : "-"}
+                                </Text>
+                                <Text style={[s.td, { width: 30, textAlign: "center", fontSize: 7 }]}>{nested.duration}</Text>
+                                <Text style={[s.tdRight, { width: 60, fontSize: 7, color: "#777" }]}>{formatCurrency(nested.lineTotal)}</Text>
+                              </View>
+                            ))}
                           </View>
-                          <Text style={[s.td, { width: 30, textAlign: "center", fontSize: 8 }]}>
-                            {child.quantity}
-                          </Text>
-                          <Text style={[s.tdRight, { width: 60, fontSize: 8 }]}>
-                            {child.unitPrice != null ? formatCurrency(child.unitPrice) : "-"}
-                          </Text>
-                          <Text style={[s.td, { width: 30, textAlign: "center", fontSize: 8 }]}>
-                            {child.duration}
-                          </Text>
-                          <Text style={[s.tdRight, { width: 60, fontSize: 8 }]}>
-                            {formatCurrency(child.lineTotal)}
-                          </Text>
-                        </View>
-                      ))}
+                        );
+                      })}
                     </View>
                   );
                 })}

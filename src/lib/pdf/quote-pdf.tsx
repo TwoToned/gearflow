@@ -15,6 +15,8 @@ interface LineItem {
   isOptional: boolean;
   isKitChild?: boolean;
   kitId?: string | null;
+  isPrepChild?: boolean;
+  prepId?: string | null;
   pricingMode?: string | null;
   notes: string | null;
   isOverbooked?: boolean;
@@ -80,7 +82,7 @@ const pricingLabels: Record<string, string> = {
 export function QuotePDF({ org, project }: QuotePDFProps) {
   const s = createStyles(org.branding);
   // Filter out kit children and group line items
-  const topLevelItems = project.lineItems.filter((i) => !i.isKitChild);
+  const topLevelItems = project.lineItems.filter((i) => !i.isKitChild && !i.isPrepChild);
   const groups = new Map<string, LineItem[]>();
   for (const item of topLevelItems) {
     const key = item.groupName || "_ungrouped";
@@ -180,7 +182,9 @@ export function QuotePDF({ org, project }: QuotePDFProps) {
                 )}
                 {items.map((item, idx) => {
                   const isKit = !!item.kitId && !item.isKitChild;
-                  const isItemized = isKit && item.pricingMode === "ITEMIZED";
+                  const isPrep = !!item.prepId && !item.isPrepChild;
+                  const isGroup = isKit || isPrep;
+                  const isItemized = isGroup && item.pricingMode === "ITEMIZED";
                   const children = isItemized ? (item.childLineItems || []) : [];
                   return (
                     <View key={item.id}>
@@ -190,9 +194,11 @@ export function QuotePDF({ org, project }: QuotePDFProps) {
                             <Text style={s.td}>
                               {isKit
                                 ? (item.description || item.kit?.name || "Kit")
-                                : item.model
-                                  ? `${item.model.name}${item.model.modelNumber ? ` (${item.model.modelNumber})` : ""}`
-                                  : item.description || "-"}
+                                : isPrep
+                                  ? (item.description || "Prep")
+                                  : item.model
+                                    ? `${item.model.name}${item.model.modelNumber ? ` (${item.model.modelNumber})` : ""}`
+                                    : item.description || "-"}
                             </Text>
                             {item.isOptional && (
                               <Text style={s.optionalBadge}>Optional</Text>

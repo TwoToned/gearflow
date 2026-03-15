@@ -10,6 +10,8 @@ interface LineItem {
   groupName: string | null;
   isKitChild?: boolean;
   kitId?: string | null;
+  isPrepChild?: boolean;
+  prepId?: string | null;
   model: { name: string; modelNumber?: string | null } | null;
   asset: { assetTag: string } | null;
   bulkAsset: { assetTag: string } | null;
@@ -68,7 +70,7 @@ export function ReturnSheetPDF({ org, project }: ReturnSheetPDFProps) {
   const s = createStyles(org.branding);
   // Only include items that were checked out, exclude kit children
   const items = project.lineItems.filter(
-    (i) => (i.status === "CHECKED_OUT" || i.status === "RETURNED") && !i.isKitChild
+    (i) => (i.status === "CHECKED_OUT" || i.status === "RETURNED") && !i.isKitChild && !i.isPrepChild
   );
 
   return (
@@ -99,7 +101,9 @@ export function ReturnSheetPDF({ org, project }: ReturnSheetPDFProps) {
 
           {items.map((item, idx) => {
             const isKit = !!item.kitId && !item.isKitChild;
-            const children = isKit ? (item.childLineItems || []) : [];
+            const isPrep = !!item.prepId && !item.isPrepChild;
+            const isGroup = isKit || isPrep;
+            const children = isGroup ? (item.childLineItems || []) : [];
             return (
               <View key={item.id}>
                 <View style={idx % 2 === 0 ? s.tableRow : s.tableRowAlt}>
@@ -111,9 +115,11 @@ export function ReturnSheetPDF({ org, project }: ReturnSheetPDFProps) {
                       <Text style={s.td}>
                         {isKit
                           ? (item.description || item.kit?.name || "Kit")
-                          : item.model
-                            ? `${item.model.name}${item.model.modelNumber ? ` (${item.model.modelNumber})` : ""}`
-                            : item.description || "-"}
+                          : isPrep
+                            ? (item.description || "Prep")
+                            : item.model
+                              ? `${item.model.name}${item.model.modelNumber ? ` (${item.model.modelNumber})` : ""}`
+                              : item.description || "-"}
                       </Text>
                       {item.isOverbooked && item.overbookedHasOverbooked && item.overbookedHasReduced ? (
                         <>
@@ -132,10 +138,10 @@ export function ReturnSheetPDF({ org, project }: ReturnSheetPDFProps) {
                     )}
                   </View>
                   <Text style={[s.td, { width: 30, textAlign: "center" }]}>
-                    {isKit ? children.length : item.quantity}
+                    {isGroup ? children.length : item.quantity}
                   </Text>
                   <Text style={[s.td, { width: 80, fontSize: 8, fontFamily: "Courier" }]}>
-                    {isKit ? (item.kit?.assetTag || "-") : (item.asset?.assetTag || item.bulkAsset?.assetTag || "-")}
+                    {isKit ? (item.kit?.assetTag || "-") : isPrep ? "-" : (item.asset?.assetTag || item.bulkAsset?.assetTag || "-")}
                   </Text>
                   <View style={[s.td, { width: 80, justifyContent: "center" }]}>
                     <ConditionCheckboxes />

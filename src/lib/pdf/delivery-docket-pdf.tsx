@@ -13,6 +13,8 @@ interface LineItem {
   bulkAssetId: string | null;
   isKitChild?: boolean;
   kitId?: string | null;
+  isPrepChild?: boolean;
+  prepId?: string | null;
   model: {
     name: string;
     modelNumber?: string | null;
@@ -67,7 +69,7 @@ export function DeliveryDocketPDF({ org, project }: DeliveryDocketPDFProps) {
   const s = createStyles(org.branding);
   // Only items that are actually checked out right now, exclude kit children
   const deliveredItems = project.lineItems.filter((i) => {
-    if (i.isKitChild) return false;
+    if (i.isKitChild || i.isPrepChild) return false;
     if (isBulk(i)) return i.checkedOutQuantity > 0;
     return i.status === "CHECKED_OUT";
   });
@@ -180,10 +182,14 @@ export function DeliveryDocketPDF({ org, project }: DeliveryDocketPDFProps) {
                     rowNum++;
                     const bulk = isBulk(item);
                     const isKit = !!item.kitId && !item.isKitChild;
-                    const children = isKit ? (item.childLineItems || []) : [];
+                    const isPrep = !!item.prepId && !item.isPrepChild;
+                    const isGroup = isKit || isPrep;
+                    const children = isGroup ? (item.childLineItems || []) : [];
                     const itemName = isKit
                       ? (item.description || item.kit?.name || "Kit")
-                      : item.model
+                      : isPrep
+                        ? (item.description || "Prep")
+                        : item.model
                         ? `${item.model.name}${item.model.modelNumber ? ` (${item.model.modelNumber})` : ""}`
                         : item.description || "-";
 
@@ -215,10 +221,10 @@ export function DeliveryDocketPDF({ org, project }: DeliveryDocketPDFProps) {
                             )}
                           </View>
                           <Text style={[s.td, { width: 40, textAlign: "center" }]}>
-                            {isKit ? children.length : bulk ? item.checkedOutQuantity : 1}
+                            {isGroup ? children.length : bulk ? item.checkedOutQuantity : 1}
                           </Text>
                           <Text style={[s.td, { width: 80, fontSize: 8, fontFamily: "Courier" }]}>
-                            {isKit ? (item.kit?.assetTag || "-") : bulk ? "-" : (item.asset?.assetTag || "-")}
+                            {isKit ? (item.kit?.assetTag || "-") : isPrep ? "-" : bulk ? "-" : (item.asset?.assetTag || "-")}
                           </Text>
                           <View style={[s.td, { width: 50, alignItems: "center", justifyContent: "center" }]}>
                             <View style={{ width: 8, height: 8, borderWidth: 0.75, borderColor: "#333", borderRadius: 1 }} />

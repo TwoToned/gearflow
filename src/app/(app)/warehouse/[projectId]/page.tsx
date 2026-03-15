@@ -33,6 +33,7 @@ import {
   getAvailableAssetsForModel,
   quickAddAndCheckOut,
 } from "@/server/warehouse";
+import { getProjectPreps } from "@/server/preps";
 import { lineItemStatusLabels, formatLabel } from "@/lib/status-labels";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -78,6 +79,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { OnlinePickList } from "@/components/warehouse/online-pick-list";
+import { PrepsTab } from "@/components/warehouse/preps-tab";
+import { checkOutPrep as checkOutPrepAction, checkInPrep as checkInPrepAction } from "@/server/preps";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useActiveOrganization } from "@/lib/auth-client";
 
@@ -113,6 +116,7 @@ const lineItemStatusColors: Record<string, string> = {
   QUOTED: "bg-gray-500/10 text-gray-500 border-gray-500/20",
   CONFIRMED: "bg-green-500/10 text-green-500 border-green-500/20",
   PREPPED: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+  PACKED: "bg-amber-500/10 text-amber-500 border-amber-500/20",
   CHECKED_OUT: "bg-purple-500/10 text-purple-500 border-purple-500/20",
   RETURNED: "bg-teal-500/10 text-teal-500 border-teal-500/20",
   CANCELLED: "bg-red-500/10 text-red-500 border-red-500/20",
@@ -131,6 +135,9 @@ interface LineItem {
   bulkAssetId: string | null;
   kitId: string | null;
   isKitChild: boolean;
+  prepId: string | null;
+  isPrepChild: boolean;
+  prep: { id: string; name: string; status: string } | null;
   parentLineItemId: string | null;
   model: { name: string; modelNumber?: string | null } | null;
   asset: { assetTag: string } | null;
@@ -165,10 +172,15 @@ type GroupEntry =
   | { kind: "single"; item: LineItem }
   | { kind: "serialized-group"; groupKey: string; modelName: string; items: LineItem[] }
   | { kind: "bulk-group"; groupKey: string; item: LineItem; unitCount: number }
-  | { kind: "kit-group"; groupKey: string; item: LineItem; children: LineItem[] };
+  | { kind: "kit-group"; groupKey: string; item: LineItem; children: LineItem[] }
+  | { kind: "prep-group"; groupKey: string; item: LineItem; children: LineItem[] };
 
 function isKitParent(item: LineItem) {
   return !!item.kitId && !item.isKitChild;
+}
+
+function isPrepParent(item: LineItem) {
+  return !!item.prepId && !item.isPrepChild;
 }
 
 function groupItems(items: LineItem[]): GroupEntry[] {
@@ -180,6 +192,13 @@ function groupItems(items: LineItem[]): GroupEntry[] {
       result.push({
         kind: "kit-group",
         groupKey: `kit-${item.id}`,
+        item,
+        children: (item.childLineItems || []) as LineItem[],
+      });
+    } else if (isPrepParent(item)) {
+      result.push({
+        kind: "prep-group",
+        groupKey: `prep-${item.id}`,
         item,
         children: (item.childLineItems || []) as LineItem[],
       });
@@ -228,6 +247,13 @@ function groupCheckinItems(items: LineItem[]): GroupEntry[] {
       result.push({
         kind: "kit-group",
         groupKey: `kit-in-${item.id}`,
+        item,
+        children: (item.childLineItems || []) as LineItem[],
+      });
+    } else if (isPrepParent(item)) {
+      result.push({
+        kind: "prep-group",
+        groupKey: `prep-in-${item.id}`,
         item,
         children: (item.childLineItems || []) as LineItem[],
       });
@@ -295,7 +321,8 @@ function WarehouseProjectPage({
 }) {
   const { projectId } = use(params);
   const searchParams = useSearchParams();
-  const initialTab = searchParams.get("tab") === "check-in" ? "check-in" : "check-out";
+  const tabParam = searchParams.get("tab");
+  const initialTab = tabParam === "check-in" ? "check-in" : tabParam === "preps" ? "preps" : "check-out";
   const queryClient = useQueryClient();
   const scanInputRef = useRef<HTMLInputElement>(null);
   const returnScanInputRef = useRef<HTMLInputElement>(null);
@@ -346,8 +373,41 @@ function WarehouseProjectPage({
     queryFn: () => getProjectForWarehouse(projectId),
   });
 
+  const { data: prepsData } = useQuery({
+    queryKey: ["project-preps", orgId, projectId],
+    queryFn: () => getProjectPreps(projectId),
+  });
+
+  // Build lookup: lineItemId/assetId -> prep name for showing badges on Deploy/Return items
+  const prepLookup = useMemo(() => {
+    const byLineItem = new Map<string, { prepName: string; prepStatus: string }>();
+    const byAssetId = new Map<string, { prepName: string; prepStatus: string }>();
+    if (!prepsData) return { byLineItem, byAssetId };
+    for (const prep of prepsData) {
+      // Only show badges for preps that are actively packed or being packed
+      if (prep.status === "UNPACKED" || prep.status === "CANCELLED") continue;
+      for (const item of prep.items) {
+        const info = { prepName: prep.name, prepStatus: prep.status as string };
+        if (item.lineItemId) byLineItem.set(item.lineItemId, info);
+        if (item.assetId) byAssetId.set(item.assetId, info);
+      }
+    }
+    return { byLineItem, byAssetId };
+  }, [prepsData]);
+
+  const getPrepBadge = useCallback((item: LineItem) => {
+    const info = prepLookup.byLineItem.get(item.id) || (item.assetId ? prepLookup.byAssetId.get(item.assetId) : undefined);
+    if (!info) return null;
+    return (
+      <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0 bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+        {info.prepName}
+      </Badge>
+    );
+  }, [prepLookup]);
+
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["warehouse-project", orgId, projectId] });
+    queryClient.invalidateQueries({ queryKey: ["project-preps", orgId, projectId] });
     setSelectedOut(new Set());
     setSelectedIn(new Set());
   };
@@ -394,6 +454,18 @@ function WarehouseProjectPage({
     onError: (e) => toast.error(e.message),
   });
 
+  const prepCheckOutMutation = useMutation({
+    mutationFn: (prepId: string) => checkOutPrepAction(prepId),
+    onSuccess: () => invalidate(),
+    onError: (e) => toast.error(e.message),
+  });
+
+  const prepCheckInMutation = useMutation({
+    mutationFn: (prepId: string) => checkInPrepAction(prepId),
+    onSuccess: () => invalidate(),
+    onError: (e) => toast.error(e.message),
+  });
+
   // --- Scan mutations ---
   const scanMutation = useMutation({
     mutationFn: (assetTag: string) => lookupAssetForScan(projectId, assetTag, "checkout"),
@@ -418,6 +490,32 @@ function WarehouseProjectPage({
           setScanValue("");
           scanInputRef.current?.focus();
         }
+        return;
+      }
+
+      // Handle prep container scans — deploy the entire prep
+      if (result.found && result.type === "prep_container") {
+        const prepResult = result as { prepId: string; assetName: string; prepItemCount: number };
+        prepCheckOutMutation.mutate(prepResult.prepId, {
+          onSuccess: () => {
+            toast.success(`Prep deployed: ${prepResult.assetName} (${prepResult.prepItemCount} items)`);
+            setScanValue("");
+            scanInputRef.current?.focus();
+          },
+        });
+        return;
+      }
+
+      // Handle prep member scans — prompt to scan the prep container instead
+      if (result.found && result.type === "prep_member") {
+        const prepResult = result as { prepName: string; prepContainerTag: string | null; assetName: string };
+        toast.error(
+          prepResult.prepContainerTag
+            ? `${prepResult.assetName} is in prep "${prepResult.prepName}" — scan the container (${prepResult.prepContainerTag}) instead`
+            : `${prepResult.assetName} is in prep "${prepResult.prepName}" — deploy it from the Preps tab`
+        );
+        setScanValue("");
+        scanInputRef.current?.focus();
         return;
       }
 
@@ -526,6 +624,19 @@ function WarehouseProjectPage({
           setReturnScanValue("");
           returnScanInputRef.current?.focus();
         }
+        return;
+      }
+
+      // Handle prep container return scans
+      if (result.found && result.type === "prep_container") {
+        const prepResult = result as { prepId: string; assetName: string; prepItemCount: number };
+        prepCheckInMutation.mutate(prepResult.prepId, {
+          onSuccess: () => {
+            toast.success(`Prep returned: ${prepResult.assetName} (${prepResult.prepItemCount} items)`);
+            setReturnScanValue("");
+            returnScanInputRef.current?.focus();
+          },
+        });
         return;
       }
 
@@ -658,8 +769,8 @@ function WarehouseProjectPage({
 
   // --- Derived data (must be before any early returns to keep hooks stable) ---
   const lineItems = project ? (project.lineItems || []) as unknown as LineItem[] : [];
-  // Filter out kit children — they show under their parent kit row
-  const equipmentItems = lineItems.filter((item) => item.type === "EQUIPMENT" && !item.isKitChild);
+  // Filter out kit/prep children — they show under their parent row
+  const equipmentItems = lineItems.filter((item) => item.type === "EQUIPMENT" && !item.isKitChild && !item.isPrepChild);
 
   const checkOutItemsList = equipmentItems.filter((item) => {
     if (item.status === "CANCELLED") return false;
@@ -673,7 +784,73 @@ function WarehouseProjectPage({
     return item.status === "CHECKED_OUT";
   });
 
-  const groupedOut = groupItems(checkOutItemsList);
+  const groupedOutBase = groupItems(checkOutItemsList);
+
+  // Inject PACKED preps as virtual prep-group entries in the deploy list
+  const groupedOut = useMemo(() => {
+    const result = [...groupedOutBase];
+    if (!prepsData) return result;
+    for (const prep of prepsData) {
+      if (prep.status !== "PACKED") continue;
+      // Synthesize child LineItem-like objects from PrepItem data
+      const children: LineItem[] = prep.items.map((pi: any) => ({
+        id: pi.id,
+        type: "EQUIPMENT",
+        status: "PENDING",
+        quantity: pi.quantity,
+        checkedOutQuantity: 0,
+        returnedQuantity: 0,
+        description: null,
+        modelId: pi.asset?.modelId || pi.bulkAsset?.modelId || null,
+        assetId: pi.assetId,
+        bulkAssetId: pi.bulkAssetId,
+        kitId: null,
+        isKitChild: false,
+        prepId: prep.id,
+        isPrepChild: true,
+        prep: null,
+        parentLineItemId: null,
+        model: pi.asset?.model || pi.bulkAsset?.model || null,
+        asset: pi.asset ? { assetTag: pi.asset.assetTag } : null,
+        bulkAsset: pi.bulkAsset ? { assetTag: pi.bulkAsset.assetTag } : null,
+        kit: null,
+        isSubhire: false,
+      }));
+      // Virtual parent representing the prep — uses "prep:<id>" as the selectable key
+      const virtualParent: LineItem = {
+        id: `prep:${prep.id}`,
+        type: "EQUIPMENT",
+        status: "PACKED",
+        quantity: children.length,
+        checkedOutQuantity: 0,
+        returnedQuantity: 0,
+        description: prep.name,
+        modelId: null,
+        assetId: null,
+        bulkAssetId: null,
+        kitId: null,
+        isKitChild: false,
+        prepId: prep.id,
+        isPrepChild: false,
+        prep: { id: prep.id, name: prep.name, status: prep.status },
+        parentLineItemId: null,
+        model: null,
+        asset: null,
+        bulkAsset: null,
+        kit: null,
+        isSubhire: false,
+        childLineItems: children,
+      };
+      result.push({
+        kind: "prep-group",
+        groupKey: `prep-${prep.id}`,
+        item: virtualParent,
+        children,
+      });
+    }
+    return result;
+  }, [groupedOutBase, prepsData]);
+
   const groupedIn = groupCheckinItems(checkedOutItems);
 
   // Build all selectable keys for check-out
@@ -684,7 +861,7 @@ function WarehouseProjectPage({
         keys.push(entry.item.id);
       } else if (entry.kind === "serialized-group") {
         entry.items.forEach((i) => keys.push(i.id));
-      } else if (entry.kind === "kit-group") {
+      } else if (entry.kind === "kit-group" || entry.kind === "prep-group") {
         keys.push(entry.item.id);
       } else {
         for (let u = 0; u < entry.unitCount; u++) keys.push(bulkUnitKey(entry.item.id, u));
@@ -700,7 +877,7 @@ function WarehouseProjectPage({
         keys.push(entry.item.id);
       } else if (entry.kind === "serialized-group") {
         entry.items.forEach((i) => keys.push(i.id));
-      } else if (entry.kind === "kit-group") {
+      } else if (entry.kind === "kit-group" || entry.kind === "prep-group") {
         keys.push(entry.item.id);
       } else {
         for (let u = 0; u < entry.unitCount; u++) keys.push(bulkUnitKey(entry.item.id, u));
@@ -714,19 +891,25 @@ function WarehouseProjectPage({
 
   // --- Checkout / Checkin selected ---
   const handleCheckOutSelected = async () => {
-    // Separate bulk keys (contain ":"), kit items, and serialized keys
+    // Separate bulk keys (contain ":"), kit items, prep items, and serialized keys
     const bulkQtyMap = new Map<string, number>();
     const serializedLineItemIds: string[] = [];
     const kitLineItemIds: string[] = [];
+    const prepIds: string[] = [];
 
     for (const key of selectedOut) {
-      if (key.includes(":")) {
+      if (key.startsWith("prep:")) {
+        // Virtual prep entry — extract prep ID
+        prepIds.push(key.slice(5));
+      } else if (key.includes(":")) {
         const lineItemId = key.split(":")[0];
         bulkQtyMap.set(lineItemId, (bulkQtyMap.get(lineItemId) || 0) + 1);
       } else {
         const li = lineItems.find((l) => l.id === key);
         if (li && li.kitId && !li.isKitChild) {
           kitLineItemIds.push(key);
+        } else if (li && li.prepId && !li.isPrepChild) {
+          if (li.prepId) prepIds.push(li.prepId);
         } else {
           serializedLineItemIds.push(key);
         }
@@ -741,7 +924,12 @@ function WarehouseProjectPage({
       }
     }
 
-    // If only kits were selected, we're done
+    // Check out preps via prepCheckOutMutation
+    for (const prepId of prepIds) {
+      prepCheckOutMutation.mutate(prepId);
+    }
+
+    // If only kits/preps were selected, we're done
     if (serializedLineItemIds.length === 0 && bulkQtyMap.size === 0) return;
 
     // Find serialized items that need asset assignment
@@ -840,12 +1028,15 @@ function WarehouseProjectPage({
   const handleReturnSelected = () => {
     const qtyMap = new Map<string, number>();
     const kitIds: string[] = [];
+    const prepReturnIds: string[] = [];
 
     for (const key of selectedIn) {
       const lineItemId = key.includes(":") ? key.split(":")[0] : key;
       const li = lineItems.find((l) => l.id === lineItemId);
       if (li && li.kitId && !li.isKitChild) {
         if (li.kitId) kitIds.push(li.kitId);
+      } else if (li && li.prepId && !li.isPrepChild) {
+        if (li.prepId) prepReturnIds.push(li.prepId);
       } else {
         qtyMap.set(lineItemId, (qtyMap.get(lineItemId) || 0) + 1);
       }
@@ -859,7 +1050,12 @@ function WarehouseProjectPage({
       });
     }
 
-    // Return non-kit items
+    // Return preps
+    for (const prepId of prepReturnIds) {
+      prepCheckInMutation.mutate(prepId);
+    }
+
+    // Return non-kit/non-prep items
     const items = Array.from(qtyMap.entries()).map(([lineItemId, qty]) => ({
       lineItemId,
       returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING",
@@ -871,7 +1067,7 @@ function WarehouseProjectPage({
         { items },
         { onSuccess: () => { toast.success(`Returned items`); setReturnNotes(""); } }
       );
-    } else if (kitIds.length > 0) {
+    } else if (kitIds.length > 0 || prepReturnIds.length > 0) {
       setReturnNotes("");
     }
   };
@@ -906,6 +1102,7 @@ function WarehouseProjectPage({
           <div className="flex items-center gap-1.5">
             <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-90" : ""}`} />
             <span className="font-medium">{name}</span>
+            {entry.kind === "bulk-group" && getPrepBadge(entry.item)}
           </div>
         </TableCell>
         <TableCell className="font-mono text-sm text-muted-foreground">
@@ -1018,6 +1215,10 @@ function WarehouseProjectPage({
             <PackageX className="mr-1.5 h-4 w-4" />
             Return ({checkedOutItems.length})
           </TabsTrigger>
+          <TabsTrigger value="preps">
+            <Package className="mr-1.5 h-4 w-4" />
+            Preps
+          </TabsTrigger>
         </TabsList>
 
         {/* ================================================================ */}
@@ -1109,6 +1310,7 @@ function WarehouseProjectPage({
                                 </TableCell>
                                 <TableCell className="pl-12 text-sm text-muted-foreground">
                                   {item.asset?.assetTag ? `${item.model?.name || "Asset"}` : "Unassigned"}
+                                  {getPrepBadge(item)}
                                 </TableCell>
                                 <TableCell className="font-mono text-sm text-muted-foreground">
                                   {item.asset?.assetTag || "—"}
@@ -1247,6 +1449,58 @@ function WarehouseProjectPage({
                         );
                       }
 
+                      // --- Prep group ---
+                      if (entry.kind === "prep-group") {
+                        const isExpanded = expandedGroups.has(entry.groupKey);
+                        return (
+                          <Fragment key={entry.groupKey}>
+                            <TableRow
+                              className="cursor-pointer hover:bg-accent/50"
+                              onClick={() => toggleExpanded(entry.groupKey)}
+                            >
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                <Checkbox
+                                  checked={selectedOut.has(entry.item.id)}
+                                  onCheckedChange={() => toggleSelection(selectedOut, setSelectedOut, entry.item.id)}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-1.5">
+                                  <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+                                  <Package className="h-4 w-4 text-muted-foreground" />
+                                  <span className="font-medium">{entry.item.description || "Prep"}</span>
+                                  <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0 bg-purple-500/10 text-purple-500 border-purple-500/20">Prep</Badge>
+                                </div>
+                              </TableCell>
+                              <TableCell className="font-mono text-sm text-muted-foreground">—</TableCell>
+                              <TableCell className="text-center">{entry.children.length}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className={lineItemStatusColors[entry.item.status] || ""}>
+                                  {lineItemStatusLabels[entry.item.status] || formatLabel(entry.item.status)}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                            {isExpanded && entry.children.map((child) => (
+                              <TableRow key={child.id} className="bg-muted/30">
+                                <TableCell />
+                                <TableCell className="pl-12 text-sm text-muted-foreground">
+                                  {child.model?.name || child.description || "Item"}
+                                </TableCell>
+                                <TableCell className="font-mono text-sm text-muted-foreground">
+                                  {child.asset?.assetTag || child.bulkAsset?.assetTag || "—"}
+                                </TableCell>
+                                <TableCell className="text-center">{child.quantity}</TableCell>
+                                <TableCell>
+                                  <Badge variant="outline" className={lineItemStatusColors[child.status] || ""}>
+                                    {lineItemStatusLabels[child.status] || formatLabel(child.status)}
+                                  </Badge>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </Fragment>
+                        );
+                      }
+
                       // --- Single item ---
                       const item = entry.item;
                       return (
@@ -1262,6 +1516,7 @@ function WarehouseProjectPage({
                             {item.isSubhire && (
                               <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0 bg-cyan-500/10 text-cyan-600 border-cyan-500/20">Subhire</Badge>
                             )}
+                            {getPrepBadge(item)}
                           </TableCell>
                           <TableCell className="font-mono text-sm text-muted-foreground">
                             {item.asset?.assetTag || item.bulkAsset?.assetTag || "—"}
@@ -1396,6 +1651,7 @@ function WarehouseProjectPage({
                                 </TableCell>
                                 <TableCell className="pl-12 text-sm text-muted-foreground">
                                   {item.asset?.assetTag ? `${item.model?.name || "Asset"}` : "Unassigned"}
+                                  {getPrepBadge(item)}
                                 </TableCell>
                                 <TableCell className="font-mono text-sm text-muted-foreground">
                                   {item.asset?.assetTag || "—"}
@@ -1534,6 +1790,58 @@ function WarehouseProjectPage({
                         );
                       }
 
+                      // --- Prep group (Return tab) ---
+                      if (entry.kind === "prep-group") {
+                        const isExpanded = expandedGroups.has(entry.groupKey);
+                        return (
+                          <Fragment key={entry.groupKey}>
+                            <TableRow
+                              className="cursor-pointer hover:bg-accent/50"
+                              onClick={() => toggleExpanded(entry.groupKey)}
+                            >
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                <Checkbox
+                                  checked={selectedIn.has(entry.item.id)}
+                                  onCheckedChange={() => toggleSelection(selectedIn, setSelectedIn, entry.item.id)}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-1.5">
+                                  <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+                                  <Package className="h-4 w-4 text-muted-foreground" />
+                                  <span className="font-medium">{entry.item.description || "Prep"}</span>
+                                  <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0 bg-purple-500/10 text-purple-500 border-purple-500/20">Prep</Badge>
+                                </div>
+                              </TableCell>
+                              <TableCell className="font-mono text-sm text-muted-foreground">—</TableCell>
+                              <TableCell className="text-center">{entry.children.length}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className={lineItemStatusColors["CHECKED_OUT"]}>
+                                  Deployed
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                            {isExpanded && entry.children.map((child) => (
+                              <TableRow key={child.id} className="bg-muted/30">
+                                <TableCell />
+                                <TableCell className="pl-12 text-sm text-muted-foreground">
+                                  {child.model?.name || child.description || "Item"}
+                                </TableCell>
+                                <TableCell className="font-mono text-sm text-muted-foreground">
+                                  {child.asset?.assetTag || child.bulkAsset?.assetTag || "—"}
+                                </TableCell>
+                                <TableCell className="text-center">{child.quantity}</TableCell>
+                                <TableCell>
+                                  <Badge variant="outline" className={lineItemStatusColors[child.status] || ""}>
+                                    {lineItemStatusLabels[child.status] || formatLabel(child.status)}
+                                  </Badge>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </Fragment>
+                        );
+                      }
+
                       // --- Single item ---
                       const item = entry.item;
                       const isBulk = isBulkItem(item);
@@ -1551,6 +1859,7 @@ function WarehouseProjectPage({
                             {item.isSubhire && (
                               <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0 bg-cyan-500/10 text-cyan-600 border-cyan-500/20">Subhire</Badge>
                             )}
+                            {getPrepBadge(item)}
                           </TableCell>
                           <TableCell className="font-mono text-sm text-muted-foreground">
                             {assetTag || "—"}
@@ -1580,6 +1889,13 @@ function WarehouseProjectPage({
               </div>
             )}
           </div>
+        </TabsContent>
+
+        {/* ================================================================ */}
+        {/* PREPS TAB                                                        */}
+        {/* ================================================================ */}
+        <TabsContent value="preps">
+          <PrepsTab projectId={projectId} />
         </TabsContent>
       </Tabs>
 

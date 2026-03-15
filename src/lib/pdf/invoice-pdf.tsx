@@ -15,6 +15,8 @@ interface LineItem {
   isOptional: boolean;
   isKitChild?: boolean;
   kitId?: string | null;
+  isPrepChild?: boolean;
+  prepId?: string | null;
   pricingMode?: string | null;
   notes: string | null;
   isOverbooked?: boolean;
@@ -79,7 +81,7 @@ export function InvoicePDF({ org, project }: InvoicePDFProps) {
   const balanceDue = totalNum - depositNum;
 
   // Only include non-optional confirmed items, exclude kit children
-  const invoiceItems = project.lineItems.filter((i) => !i.isOptional && !i.isKitChild);
+  const invoiceItems = project.lineItems.filter((i) => !i.isOptional && !i.isKitChild && !i.isPrepChild);
 
   const groups = new Map<string, LineItem[]>();
   for (const item of invoiceItems) {
@@ -160,7 +162,9 @@ export function InvoicePDF({ org, project }: InvoicePDFProps) {
                 )}
                 {items.map((item, idx) => {
                   const isKit = !!item.kitId && !item.isKitChild;
-                  const isItemized = isKit && item.pricingMode === "ITEMIZED";
+                  const isPrep = !!item.prepId && !item.isPrepChild;
+                  const isGroup = isKit || isPrep;
+                  const isItemized = isGroup && item.pricingMode === "ITEMIZED";
                   const children = isItemized ? (item.childLineItems || []) : [];
                   return (
                     <View key={item.id}>
@@ -170,9 +174,11 @@ export function InvoicePDF({ org, project }: InvoicePDFProps) {
                             <Text style={s.td}>
                               {isKit
                                 ? (item.description || item.kit?.name || "Kit")
-                                : item.model
-                                  ? `${item.model.name}${item.model.modelNumber ? ` (${item.model.modelNumber})` : ""}`
-                                  : item.description || "-"}
+                                : isPrep
+                                  ? (item.description || "Prep")
+                                  : item.model
+                                    ? `${item.model.name}${item.model.modelNumber ? ` (${item.model.modelNumber})` : ""}`
+                                    : item.description || "-"}
                             </Text>
                             {item.isOverbooked && item.overbookedHasOverbooked && item.overbookedHasReduced ? (
                               <>

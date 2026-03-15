@@ -194,6 +194,7 @@ export async function getKitBookings(
       organizationId,
       kitId,
       isKitChild: false,
+      isPrepChild: false,
       status: { not: "CANCELLED" },
       project: {
         isTemplate: false,

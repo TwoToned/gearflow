@@ -48,6 +48,8 @@ model User {
   crewMembers             CrewMember[]
   confirmedAssignments    CrewAssignment[] @relation("ConfirmedBy")
   approvedTimeEntries     CrewTimeEntry[]  @relation("TimeEntryApprovedBy")
+  preparedPreps           Prep[]
+  addedPrepItems          PrepItem[]       @relation("PrepItemAddedBy")
 
   @@map("user")
 }
@@ -145,6 +147,7 @@ model Organization {
   crewTimeEntries    CrewTimeEntry[]
   projectServices    ProjectService[]
   serviceTemplates   ServiceTemplate[]
+  preps              Prep[]
   @@map("organization")
 }
 
@@ -614,6 +617,7 @@ model Kit {
   bulkItems        KitBulkItem[]
   assets           Asset[]
   lineItems        ProjectLineItem[]
+  prepItems        PrepItem[]
   scanLogs         AssetScanLog[]
   maintenanceRecords MaintenanceRecord[]
   media            KitMedia[]
@@ -714,6 +718,8 @@ model Asset {
   media               AssetMedia[]
   testTagAsset        TestTagAsset?
   supplierOrderItems  SupplierOrderItem[]
+  prepContainer       Prep?              @relation("PrepContainer")
+  prepItems           PrepItem[]         @relation("PrepItems")
 
   @@unique([organizationId, assetTag])
   @@index([organizationId])
@@ -753,6 +759,7 @@ model BulkAsset {
   lineItems     ProjectLineItem[]
   scanLogs      AssetScanLog[]
   testTagAssets TestTagAsset[]
+  prepItems     PrepItem[]
 
   @@unique([organizationId, assetTag])
   @@index([organizationId])
@@ -926,6 +933,7 @@ model Project {
   supplierOrders   SupplierOrder[]
   crewAssignments  CrewAssignment[]
   services         ProjectService[]
+  preps            Prep[]
 
   @@unique([organizationId, projectNumber])
   @@index([organizationId])
@@ -955,6 +963,9 @@ model ProjectLineItem {
   kitId           String?
   kit             Kit?           @relation(fields: [kitId], references: [id], onDelete: SetNull)
   isKitChild      Boolean        @default(false)
+  prepId          String?
+  prep            Prep?          @relation("PrepLineItems", fields: [prepId], references: [id], onDelete: SetNull)
+  isPrepChild     Boolean        @default(false)
   parentLineItemId String?
   parentLineItem  ProjectLineItem? @relation("KitLineItemChildren", fields: [parentLineItemId], references: [id], onDelete: Cascade)
   childLineItems  ProjectLineItem[] @relation("KitLineItemChildren")
@@ -989,6 +1000,7 @@ model ProjectLineItem {
   supplierOrderId   String?
   supplierOrder     SupplierOrder? @relation(fields: [supplierOrderId], references: [id], onDelete: SetNull)
   service           ProjectService?
+  prepItems         PrepItem[]
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
@@ -998,6 +1010,7 @@ model ProjectLineItem {
   @@index([assetId])
   @@index([bulkAssetId])
   @@index([kitId])
+  @@index([prepId])
   @@index([parentLineItemId])
   @@index([supplierId])
   @@index([supplierOrderId])
@@ -1828,4 +1841,84 @@ model ServiceTemplate {
 
   @@index([organizationId])
   @@map("service_template")
+}
+
+// ─── Prep System (Pre-Packing / Staging) ─────────────────────────────────────
+
+model Prep {
+  id              String     @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  projectId       String
+  project         Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  // Container (optional — may be a tracked asset like a pelican case or road case)
+  name            String               // "FOH Rack", "Mic Case A", "Cable Box 3"
+  containerAssetId String?  @unique     // If the case/rack is a tracked asset
+  containerAsset  Asset?     @relation("PrepContainer", fields: [containerAssetId], references: [id], onDelete: SetNull)
+
+  status          PrepStatus @default(PACKING)
+
+  // Metadata
+  notes           String?
+  preparedById    String?
+  preparedBy      User?      @relation(fields: [preparedById], references: [id], onDelete: SetNull)
+  preparedAt      DateTime?
+  checkedOutAt    DateTime?
+  returnedAt      DateTime?
+  unpackedAt      DateTime?
+
+  items           PrepItem[]
+  lineItems       ProjectLineItem[] @relation("PrepLineItems")
+
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([organizationId])
+  @@index([projectId])
+  @@index([containerAssetId])
+  @@map("prep")
+}
+
+model PrepItem {
+  id              String     @id @default(cuid())
+  prepId          String
+  prep            Prep       @relation(fields: [prepId], references: [id], onDelete: Cascade)
+
+  // What's in the container (one of these is set)
+  assetId         String?
+  asset           Asset?     @relation("PrepItems", fields: [assetId], references: [id], onDelete: SetNull)
+  bulkAssetId     String?
+  bulkAsset       BulkAsset? @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
+  kitId           String?
+  kit             Kit?       @relation(fields: [kitId], references: [id], onDelete: SetNull)
+  quantity        Int        @default(1)       // For bulk assets
+
+  // Which line item this fulfils (optional — links prep to the project's equipment list)
+  lineItemId      String?
+  lineItem        ProjectLineItem? @relation(fields: [lineItemId], references: [id], onDelete: SetNull)
+
+  // Tracking
+  addedAt         DateTime   @default(now())
+  addedById       String?
+  addedBy         User?      @relation("PrepItemAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+  sortOrder       Int        @default(0)
+
+  @@unique([prepId, assetId])           // Each asset in at most one prep
+  @@index([prepId])
+  @@index([assetId])
+  @@index([bulkAssetId])
+  @@index([kitId])
+  @@index([lineItemId])
+  @@map("prep_item")
+}
+
+enum PrepStatus {
+  PACKING         // Staff are adding items
+  PACKED          // Ready to go
+  CHECKED_OUT     // Out on a project
+  RETURNED        // Back from project
+  UNPACKED        // Contents returned to shelf
+  CANCELLED
 }

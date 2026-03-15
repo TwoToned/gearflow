@@ -241,39 +241,42 @@ export default function PullSheetPage({
                     const assetTag = asset?.assetTag || bulkAsset?.assetTag || null;
                     const overbookedInfo = item.overbookedInfo as { overBy: number; totalStock: number; totalBooked: number; inherited?: boolean } | null;
                     const isKit = !!(item.kitId) && !(item.isKitChild);
-                    const children = isKit ? ((item.childLineItems || []) as Array<Record<string, unknown>>) : [];
+                    const isPrep = !!(item.prepId) && !(item.isPrepChild);
+                    const isGroupParent = isKit || isPrep;
+                    const children = isGroupParent ? ((item.childLineItems || []) as Array<Record<string, unknown>>) : [];
                     const qty = item.quantity as number;
-                    const itemName = isKit
-                      ? (item.description as string) || kit?.name || "Kit"
+                    const groupLabel = isKit ? "Kit" : "Prep";
+                    const itemName = isGroupParent
+                      ? (item.description as string) || kit?.name || groupLabel
                       : model
                         ? [model.name, model.modelNumber].filter(Boolean).join(" - ")
                         : (item.description as string) || "Unnamed item";
 
                     return (
                       <React.Fragment key={item.id as string}>
-                        <TableRow className={isKit ? "bg-muted/30" : ""}>
+                        <TableRow className={isGroupParent ? "bg-muted/30" : ""}>
                           <TableCell className="text-center">
-                            {isKit
+                            {isGroupParent
                               ? <Container className="h-4 w-4 text-muted-foreground print:text-black" />
                               : <Square className="h-4 w-4 text-muted-foreground print:text-black" />}
                           </TableCell>
                           <TableCell>
-                            <span className={isKit ? "font-bold" : "font-medium"}>
-                              {isKit ? `[Kit] ${itemName}` : itemName}
+                            <span className={isGroupParent ? "font-bold" : "font-medium"}>
+                              {isGroupParent ? `[${groupLabel}] ${itemName}` : itemName}
                             </span>
                             {overbookedInfo && <PullSheetOverbookedBadge info={overbookedInfo} />}
                           </TableCell>
                           <TableCell className="text-center">
-                            {isKit ? children.length : qty}
+                            {isGroupParent ? children.length : qty}
                           </TableCell>
                           <TableCell className="font-mono text-sm text-muted-foreground">
-                            {isKit ? (kit?.assetTag || "—") : (assetTag || "—")}
+                            {isGroupParent ? (kit?.assetTag || "—") : (assetTag || "—")}
                           </TableCell>
                           <TableCell className="text-sm text-muted-foreground">
                             {asset?.location?.name || "—"}
                           </TableCell>
                         </TableRow>
-                        {/* Kit children */}
+                        {/* Kit/Prep children */}
                         {children.map((child) => {
                           const childModel = child.model as { name: string; modelNumber?: string | null } | null;
                           const childAsset = child.asset as { assetTag: string; location?: { name: string } | null } | null;

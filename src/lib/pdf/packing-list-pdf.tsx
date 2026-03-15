@@ -10,6 +10,8 @@ interface LineItem {
   status: string;
   isKitChild?: boolean;
   kitId?: string | null;
+  isPrepChild?: boolean;
+  prepId?: string | null;
   model: {
     name: string;
     modelNumber?: string | null;
@@ -27,6 +29,7 @@ interface LineItem {
   overbookedHasReduced?: boolean;
   isSubhire?: boolean;
   showSubhireOnDocs?: boolean;
+  preppedIn?: string | null;
   childLineItems?: LineItem[];
 }
 
@@ -47,7 +50,7 @@ export function PullSlipPDF({ org, project }: PullSlipPDFProps) {
   const s = createStyles(org.branding);
   // Filter out kit children (they'll be rendered under their parent)
   const equipmentItems = project.lineItems.filter(
-    (i) => i.status !== "CANCELLED" && !i.isKitChild
+    (i) => i.status !== "CANCELLED" && !i.isKitChild && !i.isPrepChild
   );
 
   // Group by groupName
@@ -127,7 +130,9 @@ export function PullSlipPDF({ org, project }: PullSlipPDFProps) {
               )}
               {items.map((item, idx) => {
                 const isKit = !!item.kitId && !item.isKitChild;
-                const children = isKit ? (item.childLineItems || []) : [];
+                const isPrep = !!item.prepId && !item.isPrepChild;
+                const isGroup = isKit || isPrep;
+                const children = isGroup ? (item.childLineItems || []) : [];
                 return (
                   <View key={item.id}>
                     <View style={idx % 2 === 0 ? s.tableRow : s.tableRowAlt}>
@@ -136,12 +141,14 @@ export function PullSlipPDF({ org, project }: PullSlipPDFProps) {
                       </View>
                       <View style={{ flex: 3 }}>
                         <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                          <Text style={[s.td, { fontFamily: isKit ? "Helvetica-Bold" : "Helvetica" }]}>
+                          <Text style={[s.td, { fontFamily: isGroup ? "Helvetica-Bold" : "Helvetica" }]}>
                             {isKit
                               ? `[Kit] ${item.description || item.kit?.name || "Kit"}`
-                              : item.model
-                                ? `${item.model.name}${item.model.modelNumber ? ` (${item.model.modelNumber})` : ""}`
-                                : item.description || "-"}
+                              : isPrep
+                                ? `[Prep] ${item.description || "Prep"}`
+                                : item.model
+                                  ? `${item.model.name}${item.model.modelNumber ? ` (${item.model.modelNumber})` : ""}`
+                                  : item.description || "-"}
                           </Text>
                           {item.isOverbooked && item.overbookedHasOverbooked && item.overbookedHasReduced ? (
                             <>
@@ -154,13 +161,16 @@ export function PullSlipPDF({ org, project }: PullSlipPDFProps) {
                           {item.isSubhire && (
                             <Text style={{ fontSize: 6, color: "#0891b2", backgroundColor: "#cffafe", paddingHorizontal: 3, paddingVertical: 1, borderRadius: 2, fontFamily: "Helvetica-Bold" }}>SUBHIRE</Text>
                           )}
+                          {item.preppedIn && (
+                            <Text style={{ fontSize: 6, color: "#059669", backgroundColor: "#d1fae5", paddingHorizontal: 3, paddingVertical: 1, borderRadius: 2, fontFamily: "Helvetica-Bold" }}>PREPPED: {item.preppedIn}</Text>
+                          )}
                         </View>
                         {item.notes && (
                           <Text style={{ fontSize: 7, color: "#888", marginTop: 1 }}>{item.notes}</Text>
                         )}
                       </View>
                       <Text style={[s.td, { width: 30, textAlign: "center" }]}>
-                        {isKit ? children.length : item.quantity}
+                        {isGroup ? children.length : item.quantity}
                       </Text>
                       <Text style={[s.td, { width: 80, fontSize: 8, fontFamily: "Courier" }]}>
                         {isKit ? (item.kit?.assetTag || "-") : (item.asset?.assetTag || item.bulkAsset?.assetTag || "-")}
@@ -169,7 +179,7 @@ export function PullSlipPDF({ org, project }: PullSlipPDFProps) {
                         {item.model?.category?.name || "-"}
                       </Text>
                     </View>
-                    {!isKit && item.quantity > 1 && (() => {
+                    {!isGroup && item.quantity > 1 && (() => {
                       const shortName = item.model
                         ? item.model.name
                         : (item.description || "Item");

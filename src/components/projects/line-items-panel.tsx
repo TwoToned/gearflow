@@ -345,23 +345,25 @@ function SortableItemRow({
       };
 
   const isKitParent = !!item.kitId && !item.isKitChild;
-  const Icon = isKitParent ? Container : (typeIcons[item.type] || Package);
-  const itemName = isKitParent
-    ? item.description || "Unnamed Kit"
+  const isPrepParent = !!item.prepId && !item.isPrepChild;
+  const isGroupParent = isKitParent || isPrepParent;
+  const Icon = isGroupParent ? Container : (typeIcons[item.type] || Package);
+  const itemName = isGroupParent
+    ? item.description || (isKitParent ? "Unnamed Kit" : "Unnamed Prep")
     : item.type === "EQUIPMENT"
       ? [item.model?.name, item.model?.modelNumber].filter(Boolean).join(" - ") ||
         item.description ||
         "Unnamed item"
       : item.description || "Unnamed item";
   const isExpanded = expandedKits.has(item.id);
-  const childItems = isKitParent ? (item.childLineItems || []) : [];
+  const childItems = isGroupParent ? (item.childLineItems || []) : [];
 
   return (
     <React.Fragment>
       <TableRow
         ref={setNodeRef}
         style={style}
-        className={`${isKitParent ? "bg-muted/30" : ""} ${isDragging || parentGroupDragging ? "opacity-30" : ""} ${isDragOverlay ? "bg-background" : ""}`}
+        className={`${isGroupParent ? "bg-muted/30" : ""} ${isDragging || parentGroupDragging ? "opacity-30" : ""} ${isDragOverlay ? "bg-background" : ""}`}
       >
         <TableCell className={`w-8 px-1 ${isGrouped ? "pl-6" : ""}`}>
           <button
@@ -375,7 +377,7 @@ function SortableItemRow({
         </TableCell>
         <TableCell>
           <div className="flex items-center gap-2">
-            {isKitParent ? (
+            {isGroupParent ? (
               <button
                 type="button"
                 onClick={() => onToggleKit(item.id)}
@@ -391,9 +393,9 @@ function SortableItemRow({
                   <span className="font-medium">{itemName}</span>
                   <Badge
                     variant="outline"
-                    className="ml-2 text-xs bg-indigo-500/10 text-indigo-600 border-indigo-500/20"
+                    className={`ml-2 text-xs ${isKitParent ? "bg-indigo-500/10 text-indigo-600 border-indigo-500/20" : "bg-orange-500/10 text-orange-600 border-orange-500/20"}`}
                   >
-                    Kit
+                    {isKitParent ? "Kit" : "Prep"}
                   </Badge>
                   {item.pricingMode === "ITEMIZED" && (
                     <Badge variant="outline" className="ml-1 text-xs">
@@ -601,9 +603,11 @@ function SortableGroupHeader({
       {isDragOverlay && groupItems && groupItems.length > 0 && (
         groupItems.map((item) => {
           const isKitParent = !!item.kitId && !item.isKitChild;
-          const Icon = isKitParent ? Container : (typeIcons[item.type] || Package);
-          const name = isKitParent
-            ? item.description || "Unnamed Kit"
+          const isPrepParent = !!item.prepId && !item.isPrepChild;
+          const isGroupParent = isKitParent || isPrepParent;
+          const Icon = isGroupParent ? Container : (typeIcons[item.type] || Package);
+          const name = isGroupParent
+            ? item.description || (isKitParent ? "Unnamed Kit" : "Unnamed Prep")
             : item.type === "EQUIPMENT"
               ? [item.model?.name, item.model?.modelNumber].filter(Boolean).join(" - ") ||
                 item.description || "Unnamed"
@@ -775,7 +779,7 @@ export function LineItemsPanel({
   }, []);
 
   const topLevelItems = useMemo(
-    () => lineItems.filter((item) => !item.isKitChild),
+    () => lineItems.filter((item) => !item.isKitChild && !item.isPrepChild),
     [lineItems],
   );
 
@@ -987,8 +991,8 @@ export function LineItemsPanel({
             },
           ];
         });
-        // Add kit children back (they keep their parent's order context)
-        const children = old.lineItems.filter((li) => li.isKitChild);
+        // Add kit/prep children back (they keep their parent's order context)
+        const children = old.lineItems.filter((li) => li.isKitChild || li.isPrepChild);
         return {
           ...old,
           lineItems: [...reordered, ...children],

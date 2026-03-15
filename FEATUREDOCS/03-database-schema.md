@@ -63,6 +63,10 @@
 - **ProjectService** — `id, organizationId, projectId, type (DELIVERY|PICKUP|BUMP_IN|BUMP_OUT|LABOUR|MISC), title, description, notes, date, startTime, endTime, estimatedDuration, address, latitude, longitude, status (PLANNED|CONFIRMED|IN_PROGRESS|COMPLETED|CANCELLED), showOnDocuments, unitPrice, quantity, pricingType, duration, discount, lineTotal, taxable, lineItemId (unique), vehicleDescription, numberOfTrips, crewCountRequired, crewRoleId (FK→CrewRole), sortOrder`. Has `crewAssignments CrewAssignment[]` relation via `serviceId`.
 - **ServiceTemplate** — `id, organizationId, type (ServiceType), title, description, defaultCrewCount, defaultVehicle, defaultPricingType, defaultUnitPrice, showOnDocuments, isAutoAdded, sortOrder, isActive`
 
+## Prep Models
+- **Prep** — `id, organizationId, projectId, name, containerAssetId? (unique), status (PACKING|PACKED|CHECKED_OUT|RETURNED|UNPACKED|CANCELLED), notes?, preparedById?, preparedAt?, checkedOutAt?, returnedAt?, unpackedAt?`. Container links to Asset via `"PrepContainer"` relation.
+- **PrepItem** — `id, prepId, assetId?, bulkAssetId?, kitId?, quantity, lineItemId?, addedAt, addedById?, sortOrder`. Unique: `[prepId, assetId]`. Links prep contents to assets, kits, and project line items.
+
 ## Activity & Scan Logs
 - **ActivityLog** — `id, organizationId, action, entityType, entityId, entityName, userId, userName, summary, details (JSON), metadata (JSON), projectId, assetId, kitId, createdAt`
 - **AssetScanLog** — `id, organizationId, assetId, bulkAssetId, kitId, projectId, action (CHECK_OUT|CHECK_IN|SCAN_VERIFY|TRANSFER), scannedById, scannedAt, notes, location`

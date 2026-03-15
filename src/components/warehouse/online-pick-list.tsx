@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Container, Check, Loader2 } from "lucide-react";
+import { Container, Package, Check, Loader2 } from "lucide-react";
 import { getProjectPullSheet } from "@/server/warehouse";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -121,10 +121,12 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
   for (const group of allGroups) {
     for (const item of group.items) {
       const isKit = !!(item.kitId) && !(item.isKitChild);
+      const isPrep = !!(item.prepId) && !(item.isPrepChild);
+      const isGroup = isKit || isPrep;
       const qty = item.quantity as number;
-      const children = isKit ? ((item.childLineItems || []) as Array<Record<string, unknown>>) : [];
+      const children = isGroup ? ((item.childLineItems || []) as Array<Record<string, unknown>>) : [];
 
-      if (isKit) {
+      if (isGroup) {
         // Kit header itself
         totalItems++;
         if (checked.has(`kit-${item.id}`)) checkedItems++;
@@ -190,37 +192,41 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
                 const kit = item.kit as { assetTag: string; name: string } | null;
                 const assetTag = asset?.assetTag || bulkAsset?.assetTag || null;
                 const isKit = !!(item.kitId) && !(item.isKitChild);
-                const children = isKit ? ((item.childLineItems || []) as Array<Record<string, unknown>>) : [];
+                const isPrep = !!(item.prepId) && !(item.isPrepChild);
+                const isGroup = isKit || isPrep;
+                const children = isGroup ? ((item.childLineItems || []) as Array<Record<string, unknown>>) : [];
                 const qty = item.quantity as number;
                 const itemName = isKit
                   ? (item.description as string) || kit?.name || "Kit"
-                  : model
-                    ? [model.name, model.modelNumber].filter(Boolean).join(" - ")
-                    : (item.description as string) || "Unnamed item";
+                  : isPrep
+                    ? (item.description as string) || "Prep"
+                    : model
+                      ? [model.name, model.modelNumber].filter(Boolean).join(" - ")
+                      : (item.description as string) || "Unnamed item";
 
                 return (
                   <React.Fragment key={item.id as string}>
-                    {/* Kit header */}
-                    {isKit && (() => {
-                      const kitKey = `kit-${item.id}`;
-                      const kitChecked = checked.has(kitKey);
+                    {/* Kit/Prep group header */}
+                    {isGroup && (() => {
+                      const groupKey = `kit-${item.id}`;
+                      const groupChecked = checked.has(groupKey);
                       return (
                         <button
                           onClick={() => toggleKit(item)}
                           className={`flex w-full items-center gap-2 rounded-md bg-muted/50 px-3 py-2.5 mt-2 text-left transition-colors hover:bg-accent/50 active:bg-accent ${
-                            kitChecked ? "opacity-60" : ""
+                            groupChecked ? "opacity-60" : ""
                           }`}
                         >
-                          <Checkbox checked={kitChecked} className="shrink-0 pointer-events-none" />
-                          <Container className="h-4 w-4 text-muted-foreground shrink-0" />
-                          <span className={`font-semibold text-sm flex-1 ${kitChecked ? "line-through text-muted-foreground" : ""}`}>{itemName}</span>
-                          <span className="font-mono text-xs text-muted-foreground">{kit?.assetTag}</span>
+                          <Checkbox checked={groupChecked} className="shrink-0 pointer-events-none" />
+                          {isKit ? <Container className="h-4 w-4 text-muted-foreground shrink-0" /> : <Package className="h-4 w-4 text-muted-foreground shrink-0" />}
+                          <span className={`font-semibold text-sm flex-1 ${groupChecked ? "line-through text-muted-foreground" : ""}`}>{itemName}</span>
+                          {isKit && <span className="font-mono text-xs text-muted-foreground">{kit?.assetTag}</span>}
                         </button>
                       );
                     })()}
 
-                    {/* Kit children */}
-                    {isKit && children.map((child) => {
+                    {/* Group children */}
+                    {isGroup && children.map((child) => {
                       const childModel = child.model as { name: string; modelNumber?: string | null } | null;
                       const childAsset = child.asset as { assetTag: string } | null;
                       const childBulk = child.bulkAsset as { assetTag: string } | null;
@@ -258,8 +264,8 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
                       );
                     })}
 
-                    {/* Non-kit items */}
-                    {!isKit && qty > 1 && Array.from({ length: qty }).map((_, i) => {
+                    {/* Non-group items */}
+                    {!isGroup && qty > 1 && Array.from({ length: qty }).map((_, i) => {
                       const key = `${item.id}-${i}`;
                       const isChecked = checked.has(key);
                       return (
@@ -273,7 +279,7 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
                       );
                     })}
 
-                    {!isKit && qty <= 1 && (
+                    {!isGroup && qty <= 1 && (
                       <PickListRow
                         key={item.id as string}
                         label={itemName}

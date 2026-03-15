@@ -47,6 +47,8 @@ export interface OrgSettings {
   assetTagDigits?: number;
   branding?: OrgBranding;
   testTag?: TestTagSettings;
+  icalToken?: string;
+  icalEnabled?: boolean;
 }
 
 export async function getOrganization() {

@@ -89,6 +89,7 @@ export const crewAssignmentSchema = z.object({
   notes: z.string().max(2000).optional(),
   internalNotes: z.string().max(2000).optional(),
   generateShifts: z.boolean().default(false),
+  serviceId: z.string().optional().or(z.literal("")),
 });
 
 export type CrewAssignmentFormValues = z.input<typeof crewAssignmentSchema>;

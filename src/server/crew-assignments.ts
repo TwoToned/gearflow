@@ -79,6 +79,9 @@ export async function getProjectCrew(projectId: string) {
       crewRole: {
         select: { id: true, name: true, color: true, defaultRate: true, rateType: true },
       },
+      service: {
+        select: { id: true, title: true, type: true },
+      },
       shifts: { orderBy: { date: "asc" } },
       confirmedBy: { select: { id: true, name: true } },
     },
@@ -138,6 +141,7 @@ export async function createAssignment(projectId: string, data: CrewAssignmentFo
       projectId,
       crewMemberId: parsed.crewMemberId,
       crewRoleId: parsed.crewRoleId || null,
+      serviceId: parsed.serviceId || null,
       status: parsed.status,
       phase: parsed.phase || null,
       isProjectManager: parsed.isProjectManager,
@@ -227,6 +231,7 @@ export async function updateAssignment(id: string, data: CrewAssignmentFormValue
     where: { id, organizationId },
     data: {
       crewRoleId: parsed.crewRoleId || null,
+      serviceId: parsed.serviceId || null,
       status: parsed.status,
       phase: parsed.phase || null,
       isProjectManager: parsed.isProjectManager,

@@ -143,6 +143,8 @@ model Organization {
   crewSkills         CrewSkill[]
   crewAssignments    CrewAssignment[]
   crewTimeEntries    CrewTimeEntry[]
+  projectServices    ProjectService[]
+  serviceTemplates   ServiceTemplate[]
   @@map("organization")
 }
 
@@ -923,6 +925,7 @@ model Project {
   media            ProjectMedia[]
   supplierOrders   SupplierOrder[]
   crewAssignments  CrewAssignment[]
+  services         ProjectService[]
 
   @@unique([organizationId, projectNumber])
   @@index([organizationId])
@@ -985,6 +988,7 @@ model ProjectLineItem {
   subhireOrderNumber String?
   supplierOrderId   String?
   supplierOrder     SupplierOrder? @relation(fields: [supplierOrderId], references: [id], onDelete: SetNull)
+  service           ProjectService?
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
@@ -1477,6 +1481,7 @@ model CrewRole {
 
   crewMembers     CrewMember[]
   assignments     CrewAssignment[]
+  projectServices ProjectService[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -1572,6 +1577,10 @@ model CrewAssignment {
   confirmedById   String?
   confirmedBy     User?    @relation("ConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
 
+  // Service link (when assigned via a ProjectService)
+  serviceId       String?
+  service         ProjectService? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+
   shifts          CrewShift[]
   timeEntries     CrewTimeEntry[]
 
@@ -1583,6 +1592,7 @@ model CrewAssignment {
   @@index([projectId])
   @@index([crewMemberId])
   @@index([crewMemberId, startDate])
+  @@index([serviceId])
   @@map("crew_assignment")
 }
 
@@ -1704,4 +1714,118 @@ enum TimeEntryStatus {
   APPROVED
   DISPUTED
   EXPORTED
+}
+
+// ─── Project Services ───────────────────────────────────────────────────────
+
+model ProjectService {
+  id              String   @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  // Type & description
+  type            ServiceType
+  title           String
+  description     String?
+  notes           String?
+
+  // Schedule
+  date            DateTime?
+  endDate         DateTime?
+  startTime       String?
+  endTime         String?
+  scheduledTime   String?   // Delivery/pickup time (separate from service work window)
+  estimatedDuration Int?
+
+  // Address (for delivery/pickup)
+  address         String?
+  latitude        Float?
+  longitude       Float?
+
+  // Status
+  status          ServiceStatus @default(PLANNED)
+
+  // Financial
+  showOnDocuments Boolean  @default(false)
+  unitPrice       Decimal? @db.Decimal(10, 2)
+  quantity        Int      @default(1)
+  pricingType     PricingType?
+  duration        Decimal? @db.Decimal(6, 2)
+  discount        Decimal? @db.Decimal(5, 2)
+  lineTotal       Decimal? @db.Decimal(10, 2)
+  taxable         Boolean  @default(true)
+
+  // Linked line item (auto-generated when showOnDocuments is true)
+  lineItemId      String?  @unique
+  lineItem        ProjectLineItem? @relation(fields: [lineItemId], references: [id], onDelete: SetNull)
+
+  // Transport-specific (for DELIVERY/PICKUP)
+  vehicleDescription String?
+  numberOfTrips      Int?
+
+  // Labour-specific
+  crewCountRequired  Int?
+  crewRoleId         String?
+  crewRole           CrewRole? @relation(fields: [crewRoleId], references: [id], onDelete: SetNull)
+
+  // Crew assignments linked to this service
+  crewAssignments    CrewAssignment[]
+
+  // Ordering
+  sortOrder       Int      @default(0)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([projectId])
+  @@index([projectId, type])
+  @@index([projectId, date])
+  @@map("project_service")
+}
+
+enum ServiceType {
+  DELIVERY
+  PICKUP
+  BUMP_IN
+  BUMP_OUT
+  LABOUR
+  MISC
+}
+
+enum ServiceStatus {
+  PLANNED
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+// ─── Service Templates ──────────────────────────────────────────────────────
+
+model ServiceTemplate {
+  id              String   @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  type            ServiceType
+  title           String
+  description     String?
+  defaultCrewCount Int?
+  defaultVehicle  String?
+  defaultPricingType PricingType?
+  defaultUnitPrice Decimal? @db.Decimal(10, 2)
+  showOnDocuments Boolean  @default(false)
+  isAutoAdded     Boolean  @default(false)
+  sortOrder       Int      @default(0)
+  isActive        Boolean  @default(true)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([organizationId])
+  @@map("service_template")
 }

@@ -40,6 +40,7 @@ import {
   sendBulkMessage,
 } from "@/server/crew-communication";
 import { getCrewRoleOptions, createCrewRole } from "@/server/crew";
+import { getProjectServices } from "@/server/project-services";
 import {
   crewAssignmentSchema,
   type CrewAssignmentFormValues,
@@ -555,16 +556,14 @@ function AssignmentRow({
           }
         >
           <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Badge
-                  variant="outline"
-                  className={`cursor-pointer ${statusColors[a.status as string] || ""}`}
-                />
-              }
-            >
-              {assignmentStatusLabels[a.status as string] || (a.status as string)}
-              <ChevronDown className="ml-1 h-3 w-3" />
+            <DropdownMenuTrigger render={<Button variant="ghost" size="sm" className="h-auto px-2 py-0.5" />}>
+              <Badge
+                variant="outline"
+                className={`pointer-events-none ${statusColors[a.status as string] || ""}`}
+              >
+                {assignmentStatusLabels[a.status as string] || (a.status as string)}
+                <ChevronDown className="ml-1 h-3 w-3" />
+              </Badge>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {allStatuses.map((s) => (
@@ -659,6 +658,24 @@ function AssignmentDialog({
     enabled: open,
   });
 
+  const { data: projectServices = [] } = useQuery({
+    queryKey: ["project-services", orgId, projectId],
+    queryFn: () => getProjectServices(projectId),
+    enabled: open,
+  });
+
+  const serviceOptions = (projectServices as { id: string; title: string; type: string; crewCountRequired: number | null; crewAssignments: unknown[] }[])
+    .filter((s) => (s as { status?: string }).status !== "CANCELLED")
+    .map((s) => {
+      const assigned = s.crewAssignments?.length ?? 0;
+      const needed = s.crewCountRequired ?? 0;
+      const crewInfo = needed > 0 ? ` (${assigned}/${needed} crew)` : assigned > 0 ? ` (${assigned} crew)` : "";
+      return {
+        value: s.id,
+        label: `${s.title}${crewInfo}`,
+      };
+    });
+
   const form = useForm<CrewAssignmentFormValues>({
     resolver: zodResolver(crewAssignmentSchema),
     defaultValues: assignment
@@ -688,6 +705,7 @@ function AssignmentDialog({
           notes: (assignment.notes as string) || "",
           internalNotes: (assignment.internalNotes as string) || "",
           generateShifts: false,
+          serviceId: (assignment.serviceId as string) || "",
         }
       : {
           crewMemberId: "",
@@ -700,6 +718,7 @@ function AssignmentDialog({
           notes: "",
           internalNotes: "",
           generateShifts: true,
+          serviceId: "",
         },
   });
 
@@ -754,6 +773,9 @@ function AssignmentDialog({
         queryKey: ["project-labour-cost", orgId, projectId],
       });
       queryClient.invalidateQueries({ queryKey: ["crew-member"] });
+      queryClient.invalidateQueries({
+        queryKey: ["project-services", orgId, projectId],
+      });
       onOpenChange(false);
       form.reset();
     },
@@ -772,6 +794,9 @@ function AssignmentDialog({
         queryKey: ["project-labour-cost", orgId, projectId],
       });
       queryClient.invalidateQueries({ queryKey: ["crew-member"] });
+      queryClient.invalidateQueries({
+        queryKey: ["project-services", orgId, projectId],
+      });
       onOpenChange(false);
     },
     onError: (e) => toast.error(e.message),
@@ -852,6 +877,56 @@ function AssignmentDialog({
                   {form.formState.errors.crewMemberId.message}
                 </p>
               )}
+            </div>
+          )}
+
+          {/* Service */}
+          {serviceOptions.length > 0 && (
+            <div className="space-y-1.5">
+              <Label>Linked Service</Label>
+              <ComboboxPicker
+                options={serviceOptions}
+                value={form.watch("serviceId") || ""}
+                onChange={(v) => {
+                  form.setValue("serviceId", v);
+                  // Inherit data from the selected service
+                  if (v) {
+                    const svc = (projectServices as { id: string; type: string; date: string | null; endDate: string | null; startTime: string | null; endTime: string | null; crewRoleId: string | null }[]).find((s) => s.id === v);
+                    if (svc) {
+                      // Map service type to phase
+                      const phaseMap: Record<string, string> = {
+                        DELIVERY: "DELIVERY", PICKUP: "PICKUP",
+                        BUMP_IN: "BUMP_IN", BUMP_OUT: "BUMP_OUT",
+                        LABOUR: "EVENT", MISC: "FULL_DURATION",
+                      };
+                      const phase = phaseMap[svc.type];
+                      if (phase) form.setValue("phase", phase as CrewAssignmentFormValues["phase"]);
+                      if (svc.crewRoleId) form.setValue("crewRoleId", svc.crewRoleId);
+                      if (svc.date) {
+                        const dateStr = new Date(svc.date).toISOString().split("T")[0];
+                        form.setValue("startDate", dateStr as unknown as Date);
+                        const endDateStr = svc.endDate
+                          ? new Date(svc.endDate).toISOString().split("T")[0]
+                          : dateStr;
+                        form.setValue("endDate", endDateStr as unknown as Date);
+                      }
+                      // Only inherit times for single-day services
+                      const svcIsMultiDay = svc.date && svc.endDate &&
+                        new Date(svc.date).toISOString().slice(0, 10) !== new Date(svc.endDate).toISOString().slice(0, 10);
+                      if (!svcIsMultiDay) {
+                        if (svc.startTime) form.setValue("startTime", svc.startTime);
+                        if (svc.endTime) form.setValue("endTime", svc.endTime);
+                      } else {
+                        form.setValue("startTime", "");
+                        form.setValue("endTime", "");
+                      }
+                    }
+                  }
+                }}
+                placeholder="Link to a service..."
+                emptyMessage="No services found"
+                allowClear
+              />
             </div>
           )}
 

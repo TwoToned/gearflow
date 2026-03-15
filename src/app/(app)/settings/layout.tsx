@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   Palette,
   Users,
+  Truck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCanDo } from "@/lib/use-permissions";
@@ -18,6 +19,7 @@ const settingsNav = [
   { title: "Billing", href: "/settings/billing", icon: CreditCard, permission: "orgSettings" as const },
   { title: "Assets", href: "/settings/assets", icon: Package, permission: "orgSettings" as const },
   { title: "Test & Tag", href: "/settings/test-and-tag", icon: ShieldCheck, permission: "orgSettings" as const },
+  { title: "Services", href: "/settings/services", icon: Truck, permission: "orgSettings" as const },
   { title: "Branding", href: "/settings/branding", icon: Palette, permission: "orgSettings" as const },
   { title: "Team", href: "/settings/team", icon: Users, permission: "orgMembers" as const },
 ];

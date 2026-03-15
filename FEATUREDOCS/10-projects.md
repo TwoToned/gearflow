@@ -24,6 +24,59 @@ Line items with `isSubhire: true` and `supplierId` reference third-party equipme
 ## Line Item Types
 - **EQUIPMENT**: Links to `modelId`, optionally `assetId`, `bulkAssetId`, or `kitId`
 - **SERVICE / LABOUR / TRANSPORT / MISC**: No asset link, just description + pricing
+- Service-linked line items are auto-created by `ProjectService` when `showOnDocuments: true`
+
+## Project Services
+Structured operational tasks attached to a project (deliveries, pickups, bump in/out, labour, misc).
+
+### Service Types
+`DELIVERY, PICKUP, BUMP_IN, BUMP_OUT, LABOUR, MISC`
+
+### Service Status Flow
+`PLANNED → CONFIRMED → IN_PROGRESS → COMPLETED` (any → `CANCELLED`)
+
+### Key Behaviour
+- Each service has its own date, time, address (for delivery/pickup), crew count, pricing
+- `showOnDocuments` toggle: when true, auto-creates/syncs a `ProjectLineItem` (type mapped: DELIVERY/PICKUP→TRANSPORT, BUMP_IN/BUMP_OUT/LABOUR→LABOUR, MISC→SERVICE)
+- Toggling `showOnDocuments` off deletes the linked line item and recalculates project totals
+- Deleting a service with a linked line item also deletes the line item
+- Services appear on the project detail page under a dedicated **Services** tab
+- Services are grouped by date in the UI
+
+### Crew Integration
+- Each service can optionally have a `crewRoleId` (FK to `CrewRole`) and `crewCountRequired`
+- Service dialog includes a crew role picker (ComboboxPicker with `creatable` mode — type to create new roles inline) and searchable crew member multi-select
+- When crew members are selected in the service dialog, `CrewAssignment` records are auto-created with `serviceId` set
+- Service type maps to assignment phase: DELIVERY→DELIVERY, PICKUP→PICKUP, BUMP_IN→BUMP_IN, BUMP_OUT→BUMP_OUT, LABOUR→EVENT, MISC→FULL_DURATION
+- Auto-created assignments use status `CONFIRMED`, inherit service date/times
+- On update, crew assignments are reconciled: removed members get their assignment deleted, new members get assignments created
+- Deleting a service deletes all linked crew assignments
+- Crew assigned via services also appear on the project Crew tab (both tabs share `CrewAssignment` records)
+- From the Crew tab's AssignmentDialog, crew can be linked to a service via a "Linked Service" ComboboxPicker
+- Service cards show: crew role badge, assigned crew names, shortage warning when assigned < required
+- Query invalidation ensures Crew tab and Services tab stay in sync
+
+### Defaults from Project
+- New services inherit the project location address/coordinates (editable)
+- Date auto-fills based on service type:
+  - DELIVERY/BUMP_IN → project `loadInDate` (fallback: `eventStartDate`)
+  - PICKUP/BUMP_OUT → project `loadOutDate` (fallback: `eventEndDate`)
+  - LABOUR/MISC → project `eventStartDate` (fallback: `loadInDate`)
+- `ServicesPanel` receives project date and location props from the project detail page
+
+### Service Templates
+- Managed in Settings → Services (`/settings/services`)
+- Define default services with type, title, pricing, crew count, vehicle
+- `isAutoAdded` flag for templates that should be added to every new project
+- Templates appear in the "Add Service" dropdown on the Services tab
+
+### Server Actions
+- File: `src/server/project-services.ts`
+- CRUD: `createProjectService`, `updateProjectService`, `deleteProjectService`, `getProjectServices`
+- Status: `updateServiceStatus`, `bulkUpdateServiceStatus`
+- Templates: `createServiceTemplate`, `updateServiceTemplate`, `deleteServiceTemplate`, `getServiceTemplates`
+- Financial: `getProjectServicesSummary`
+- Uses `requirePermission("project", "update")` for writes
 
 ## Pricing Types
 - `PER_DAY`: `unitPrice * duration` (duration in days)

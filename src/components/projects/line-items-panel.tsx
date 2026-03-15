@@ -73,7 +73,6 @@ import {
   TooltipProvider,
 } from "@/components/ui/tooltip";
 import { AddEquipmentDialog } from "./add-equipment-dialog";
-import { AddServiceDialog } from "./add-service-dialog";
 import { AddSubhireDialog } from "./add-subhire-dialog";
 import { EditLineItemDialog } from "./edit-line-item-dialog";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -650,7 +649,6 @@ export function LineItemsPanel({
 }: LineItemsPanelProps) {
   const queryClient = useQueryClient();
   const [equipmentDialogOpen, setEquipmentDialogOpen] = useState(false);
-  const [serviceDialogOpen, setServiceDialogOpen] = useState(false);
   const [kitDialogOpen, setKitDialogOpen] = useState(false);
   const [subhireDialogOpen, setSubhireDialogOpen] = useState(false);
   const [selectedKitId, setSelectedKitId] = useState("");
@@ -1016,14 +1014,6 @@ export function LineItemsPanel({
         <Button
           size="sm"
           variant="outline"
-          onClick={() => setServiceDialogOpen(true)}
-        >
-          <Plus className="mr-1.5 h-4 w-4" />
-          <span className="hidden sm:inline">Add </span>Service
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
           onClick={() => setKitDialogOpen(true)}
         >
           <Container className="mr-1.5 h-4 w-4" />
@@ -1202,14 +1192,6 @@ export function LineItemsPanel({
         onGroupCreated={addExtraGroup}
         open={equipmentDialogOpen}
         onOpenChange={setEquipmentDialogOpen}
-      />
-
-      <AddServiceDialog
-        projectId={projectId}
-        existingGroups={existingGroups}
-        onGroupCreated={addExtraGroup}
-        open={serviceDialogOpen}
-        onOpenChange={setServiceDialogOpen}
       />
 
       <AddSubhireDialog

@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { LineItemsPanel } from "@/components/projects/line-items-panel";
 import { CrewPanel } from "@/components/projects/crew-panel";
+import { ServicesPanel } from "@/components/projects/services-panel";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -359,6 +360,7 @@ export default function ProjectDetailPage({
         <TabsList>
           <TabsTrigger value="details">Details</TabsTrigger>
           <TabsTrigger value="equipment">Equipment</TabsTrigger>
+          <TabsTrigger value="services">Services</TabsTrigger>
           <TabsTrigger value="crew">Crew</TabsTrigger>
           <TabsTrigger value="notes">Notes</TabsTrigger>
           <TabsTrigger value="files">Files ({(project.media || []).length})</TabsTrigger>
@@ -682,6 +684,22 @@ export default function ProjectDetailPage({
                   ? new Date(project.rentalEndDate as unknown as string)
                   : undefined
               }
+            />
+          </div>
+        </TabsContent>
+
+        {/* Services Tab */}
+        <TabsContent value="services">
+          <div className="pt-4">
+            <ServicesPanel
+              projectId={id}
+              projectAddress={project.location?.address || ""}
+              projectLatitude={project.location?.latitude ?? null}
+              projectLongitude={project.location?.longitude ?? null}
+              projectLoadInDate={project.loadInDate ? new Date(project.loadInDate as unknown as string).toISOString().slice(0, 10) : ""}
+              projectLoadOutDate={project.loadOutDate ? new Date(project.loadOutDate as unknown as string).toISOString().slice(0, 10) : ""}
+              projectEventStartDate={project.eventStartDate ? new Date(project.eventStartDate as unknown as string).toISOString().slice(0, 10) : ""}
+              projectEventEndDate={project.eventEndDate ? new Date(project.eventEndDate as unknown as string).toISOString().slice(0, 10) : ""}
             />
           </div>
         </TabsContent>

@@ -50,6 +50,15 @@ export async function GET(
               model: { include: { category: true } },
               asset: true,
               bulkAsset: true,
+              kit: true,
+              childLineItems: {
+                orderBy: { sortOrder: "asc" },
+                include: {
+                  model: { include: { category: true } },
+                  asset: true,
+                  bulkAsset: true,
+                },
+              },
             },
           },
         },

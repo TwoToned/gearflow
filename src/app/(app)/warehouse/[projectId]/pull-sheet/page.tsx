@@ -241,13 +241,11 @@ export default function PullSheetPage({
                     const assetTag = asset?.assetTag || bulkAsset?.assetTag || null;
                     const overbookedInfo = item.overbookedInfo as { overBy: number; totalStock: number; totalBooked: number; inherited?: boolean } | null;
                     const isKit = !!(item.kitId) && !(item.isKitChild);
-                    const isPrep = !!(item.prepId) && !(item.isPrepChild);
-                    const isGroupParent = isKit || isPrep;
+                    const isGroupParent = isKit;
                     const children = isGroupParent ? ((item.childLineItems || []) as Array<Record<string, unknown>>) : [];
                     const qty = item.quantity as number;
-                    const groupLabel = isKit ? "Kit" : "Prep";
                     const itemName = isGroupParent
-                      ? (item.description as string) || kit?.name || groupLabel
+                      ? (item.description as string) || kit?.name || "Kit"
                       : model
                         ? [model.name, model.modelNumber].filter(Boolean).join(" - ")
                         : (item.description as string) || "Unnamed item";
@@ -262,7 +260,7 @@ export default function PullSheetPage({
                           </TableCell>
                           <TableCell>
                             <span className={isGroupParent ? "font-bold" : "font-medium"}>
-                              {isGroupParent ? `[${groupLabel}] ${itemName}` : itemName}
+                              {isGroupParent ? `[Kit] ${itemName}` : itemName}
                             </span>
                             {overbookedInfo && <PullSheetOverbookedBadge info={overbookedInfo} />}
                           </TableCell>
@@ -276,7 +274,7 @@ export default function PullSheetPage({
                             {asset?.location?.name || "—"}
                           </TableCell>
                         </TableRow>
-                        {/* Kit/Prep children */}
+                        {/* Kit children */}
                         {children.map((child) => {
                           const childModel = child.model as { name: string; modelNumber?: string | null } | null;
                           const childAsset = child.asset as { assetTag: string; location?: { name: string } | null } | null;

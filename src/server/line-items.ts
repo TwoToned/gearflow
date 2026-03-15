@@ -99,7 +99,6 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         modelId: parsed.modelId,
         assetId: null,
         isKitChild: false,
-        isPrepChild: false,
         status: { not: "CANCELLED" },
       },
     });
@@ -366,12 +365,9 @@ export async function removeLineItem(id: string) {
   });
   if (!item) throw new Error("Line item not found");
 
-  // Block removal of kit/prep child items
+  // Block removal of kit child items
   if (item.isKitChild) {
     throw new Error("This item is part of a Kit. Remove the Kit instead.");
-  }
-  if (item.isPrepChild) {
-    throw new Error("This item is part of a Prep. Unpack the Prep instead.");
   }
 
   // If this is a kit parent, cascade delete children
@@ -380,12 +376,6 @@ export async function removeLineItem(id: string) {
     await prisma.projectLineItem.deleteMany({
       where: { parentLineItemId: item.id, organizationId },
     });
-  }
-
-  // Block deletion of prep parent line items — use unpackPrep instead
-  const isPrepParent = item.prepId && !item.isPrepChild;
-  if (isPrepParent) {
-    throw new Error("This item is a Prep group. Use Unpack to dissolve it.");
   }
 
   await prisma.projectLineItem.delete({ where: { id } });

@@ -84,7 +84,7 @@ type Project = {
   rentalStartDate?: string | null;
   rentalEndDate?: string | null;
   client?: { name: string } | null;
-  lineItems?: Array<{ status: string; type: string; isKitChild: boolean; isPrepChild: boolean }>;
+  lineItems?: Array<{ status: string; type: string; isKitChild: boolean }>;
 };
 
 type PendingAction = {
@@ -133,7 +133,7 @@ export default function WarehousePage() {
     targetStatus: "CHECKED_OUT" | "RETURNED" | "COMPLETED"
   ) {
     const lineItems = (project.lineItems || []).filter(
-      (li) => li.type === "EQUIPMENT" && !li.isKitChild && !li.isPrepChild
+      (li) => li.type === "EQUIPMENT" && !li.isKitChild
     );
 
     if (lineItems.length === 0) {

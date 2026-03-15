@@ -345,11 +345,10 @@ function SortableItemRow({
       };
 
   const isKitParent = !!item.kitId && !item.isKitChild;
-  const isPrepParent = !!item.prepId && !item.isPrepChild;
-  const isGroupParent = isKitParent || isPrepParent;
+  const isGroupParent = isKitParent;
   const Icon = isGroupParent ? Container : (typeIcons[item.type] || Package);
   const itemName = isGroupParent
-    ? item.description || (isKitParent ? "Unnamed Kit" : "Unnamed Prep")
+    ? item.description || "Unnamed Kit"
     : item.type === "EQUIPMENT"
       ? [item.model?.name, item.model?.modelNumber].filter(Boolean).join(" - ") ||
         item.description ||
@@ -498,6 +497,20 @@ function SortableItemRow({
             model?: { name: string } | null;
             description?: string | null;
             asset?: { assetTag: string } | null;
+            kitId?: string | null;
+            kit?: { assetTag: string; name: string; isPrep?: boolean } | null;
+            childLineItems?: Array<{
+              id: string;
+              model?: { name: string } | null;
+              description?: string | null;
+              asset?: { assetTag: string } | null;
+              quantity: number;
+              duration: number;
+              unitPrice?: unknown;
+              lineTotal?: unknown;
+              isOverbooked?: boolean;
+              overbookedInfo?: { overBy: number; totalStock: number; totalBooked: number } | null;
+            }>;
             quantity: number;
             duration: number;
             unitPrice?: unknown;
@@ -505,43 +518,98 @@ function SortableItemRow({
             isOverbooked?: boolean;
             overbookedInfo?: { overBy: number; totalStock: number; totalBooked: number } | null;
           }>
-        ).map((child) => (
-          <TableRow key={child.id} className="bg-muted/10">
-            <TableCell className="w-8" />
-            <TableCell>
-              <div className="flex items-center gap-2 pl-8">
-                <Package className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <div>
-                  <span className="text-sm">
-                    {child.model?.name || child.description || "Unnamed"}
-                  </span>
-                  {child.asset?.assetTag && (
-                    <span className="ml-1.5 text-xs text-muted-foreground">
-                      ({child.asset.assetTag})
-                    </span>
-                  )}
-                  {child.isOverbooked && (
-                    <OverbookedBadge info={child.overbookedInfo} />
-                  )}
-                </div>
-              </div>
-            </TableCell>
-            <TableCell className="text-center text-sm">
-              {child.quantity}
-            </TableCell>
-            <TableCell className="text-right text-sm hidden md:table-cell">
-              {formatCurrency(child.unitPrice as number | null)}
-            </TableCell>
-            <TableCell className="text-center text-sm hidden lg:table-cell">
-              {child.duration}
-            </TableCell>
-            <TableCell className="text-right text-sm hidden sm:table-cell">
-              {formatCurrency(child.lineTotal as number | null)}
-            </TableCell>
-            <TableCell className="hidden sm:table-cell" />
-            <TableCell />
-          </TableRow>
-        ))}
+        ).map((child) => {
+          const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
+          const nestedChildren = child.childLineItems || [];
+          return (
+            <React.Fragment key={child.id}>
+              <TableRow className="bg-muted/10">
+                <TableCell className="w-8" />
+                <TableCell>
+                  <div className="flex items-center gap-2 pl-8">
+                    {isNestedKit ? (
+                      <Container className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <Package className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    )}
+                    <div>
+                      <span className={`text-sm ${isNestedKit ? "font-medium" : ""}`}>
+                        {child.model?.name || child.description || "Unnamed"}
+                      </span>
+                      {child.asset?.assetTag && (
+                        <span className="ml-1.5 text-xs text-muted-foreground">
+                          ({child.asset.assetTag})
+                        </span>
+                      )}
+                      {isNestedKit && (
+                        <>
+                          <Badge variant="outline" className="ml-1.5 text-xs bg-indigo-500/10 text-indigo-600 border-indigo-500/20">Kit</Badge>
+                          <span className="ml-1.5 text-xs text-muted-foreground">
+                            {nestedChildren.length} item{nestedChildren.length !== 1 ? "s" : ""}
+                          </span>
+                        </>
+                      )}
+                      {child.isOverbooked && (
+                        <OverbookedBadge info={child.overbookedInfo} />
+                      )}
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell className="text-center text-sm">
+                  {isNestedKit ? nestedChildren.length : child.quantity}
+                </TableCell>
+                <TableCell className="text-right text-sm hidden md:table-cell">
+                  {formatCurrency(child.unitPrice as number | null)}
+                </TableCell>
+                <TableCell className="text-center text-sm hidden lg:table-cell">
+                  {child.duration}
+                </TableCell>
+                <TableCell className="text-right text-sm hidden sm:table-cell">
+                  {formatCurrency(child.lineTotal as number | null)}
+                </TableCell>
+                <TableCell className="hidden sm:table-cell" />
+                <TableCell />
+              </TableRow>
+              {isNestedKit && nestedChildren.map((nested) => (
+                <TableRow key={nested.id} className="bg-muted/5">
+                  <TableCell className="w-8" />
+                  <TableCell>
+                    <div className="flex items-center gap-2 pl-14">
+                      <Package className="h-3 w-3 shrink-0 text-muted-foreground" />
+                      <div>
+                        <span className="text-sm text-muted-foreground">
+                          {nested.model?.name || nested.description || "Unnamed"}
+                        </span>
+                        {nested.asset?.assetTag && (
+                          <span className="ml-1.5 text-xs text-muted-foreground">
+                            ({nested.asset.assetTag})
+                          </span>
+                        )}
+                        {nested.isOverbooked && (
+                          <OverbookedBadge info={nested.overbookedInfo} />
+                        )}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-center text-sm text-muted-foreground">
+                    {nested.quantity}
+                  </TableCell>
+                  <TableCell className="text-right text-sm hidden md:table-cell text-muted-foreground">
+                    {formatCurrency(nested.unitPrice as number | null)}
+                  </TableCell>
+                  <TableCell className="text-center text-sm hidden lg:table-cell text-muted-foreground">
+                    {nested.duration}
+                  </TableCell>
+                  <TableCell className="text-right text-sm hidden sm:table-cell text-muted-foreground">
+                    {formatCurrency(nested.lineTotal as number | null)}
+                  </TableCell>
+                  <TableCell className="hidden sm:table-cell" />
+                  <TableCell />
+                </TableRow>
+              ))}
+            </React.Fragment>
+          );
+        })}
     </React.Fragment>
   );
 }
@@ -603,11 +671,10 @@ function SortableGroupHeader({
       {isDragOverlay && groupItems && groupItems.length > 0 && (
         groupItems.map((item) => {
           const isKitParent = !!item.kitId && !item.isKitChild;
-          const isPrepParent = !!item.prepId && !item.isPrepChild;
-          const isGroupParent = isKitParent || isPrepParent;
+          const isGroupParent = isKitParent;
           const Icon = isGroupParent ? Container : (typeIcons[item.type] || Package);
           const name = isGroupParent
-            ? item.description || (isKitParent ? "Unnamed Kit" : "Unnamed Prep")
+            ? item.description || "Unnamed Kit"
             : item.type === "EQUIPMENT"
               ? [item.model?.name, item.model?.modelNumber].filter(Boolean).join(" - ") ||
                 item.description || "Unnamed"
@@ -779,7 +846,7 @@ export function LineItemsPanel({
   }, []);
 
   const topLevelItems = useMemo(
-    () => lineItems.filter((item) => !item.isKitChild && !item.isPrepChild),
+    () => lineItems.filter((item) => !item.isKitChild),
     [lineItems],
   );
 
@@ -991,8 +1058,8 @@ export function LineItemsPanel({
             },
           ];
         });
-        // Add kit/prep children back (they keep their parent's order context)
-        const children = old.lineItems.filter((li) => li.isKitChild || li.isPrepChild);
+        // Add kit children back (they keep their parent's order context)
+        const children = old.lineItems.filter((li) => li.isKitChild);
         return {
           ...old,
           lineItems: [...reordered, ...children],

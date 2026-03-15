@@ -79,6 +79,49 @@ export async function getCategoryTree() {
   return serialize(roots);
 }
 
+// ---------------------------------------------------------------------------
+// getCaseCategoryIds — get category + all descendant IDs for prep-kit cases
+// ---------------------------------------------------------------------------
+export async function getCaseCategoryIds(): Promise<string[]> {
+  const { organizationId } = await getOrgContext();
+
+  // Read prepKitCategoryId from org settings
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { metadata: true },
+  });
+  const settings = org?.metadata ? JSON.parse(org.metadata as string) : {};
+  const rootCatId = settings.prepKitCategoryId;
+  if (!rootCatId) return [];
+
+  // Fetch all categories and walk the tree
+  const allCats = await prisma.category.findMany({
+    where: { organizationId },
+    select: { id: true, parentId: true },
+  });
+
+  const childrenMap = new Map<string, string[]>();
+  for (const cat of allCats) {
+    if (cat.parentId) {
+      const list = childrenMap.get(cat.parentId) || [];
+      list.push(cat.id);
+      childrenMap.set(cat.parentId, list);
+    }
+  }
+
+  // BFS from root
+  const result: string[] = [];
+  const queue = [rootCatId];
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    result.push(id);
+    const kids = childrenMap.get(id);
+    if (kids) queue.push(...kids);
+  }
+
+  return result;
+}
+
 export async function createCategory(data: CategoryFormValues) {
   const { organizationId, userId, userName } = await requirePermission("model", "create");
   const parsed = categorySchema.parse(data);

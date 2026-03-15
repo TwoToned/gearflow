@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Container, Package, Check, Loader2 } from "lucide-react";
+import { Container, Check, Loader2 } from "lucide-react";
 import { getProjectPullSheet } from "@/server/warehouse";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -121,8 +121,7 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
   for (const group of allGroups) {
     for (const item of group.items) {
       const isKit = !!(item.kitId) && !(item.isKitChild);
-      const isPrep = !!(item.prepId) && !(item.isPrepChild);
-      const isGroup = isKit || isPrep;
+      const isGroup = isKit;
       const qty = item.quantity as number;
       const children = isGroup ? ((item.childLineItems || []) as Array<Record<string, unknown>>) : [];
 
@@ -192,21 +191,18 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
                 const kit = item.kit as { assetTag: string; name: string } | null;
                 const assetTag = asset?.assetTag || bulkAsset?.assetTag || null;
                 const isKit = !!(item.kitId) && !(item.isKitChild);
-                const isPrep = !!(item.prepId) && !(item.isPrepChild);
-                const isGroup = isKit || isPrep;
+                const isGroup = isKit;
                 const children = isGroup ? ((item.childLineItems || []) as Array<Record<string, unknown>>) : [];
                 const qty = item.quantity as number;
                 const itemName = isKit
                   ? (item.description as string) || kit?.name || "Kit"
-                  : isPrep
-                    ? (item.description as string) || "Prep"
-                    : model
+                  : model
                       ? [model.name, model.modelNumber].filter(Boolean).join(" - ")
                       : (item.description as string) || "Unnamed item";
 
                 return (
                   <React.Fragment key={item.id as string}>
-                    {/* Kit/Prep group header */}
+                    {/* Kit group header */}
                     {isGroup && (() => {
                       const groupKey = `kit-${item.id}`;
                       const groupChecked = checked.has(groupKey);
@@ -218,7 +214,7 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
                           }`}
                         >
                           <Checkbox checked={groupChecked} className="shrink-0 pointer-events-none" />
-                          {isKit ? <Container className="h-4 w-4 text-muted-foreground shrink-0" /> : <Package className="h-4 w-4 text-muted-foreground shrink-0" />}
+                          <Container className="h-4 w-4 text-muted-foreground shrink-0" />
                           <span className={`font-semibold text-sm flex-1 ${groupChecked ? "line-through text-muted-foreground" : ""}`}>{itemName}</span>
                           {isKit && <span className="font-mono text-xs text-muted-foreground">{kit?.assetTag}</span>}
                         </button>

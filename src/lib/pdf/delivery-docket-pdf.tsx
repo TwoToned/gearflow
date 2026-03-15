@@ -13,15 +13,13 @@ interface LineItem {
   bulkAssetId: string | null;
   isKitChild?: boolean;
   kitId?: string | null;
-  isPrepChild?: boolean;
-  prepId?: string | null;
   model: {
     name: string;
     modelNumber?: string | null;
   } | null;
   asset: { assetTag: string } | null;
   bulkAsset: { assetTag: string } | null;
-  kit?: { assetTag: string; name: string } | null;
+  kit?: { assetTag: string; name: string; isPrep?: boolean } | null;
   notes: string | null;
   isOverbooked?: boolean;
   overbookedInherited?: boolean;
@@ -69,7 +67,7 @@ export function DeliveryDocketPDF({ org, project }: DeliveryDocketPDFProps) {
   const s = createStyles(org.branding);
   // Only items that are actually checked out right now, exclude kit children
   const deliveredItems = project.lineItems.filter((i) => {
-    if (i.isKitChild || i.isPrepChild) return false;
+    if (i.isKitChild) return false;
     if (isBulk(i)) return i.checkedOutQuantity > 0;
     return i.status === "CHECKED_OUT";
   });
@@ -182,14 +180,11 @@ export function DeliveryDocketPDF({ org, project }: DeliveryDocketPDFProps) {
                     rowNum++;
                     const bulk = isBulk(item);
                     const isKit = !!item.kitId && !item.isKitChild;
-                    const isPrep = !!item.prepId && !item.isPrepChild;
-                    const isGroup = isKit || isPrep;
+                    const isGroup = isKit;
                     const children = isGroup ? (item.childLineItems || []) : [];
                     const itemName = isKit
                       ? (item.description || item.kit?.name || "Kit")
-                      : isPrep
-                        ? (item.description || "Prep")
-                        : item.model
+                      : item.model
                         ? `${item.model.name}${item.model.modelNumber ? ` (${item.model.modelNumber})` : ""}`
                         : item.description || "-";
 
@@ -224,36 +219,58 @@ export function DeliveryDocketPDF({ org, project }: DeliveryDocketPDFProps) {
                             {isGroup ? children.length : bulk ? item.checkedOutQuantity : 1}
                           </Text>
                           <Text style={[s.td, { width: 80, fontSize: 8, fontFamily: "Courier" }]}>
-                            {isKit ? (item.kit?.assetTag || "-") : isPrep ? "-" : bulk ? "-" : (item.asset?.assetTag || "-")}
+                            {isKit ? (item.kit?.isPrep && item.kit.assetTag.startsWith("PREP-") ? "-" : (item.kit?.assetTag || "-")) : bulk ? "-" : (item.asset?.assetTag || "-")}
                           </Text>
                           <View style={[s.td, { width: 50, alignItems: "center", justifyContent: "center" }]}>
                             <View style={{ width: 8, height: 8, borderWidth: 0.75, borderColor: "#333", borderRadius: 1 }} />
                           </View>
                         </View>
-                        {children.map((child) => (
-                          <View key={child.id} style={s.tableRow}>
-                            <Text style={[s.td, { width: 24 }]}> </Text>
-                            <View style={{ flex: 3, paddingLeft: 12 }}>
-                              <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                                <Text style={[s.td, { fontSize: 8, color: "#555" }]}>
-                                  {child.model?.name || child.description || "-"}
+                        {children.map((child) => {
+                          const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
+                          const nestedChildren = child.childLineItems || [];
+                          const childName = child.model?.name || child.description || "-";
+                          return (
+                            <View key={child.id}>
+                              <View style={s.tableRow}>
+                                <Text style={[s.td, { width: 24 }]}> </Text>
+                                <View style={{ flex: 3, paddingLeft: 12 }}>
+                                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                                    <Text style={[s.td, { fontSize: 8, color: "#555", fontFamily: isNestedKit ? "Helvetica-Bold" : "Helvetica" }]}>
+                                      {isNestedKit ? `[Kit] ${childName}` : childName}
+                                    </Text>
+                                    {child.isOverbooked && (
+                                      <Text style={{ fontSize: 6, color: child.overbookedReducedOnly ? "#7c3aed" : "#dc2626", backgroundColor: child.overbookedReducedOnly ? "#ede9fe" : "#fee2e2", paddingHorizontal: 3, paddingVertical: 1, borderRadius: 2, fontFamily: "Helvetica-Bold" }}>{child.overbookedReducedOnly ? "REDUCED STOCK" : "OVERBOOKED"}</Text>
+                                    )}
+                                  </View>
+                                </View>
+                                <Text style={[s.td, { width: 40, textAlign: "center", fontSize: 8 }]}>
+                                  {isNestedKit ? nestedChildren.length : child.quantity}
                                 </Text>
-                                {child.isOverbooked && (
-                                  <Text style={{ fontSize: 6, color: child.overbookedReducedOnly ? "#7c3aed" : "#dc2626", backgroundColor: child.overbookedReducedOnly ? "#ede9fe" : "#fee2e2", paddingHorizontal: 3, paddingVertical: 1, borderRadius: 2, fontFamily: "Helvetica-Bold" }}>{child.overbookedReducedOnly ? "REDUCED STOCK" : "OVERBOOKED"}</Text>
-                                )}
+                                <Text style={[s.td, { width: 80, fontSize: 7, fontFamily: "Courier", color: "#555" }]}>
+                                  {child.asset?.assetTag || child.bulkAsset?.assetTag || (isNestedKit ? (child.kit?.assetTag || "-") : "-")}
+                                </Text>
+                                <View style={[s.td, { width: 50, alignItems: "center", justifyContent: "center" }]}>
+                                  <View style={{ width: 8, height: 8, borderWidth: 0.75, borderColor: "#333", borderRadius: 1 }} />
+                                </View>
                               </View>
+                              {isNestedKit && nestedChildren.map((nested) => (
+                                <View key={nested.id} style={s.tableRow}>
+                                  <Text style={[s.td, { width: 24 }]}> </Text>
+                                  <View style={{ flex: 3, paddingLeft: 24 }}>
+                                    <Text style={[s.td, { fontSize: 7, color: "#777" }]}>{nested.model?.name || nested.description || "-"}</Text>
+                                  </View>
+                                  <Text style={[s.td, { width: 40, textAlign: "center", fontSize: 7 }]}>{nested.quantity}</Text>
+                                  <Text style={[s.td, { width: 80, fontSize: 7, fontFamily: "Courier", color: "#777" }]}>
+                                    {nested.asset?.assetTag || nested.bulkAsset?.assetTag || "-"}
+                                  </Text>
+                                  <View style={[s.td, { width: 50, alignItems: "center", justifyContent: "center" }]}>
+                                    <View style={{ width: 8, height: 8, borderWidth: 0.75, borderColor: "#333", borderRadius: 1 }} />
+                                  </View>
+                                </View>
+                              ))}
                             </View>
-                            <Text style={[s.td, { width: 40, textAlign: "center", fontSize: 8 }]}>
-                              {child.quantity}
-                            </Text>
-                            <Text style={[s.td, { width: 80, fontSize: 7, fontFamily: "Courier", color: "#555" }]}>
-                              {child.asset?.assetTag || child.bulkAsset?.assetTag || "-"}
-                            </Text>
-                            <View style={[s.td, { width: 50, alignItems: "center", justifyContent: "center" }]}>
-                            <View style={{ width: 8, height: 8, borderWidth: 0.75, borderColor: "#333", borderRadius: 1 }} />
-                          </View>
-                          </View>
-                        ))}
+                          );
+                        })}
                       </View>
                     );
                   })}

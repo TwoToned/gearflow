@@ -10,12 +10,10 @@ interface LineItem {
   groupName: string | null;
   isKitChild?: boolean;
   kitId?: string | null;
-  isPrepChild?: boolean;
-  prepId?: string | null;
   model: { name: string; modelNumber?: string | null } | null;
   asset: { assetTag: string } | null;
   bulkAsset: { assetTag: string } | null;
-  kit?: { assetTag: string; name: string } | null;
+  kit?: { assetTag: string; name: string; isPrep?: boolean } | null;
   notes: string | null;
   isOverbooked?: boolean;
   overbookedInherited?: boolean;
@@ -70,7 +68,7 @@ export function ReturnSheetPDF({ org, project }: ReturnSheetPDFProps) {
   const s = createStyles(org.branding);
   // Only include items that were checked out, exclude kit children
   const items = project.lineItems.filter(
-    (i) => (i.status === "CHECKED_OUT" || i.status === "RETURNED") && !i.isKitChild && !i.isPrepChild
+    (i) => (i.status === "CHECKED_OUT" || i.status === "RETURNED") && !i.isKitChild
   );
 
   return (
@@ -101,8 +99,7 @@ export function ReturnSheetPDF({ org, project }: ReturnSheetPDFProps) {
 
           {items.map((item, idx) => {
             const isKit = !!item.kitId && !item.isKitChild;
-            const isPrep = !!item.prepId && !item.isPrepChild;
-            const isGroup = isKit || isPrep;
+            const isGroup = isKit;
             const children = isGroup ? (item.childLineItems || []) : [];
             return (
               <View key={item.id}>
@@ -115,11 +112,9 @@ export function ReturnSheetPDF({ org, project }: ReturnSheetPDFProps) {
                       <Text style={s.td}>
                         {isKit
                           ? (item.description || item.kit?.name || "Kit")
-                          : isPrep
-                            ? (item.description || "Prep")
-                            : item.model
-                              ? `${item.model.name}${item.model.modelNumber ? ` (${item.model.modelNumber})` : ""}`
-                              : item.description || "-"}
+                          : item.model
+                            ? `${item.model.name}${item.model.modelNumber ? ` (${item.model.modelNumber})` : ""}`
+                            : item.description || "-"}
                       </Text>
                       {item.isOverbooked && item.overbookedHasOverbooked && item.overbookedHasReduced ? (
                         <>
@@ -141,40 +136,65 @@ export function ReturnSheetPDF({ org, project }: ReturnSheetPDFProps) {
                     {isGroup ? children.length : item.quantity}
                   </Text>
                   <Text style={[s.td, { width: 80, fontSize: 8, fontFamily: "Courier" }]}>
-                    {isKit ? (item.kit?.assetTag || "-") : isPrep ? "-" : (item.asset?.assetTag || item.bulkAsset?.assetTag || "-")}
+                    {isKit ? (item.kit?.isPrep && item.kit.assetTag.startsWith("PREP-") ? "-" : (item.kit?.assetTag || "-")) : (item.asset?.assetTag || item.bulkAsset?.assetTag || "-")}
                   </Text>
                   <View style={[s.td, { width: 80, justifyContent: "center" }]}>
                     <ConditionCheckboxes />
                   </View>
                   <Text style={[s.td, { flex: 1 }]}> </Text>
                 </View>
-                {children.map((child) => (
-                  <View key={child.id} style={s.tableRow}>
-                    <View style={[s.td, { width: 20, alignItems: "center", justifyContent: "center" }]}>
-                      <Checkbox size={6} />
-                    </View>
-                    <View style={{ flex: 2, paddingLeft: 12 }}>
-                      <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                        <Text style={[s.td, { fontSize: 8, color: "#555" }]}>
-                          {child.model?.name || child.description || "-"}
+                {children.map((child) => {
+                  const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
+                  const nestedChildren = child.childLineItems || [];
+                  const childName = child.model?.name || child.description || "-";
+                  return (
+                    <View key={child.id}>
+                      <View style={s.tableRow}>
+                        <View style={[s.td, { width: 20, alignItems: "center", justifyContent: "center" }]}>
+                          <Checkbox size={6} />
+                        </View>
+                        <View style={{ flex: 2, paddingLeft: 12 }}>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                            <Text style={[s.td, { fontSize: 8, color: "#555", fontFamily: isNestedKit ? "Helvetica-Bold" : "Helvetica" }]}>
+                              {isNestedKit ? `[Kit] ${childName}` : childName}
+                            </Text>
+                            {child.isOverbooked && (
+                              <Text style={{ fontSize: 6, color: child.overbookedReducedOnly ? "#7c3aed" : "#dc2626", backgroundColor: child.overbookedReducedOnly ? "#ede9fe" : "#fee2e2", paddingHorizontal: 3, paddingVertical: 1, borderRadius: 2, fontFamily: "Helvetica-Bold" }}>{child.overbookedReducedOnly ? "REDUCED STOCK" : "OVERBOOKED"}</Text>
+                            )}
+                          </View>
+                        </View>
+                        <Text style={[s.td, { width: 30, textAlign: "center", fontSize: 8 }]}>
+                          {isNestedKit ? nestedChildren.length : child.quantity}
                         </Text>
-                        {child.isOverbooked && (
-                          <Text style={{ fontSize: 6, color: child.overbookedReducedOnly ? "#7c3aed" : "#dc2626", backgroundColor: child.overbookedReducedOnly ? "#ede9fe" : "#fee2e2", paddingHorizontal: 3, paddingVertical: 1, borderRadius: 2, fontFamily: "Helvetica-Bold" }}>{child.overbookedReducedOnly ? "REDUCED STOCK" : "OVERBOOKED"}</Text>
-                        )}
+                        <Text style={[s.td, { width: 80, fontSize: 7, fontFamily: "Courier", color: "#555" }]}>
+                          {child.asset?.assetTag || child.bulkAsset?.assetTag || (isNestedKit ? (child.kit?.assetTag || "-") : "-")}
+                        </Text>
+                        <View style={[s.td, { width: 80, justifyContent: "center" }]}>
+                          <ConditionCheckboxes fontSize={6} />
+                        </View>
+                        <Text style={[s.td, { flex: 1 }]}> </Text>
                       </View>
+                      {isNestedKit && nestedChildren.map((nested) => (
+                        <View key={nested.id} style={s.tableRow}>
+                          <View style={[s.td, { width: 20, alignItems: "center", justifyContent: "center" }]}>
+                            <Checkbox size={6} />
+                          </View>
+                          <View style={{ flex: 2, paddingLeft: 24 }}>
+                            <Text style={[s.td, { fontSize: 7, color: "#777" }]}>{nested.model?.name || nested.description || "-"}</Text>
+                          </View>
+                          <Text style={[s.td, { width: 30, textAlign: "center", fontSize: 7 }]}>{nested.quantity}</Text>
+                          <Text style={[s.td, { width: 80, fontSize: 7, fontFamily: "Courier", color: "#777" }]}>
+                            {nested.asset?.assetTag || nested.bulkAsset?.assetTag || "-"}
+                          </Text>
+                          <View style={[s.td, { width: 80, justifyContent: "center" }]}>
+                            <ConditionCheckboxes fontSize={6} />
+                          </View>
+                          <Text style={[s.td, { flex: 1 }]}> </Text>
+                        </View>
+                      ))}
                     </View>
-                    <Text style={[s.td, { width: 30, textAlign: "center", fontSize: 8 }]}>
-                      {child.quantity}
-                    </Text>
-                    <Text style={[s.td, { width: 80, fontSize: 7, fontFamily: "Courier", color: "#555" }]}>
-                      {child.asset?.assetTag || child.bulkAsset?.assetTag || "-"}
-                    </Text>
-                    <View style={[s.td, { width: 80, justifyContent: "center" }]}>
-                      <ConditionCheckboxes fontSize={6} />
-                    </View>
-                    <Text style={[s.td, { flex: 1 }]}> </Text>
-                  </View>
-                ))}
+                  );
+                })}
               </View>
             );
           })}

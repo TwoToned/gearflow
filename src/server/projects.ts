@@ -101,7 +101,7 @@ export async function getProjects(params?: {
         ...(includeLineItems && {
           lineItems: {
             where: { status: { not: "CANCELLED" }, type: "EQUIPMENT" },
-            select: { id: true, status: true, type: true, isKitChild: true, isPrepChild: true },
+            select: { id: true, status: true, type: true, isKitChild: true },
           },
         }),
       },
@@ -150,7 +150,7 @@ export async function getProjectIssueFlags(projectIds: string[]) {
     },
     select: {
       id: true, projectId: true, modelId: true, quantity: true,
-      isKitChild: true, isPrepChild: true, parentLineItemId: true, kitId: true, prepId: true, status: true,
+      isKitChild: true, parentLineItemId: true, kitId: true, status: true,
     },
   });
 
@@ -194,7 +194,13 @@ export async function getProject(id: string) {
           kit: true,
           supplier: true,
           childLineItems: {
-            include: { model: true, asset: true, bulkAsset: true },
+            include: {
+              model: true, asset: true, bulkAsset: true, kit: true,
+              childLineItems: {
+                include: { model: true, asset: true, bulkAsset: true },
+                orderBy: { sortOrder: "asc" },
+              },
+            },
             orderBy: { sortOrder: "asc" },
           },
         },
@@ -431,7 +437,7 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
     where: { id: sourceId, organizationId },
     include: {
       lineItems: {
-        where: { isKitChild: false, isPrepChild: false },
+        where: { isKitChild: false },
         include: {
           childLineItems: true,
         },
@@ -492,7 +498,6 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
             isSubhire: li.isSubhire,
             showSubhireOnDocs: li.showSubhireOnDocs,
             isKitChild: false,
-            isPrepChild: false,
             pricingMode: li.pricingMode,
             status: "QUOTED",
           },
@@ -549,7 +554,7 @@ export async function saveAsTemplate(projectId: string, templateName: string) {
     where: { id: projectId, organizationId },
     include: {
       lineItems: {
-        where: { isKitChild: false, isPrepChild: false },
+        where: { isKitChild: false },
         include: { childLineItems: true },
         orderBy: { sortOrder: "asc" },
       },
@@ -609,7 +614,6 @@ export async function saveAsTemplate(projectId: string, templateName: string) {
             isSubhire: li.isSubhire,
             showSubhireOnDocs: li.showSubhireOnDocs,
             isKitChild: false,
-            isPrepChild: false,
             pricingMode: li.pricingMode,
             status: "QUOTED",
           },
@@ -666,7 +670,7 @@ export async function getTemplates() {
     include: {
       client: true,
       location: true,
-      _count: { select: { lineItems: { where: { isKitChild: false, isPrepChild: false } } } },
+      _count: { select: { lineItems: { where: { isKitChild: false } } } },
     },
     orderBy: { updatedAt: "desc" },
   });

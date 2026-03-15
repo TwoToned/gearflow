@@ -33,7 +33,6 @@ import {
   getAvailableAssetsForModel,
   quickAddAndCheckOut,
 } from "@/server/warehouse";
-import { getProjectPreps } from "@/server/preps";
 import { lineItemStatusLabels, formatLabel } from "@/lib/status-labels";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -80,7 +79,6 @@ import {
 import { RequirePermission } from "@/components/auth/require-permission";
 import { OnlinePickList } from "@/components/warehouse/online-pick-list";
 import { PrepsTab } from "@/components/warehouse/preps-tab";
-import { checkOutPrep as checkOutPrepAction, checkInPrep as checkInPrepAction } from "@/server/preps";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useActiveOrganization } from "@/lib/auth-client";
 
@@ -135,14 +133,11 @@ interface LineItem {
   bulkAssetId: string | null;
   kitId: string | null;
   isKitChild: boolean;
-  prepId: string | null;
-  isPrepChild: boolean;
-  prep: { id: string; name: string; status: string } | null;
   parentLineItemId: string | null;
   model: { name: string; modelNumber?: string | null } | null;
   asset: { assetTag: string } | null;
   bulkAsset: { assetTag: string } | null;
-  kit: { id: string; assetTag: string; name: string } | null;
+  kit: { id: string; assetTag: string; name: string; isPrep: boolean } | null;
   isSubhire: boolean;
   childLineItems?: LineItem[];
 }
@@ -164,6 +159,100 @@ function modelDisplayName(item: LineItem) {
 }
 
 // ---------------------------------------------------------------------------
+// Render kit children (with nested kit support for prep-kits)
+// ---------------------------------------------------------------------------
+function KitChildRows({
+  children,
+  verifiedKitItems,
+  expandedGroups,
+  toggleExpanded,
+  onToggleVerify,
+}: {
+  children: LineItem[];
+  verifiedKitItems: Set<string>;
+  expandedGroups: Set<string>;
+  toggleExpanded: (key: string) => void;
+  onToggleVerify: (assetId: string) => void;
+}) {
+  return (
+    <>
+      {children.map((child) => {
+        const isVerified = verifiedKitItems.has(child.id);
+        const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
+        const nestedExpanded = expandedGroups.has(`nested-${child.id}`);
+        return (
+          <Fragment key={child.id}>
+            <TableRow
+              className={`${isVerified ? "bg-green-500/5" : "bg-muted/30"} ${isNestedKit ? "cursor-pointer" : ""}`}
+              onClick={isNestedKit ? () => toggleExpanded(`nested-${child.id}`) : undefined}
+            >
+              <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                <button type="button" onClick={() => onToggleVerify(child.id)} className="mx-auto block">
+                  {isVerified
+                    ? <CircleCheck className="h-4 w-4 text-green-500" />
+                    : <Circle className="h-4 w-4 text-muted-foreground/30 hover:text-muted-foreground transition-colors" />
+                  }
+                </button>
+              </TableCell>
+              <TableCell className="pl-12 text-sm text-muted-foreground">
+                <div className="flex items-center gap-1.5">
+                  {isNestedKit && (
+                    <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${nestedExpanded ? "rotate-90" : ""}`} />
+                  )}
+                  {isNestedKit && <Container className="h-3.5 w-3.5 text-muted-foreground" />}
+                  <span>{child.model?.name || child.description || "Item"}</span>
+                  {isNestedKit && (
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Kit</Badge>
+                  )}
+                </div>
+              </TableCell>
+              <TableCell className="font-mono text-sm text-muted-foreground">
+                {child.asset?.assetTag || child.bulkAsset?.assetTag || (isNestedKit ? (child.kit?.assetTag || "—") : "—")}
+              </TableCell>
+              <TableCell className="text-center">{isNestedKit ? child.childLineItems!.length : child.quantity}</TableCell>
+              <TableCell>
+                {isVerified
+                  ? <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">Verified</Badge>
+                  : <Badge variant="outline" className={lineItemStatusColors[child.status] || ""}>{lineItemStatusLabels[child.status] || formatLabel(child.status)}</Badge>
+                }
+              </TableCell>
+            </TableRow>
+            {isNestedKit && nestedExpanded && child.childLineItems!.map((nested) => {
+              const nestedVerified = verifiedKitItems.has(nested.id);
+              return (
+                <TableRow key={nested.id} className={nestedVerified ? "bg-green-500/5" : "bg-muted/20"}>
+                  <TableCell className="text-center">
+                    <button type="button" onClick={() => onToggleVerify(nested.id)} className="mx-auto block">
+                      {nestedVerified
+                        ? <CircleCheck className="h-4 w-4 text-green-500" />
+                        : <Circle className="h-4 w-4 text-muted-foreground/30 hover:text-muted-foreground transition-colors" />
+                      }
+                    </button>
+                  </TableCell>
+                  <TableCell className="pl-20 text-sm text-muted-foreground">
+                    {nested.model?.name || nested.description || "Item"}
+                  </TableCell>
+                  <TableCell className="font-mono text-sm text-muted-foreground">
+                    {nested.asset?.assetTag || nested.bulkAsset?.assetTag || "—"}
+                  </TableCell>
+                  <TableCell className="text-center">{nested.quantity}</TableCell>
+                  <TableCell>
+                    {nestedVerified
+                      ? <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">Verified</Badge>
+                      : <Badge variant="outline" className={lineItemStatusColors[nested.status] || ""}>{lineItemStatusLabels[nested.status] || formatLabel(nested.status)}</Badge>
+                    }
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Grouping: serialized items with same model get grouped, bulk items become
 // expandable with per-unit rows, single serialized items stay flat.
 // ---------------------------------------------------------------------------
@@ -172,15 +261,10 @@ type GroupEntry =
   | { kind: "single"; item: LineItem }
   | { kind: "serialized-group"; groupKey: string; modelName: string; items: LineItem[] }
   | { kind: "bulk-group"; groupKey: string; item: LineItem; unitCount: number }
-  | { kind: "kit-group"; groupKey: string; item: LineItem; children: LineItem[] }
-  | { kind: "prep-group"; groupKey: string; item: LineItem; children: LineItem[] };
+  | { kind: "kit-group"; groupKey: string; item: LineItem; children: LineItem[] };
 
 function isKitParent(item: LineItem) {
   return !!item.kitId && !item.isKitChild;
-}
-
-function isPrepParent(item: LineItem) {
-  return !!item.prepId && !item.isPrepChild;
 }
 
 function groupItems(items: LineItem[]): GroupEntry[] {
@@ -192,13 +276,6 @@ function groupItems(items: LineItem[]): GroupEntry[] {
       result.push({
         kind: "kit-group",
         groupKey: `kit-${item.id}`,
-        item,
-        children: (item.childLineItems || []) as LineItem[],
-      });
-    } else if (isPrepParent(item)) {
-      result.push({
-        kind: "prep-group",
-        groupKey: `prep-${item.id}`,
         item,
         children: (item.childLineItems || []) as LineItem[],
       });
@@ -247,13 +324,6 @@ function groupCheckinItems(items: LineItem[]): GroupEntry[] {
       result.push({
         kind: "kit-group",
         groupKey: `kit-in-${item.id}`,
-        item,
-        children: (item.childLineItems || []) as LineItem[],
-      });
-    } else if (isPrepParent(item)) {
-      result.push({
-        kind: "prep-group",
-        groupKey: `prep-in-${item.id}`,
         item,
         children: (item.childLineItems || []) as LineItem[],
       });
@@ -368,46 +438,23 @@ function WarehouseProjectPage({
     quantity: number;
   }>>([]);
 
+  // Kit verification confirmation dialog
+  const [kitConfirm, setKitConfirm] = useState<{
+    action: "deploy" | "return";
+    kitName: string;
+    kitId: string;
+    verifiedCount: number;
+    totalCount: number;
+  } | null>(null);
+
   const { data: project, isLoading } = useQuery({
     queryKey: ["warehouse-project", orgId, projectId],
     queryFn: () => getProjectForWarehouse(projectId),
   });
 
-  const { data: prepsData } = useQuery({
-    queryKey: ["project-preps", orgId, projectId],
-    queryFn: () => getProjectPreps(projectId),
-  });
-
-  // Build lookup: lineItemId/assetId -> prep name for showing badges on Deploy/Return items
-  const prepLookup = useMemo(() => {
-    const byLineItem = new Map<string, { prepName: string; prepStatus: string }>();
-    const byAssetId = new Map<string, { prepName: string; prepStatus: string }>();
-    if (!prepsData) return { byLineItem, byAssetId };
-    for (const prep of prepsData) {
-      // Only show badges for preps that are actively packed or being packed
-      if (prep.status === "UNPACKED" || prep.status === "CANCELLED") continue;
-      for (const item of prep.items) {
-        const info = { prepName: prep.name, prepStatus: prep.status as string };
-        if (item.lineItemId) byLineItem.set(item.lineItemId, info);
-        if (item.assetId) byAssetId.set(item.assetId, info);
-      }
-    }
-    return { byLineItem, byAssetId };
-  }, [prepsData]);
-
-  const getPrepBadge = useCallback((item: LineItem) => {
-    const info = prepLookup.byLineItem.get(item.id) || (item.assetId ? prepLookup.byAssetId.get(item.assetId) : undefined);
-    if (!info) return null;
-    return (
-      <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0 bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
-        {info.prepName}
-      </Badge>
-    );
-  }, [prepLookup]);
-
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["warehouse-project", orgId, projectId] });
-    queryClient.invalidateQueries({ queryKey: ["project-preps", orgId, projectId] });
+    queryClient.invalidateQueries({ queryKey: ["project-prep-kits", orgId, projectId] });
     setSelectedOut(new Set());
     setSelectedIn(new Set());
   };
@@ -454,18 +501,6 @@ function WarehouseProjectPage({
     onError: (e) => toast.error(e.message),
   });
 
-  const prepCheckOutMutation = useMutation({
-    mutationFn: (prepId: string) => checkOutPrepAction(prepId),
-    onSuccess: () => invalidate(),
-    onError: (e) => toast.error(e.message),
-  });
-
-  const prepCheckInMutation = useMutation({
-    mutationFn: (prepId: string) => checkInPrepAction(prepId),
-    onSuccess: () => invalidate(),
-    onError: (e) => toast.error(e.message),
-  });
-
   // --- Scan mutations ---
   const scanMutation = useMutation({
     mutationFn: (assetTag: string) => lookupAssetForScan(projectId, assetTag, "checkout"),
@@ -474,13 +509,30 @@ function WarehouseProjectPage({
       if (result.found && result.type === "kit") {
         const kitResult = result as { kitId: string; kitAssetTag: string; assetName: string; lineItemId: string | null; reason: string | null };
         if (kitResult.lineItemId && !kitResult.reason) {
-          kitCheckOutMutation.mutate(kitResult.kitId, {
-            onSuccess: () => {
-              toast.success(`Kit deployed: ${kitResult.assetName}`);
-              setScanValue("");
-              scanInputRef.current?.focus();
-            },
-          });
+          // Check verification status before deploying
+          const kitLi = lineItems.find((l) => l.kitId === kitResult.kitId && !l.isKitChild);
+          const children = kitLi ? ((kitLi.childLineItems || []) as LineItem[]) : [];
+          const verifiable = children;
+          const verified = verifiable.filter((c) => verifiedKitItems.has(c.id));
+          if (verifiable.length > 0 && verified.length < verifiable.length) {
+            setKitConfirm({
+              action: "deploy",
+              kitName: kitResult.assetName,
+              kitId: kitResult.kitId,
+              verifiedCount: verified.length,
+              totalCount: verifiable.length,
+            });
+            setScanValue("");
+            scanInputRef.current?.focus();
+          } else {
+            kitCheckOutMutation.mutate(kitResult.kitId, {
+              onSuccess: () => {
+                toast.success(`Kit deployed: ${kitResult.assetName}`);
+                setScanValue("");
+                scanInputRef.current?.focus();
+              },
+            });
+          }
         } else {
           const messages: Record<string, string> = {
             not_on_project: "Kit not assigned to this project",
@@ -493,43 +545,23 @@ function WarehouseProjectPage({
         return;
       }
 
-      // Handle prep container scans — deploy the entire prep
-      if (result.found && result.type === "prep_container") {
-        const prepResult = result as { prepId: string; assetName: string; prepItemCount: number };
-        prepCheckOutMutation.mutate(prepResult.prepId, {
-          onSuccess: () => {
-            toast.success(`Prep deployed: ${prepResult.assetName} (${prepResult.prepItemCount} items)`);
-            setScanValue("");
-            scanInputRef.current?.focus();
-          },
-        });
-        return;
-      }
-
-      // Handle prep member scans — prompt to scan the prep container instead
-      if (result.found && result.type === "prep_member") {
-        const prepResult = result as { prepName: string; prepContainerTag: string | null; assetName: string };
-        toast.error(
-          prepResult.prepContainerTag
-            ? `${prepResult.assetName} is in prep "${prepResult.prepName}" — scan the container (${prepResult.prepContainerTag}) instead`
-            : `${prepResult.assetName} is in prep "${prepResult.prepName}" — deploy it from the Preps tab`
-        );
-        setScanValue("");
-        scanInputRef.current?.focus();
-        return;
-      }
-
       // Handle kit member scans — verify the item is present in the kit
       if (result.found && result.type === "kit_member") {
         const memberResult = result as { kitId: string | null; kitAssetTag: string | null; assetId: string | null; assetName: string };
         // Check if this kit is on the project
         const kitOnProject = memberResult.kitId && lineItems.find((li) => li.kitId === memberResult.kitId && !li.isKitChild);
         if (kitOnProject && memberResult.assetId) {
-          setVerifiedKitItems((prev) => {
-            const next = new Set(prev);
-            next.add(memberResult.assetId!);
-            return next;
-          });
+          // Find the child line item by assetId and verify by line item id
+          const children = (kitOnProject.childLineItems || []) as LineItem[];
+          const childLi = children.find((c) => c.assetId === memberResult.assetId)
+            || children.flatMap((c) => (c.childLineItems || []) as LineItem[]).find((c) => c.assetId === memberResult.assetId);
+          if (childLi) {
+            setVerifiedKitItems((prev) => {
+              const next = new Set(prev);
+              next.add(childLi.id);
+              return next;
+            });
+          }
           // Auto-expand the kit group
           const kitGroupKey = `kit-${kitOnProject.id}`;
           setExpandedGroups((prev) => {
@@ -604,17 +636,34 @@ function WarehouseProjectPage({
       if (result.found && result.type === "kit") {
         const kitResult = result as { kitId: string; assetName: string; lineItemId: string | null; reason: string | null };
         if (kitResult.lineItemId && !kitResult.reason) {
-          kitCheckInMutation.mutate(
-            { kitId: kitResult.kitId, returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING" },
-            {
-              onSuccess: () => {
-                toast.success(`Kit returned: ${kitResult.assetName}`);
-                setReturnScanValue("");
-                setReturnNotes("");
-                returnScanInputRef.current?.focus();
-              },
-            }
-          );
+          // Check verification status before returning
+          const kitLi = lineItems.find((l) => l.kitId === kitResult.kitId && !l.isKitChild);
+          const children = kitLi ? ((kitLi.childLineItems || []) as LineItem[]) : [];
+          const verifiable = children;
+          const verified = verifiable.filter((c) => verifiedKitItems.has(c.id));
+          if (verifiable.length > 0 && verified.length < verifiable.length) {
+            setKitConfirm({
+              action: "return",
+              kitName: kitResult.assetName,
+              kitId: kitResult.kitId,
+              verifiedCount: verified.length,
+              totalCount: verifiable.length,
+            });
+            setReturnScanValue("");
+            returnScanInputRef.current?.focus();
+          } else {
+            kitCheckInMutation.mutate(
+              { kitId: kitResult.kitId, returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING" },
+              {
+                onSuccess: () => {
+                  toast.success(`Kit returned: ${kitResult.assetName}`);
+                  setReturnScanValue("");
+                  setReturnNotes("");
+                  returnScanInputRef.current?.focus();
+                },
+              }
+            );
+          }
         } else {
           const messages: Record<string, string> = {
             not_on_project: "Kit not assigned to this project",
@@ -627,29 +676,21 @@ function WarehouseProjectPage({
         return;
       }
 
-      // Handle prep container return scans
-      if (result.found && result.type === "prep_container") {
-        const prepResult = result as { prepId: string; assetName: string; prepItemCount: number };
-        prepCheckInMutation.mutate(prepResult.prepId, {
-          onSuccess: () => {
-            toast.success(`Prep returned: ${prepResult.assetName} (${prepResult.prepItemCount} items)`);
-            setReturnScanValue("");
-            returnScanInputRef.current?.focus();
-          },
-        });
-        return;
-      }
-
       // Handle kit member scans — verify on return too
       if (result.found && result.type === "kit_member") {
         const memberResult = result as { kitId: string | null; kitAssetTag: string | null; assetId: string | null; assetName: string };
         const kitOnProject = memberResult.kitId && lineItems.find((li) => li.kitId === memberResult.kitId && !li.isKitChild);
         if (kitOnProject && memberResult.assetId) {
-          setVerifiedKitItems((prev) => {
-            const next = new Set(prev);
-            next.add(memberResult.assetId!);
-            return next;
-          });
+          const children = (kitOnProject.childLineItems || []) as LineItem[];
+          const childLi = children.find((c) => c.assetId === memberResult.assetId)
+            || children.flatMap((c) => (c.childLineItems || []) as LineItem[]).find((c) => c.assetId === memberResult.assetId);
+          if (childLi) {
+            setVerifiedKitItems((prev) => {
+              const next = new Set(prev);
+              next.add(childLi.id);
+              return next;
+            });
+          }
           const kitGroupKey = `kit-in-${kitOnProject.id}`;
           setExpandedGroups((prev) => {
             const next = new Set(prev);
@@ -769,8 +810,8 @@ function WarehouseProjectPage({
 
   // --- Derived data (must be before any early returns to keep hooks stable) ---
   const lineItems = project ? (project.lineItems || []) as unknown as LineItem[] : [];
-  // Filter out kit/prep children — they show under their parent row
-  const equipmentItems = lineItems.filter((item) => item.type === "EQUIPMENT" && !item.isKitChild && !item.isPrepChild);
+  // Filter out kit children — they show under their parent row
+  const equipmentItems = lineItems.filter((item) => item.type === "EQUIPMENT" && !item.isKitChild);
 
   const checkOutItemsList = equipmentItems.filter((item) => {
     if (item.status === "CANCELLED") return false;
@@ -784,72 +825,7 @@ function WarehouseProjectPage({
     return item.status === "CHECKED_OUT";
   });
 
-  const groupedOutBase = groupItems(checkOutItemsList);
-
-  // Inject PACKED preps as virtual prep-group entries in the deploy list
-  const groupedOut = useMemo(() => {
-    const result = [...groupedOutBase];
-    if (!prepsData) return result;
-    for (const prep of prepsData) {
-      if (prep.status !== "PACKED") continue;
-      // Synthesize child LineItem-like objects from PrepItem data
-      const children: LineItem[] = prep.items.map((pi: any) => ({
-        id: pi.id,
-        type: "EQUIPMENT",
-        status: "PENDING",
-        quantity: pi.quantity,
-        checkedOutQuantity: 0,
-        returnedQuantity: 0,
-        description: null,
-        modelId: pi.asset?.modelId || pi.bulkAsset?.modelId || null,
-        assetId: pi.assetId,
-        bulkAssetId: pi.bulkAssetId,
-        kitId: null,
-        isKitChild: false,
-        prepId: prep.id,
-        isPrepChild: true,
-        prep: null,
-        parentLineItemId: null,
-        model: pi.asset?.model || pi.bulkAsset?.model || null,
-        asset: pi.asset ? { assetTag: pi.asset.assetTag } : null,
-        bulkAsset: pi.bulkAsset ? { assetTag: pi.bulkAsset.assetTag } : null,
-        kit: null,
-        isSubhire: false,
-      }));
-      // Virtual parent representing the prep — uses "prep:<id>" as the selectable key
-      const virtualParent: LineItem = {
-        id: `prep:${prep.id}`,
-        type: "EQUIPMENT",
-        status: "PACKED",
-        quantity: children.length,
-        checkedOutQuantity: 0,
-        returnedQuantity: 0,
-        description: prep.name,
-        modelId: null,
-        assetId: null,
-        bulkAssetId: null,
-        kitId: null,
-        isKitChild: false,
-        prepId: prep.id,
-        isPrepChild: false,
-        prep: { id: prep.id, name: prep.name, status: prep.status },
-        parentLineItemId: null,
-        model: null,
-        asset: null,
-        bulkAsset: null,
-        kit: null,
-        isSubhire: false,
-        childLineItems: children,
-      };
-      result.push({
-        kind: "prep-group",
-        groupKey: `prep-${prep.id}`,
-        item: virtualParent,
-        children,
-      });
-    }
-    return result;
-  }, [groupedOutBase, prepsData]);
+  const groupedOut = groupItems(checkOutItemsList);
 
   const groupedIn = groupCheckinItems(checkedOutItems);
 
@@ -861,7 +837,7 @@ function WarehouseProjectPage({
         keys.push(entry.item.id);
       } else if (entry.kind === "serialized-group") {
         entry.items.forEach((i) => keys.push(i.id));
-      } else if (entry.kind === "kit-group" || entry.kind === "prep-group") {
+      } else if (entry.kind === "kit-group") {
         keys.push(entry.item.id);
       } else {
         for (let u = 0; u < entry.unitCount; u++) keys.push(bulkUnitKey(entry.item.id, u));
@@ -877,7 +853,7 @@ function WarehouseProjectPage({
         keys.push(entry.item.id);
       } else if (entry.kind === "serialized-group") {
         entry.items.forEach((i) => keys.push(i.id));
-      } else if (entry.kind === "kit-group" || entry.kind === "prep-group") {
+      } else if (entry.kind === "kit-group") {
         keys.push(entry.item.id);
       } else {
         for (let u = 0; u < entry.unitCount; u++) keys.push(bulkUnitKey(entry.item.id, u));
@@ -891,45 +867,48 @@ function WarehouseProjectPage({
 
   // --- Checkout / Checkin selected ---
   const handleCheckOutSelected = async () => {
-    // Separate bulk keys (contain ":"), kit items, prep items, and serialized keys
+    // Separate bulk keys (contain ":"), kit items, and serialized keys
     const bulkQtyMap = new Map<string, number>();
     const serializedLineItemIds: string[] = [];
     const kitLineItemIds: string[] = [];
-    const prepIds: string[] = [];
 
     for (const key of selectedOut) {
-      if (key.startsWith("prep:")) {
-        // Virtual prep entry — extract prep ID
-        prepIds.push(key.slice(5));
-      } else if (key.includes(":")) {
+      if (key.includes(":")) {
         const lineItemId = key.split(":")[0];
         bulkQtyMap.set(lineItemId, (bulkQtyMap.get(lineItemId) || 0) + 1);
       } else {
         const li = lineItems.find((l) => l.id === key);
         if (li && li.kitId && !li.isKitChild) {
           kitLineItemIds.push(key);
-        } else if (li && li.prepId && !li.isPrepChild) {
-          if (li.prepId) prepIds.push(li.prepId);
         } else {
           serializedLineItemIds.push(key);
         }
       }
     }
 
-    // Check out kits via kitCheckOutMutation
+    // Check out kits (including prep-kits) — check verification first
     for (const kitItemId of kitLineItemIds) {
       const li = lineItems.find((l) => l.id === kitItemId);
       if (li?.kitId) {
-        kitCheckOutMutation.mutate(li.kitId);
+        const children = (li.childLineItems || []) as LineItem[];
+        const verifiable = children;
+        const verified = verifiable.filter((c) => verifiedKitItems.has(c.id));
+        if (verifiable.length > 0 && verified.length < verifiable.length) {
+          // Not fully verified — prompt
+          setKitConfirm({
+            action: "deploy",
+            kitName: li.description || li.kit?.name || "Kit",
+            kitId: li.kitId,
+            verifiedCount: verified.length,
+            totalCount: verifiable.length,
+          });
+        } else {
+          kitCheckOutMutation.mutate(li.kitId);
+        }
       }
     }
 
-    // Check out preps via prepCheckOutMutation
-    for (const prepId of prepIds) {
-      prepCheckOutMutation.mutate(prepId);
-    }
-
-    // If only kits/preps were selected, we're done
+    // If only kits were selected, we're done
     if (serializedLineItemIds.length === 0 && bulkQtyMap.size === 0) return;
 
     // Find serialized items that need asset assignment
@@ -1028,34 +1007,42 @@ function WarehouseProjectPage({
   const handleReturnSelected = () => {
     const qtyMap = new Map<string, number>();
     const kitIds: string[] = [];
-    const prepReturnIds: string[] = [];
 
     for (const key of selectedIn) {
       const lineItemId = key.includes(":") ? key.split(":")[0] : key;
       const li = lineItems.find((l) => l.id === lineItemId);
       if (li && li.kitId && !li.isKitChild) {
         if (li.kitId) kitIds.push(li.kitId);
-      } else if (li && li.prepId && !li.isPrepChild) {
-        if (li.prepId) prepReturnIds.push(li.prepId);
       } else {
         qtyMap.set(lineItemId, (qtyMap.get(lineItemId) || 0) + 1);
       }
     }
 
-    // Return kits
+    // Return kits (including prep-kits) — check verification first
     for (const kitId of kitIds) {
+      const kitLi = lineItems.find((l) => l.kitId === kitId && !l.isKitChild);
+      if (kitLi) {
+        const children = (kitLi.childLineItems || []) as LineItem[];
+        const verifiable = children;
+        const verified = verifiable.filter((c) => verifiedKitItems.has(c.id));
+        if (verifiable.length > 0 && verified.length < verifiable.length) {
+          setKitConfirm({
+            action: "return",
+            kitName: kitLi.description || kitLi.kit?.name || "Kit",
+            kitId,
+            verifiedCount: verified.length,
+            totalCount: verifiable.length,
+          });
+          continue;
+        }
+      }
       kitCheckInMutation.mutate({
         kitId,
         returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING",
       });
     }
 
-    // Return preps
-    for (const prepId of prepReturnIds) {
-      prepCheckInMutation.mutate(prepId);
-    }
-
-    // Return non-kit/non-prep items
+    // Return non-kit items
     const items = Array.from(qtyMap.entries()).map(([lineItemId, qty]) => ({
       lineItemId,
       returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING",
@@ -1067,7 +1054,7 @@ function WarehouseProjectPage({
         { items },
         { onSuccess: () => { toast.success(`Returned items`); setReturnNotes(""); } }
       );
-    } else if (kitIds.length > 0 || prepReturnIds.length > 0) {
+    } else if (kitIds.length > 0) {
       setReturnNotes("");
     }
   };
@@ -1102,8 +1089,7 @@ function WarehouseProjectPage({
           <div className="flex items-center gap-1.5">
             <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-90" : ""}`} />
             <span className="font-medium">{name}</span>
-            {entry.kind === "bulk-group" && getPrepBadge(entry.item)}
-          </div>
+                      </div>
         </TableCell>
         <TableCell className="font-mono text-sm text-muted-foreground">
           {entry.kind === "bulk-group" ? (entry.item.bulkAsset?.assetTag || "—") : ""}
@@ -1310,7 +1296,7 @@ function WarehouseProjectPage({
                                 </TableCell>
                                 <TableCell className="pl-12 text-sm text-muted-foreground">
                                   {item.asset?.assetTag ? `${item.model?.name || "Asset"}` : "Unassigned"}
-                                  {getPrepBadge(item)}
+      
                                 </TableCell>
                                 <TableCell className="font-mono text-sm text-muted-foreground">
                                   {item.asset?.assetTag || "—"}
@@ -1373,8 +1359,8 @@ function WarehouseProjectPage({
                       // --- Kit group ---
                       if (entry.kind === "kit-group") {
                         const isExpanded = expandedGroups.has(entry.groupKey);
-                        const verifiableChildren = entry.children.filter((c) => c.assetId);
-                        const verifiedCount = verifiableChildren.filter((c) => c.assetId && verifiedKitItems.has(c.assetId)).length;
+                        const verifiableChildren = entry.children;
+                        const verifiedCount = verifiableChildren.filter((c) => verifiedKitItems.has(c.id)).length;
                         const allVerified = verifiableChildren.length > 0 && verifiedCount === verifiableChildren.length;
                         return (
                           <Fragment key={entry.groupKey}>
@@ -1393,7 +1379,9 @@ function WarehouseProjectPage({
                                   <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-90" : ""}`} />
                                   <Container className="h-4 w-4 text-muted-foreground" />
                                   <span className="font-medium">{entry.item.description || entry.item.kit?.name || "Kit"}</span>
-                                  <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">Kit</Badge>
+                                  <Badge variant="secondary" className={`ml-1 text-[10px] px-1.5 py-0 ${entry.item.kit?.isPrep ? "bg-purple-500/10 text-purple-500 border-purple-500/20" : ""}`}>
+                                    {entry.item.kit?.isPrep ? "Prep" : "Kit"}
+                                  </Badge>
                                   {verifiableChildren.length > 0 && (
                                     <Badge
                                       variant="outline"
@@ -1410,7 +1398,7 @@ function WarehouseProjectPage({
                                 </div>
                               </TableCell>
                               <TableCell className="font-mono text-sm text-muted-foreground">
-                                {entry.item.kit?.assetTag || "—"}
+                                {entry.item.kit?.isPrep && entry.item.kit.assetTag.startsWith("PREP-") ? "—" : (entry.item.kit?.assetTag || "—")}
                               </TableCell>
                               <TableCell className="text-center">{entry.children.length}</TableCell>
                               <TableCell>
@@ -1419,84 +1407,22 @@ function WarehouseProjectPage({
                                 </Badge>
                               </TableCell>
                             </TableRow>
-                            {isExpanded && entry.children.map((child) => {
-                              const isVerified = child.assetId ? verifiedKitItems.has(child.assetId) : false;
-                              return (
-                                <TableRow key={child.id} className={isVerified ? "bg-green-500/5" : "bg-muted/30"}>
-                                  <TableCell className="text-center">
-                                    {isVerified
-                                      ? <CircleCheck className="h-4 w-4 text-green-500 mx-auto" />
-                                      : <Circle className="h-4 w-4 text-muted-foreground/30 mx-auto" />
-                                    }
-                                  </TableCell>
-                                  <TableCell className="pl-12 text-sm text-muted-foreground">
-                                    {child.model?.name || child.description || "Item"}
-                                  </TableCell>
-                                  <TableCell className="font-mono text-sm text-muted-foreground">
-                                    {child.asset?.assetTag || child.bulkAsset?.assetTag || "—"}
-                                  </TableCell>
-                                  <TableCell className="text-center">{child.quantity}</TableCell>
-                                  <TableCell>
-                                    {isVerified
-                                      ? <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">Verified</Badge>
-                                      : <Badge variant="outline" className={lineItemStatusColors[child.status] || ""}>{lineItemStatusLabels[child.status] || formatLabel(child.status)}</Badge>
-                                    }
-                                  </TableCell>
-                                </TableRow>
-                              );
-                            })}
-                          </Fragment>
-                        );
-                      }
-
-                      // --- Prep group ---
-                      if (entry.kind === "prep-group") {
-                        const isExpanded = expandedGroups.has(entry.groupKey);
-                        return (
-                          <Fragment key={entry.groupKey}>
-                            <TableRow
-                              className="cursor-pointer hover:bg-accent/50"
-                              onClick={() => toggleExpanded(entry.groupKey)}
-                            >
-                              <TableCell onClick={(e) => e.stopPropagation()}>
-                                <Checkbox
-                                  checked={selectedOut.has(entry.item.id)}
-                                  onCheckedChange={() => toggleSelection(selectedOut, setSelectedOut, entry.item.id)}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-1.5">
-                                  <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-90" : ""}`} />
-                                  <Package className="h-4 w-4 text-muted-foreground" />
-                                  <span className="font-medium">{entry.item.description || "Prep"}</span>
-                                  <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0 bg-purple-500/10 text-purple-500 border-purple-500/20">Prep</Badge>
-                                </div>
-                              </TableCell>
-                              <TableCell className="font-mono text-sm text-muted-foreground">—</TableCell>
-                              <TableCell className="text-center">{entry.children.length}</TableCell>
-                              <TableCell>
-                                <Badge variant="outline" className={lineItemStatusColors[entry.item.status] || ""}>
-                                  {lineItemStatusLabels[entry.item.status] || formatLabel(entry.item.status)}
-                                </Badge>
-                              </TableCell>
-                            </TableRow>
-                            {isExpanded && entry.children.map((child) => (
-                              <TableRow key={child.id} className="bg-muted/30">
-                                <TableCell />
-                                <TableCell className="pl-12 text-sm text-muted-foreground">
-                                  {child.model?.name || child.description || "Item"}
-                                </TableCell>
-                                <TableCell className="font-mono text-sm text-muted-foreground">
-                                  {child.asset?.assetTag || child.bulkAsset?.assetTag || "—"}
-                                </TableCell>
-                                <TableCell className="text-center">{child.quantity}</TableCell>
-                                <TableCell>
-                                  <Badge variant="outline" className={lineItemStatusColors[child.status] || ""}>
-                                    {lineItemStatusLabels[child.status] || formatLabel(child.status)}
-                                  </Badge>
-                                </TableCell>
-                              </TableRow>
-                            ))}
+                            {isExpanded && (
+                              <KitChildRows
+                                children={entry.children}
+                                verifiedKitItems={verifiedKitItems}
+                                expandedGroups={expandedGroups}
+                                toggleExpanded={toggleExpanded}
+                                onToggleVerify={(assetId) => {
+                                  setVerifiedKitItems((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(assetId)) next.delete(assetId);
+                                    else next.add(assetId);
+                                    return next;
+                                  });
+                                }}
+                              />
+                            )}
                           </Fragment>
                         );
                       }
@@ -1516,7 +1442,7 @@ function WarehouseProjectPage({
                             {item.isSubhire && (
                               <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0 bg-cyan-500/10 text-cyan-600 border-cyan-500/20">Subhire</Badge>
                             )}
-                            {getPrepBadge(item)}
+
                           </TableCell>
                           <TableCell className="font-mono text-sm text-muted-foreground">
                             {item.asset?.assetTag || item.bulkAsset?.assetTag || "—"}
@@ -1651,7 +1577,7 @@ function WarehouseProjectPage({
                                 </TableCell>
                                 <TableCell className="pl-12 text-sm text-muted-foreground">
                                   {item.asset?.assetTag ? `${item.model?.name || "Asset"}` : "Unassigned"}
-                                  {getPrepBadge(item)}
+      
                                 </TableCell>
                                 <TableCell className="font-mono text-sm text-muted-foreground">
                                   {item.asset?.assetTag || "—"}
@@ -1714,8 +1640,8 @@ function WarehouseProjectPage({
                       // --- Kit group ---
                       if (entry.kind === "kit-group") {
                         const isExpanded = expandedGroups.has(entry.groupKey);
-                        const verifiableChildren = entry.children.filter((c) => c.assetId);
-                        const verifiedCount = verifiableChildren.filter((c) => c.assetId && verifiedKitItems.has(c.assetId)).length;
+                        const verifiableChildren = entry.children;
+                        const verifiedCount = verifiableChildren.filter((c) => verifiedKitItems.has(c.id)).length;
                         const allVerified = verifiableChildren.length > 0 && verifiedCount === verifiableChildren.length;
                         return (
                           <Fragment key={entry.groupKey}>
@@ -1734,7 +1660,9 @@ function WarehouseProjectPage({
                                   <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-90" : ""}`} />
                                   <Container className="h-4 w-4 text-muted-foreground" />
                                   <span className="font-medium">{entry.item.description || entry.item.kit?.name || "Kit"}</span>
-                                  <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">Kit</Badge>
+                                  <Badge variant="secondary" className={`ml-1 text-[10px] px-1.5 py-0 ${entry.item.kit?.isPrep ? "bg-purple-500/10 text-purple-500 border-purple-500/20" : ""}`}>
+                                    {entry.item.kit?.isPrep ? "Prep" : "Kit"}
+                                  </Badge>
                                   {verifiableChildren.length > 0 && (
                                     <Badge
                                       variant="outline"
@@ -1751,7 +1679,7 @@ function WarehouseProjectPage({
                                 </div>
                               </TableCell>
                               <TableCell className="font-mono text-sm text-muted-foreground">
-                                {entry.item.kit?.assetTag || "—"}
+                                {entry.item.kit?.isPrep && entry.item.kit.assetTag.startsWith("PREP-") ? "—" : (entry.item.kit?.assetTag || "—")}
                               </TableCell>
                               <TableCell className="text-center">{entry.children.length}</TableCell>
                               <TableCell>
@@ -1760,84 +1688,22 @@ function WarehouseProjectPage({
                                 </Badge>
                               </TableCell>
                             </TableRow>
-                            {isExpanded && entry.children.map((child) => {
-                              const isVerified = child.assetId ? verifiedKitItems.has(child.assetId) : false;
-                              return (
-                                <TableRow key={child.id} className={isVerified ? "bg-green-500/5" : "bg-muted/30"}>
-                                  <TableCell className="text-center">
-                                    {isVerified
-                                      ? <CircleCheck className="h-4 w-4 text-green-500 mx-auto" />
-                                      : <Circle className="h-4 w-4 text-muted-foreground/30 mx-auto" />
-                                    }
-                                  </TableCell>
-                                  <TableCell className="pl-12 text-sm text-muted-foreground">
-                                    {child.model?.name || child.description || "Item"}
-                                  </TableCell>
-                                  <TableCell className="font-mono text-sm text-muted-foreground">
-                                    {child.asset?.assetTag || child.bulkAsset?.assetTag || "—"}
-                                  </TableCell>
-                                  <TableCell className="text-center">{child.quantity}</TableCell>
-                                  <TableCell>
-                                    {isVerified
-                                      ? <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">Verified</Badge>
-                                      : <Badge variant="outline" className={lineItemStatusColors[child.status] || ""}>{lineItemStatusLabels[child.status] || formatLabel(child.status)}</Badge>
-                                    }
-                                  </TableCell>
-                                </TableRow>
-                              );
-                            })}
-                          </Fragment>
-                        );
-                      }
-
-                      // --- Prep group (Return tab) ---
-                      if (entry.kind === "prep-group") {
-                        const isExpanded = expandedGroups.has(entry.groupKey);
-                        return (
-                          <Fragment key={entry.groupKey}>
-                            <TableRow
-                              className="cursor-pointer hover:bg-accent/50"
-                              onClick={() => toggleExpanded(entry.groupKey)}
-                            >
-                              <TableCell onClick={(e) => e.stopPropagation()}>
-                                <Checkbox
-                                  checked={selectedIn.has(entry.item.id)}
-                                  onCheckedChange={() => toggleSelection(selectedIn, setSelectedIn, entry.item.id)}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-1.5">
-                                  <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-90" : ""}`} />
-                                  <Package className="h-4 w-4 text-muted-foreground" />
-                                  <span className="font-medium">{entry.item.description || "Prep"}</span>
-                                  <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0 bg-purple-500/10 text-purple-500 border-purple-500/20">Prep</Badge>
-                                </div>
-                              </TableCell>
-                              <TableCell className="font-mono text-sm text-muted-foreground">—</TableCell>
-                              <TableCell className="text-center">{entry.children.length}</TableCell>
-                              <TableCell>
-                                <Badge variant="outline" className={lineItemStatusColors["CHECKED_OUT"]}>
-                                  Deployed
-                                </Badge>
-                              </TableCell>
-                            </TableRow>
-                            {isExpanded && entry.children.map((child) => (
-                              <TableRow key={child.id} className="bg-muted/30">
-                                <TableCell />
-                                <TableCell className="pl-12 text-sm text-muted-foreground">
-                                  {child.model?.name || child.description || "Item"}
-                                </TableCell>
-                                <TableCell className="font-mono text-sm text-muted-foreground">
-                                  {child.asset?.assetTag || child.bulkAsset?.assetTag || "—"}
-                                </TableCell>
-                                <TableCell className="text-center">{child.quantity}</TableCell>
-                                <TableCell>
-                                  <Badge variant="outline" className={lineItemStatusColors[child.status] || ""}>
-                                    {lineItemStatusLabels[child.status] || formatLabel(child.status)}
-                                  </Badge>
-                                </TableCell>
-                              </TableRow>
-                            ))}
+                            {isExpanded && (
+                              <KitChildRows
+                                children={entry.children}
+                                verifiedKitItems={verifiedKitItems}
+                                expandedGroups={expandedGroups}
+                                toggleExpanded={toggleExpanded}
+                                onToggleVerify={(assetId) => {
+                                  setVerifiedKitItems((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(assetId)) next.delete(assetId);
+                                    else next.add(assetId);
+                                    return next;
+                                  });
+                                }}
+                              />
+                            )}
                           </Fragment>
                         );
                       }
@@ -1859,7 +1725,7 @@ function WarehouseProjectPage({
                             {item.isSubhire && (
                               <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0 bg-cyan-500/10 text-cyan-600 border-cyan-500/20">Subhire</Badge>
                             )}
-                            {getPrepBadge(item)}
+
                           </TableCell>
                           <TableCell className="font-mono text-sm text-muted-foreground">
                             {assetTag || "—"}
@@ -1898,6 +1764,45 @@ function WarehouseProjectPage({
           <PrepsTab projectId={projectId} />
         </TabsContent>
       </Tabs>
+
+      {/* Kit Verification Confirmation */}
+      {kitConfirm && (
+        <Dialog open={true} onOpenChange={() => setKitConfirm(null)}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>
+                {kitConfirm.action === "deploy" ? "Deploy without full verification?" : "Return without full verification?"}
+              </DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">{kitConfirm.kitName}</span> has only{" "}
+              <span className="font-medium text-foreground">{kitConfirm.verifiedCount}/{kitConfirm.totalCount}</span>{" "}
+              items verified. {kitConfirm.action === "deploy" ? "Deploy" : "Return"} anyway?
+            </p>
+            <DialogFooter>
+              <Button variant="outline" size="sm" onClick={() => setKitConfirm(null)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (kitConfirm.action === "deploy") {
+                    kitCheckOutMutation.mutate(kitConfirm.kitId);
+                  } else {
+                    kitCheckInMutation.mutate({
+                      kitId: kitConfirm.kitId,
+                      returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING",
+                    });
+                  }
+                  setKitConfirm(null);
+                }}
+              >
+                {kitConfirm.action === "deploy" ? "Deploy" : "Return"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Add to Project Prompt */}
       <Dialog open={addPromptOpen} onOpenChange={setAddPromptOpen}>

@@ -38,10 +38,8 @@ export async function computeOverbookedStatus(
     modelId: string | null;
     quantity: number;
     isKitChild: boolean;
-    isPrepChild: boolean;
     parentLineItemId: string | null;
     kitId: string | null;
-    prepId: string | null;
     status: string;
   }>,
   rentalStartDate: Date | null,
@@ -155,9 +153,9 @@ export async function computeOverbookedStatus(
     }
   }
 
-  // Also mark kit/prep parent items as overbooked if any of their children are
+  // Also mark kit parent items as overbooked if any of their children are
   for (const li of lineItems) {
-    if ((li.kitId && !li.isKitChild) || (li.prepId && !li.isPrepChild)) {
+    if (li.kitId && !li.isKitChild) {
       const children = lineItems.filter((c) => c.parentLineItemId === li.id);
       const overbookedChildren = children.filter((c) => overbookedMap.has(c.id));
       if (overbookedChildren.length > 0) {

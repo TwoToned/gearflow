@@ -27,10 +27,15 @@ export async function getProjectForWarehouse(projectId: string) {
           asset: true,
           bulkAsset: true,
           kit: true,
-          prep: { select: { id: true, name: true, status: true } },
           childLineItems: {
             orderBy: { sortOrder: "asc" },
-            include: { model: true, asset: true, bulkAsset: true },
+            include: {
+              model: true, asset: true, bulkAsset: true, kit: true,
+              childLineItems: {
+                orderBy: { sortOrder: "asc" },
+                include: { model: true, asset: true, bulkAsset: true, kit: true },
+              },
+            },
           },
         },
       },
@@ -59,7 +64,7 @@ export async function lookupAssetForScan(
 ) {
   const { organizationId } = await getOrgContext();
 
-  // Look up the asset tag in all tables: serialized, bulk, kits, and prep containers
+  // Look up the asset tag in all tables: serialized, bulk, kits
   const [asset, bulkAsset, kit] = await Promise.all([
     prisma.asset.findUnique({
       where: { organizationId_assetTag: { organizationId, assetTag } },
@@ -73,32 +78,6 @@ export async function lookupAssetForScan(
       where: { organizationId_assetTag: { organizationId, assetTag } },
     }),
   ]);
-
-  // Check if this asset is a prep container
-  if (asset) {
-    const prepStatus = mode === "checkout" ? { in: ["PACKED" as const, "PACKING" as const] } : { equals: "CHECKED_OUT" as const };
-    const prep = await prisma.prep.findFirst({
-      where: {
-        containerAssetId: asset.id,
-        projectId,
-        organizationId,
-        status: prepStatus,
-      },
-      include: { items: { select: { id: true } } },
-    });
-    if (prep) {
-      return serialize({
-        found: true as const,
-        type: "prep_container" as const,
-        lineItemId: null,
-        assetId: asset.id,
-        assetName: prep.name,
-        prepId: prep.id,
-        prepItemCount: prep.items.length,
-        reason: null,
-      });
-    }
-  }
 
   // If it's a Kit barcode
   if (kit) {
@@ -127,45 +106,6 @@ export async function lookupAssetForScan(
       found: true as const, type: "kit_member" as const, lineItemId: null, assetId: asset.id,
       assetName: asset.model.name, kitId: parentKit?.id || null, kitAssetTag: parentKit?.assetTag || null, reason: "asset_in_kit" as const,
     });
-  }
-
-  // If this serialized asset is inside a Prep, prompt to scan the prep instead
-  if (asset) {
-    const prepStatus = mode === "checkout"
-      ? { in: ["PACKED" as const, "PACKING" as const] }
-      : { equals: "CHECKED_OUT" as const };
-    const prepItem = await prisma.prepItem.findFirst({
-      where: {
-        assetId: asset.id,
-        prep: {
-          projectId,
-          organizationId,
-          status: prepStatus,
-        },
-      },
-      include: {
-        prep: {
-          include: {
-            containerAsset: { select: { assetTag: true } },
-            items: { select: { id: true } },
-          },
-        },
-      },
-    });
-    if (prepItem) {
-      return serialize({
-        found: true as const,
-        type: "prep_member" as const,
-        lineItemId: null,
-        assetId: asset.id,
-        assetName: asset.model.name,
-        prepId: prepItem.prep.id,
-        prepName: prepItem.prep.name,
-        prepContainerTag: prepItem.prep.containerAsset?.assetTag || null,
-        prepItemCount: prepItem.prep.items.length,
-        reason: "asset_in_prep" as const,
-      });
-    }
   }
 
   const found = asset || bulkAsset;
@@ -209,7 +149,6 @@ export async function lookupAssetForScan(
         organizationId,
         modelId,
         isKitChild: false,
-        isPrepChild: false,
         status: { notIn: ["CANCELLED", ...(mode === "checkout" ? ["CHECKED_OUT" as const] : [])] },
         // For checkout, don't match a line item that already has a different asset assigned
         ...(asset ? { assetId: null } : {}),
@@ -943,6 +882,16 @@ export async function getProjectPullSheet(projectId: string) {
               model: { include: { category: true } },
               asset: { include: { location: true } },
               bulkAsset: true,
+              kit: true,
+              childLineItems: {
+                where: { status: { not: "CANCELLED" } },
+                orderBy: { sortOrder: "asc" },
+                include: {
+                  model: { include: { category: true } },
+                  asset: { include: { location: true } },
+                  bulkAsset: true,
+                },
+              },
             },
           },
         },
@@ -964,7 +913,7 @@ export async function getProjectPullSheet(projectId: string) {
   );
 
   const enrichedLineItems = project.lineItems
-    .filter((li) => !li.isKitChild && !li.isPrepChild) // Kit/prep children render under their parent
+    .filter((li) => !li.isKitChild) // Kit children render under their parent
     .map((li) => {
       const info = overbookedMap.get(li.id);
       return {
@@ -978,45 +927,9 @@ export async function getProjectPullSheet(projectId: string) {
       };
     });
 
-  // Fetch preps for this project to annotate line items with prep info
-  const preps = await prisma.prep.findMany({
-    where: {
-      projectId,
-      organizationId,
-      status: { notIn: ["UNPACKED", "CANCELLED"] },
-    },
-    include: {
-      items: { select: { assetId: true, bulkAssetId: true, lineItemId: true } },
-    },
-  });
-
-  // Build a map: lineItemId -> prep name
-  const lineItemPrepMap = new Map<string, string>();
-  // Build a map: assetId -> prep name
-  const assetPrepMap = new Map<string, string>();
-  for (const prep of preps) {
-    for (const item of prep.items) {
-      if (item.lineItemId) lineItemPrepMap.set(item.lineItemId, prep.name);
-      if (item.assetId) assetPrepMap.set(item.assetId, prep.name);
-    }
-  }
-
-  // Annotate enriched line items with prep info
-  const annotatedLineItems = enrichedLineItems.map((li) => {
-    const prepName = lineItemPrepMap.get(li.id) || (li.assetId ? assetPrepMap.get(li.assetId) : undefined) || null;
-    return {
-      ...li,
-      preppedIn: prepName,
-      childLineItems: li.childLineItems?.map((child) => ({
-        ...child,
-        preppedIn: lineItemPrepMap.get(child.id) || (child.assetId ? assetPrepMap.get(child.assetId) : undefined) || null,
-      })),
-    };
-  });
-
   // Group line items by groupName
-  const groups: Record<string, typeof annotatedLineItems> = {};
-  for (const item of annotatedLineItems) {
+  const groups: Record<string, typeof enrichedLineItems> = {};
+  for (const item of enrichedLineItems) {
     const key = item.groupName || "Ungrouped";
     if (!groups[key]) {
       groups[key] = [];
@@ -1027,6 +940,5 @@ export async function getProjectPullSheet(projectId: string) {
   return serialize({
     project,
     groups,
-    preps: preps.map((p) => ({ id: p.id, name: p.name, status: p.status, itemCount: p.items.length })),
   });
 }

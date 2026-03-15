@@ -26,28 +26,46 @@ GearFlow replaces all of that with a single platform that handles the **entire e
 ## What You Get
 
 ### Inventory That Actually Works
-Track every piece of gear with auto-generated asset tags, QR codes, and full lifecycle status. Handle both **serialized assets** (individual items like a console or projector) and **bulk assets** (cables, clamps, gaff tape) with stock levels and reorder alerts. Group gear into **Kits** — road cases and racks that check out as a single unit with one scan.
+Track every piece of gear with auto-generated asset tags, QR codes, and full lifecycle status. Handle both **serialized assets** (individual items like a console or projector) and **bulk assets** (cables, clamps, gaff tape) with stock levels and reorder alerts. Group gear into **Kits** — road cases and racks that check out as a single unit with one scan. Attach photos, manuals, and documents to any item. Tag everything with free-form labels for fast filtering. Import and export via CSV when you need to move data in bulk.
 
 ### Project & Rental Lifecycle
-Take a project from **Enquiry → Quote → Confirmed → Checked Out → On Site → Returned → Invoiced**. Add line items for equipment, labour, transport, and services with flexible pricing modes. Real-time **availability checking** warns you before you double-book, and overbooking is allowed with explicit confirmation when you need to make it work anyway.
+Take a project from **Enquiry → Quote → Confirmed → Checked Out → On Site → Returned → Invoiced**. Add line items for equipment, labour, transport, and services with per-day, weekly, flat, or hourly pricing. Drag-and-drop line item groups keep quotes organized. Real-time **availability checking** warns you before you double-book, with reduced-stock detection for gear that's in maintenance or marked lost. Overbooking is allowed with explicit confirmation when you need to make it work anyway. Save any project as a **template** to reuse equipment lists on future shows.
+
+### Project Services & Scheduling
+Attach structured operational tasks to projects — **deliveries, pickups, bump in/out, labour calls, and more**. Each service has its own status flow, date/time, location, and crew assignments. Create service templates so your standard show workflow is one click away. Services auto-sync with line items and crew schedules.
+
+### Crew Management
+Manage your team of **employees, freelancers, contractors, and volunteers** with roles, skills, and certification tracking. Assign crew to project services and see everyone's availability on a **14-day Gantt-style planner**. Send offers, track acceptances, log timesheets with approval workflows, and generate **Call Sheet PDFs**. Each crew member gets a personal **iCal feed** they can subscribe to. Expiring certifications trigger automatic notifications.
 
 ### Warehouse Floor, Meet Your Phone
-Your crew gets a **PWA with barcode scanning** — scan an asset tag, hear the chime, move on. Check out to projects, check in with condition tracking. Pull sheets give pickers an interactive checklist. Kit barcodes check out the entire container and all its contents in one scan. Works on any phone, no app store required.
+Your crew gets a **PWA with barcode scanning** — scan an asset tag, hear the chime, move on. Check out to projects, check in with condition tracking (Good / Damaged / Missing). Pull sheets give pickers an interactive checklist. Kit barcodes check out the entire container and all its contents in one scan. Conflict detection blocks checkout if an asset is already out on another project. Works on any phone with a camera — no app store required.
 
 ### Professional Documents in Seconds
-Generate **Quotes, Invoices, Packing Lists, Return Sheets, and Delivery Dockets** as polished PDFs with your logo, grouped line items, kit breakdowns, and overbooking badges. Ready to email to clients or hand to the warehouse.
+Generate **Quotes, Invoices, Packing Lists, Return Sheets, and Delivery Dockets** as polished PDFs with your org logo, grouped line items, kit breakdowns, line item notes, and overbooking badges. Kit contents render as indented children across all document types. Ready to email to clients or hand to the warehouse.
 
 ### Test & Tag Compliance (AS/NZS 3760:2022)
-Full equipment register with electrical test records, automatic due-date tracking, and 10 report types including compliance certificates. Never get caught out by an audit again.
+Full equipment register with visual inspection and electrical test records — earth continuity, insulation resistance, leakage current, polarity, and RCD trip time. Track test intervals per equipment class, get notified when items are due, and generate **10 report types** including full register, overdue items, test session logs, item history, due schedule, tester activity, and compliance certificates in PDF and CSV.
 
 ### Maintenance & Repairs
-Schedule and track repairs, preventative maintenance, firmware updates, and inspections across multiple assets. Overdue items surface automatically in your notification center.
+Schedule and track repairs, preventative maintenance, firmware updates, inspections, and cleaning across multiple assets in a single record. Track status from Scheduled through to Completed with pass/fail/conditional results. Overdue items surface automatically in your notification center.
+
+### Clients, Suppliers & Locations
+Manage **clients** (companies, individuals, venues, production houses) with contact details, billing info, and payment terms. Keep a **supplier directory** for purchase tracking and subhire, with full purchase order workflows from draft through to received. Organize **locations** in a hierarchy — warehouses, venues, vehicles, offsite storage — with address autocomplete, **interactive maps**, and get-directions links.
 
 ### Teams & Permissions
-Multi-tenant from day one. Each organization gets isolated data, configurable branding, and a role hierarchy — **Owner, Admin, Manager, Member, Viewer** — with granular permissions across 14 resource types. Add 2FA, team invitations, and a full audit trail.
+Multi-tenant from day one. Each organization gets isolated data, configurable branding, and a role hierarchy — **Owner, Admin, Manager, Member, Viewer** — with granular permissions across 14 resource types. Two-factor authentication with backup codes, passkey support, team invitations, and a full audit trail logging every write operation. Export and import entire organizations for backup or migration.
+
+### Dashboard & Notifications
+A live dashboard shows active projects, asset counts, upcoming shows, and recent activity. The **notification center** surfaces overdue returns, upcoming projects, maintenance due, low stock alerts, pending crew offers, expiring certifications, and submitted timesheets — so nothing slips through the cracks.
 
 ### Search That Gets Out of Your Way
-A global command palette searches across every entity type. Type `@` to jump to any page. Type a date to open availability. Fully keyboard-navigable.
+A global command palette searches across every entity type. Type `@` to jump to any page with drill-down into children. Type a date to open the availability calendar. Use `/` for slash commands. Full keyboard navigation with `Shift+arrows`, `Tab`, and `Escape`.
+
+### Mobile-First PWA
+Installable on iOS and Android home screens. Proper safe area handling for notch, Dynamic Island, and home indicator. Bottom navigation with quick access to Home, Assets, Scan, Projects, and Warehouse. Touch-optimized with 44px minimum tap targets and responsive tables that progressively hide columns on smaller screens.
+
+### Site Administration
+A dedicated **admin panel** for platform-wide management — create and manage organizations, promote or ban users, force-disable 2FA, configure registration policies (open, invite-only, or disabled), set global tax rates and currency, and customize platform branding with your own name, icon, and logo.
 
 ---
 

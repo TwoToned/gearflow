@@ -93,7 +93,7 @@ The warehouse page has a "Documents" dropdown with access to all project PDFs (P
 ### Deployment-Aware Filtering
 - **Delivery Docket**: Only shows deployed items. Kit/prep-kit children are filtered to CHECKED_OUT only. Nested kit grandchildren are also filtered to CHECKED_OUT.
 - **Return Sheet**: Only shows deployed/returned items. Kit children filtered to CHECKED_OUT or RETURNED. Nested grandchildren similarly filtered.
-- **Pull Slip**: Shows all non-cancelled items (for packing purposes — includes undeployed items).
+- **Pull Slip**: Shows all non-cancelled items. Already-deployed items display with a filled checkbox (tick) instead of an empty one. Bulk per-unit rows tick the first N units matching `checkedOutQuantity`. Kit children and nested grandchildren also show ticked/unticked based on their deployment status.
 - **Quote / Invoice**: Show all items regardless of deployment status (for pricing).
 
 ## Online Pick List

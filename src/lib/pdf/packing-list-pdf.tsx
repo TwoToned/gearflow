@@ -114,7 +114,23 @@ export function PullSlipPDF({ org, project }: PullSlipPDFProps) {
     groups.set(key, arr);
   }
 
-  const totalItems = equipmentItems.reduce((sum, i) => sum + i.quantity, 0);
+  const totalItems = equipmentItems.reduce((sum, i) => {
+    if (i.kitId && !i.isKitChild) {
+      // Kit/prep-kit: count children + grandchildren instead of the parent
+      const children = i.childLineItems || [];
+      let count = 0;
+      for (const child of children) {
+        if (child.kitId && child.childLineItems?.length) {
+          // Nested kit: count its grandchildren
+          count += child.childLineItems.reduce((s, gc) => s + gc.quantity, 0);
+        } else {
+          count += child.quantity;
+        }
+      }
+      return sum + count;
+    }
+    return sum + i.quantity;
+  }, 0);
   const totalWeight = equipmentItems.reduce((sum, i) => {
     const w = i.model?.weight ? Number(i.model.weight) : 0;
     return sum + w * i.quantity;

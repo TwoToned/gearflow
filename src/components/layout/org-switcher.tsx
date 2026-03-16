@@ -1,13 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Building2, Check, ChevronsUpDown } from "lucide-react";
+import { Building2, Check, ChevronsUpDown, Plus } from "lucide-react";
 import {
   useActiveOrganization,
   useListOrganizations,
   organization,
 } from "@/lib/auth-client";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { checkOrgCreationAllowed } from "@/server/site-admin";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -24,6 +25,10 @@ export function OrgSwitcher() {
   const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const { data: orgs } = useListOrganizations();
+  const { data: orgPolicy } = useQuery({
+    queryKey: ["org-creation-allowed"],
+    queryFn: checkOrgCreationAllowed,
+  });
 
   const handleSwitch = async (orgId: string) => {
     await organization.setActive({ organizationId: orgId });
@@ -62,6 +67,20 @@ export function OrgSwitcher() {
             </DropdownMenuItem>
           ))}
         </DropdownMenuGroup>
+        {orgPolicy?.allowed && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              <DropdownMenuItem
+                onClick={() => router.push("/onboarding")}
+                className="gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                <span>New Organization</span>
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

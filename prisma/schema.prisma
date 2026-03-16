@@ -1343,6 +1343,7 @@ model SiteSettings {
   twoFactorGlobalPolicy  String   @default("OFF")  // OFF, RECOMMENDED, REQUIRED_SITE_ADMINS, REQUIRED_ALL
   defaultCurrency        String   @default("AUD")
   defaultTaxRate         Float    @default(10)
+  allowOrgCreation       Boolean  @default(true)
   socialLoginGoogle      Boolean  @default(false)
   socialLoginMicrosoft   Boolean  @default(false)
   createdAt              DateTime @default(now())

@@ -16,11 +16,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Search, Trash2, Building2, Eye, Upload, Download } from "lucide-react";
+import { Search, Trash2, Building2, Eye, Upload, Download, Plus } from "lucide-react";
 import Link from "next/link";
+import { Label } from "@/components/ui/label";
 import {
   getAllOrganizations,
   adminDeleteOrganization,
+  adminCreateOrganization,
 } from "@/server/site-admin";
 
 export default function AdminOrganizationsPage() {
@@ -32,6 +34,9 @@ export default function AdminOrganizationsPage() {
     name: string;
   } | null>(null);
   const [confirmName, setConfirmName] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createSlug, setCreateSlug] = useState("");
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importName, setImportName] = useState("");
@@ -83,6 +88,22 @@ export default function AdminOrganizationsPage() {
     onError: (e) => toast.error(e.message),
   });
 
+  const createMutation = useMutation({
+    mutationFn: () => adminCreateOrganization({ name: createName.trim(), slug: createSlug.trim() }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-organizations"] });
+      toast.success("Organization created");
+      setCreateOpen(false);
+      setCreateName("");
+      setCreateSlug("");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  function slugify(text: string): string {
+    return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  }
+
   return (
     <AdminShell>
       <div className="space-y-6">
@@ -107,7 +128,11 @@ export default function AdminOrganizationsPage() {
               className="pl-9"
             />
           </div>
-          <Button size="sm" onClick={() => setImportOpen(true)}>
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Create
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
             <Upload className="mr-2 h-4 w-4" />
             Import
           </Button>
@@ -298,6 +323,64 @@ export default function AdminOrganizationsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Create Organization Dialog */}
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCreateOpen(false);
+            setCreateName("");
+            setCreateSlug("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Organization</DialogTitle>
+            <DialogDescription>
+              Create a new organization. You will be assigned as the owner.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="create-org-name">Organization Name</Label>
+              <Input
+                id="create-org-name"
+                placeholder="Two Toned Productions"
+                value={createName}
+                onChange={(e) => {
+                  setCreateName(e.target.value);
+                  setCreateSlug(slugify(e.target.value));
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-org-slug">URL Slug</Label>
+              <Input
+                id="create-org-slug"
+                placeholder="two-toned-productions"
+                value={createSlug}
+                onChange={(e) => setCreateSlug(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Lowercase letters, numbers, and hyphens only.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!createName.trim() || !createSlug.trim() || createMutation.isPending}
+              onClick={() => createMutation.mutate()}
+            >
+              {createMutation.isPending ? "Creating..." : "Create Organization"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Import Organization Dialog */}
       <Dialog
         open={importOpen}

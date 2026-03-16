@@ -14,9 +14,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Building2, LogOut, Loader2, Shield } from "lucide-react";
+import { Building2, LogOut, Loader2, Shield, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { getMyPendingInvitations, checkIsSiteAdmin } from "@/server/invitations";
+import { checkOrgCreationAllowed } from "@/server/site-admin";
 
 export default function NoOrganizationPage() {
   const router = useRouter();
@@ -32,6 +33,11 @@ export default function NoOrganizationPage() {
   const { data: isSiteAdmin } = useQuery({
     queryKey: ["is-site-admin"],
     queryFn: checkIsSiteAdmin,
+  });
+
+  const { data: orgPolicy } = useQuery({
+    queryKey: ["org-creation-allowed"],
+    queryFn: checkOrgCreationAllowed,
   });
 
   const acceptMutation = useMutation({
@@ -113,6 +119,15 @@ export default function NoOrganizationPage() {
         )}
       </CardContent>
       <CardFooter className="flex flex-col gap-2">
+        {orgPolicy?.allowed && (
+          <Button
+            className="w-full"
+            onClick={() => router.push("/onboarding")}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Create Organization
+          </Button>
+        )}
         {isSiteAdmin && (
           <Button
             variant="outline"

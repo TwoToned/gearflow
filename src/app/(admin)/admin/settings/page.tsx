@@ -29,6 +29,7 @@ export default function AdminSettingsPage() {
     twoFactorGlobalPolicy: "OFF",
     defaultCurrency: "AUD",
     defaultTaxRate: 10,
+    allowOrgCreation: true,
     socialLoginGoogle: false,
     socialLoginMicrosoft: false,
   });
@@ -42,6 +43,7 @@ export default function AdminSettingsPage() {
         twoFactorGlobalPolicy: settings.twoFactorGlobalPolicy || "OFF",
         defaultCurrency: settings.defaultCurrency || "AUD",
         defaultTaxRate: settings.defaultTaxRate ?? 10,
+        allowOrgCreation: settings.allowOrgCreation ?? true,
         socialLoginGoogle: settings.socialLoginGoogle ?? false,
         socialLoginMicrosoft: settings.socialLoginMicrosoft ?? false,
       });
@@ -147,6 +149,24 @@ export default function AdminSettingsPage() {
                 <option value="INVITE_ONLY">Invite Only</option>
                 <option value="DISABLED">Disabled</option>
               </select>
+            </div>
+            <Separator />
+            <div className="flex items-center justify-between rounded-md border p-3">
+              <div>
+                <span className="text-sm font-medium">Allow Organization Creation</span>
+                <p className="text-xs text-muted-foreground">
+                  When disabled, only site admins can create new organizations.
+                </p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={form.allowOrgCreation}
+                  onChange={(e) => setForm((f) => ({ ...f, allowOrgCreation: e.target.checked }))}
+                />
+                <div className="w-9 h-5 bg-muted rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-background after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
+              </label>
             </div>
             <Separator />
             <div className="flex items-center gap-2">

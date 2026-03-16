@@ -67,6 +67,7 @@ export async function getItems({ page, pageSize, search, sort, order }) {
 | `/api/avatar` | POST/DELETE | Upload/remove profile picture |
 | `/api/documents/[projectId]` | GET | PDF generation via pdfme (query: `type=quote\|invoice\|pull-slip\|return-sheet\|delivery-docket`, `templateId` optional) |
 | `/api/documents/call-sheet/[projectId]` | GET | Call sheet PDF via pdfme (query: `date` optional, `templateId` optional) |
+| `/api/documents/template-preview` | POST | Template preview PDF (body: `{ docType, settings }`, returns binary PDF) |
 | `/api/test-tag-reports/[reportType]` | GET | T&T report PDF/CSV via pdfme (10 types, query: `format=pdf\|csv`) |
 | `/api/platform-name` | GET | Public site settings (name, icon, logo, policies) |
 | `/api/registration-policy` | GET | Public registration policy only |

@@ -42,6 +42,19 @@
 - `/admin/settings` — Platform name, icon, logo, registration policy, 2FA global policy, default currency/tax
 - **Mobile**: `AdminShell` component with hamburger menu replacing desktop sidebar
 
+## Document Templates (`/settings/documents`)
+- Template cards grouped by document type (Quote, Invoice, Packing List, etc.)
+- System defaults shown as virtual cards — "Customise" duplicates into org-owned `DocumentTemplate`
+- Each template has version history, draft/published state, and default flag
+- **Template Editor** (`/template-designer/[id]`): Full-screen Zoho Books-style editor
+  - Left icon nav: General, Header, Details, Table, Totals, Other
+  - Middle: form controls for each section (toggles, inputs, dropdowns)
+  - Right: live PDF preview with real org branding + sample data (pdf.js canvas)
+  - Debounced preview regeneration (600ms) via POST `/api/documents/template-preview`
+- **Permissions**: `document.manage_templates` — owner, admin, manager roles
+- **DB model**: `DocumentTemplate` — `basePdf`, `schemas`, `settings` (all JSON), `isDefault`, `isDraft`, `version`
+- **Template selection priority** (at PDF generation time): specific `templateId` → org's published default → system default
+
 ## Dashboard & Reporting
 - **Dashboard** (`/dashboard`): Stats cards (Total Assets, Checked Out, Active Projects, Maintenance Due), recent activity feed, upcoming projects
 - **Reports** (`/reports`): Project stats by status, revenue calculations, asset utilization

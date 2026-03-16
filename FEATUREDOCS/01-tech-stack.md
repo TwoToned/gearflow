@@ -11,7 +11,7 @@
 | Auth | Better Auth | Organization, TwoFactor, Admin plugins |
 | State Management | React Query | 60s stale time, no refetchOnWindowFocus |
 | Forms | React Hook Form + Zod | `zodResolver()`, `z.input<>` for types |
-| PDF | @react-pdf/renderer | Helvetica only, no Unicode |
+| PDF | pdfme (@pdfme/generator + custom plugins) | Helvetica only, no Unicode. pdf.js for client-side preview |
 | Storage | AWS SDK (S3/MinIO) | Org-prefixed file paths |
 | Email | Resend SDK | Invitations, password reset, notifications |
 | Icons | lucide-react | 180+ icons, dynamic icon component |

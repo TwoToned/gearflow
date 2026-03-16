@@ -55,6 +55,7 @@ export async function getItems({ page, pageSize, search, sort, order }) {
 | `test-tag-assets.ts` | `createTestTagAsset`, `batchCreateTestTagAssets`, `getTestTagAssets`, `peekNextTestTagIds`, `reserveTestTagIds` |
 | `test-tag-records.ts` | `createTestTagRecord`, `recalculateTestTagStatus` |
 | `test-tag-reports.ts` | 10 report functions + CSV exports |
+| `document-templates.ts` | `getDocumentTemplates`, `getDocumentTemplate`, `createDocumentTemplate`, `updateDocumentTemplate`, `publishDocumentTemplate`, `setDefaultTemplate`, `unsetDefaultTemplate`, `deleteDocumentTemplate`, `duplicateSystemDefault`, `getPublishedTemplatesForDropdown` |
 
 ## API Routes
 | Route | Method | Purpose |
@@ -64,8 +65,9 @@ export async function getItems({ page, pageSize, search, sort, order }) {
 | `/api/files/[...path]` | GET | S3 file proxy — validates org prefix on `storageKey` |
 | `/api/uploads` | POST | Multipart file upload to S3, returns `FileUpload` metadata |
 | `/api/avatar` | POST/DELETE | Upload/remove profile picture |
-| `/api/documents/[projectId]` | GET | PDF generation (query: `type=quote\|invoice\|packing-list\|return-sheet\|delivery-docket`) |
-| `/api/test-tag-reports/[reportType]` | GET | T&T report PDF/CSV (10 types, query: `format=pdf\|csv`) |
+| `/api/documents/[projectId]` | GET | PDF generation via pdfme (query: `type=quote\|invoice\|pull-slip\|return-sheet\|delivery-docket`, `templateId` optional) |
+| `/api/documents/call-sheet/[projectId]` | GET | Call sheet PDF via pdfme (query: `date` optional, `templateId` optional) |
+| `/api/test-tag-reports/[reportType]` | GET | T&T report PDF/CSV via pdfme (10 types, query: `format=pdf\|csv`) |
 | `/api/platform-name` | GET | Public site settings (name, icon, logo, policies) |
 | `/api/registration-policy` | GET | Public registration policy only |
 | `/api/admin/org-export/[orgId]` | GET | Stream org backup as ZIP (site admin only) |

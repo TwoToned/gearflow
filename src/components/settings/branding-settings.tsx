@@ -90,7 +90,8 @@ export function BrandingSettings({ orgName, settings, onBrandingChange }: Brandi
           throw new Error(err.error || "Upload failed");
         }
         const uploaded = await res.json();
-        const url = uploaded.thumbnailUrl || uploaded.url;
+        // Use original URL (not thumbnail) — needed for PDF embedding
+        const url = uploaded.url;
 
         if (type === "logo") setLogoUrl(url);
         else setIconUrl(url);

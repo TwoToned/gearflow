@@ -145,6 +145,7 @@ model Organization {
   crewTimeEntries    CrewTimeEntry[]
   projectServices    ProjectService[]
   serviceTemplates   ServiceTemplate[]
+  documentTemplates  DocumentTemplate[]
   @@map("organization")
 }
 
@@ -1830,6 +1831,30 @@ model ServiceTemplate {
 
   @@index([organizationId])
   @@map("service_template")
+}
+
+// ─── Document Templates ──────────────────────────────────────────────────────
+
+model DocumentTemplate {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name           String
+  type           String   // "quote" | "invoice" | "packing-list" | "return-sheet" | "delivery-docket" | "call-sheet"
+  basePdf        String   @db.Text  // JSON — page size, orientation, margins
+  schemas        String   @db.Text  // JSON — pdfme schema array
+  settings       String?  @db.Text  // JSON — TemplateSettings (user-facing config)
+  isDefault      Boolean  @default(false)
+  isDraft        Boolean  @default(true)
+  version        Int      @default(1)
+  thumbnailUrl   String?
+  publishedAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId, type])
+  @@map("document_template")
 }
 
 // ─── Prep System (Pre-Packing / Staging) ─────────────────────────────────────

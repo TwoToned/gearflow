@@ -189,3 +189,203 @@ body {
   display: none !important;
 }
 
+/* ═══════════════════════════════════════════════════════
+   pdfme Designer — Polished overrides
+   ═══════════════════════════════════════════════════════ */
+
+/* Canvas workspace background (the area around the page) */
+.designer-shell .pdfme-designer-root {
+  background: oklch(0.92 0.005 220) !important;
+}
+.dark .designer-shell .pdfme-designer-root {
+  background: oklch(0.11 0.012 220) !important;
+}
+.designer-shell .pdfme-designer-canvas {
+  background-color: oklch(0.92 0.005 220) !important;
+}
+.dark .designer-shell .pdfme-designer-canvas {
+  background-color: oklch(0.11 0.012 220) !important;
+}
+
+/* ── Left sidebar (plugin toolbar) ── */
+.designer-shell .pdfme-designer-left-sidebar {
+  background: var(--card) !important;
+  border-right: 1px solid var(--border) !important;
+}
+
+.designer-shell .pdfme-designer-left-sidebar button {
+  border-color: var(--border) !important;
+  background: var(--background) !important;
+  border-radius: 0.375rem !important;
+  transition: all 0.15s ease !important;
+}
+.designer-shell .pdfme-designer-left-sidebar button:hover {
+  border-color: var(--primary) !important;
+  background: oklch(from var(--primary) l c h / 8%) !important;
+}
+.designer-shell .pdfme-designer-left-sidebar button div {
+  color: var(--foreground) !important;
+  font-family: var(--font-dm-sans), ui-sans-serif, sans-serif !important;
+  font-size: 9px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.02em !important;
+}
+.designer-shell .pdfme-designer-left-sidebar button svg {
+  stroke: var(--foreground) !important;
+}
+
+/* ── Right sidebar (field list + properties) ── */
+.designer-shell .pdfme-designer-right-sidebar > div {
+  background: var(--card) !important;
+  border-left: 1px solid var(--border) !important;
+  font-family: var(--font-dm-sans), ui-sans-serif, sans-serif !important;
+}
+
+/* Field List title */
+.designer-shell .pdfme-designer-list-view .ant-typography {
+  color: var(--foreground) !important;
+  font-family: var(--font-dm-sans), ui-sans-serif, sans-serif !important;
+  font-size: 13px !important;
+}
+
+/* Divider lines */
+.designer-shell .ant-divider {
+  border-color: var(--border) !important;
+}
+
+/* List item buttons in right sidebar */
+.designer-shell .pdfme-designer-right-sidebar .ant-btn {
+  color: var(--foreground) !important;
+  border-color: var(--border) !important;
+  background: var(--background) !important;
+}
+.designer-shell .pdfme-designer-right-sidebar .ant-btn:hover {
+  border-color: var(--primary) !important;
+  color: var(--primary) !important;
+}
+
+/* Field names in list */
+.designer-shell .pdfme-designer-list-view span {
+  color: var(--foreground) !important;
+  font-family: var(--font-dm-sans), ui-sans-serif, sans-serif !important;
+}
+
+/* Bulk update link */
+.designer-shell .pdfme-designer-bulk-update {
+  color: var(--muted-foreground) !important;
+  font-family: var(--font-dm-sans), ui-sans-serif, sans-serif !important;
+}
+.designer-shell .pdfme-designer-bulk-update:hover {
+  color: var(--primary) !important;
+}
+
+/* ── Rulers ── */
+.designer-shell .ruler-container {
+  background: var(--card) !important;
+}
+/* Ruler strip areas (horizontal/vertical) use inline bg */
+.designer-shell .pdfme-designer-background > div {
+  background: var(--card) !important;
+}
+/* The actual guides/ruler area inside */
+.designer-shell .scena-guides-manager {
+  background: var(--card) !important;
+}
+.designer-shell .scena-guides-horizontal,
+.designer-shell .scena-guides-vertical {
+  background: var(--card) !important;
+}
+
+/* ── Zoom controls ── */
+.designer-shell .pdfme-ui-zoom {
+  background: var(--card) !important;
+  border-radius: 0.5rem !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: 0 2px 8px oklch(0 0 0 / 10%) !important;
+  font-family: var(--font-dm-sans), ui-sans-serif, sans-serif !important;
+  color: var(--foreground) !important;
+}
+.designer-shell .pdfme-ui-zoom button {
+  color: var(--foreground) !important;
+}
+.designer-shell .pdfme-ui-zoom span {
+  color: var(--foreground) !important;
+  font-family: var(--font-dm-sans), ui-sans-serif, sans-serif !important;
+}
+
+/* ── Moveable selection handles — match primary color ── */
+.designer-shell .moveable-control {
+  background: var(--primary) !important;
+  border-color: var(--primary) !important;
+}
+.designer-shell .moveable-line {
+  background: var(--primary) !important;
+}
+
+/* ── Guide lines ── */
+.designer-shell .scena-guides-guide {
+  background: var(--primary) !important;
+}
+
+/* ── Context menu ── */
+.designer-shell .pdfme-ui-context-menu {
+  background: var(--popover) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 0.5rem !important;
+  box-shadow: 0 4px 16px oklch(0 0 0 / 15%) !important;
+  color: var(--foreground) !important;
+  font-family: var(--font-dm-sans), ui-sans-serif, sans-serif !important;
+}
+
+/* ── Ant design overrides for property inputs ── */
+.designer-shell input[class*="ant-input"],
+.designer-shell .ant-select-selector,
+.designer-shell .ant-input-number-input {
+  background: var(--background) !important;
+  border-color: var(--border) !important;
+  color: var(--foreground) !important;
+  font-family: var(--font-dm-sans), ui-sans-serif, sans-serif !important;
+  border-radius: 0.375rem !important;
+}
+.designer-shell input[class*="ant-input"]:focus,
+.designer-shell .ant-select-selector:focus-within {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 2px oklch(from var(--primary) l c h / 15%) !important;
+}
+
+/* Labels in property panel */
+.designer-shell .ant-form-item-label label {
+  color: var(--muted-foreground) !important;
+  font-family: var(--font-dm-sans), ui-sans-serif, sans-serif !important;
+  font-size: 11px !important;
+}
+
+/* Scrollbar styling for designer sidebars */
+.designer-shell .pdfme-designer-right-sidebar ::-webkit-scrollbar,
+.designer-shell .pdfme-designer-left-sidebar ::-webkit-scrollbar {
+  width: 4px;
+}
+.designer-shell .pdfme-designer-right-sidebar ::-webkit-scrollbar-track,
+.designer-shell .pdfme-designer-left-sidebar ::-webkit-scrollbar-track {
+  background: transparent;
+}
+.designer-shell .pdfme-designer-right-sidebar ::-webkit-scrollbar-thumb,
+.designer-shell .pdfme-designer-left-sidebar ::-webkit-scrollbar-thumb {
+  background: oklch(from var(--foreground) l c h / 15%);
+  border-radius: 4px;
+}
+
+/* ── Sidebar toggle button ── */
+.designer-shell .pdfme-designer-sidebar-toggle {
+  background: var(--card) !important;
+  border-color: var(--border) !important;
+  color: var(--foreground) !important;
+}
+.designer-shell .pdfme-designer-sidebar-toggle:hover {
+  border-color: var(--primary) !important;
+  color: var(--primary) !important;
+}
+.designer-shell .pdfme-designer-sidebar-toggle svg {
+  stroke: currentColor !important;
+}
+

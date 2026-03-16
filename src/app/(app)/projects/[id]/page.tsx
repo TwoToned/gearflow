@@ -53,6 +53,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
 import {
   Table,
@@ -63,6 +66,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { addProjectMedia, removeProjectMedia, getProjectMedia } from "@/server/project-media";
+import { getPublishedTemplatesForDropdown } from "@/server/document-templates";
 import { MediaUploader, type MediaItem } from "@/components/media/media-uploader";
 import { NotesEditor } from "@/components/ui/notes-editor";
 import { CanDo } from "@/components/auth/permission-gate";
@@ -153,6 +157,12 @@ export default function ProjectDetailPage({
   const { data: project, isLoading } = useQuery({
     queryKey: ["project", orgId, id],
     queryFn: () => getProject(id),
+  });
+
+  const { data: customTemplates } = useQuery({
+    queryKey: ["document-templates-dropdown", orgId],
+    queryFn: () => getPublishedTemplatesForDropdown(),
+    staleTime: 60_000,
   });
 
   const statusMutation = useMutation({
@@ -255,31 +265,45 @@ export default function ProjectDetailPage({
                 <ChevronDown className="ml-1 h-3 w-3" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onClick={() => window.open(`/api/documents/${id}?type=quote`, "_blank")}
-                >
-                  Quote / Proposal
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => window.open(`/api/documents/${id}?type=invoice`, "_blank")}
-                >
-                  Invoice
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => window.open(`/api/documents/${id}?type=pull-slip`, "_blank")}
-                >
-                  Pull Slip
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => window.open(`/api/documents/${id}?type=delivery-docket`, "_blank")}
-                >
-                  Delivery Docket
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => window.open(`/api/documents/${id}?type=return-sheet`, "_blank")}
-                >
-                  Return Sheet
-                </DropdownMenuItem>
+                {([
+                  { label: "Quote / Proposal", type: "quote", apiType: "quote" },
+                  { label: "Invoice", type: "invoice", apiType: "invoice" },
+                  { label: "Pull Slip", type: "packing-list", apiType: "pull-slip" },
+                  { label: "Delivery Docket", type: "delivery-docket", apiType: "delivery-docket" },
+                  { label: "Return Sheet", type: "return-sheet", apiType: "return-sheet" },
+                ] as const).map(({ label, type, apiType }) => {
+                  const templates = customTemplates?.filter((t: { type: string }) => t.type === type) || [];
+                  if (templates.length === 0) {
+                    return (
+                      <DropdownMenuItem
+                        key={type}
+                        onClick={() => window.open(`/api/documents/${id}?type=${apiType}`, "_blank")}
+                      >
+                        {label}
+                      </DropdownMenuItem>
+                    );
+                  }
+                  return (
+                    <DropdownMenuSub key={type}>
+                      <DropdownMenuSubTrigger>{label}</DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent>
+                        <DropdownMenuItem
+                          onClick={() => window.open(`/api/documents/${id}?type=${apiType}`, "_blank")}
+                        >
+                          Default
+                        </DropdownMenuItem>
+                        {templates.map((t: { id: string; name: string }) => (
+                          <DropdownMenuItem
+                            key={t.id}
+                            onClick={() => window.open(`/api/documents/${id}?type=${apiType}&templateId=${t.id}`, "_blank")}
+                          >
+                            {t.name}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                  );
+                })}
                 <DropdownMenuItem
                   onClick={() => window.open(`/api/documents/call-sheet/${id}`, "_blank")}
                 >

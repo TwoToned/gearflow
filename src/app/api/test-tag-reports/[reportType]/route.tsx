@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { renderToBuffer } from "@react-pdf/renderer";
 import { prisma } from "@/lib/prisma";
 import { requireOrganization } from "@/lib/auth-server";
 import { getFileAsDataUri } from "@/lib/storage";
+import { generateTestTagReport } from "@/lib/pdfme/generate-pdf";
+import type { TestTagReportType } from "@/lib/pdfme/types";
 import type { ReportFilters } from "@/server/test-tag-reports";
 import {
   getRegisterReportData, exportRegisterCSV,
@@ -17,16 +18,19 @@ import {
   getComplianceCertificateData,
 } from "@/server/test-tag-reports";
 
-import { TestTagRegisterPDF } from "@/lib/pdf/test-tag-register-pdf";
-import { TestTagOverduePDF } from "@/lib/pdf/test-tag-overdue-pdf";
-import { TestTagSessionPDF } from "@/lib/pdf/test-tag-session-pdf";
-import { TestTagItemHistoryPDF } from "@/lib/pdf/test-tag-item-history-pdf";
-import { TestTagDueSchedulePDF } from "@/lib/pdf/test-tag-due-schedule-pdf";
-import { TestTagClassSummaryPDF } from "@/lib/pdf/test-tag-class-summary-pdf";
-import { TestTagTesterActivityPDF } from "@/lib/pdf/test-tag-tester-activity-pdf";
-import { TestTagFailedItemsPDF } from "@/lib/pdf/test-tag-failed-items-pdf";
-import { TestTagBulkSummaryPDF } from "@/lib/pdf/test-tag-bulk-summary-pdf";
-import { TestTagComplianceCertPDF } from "@/lib/pdf/test-tag-compliance-cert-pdf";
+/** Map URL report types to pdfme report types */
+const reportTypeMap: Record<string, TestTagReportType> = {
+  register: "tt-register",
+  overdue: "tt-overdue",
+  session: "tt-session",
+  "item-history": "tt-item-history",
+  "due-schedule": "tt-due-schedule",
+  "class-summary": "tt-class-summary",
+  "tester-activity": "tt-tester-activity",
+  "failed-items": "tt-failed-items",
+  "bulk-summary": "tt-bulk-summary",
+  "compliance-certificate": "tt-compliance-cert",
+};
 
 function parseFilters(url: URL): ReportFilters {
   const filters: ReportFilters = {};
@@ -83,6 +87,12 @@ async function getOrgData(organizationId: string) {
   };
 }
 
+// Helper to serialize dates to strings
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const ser = (data: any) => JSON.parse(JSON.stringify(data, (_key, value) =>
+  value instanceof Date ? value.toISOString() : value
+));
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ reportType: string }> }
@@ -101,14 +111,8 @@ export async function GET(
   const { organizationId } = session;
   const filters = parseFilters(url);
 
-  // Helper to serialize dates to strings (same pattern as existing document route)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ser = (data: any) => JSON.parse(JSON.stringify(data, (_key, value) =>
-    value instanceof Date ? value.toISOString() : value
-  ));
-
   try {
-    // CSV exports
+    // CSV exports (unchanged — no PDF rendering needed)
     if (format === "csv") {
       let csv: string;
       let filename: string;
@@ -159,81 +163,71 @@ export async function GET(
       });
     }
 
-    // PDF exports
+    // PDF exports — pdfme generation
+    const pdfmeType = reportTypeMap[reportType];
+    if (!pdfmeType) {
+      return NextResponse.json({ error: "Unknown report type" }, { status: 400 });
+    }
+
     const orgData = await getOrgData(organizationId);
-    let doc;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let reportData: any;
     let filename: string;
 
     switch (reportType) {
-      case "register": {
-        const data = ser(await getRegisterReportData(filters));
-        doc = <TestTagRegisterPDF org={orgData} data={data} />;
+      case "register":
+        reportData = ser(await getRegisterReportData(filters));
         filename = "TT-Register.pdf";
         break;
-      }
-      case "overdue": {
-        const data = ser(await getOverdueReportData(filters));
-        doc = <TestTagOverduePDF org={orgData} data={data} />;
+      case "overdue":
+        reportData = ser(await getOverdueReportData(filters));
         filename = "TT-NonCompliant.pdf";
         break;
-      }
-      case "session": {
-        const data = ser(await getSessionReportData(filters));
-        doc = <TestTagSessionPDF org={orgData} data={data} />;
+      case "session":
+        reportData = ser(await getSessionReportData(filters));
         filename = "TT-Session.pdf";
         break;
-      }
       case "item-history": {
         const id = url.searchParams.get("testTagAssetId");
         if (!id) return NextResponse.json({ error: "testTagAssetId required" }, { status: 400 });
-        const data = ser(await getItemHistoryReportData(id));
-        doc = <TestTagItemHistoryPDF org={orgData} data={data} />;
-        filename = `TT-History-${data.testTagId}.pdf`;
+        reportData = ser(await getItemHistoryReportData(id));
+        filename = `TT-History-${reportData.testTagId}.pdf`;
         break;
       }
-      case "due-schedule": {
-        const data = ser(await getDueScheduleReportData(filters));
-        doc = <TestTagDueSchedulePDF org={orgData} data={data} />;
+      case "due-schedule":
+        reportData = ser(await getDueScheduleReportData(filters));
         filename = "TT-DueSchedule.pdf";
         break;
-      }
-      case "class-summary": {
-        const data = ser(await getClassSummaryReportData(filters));
-        doc = <TestTagClassSummaryPDF org={orgData} data={data} />;
+      case "class-summary":
+        reportData = ser(await getClassSummaryReportData(filters));
         filename = "TT-ClassSummary.pdf";
         break;
-      }
-      case "tester-activity": {
-        const data = ser(await getTesterActivityReportData(filters));
-        doc = <TestTagTesterActivityPDF org={orgData} data={data} />;
+      case "tester-activity":
+        reportData = ser(await getTesterActivityReportData(filters));
         filename = "TT-TesterActivity.pdf";
         break;
-      }
-      case "failed-items": {
-        const data = ser(await getFailedItemsReportData(filters));
-        doc = <TestTagFailedItemsPDF org={orgData} data={data} />;
+      case "failed-items":
+        reportData = ser(await getFailedItemsReportData(filters));
         filename = "TT-FailedItems.pdf";
         break;
-      }
       case "bulk-summary": {
         if (!filters.bulkAssetId) return NextResponse.json({ error: "bulkAssetId required" }, { status: 400 });
-        const data = ser(await getBulkSummaryReportData(filters.bulkAssetId, filters));
-        doc = <TestTagBulkSummaryPDF org={orgData} data={data} />;
-        filename = `TT-BulkSummary-${data.bulkAsset.assetTag}.pdf`;
+        reportData = ser(await getBulkSummaryReportData(filters.bulkAssetId, filters));
+        filename = `TT-BulkSummary-${reportData.bulkAsset.assetTag}.pdf`;
         break;
       }
-      case "compliance-certificate": {
-        const data = ser(await getComplianceCertificateData(filters));
-        doc = <TestTagComplianceCertPDF org={orgData} data={data} />;
+      case "compliance-certificate":
+        reportData = ser(await getComplianceCertificateData(filters));
         filename = "TT-ComplianceCertificate.pdf";
         break;
-      }
       default:
         return NextResponse.json({ error: "Unknown report type" }, { status: 400 });
     }
 
-    const buffer = await renderToBuffer(doc);
-    return new NextResponse(new Uint8Array(buffer), {
+    const pdf = await generateTestTagReport(pdfmeType, reportData, orgData);
+
+    return new NextResponse(Buffer.from(pdf), {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `inline; filename="${filename}"`,

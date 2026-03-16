@@ -124,6 +124,41 @@ export async function getFileAsDataUri(proxyUrl: string): Promise<string | null>
   const key = storageKeyFromUrl(proxyUrl);
   if (!key) return null;
 
+  // Try the key directly first
+  const result = await fetchS3AsDataUri(key);
+  if (result) return result;
+
+  // If the URL was a thumbnail, try to find the original
+  if (proxyUrl.includes("_thumb")) {
+    // Strategy 1: strip _thumb suffix to reconstruct the original key
+    const thumbKey = storageKeyFromUrl(proxyUrl);
+    if (thumbKey) {
+      const originalKey = thumbKey.replace(/_thumb(\.[^.]+)$/, "$1");
+      if (originalKey !== thumbKey) {
+        const originalResult = await fetchS3AsDataUri(originalKey);
+        if (originalResult) return originalResult;
+      }
+    }
+
+    // Strategy 2: look up the FileUpload record by thumbnailUrl
+    try {
+      const { prisma } = await import("@/lib/prisma");
+      const record = await prisma.fileUpload.findFirst({
+        where: { thumbnailUrl: proxyUrl },
+        select: { storageKey: true },
+      });
+      if (record) {
+        return fetchS3AsDataUri(record.storageKey);
+      }
+    } catch {
+      // DB lookup failed, give up
+    }
+  }
+
+  return null;
+}
+
+async function fetchS3AsDataUri(key: string): Promise<string | null> {
   try {
     const response = await getFromS3(key);
     if (!response.Body) return null;

@@ -12,8 +12,8 @@
 3. `lookupAssetForScan` validates: asset exists, matches a line item model, not already deployed elsewhere
 4. For serialized: `checkOutItems` assigns `assetId` to line item, sets asset status to `CHECKED_OUT`
 5. For bulk: increments `checkedOutQuantity` on line item, decrements `availableQuantity` on bulk asset
-6. For kit: `checkOutKit` atomically updates kit + all member assets + all child line items
-7. For prep-kit: same `checkOutKit` flow — prep-kits share the kit deploy/return path
+6. For kit: `checkOutKit` atomically updates kit + all member assets + all child line items + all grandchildren (nested kits inside prep-kits)
+7. For prep-kit: same `checkOutKit` flow — handles children, nested kit entities, and grandchild assets via `ProjectLineItem.assetId` (not `KitSerializedItem`)
 
 ## Return Flow (Check In)
 1. User selects items to return, specifies condition per item
@@ -77,13 +77,16 @@ When adding assets/kits to projects:
 When assets or kits are stuck in `CHECKED_OUT` status (e.g., project deleted while items deployed, data inconsistency), "Force Return" buttons allow resetting them to `AVAILABLE`:
 
 ### Server Actions (`src/server/warehouse.ts`)
-- **`forceReturnAsset(assetId)`** — Finds all CHECKED_OUT line items for the asset across all projects, sets them to RETURNED, resets asset status to AVAILABLE, restores default location
-- **`forceReturnKit(kitId)`** — Same for kits: resets kit + all serialized assets inside to AVAILABLE, sets all related line items to RETURNED
+- **`forceReturnAsset(assetId)`** — Finds all CHECKED_OUT line items for the asset across all projects, sets them to RETURNED, resets asset status to AVAILABLE, restores default location (or null). Also dissolves any prep-kits using this asset as a case.
+- **`forceReturnKit(kitId)`** — For regular kits: resets kit + all children (including nested kits and grandchildren) to AVAILABLE, sets all related line items to RETURNED, always resets location (even to null). For prep-kits: dissolves entirely (un-parents children, deletes Kit record, returns `{ deleted: true }`).
+- **`bulkForceReturnAssets(assetIds)`** — Batch force return for multiple assets in one transaction.
 
 ### UI Locations
 - **Asset detail page** (`/assets/registry/[id]`): Force Return button in header, visible when `status === "CHECKED_OUT"`
-- **Kit detail page** (`/kits/[id]`): Force Return button in header, visible when `status === "CHECKED_OUT"`
+- **Kit detail page** (`/kits/[id]`): Force Return button in header, visible when `status === "CHECKED_OUT"`. Redirects to `/kits` if prep-kit was dissolved.
 - **Model detail page** (`/assets/models/[id]`): Per-row Force Return icon button in serialized assets table for each `CHECKED_OUT` asset
+- **Asset list page**: Bulk Force Return button in selection bar
+- **Kit list page**: Bulk Force Return button in selection bar
 - All use `confirm()` pattern, amber text color, `RotateCcw` icon
 - Permission: `warehouse.check_in`
 
@@ -95,6 +98,11 @@ The warehouse page has a "Documents" dropdown with access to all project PDFs (P
 - **Return Sheet**: Only shows deployed/returned items. Kit children filtered to CHECKED_OUT or RETURNED. Nested grandchildren similarly filtered.
 - **Pull Slip**: Shows all non-cancelled items. Already-deployed items display with a filled checkbox (tick) instead of an empty one. Bulk per-unit rows tick the first N units matching `checkedOutQuantity`. Kit children and nested grandchildren also show ticked/unticked based on their deployment status.
 - **Quote / Invoice**: Show all items regardless of deployment status (for pricing).
+
+### Total Item Counts
+- **Pull Slip** and **Delivery Docket** display a "Total Items" count in the header info section.
+- Kit/prep-kit parents are NOT counted as 1 — instead, all individual children and nested kit grandchildren are counted.
+- Delivery docket counts only deployed children (`CHECKED_OUT`). Pull slip counts all children.
 
 ## Online Pick List
 Dialog with full item list showing deployment status per line item. Mobile full-screen with safe area padding. Kit and prep-kit groups show as expandable sections with children.

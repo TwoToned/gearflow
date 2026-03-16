@@ -52,7 +52,12 @@ An optional physical container (from the org's "case" category). When provided:
 - **`removeItemFromPrepKit(prepKitId, lineItemId, quantity?)`** — Un-parents child, merges split bulk quantities back to original line items.
 
 ### Deploy / Return
-Prep-kits use the **same** `checkOutKit()` / `checkInKit()` as regular kits — no separate actions needed. The kit + all children are updated atomically.
+Prep-kits use the **same** `checkOutKit()` / `checkInKit()` as regular kits — no separate actions needed. The kit + all children + nested kit grandchildren are updated atomically. Prep-kit child assets are tracked via `ProjectLineItem.assetId` (not `KitSerializedItem`), so both functions handle this path.
+
+### Force Return
+- `forceReturnKit()` on a prep-kit **dissolves** it entirely: un-parents all children/grandchildren, deletes the Kit record, returns `{ deleted: true }`
+- `forceReturnAsset()` on an asset used as a prep-kit case also dissolves the prep-kit
+- Kit detail page redirects to `/kits` after a prep-kit force return
 
 ## UI
 
@@ -81,7 +86,9 @@ Prep-kits appear identically to regular kits in the deploy/return tables:
 Before deploying or returning a kit/prep-kit with unverified items:
 - Confirmation dialog shows "X/Y items verified — deploy/return anyway?"
 - Verification circles are **clickable** (not scan-only) for all children and grandchildren
-- `verifiedKitItems` Set tracks confirmed asset IDs
+- `verifiedKitItems` Set tracks confirmed line item IDs
+- `collectAllVerifiableIds(children, mode)` filters by mode so counts reflect only relevant items
+- "Deploy Verified" automatically includes nested kit parent line items when grandchildren are verified
 - Applies to both kits and prep-kits equally
 
 ### PDF Documents
@@ -90,6 +97,9 @@ Prep-kit items render on all 5 PDFs (packing list, delivery docket, return sheet
 - Children indented below
 - Nested kits inside prep-kits show as `[Kit] Name` with their own indented children
 - `PREP-*` tags display as `"-"` on documents
+- **Delivery docket / return sheet**: Only deployed children/grandchildren are shown (filtered by status)
+- **Pull slip**: All children shown, deployed items display with a ticked checkbox
+- **Total item counts**: Kit/prep-kit counted as sum of children + grandchildren, not as 1
 
 ### Project Equipment List
 Prep-kit groups render in `line-items-panel.tsx` with:

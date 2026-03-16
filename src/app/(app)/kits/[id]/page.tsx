@@ -3,9 +3,9 @@
 import { use, useState, useRef, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Trash2, Loader2, X, ScanBarcode, Camera } from "lucide-react";
+import { Pencil, Plus, Trash2, Loader2, X, ScanBarcode, Camera, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -19,6 +19,7 @@ import {
   getAvailableAssetsForKit,
   getAvailableBulkAssetsForKit,
 } from "@/server/kits";
+import { forceReturnKit } from "@/server/warehouse";
 import {
   addKitMedia,
   removeKitMedia,
@@ -84,6 +85,7 @@ function formatDate(date: Date | string | null | undefined) {
 
 export default function KitDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
 
@@ -145,6 +147,21 @@ export default function KitDetailPage({ params }: { params: Promise<{ id: string
     onSuccess: () => {
       toast.success("Status updated");
       queryClient.invalidateQueries({ queryKey: ["kit", orgId, id] });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const forceReturnMutation = useMutation({
+    mutationFn: () => forceReturnKit(id),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["kits"] });
+      if (result.deleted) {
+        toast.success("Prep-kit dissolved and all contents returned");
+        router.push("/kits");
+      } else {
+        toast.success("Kit force returned to available");
+        queryClient.invalidateQueries({ queryKey: ["kit", orgId, id] });
+      }
     },
     onError: (e) => toast.error(e.message),
   });
@@ -256,10 +273,24 @@ export default function KitDetailPage({ params }: { params: Promise<{ id: string
           </div>
         </div>
         <CanDo resource="kit" action="update">
-          <Button variant="outline" render={<Link href={`/kits/${id}/edit`} />}>
-            <Pencil className="mr-2 h-4 w-4" />
-            Edit
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {kit.status === "CHECKED_OUT" && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-amber-600"
+                onClick={() => { if (confirm("Force return this kit and all its contents? All project assignments will be marked as returned.")) forceReturnMutation.mutate(); }}
+                disabled={forceReturnMutation.isPending}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Force Return
+              </Button>
+            )}
+            <Button variant="outline" render={<Link href={`/kits/${id}/edit`} />}>
+              <Pencil className="mr-2 h-4 w-4" />
+              Edit
+            </Button>
+          </div>
         </CanDo>
       </div>
 

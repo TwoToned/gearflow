@@ -4,13 +4,14 @@ import { use, useMemo } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Archive, Plus, Package, Trash2 } from "lucide-react";
+import { Pencil, Archive, Plus, Package, Trash2, RotateCcw } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { useActiveOrganization } from "@/lib/auth-client";
 
 import { getModel, archiveModel } from "@/server/models";
 import { archiveBulkAsset, deleteBulkAsset } from "@/server/bulk-assets";
+import { forceReturnAsset } from "@/server/warehouse";
 import {
   addModelMedia,
   removeModelMedia,
@@ -98,6 +99,16 @@ export default function ModelDetailPage({ params }: { params: Promise<{ id: stri
       toast.success("Bulk asset deleted");
       queryClient.invalidateQueries({ queryKey: ["model", orgId, id] });
       queryClient.invalidateQueries({ queryKey: ["bulk-assets"] });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const forceReturnMutation = useMutation({
+    mutationFn: (assetId: string) => forceReturnAsset(assetId),
+    onSuccess: () => {
+      toast.success("Asset force returned to available");
+      queryClient.invalidateQueries({ queryKey: ["model", orgId, id] });
+      queryClient.invalidateQueries({ queryKey: ["assets"] });
     },
     onError: (e) => toast.error(e.message),
   });
@@ -274,6 +285,7 @@ export default function ModelDetailPage({ params }: { params: Promise<{ id: stri
                       <TableHead>Serial #</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Location</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -292,6 +304,24 @@ export default function ModelDetailPage({ params }: { params: Promise<{ id: stri
                           </Badge>
                         </TableCell>
                         <TableCell className="text-muted-foreground">{asset.location?.name || "—"}</TableCell>
+                        <TableCell className="text-right">
+                          <CanDo resource="warehouse" action="check_in">
+                            {asset.status === "CHECKED_OUT" && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-amber-500"
+                                title="Force Return"
+                                onClick={() => {
+                                  if (confirm(`Force return ${asset.assetTag} to available? This will reset its status and location.`))
+                                    forceReturnMutation.mutate(asset.id);
+                                }}
+                              >
+                                <RotateCcw className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                          </CanDo>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

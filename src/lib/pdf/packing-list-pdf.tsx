@@ -6,6 +6,7 @@ interface LineItem {
   id: string;
   description: string | null;
   quantity: number;
+  checkedOutQuantity: number;
   groupName: string | null;
   status: string;
   isKitChild?: boolean;
@@ -28,6 +29,60 @@ interface LineItem {
   isSubhire?: boolean;
   showSubhireOnDocs?: boolean;
   childLineItems?: LineItem[];
+}
+
+function Checkbox({ checked = false, size = 7 }: { checked?: boolean; size?: number }) {
+  if (checked) {
+    // Draw a tick/checkmark using two rotated lines inside the box
+    return (
+      <View
+        style={{
+          width: size,
+          height: size,
+          borderWidth: 0.75,
+          borderColor: "#333",
+          borderRadius: 1,
+          position: "relative",
+        }}
+      >
+        {/* Short leg of tick (bottom-left to center-bottom) */}
+        <View
+          style={{
+            position: "absolute",
+            left: size * 0.1,
+            top: size * 0.45,
+            width: size * 0.3,
+            height: 1,
+            backgroundColor: "#333",
+            transform: "rotate(45deg)",
+          }}
+        />
+        {/* Long leg of tick (center-bottom to top-right) */}
+        <View
+          style={{
+            position: "absolute",
+            left: size * 0.25,
+            top: size * 0.3,
+            width: size * 0.55,
+            height: 1,
+            backgroundColor: "#333",
+            transform: "rotate(-45deg)",
+          }}
+        />
+      </View>
+    );
+  }
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderWidth: 0.75,
+        borderColor: "#333",
+        borderRadius: 1,
+      }}
+    />
+  );
 }
 
 interface PullSlipPDFProps {
@@ -59,7 +114,23 @@ export function PullSlipPDF({ org, project }: PullSlipPDFProps) {
     groups.set(key, arr);
   }
 
-  const totalItems = equipmentItems.reduce((sum, i) => sum + i.quantity, 0);
+  const totalItems = equipmentItems.reduce((sum, i) => {
+    if (i.kitId && !i.isKitChild) {
+      // Kit/prep-kit: count children + grandchildren instead of the parent
+      const children = i.childLineItems || [];
+      let count = 0;
+      for (const child of children) {
+        if (child.kitId && child.childLineItems?.length) {
+          // Nested kit: count its grandchildren
+          count += child.childLineItems.reduce((s, gc) => s + gc.quantity, 0);
+        } else {
+          count += child.quantity;
+        }
+      }
+      return sum + count;
+    }
+    return sum + i.quantity;
+  }, 0);
   const totalWeight = equipmentItems.reduce((sum, i) => {
     const w = i.model?.weight ? Number(i.model.weight) : 0;
     return sum + w * i.quantity;
@@ -133,7 +204,7 @@ export function PullSlipPDF({ org, project }: PullSlipPDFProps) {
                   <View key={item.id}>
                     <View style={idx % 2 === 0 ? s.tableRow : s.tableRowAlt}>
                       <View style={[s.td, { width: 20, alignItems: "center", justifyContent: "center" }]}>
-                        <View style={{ width: 7, height: 7, borderWidth: 0.75, borderColor: "#333", borderRadius: 1 }} />
+                        <Checkbox checked={item.status === "CHECKED_OUT"} />
                       </View>
                       <View style={{ flex: 3 }}>
                         <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
@@ -174,11 +245,12 @@ export function PullSlipPDF({ org, project }: PullSlipPDFProps) {
                       const shortName = item.model
                         ? item.model.name
                         : (item.description || "Item");
+                      const checkedOut = item.checkedOutQuantity || 0;
                       return (
                         <View style={{ paddingLeft: 26, paddingRight: 6, paddingBottom: 4 }}>
                           {Array.from({ length: item.quantity }).map((_, i) => (
                             <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingVertical: 1 }}>
-                              <View style={{ width: 7, height: 7, borderWidth: 0.75, borderColor: "#333", borderRadius: 1 }} />
+                              <Checkbox checked={i < checkedOut} />
                               <Text style={{ fontSize: 7, color: "#666" }}>{shortName} - {i + 1}</Text>
                             </View>
                           ))}
@@ -193,7 +265,7 @@ export function PullSlipPDF({ org, project }: PullSlipPDFProps) {
                         <View key={child.id}>
                           <View style={s.tableRow}>
                             <View style={[s.td, { width: 20, alignItems: "center", justifyContent: "center" }]}>
-                              <View style={{ width: 7, height: 7, borderWidth: 0.75, borderColor: "#333", borderRadius: 1 }} />
+                              <Checkbox checked={child.status === "CHECKED_OUT"} />
                             </View>
                             <View style={{ flex: 3, paddingLeft: 12 }}>
                               <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
@@ -215,23 +287,26 @@ export function PullSlipPDF({ org, project }: PullSlipPDFProps) {
                               {child.model?.category?.name || ""}
                             </Text>
                           </View>
-                          {!isNestedKit && child.quantity > 1 && (
-                            <View style={{ paddingLeft: 38, paddingRight: 6, paddingBottom: 4 }}>
-                              {Array.from({ length: child.quantity }).map((_, i) => (
-                                <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingVertical: 1 }}>
-                                  <View style={{ width: 7, height: 7, borderWidth: 0.75, borderColor: "#333", borderRadius: 1 }} />
-                                  <Text style={{ fontSize: 7, color: "#666" }}>{childName} - {i + 1}</Text>
-                                </View>
-                              ))}
-                            </View>
-                          )}
+                          {!isNestedKit && child.quantity > 1 && (() => {
+                            const childCheckedOut = child.checkedOutQuantity || 0;
+                            return (
+                              <View style={{ paddingLeft: 38, paddingRight: 6, paddingBottom: 4 }}>
+                                {Array.from({ length: child.quantity }).map((_, i) => (
+                                  <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingVertical: 1 }}>
+                                    <Checkbox checked={i < childCheckedOut} />
+                                    <Text style={{ fontSize: 7, color: "#666" }}>{childName} - {i + 1}</Text>
+                                  </View>
+                                ))}
+                              </View>
+                            );
+                          })()}
                           {isNestedKit && nestedChildren.map((nested) => {
                             const nestedName = nested.model?.name || nested.description || "-";
                             return (
                               <View key={nested.id}>
                                 <View style={s.tableRow}>
                                   <View style={[s.td, { width: 20, alignItems: "center", justifyContent: "center" }]}>
-                                    <View style={{ width: 7, height: 7, borderWidth: 0.75, borderColor: "#333", borderRadius: 1 }} />
+                                    <Checkbox checked={nested.status === "CHECKED_OUT"} />
                                   </View>
                                   <View style={{ flex: 3, paddingLeft: 24 }}>
                                     <Text style={[s.td, { fontSize: 7, color: "#777" }]}>{nestedName}</Text>

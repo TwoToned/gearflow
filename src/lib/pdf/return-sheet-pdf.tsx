@@ -100,7 +100,9 @@ export function ReturnSheetPDF({ org, project }: ReturnSheetPDFProps) {
           {items.map((item, idx) => {
             const isKit = !!item.kitId && !item.isKitChild;
             const isGroup = isKit;
-            const children = isGroup ? (item.childLineItems || []) : [];
+            // Only show deployed/returned children
+            const allChildren = isGroup ? (item.childLineItems || []) : [];
+            const children = allChildren.filter((c) => c.status === "CHECKED_OUT" || c.status === "RETURNED");
             return (
               <View key={item.id}>
                 <View style={idx % 2 === 0 ? s.tableRow : s.tableRowAlt}>
@@ -145,7 +147,10 @@ export function ReturnSheetPDF({ org, project }: ReturnSheetPDFProps) {
                 </View>
                 {children.map((child) => {
                   const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
-                  const nestedChildren = child.childLineItems || [];
+                  // Only show deployed/returned grandchildren
+                  const nestedChildren = isNestedKit
+                    ? (child.childLineItems || []).filter((gc) => gc.status === "CHECKED_OUT" || gc.status === "RETURNED")
+                    : [];
                   const childName = child.model?.name || child.description || "-";
                   return (
                     <View key={child.id}>

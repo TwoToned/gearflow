@@ -3,10 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Loader2, Download, Upload } from "lucide-react";
+import { Plus, Pencil, Loader2, Download, Upload, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
 import { getAssets, bulkUpdateAssets } from "@/server/assets";
+import { bulkForceReturnAssets } from "@/server/warehouse";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { getBulkAssets } from "@/server/bulk-assets";
 import { getLocations } from "@/server/locations";
@@ -370,6 +371,16 @@ export function AssetTable() {
     setBulkEditOpen(false);
   };
 
+  const forceReturnMutation = useMutation({
+    mutationFn: () => bulkForceReturnAssets(Array.from(selectedIds)),
+    onSuccess: (result) => {
+      toast.success(`Force returned ${result.count} assets to available`);
+      clearSelection();
+      queryClient.invalidateQueries({ queryKey: ["assets"] });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const viewToggle = (
     <div className="flex rounded-md border">
       <button
@@ -428,6 +439,21 @@ export function AssetTable() {
             <Button size="sm" variant="outline" onClick={() => setBulkEditOpen(true)}>
               <Pencil className="mr-2 h-3 w-3" />
               Bulk Edit
+            </Button>
+          </CanDo>
+          <CanDo resource="warehouse" action="check_in">
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-amber-500"
+              disabled={forceReturnMutation.isPending}
+              onClick={() => {
+                if (confirm(`Force return ${selectedIds.size} selected assets to available? This will reset their status and location.`))
+                  forceReturnMutation.mutate();
+              }}
+            >
+              {forceReturnMutation.isPending ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <RotateCcw className="mr-2 h-3 w-3" />}
+              Force Return
             </Button>
           </CanDo>
           <Button size="sm" variant="ghost" onClick={clearSelection}>

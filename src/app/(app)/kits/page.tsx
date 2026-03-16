@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Plus, RotateCcw, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 
 import { getKits } from "@/server/kits";
 import { getLocations } from "@/server/locations";
 import { getCategories } from "@/server/categories";
+import { forceReturnKit } from "@/server/warehouse";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -168,8 +170,33 @@ export default function KitsPage() {
   } = useTablePreferences("kits", { sortBy: "assetTag", sortOrder: "asc" });
 
   const [search, setSearch] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+
+  const forceReturnMutation = useMutation({
+    mutationFn: async () => {
+      const ids = Array.from(selectedIds);
+      let count = 0;
+      for (const id of ids) {
+        try {
+          await forceReturnKit(id);
+          count++;
+        } catch {
+          // skip kits that are already available
+        }
+      }
+      return count;
+    },
+    onSuccess: (count) => {
+      toast.success(`Force returned ${count} kits to available`);
+      setSelectedIds(new Set());
+      queryClient.invalidateQueries({ queryKey: ["kits"] });
+      queryClient.invalidateQueries({ queryKey: ["assets"] });
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const { data: locationsData } = useQuery({
     queryKey: ["locations", orgId],
@@ -213,6 +240,30 @@ export default function KitsPage() {
           </div>
         </div>
 
+        {selectedIds.size > 0 && (
+          <div className="flex items-center gap-3 rounded-md border bg-muted/50 px-4 py-2">
+            <span className="text-sm font-medium">{selectedIds.size} selected</span>
+            <CanDo resource="warehouse" action="check_in">
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-amber-500"
+                disabled={forceReturnMutation.isPending}
+                onClick={() => {
+                  if (confirm(`Force return ${selectedIds.size} selected kits and all their contents to available?`))
+                    forceReturnMutation.mutate();
+                }}
+              >
+                {forceReturnMutation.isPending ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <RotateCcw className="mr-2 h-3 w-3" />}
+                Force Return
+              </Button>
+            </CanDo>
+            <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>
+              Clear
+            </Button>
+          </div>
+        )}
+
         <DataTable
           data={kits}
           columns={columns}
@@ -234,6 +285,9 @@ export default function KitsPage() {
           onResetPreferences={resetPreferences}
           isLoading={isLoading}
           emptyTitle="No kits found"
+          enableRowSelection
+          selectedRows={selectedIds}
+          onSelectionChange={setSelectedIds}
           toolbarActions={
             <CanDo resource="kit" action="create">
               <Button size="sm" className="h-8" render={<Link href="/kits/new" />}>

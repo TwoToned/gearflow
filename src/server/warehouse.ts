@@ -330,6 +330,10 @@ export async function checkOutItems(
             select: { status: true, assetTag: true },
           });
           if (assetRecord && assetRecord.status === "CHECKED_OUT") {
+            // If this line item is already CHECKED_OUT, skip it (partial re-deploy)
+            if (lineItem.status === "CHECKED_OUT") {
+              continue;
+            }
             throw new Error(`Asset ${assetRecord.assetTag} is already deployed`);
           }
           if (assetRecord && (assetRecord.status === "RETIRED" || assetRecord.status === "IN_MAINTENANCE" || assetRecord.status === "LOST")) {
@@ -577,11 +581,63 @@ export async function checkOutKit(projectId: string, kitId: string) {
       data: { status: "CHECKED_OUT", checkedOutQuantity: 1, checkedOutAt: new Date(), checkedOutById: userId },
     });
 
-    // Update all child line items
-    await tx.projectLineItem.updateMany({
+    // Update all child line items (direct children)
+    const children = await tx.projectLineItem.findMany({
       where: { parentLineItemId: kitLineItem.id, organizationId },
-      data: { status: "CHECKED_OUT", checkedOutQuantity: 1, checkedOutAt: new Date(), checkedOutById: userId },
+      select: { id: true, assetId: true, kitId: true },
     });
+    if (children.length > 0) {
+      await tx.projectLineItem.updateMany({
+        where: { id: { in: children.map((c) => c.id) } },
+        data: { status: "CHECKED_OUT", checkedOutQuantity: 1, checkedOutAt: new Date(), checkedOutById: userId },
+      });
+    }
+
+    // Handle grandchildren: children of nested kits inside this kit
+    const nestedKitChildren = children.filter((c) => c.kitId);
+    for (const nestedChild of nestedKitChildren) {
+      // Update grandchild line items
+      await tx.projectLineItem.updateMany({
+        where: { parentLineItemId: nestedChild.id, organizationId },
+        data: { status: "CHECKED_OUT", checkedOutQuantity: 1, checkedOutAt: new Date(), checkedOutById: userId },
+      });
+      // Update the nested kit entity status
+      await tx.kit.update({
+        where: { id: nestedChild.kitId! },
+        data: { status: "CHECKED_OUT", ...(projectLocationId && { locationId: projectLocationId }) },
+      });
+      // Update serialized assets inside the nested kit
+      const nestedKitItems = await tx.kitSerializedItem.findMany({ where: { kitId: nestedChild.kitId! } });
+      if (nestedKitItems.length > 0) {
+        await tx.asset.updateMany({
+          where: { id: { in: nestedKitItems.map((ki) => ki.assetId) } },
+          data: { status: "CHECKED_OUT", ...(projectLocationId && { locationId: projectLocationId }) },
+        });
+      }
+    }
+
+    // Update child assets referenced by line items (for prep-kits whose contents are line item references, not KitSerializedItem)
+    const childAssetIds = children.filter((c) => c.assetId).map((c) => c.assetId!);
+    if (childAssetIds.length > 0) {
+      await tx.asset.updateMany({
+        where: { id: { in: childAssetIds } },
+        data: { status: "CHECKED_OUT", ...(projectLocationId && { locationId: projectLocationId }) },
+      });
+    }
+    // Also update grandchild assets
+    if (nestedKitChildren.length > 0) {
+      const grandchildren = await tx.projectLineItem.findMany({
+        where: { parentLineItemId: { in: nestedKitChildren.map((c) => c.id) }, organizationId },
+        select: { assetId: true },
+      });
+      const grandchildAssetIds = grandchildren.filter((gc) => gc.assetId).map((gc) => gc.assetId!);
+      if (grandchildAssetIds.length > 0) {
+        await tx.asset.updateMany({
+          where: { id: { in: grandchildAssetIds } },
+          data: { status: "CHECKED_OUT", ...(projectLocationId && { locationId: projectLocationId }) },
+        });
+      }
+    }
 
     // Update Kit status and location
     await tx.kit.update({
@@ -592,15 +648,12 @@ export async function checkOutKit(projectId: string, kitId: string) {
       },
     });
 
-    // Update all serialized assets inside the kit — status and location
+    // Update all serialized assets inside the kit (KitSerializedItem records — for regular kits)
     const kitItems = await tx.kitSerializedItem.findMany({ where: { kitId } });
-    for (const ki of kitItems) {
-      await tx.asset.update({
-        where: { id: ki.assetId },
-        data: {
-          status: "CHECKED_OUT",
-          ...(projectLocationId && { locationId: projectLocationId }),
-        },
+    if (kitItems.length > 0) {
+      await tx.asset.updateMany({
+        where: { id: { in: kitItems.map((ki) => ki.assetId) } },
+        data: { status: "CHECKED_OUT", ...(projectLocationId && { locationId: projectLocationId }) },
       });
     }
 
@@ -658,32 +711,79 @@ export async function checkInKit(
       data: { status: "RETURNED", returnedQuantity: 1, returnedAt: new Date(), returnedById: userId, returnCondition },
     });
 
-    // Update all child line items
-    await tx.projectLineItem.updateMany({
-      where: { parentLineItemId: kitLineItem.id, organizationId },
-      data: { status: "RETURNED", returnedQuantity: 1, returnedAt: new Date(), returnedById: userId, returnCondition },
-    });
-
-    // Update Kit status and restore location (default, or clear if no default)
     const newKitStatus = returnCondition === "DAMAGED" ? "IN_MAINTENANCE" : returnCondition === "MISSING" ? "INCOMPLETE" : "AVAILABLE";
+    const assetStatus = returnCondition === "DAMAGED" ? "IN_MAINTENANCE" : returnCondition === "MISSING" ? "LOST" : "AVAILABLE";
+
+    // Update all child line items (direct children)
+    const children = await tx.projectLineItem.findMany({
+      where: { parentLineItemId: kitLineItem.id, organizationId, status: "CHECKED_OUT" },
+      select: { id: true, assetId: true, kitId: true },
+    });
+    if (children.length > 0) {
+      await tx.projectLineItem.updateMany({
+        where: { id: { in: children.map((c) => c.id) } },
+        data: { status: "RETURNED", returnedQuantity: 1, returnedAt: new Date(), returnedById: userId, returnCondition },
+      });
+    }
+
+    // Handle grandchildren: children of nested kits inside this kit
+    const nestedKitChildren = children.filter((c) => c.kitId);
+    for (const nestedChild of nestedKitChildren) {
+      // Return grandchild line items
+      await tx.projectLineItem.updateMany({
+        where: { parentLineItemId: nestedChild.id, organizationId, status: "CHECKED_OUT" },
+        data: { status: "RETURNED", returnedQuantity: 1, returnedAt: new Date(), returnedById: userId, returnCondition },
+      });
+      // Reset the nested kit entity
+      await tx.kit.update({
+        where: { id: nestedChild.kitId! },
+        data: { status: newKitStatus, locationId: defaultLocationId },
+      });
+      // Reset serialized assets inside the nested kit
+      const nestedKitItems = await tx.kitSerializedItem.findMany({ where: { kitId: nestedChild.kitId! } });
+      if (nestedKitItems.length > 0) {
+        await tx.asset.updateMany({
+          where: { id: { in: nestedKitItems.map((ki) => ki.assetId) } },
+          data: { status: assetStatus, locationId: defaultLocationId },
+        });
+      }
+    }
+
+    // Reset child assets referenced by line items (for prep-kits)
+    const childAssetIds = children.filter((c) => c.assetId).map((c) => c.assetId!);
+    if (childAssetIds.length > 0) {
+      await tx.asset.updateMany({
+        where: { id: { in: childAssetIds } },
+        data: { status: assetStatus, locationId: defaultLocationId },
+      });
+    }
+    // Also reset grandchild assets
+    if (nestedKitChildren.length > 0) {
+      const grandchildren = await tx.projectLineItem.findMany({
+        where: { parentLineItemId: { in: nestedKitChildren.map((c) => c.id) }, organizationId },
+        select: { assetId: true },
+      });
+      const grandchildAssetIds = grandchildren.filter((gc) => gc.assetId).map((gc) => gc.assetId!);
+      if (grandchildAssetIds.length > 0) {
+        await tx.asset.updateMany({
+          where: { id: { in: grandchildAssetIds } },
+          data: { status: assetStatus, locationId: defaultLocationId },
+        });
+      }
+    }
+
+    // Update Kit status and restore location
     await tx.kit.update({
       where: { id: kitId },
-      data: {
-        status: newKitStatus,
-        locationId: defaultLocationId,
-      },
+      data: { status: newKitStatus, locationId: defaultLocationId },
     });
 
-    // Update all serialized assets inside the kit — status and restore location
+    // Update all serialized assets inside the kit (KitSerializedItem — for regular kits)
     const kitItems = await tx.kitSerializedItem.findMany({ where: { kitId } });
-    const assetStatus = returnCondition === "DAMAGED" ? "IN_MAINTENANCE" : returnCondition === "MISSING" ? "LOST" : "AVAILABLE";
-    for (const ki of kitItems) {
-      await tx.asset.update({
-        where: { id: ki.assetId },
-        data: {
-          status: assetStatus,
-          locationId: defaultLocationId,
-        },
+    if (kitItems.length > 0) {
+      await tx.asset.updateMany({
+        where: { id: { in: kitItems.map((ki) => ki.assetId) } },
+        data: { status: assetStatus, locationId: defaultLocationId },
       });
     }
 
@@ -941,4 +1041,342 @@ export async function getProjectPullSheet(projectId: string) {
     project,
     groups,
   });
+}
+
+// ---------------------------------------------------------------------------
+// 8. forceReturnAsset — reset a stuck asset to AVAILABLE
+// ---------------------------------------------------------------------------
+
+export async function forceReturnAsset(assetId: string) {
+  const { organizationId, userId, userName } = await requirePermission("warehouse", "check_in");
+
+  const asset = await prisma.asset.findFirst({
+    where: { id: assetId, organizationId },
+    select: { id: true, assetTag: true, status: true },
+  });
+
+  if (!asset) throw new Error("Asset not found");
+  if (asset.status === "AVAILABLE") throw new Error("Asset is already available");
+
+  const defaultLocation = await prisma.location.findFirst({
+    where: { organizationId, isDefault: true },
+    select: { id: true },
+  });
+
+  // Check if this asset is used as a case for any prep-kits (same assetTag)
+  const prepKits = await prisma.kit.findMany({
+    where: { organizationId, assetTag: asset.assetTag, isPrep: true },
+    select: { id: true },
+  });
+
+  await prisma.$transaction(async (tx) => {
+    // Return all checked-out line items for this asset across all projects
+    await tx.projectLineItem.updateMany({
+      where: { assetId, organizationId, status: "CHECKED_OUT" },
+      data: {
+        status: "RETURNED",
+        returnedQuantity: 1,
+        returnedAt: new Date(),
+        returnCondition: "GOOD",
+      },
+    });
+
+    // Clean up any prep-kits that use this asset as a case
+    for (const prepKit of prepKits) {
+      // Find and clean up prep-kit line items
+      const prepParents = await tx.projectLineItem.findMany({
+        where: { kitId: prepKit.id, organizationId, isKitChild: false },
+        select: { id: true },
+      });
+      for (const parent of prepParents) {
+        // Get children and grandchildren
+        const children = await tx.projectLineItem.findMany({
+          where: { parentLineItemId: parent.id, organizationId },
+          select: { id: true, kitId: true, assetId: true },
+        });
+        // Handle grandchildren of nested kits
+        for (const child of children) {
+          if (child.kitId) {
+            await tx.projectLineItem.updateMany({
+              where: { parentLineItemId: child.id, organizationId },
+              data: { isKitChild: false, parentLineItemId: null },
+            });
+          }
+        }
+        // Un-parent all children
+        await tx.projectLineItem.updateMany({
+          where: { parentLineItemId: parent.id, organizationId },
+          data: { isKitChild: false, parentLineItemId: null },
+        });
+        // Reset child assets
+        const childAssetIds = children.filter((c) => c.assetId).map((c) => c.assetId!);
+        if (childAssetIds.length > 0) {
+          await tx.asset.updateMany({
+            where: { id: { in: childAssetIds }, status: "CHECKED_OUT" },
+            data: { status: "AVAILABLE", locationId: defaultLocation?.id ?? null },
+          });
+        }
+        // Delete the parent line item
+        await tx.projectLineItem.delete({ where: { id: parent.id } });
+      }
+      // Delete prep-kit record
+      await tx.kitSerializedItem.deleteMany({ where: { kitId: prepKit.id } });
+      await tx.kitBulkItem.deleteMany({ where: { kitId: prepKit.id } });
+      await tx.kit.delete({ where: { id: prepKit.id } });
+    }
+
+    // Reset asset status and location
+    await tx.asset.update({
+      where: { id: assetId },
+      data: {
+        status: "AVAILABLE",
+        locationId: defaultLocation?.id ?? null,
+      },
+    });
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "FORCE_RETURN",
+    entityType: "asset",
+    entityId: assetId,
+    entityName: asset.assetTag,
+    summary: `Force returned asset ${asset.assetTag} to available${prepKits.length > 0 ? ` (dissolved ${prepKits.length} prep-kit${prepKits.length > 1 ? "s" : ""})` : ""}`,
+  });
+
+  return serialize({ success: true });
+}
+
+// ---------------------------------------------------------------------------
+// 9. forceReturnKit — reset a stuck kit + contents to AVAILABLE
+// ---------------------------------------------------------------------------
+
+export async function forceReturnKit(kitId: string) {
+  const { organizationId, userId, userName } = await requirePermission("warehouse", "check_in");
+
+  const kit = await prisma.kit.findFirst({
+    where: { id: kitId, organizationId },
+    select: { id: true, assetTag: true, name: true, status: true, isPrep: true },
+  });
+
+  if (!kit) throw new Error("Kit not found");
+  if (kit.status === "AVAILABLE" && !kit.isPrep) throw new Error("Kit is already available");
+
+  const defaultLocation = await prisma.location.findFirst({
+    where: { organizationId, isDefault: true },
+    select: { id: true },
+  });
+
+  await prisma.$transaction(async (tx) => {
+    const now = new Date();
+    const returnData = { status: "RETURNED" as const, returnedQuantity: 1, returnedAt: now, returnCondition: "GOOD" as const };
+    const resetData = { status: "AVAILABLE" as const, locationId: defaultLocation?.id ?? null };
+
+    // Find all parent line items for this kit across all projects
+    const kitParentItems = await tx.projectLineItem.findMany({
+      where: { kitId, organizationId, isKitChild: false },
+      select: { id: true, status: true },
+    });
+
+    for (const parent of kitParentItems) {
+      // Get all children (may include nested kits with their own kitId)
+      const children = await tx.projectLineItem.findMany({
+        where: { parentLineItemId: parent.id, organizationId },
+        select: { id: true, assetId: true, kitId: true, status: true },
+      });
+
+      // Handle grandchildren first (children of nested kits)
+      const nestedKitChildren = children.filter((c) => c.kitId);
+      for (const child of nestedKitChildren) {
+        // Return grandchildren line items
+        const grandchildren = await tx.projectLineItem.findMany({
+          where: { parentLineItemId: child.id, organizationId },
+          select: { id: true, assetId: true },
+        });
+        if (grandchildren.length > 0) {
+          await tx.projectLineItem.updateMany({
+            where: { id: { in: grandchildren.map((gc) => gc.id) }, status: "CHECKED_OUT" },
+            data: returnData,
+          });
+          // Reset grandchild assets
+          const gcAssetIds = grandchildren.filter((gc) => gc.assetId).map((gc) => gc.assetId!);
+          if (gcAssetIds.length > 0) {
+            await tx.asset.updateMany({
+              where: { id: { in: gcAssetIds } },
+              data: resetData,
+            });
+          }
+        }
+      }
+
+      // Reset nested child kits to AVAILABLE + their serialized assets
+      const childKitIds = nestedKitChildren.map((c) => c.kitId!);
+      if (childKitIds.length > 0) {
+        await tx.kit.updateMany({
+          where: { id: { in: childKitIds }, organizationId },
+          data: resetData,
+        });
+        const nestedKitAssets = await tx.kitSerializedItem.findMany({
+          where: { kitId: { in: childKitIds } },
+          select: { assetId: true },
+        });
+        if (nestedKitAssets.length > 0) {
+          await tx.asset.updateMany({
+            where: { id: { in: nestedKitAssets.map((a) => a.assetId) } },
+            data: resetData,
+          });
+        }
+      }
+
+      // Return all children
+      const checkedOutChildren = children.filter((c) => c.status === "CHECKED_OUT");
+      if (checkedOutChildren.length > 0) {
+        await tx.projectLineItem.updateMany({
+          where: { id: { in: checkedOutChildren.map((c) => c.id) } },
+          data: returnData,
+        });
+      }
+
+      // Reset child assets to AVAILABLE
+      const childAssetIds = children.filter((c) => c.assetId).map((c) => c.assetId!);
+      if (childAssetIds.length > 0) {
+        await tx.asset.updateMany({
+          where: { id: { in: childAssetIds } },
+          data: resetData,
+        });
+      }
+
+      // Return parent line item
+      if (parent.status === "CHECKED_OUT") {
+        await tx.projectLineItem.update({
+          where: { id: parent.id },
+          data: returnData,
+        });
+      }
+
+      // If prep-kit: delete the parent line item and un-parent children
+      if (kit.isPrep) {
+        // Un-parent all children (they become standalone project line items)
+        await tx.projectLineItem.updateMany({
+          where: { parentLineItemId: parent.id, organizationId },
+          data: { isKitChild: false, parentLineItemId: null },
+        });
+        // Also un-parent grandchildren of nested kits
+        for (const child of nestedKitChildren) {
+          await tx.projectLineItem.updateMany({
+            where: { parentLineItemId: child.id, organizationId },
+            data: { isKitChild: false, parentLineItemId: null },
+          });
+          // Un-parent the nested kit line item itself
+          await tx.projectLineItem.update({
+            where: { id: child.id },
+            data: { isKitChild: false, parentLineItemId: null },
+          });
+        }
+        // Delete the prep-kit parent line item
+        await tx.projectLineItem.delete({ where: { id: parent.id } });
+      }
+    }
+
+    if (kit.isPrep) {
+      // Delete the prep-kit Kit record entirely
+      await tx.kitSerializedItem.deleteMany({ where: { kitId } });
+      await tx.kitBulkItem.deleteMany({ where: { kitId } });
+      await tx.kit.delete({ where: { id: kitId } });
+    } else {
+      // Regular kit: just reset status
+      await tx.kit.update({
+        where: { id: kitId },
+        data: resetData,
+      });
+
+      // Reset all serialized assets inside this kit (KitSerializedItem records)
+      const kitItems = await tx.kitSerializedItem.findMany({
+        where: { kitId },
+        select: { assetId: true },
+      });
+      if (kitItems.length > 0) {
+        await tx.asset.updateMany({
+          where: { id: { in: kitItems.map((ki) => ki.assetId) } },
+          data: resetData,
+        });
+      }
+    }
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "FORCE_RETURN",
+    entityType: "kit",
+    entityId: kitId,
+    entityName: `${kit.assetTag} - ${kit.name}`,
+    summary: kit.isPrep
+      ? `Force returned and dissolved prep-kit ${kit.assetTag}`
+      : `Force returned kit ${kit.assetTag} and all contents to available`,
+  });
+
+  return serialize({ success: true, deleted: kit.isPrep });
+}
+
+// ---------------------------------------------------------------------------
+// 10. bulkForceReturnAssets — force return multiple assets at once
+// ---------------------------------------------------------------------------
+
+export async function bulkForceReturnAssets(assetIds: string[]) {
+  const { organizationId, userId, userName } = await requirePermission("warehouse", "check_in");
+
+  if (assetIds.length === 0) throw new Error("No assets selected");
+
+  const assets = await prisma.asset.findMany({
+    where: { id: { in: assetIds }, organizationId, status: "CHECKED_OUT" },
+    select: { id: true, assetTag: true },
+  });
+
+  if (assets.length === 0) throw new Error("No checked-out assets found in selection");
+
+  const defaultLocation = await prisma.location.findFirst({
+    where: { organizationId, isDefault: true },
+    select: { id: true },
+  });
+
+  const ids = assets.map((a) => a.id);
+
+  await prisma.$transaction(async (tx) => {
+    // Return all checked-out line items for these assets
+    await tx.projectLineItem.updateMany({
+      where: { assetId: { in: ids }, organizationId, status: "CHECKED_OUT" },
+      data: {
+        status: "RETURNED",
+        returnedQuantity: 1,
+        returnedAt: new Date(),
+        returnCondition: "GOOD",
+      },
+    });
+
+    // Reset all assets
+    await tx.asset.updateMany({
+      where: { id: { in: ids } },
+      data: {
+        status: "AVAILABLE",
+        locationId: defaultLocation?.id ?? null,
+      },
+    });
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "FORCE_RETURN",
+    entityType: "asset",
+    entityId: ids[0],
+    entityName: assets.map((a) => a.assetTag).join(", "),
+    summary: `Bulk force returned ${assets.length} assets to available`,
+  });
+
+  return serialize({ count: assets.length });
 }

@@ -167,12 +167,14 @@ function KitChildRows({
   expandedGroups,
   toggleExpanded,
   onToggleVerify,
+  mode,
 }: {
   children: LineItem[];
   verifiedKitItems: Set<string>;
   expandedGroups: Set<string>;
   toggleExpanded: (key: string) => void;
   onToggleVerify: (assetId: string) => void;
+  mode: "deploy" | "return";
 }) {
   return (
     <>
@@ -180,6 +182,24 @@ function KitChildRows({
         const isVerified = verifiedKitItems.has(child.id);
         const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
         const nestedExpanded = expandedGroups.has(`nested-${child.id}`);
+
+        // Filter nested kit grandchildren based on deploy/return mode
+        const allGrandchildren = isNestedKit ? (child.childLineItems as LineItem[]) : [];
+        const filteredGrandchildren = isNestedKit
+          ? mode === "deploy"
+            ? allGrandchildren.filter((gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED")
+            : allGrandchildren.filter((gc) => gc.status === "CHECKED_OUT")
+          : [];
+
+        // For nested kits: detect partial deployment
+        const nestedKitPartial = isNestedKit
+          && allGrandchildren.some((gc) => gc.status === "CHECKED_OUT")
+          && allGrandchildren.some((gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED");
+
+        // Skip nested kits with no relevant grandchildren in this mode
+        // (but still show regular items based on the parent's filtering)
+        if (isNestedKit && filteredGrandchildren.length === 0) return null;
+
         return (
           <Fragment key={child.id}>
             <TableRow
@@ -204,20 +224,25 @@ function KitChildRows({
                   {isNestedKit && (
                     <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Kit</Badge>
                   )}
+                  {nestedKitPartial && (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-amber-500/10 text-amber-500 border-amber-500/20">Partial</Badge>
+                  )}
                 </div>
               </TableCell>
               <TableCell className="font-mono text-sm text-muted-foreground">
                 {child.asset?.assetTag || child.bulkAsset?.assetTag || (isNestedKit ? (child.kit?.assetTag || "—") : "—")}
               </TableCell>
-              <TableCell className="text-center">{isNestedKit ? child.childLineItems!.length : child.quantity}</TableCell>
+              <TableCell className="text-center">{isNestedKit ? filteredGrandchildren.length : child.quantity}</TableCell>
               <TableCell>
                 {isVerified
                   ? <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">Verified</Badge>
-                  : <Badge variant="outline" className={lineItemStatusColors[child.status] || ""}>{lineItemStatusLabels[child.status] || formatLabel(child.status)}</Badge>
+                  : nestedKitPartial
+                    ? <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20">Partial</Badge>
+                    : <Badge variant="outline" className={lineItemStatusColors[child.status] || ""}>{lineItemStatusLabels[child.status] || formatLabel(child.status)}</Badge>
                 }
               </TableCell>
             </TableRow>
-            {isNestedKit && nestedExpanded && child.childLineItems!.map((nested) => {
+            {isNestedKit && nestedExpanded && filteredGrandchildren.map((nested) => {
               const nestedVerified = verifiedKitItems.has(nested.id);
               return (
                 <TableRow key={nested.id} className={nestedVerified ? "bg-green-500/5" : "bg-muted/20"}>
@@ -267,17 +292,56 @@ function isKitParent(item: LineItem) {
   return !!item.kitId && !item.isKitChild;
 }
 
+function collectAllVerifiableIds(children: LineItem[], mode: "deploy" | "return"): string[] {
+  const ids: string[] = [];
+  for (const child of children) {
+    const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
+
+    if (isNestedKit) {
+      // For nested kits, only count relevant grandchildren (not the nested kit parent itself)
+      const grandchildren = child.childLineItems as LineItem[];
+      const filtered = mode === "deploy"
+        ? grandchildren.filter((gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED")
+        : grandchildren.filter((gc) => gc.status === "CHECKED_OUT");
+      for (const gc of filtered) {
+        ids.push(gc.id);
+      }
+    } else {
+      // Regular child: include based on mode
+      if (mode === "deploy" && child.status !== "CHECKED_OUT" && child.status !== "CANCELLED") {
+        ids.push(child.id);
+      } else if (mode === "return" && child.status === "CHECKED_OUT") {
+        ids.push(child.id);
+      }
+    }
+  }
+  return ids;
+}
+
 function groupItems(items: LineItem[]): GroupEntry[] {
   const serializedByModel = new Map<string, LineItem[]>();
   const result: GroupEntry[] = [];
 
   for (const item of items) {
     if (isKitParent(item)) {
+      // Deploy tab: show children that aren't checked out, or nested kits with undeployed grandchildren
+      const allChildren = (item.childLineItems || []) as LineItem[];
+      const deployChildren = allChildren.filter((c) => {
+        if (c.status === "CANCELLED") return false;
+        if (c.status !== "CHECKED_OUT") return true;
+        // Nested kit that's checked out: still include if any grandchildren need deploying
+        if (c.kitId && c.childLineItems?.length) {
+          return (c.childLineItems as LineItem[]).some(
+            (gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED"
+          );
+        }
+        return false;
+      });
       result.push({
         kind: "kit-group",
         groupKey: `kit-${item.id}`,
         item,
-        children: (item.childLineItems || []) as LineItem[],
+        children: deployChildren,
       });
     } else if (isBulkItem(item)) {
       const remaining = item.quantity - item.checkedOutQuantity;
@@ -321,11 +385,21 @@ function groupCheckinItems(items: LineItem[]): GroupEntry[] {
 
   for (const item of items) {
     if (isKitParent(item)) {
+      // Return tab: show children that are checked out, or nested kits with deployed grandchildren
+      const allChildren = (item.childLineItems || []) as LineItem[];
+      const returnChildren = allChildren.filter((c) => {
+        if (c.status === "CHECKED_OUT") return true;
+        // Nested kit not checked out: still include if any grandchildren are deployed
+        if (c.kitId && c.childLineItems?.length) {
+          return (c.childLineItems as LineItem[]).some((gc) => gc.status === "CHECKED_OUT");
+        }
+        return false;
+      });
       result.push({
         kind: "kit-group",
         groupKey: `kit-in-${item.id}`,
         item,
-        children: (item.childLineItems || []) as LineItem[],
+        children: returnChildren,
       });
     } else if (isBulkItem(item)) {
       const remaining = item.checkedOutQuantity - item.returnedQuantity;
@@ -443,8 +517,10 @@ function WarehouseProjectPage({
     action: "deploy" | "return";
     kitName: string;
     kitId: string;
+    parentLineItemId: string;
     verifiedCount: number;
     totalCount: number;
+    verifiedIds: string[];
   } | null>(null);
 
   const { data: project, isLoading } = useQuery({
@@ -512,15 +588,17 @@ function WarehouseProjectPage({
           // Check verification status before deploying
           const kitLi = lineItems.find((l) => l.kitId === kitResult.kitId && !l.isKitChild);
           const children = kitLi ? ((kitLi.childLineItems || []) as LineItem[]) : [];
-          const verifiable = children;
-          const verified = verifiable.filter((c) => verifiedKitItems.has(c.id));
-          if (verifiable.length > 0 && verified.length < verifiable.length) {
+          const allIds = collectAllVerifiableIds(children, "deploy");
+          const verifiedIds = allIds.filter((id) => verifiedKitItems.has(id));
+          if (allIds.length > 0 && verifiedIds.length < allIds.length) {
             setKitConfirm({
               action: "deploy",
               kitName: kitResult.assetName,
               kitId: kitResult.kitId,
-              verifiedCount: verified.length,
-              totalCount: verifiable.length,
+              parentLineItemId: kitLi?.id || kitResult.lineItemId || "",
+              verifiedCount: verifiedIds.length,
+              totalCount: allIds.length,
+              verifiedIds,
             });
             setScanValue("");
             scanInputRef.current?.focus();
@@ -639,15 +717,17 @@ function WarehouseProjectPage({
           // Check verification status before returning
           const kitLi = lineItems.find((l) => l.kitId === kitResult.kitId && !l.isKitChild);
           const children = kitLi ? ((kitLi.childLineItems || []) as LineItem[]) : [];
-          const verifiable = children;
-          const verified = verifiable.filter((c) => verifiedKitItems.has(c.id));
-          if (verifiable.length > 0 && verified.length < verifiable.length) {
+          const allIds = collectAllVerifiableIds(children, "return");
+          const verifiedIds = allIds.filter((id) => verifiedKitItems.has(id));
+          if (allIds.length > 0 && verifiedIds.length < allIds.length) {
             setKitConfirm({
               action: "return",
               kitName: kitResult.assetName,
               kitId: kitResult.kitId,
-              verifiedCount: verified.length,
-              totalCount: verifiable.length,
+              parentLineItemId: kitLi?.id || kitResult.lineItemId || "",
+              verifiedCount: verifiedIds.length,
+              totalCount: allIds.length,
+              verifiedIds,
             });
             setReturnScanValue("");
             returnScanInputRef.current?.focus();
@@ -815,12 +895,38 @@ function WarehouseProjectPage({
 
   const checkOutItemsList = equipmentItems.filter((item) => {
     if (item.status === "CANCELLED") return false;
+    // Kit parents: show in deploy tab if any children/grandchildren still need deploying
+    if (isKitParent(item)) {
+      const children = (item.childLineItems || []) as LineItem[];
+      return children.some((c) => {
+        if (c.status !== "CHECKED_OUT" && c.status !== "CANCELLED") return true;
+        // Nested kit: check grandchildren too
+        if (c.kitId && c.childLineItems?.length) {
+          return (c.childLineItems as LineItem[]).some(
+            (gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED"
+          );
+        }
+        return false;
+      });
+    }
     if (item.status === "RETURNED") return true;
     if (isBulkItem(item)) return item.checkedOutQuantity < item.quantity;
     return item.status !== "CHECKED_OUT";
   });
 
   const checkedOutItems = equipmentItems.filter((item) => {
+    // Kit parents: show in return tab if any children/grandchildren are deployed
+    if (isKitParent(item)) {
+      const children = (item.childLineItems || []) as LineItem[];
+      return children.some((c) => {
+        if (c.status === "CHECKED_OUT") return true;
+        // Nested kit: check grandchildren too
+        if (c.kitId && c.childLineItems?.length) {
+          return (c.childLineItems as LineItem[]).some((gc) => gc.status === "CHECKED_OUT");
+        }
+        return false;
+      });
+    }
     if (isBulkItem(item)) return item.checkedOutQuantity > item.returnedQuantity;
     return item.status === "CHECKED_OUT";
   });
@@ -891,16 +997,18 @@ function WarehouseProjectPage({
       const li = lineItems.find((l) => l.id === kitItemId);
       if (li?.kitId) {
         const children = (li.childLineItems || []) as LineItem[];
-        const verifiable = children;
-        const verified = verifiable.filter((c) => verifiedKitItems.has(c.id));
-        if (verifiable.length > 0 && verified.length < verifiable.length) {
+        const allIds = collectAllVerifiableIds(children, "deploy");
+        const verifiedIds = allIds.filter((id) => verifiedKitItems.has(id));
+        if (allIds.length > 0 && verifiedIds.length < allIds.length) {
           // Not fully verified — prompt
           setKitConfirm({
             action: "deploy",
             kitName: li.description || li.kit?.name || "Kit",
             kitId: li.kitId,
-            verifiedCount: verified.length,
-            totalCount: verifiable.length,
+            parentLineItemId: li.id,
+            verifiedCount: verifiedIds.length,
+            totalCount: allIds.length,
+            verifiedIds,
           });
         } else {
           kitCheckOutMutation.mutate(li.kitId);
@@ -1023,15 +1131,17 @@ function WarehouseProjectPage({
       const kitLi = lineItems.find((l) => l.kitId === kitId && !l.isKitChild);
       if (kitLi) {
         const children = (kitLi.childLineItems || []) as LineItem[];
-        const verifiable = children;
-        const verified = verifiable.filter((c) => verifiedKitItems.has(c.id));
-        if (verifiable.length > 0 && verified.length < verifiable.length) {
+        const allIds = collectAllVerifiableIds(children, "return");
+        const verifiedIds = allIds.filter((id) => verifiedKitItems.has(id));
+        if (allIds.length > 0 && verifiedIds.length < allIds.length) {
           setKitConfirm({
             action: "return",
             kitName: kitLi.description || kitLi.kit?.name || "Kit",
             kitId,
-            verifiedCount: verified.length,
-            totalCount: verifiable.length,
+            parentLineItemId: kitLi.id,
+            verifiedCount: verifiedIds.length,
+            totalCount: allIds.length,
+            verifiedIds,
           });
           continue;
         }
@@ -1359,9 +1469,12 @@ function WarehouseProjectPage({
                       // --- Kit group ---
                       if (entry.kind === "kit-group") {
                         const isExpanded = expandedGroups.has(entry.groupKey);
-                        const verifiableChildren = entry.children;
-                        const verifiedCount = verifiableChildren.filter((c) => verifiedKitItems.has(c.id)).length;
-                        const allVerified = verifiableChildren.length > 0 && verifiedCount === verifiableChildren.length;
+                        const allIds = collectAllVerifiableIds(entry.children, "deploy");
+                        const verifiedCount = allIds.filter((id) => verifiedKitItems.has(id)).length;
+                        const allVerified = allIds.length > 0 && verifiedCount === allIds.length;
+                        // Detect partial deployment: parent is checked out but some children still need deploying
+                        const allChildren = (entry.item.childLineItems || []) as LineItem[];
+                        const isPartiallyDeployed = entry.item.status === "CHECKED_OUT" && allChildren.some((c) => c.status === "CHECKED_OUT");
                         return (
                           <Fragment key={entry.groupKey}>
                             <TableRow
@@ -1382,7 +1495,7 @@ function WarehouseProjectPage({
                                   <Badge variant="secondary" className={`ml-1 text-[10px] px-1.5 py-0 ${entry.item.kit?.isPrep ? "bg-purple-500/10 text-purple-500 border-purple-500/20" : ""}`}>
                                     {entry.item.kit?.isPrep ? "Prep" : "Kit"}
                                   </Badge>
-                                  {verifiableChildren.length > 0 && (
+                                  {allIds.length > 0 && (
                                     <Badge
                                       variant="outline"
                                       className={allVerified
@@ -1392,7 +1505,7 @@ function WarehouseProjectPage({
                                           : "ml-1 text-[10px] px-1.5 py-0"
                                       }
                                     >
-                                      {verifiedCount}/{verifiableChildren.length} verified
+                                      {verifiedCount}/{allIds.length} verified
                                     </Badge>
                                   )}
                                 </div>
@@ -1402,9 +1515,15 @@ function WarehouseProjectPage({
                               </TableCell>
                               <TableCell className="text-center">{entry.children.length}</TableCell>
                               <TableCell>
-                                <Badge variant="outline" className={lineItemStatusColors[entry.item.status] || ""}>
-                                  {entry.item.status}
-                                </Badge>
+                                {isPartiallyDeployed ? (
+                                  <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20">
+                                    Partial
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline" className={lineItemStatusColors[entry.item.status] || ""}>
+                                    {lineItemStatusLabels[entry.item.status] || formatLabel(entry.item.status)}
+                                  </Badge>
+                                )}
                               </TableCell>
                             </TableRow>
                             {isExpanded && (
@@ -1413,6 +1532,7 @@ function WarehouseProjectPage({
                                 verifiedKitItems={verifiedKitItems}
                                 expandedGroups={expandedGroups}
                                 toggleExpanded={toggleExpanded}
+                                mode="deploy"
                                 onToggleVerify={(assetId) => {
                                   setVerifiedKitItems((prev) => {
                                     const next = new Set(prev);
@@ -1640,9 +1760,12 @@ function WarehouseProjectPage({
                       // --- Kit group ---
                       if (entry.kind === "kit-group") {
                         const isExpanded = expandedGroups.has(entry.groupKey);
-                        const verifiableChildren = entry.children;
-                        const verifiedCount = verifiableChildren.filter((c) => verifiedKitItems.has(c.id)).length;
-                        const allVerified = verifiableChildren.length > 0 && verifiedCount === verifiableChildren.length;
+                        const allIds = collectAllVerifiableIds(entry.children, "return");
+                        const verifiedCount = allIds.filter((id) => verifiedKitItems.has(id)).length;
+                        const allVerified = allIds.length > 0 && verifiedCount === allIds.length;
+                        // Detect partial deployment: some children are deployed, others are not
+                        const allChildren = (entry.item.childLineItems || []) as LineItem[];
+                        const isPartiallyDeployed = allChildren.some((c) => c.status !== "CHECKED_OUT" && c.status !== "CANCELLED");
                         return (
                           <Fragment key={entry.groupKey}>
                             <TableRow
@@ -1663,7 +1786,7 @@ function WarehouseProjectPage({
                                   <Badge variant="secondary" className={`ml-1 text-[10px] px-1.5 py-0 ${entry.item.kit?.isPrep ? "bg-purple-500/10 text-purple-500 border-purple-500/20" : ""}`}>
                                     {entry.item.kit?.isPrep ? "Prep" : "Kit"}
                                   </Badge>
-                                  {verifiableChildren.length > 0 && (
+                                  {allIds.length > 0 && (
                                     <Badge
                                       variant="outline"
                                       className={allVerified
@@ -1673,7 +1796,7 @@ function WarehouseProjectPage({
                                           : "ml-1 text-[10px] px-1.5 py-0"
                                       }
                                     >
-                                      {verifiedCount}/{verifiableChildren.length} verified
+                                      {verifiedCount}/{allIds.length} verified
                                     </Badge>
                                   )}
                                 </div>
@@ -1683,9 +1806,15 @@ function WarehouseProjectPage({
                               </TableCell>
                               <TableCell className="text-center">{entry.children.length}</TableCell>
                               <TableCell>
-                                <Badge variant="outline" className={lineItemStatusColors["CHECKED_OUT"]}>
-                                  Deployed
-                                </Badge>
+                                {isPartiallyDeployed ? (
+                                  <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20">
+                                    Partial
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline" className={lineItemStatusColors["CHECKED_OUT"]}>
+                                    Deployed
+                                  </Badge>
+                                )}
                               </TableCell>
                             </TableRow>
                             {isExpanded && (
@@ -1694,6 +1823,7 @@ function WarehouseProjectPage({
                                 verifiedKitItems={verifiedKitItems}
                                 expandedGroups={expandedGroups}
                                 toggleExpanded={toggleExpanded}
+                                mode="return"
                                 onToggleVerify={(assetId) => {
                                   setVerifiedKitItems((prev) => {
                                     const next = new Set(prev);
@@ -1768,21 +1898,71 @@ function WarehouseProjectPage({
       {/* Kit Verification Confirmation */}
       {kitConfirm && (
         <Dialog open={true} onOpenChange={() => setKitConfirm(null)}>
-          <DialogContent className="sm:max-w-sm">
+          <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>
                 {kitConfirm.action === "deploy" ? "Deploy without full verification?" : "Return without full verification?"}
               </DialogTitle>
             </DialogHeader>
             <p className="text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">{kitConfirm.kitName}</span> has only{" "}
+              <span className="font-medium text-foreground">{kitConfirm.kitName}</span> has{" "}
               <span className="font-medium text-foreground">{kitConfirm.verifiedCount}/{kitConfirm.totalCount}</span>{" "}
-              items verified. {kitConfirm.action === "deploy" ? "Deploy" : "Return"} anyway?
+              items verified. You can {kitConfirm.action === "deploy" ? "deploy" : "return"} only the verified items, or {kitConfirm.action === "deploy" ? "deploy" : "return"} everything.
             </p>
-            <DialogFooter>
+            <DialogFooter className="flex-col sm:flex-row gap-2">
               <Button variant="outline" size="sm" onClick={() => setKitConfirm(null)}>
                 Cancel
               </Button>
+              {kitConfirm.verifiedCount > 0 && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    if (kitConfirm.action === "deploy") {
+                      // Deploy verified children + the kit parent (if not already deployed) so it moves to return tab
+                      const parentLi = lineItems.find((l) => l.id === kitConfirm.parentLineItemId);
+                      const children = parentLi ? ((parentLi.childLineItems || []) as LineItem[]) : [];
+
+                      // Also include nested kit parent line items when their grandchildren are being deployed
+                      const nestedKitParentIds: string[] = [];
+                      for (const child of children) {
+                        if (child.kitId && child.childLineItems?.length) {
+                          const hasVerifiedGrandchild = (child.childLineItems as LineItem[]).some(
+                            (gc) => kitConfirm.verifiedIds.includes(gc.id)
+                          );
+                          if (hasVerifiedGrandchild && child.status !== "CHECKED_OUT") {
+                            nestedKitParentIds.push(child.id);
+                          }
+                        }
+                      }
+
+                      const items = [
+                        ...(parentLi?.status !== "CHECKED_OUT" ? [{ lineItemId: kitConfirm.parentLineItemId }] : []),
+                        ...nestedKitParentIds.map((id) => ({ lineItemId: id })),
+                        ...kitConfirm.verifiedIds.map((id) => ({ lineItemId: id })),
+                      ];
+                      checkOutMutation.mutate(items, {
+                        onSuccess: () => toast.success(`Deployed ${kitConfirm.verifiedCount} verified items`),
+                      });
+                    } else {
+                      // Return only verified children — kit parent stays deployed until all returned
+                      checkInMutation.mutate(
+                        {
+                          items: kitConfirm.verifiedIds.map((id) => ({
+                            lineItemId: id,
+                            returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING",
+                            notes: returnNotes || undefined,
+                          })),
+                        },
+                        { onSuccess: () => toast.success(`Returned ${kitConfirm.verifiedCount} verified items`) }
+                      );
+                    }
+                    setKitConfirm(null);
+                  }}
+                >
+                  {kitConfirm.action === "deploy" ? "Deploy" : "Return"} Verified ({kitConfirm.verifiedCount})
+                </Button>
+              )}
               <Button
                 size="sm"
                 onClick={() => {
@@ -1797,7 +1977,7 @@ function WarehouseProjectPage({
                   setKitConfirm(null);
                 }}
               >
-                {kitConfirm.action === "deploy" ? "Deploy" : "Return"}
+                {kitConfirm.action === "deploy" ? "Deploy" : "Return"} All ({kitConfirm.totalCount})
               </Button>
             </DialogFooter>
           </DialogContent>

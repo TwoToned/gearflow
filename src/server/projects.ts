@@ -697,13 +697,107 @@ export async function deleteProject(id: string) {
   // Only allow deleting cancelled projects
   const project = await prisma.project.findUnique({
     where: { id, organizationId },
+    include: {
+      lineItems: {
+        select: {
+          id: true,
+          assetId: true,
+          kitId: true,
+          status: true,
+          kit: { select: { id: true, isPrep: true } },
+        },
+      },
+    },
   });
 
   if (!project) throw new Error("Project not found");
   if (project.status !== "CANCELLED") throw new Error("Only cancelled projects can be deleted");
 
-  await prisma.project.delete({
-    where: { id, organizationId },
+  // Collect IDs to reset
+  const checkedOutAssetIds: string[] = [];
+  const checkedOutKitIds: string[] = [];
+  const prepKitIds: string[] = [];
+
+  for (const li of project.lineItems) {
+    if (li.assetId && (li.status === "CHECKED_OUT" || li.status === "CONFIRMED")) {
+      checkedOutAssetIds.push(li.assetId);
+    }
+    if (li.kitId) {
+      if (li.kit?.isPrep) {
+        prepKitIds.push(li.kitId);
+      } else if (li.status === "CHECKED_OUT" || li.status === "CONFIRMED") {
+        checkedOutKitIds.push(li.kitId);
+      }
+    }
+  }
+
+  // Get org default location
+  const defaultLocation = await prisma.location.findFirst({
+    where: { organizationId, isDefault: true },
+    select: { id: true },
+  });
+
+  await prisma.$transaction(async (tx) => {
+    // Reset checked-out assets to AVAILABLE
+    if (checkedOutAssetIds.length > 0) {
+      await tx.asset.updateMany({
+        where: { id: { in: checkedOutAssetIds }, organizationId },
+        data: {
+          status: "AVAILABLE",
+          locationId: defaultLocation?.id ?? null,
+        },
+      });
+    }
+
+    // Reset checked-out kits and their contents to AVAILABLE
+    if (checkedOutKitIds.length > 0) {
+      await tx.kit.updateMany({
+        where: { id: { in: checkedOutKitIds }, organizationId },
+        data: {
+          status: "AVAILABLE",
+          locationId: defaultLocation?.id ?? null,
+        },
+      });
+      // Reset serialized assets inside those kits
+      const kitAssets = await tx.kitSerializedItem.findMany({
+        where: { kitId: { in: checkedOutKitIds } },
+        select: { assetId: true },
+      });
+      if (kitAssets.length > 0) {
+        await tx.asset.updateMany({
+          where: { id: { in: kitAssets.map((ka) => ka.assetId) }, organizationId },
+          data: {
+            status: "AVAILABLE",
+            locationId: defaultLocation?.id ?? null,
+          },
+        });
+      }
+    }
+
+    // Delete prep-kits (their line items cascade with project delete, but the Kit records don't)
+    if (prepKitIds.length > 0) {
+      // First reset any serialized assets inside prep-kits
+      const prepKitAssets = await tx.kitSerializedItem.findMany({
+        where: { kitId: { in: prepKitIds } },
+        select: { assetId: true },
+      });
+      if (prepKitAssets.length > 0) {
+        await tx.asset.updateMany({
+          where: { id: { in: prepKitAssets.map((ka) => ka.assetId) }, organizationId, status: "CHECKED_OUT" },
+          data: {
+            status: "AVAILABLE",
+            locationId: defaultLocation?.id ?? null,
+          },
+        });
+      }
+      // Delete kit contents then kits
+      await tx.kitSerializedItem.deleteMany({ where: { kitId: { in: prepKitIds } } });
+      await tx.kitBulkItem.deleteMany({ where: { kitId: { in: prepKitIds } } });
+      await tx.kit.deleteMany({ where: { id: { in: prepKitIds }, organizationId } });
+    }
+
+    // Delete the project (cascades to line items, media, etc.)
+    await tx.project.delete({ where: { id, organizationId } });
   });
 
   await logActivity({
@@ -715,6 +809,11 @@ export async function deleteProject(id: string) {
     entityId: id,
     entityName: project.projectNumber,
     summary: `Deleted project ${project.projectNumber} - ${project.name}`,
-    details: { deleted: { projectNumber: project.projectNumber, name: project.name } },
+    details: {
+      deleted: { projectNumber: project.projectNumber, name: project.name },
+      freedAssets: checkedOutAssetIds.length,
+      freedKits: checkedOutKitIds.length,
+      deletedPrepKits: prepKitIds.length,
+    },
   });
 }

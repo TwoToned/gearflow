@@ -82,6 +82,19 @@ export function DeliveryDocketPDF({ org, project }: DeliveryDocketPDFProps) {
   }
 
   const totalItems = deliveredItems.reduce((sum, i) => {
+    if (i.kitId && !i.isKitChild) {
+      // Kit/prep-kit: count deployed children + grandchildren
+      const children = (i.childLineItems || []).filter((c) => c.status === "CHECKED_OUT");
+      let count = 0;
+      for (const child of children) {
+        if (child.kitId && child.childLineItems?.length) {
+          count += (child.childLineItems || []).filter((gc) => gc.status === "CHECKED_OUT").reduce((s, gc) => s + gc.quantity, 0);
+        } else {
+          count += child.quantity;
+        }
+      }
+      return sum + count;
+    }
     if (isBulk(i)) return sum + i.checkedOutQuantity;
     return sum + 1;
   }, 0);
@@ -181,7 +194,9 @@ export function DeliveryDocketPDF({ org, project }: DeliveryDocketPDFProps) {
                     const bulk = isBulk(item);
                     const isKit = !!item.kitId && !item.isKitChild;
                     const isGroup = isKit;
-                    const children = isGroup ? (item.childLineItems || []) : [];
+                    // Only show deployed children
+                    const allChildren = isGroup ? (item.childLineItems || []) : [];
+                    const children = allChildren.filter((c) => c.status === "CHECKED_OUT");
                     const itemName = isKit
                       ? (item.description || item.kit?.name || "Kit")
                       : item.model
@@ -227,7 +242,10 @@ export function DeliveryDocketPDF({ org, project }: DeliveryDocketPDFProps) {
                         </View>
                         {children.map((child) => {
                           const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
-                          const nestedChildren = child.childLineItems || [];
+                          // Only show deployed grandchildren
+                          const nestedChildren = isNestedKit
+                            ? (child.childLineItems || []).filter((gc) => gc.status === "CHECKED_OUT")
+                            : [];
                           const childName = child.model?.name || child.description || "-";
                           return (
                             <View key={child.id}>

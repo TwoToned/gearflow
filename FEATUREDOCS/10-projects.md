@@ -111,3 +111,14 @@ Adding a model that already exists as a line item on the project **merges** into
 - "Use Template" → `duplicateProject(templateId, { isTemplate: false })` → creates real project
 - "Save as Template" → `saveAsTemplate(projectId)` → creates template from real project
 - Both call `recalculateProjectTotals` AFTER transaction commits (not inside)
+
+## Project Deletion
+Only cancelled projects can be deleted (`deleteProject` in `src/server/projects.ts`).
+
+### Cleanup on Delete
+1. **Reset checked-out assets**: All `CHECKED_OUT` serialized assets linked to project line items → `AVAILABLE`, restore default location
+2. **Reset checked-out kits**: All `CHECKED_OUT` kits + their serialized assets → `AVAILABLE`, restore locations
+3. **Delete prep-kits**: All `Kit` records with `isPrep: true` linked to this project are fully deleted (kit contents, bulk items, serialized items)
+4. **Cascade**: `Project.delete()` cascades to all `ProjectLineItem`, `ProjectMedia`, etc.
+
+This ensures no orphaned prep-kit records block future asset tag creation, and no assets remain stuck in `CHECKED_OUT` status.

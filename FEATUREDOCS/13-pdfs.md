@@ -9,10 +9,10 @@
 
 ## Constraints
 - **Helvetica only** — no Unicode symbols (use ASCII: `-` not `—`, `|` not `•`)
-- Checkboxes rendered as `View` boxes with borders
+- Checkboxes rendered as `View` boxes with borders; checked state draws a tick using two rotated `View` lines
 - Line item notes shown as subtitles
 - Badges: red "OVERBOOKED", purple "REDUCED STOCK"
-- Pull slip: per-unit checkboxes for qty > 1 items
+- Pull slip: per-unit checkboxes for qty > 1 items, ticked for already-deployed units
 
 ## Child Rendering (Kits, Prep-Kits, Accessories)
 All 5 PDFs use a unified `allChildren` array that includes kit children and accessories.
@@ -36,6 +36,12 @@ All 5 PDFs use a unified `allChildren` array that includes kit children and acce
 - Regular kits/assets: show their asset tag
 - Prep-kits with `PREP-*` auto-generated tags: display `"-"` instead
 - Prep-kits with case asset tags: show the real tag
+
+## Deployment-Aware Filtering
+- **Delivery Docket**: Top-level items filtered to `CHECKED_OUT` only. Kit/prep-kit children filtered to `CHECKED_OUT`. Nested grandchildren also filtered. Total count reflects individual deployed children, not kit-as-1.
+- **Return Sheet**: Top-level filtered to `CHECKED_OUT` or `RETURNED`. Children and grandchildren filtered the same way.
+- **Pull Slip**: Shows all non-cancelled items. Already-deployed items display with a ticked checkbox (two rotated `View` lines). Bulk per-unit rows tick the first N units matching `checkedOutQuantity`. Total count reflects individual children/grandchildren, not kit-as-1.
+- **Quote / Invoice**: All items shown regardless of deployment status.
 
 ## T&T Reports
 10 PDF templates in `src/lib/pdf/test-tag-*.tsx`. API route: `GET /api/test-tag-reports/[reportType]?format=pdf|csv`. Date objects must be JSON-serialized before passing to PDF components.

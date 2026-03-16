@@ -47,10 +47,11 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
           throw new Error(`Asset is already booked on ${conflict.project.projectNumber} - ${conflict.project.name}`);
         }
 
-        // Also check asset status
+        // Block truly unavailable assets (retired, lost, in maintenance) but allow checked-out ones
+        // — they may be deployed now but available by the project's dates
         const asset = await prisma.asset.findUnique({ where: { id: parsed.assetId } });
-        if (asset && asset.status !== "AVAILABLE") {
-          throw new Error(`Asset is not available (status: ${asset.status.replace("_", " ")})`);
+        if (asset && (asset.status === "RETIRED" || asset.status === "LOST")) {
+          throw new Error(`Asset is ${asset.status.replace("_", " ").toLowerCase()} and cannot be added`);
         }
       } else {
         // Model-level — check quantity against available stock
@@ -287,7 +288,10 @@ export async function addKitLineItem(
     },
   });
   if (!kit) throw new Error("Kit not found");
-  if (kit.status !== "AVAILABLE") throw new Error(`Kit is not available (status: ${kit.status})`);
+  // Block truly unavailable kits but allow checked-out ones — date overlap check below handles real conflicts
+  if (kit.status === "IN_MAINTENANCE" || kit.status === "INCOMPLETE") {
+    throw new Error(`Kit is ${kit.status.replace("_", " ").toLowerCase()} and cannot be added`);
+  }
 
   // Check not already on an overlapping project
   const project = await prisma.project.findUnique({
@@ -566,8 +570,8 @@ export async function lookupAssetByTag(
     }
   }
 
-  // Also flag if asset is not in AVAILABLE status
-  if (asset.status !== "AVAILABLE") {
+  // Only block truly unavailable assets — checked out/reserved assets can be added to future projects
+  if (asset.status === "RETIRED" || asset.status === "LOST") {
     available = false;
     if (!conflictsWith) {
       conflictsWith = `Asset status: ${asset.status.replace("_", " ")}`;
@@ -597,7 +601,8 @@ export async function checkKitAvailability(
     return serialize({ available: false, conflictsWith: "Kit not found" });
   }
 
-  if (kit.status !== "AVAILABLE") {
+  // Only block truly unavailable kits — checked out kits can still be added to future projects
+  if (kit.status === "IN_MAINTENANCE" || kit.status === "INCOMPLETE") {
     return serialize({ available: false, conflictsWith: `Kit status: ${kit.status.replace("_", " ")}` });
   }
 

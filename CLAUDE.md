@@ -86,6 +86,12 @@ npx prisma migrate dev   # Apply all migrations + generate client
 - Use `z.input<typeof schema>` for form types (NOT `z.infer`)
 - React Hook Form + `zodResolver()` + `useMutation()`
 
+### DOM Safety (removeChild Fix)
+- `DomPatch` (in root layout) monkey-patches `removeChild`/`insertBefore` to silently ignore calls where the target node is not a child — prevents the React 19 "Cannot read properties of null" TypeError
+- `GlobalErrorBoundary` (in root layout) catches any remaining DOM manipulation errors and auto-recovers
+- **When adding new providers or scripts to the root layout**: place them inside `<GlobalErrorBoundary>` to ensure coverage
+- **Never remove** `DomPatch` or `GlobalErrorBoundary` from `layout.tsx` — they are critical for navigation stability
+
 ### Key Gotchas
 - No `AlertDialog` — use `Dialog` with confirm/cancel buttons
 - `SelectValue` can't resolve portal-rendered items — pass explicit label children

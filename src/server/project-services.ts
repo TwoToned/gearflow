@@ -10,6 +10,7 @@ import {
   type ServiceTemplateFormValues,
 } from "@/lib/validations/project-service";
 import { logActivity } from "@/lib/activity-log";
+import { sendCrewOffer } from "@/server/crew-communication";
 import { recalculateProjectTotals } from "@/server/line-items";
 import type { ServiceType, LineItemType, PricingType, ProjectPhase } from "@/generated/prisma/client";
 
@@ -526,16 +527,41 @@ export async function updateServiceCrewStatus(
   });
   if (!service) throw new Error("Service not found");
 
-  const result = await prisma.crewAssignment.updateMany({
-    where: {
-      serviceId,
-      // Only move forward: don't re-offer already confirmed, etc.
-      ...(status === "OFFERED" ? { status: "PENDING" } : {}),
-      ...(status === "CONFIRMED" ? { status: { in: ["PENDING", "OFFERED", "ACCEPTED"] } } : {}),
-      ...(status === "CANCELLED" ? { status: { notIn: ["COMPLETED", "CANCELLED"] } } : {}),
-    },
-    data: { status },
-  });
+  let updatedCount: number;
+
+  if (status === "OFFERED") {
+    // For OFFERED status, use sendCrewOffer to send emails + update status
+    const pendingAssignments = await prisma.crewAssignment.findMany({
+      where: {
+        serviceId,
+        status: "PENDING",
+        crewMember: { email: { not: null } },
+      },
+      select: { id: true },
+    });
+
+    let sent = 0;
+    const errors: string[] = [];
+    for (const a of pendingAssignments) {
+      try {
+        await sendCrewOffer(a.id);
+        sent++;
+      } catch (e) {
+        errors.push((e as Error).message);
+      }
+    }
+    updatedCount = sent;
+  } else {
+    const result = await prisma.crewAssignment.updateMany({
+      where: {
+        serviceId,
+        ...(status === "CONFIRMED" ? { status: { in: ["PENDING", "OFFERED", "ACCEPTED"] } } : {}),
+        ...(status === "CANCELLED" ? { status: { notIn: ["COMPLETED", "CANCELLED"] } } : {}),
+      },
+      data: { status },
+    });
+    updatedCount = result.count;
+  }
 
   const statusLabels: Record<string, string> = {
     OFFERED: "sent offers to",
@@ -551,11 +577,11 @@ export async function updateServiceCrewStatus(
     entityType: "service",
     entityId: serviceId,
     entityName: service.title,
-    summary: `${statusLabels[status]} ${result.count} crew on "${service.title}"`,
+    summary: `${statusLabels[status]} ${updatedCount} crew on "${service.title}"`,
     projectId: service.projectId,
   });
 
-  return serialize({ updated: result.count });
+  return serialize({ updated: updatedCount });
 }
 
 // ─── Line Item Sync ───────────────────────────────────────────────────────────

@@ -82,6 +82,19 @@ export function DeliveryDocketPDF({ org, project }: DeliveryDocketPDFProps) {
   }
 
   const totalItems = deliveredItems.reduce((sum, i) => {
+    if (i.kitId && !i.isKitChild) {
+      // Kit/prep-kit: count deployed children + grandchildren
+      const children = (i.childLineItems || []).filter((c) => c.status === "CHECKED_OUT");
+      let count = 0;
+      for (const child of children) {
+        if (child.kitId && child.childLineItems?.length) {
+          count += (child.childLineItems || []).filter((gc) => gc.status === "CHECKED_OUT").reduce((s, gc) => s + gc.quantity, 0);
+        } else {
+          count += child.quantity;
+        }
+      }
+      return sum + count;
+    }
     if (isBulk(i)) return sum + i.checkedOutQuantity;
     return sum + 1;
   }, 0);

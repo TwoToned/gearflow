@@ -1,13 +1,39 @@
 # PDF Document Generation
 
 ## Architecture
-- `@react-pdf/renderer` renders React components to PDF
+
+### New: pdfme System (Phase 1 complete)
+- **Engine**: `@pdfme/generator` with custom plugins using `@pdfme/pdf-lib` drawing APIs
+- **Pipeline**: `generatePdf(projectId, orgId, docType)` → `buildDocumentData()` → template builder → pdfme `generate()` → PDF buffer
+- **Data assembly**: `src/lib/pdfme/build-document-data.ts` — loads project+org, computes overbooking, enriches line items, serializes Decimals, returns `DocumentData` contract
+- **Token resolution**: `src/lib/pdfme/token-resolver.ts` — replaces `{variable}` tokens in text schemas
+- **Templates**: `src/lib/pdfme/templates/` — each doc type has `buildTemplate()` (schema layout) + `buildInputs()` (data→JSON mapping)
+- **Orchestrator**: `src/lib/pdfme/generate-pdf.ts` — `generatePdf()` and `generatePdfFromData()`
+- **Test route**: `GET /api/documents/pdfme-test/[projectId]?type=quote` (temporary)
+
+### Custom Plugins (`src/lib/pdfme/plugins/`)
+| Plugin | Purpose |
+|--------|---------|
+| `gearflowTable` | Equipment table — grouping, kit children (3 levels), badges, checkboxes, conditions, per-unit expansion |
+| `gearflowFinancialSummary` | Subtotal/discount/tax/total block with optional deposit/balance |
+| `gearflowPageHeader` | Three modes: logo, icon, none — org info + doc title |
+| `gearflowPageFooter` | Centered footer with top border |
+| `gearflowCheckbox` | Empty/checked checkbox square |
+| `gearflowSignatureLine` | Signature blocks with configurable columns |
+| `gearflowCrewTable` | Crew table for call sheets — sorted by call time then role |
+
+### Plugin Architecture
+- Plugins receive `value` as JSON string, parse it, draw directly via pdf-lib
+- `helpers.ts`: coordinate conversion (mm→pt, Y-flip), font caching (Helvetica/Bold/Courier), color parsing, text wrapping
+- `ui` and `propPanel` are stubs — Phase 3 will add template designer UI
+
+### Legacy: @react-pdf/renderer (still active, to be retired)
 - API route: `GET /api/documents/[projectId]?type=quote` streams PDF
 - Templates in `src/lib/pdf/`: `quote-pdf.tsx`, `invoice-pdf.tsx`, `packing-list-pdf.tsx`, `return-sheet-pdf.tsx`, `delivery-docket-pdf.tsx`
 - Shared styles in `src/lib/pdf/styles.ts`
 - Documents accessible from both the **project detail page** and the **warehouse page** via dropdown menus
 
-## Constraints
+## Constraints (Legacy)
 - **Helvetica only** — no Unicode symbols (use ASCII: `-` not `—`, `|` not `•`)
 - Checkboxes rendered as `View` boxes with borders; checked state draws a tick using two rotated `View` lines
 - Line item notes shown as subtitles

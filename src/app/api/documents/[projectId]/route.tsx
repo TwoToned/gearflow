@@ -9,6 +9,17 @@ import { ReturnSheetPDF } from "@/lib/pdf/return-sheet-pdf";
 import { DeliveryDocketPDF } from "@/lib/pdf/delivery-docket-pdf";
 import { computeOverbookedStatus } from "@/lib/availability";
 import { getFileAsDataUri } from "@/lib/storage";
+import { generatePdf } from "@/lib/pdfme/generate-pdf";
+import type { DocumentType } from "@/lib/pdfme/types";
+
+/** Map old type param values to pdfme DocumentType */
+const pdfmeTypeMap: Record<string, DocumentType> = {
+  quote: "quote",
+  invoice: "invoice",
+  "pull-slip": "packing-list",
+  "return-sheet": "return-sheet",
+  "delivery-docket": "delivery-docket",
+};
 
 export async function GET(
   request: NextRequest,
@@ -17,6 +28,7 @@ export async function GET(
   const { projectId } = await params;
   const url = new URL(request.url);
   const type = url.searchParams.get("type") || "quote";
+  const engine = url.searchParams.get("engine");
 
   let session;
   try {
@@ -26,6 +38,30 @@ export async function GET(
   }
 
   const { organizationId } = session;
+
+  // pdfme engine: ?engine=pdfme to use the new system for A/B comparison
+  if (engine === "pdfme") {
+    const docType = pdfmeTypeMap[type];
+    if (!docType) {
+      return NextResponse.json({ error: `Unknown type for pdfme: ${type}` }, { status: 400 });
+    }
+    try {
+      const pdf = await generatePdf(projectId, organizationId, docType);
+      const filename = `${docType}-${projectId}.pdf`;
+      return new NextResponse(Buffer.from(pdf), {
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `inline; filename="${filename}"`,
+        },
+      });
+    } catch (error) {
+      console.error("pdfme generation error:", error);
+      return NextResponse.json(
+        { error: "pdfme generation failed", details: String(error) },
+        { status: 500 }
+      );
+    }
+  }
 
   const org = await prisma.organization.findUnique({
     where: { id: organizationId },

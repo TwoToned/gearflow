@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireOrganization } from "@/lib/auth-server";
 import { CallSheetPDF } from "@/lib/pdf/call-sheet-pdf";
 import { getFileAsDataUri } from "@/lib/storage";
+import { generatePdf } from "@/lib/pdfme/generate-pdf";
 
 export async function GET(
   request: NextRequest,
@@ -12,6 +13,7 @@ export async function GET(
   const { projectId } = await params;
   const url = new URL(request.url);
   const dateParam = url.searchParams.get("date");
+  const engine = url.searchParams.get("engine");
 
   let session;
   try {
@@ -21,6 +23,27 @@ export async function GET(
   }
 
   const { organizationId } = session;
+
+  // pdfme engine: ?engine=pdfme for A/B comparison
+  if (engine === "pdfme") {
+    try {
+      const callSheetDate = dateParam ? new Date(dateParam) : undefined;
+      const pdf = await generatePdf(projectId, organizationId, "call-sheet", callSheetDate);
+      const filename = `CallSheet-${projectId}.pdf`;
+      return new NextResponse(Buffer.from(pdf), {
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `inline; filename="${filename}"`,
+        },
+      });
+    } catch (error) {
+      console.error("pdfme call-sheet error:", error);
+      return NextResponse.json(
+        { error: "pdfme generation failed", details: String(error) },
+        { status: 500 }
+      );
+    }
+  }
 
   const org = await prisma.organization.findUnique({
     where: { id: organizationId },

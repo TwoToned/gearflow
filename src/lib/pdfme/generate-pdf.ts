@@ -24,45 +24,50 @@ async function getCustomTemplate(
   docType: DocumentType,
   templateId?: string,
 ): Promise<{ template: Template; settings: TemplateSettings | null } | null> {
-  // If a specific templateId is provided, load that
-  if (templateId) {
-    const specific = await prisma.documentTemplate.findFirst({
+  try {
+    // If a specific templateId is provided, load that
+    if (templateId) {
+      const specific = await prisma.documentTemplate.findFirst({
+        where: {
+          id: templateId,
+          organizationId,
+          isDraft: false,
+        },
+      });
+      if (specific) {
+        return {
+          template: {
+            basePdf: JSON.parse(specific.basePdf),
+            schemas: JSON.parse(specific.schemas),
+          },
+          settings: specific.settings ? JSON.parse(specific.settings) : null,
+        };
+      }
+    }
+
+    // Otherwise, look for org's default template for this doc type
+    const custom = await prisma.documentTemplate.findFirst({
       where: {
-        id: templateId,
         organizationId,
+        type: docType,
+        isDefault: true,
         isDraft: false,
       },
     });
-    if (specific) {
-      return {
-        template: {
-          basePdf: JSON.parse(specific.basePdf),
-          schemas: JSON.parse(specific.schemas),
-        },
-        settings: specific.settings ? JSON.parse(specific.settings) : null,
-      };
-    }
+
+    if (!custom) return null;
+
+    return {
+      template: {
+        basePdf: JSON.parse(custom.basePdf),
+        schemas: JSON.parse(custom.schemas),
+      },
+      settings: custom.settings ? JSON.parse(custom.settings) : null,
+    };
+  } catch {
+    // Table may not exist yet (migration not run) — fall back to system default
+    return null;
   }
-
-  // Otherwise, look for org's default template for this doc type
-  const custom = await prisma.documentTemplate.findFirst({
-    where: {
-      organizationId,
-      type: docType,
-      isDefault: true,
-      isDraft: false,
-    },
-  });
-
-  if (!custom) return null;
-
-  return {
-    template: {
-      basePdf: JSON.parse(custom.basePdf),
-      schemas: JSON.parse(custom.schemas),
-    },
-    settings: custom.settings ? JSON.parse(custom.settings) : null,
-  };
 }
 
 /**

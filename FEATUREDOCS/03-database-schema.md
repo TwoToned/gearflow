@@ -67,6 +67,9 @@
 - **Prep** — `id, organizationId, projectId, name, containerAssetId? (unique), status (PACKING|PACKED|CHECKED_OUT|RETURNED|UNPACKED|CANCELLED), notes?, preparedById?, preparedAt?, checkedOutAt?, returnedAt?, unpackedAt?`. Container links to Asset via `"PrepContainer"` relation.
 - **PrepItem** — `id, prepId, assetId?, bulkAssetId?, kitId?, quantity, lineItemId?, addedAt, addedById?, sortOrder`. Unique: `[prepId, assetId]`. Links prep contents to assets, kits, and project line items.
 
+## Document Templates
+- **DocumentTemplate** — `id, organizationId, name, type (quote|invoice|packing-list|return-sheet|delivery-docket|call-sheet), basePdf (Text/JSON), schemas (Text/JSON), settings (Text/JSON, nullable), isDefault, isDraft, version, thumbnailUrl?, publishedAt?, createdAt, updatedAt`. Index: `[organizationId, type]`. Cascade delete with Organization.
+
 ## Activity & Scan Logs
 - **ActivityLog** — `id, organizationId, action, entityType, entityId, entityName, userId, userName, summary, details (JSON), metadata (JSON), projectId, assetId, kitId, createdAt`
 - **AssetScanLog** — `id, organizationId, assetId, bulkAssetId, kitId, projectId, action (CHECK_OUT|CHECK_IN|SCAN_VERIFY|TRANSFER), scannedById, scannedAt, notes, location`

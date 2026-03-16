@@ -93,7 +93,7 @@ div.app-shell (fixed inset-0 on mobile, relative on desktop)
 | `/settings/test-and-tag` | T&T ID format, defaults |
 | `/settings/billing` | Currency & tax |
 | `/settings/documents` | Document template management — cards grouped by doc type |
-| `/template-designer/[id]` | Full-screen pdfme template designer |
+| `/template-designer/[id]` | Full-screen template editor (Zoho Books-style, `(designer)` route group with own layout — no sidebar) |
 | `/settings/branding` | Logo & colors |
 | `/settings/team` | Members, invites, roles, permission matrix |
 | `/account` | Profile, password, 2FA, sessions, organizations |

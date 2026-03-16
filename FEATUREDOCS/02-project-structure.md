@@ -5,6 +5,7 @@ src/
 ├── app/
 │   ├── (auth)/           # Public pages: login, register, onboarding, invite, no-org
 │   ├── (app)/            # Protected pages: dashboard, assets, projects, warehouse, etc.
+│   ├── (designer)/       # Full-screen template designer (no sidebar layout)
 │   ├── (admin)/admin/    # Site admin panel
 │   ├── api/              # API routes: auth, files, uploads, documents, reports, admin
 │   ├── layout.tsx        # Root layout: fonts, theme, query provider, toaster
@@ -22,7 +23,7 @@ src/
 │   ├── media/            # MediaUploader, MediaThumbnail, MediaLightbox
 │   ├── projects/         # ProjectForm, LineItemsPanel, AddEquipmentDialog, documents
 │   ├── providers/        # ThemeProvider, QueryProvider, BrandingProvider
-│   ├── settings/         # InviteMember, MemberList, RoleManager, PermissionMatrix
+│   ├── settings/         # InviteMember, MemberList, RoleManager, PermissionMatrix, template-editor/, document-template-manager
 │   ├── suppliers/        # Supplier forms, tables
 │   ├── test-tag/         # TestTagTable, BatchCreateDialog
 │   ├── ui/               # Base components: Button, Card, Dialog, Sheet, Table, BarcodeScanner, ComboboxPicker, etc.
@@ -48,7 +49,7 @@ src/
 │   ├── use-platform-name.ts  # Client-side usePlatformName, usePlatformBranding
 │   ├── use-table-preferences.ts  # localStorage per-table sort/page/view
 │   ├── validations/      # Zod schemas: asset, model, kit, project, client, etc.
-│   ├── pdf/              # PDF document templates and shared styles
+│   ├── pdfme/            # pdfme PDF generation: plugins, templates, fonts, types, sample data, template settings
 │   ├── org-export.ts     # Organization ZIP export
 │   ├── org-import.ts     # Organization ZIP import
 │   └── org-transfer-types.ts  # Export manifest types
@@ -80,6 +81,7 @@ src/
 │   ├── custom-roles.ts   # Custom role CRUD
 │   ├── user-profile.ts   # User account operations
 │   ├── invitations.ts    # Invitation helpers
+│   ├── document-templates.ts # Document template CRUD, publish, set default
 │   ├── test-tag-assets.ts    # T&T asset CRUD
 │   ├── test-tag-records.ts   # T&T test record CRUD
 │   └── test-tag-reports.ts   # T&T report data + CSV

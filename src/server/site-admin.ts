@@ -52,6 +52,7 @@ export async function updateSiteSettings(data: {
   twoFactorGlobalPolicy?: string;
   defaultCurrency?: string;
   defaultTaxRate?: number;
+  allowOrgCreation?: boolean;
   socialLoginGoogle?: boolean;
   socialLoginMicrosoft?: boolean;
 }) {
@@ -73,7 +74,65 @@ export async function updateSiteSettings(data: {
   return serialize(updated);
 }
 
+// ─── Org Creation Policy ──────────────────────────────────────────────────
+
+/** Check whether the current user is allowed to create organizations. */
+export async function checkOrgCreationAllowed(): Promise<{ allowed: boolean; isSiteAdmin: boolean }> {
+  try {
+    const session = await requireSession();
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { role: true },
+    });
+    const admin = user?.role === "admin";
+    if (admin) return { allowed: true, isSiteAdmin: true };
+
+    const settings = await prisma.siteSettings.findFirst();
+    return { allowed: settings?.allowOrgCreation ?? true, isSiteAdmin: false };
+  } catch {
+    return { allowed: false, isSiteAdmin: false };
+  }
+}
+
 // ─── Organization Management ───────────────────────────────────────────────
+
+export async function adminCreateOrganization(data: {
+  name: string;
+  slug: string;
+  ownerUserId?: string;
+}) {
+  const session = await requireSiteAdmin();
+  const { name, slug, ownerUserId } = data;
+
+  if (!name.trim() || !slug.trim()) {
+    throw new Error("Name and slug are required.");
+  }
+
+  // Validate slug format
+  const normalizedSlug = slug.toLowerCase().replace(/[^a-z0-9-]/g, "").replace(/(^-|-$)/g, "");
+  if (!normalizedSlug) throw new Error("Invalid slug.");
+
+  // Check slug uniqueness
+  const existing = await prisma.organization.findUnique({ where: { slug: normalizedSlug } });
+  if (existing) throw new Error("An organization with this slug already exists.");
+
+  // Determine owner — defaults to the admin performing the action
+  const ownerId = ownerUserId || session.user.id;
+  const ownerUser = await prisma.user.findUnique({ where: { id: ownerId }, select: { id: true } });
+  if (!ownerUser) throw new Error("Owner user not found.");
+
+  const org = await prisma.$transaction(async (tx) => {
+    const newOrg = await tx.organization.create({
+      data: { name: name.trim(), slug: normalizedSlug },
+    });
+    await tx.member.create({
+      data: { organizationId: newOrg.id, userId: ownerId, role: "owner" },
+    });
+    return newOrg;
+  });
+
+  return serialize(org);
+}
 
 export async function getAllOrganizations(params?: {
   page?: number;

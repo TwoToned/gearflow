@@ -33,6 +33,7 @@ interface LineItem {
 
 function Checkbox({ checked = false, size = 7 }: { checked?: boolean; size?: number }) {
   if (checked) {
+    // Draw a tick/checkmark using two rotated lines inside the box
     return (
       <View
         style={{
@@ -41,12 +42,33 @@ function Checkbox({ checked = false, size = 7 }: { checked?: boolean; size?: num
           borderWidth: 0.75,
           borderColor: "#333",
           borderRadius: 1,
-          backgroundColor: "#333",
-          alignItems: "center",
-          justifyContent: "center",
+          position: "relative",
         }}
       >
-        <Text style={{ fontSize: size - 2, color: "#fff", fontFamily: "Helvetica-Bold", lineHeight: 1 }}>x</Text>
+        {/* Short leg of tick (bottom-left to center-bottom) */}
+        <View
+          style={{
+            position: "absolute",
+            left: size * 0.1,
+            top: size * 0.45,
+            width: size * 0.3,
+            height: 1,
+            backgroundColor: "#333",
+            transform: "rotate(45deg)",
+          }}
+        />
+        {/* Long leg of tick (center-bottom to top-right) */}
+        <View
+          style={{
+            position: "absolute",
+            left: size * 0.25,
+            top: size * 0.3,
+            width: size * 0.55,
+            height: 1,
+            backgroundColor: "#333",
+            transform: "rotate(-45deg)",
+          }}
+        />
       </View>
     );
   }

@@ -11,6 +11,8 @@ import {
   Trash2,
   MapPin,
   Clock,
+  Pencil,
+  RefreshCw,
 } from "lucide-react";
 
 import {
@@ -36,13 +38,17 @@ import {
   getDisplayTokens,
   createDisplayToken,
   revokeDisplayToken,
+  updateDisplayToken,
+  regenerateDisplayToken,
 } from "@/server/warehouse-display";
 import { getLocations } from "@/server/locations";
 
 interface DisplayToken {
   id: string;
   name: string;
+  token: string;
   layout: string;
+  locationId: string | null;
   location: { id: string; name: string } | null;
   createdBy: { name: string };
   lastAccessedAt: string | Date | null;
@@ -65,16 +71,103 @@ function formatDate(date: string | Date | null) {
   });
 }
 
+function getDisplayUrl(token: string) {
+  const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+  return `${baseUrl}/warehouse/display/${token}`;
+}
+
+// ─── Layout Picker (shared between create & edit) ────────────────────────────
+
+function LayoutPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="grid gap-2">
+      {LAYOUTS.map((l) => (
+        <label
+          key={l.value}
+          className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${
+            value === l.value
+              ? "border-primary bg-primary/5"
+              : "hover:bg-muted/50"
+          }`}
+        >
+          <input
+            type="radio"
+            name="layout"
+            value={l.value}
+            checked={value === l.value}
+            onChange={() => onChange(l.value)}
+            className="mt-0.5"
+          />
+          <div>
+            <div className="text-sm font-medium">{l.label}</div>
+            <div className="text-xs text-muted-foreground">{l.description}</div>
+          </div>
+        </label>
+      ))}
+    </div>
+  );
+}
+
+// ─── Location Select (shared) ────────────────────────────────────────────────
+
+function LocationSelect({
+  value,
+  onChange,
+  locations,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  locations: Array<{ id: string; name: string; type: string }>;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label>Location (optional)</Label>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      >
+        <option value="">All locations</option>
+        {locations
+          .filter((l) => l.type === "WAREHOUSE")
+          .map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.name}
+            </option>
+          ))}
+      </select>
+      <p className="text-xs text-muted-foreground">
+        Scope to a warehouse location to only show relevant projects.
+      </p>
+    </div>
+  );
+}
+
+// ─── Main Page ───────────────────────────────────────────────────────────────
+
 export default function DisplaySettingsPage() {
   const queryClient = useQueryClient();
   const canEdit = useCanDo("orgSettings", "update");
-  const [open, setOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [newToken, setNewToken] = useState<string | null>(null);
+  const [editingToken, setEditingToken] = useState<DisplayToken | null>(null);
+  const [regeneratedUrl, setRegeneratedUrl] = useState<string | null>(null);
 
-  // Form state
+  // Create form state
   const [name, setName] = useState("");
   const [locationId, setLocationId] = useState("");
   const [layout, setLayout] = useState("standard");
+
+  // Edit form state
+  const [editName, setEditName] = useState("");
+  const [editLocationId, setEditLocationId] = useState("");
+  const [editLayout, setEditLayout] = useState("standard");
 
   const { data: tokens, isLoading } = useQuery({
     queryKey: ["display-tokens"],
@@ -86,14 +179,19 @@ export default function DisplaySettingsPage() {
     queryFn: () => getLocations({ pageSize: 100, sortBy: "name" }),
   });
 
-  const locations = (locationsData as { locations: Array<{ id: string; name: string; type: string }> })?.locations ?? [];
+  const locations =
+    (locationsData as { locations: Array<{ id: string; name: string; type: string }> })
+      ?.locations ?? [];
+
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: ["display-tokens"] });
 
   const createMutation = useMutation({
     mutationFn: createDisplayToken,
     onSuccess: (result) => {
       const data = result as { token: string; display: unknown };
       setNewToken(data.token);
-      queryClient.invalidateQueries({ queryKey: ["display-tokens"] });
+      invalidate();
       toast.success("Display token created");
     },
     onError: (e) => toast.error(e.message),
@@ -102,8 +200,38 @@ export default function DisplaySettingsPage() {
   const revokeMutation = useMutation({
     mutationFn: revokeDisplayToken,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["display-tokens"] });
+      invalidate();
       toast.success("Display token revoked");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (data: { id: string; name: string; locationId: string | null; layout: string }) =>
+      updateDisplayToken(data.id, {
+        name: data.name,
+        locationId: data.locationId,
+        layout: data.layout,
+      }),
+    onSuccess: () => {
+      setEditingToken(null);
+      invalidate();
+      toast.success("Display updated");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const regenerateMutation = useMutation({
+    mutationFn: regenerateDisplayToken,
+    onSuccess: (result) => {
+      const data = result as { token: string };
+      const newUrl = getDisplayUrl(data.token);
+      setRegeneratedUrl(newUrl);
+      if (editingToken) {
+        setEditingToken({ ...editingToken, token: data.token });
+      }
+      invalidate();
+      toast.success("New URL generated");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -120,18 +248,33 @@ export default function DisplaySettingsPage() {
     });
   }
 
-  function handleCloseDialog() {
-    setOpen(false);
+  function handleCloseCreate() {
+    setCreateOpen(false);
     setNewToken(null);
     setName("");
     setLocationId("");
     setLayout("standard");
   }
 
-  function getDisplayUrl(token: string) {
-    const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
-    return `${baseUrl}/warehouse/display/${token}`;
+  function openEdit(t: DisplayToken) {
+    setEditingToken(t);
+    setEditName(t.name);
+    setEditLocationId(t.locationId || "");
+    setEditLayout(t.layout);
+    setRegeneratedUrl(null);
   }
+
+  function handleSaveEdit() {
+    if (!editingToken || !editName.trim()) return;
+    updateMutation.mutate({
+      id: editingToken.id,
+      name: editName.trim(),
+      locationId: editLocationId || null,
+      layout: editLayout,
+    });
+  }
+
+  const tokenList = (tokens as unknown as DisplayToken[]) ?? [];
 
   return (
     <Card>
@@ -153,9 +296,9 @@ export default function DisplaySettingsPage() {
         ) : (
           <>
             {/* Existing tokens */}
-            {tokens && (tokens as unknown as DisplayToken[]).length > 0 && (
+            {tokenList.length > 0 && (
               <div className="space-y-3">
-                {(tokens as unknown as DisplayToken[]).map((t) => (
+                {tokenList.map((t) => (
                   <div
                     key={t.id}
                     className="flex items-start justify-between gap-4 rounded-lg border p-4"
@@ -183,18 +326,31 @@ export default function DisplaySettingsPage() {
                       </div>
                     </div>
                     {canEdit && (
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="shrink-0 text-destructive hover:text-destructive"
-                        onClick={() => {
-                          if (confirm(`Revoke display "${t.name}"? The screen will stop working.`))
-                            revokeMutation.mutate(t.id);
-                        }}
-                        disabled={revokeMutation.isPending}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex gap-1 shrink-0">
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => openEdit(t)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => {
+                            if (
+                              confirm(
+                                `Revoke display "${t.name}"? The screen will stop working.`
+                              )
+                            )
+                              revokeMutation.mutate(t.id);
+                          }}
+                          disabled={revokeMutation.isPending}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     )}
                   </div>
                 ))}
@@ -203,7 +359,13 @@ export default function DisplaySettingsPage() {
 
             {/* Create button */}
             {canEdit && (
-              <Dialog open={open} onOpenChange={(v) => { if (!v) handleCloseDialog(); else setOpen(true); }}>
+              <Dialog
+                open={createOpen}
+                onOpenChange={(v) => {
+                  if (!v) handleCloseCreate();
+                  else setCreateOpen(true);
+                }}
+              >
                 <DialogTrigger render={<Button variant="outline" />}>
                   <Plus className="mr-2 h-4 w-4" />
                   Add Display
@@ -218,8 +380,9 @@ export default function DisplaySettingsPage() {
                   {newToken ? (
                     <div className="space-y-4">
                       <p className="text-sm text-muted-foreground">
-                        Copy this URL and open it on your warehouse TV or monitor.
-                        This URL will only be shown once.
+                        Copy this URL and open it on your warehouse TV or
+                        monitor. You can regenerate this URL later from the edit
+                        menu.
                       </p>
                       <div className="flex gap-2">
                         <Input
@@ -232,7 +395,9 @@ export default function DisplaySettingsPage() {
                           size="icon"
                           className="shrink-0"
                           onClick={() => {
-                            navigator.clipboard.writeText(getDisplayUrl(newToken));
+                            navigator.clipboard.writeText(
+                              getDisplayUrl(newToken)
+                            );
                             toast.success("URL copied to clipboard");
                           }}
                         >
@@ -255,57 +420,15 @@ export default function DisplaySettingsPage() {
                         />
                       </div>
 
-                      <div className="space-y-2">
-                        <Label htmlFor="displayLocation">Location (optional)</Label>
-                        <select
-                          id="displayLocation"
-                          value={locationId}
-                          onChange={(e) => setLocationId(e.target.value)}
-                          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        >
-                          <option value="">All locations</option>
-                          {locations
-                            .filter((l) => l.type === "WAREHOUSE")
-                            .map((l) => (
-                              <option key={l.id} value={l.id}>
-                                {l.name}
-                              </option>
-                            ))}
-                        </select>
-                        <p className="text-xs text-muted-foreground">
-                          Scope to a warehouse location to only show relevant projects.
-                        </p>
-                      </div>
+                      <LocationSelect
+                        value={locationId}
+                        onChange={setLocationId}
+                        locations={locations}
+                      />
 
                       <div className="space-y-2">
                         <Label>Layout</Label>
-                        <div className="grid gap-2">
-                          {LAYOUTS.map((l) => (
-                            <label
-                              key={l.value}
-                              className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${
-                                layout === l.value
-                                  ? "border-primary bg-primary/5"
-                                  : "hover:bg-muted/50"
-                              }`}
-                            >
-                              <input
-                                type="radio"
-                                name="layout"
-                                value={l.value}
-                                checked={layout === l.value}
-                                onChange={() => setLayout(l.value)}
-                                className="mt-0.5"
-                              />
-                              <div>
-                                <div className="text-sm font-medium">{l.label}</div>
-                                <div className="text-xs text-muted-foreground">
-                                  {l.description}
-                                </div>
-                              </div>
-                            </label>
-                          ))}
-                        </div>
+                        <LayoutPicker value={layout} onChange={setLayout} />
                       </div>
 
                       <div className="flex gap-2 justify-end">
@@ -327,6 +450,127 @@ export default function DisplaySettingsPage() {
                 </DialogContent>
               </Dialog>
             )}
+
+            {/* Edit dialog */}
+            <Dialog
+              open={!!editingToken}
+              onOpenChange={(v) => {
+                if (!v) {
+                  setEditingToken(null);
+                  setRegeneratedUrl(null);
+                }
+              }}
+            >
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Edit Display</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="editDisplayName">Display Name</Label>
+                    <Input
+                      id="editDisplayName"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                    />
+                  </div>
+
+                  <LocationSelect
+                    value={editLocationId}
+                    onChange={setEditLocationId}
+                    locations={locations}
+                  />
+
+                  <div className="space-y-2">
+                    <Label>Layout</Label>
+                    <LayoutPicker
+                      value={editLayout}
+                      onChange={setEditLayout}
+                    />
+                  </div>
+
+                  {/* Display URL section */}
+                  <div className="border-t pt-4 space-y-3">
+                    <Label>Display URL</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        readOnly
+                        value={
+                          regeneratedUrl ||
+                          (editingToken
+                            ? getDisplayUrl(editingToken.token)
+                            : "")
+                        }
+                        className="font-mono text-xs"
+                      />
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="shrink-0"
+                        onClick={() => {
+                          const url =
+                            regeneratedUrl ||
+                            (editingToken
+                              ? getDisplayUrl(editingToken.token)
+                              : "");
+                          navigator.clipboard.writeText(url);
+                          toast.success("URL copied to clipboard");
+                        }}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    {regeneratedUrl && (
+                      <p className="text-xs text-muted-foreground">
+                        New URL generated. The previous URL no longer works.
+                      </p>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        if (
+                          editingToken &&
+                          confirm(
+                            "Generate a new URL? The current URL will stop working and the screen will need to be updated."
+                          )
+                        )
+                          regenerateMutation.mutate(editingToken.id);
+                      }}
+                      disabled={regenerateMutation.isPending}
+                    >
+                      {regenerateMutation.isPending ? (
+                        <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                      )}
+                      Regenerate URL
+                    </Button>
+                  </div>
+
+                  <div className="flex gap-2 justify-end border-t pt-4">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setEditingToken(null);
+                        setRegeneratedUrl(null);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleSaveEdit}
+                      disabled={updateMutation.isPending}
+                    >
+                      {updateMutation.isPending && (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      )}
+                      Save Changes
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
           </>
         )}
       </CardContent>

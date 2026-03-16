@@ -1868,7 +1868,8 @@ model WarehouseDashboardToken {
   organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   name            String               // "Main Warehouse TV", "Loading Dock Screen"
-  tokenHash       String   @unique     // SHA-256 of the access token
+  token           String               // Raw access token (for URL display in settings)
+  tokenHash       String   @unique     // SHA-256 of the access token (for lookup)
   locationId      String?              // Scope to a specific warehouse location
   location        Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
   isActive        Boolean  @default(true)

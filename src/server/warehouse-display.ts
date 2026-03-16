@@ -44,6 +44,7 @@ export async function createDisplayToken(data: {
     data: {
       organizationId,
       name: data.name,
+      token: rawToken,
       tokenHash,
       locationId: data.locationId || null,
       layout: data.layout || "standard",
@@ -97,6 +98,86 @@ export async function revokeDisplayToken(id: string) {
   });
 
   return { success: true };
+}
+
+export async function updateDisplayToken(
+  id: string,
+  data: { name?: string; locationId?: string | null; layout?: string }
+) {
+  const { organizationId, userId, userName } = await requirePermission(
+    "orgSettings",
+    "update"
+  );
+
+  const existing = await prisma.warehouseDashboardToken.findFirst({
+    where: { id, organizationId },
+  });
+  if (!existing) throw new Error("Display token not found");
+
+  const token = await prisma.warehouseDashboardToken.update({
+    where: { id },
+    data: {
+      ...(data.name !== undefined && { name: data.name }),
+      ...(data.layout !== undefined && { layout: data.layout }),
+      ...(data.locationId !== undefined && {
+        locationId: data.locationId || null,
+      }),
+    },
+    include: {
+      location: { select: { id: true, name: true } },
+      createdBy: { select: { name: true } },
+    },
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "update",
+    entityType: "warehouseDashboardToken",
+    entityId: token.id,
+    entityName: token.name,
+    summary: `Updated warehouse display "${token.name}"`,
+  });
+
+  return serialize(token);
+}
+
+export async function regenerateDisplayToken(id: string) {
+  const { organizationId, userId, userName } = await requirePermission(
+    "orgSettings",
+    "update"
+  );
+
+  const existing = await prisma.warehouseDashboardToken.findFirst({
+    where: { id, organizationId },
+  });
+  if (!existing) throw new Error("Display token not found");
+
+  const rawToken = randomBytes(32).toString("hex");
+  const tokenHash = hashToken(rawToken);
+
+  const updated = await prisma.warehouseDashboardToken.update({
+    where: { id },
+    data: { token: rawToken, tokenHash },
+    include: {
+      location: { select: { id: true, name: true } },
+      createdBy: { select: { name: true } },
+    },
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "update",
+    entityType: "warehouseDashboardToken",
+    entityId: id,
+    entityName: existing.name,
+    summary: `Regenerated URL for warehouse display "${existing.name}"`,
+  });
+
+  return serialize({ token: rawToken, display: updated });
 }
 
 // ─── Display Data ────────────────────────────────────────────────────────────

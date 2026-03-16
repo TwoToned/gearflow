@@ -3,6 +3,7 @@ CREATE TABLE "warehouse_dashboard_token" (
     "id" TEXT NOT NULL,
     "organizationId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
+    "token" TEXT NOT NULL,
     "tokenHash" TEXT NOT NULL,
     "locationId" TEXT,
     "isActive" BOOLEAN NOT NULL DEFAULT true,

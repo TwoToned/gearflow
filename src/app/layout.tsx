@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { DM_Sans, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { QueryProvider } from "@/components/providers/query-provider";
+import { GlobalErrorBoundary } from "@/components/error-boundary";
+import { DomPatch } from "@/components/dom-patch";
 import { Toaster } from "@/components/ui/sonner";
 import { getPlatformName } from "@/lib/platform";
 import "./globals.css";
@@ -60,9 +62,12 @@ export default function RootLayout({
         className={`${dmSans.variable} ${geistMono.variable} antialiased`}
         suppressHydrationWarning
       >
-        <ThemeProvider>
-          <QueryProvider>{children}</QueryProvider>
-        </ThemeProvider>
+        <DomPatch />
+        <GlobalErrorBoundary>
+          <ThemeProvider>
+            <QueryProvider>{children}</QueryProvider>
+          </ThemeProvider>
+        </GlobalErrorBoundary>
         <Toaster />
       </body>
     </html>

@@ -4,14 +4,18 @@
  * Shows per-unit checkboxes for qty > 1, total items count, total weight.
  */
 import type { Template } from "@pdfme/common";
-import type { DocumentData, TablePluginConfig, PageHeaderConfig, FooterConfig } from "../types";
+import type { DocumentData } from "../types";
+import type { TemplateSettings } from "../template-settings";
+import { getDefaultSettings } from "../template-settings";
+import { buildHeaderConfig, buildFooterConfig, buildProjectLines, buildTableConfig, getLogoModeOffset } from "./shared-builders";
 
 const PAGE_WIDTH = 210;
 const PAGE_HEIGHT = 297;
 const MARGIN = 14;
 const CONTENT_W = PAGE_WIDTH - MARGIN * 2;
 
-export function buildPackingListTemplate(): Template {
+export function buildPackingListTemplate(settings?: TemplateSettings): Template {
+  const o = getLogoModeOffset(settings);
   return {
     basePdf: {
       width: PAGE_WIDTH,
@@ -26,13 +30,13 @@ export function buildPackingListTemplate(): Template {
           content: "",
           position: { x: MARGIN, y: MARGIN },
           width: CONTENT_W,
-          height: 25,
+          height: 25 + o,
         },
         {
           name: "projectInfo",
           type: "text",
           content: "",
-          position: { x: MARGIN, y: 42 },
+          position: { x: MARGIN, y: 42 + o },
           width: CONTENT_W,
           height: 18,
           fontSize: 9,
@@ -42,7 +46,7 @@ export function buildPackingListTemplate(): Template {
           name: "table",
           type: "gearflowTable",
           content: "",
-          position: { x: MARGIN, y: 64 },
+          position: { x: MARGIN, y: 64 + o },
           width: CONTENT_W,
           height: 200,
         },
@@ -50,7 +54,7 @@ export function buildPackingListTemplate(): Template {
           name: "summary",
           type: "text",
           content: "",
-          position: { x: MARGIN, y: 268 },
+          position: { x: MARGIN, y: 268 + o },
           width: CONTENT_W,
           height: 8,
           fontSize: 8,
@@ -69,57 +73,26 @@ export function buildPackingListTemplate(): Template {
   };
 }
 
-export function buildPackingListInputs(data: DocumentData): Record<string, string> {
-  const headerConfig: PageHeaderConfig = {
-    orgName: data.org_name,
-    orgDetails: [data.org_address, data.org_phone, data.org_email].filter(Boolean).join("\n"),
-    docTitle: "PULL SLIP",
-    docMeta: `${data.project_number}\n${data.document_date}`,
-    logoData: data.org_logo,
-    iconData: data.org_icon,
-    documentLogoMode: data.org_branding?.documentLogoMode || "icon",
-    showOrgNameOnDocuments: data.org_branding?.showOrgNameOnDocuments !== false,
-    documentColor: data.org_document_color,
-  };
+export function buildPackingListInputs(data: DocumentData, _callSheetDate?: Date, settings?: TemplateSettings): Record<string, string> {
+  const s = settings || getDefaultSettings("packing-list");
+  const docColor = s.accentColor || data.org_document_color;
 
-  const projectLines: string[] = [data.project_name];
-  if (data.venue_name) projectLines.push(`Venue: ${data.venue_name}`);
-  if (data.rental_start && data.rental_start !== "-") {
-    projectLines.push(`Rental: ${data.rental_start}${data.rental_end && data.rental_end !== "-" ? ` - ${data.rental_end}` : ""}`);
-  }
+  const headerConfig = buildHeaderConfig(data, s, docColor);
+  const projectLines = buildProjectLines(data, s);
 
-  const tableConfig: { items: typeof data.line_items; config: TablePluginConfig } = {
-    items: data.line_items,
-    config: {
-      documentType: "packing-list",
-      documentColor: data.org_document_color,
-      showGroupHeaders: true,
-      showKitChildren: true,
-      showCheckboxes: true,
-      showConditionColumns: false,
-      showPricing: false,
-      showBadges: false,
-      showNotes: false,
-      showPerUnitCheckboxes: true,
-      showAssetTags: true,
-      showCategories: true,
-      showRowNumbers: false,
-      filterOptional: false,
-      filterByStatus: null,
-    },
-  };
+  const tableConfig = buildTableConfig(data, s, "packing-list", docColor, {
+    filterOptional: false,
+    filterByStatus: null,
+  });
 
-  const footerConfig: FooterConfig = {
-    text: `${data.org_name} | ${data.org_email} | ${data.org_phone}`,
-    secondLine: `Ref: ${data.project_number} | Generated ${data.document_date}`,
-  };
+  const footerConfig = buildFooterConfig(data, s);
 
   const totalWeightStr = data.total_weight > 0 ? ` | Total Weight: ${data.total_weight.toFixed(1)}kg` : "";
-  const summaryText = `Total Items: ${data.total_items}${totalWeightStr}`;
+  const summaryText = s.other.showSummaryLine ? `Total Items: ${data.total_items}${totalWeightStr}` : "";
 
   return {
     header: JSON.stringify(headerConfig),
-    projectInfo: projectLines.join("\n"),
+    projectInfo: projectLines,
     table: JSON.stringify(tableConfig),
     summary: summaryText,
     footer: JSON.stringify(footerConfig),

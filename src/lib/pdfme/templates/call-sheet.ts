@@ -3,15 +3,19 @@
  * Landscape A4 (297mm × 210mm). Crew table with project/location/contact info.
  */
 import type { Template } from "@pdfme/common";
-import type { DocumentData, PageHeaderConfig, FooterConfig } from "../types";
+import type { DocumentData } from "../types";
+import type { TemplateSettings } from "../template-settings";
+import { getDefaultSettings } from "../template-settings";
 import { formatDate } from "../plugins/helpers";
+import { buildHeaderConfig, buildFooterConfig, getLogoModeOffset } from "./shared-builders";
 
 const PAGE_WIDTH = 297; // landscape
 const PAGE_HEIGHT = 210;
 const MARGIN = 14;
 const CONTENT_W = PAGE_WIDTH - MARGIN * 2; // 269mm
 
-export function buildCallSheetTemplate(): Template {
+export function buildCallSheetTemplate(settings?: TemplateSettings): Template {
+  const o = getLogoModeOffset(settings);
   return {
     basePdf: {
       width: PAGE_WIDTH,
@@ -26,14 +30,14 @@ export function buildCallSheetTemplate(): Template {
           content: "",
           position: { x: MARGIN, y: MARGIN },
           width: CONTENT_W,
-          height: 25,
+          height: 25 + o,
         },
         // Three-column info row
         {
           name: "projectInfo",
           type: "text",
           content: "",
-          position: { x: MARGIN, y: 42 },
+          position: { x: MARGIN, y: 42 + o },
           width: CONTENT_W / 3 - 4,
           height: 22,
           fontSize: 9,
@@ -43,7 +47,7 @@ export function buildCallSheetTemplate(): Template {
           name: "locationInfo",
           type: "text",
           content: "",
-          position: { x: MARGIN + CONTENT_W / 3, y: 42 },
+          position: { x: MARGIN + CONTENT_W / 3, y: 42 + o },
           width: CONTENT_W / 3 - 4,
           height: 22,
           fontSize: 9,
@@ -53,7 +57,7 @@ export function buildCallSheetTemplate(): Template {
           name: "siteContact",
           type: "text",
           content: "",
-          position: { x: MARGIN + (CONTENT_W / 3) * 2, y: 42 },
+          position: { x: MARGIN + (CONTENT_W / 3) * 2, y: 42 + o },
           width: CONTENT_W / 3 - 4,
           height: 22,
           fontSize: 9,
@@ -64,7 +68,7 @@ export function buildCallSheetTemplate(): Template {
           name: "crewTable",
           type: "gearflowCrewTable",
           content: "",
-          position: { x: MARGIN, y: 68 },
+          position: { x: MARGIN, y: 68 + o },
           width: CONTENT_W,
           height: 110,
         },
@@ -73,7 +77,7 @@ export function buildCallSheetTemplate(): Template {
           name: "crewNotes",
           type: "text",
           content: "",
-          position: { x: MARGIN, y: 182 },
+          position: { x: MARGIN, y: 182 + o },
           width: CONTENT_W,
           height: 10,
           fontSize: 8,
@@ -92,7 +96,10 @@ export function buildCallSheetTemplate(): Template {
   };
 }
 
-export function buildCallSheetInputs(data: DocumentData, callSheetDate?: Date): Record<string, string> {
+export function buildCallSheetInputs(data: DocumentData, callSheetDate?: Date, settings?: TemplateSettings): Record<string, string> {
+  const s = settings || getDefaultSettings("call-sheet");
+  const docColor = s.accentColor || data.org_document_color;
+
   const dateStr = callSheetDate
     ? formatDate(callSheetDate.toISOString())
     : data.load_in_date !== "-"
@@ -101,24 +108,17 @@ export function buildCallSheetInputs(data: DocumentData, callSheetDate?: Date): 
         ? data.event_start
         : data.rental_start;
 
-  const headerConfig: PageHeaderConfig = {
-    orgName: data.org_name,
-    orgDetails: [data.org_address, data.org_phone, data.org_email].filter(Boolean).join("\n"),
-    docTitle: "CALL SHEET",
-    docMeta: `${data.project_number}\n${dateStr}`,
-    logoData: data.org_logo,
-    iconData: data.org_icon,
-    documentLogoMode: data.org_branding?.documentLogoMode || "icon",
-    showOrgNameOnDocuments: data.org_branding?.showOrgNameOnDocuments !== false,
-    documentColor: data.org_document_color,
-  };
+  // Override the header meta with call sheet date
+  const headerConfig = buildHeaderConfig(data, s, docColor);
+  headerConfig.docMeta = `${data.project_number}\n${dateStr}`;
 
   const projectLines = [data.project_name, `Date: ${dateStr}`];
+
   const locationLines = [data.venue_name || "-"];
   if (data.venue_address) locationLines.push(data.venue_address);
 
   const contactLines: string[] = [];
-  if (data.site_contact_name) {
+  if (s.details.showSiteContact && data.site_contact_name) {
     contactLines.push(data.site_contact_name);
     if (data.site_contact_phone) contactLines.push(`Ph: ${data.site_contact_phone}`);
     if (data.site_contact_email) contactLines.push(data.site_contact_email);
@@ -128,13 +128,11 @@ export function buildCallSheetInputs(data: DocumentData, callSheetDate?: Date): 
 
   const crewTableConfig = {
     crew: data.crew,
-    documentColor: data.org_document_color,
+    documentColor: docColor,
   };
 
-  const footerConfig: FooterConfig = {
-    text: `${data.org_name} | ${data.org_email} | ${data.org_phone}`,
-    secondLine: `Ref: ${data.project_number} | Generated ${data.document_date}`,
-  };
+  const footerConfig = buildFooterConfig(data, s);
+  const crewNotes = s.other.showCrewNotes && data.crew_notes ? `Notes: ${data.crew_notes}` : "";
 
   return {
     header: JSON.stringify(headerConfig),
@@ -142,7 +140,7 @@ export function buildCallSheetInputs(data: DocumentData, callSheetDate?: Date): 
     locationInfo: locationLines.join("\n"),
     siteContact: contactLines.join("\n"),
     crewTable: JSON.stringify(crewTableConfig),
-    crewNotes: data.crew_notes ? `Notes: ${data.crew_notes}` : "",
+    crewNotes,
     footer: JSON.stringify(footerConfig),
   };
 }

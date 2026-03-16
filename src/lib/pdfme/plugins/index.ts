@@ -10,11 +10,14 @@ import gearflowPageFooter from "./gearflow-page-footer";
 import gearflowCheckbox from "./gearflow-checkbox";
 import gearflowSignatureLine from "./gearflow-signature-line";
 import gearflowCrewTable from "./gearflow-crew-table";
+import { gearflowDataTable } from "./gearflow-data-table";
+import { gearflowSummaryBox } from "./gearflow-summary-box";
+import { gearflowTextBlock } from "./gearflow-text-block";
 
 export const gearflowPlugins = {
   // Built-in pdfme plugins
   text,
-  // Custom plugins
+  // Custom plugins — project documents
   gearflowTable,
   gearflowFinancialSummary,
   gearflowPageHeader,
@@ -22,6 +25,10 @@ export const gearflowPlugins = {
   gearflowCheckbox,
   gearflowSignatureLine,
   gearflowCrewTable,
+  // Custom plugins — reports
+  gearflowDataTable,
+  gearflowSummaryBox,
+  gearflowTextBlock,
 };
 
 export {
@@ -32,4 +39,7 @@ export {
   gearflowCheckbox,
   gearflowSignatureLine,
   gearflowCrewTable,
+  gearflowDataTable,
+  gearflowSummaryBox,
+  gearflowTextBlock,
 };

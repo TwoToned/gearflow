@@ -6,7 +6,7 @@
 import { prisma } from "@/lib/prisma";
 import { computeOverbookedStatus } from "@/lib/availability";
 import { getFileAsDataUri } from "@/lib/storage";
-import { formatCurrency, formatDate } from "@/lib/pdf/styles";
+import { formatCurrency, formatDate } from "./plugins/helpers";
 import type { DocumentData, DocumentLineItem, CrewEntry, DocumentType } from "./types";
 
 const DEFAULT_DOC_COLOR = "#0d4f4f";
@@ -172,7 +172,9 @@ export async function buildDocumentData(
     lineItems: enrichedLineItems,
   });
 
-  const lineItems: DocumentLineItem[] = serialized.lineItems;
+  // serializeDecimals converts Prisma Decimal fields to numbers
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const lineItems: DocumentLineItem[] = serialized.lineItems as any;
 
   // Compute totals for packing list / delivery docket
   const topLevelItems = lineItems.filter((i) => !i.isKitChild);

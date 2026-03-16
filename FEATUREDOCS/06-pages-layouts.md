@@ -92,6 +92,8 @@ div.app-shell (fixed inset-0 on mobile, relative on desktop)
 | `/settings/assets` | Asset tags, links to suppliers & categories |
 | `/settings/test-and-tag` | T&T ID format, defaults |
 | `/settings/billing` | Currency & tax |
+| `/settings/documents` | Document template management — cards grouped by doc type |
+| `/template-designer/[id]` | Full-screen pdfme template designer |
 | `/settings/branding` | Logo & colors |
 | `/settings/team` | Members, invites, roles, permission matrix |
 | `/account` | Profile, password, 2FA, sessions, organizations |

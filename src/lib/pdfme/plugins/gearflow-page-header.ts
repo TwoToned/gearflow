@@ -1,7 +1,6 @@
 /**
  * gearflowPageHeader plugin — renders document header with logo/icon + org info + doc title.
- * Replicates the PdfHeader component from @react-pdf/renderer.
- * Three modes: "logo" (full logo + title row), "icon" (icon + name, title right), "none" (name + title right)
+ * Three modes: "logo" (full logo above, compact details below), "icon" (icon + name, title right), "none" (name + title right)
  */
 import type { Plugin, Schema, PDFRenderProps } from "@pdfme/common";
 import { getLayoutProps, hexToRgb, getHelveticaFonts, stubUiRender, stubPropPanel } from "./helpers";
@@ -31,7 +30,8 @@ async function pdfRender(arg: PDFRenderProps<PageHeaderSchema>) {
 
   // === Logo mode ===
   if (mode === "logo" && config.logoData) {
-    // Row 1: Logo on left, doc title + meta on right
+    // Layout: Logo at top-left, then same org name + details layout as icon/none
+    // below, shifted down so nothing overlaps the logo.
     let logoImage;
     try {
       if (config.logoData.includes("image/png")) {
@@ -43,12 +43,13 @@ async function pdfRender(arg: PDFRenderProps<PageHeaderSchema>) {
       // Failed to embed logo, skip
     }
 
+    let logoH = 0;
     if (logoImage) {
-      const maxLogoW = 180;
-      const maxLogoH = 60;
+      const maxLogoW = 200;
+      const maxLogoH = 50;
       const scale = Math.min(maxLogoW / logoImage.width, maxLogoH / logoImage.height, 1);
       const logoW = logoImage.width * scale;
-      const logoH = logoImage.height * scale;
+      logoH = logoImage.height * scale;
 
       page.drawImage(logoImage, {
         x,
@@ -58,7 +59,38 @@ async function pdfRender(arg: PDFRenderProps<PageHeaderSchema>) {
       });
     }
 
-    // Doc title on right
+    // Shift down past logo
+    currentY -= logoH + 8;
+
+    // Now render the same layout as icon/none mode below the logo
+    // Left side: org name + details
+    let textY = currentY;
+    if (showOrgName) {
+      page.drawText(config.orgName, {
+        x,
+        y: textY - 16,
+        size: 18,
+        font: fonts.bold,
+        color: docColor,
+      });
+      textY -= 28;
+    }
+
+    if (config.orgDetails) {
+      const detailLines = config.orgDetails.split("\n");
+      for (const line of detailLines) {
+        page.drawText(line, {
+          x,
+          y: textY,
+          size: 8,
+          font: fonts.regular,
+          color: detailsColor,
+        });
+        textY -= 12;
+      }
+    }
+
+    // Right side: doc title + meta (aligned to the same row as org name)
     const titleSize = 22;
     const titleWidth = fonts.bold.widthOfTextAtSize(config.docTitle, titleSize);
     page.drawText(config.docTitle, {
@@ -69,7 +101,6 @@ async function pdfRender(arg: PDFRenderProps<PageHeaderSchema>) {
       color: docColor,
     });
 
-    // Doc meta below title
     const metaLines = config.docMeta.split("\n");
     let metaY = currentY - titleSize - 14;
     for (const line of metaLines) {
@@ -84,35 +115,6 @@ async function pdfRender(arg: PDFRenderProps<PageHeaderSchema>) {
       metaY -= 13;
     }
 
-    currentY -= 70; // Advance past logo row
-
-    // Company name below logo (if shown)
-    if (showOrgName) {
-      page.drawText(config.orgName, {
-        x,
-        y: currentY,
-        size: 18,
-        font: fonts.bold,
-        color: docColor,
-      });
-      currentY -= 14;
-    }
-
-    // Org details below company name
-    if (config.orgDetails) {
-      const detailLines = config.orgDetails.split("\n");
-      for (const line of detailLines) {
-        page.drawText(line, {
-          x,
-          y: currentY,
-          size: 8,
-          font: fonts.regular,
-          color: detailsColor,
-        });
-        currentY -= 12;
-      }
-    }
-
     return;
   }
 
@@ -120,30 +122,32 @@ async function pdfRender(arg: PDFRenderProps<PageHeaderSchema>) {
   // Left side: icon + org name + details
   let leftX = x;
 
-  if (mode === "icon") {
-    const iconSrc = config.iconData || config.logoData;
-    if (iconSrc) {
-      let iconImage;
-      try {
-        if (iconSrc.includes("image/png")) {
-          iconImage = await pdfDoc.embedPng(iconSrc);
-        } else {
-          iconImage = await pdfDoc.embedJpg(iconSrc);
-        }
-      } catch {
-        // Failed to embed icon
+  if (mode === "icon" && config.iconData) {
+    // Only use dedicated icon data — don't fall back to logo (a wide logo
+    // looks wrong squished into a 40×40 square)
+    let iconImage;
+    try {
+      if (config.iconData.includes("image/png")) {
+        iconImage = await pdfDoc.embedPng(config.iconData);
+      } else {
+        iconImage = await pdfDoc.embedJpg(config.iconData);
       }
+    } catch {
+      // Failed to embed icon
+    }
 
-      if (iconImage) {
-        const iconSize = 40;
-        page.drawImage(iconImage, {
-          x: leftX,
-          y: currentY - iconSize,
-          width: iconSize,
-          height: iconSize,
-        });
-        leftX += iconSize + 10; // gap
-      }
+    if (iconImage) {
+      const maxH = 40;
+      const scale = Math.min(maxH / iconImage.height, 1);
+      const iconW = iconImage.width * scale;
+      const iconH = iconImage.height * scale;
+      page.drawImage(iconImage, {
+        x: leftX,
+        y: currentY - iconH,
+        width: iconW,
+        height: iconH,
+      });
+      leftX += iconW + 10; // gap
     }
   }
 

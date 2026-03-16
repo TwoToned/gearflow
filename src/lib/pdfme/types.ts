@@ -20,6 +20,18 @@ export type DocumentType =
   | "delivery-docket"
   | "call-sheet";
 
+export type TestTagReportType =
+  | "tt-register"
+  | "tt-overdue"
+  | "tt-session"
+  | "tt-item-history"
+  | "tt-due-schedule"
+  | "tt-class-summary"
+  | "tt-tester-activity"
+  | "tt-failed-items"
+  | "tt-bulk-summary"
+  | "tt-compliance-cert";
+
 /** Line item structure passed to plugins (post-serialization, post-enrichment) */
 export interface DocumentLineItem {
   id: string;

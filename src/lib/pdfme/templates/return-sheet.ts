@@ -5,14 +5,18 @@
  * Includes signature section.
  */
 import type { Template } from "@pdfme/common";
-import type { DocumentData, TablePluginConfig, PageHeaderConfig, FooterConfig, SignatureLineConfig } from "../types";
+import type { DocumentData, SignatureLineConfig } from "../types";
+import type { TemplateSettings } from "../template-settings";
+import { getDefaultSettings } from "../template-settings";
+import { buildHeaderConfig, buildFooterConfig, buildProjectLines, buildTableConfig, getLogoModeOffset } from "./shared-builders";
 
 const PAGE_WIDTH = 210;
 const PAGE_HEIGHT = 297;
 const MARGIN = 14;
 const CONTENT_W = PAGE_WIDTH - MARGIN * 2;
 
-export function buildReturnSheetTemplate(): Template {
+export function buildReturnSheetTemplate(settings?: TemplateSettings): Template {
+  const o = getLogoModeOffset(settings);
   return {
     basePdf: {
       width: PAGE_WIDTH,
@@ -27,13 +31,13 @@ export function buildReturnSheetTemplate(): Template {
           content: "",
           position: { x: MARGIN, y: MARGIN },
           width: CONTENT_W,
-          height: 25,
+          height: 25 + o,
         },
         {
           name: "projectInfo",
           type: "text",
           content: "",
-          position: { x: MARGIN, y: 42 },
+          position: { x: MARGIN, y: 42 + o },
           width: CONTENT_W,
           height: 18,
           fontSize: 9,
@@ -43,7 +47,7 @@ export function buildReturnSheetTemplate(): Template {
           name: "table",
           type: "gearflowTable",
           content: "",
-          position: { x: MARGIN, y: 64 },
+          position: { x: MARGIN, y: 64 + o },
           width: CONTENT_W,
           height: 175,
         },
@@ -51,7 +55,7 @@ export function buildReturnSheetTemplate(): Template {
           name: "signature",
           type: "gearflowSignatureLine",
           content: "",
-          position: { x: MARGIN, y: 245 },
+          position: { x: MARGIN, y: 245 + o },
           width: CONTENT_W,
           height: 20,
         },
@@ -68,62 +72,33 @@ export function buildReturnSheetTemplate(): Template {
   };
 }
 
-export function buildReturnSheetInputs(data: DocumentData): Record<string, string> {
-  const headerConfig: PageHeaderConfig = {
-    orgName: data.org_name,
-    orgDetails: [data.org_address, data.org_phone, data.org_email].filter(Boolean).join("\n"),
-    docTitle: "RETURN SHEET",
-    docMeta: `${data.project_number}\n${data.document_date}`,
-    logoData: data.org_logo,
-    iconData: data.org_icon,
-    documentLogoMode: data.org_branding?.documentLogoMode || "icon",
-    showOrgNameOnDocuments: data.org_branding?.showOrgNameOnDocuments !== false,
-    documentColor: data.org_document_color,
-  };
+export function buildReturnSheetInputs(data: DocumentData, _callSheetDate?: Date, settings?: TemplateSettings): Record<string, string> {
+  const s = settings || getDefaultSettings("return-sheet");
+  const docColor = s.accentColor || data.org_document_color;
 
-  const projectLines: string[] = [data.project_name];
-  if (data.venue_name) projectLines.push(`Venue: ${data.venue_name}`);
-  if (data.rental_start && data.rental_start !== "-") {
-    projectLines.push(`Rental: ${data.rental_start}${data.rental_end && data.rental_end !== "-" ? ` - ${data.rental_end}` : ""}`);
-  }
+  const headerConfig = buildHeaderConfig(data, s, docColor);
+  const projectLines = buildProjectLines(data, s);
 
-  const tableConfig: { items: typeof data.line_items; config: TablePluginConfig } = {
-    items: data.line_items,
-    config: {
-      documentType: "return-sheet",
-      documentColor: data.org_document_color,
-      showGroupHeaders: true,
-      showKitChildren: true,
-      showCheckboxes: true,
-      showConditionColumns: true,
-      showPricing: false,
-      showBadges: false,
-      showNotes: true,
-      showPerUnitCheckboxes: true,
-      showAssetTags: true,
-      showCategories: false,
-      showRowNumbers: false,
-      filterOptional: false,
-      filterByStatus: ["CHECKED_OUT", "RETURNED"],
-    },
-  };
+  const tableConfig = buildTableConfig(data, s, "return-sheet", docColor, {
+    filterOptional: false,
+    filterByStatus: ["CHECKED_OUT", "RETURNED"],
+  });
 
-  const signatureConfig: SignatureLineConfig = {
-    columns: [
-      { label: "Returned By", subLabel: "Name / Signature" },
-      { label: "Received By", subLabel: "Name / Signature" },
-      { label: "Date" },
-    ],
-  };
+  const signatureConfig: SignatureLineConfig = s.other.showSignatureSection
+    ? {
+        columns: [
+          { label: "Returned By", subLabel: "Name / Signature" },
+          { label: "Received By", subLabel: "Name / Signature" },
+          { label: "Date" },
+        ],
+      }
+    : { columns: [] };
 
-  const footerConfig: FooterConfig = {
-    text: `${data.org_name} | ${data.org_email} | ${data.org_phone}`,
-    secondLine: `Ref: ${data.project_number} | Generated ${data.document_date}`,
-  };
+  const footerConfig = buildFooterConfig(data, s);
 
   return {
     header: JSON.stringify(headerConfig),
-    projectInfo: projectLines.join("\n"),
+    projectInfo: projectLines,
     table: JSON.stringify(tableConfig),
     signature: JSON.stringify(signatureConfig),
     footer: JSON.stringify(footerConfig),

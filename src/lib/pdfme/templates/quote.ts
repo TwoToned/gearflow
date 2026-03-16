@@ -6,15 +6,18 @@
  * Content area: 182mm × 269mm
  */
 import type { Template } from "@pdfme/common";
-import type { DocumentData, TablePluginConfig, FinancialSummaryConfig, PageHeaderConfig, FooterConfig } from "../types";
-import { formatCurrency, formatDate } from "../plugins/helpers";
+import type { DocumentData } from "../types";
+import type { TemplateSettings } from "../template-settings";
+import { getDefaultSettings } from "../template-settings";
+import { buildHeaderConfig, buildFooterConfig, buildClientLines, buildProjectLines, buildTableConfig, buildFinancialConfig, getLogoModeOffset } from "./shared-builders";
 
 const PAGE_WIDTH = 210;
 const PAGE_HEIGHT = 297;
 const MARGIN = 14;
 const CONTENT_W = PAGE_WIDTH - MARGIN * 2; // 182mm
 
-export function buildQuoteTemplate(): Template {
+export function buildQuoteTemplate(settings?: TemplateSettings): Template {
+  const o = getLogoModeOffset(settings);
   return {
     basePdf: {
       width: PAGE_WIDTH,
@@ -30,14 +33,14 @@ export function buildQuoteTemplate(): Template {
           content: "",
           position: { x: MARGIN, y: MARGIN },
           width: CONTENT_W,
-          height: 25,
+          height: 25 + o,
         },
         // Client info (left column) — using built-in text
         {
           name: "clientInfo",
           type: "text",
           content: "",
-          position: { x: MARGIN, y: 42 },
+          position: { x: MARGIN, y: 42 + o },
           width: CONTENT_W / 2 - 4,
           height: 30,
           fontSize: 9,
@@ -48,7 +51,7 @@ export function buildQuoteTemplate(): Template {
           name: "projectInfo",
           type: "text",
           content: "",
-          position: { x: MARGIN + CONTENT_W / 2 + 4, y: 42 },
+          position: { x: MARGIN + CONTENT_W / 2 + 4, y: 42 + o },
           width: CONTENT_W / 2 - 4,
           height: 30,
           fontSize: 9,
@@ -59,7 +62,7 @@ export function buildQuoteTemplate(): Template {
           name: "table",
           type: "gearflowTable",
           content: "",
-          position: { x: MARGIN, y: 78 },
+          position: { x: MARGIN, y: 78 + o },
           width: CONTENT_W,
           height: 160,
         },
@@ -68,7 +71,7 @@ export function buildQuoteTemplate(): Template {
           name: "financials",
           type: "gearflowFinancialSummary",
           content: "",
-          position: { x: MARGIN, y: 240 },
+          position: { x: MARGIN, y: 240 + o },
           width: CONTENT_W,
           height: 25,
         },
@@ -77,7 +80,7 @@ export function buildQuoteTemplate(): Template {
           name: "notes",
           type: "text",
           content: "",
-          position: { x: MARGIN, y: 268 },
+          position: { x: MARGIN, y: 268 + o },
           width: CONTENT_W,
           height: 12,
           fontSize: 8,
@@ -100,92 +103,31 @@ export function buildQuoteTemplate(): Template {
 /**
  * Build inputs for the quote template from DocumentData.
  */
-export function buildQuoteInputs(data: DocumentData): Record<string, string> {
-  // Header config
-  const headerConfig: PageHeaderConfig = {
-    orgName: data.org_name,
-    orgDetails: [data.org_address, data.org_phone, data.org_email, data.org_website].filter(Boolean).join("\n"),
-    docTitle: "QUOTE",
-    docMeta: `${data.project_number}\n${data.document_date}`,
-    logoData: data.org_logo,
-    iconData: data.org_icon,
-    documentLogoMode: data.org_branding?.documentLogoMode || "icon",
-    showOrgNameOnDocuments: data.org_branding?.showOrgNameOnDocuments !== false,
-    documentColor: data.org_document_color,
-  };
+export function buildQuoteInputs(data: DocumentData, _callSheetDate?: Date, settings?: TemplateSettings): Record<string, string> {
+  const s = settings || getDefaultSettings("quote");
+  const docColor = s.accentColor || data.org_document_color;
 
-  // Client info text block
-  const clientLines: string[] = [];
-  if (data.client_name) clientLines.push(data.client_name);
-  if (data.client_contact) clientLines.push(`Attn: ${data.client_contact}`);
-  if (data.client_email) clientLines.push(data.client_email);
-  if (data.client_billing_address) clientLines.push(data.client_billing_address);
-  const clientInfo = clientLines.length > 0 ? clientLines.join("\n") : "-";
+  const headerConfig = buildHeaderConfig(data, s, docColor);
+  const clientInfo = buildClientLines(data, s);
+  const projectLines = buildProjectLines(data, s);
 
-  // Project info text block
-  const projectLines: string[] = [data.project_name];
-  if (data.venue_name) projectLines.push(`Venue: ${data.venue_name}`);
-  if (data.rental_start && data.rental_start !== "-") {
-    const rentalPeriod = data.rental_end && data.rental_end !== "-"
-      ? `${data.rental_start} - ${data.rental_end}`
-      : data.rental_start;
-    projectLines.push(`Rental: ${rentalPeriod}`);
-  }
-  if (data.event_start && data.event_start !== "-") {
-    const eventPeriod = data.event_end && data.event_end !== "-"
-      ? `${data.event_start} - ${data.event_end}`
-      : data.event_start;
-    projectLines.push(`Event: ${eventPeriod}`);
-  }
+  const tableConfig = buildTableConfig(data, s, "quote", docColor, {
+    filterOptional: false,
+    filterByStatus: null,
+  });
 
-  // Table config
-  const tableConfig: { items: typeof data.line_items; config: TablePluginConfig } = {
-    items: data.line_items,
-    config: {
-      documentType: "quote",
-      documentColor: data.org_document_color,
-      showGroupHeaders: true,
-      showKitChildren: true,
-      showCheckboxes: false,
-      showConditionColumns: false,
-      showPricing: true,
-      showBadges: true,
-      showNotes: true,
-      showPerUnitCheckboxes: false,
-      showAssetTags: false,
-      showCategories: false,
-      showRowNumbers: false,
-      filterOptional: false,
-      filterByStatus: null,
-    },
-  };
-
-  // Financial summary
-  const financialConfig: FinancialSummaryConfig = {
-    subtotal: data.subtotal,
-    discountPercent: data.discount_percent,
-    discountAmount: data.discount_amount,
-    taxLabel: data.tax_label,
-    taxAmount: data.tax_amount,
-    total: data.total,
-    depositPaid: 0, // Quote doesn't show deposit
+  const financialConfig = buildFinancialConfig(data, s, docColor, {
+    depositPaid: 0,
     balanceDue: 0,
-    documentColor: data.org_document_color,
-  };
+  });
 
-  // Footer
-  const footerConfig: FooterConfig = {
-    text: `${data.org_name} | ${data.org_email} | ${data.org_phone}`,
-    secondLine: "This quote is valid for 30 days from the date of issue.",
-  };
-
-  // Notes
-  const notesText = data.client_notes || "";
+  const footerConfig = buildFooterConfig(data, s);
+  const notesText = s.other.showClientNotes ? (data.client_notes || "") : "";
 
   return {
     header: JSON.stringify(headerConfig),
     clientInfo,
-    projectInfo: projectLines.join("\n"),
+    projectInfo: projectLines,
     table: JSON.stringify(tableConfig),
     financials: JSON.stringify(financialConfig),
     notes: notesText,

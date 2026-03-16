@@ -181,7 +181,9 @@ export function DeliveryDocketPDF({ org, project }: DeliveryDocketPDFProps) {
                     const bulk = isBulk(item);
                     const isKit = !!item.kitId && !item.isKitChild;
                     const isGroup = isKit;
-                    const children = isGroup ? (item.childLineItems || []) : [];
+                    // Only show deployed children
+                    const allChildren = isGroup ? (item.childLineItems || []) : [];
+                    const children = allChildren.filter((c) => c.status === "CHECKED_OUT");
                     const itemName = isKit
                       ? (item.description || item.kit?.name || "Kit")
                       : item.model
@@ -227,7 +229,10 @@ export function DeliveryDocketPDF({ org, project }: DeliveryDocketPDFProps) {
                         </View>
                         {children.map((child) => {
                           const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
-                          const nestedChildren = child.childLineItems || [];
+                          // Only show deployed grandchildren
+                          const nestedChildren = isNestedKit
+                            ? (child.childLineItems || []).filter((gc) => gc.status === "CHECKED_OUT")
+                            : [];
                           const childName = child.model?.name || child.description || "-";
                           return (
                             <View key={child.id}>

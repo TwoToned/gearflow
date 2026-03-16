@@ -717,7 +717,9 @@ export async function createPrepKit(projectId: string, name: string, caseAssetId
     if (!caseAsset) throw new Error("Case asset not found");
   }
 
-  const kitTag = caseAsset ? caseAsset.assetTag : `PREP-${Date.now().toString(36).toUpperCase()}`;
+  const kitTag = caseAsset
+    ? caseAsset.assetTag
+    : `PREP-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
   const kitName = caseAsset ? `${caseAsset.model.name} (${caseAsset.assetTag})` : name;
 
   const maxSort = await prisma.projectLineItem.aggregate({

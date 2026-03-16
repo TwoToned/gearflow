@@ -5,12 +5,13 @@ import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Archive, Pencil, Trash2, FileText } from "lucide-react";
+import { Archive, Pencil, Trash2, FileText, RotateCcw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useActiveOrganization } from "@/lib/auth-client";
 
 import { getAsset, archiveAsset, deleteAsset, updateAssetNotes } from "@/server/assets";
+import { forceReturnAsset } from "@/server/warehouse";
 import { getBulkAsset, archiveBulkAsset, deleteBulkAsset, updateBulkAssetNotes } from "@/server/bulk-assets";
 import {
   addAssetMedia,
@@ -131,6 +132,16 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
     onError: (e) => toast.error(e.message),
   });
 
+  const forceReturnMutation = useMutation({
+    mutationFn: () => forceReturnAsset(id),
+    onSuccess: () => {
+      toast.success("Asset force returned to available");
+      queryClient.invalidateQueries({ queryKey: ["asset", orgId, id] });
+      queryClient.invalidateQueries({ queryKey: ["assets"] });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   // ─── Bulk Asset → Redirect to Model page ────────────────────────────
   const bulkModelId = isBulk ? bulkQuery.data?.modelId : null;
   useEffect(() => {
@@ -188,6 +199,18 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
         </div>
         <CanDo resource="asset" action="update">
           <div className="flex flex-wrap gap-2">
+            {asset.status === "CHECKED_OUT" && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-amber-600"
+                onClick={() => { if (confirm("Force return this asset? All project assignments will be marked as returned.")) forceReturnMutation.mutate(); }}
+                disabled={forceReturnMutation.isPending}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Force Return
+              </Button>
+            )}
             <Button variant="outline" size="sm" render={<Link href={`/assets/registry/${id}/edit`} />}>
               <Pencil className="mr-2 h-4 w-4" />
               Edit

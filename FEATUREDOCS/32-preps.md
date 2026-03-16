@@ -19,7 +19,7 @@ Kit (isPrep: true)
 
 ### Asset Tag
 - **With case asset**: Uses the case asset's existing tag (e.g., `CASE-001`)
-- **Without case**: Auto-generates `PREP-{timestamp}` (e.g., `PREP-ABCD1234`)
+- **Without case**: Auto-generates `PREP-{timestamp}-{random}` (e.g., `PREP-ABCD1234-X9K2`)
 - UI hides `PREP-*` tags and shows `—` instead; real asset tags display normally
 
 ### Case Asset

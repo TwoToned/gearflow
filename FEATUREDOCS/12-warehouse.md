@@ -27,8 +27,9 @@
 Before deploying or returning a kit (or prep-kit) with unverified items:
 - Confirmation dialog shows "X/Y items verified — deploy/return anyway?"
 - Verification circles are **clickable** for manual toggle on all children and grandchildren
-- `verifiedKitItems` Set tracks confirmed asset IDs
+- `verifiedKitItems` Set tracks confirmed line item IDs
 - Checked on all 4 code paths: checkbox deploy, checkbox return, scan deploy, scan return
+- `collectAllVerifiableIds(children, mode)` filters by mode: deploy counts non-CHECKED_OUT items, return counts CHECKED_OUT items — so the X/Y badge reflects only relevant items
 
 ## Kit Groups in Deploy/Return Tabs
 Kits and prep-kits appear as expandable groups in the Deploy and Return tabs. Uses `kit-group` GroupEntry variant. Parent line item has `kitId` set, children have `isKitChild: true`. Checkbox selection routes to `kitCheckOutMutation`/`kitCheckInMutation`.
@@ -48,6 +49,23 @@ Children of a kit/prep-kit that are themselves kits render with:
 ## Preps Tab
 Third tab on warehouse page (`?tab=preps`). Create prep-kits, scan items into them, deploy, return, dissolve. See [Preps](./32-preps.md) for full details.
 
+## Partial Deploy/Return
+Kits and prep-kits support partial deployment:
+- When not all children are verified, confirmation dialog offers "Deploy Verified Only" or "Deploy All"
+- "Deploy Verified" uses `checkOutItems` (individual line items) instead of `checkOutKit` (atomic)
+- Partially deployed kits appear in BOTH deploy and return tabs with filtered children per tab
+- `KitChildRows` accepts `mode` prop (`"deploy"` or `"return"`) to filter grandchildren per tab
+- Parent line item is included in partial deploy only if not already `CHECKED_OUT`
+- Nested kit parent line items are automatically included when any of their grandchildren are being deployed verified
+- All 4 filter layers (checkOutItemsList, checkedOutItems, groupItems, groupCheckinItems) are grandchild-aware
+- `checkOutItems` skips already-deployed line items (status `CHECKED_OUT`) during partial re-deploy instead of throwing
+
+## Availability Checks
+When adding assets/kits to projects:
+- **Serialized assets**: Only `RETIRED` and `LOST` statuses are blocked. `CHECKED_OUT` assets can still be added.
+- **Kits**: Only `IN_MAINTENANCE` and `INCOMPLETE` statuses are blocked. `CHECKED_OUT` kits can still be added.
+- This allows planning future projects while equipment is deployed on current ones.
+
 ## Conflict Detection
 `lookupAssetForScan` checks both line item status AND physical asset status. If asset is `CHECKED_OUT` on another project, returns error with project name/number.
 
@@ -55,8 +73,28 @@ Third tab on warehouse page (`?tab=preps`). Create prep-kits, scan items into th
 - **Warehouse → Project**: "View Project" button in warehouse header links to `/projects/[id]`
 - **Project → Warehouse**: "Warehouse" button in project header links to `/warehouse/[id]`
 
+## Force Return
+When assets or kits are stuck in `CHECKED_OUT` status (e.g., project deleted while items deployed, data inconsistency), "Force Return" buttons allow resetting them to `AVAILABLE`:
+
+### Server Actions (`src/server/warehouse.ts`)
+- **`forceReturnAsset(assetId)`** — Finds all CHECKED_OUT line items for the asset across all projects, sets them to RETURNED, resets asset status to AVAILABLE, restores default location
+- **`forceReturnKit(kitId)`** — Same for kits: resets kit + all serialized assets inside to AVAILABLE, sets all related line items to RETURNED
+
+### UI Locations
+- **Asset detail page** (`/assets/registry/[id]`): Force Return button in header, visible when `status === "CHECKED_OUT"`
+- **Kit detail page** (`/kits/[id]`): Force Return button in header, visible when `status === "CHECKED_OUT"`
+- **Model detail page** (`/assets/models/[id]`): Per-row Force Return icon button in serialized assets table for each `CHECKED_OUT` asset
+- All use `confirm()` pattern, amber text color, `RotateCcw` icon
+- Permission: `warehouse.check_in`
+
 ## Documents
 The warehouse page has a "Documents" dropdown with access to all project PDFs (Pull Slip, Delivery Docket, Return Sheet, Quote, Invoice) — same documents available on the project detail page.
+
+### Deployment-Aware Filtering
+- **Delivery Docket**: Only shows deployed items. Kit/prep-kit children are filtered to CHECKED_OUT only. Nested kit grandchildren are also filtered to CHECKED_OUT.
+- **Return Sheet**: Only shows deployed/returned items. Kit children filtered to CHECKED_OUT or RETURNED. Nested grandchildren similarly filtered.
+- **Pull Slip**: Shows all non-cancelled items (for packing purposes — includes undeployed items).
+- **Quote / Invoice**: Show all items regardless of deployment status (for pricing).
 
 ## Online Pick List
 Dialog with full item list showing deployment status per line item. Mobile full-screen with safe area padding. Kit and prep-kit groups show as expandable sections with children.

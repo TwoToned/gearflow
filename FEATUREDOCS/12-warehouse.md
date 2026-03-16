@@ -113,16 +113,20 @@ Dialog with full item list showing deployment status per line item. Mobile full-
 A public, token-authenticated dashboard page designed for wall-mounted TVs/monitors in the warehouse. Shows today's dispatch, returns, prep status, and upcoming schedule. Dark background, large text readable from 3+ metres, auto-refreshes every 60 seconds, no interactive elements.
 
 ### Data Model
-`WarehouseDashboardToken` — stores hashed access tokens scoped to an organization and optional location. Fields: `name`, `tokenHash` (SHA-256, unique), `locationId` (optional location scope), `layout` ("standard", "compact", "dispatch-only"), `isActive`, `createdById`, `lastAccessedAt`.
+`WarehouseDashboardToken` — stores access tokens scoped to an organization and optional location. Fields: `name`, `token` (raw hex token for URL display), `tokenHash` (SHA-256, unique, for lookup), `locationId` (optional location scope), `layout` ("standard", "compact", "dispatch-only"), `isActive`, `createdById`, `lastAccessedAt`.
 
 ### Access
 - URL pattern: `/warehouse/display/{token}` (64-char hex token)
-- Token is generated in Settings > Displays, shown once on creation
+- Token is generated in Settings > Displays
+- URL is viewable any time via the edit dialog (raw token stored in DB)
 - No login required — added to middleware public routes
 - API endpoint: `GET /api/warehouse/display/{token}` returns JSON data
 
 ### Settings UI
-`/settings/displays` — create, list, and revoke display tokens. Each token has a name, optional warehouse location scope, and layout selection. Token URL shown once on creation with copy button.
+`/settings/displays` — create, list, edit, and revoke display tokens. Each token has a name, optional warehouse location scope, and layout selection.
+- **Create**: Shows URL on creation with copy button
+- **Edit** (pencil icon): Change name, location, and layout. Shows current display URL with copy button. Regenerate URL button (invalidates old URL, generates new one).
+- **Revoke** (trash icon): Deletes the token permanently
 
 ### Display Layouts
 | Layout | Description |
@@ -139,8 +143,10 @@ A public, token-authenticated dashboard page designed for wall-mounted TVs/monit
 - **Alerts**: Unprepped dispatches, partially packed dispatches, overdue returns.
 
 ### Server Actions (`src/server/warehouse-display.ts`)
-- `getDisplayTokens()` — list tokens for the org
-- `createDisplayToken({ name, locationId?, layout? })` — generates token, returns raw token + record
+- `getDisplayTokens()` — list tokens for the org (includes raw token for URL display)
+- `createDisplayToken({ name, locationId?, layout? })` — generates token, stores raw + hash, returns raw token + record
+- `updateDisplayToken(id, { name?, locationId?, layout? })` — update display settings
+- `regenerateDisplayToken(id)` — generates new token (invalidates old URL), returns new raw token
 - `revokeDisplayToken(id)` — deletes the token
 - `getWarehouseDisplayData(orgId, locationId?)` — assembles all dashboard data
 - `validateDisplayToken(rawToken)` — hash-validates, updates lastAccessedAt

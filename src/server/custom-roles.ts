@@ -50,6 +50,7 @@ export async function createCustomRole(data: {
   name: string;
   description?: string;
   color?: string;
+  ssoGroupClaim?: string;
   permissions: PermissionMap;
 }) {
   await requirePermission("orgMembers", "update_role");
@@ -63,6 +64,7 @@ export async function createCustomRole(data: {
       name: data.name.trim(),
       description: data.description?.trim() || null,
       color: data.color || null,
+      ssoGroupClaim: data.ssoGroupClaim?.trim() || null,
       permissions: JSON.stringify(data.permissions),
     },
   });
@@ -80,6 +82,7 @@ export async function updateCustomRole(
     name?: string;
     description?: string;
     color?: string;
+    ssoGroupClaim?: string;
     permissions?: PermissionMap;
   },
 ) {
@@ -99,6 +102,7 @@ export async function updateCustomRole(
   if (data.name !== undefined) updateData.name = data.name.trim();
   if (data.description !== undefined) updateData.description = data.description?.trim() || null;
   if (data.color !== undefined) updateData.color = data.color || null;
+  if (data.ssoGroupClaim !== undefined) updateData.ssoGroupClaim = data.ssoGroupClaim?.trim() || null;
   if (data.permissions !== undefined) updateData.permissions = JSON.stringify(data.permissions);
 
   const updated = await prisma.customRole.update({

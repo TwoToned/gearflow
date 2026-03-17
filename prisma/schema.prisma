@@ -48,6 +48,9 @@ model User {
   crewMembers             CrewMember[]
   confirmedAssignments    CrewAssignment[] @relation("ConfirmedBy")
   approvedTimeEntries     CrewTimeEntry[]  @relation("TimeEntryApprovedBy")
+  ssoProviders            SsoProvider[]
+  pendingSSOApprovals     PendingSSOApproval[]
+  reviewedSSOApprovals    PendingSSOApproval[] @relation("SSOReviewer")
   warehouseDashboardTokens WarehouseDashboardToken[]
 
   @@map("user")
@@ -147,6 +150,8 @@ model Organization {
   projectServices    ProjectService[]
   serviceTemplates   ServiceTemplate[]
   documentTemplates          DocumentTemplate[]
+  ssoProviders               SsoProvider[]
+  pendingSSOApprovals        PendingSSOApproval[]
   warehouseDashboardTokens   WarehouseDashboardToken[]
   @@map("organization")
 }
@@ -187,12 +192,67 @@ model CustomRole {
   description    String?
   color          String?      // Badge color class
   permissions    String       // JSON-serialized PermissionMap
+  ssoGroupClaim  String?      // OIDC/SAML group claim value for auto-matching
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
   @@unique([organizationId, name])
   @@index([organizationId])
   @@map("custom_role")
+}
+
+// ─── Better Auth SSO Tables ────────────────────────────────────────────────
+
+/// Managed by @better-auth/sso plugin. Mapped here for type-safe Prisma queries.
+model SsoProvider {
+  id             String        @id @default(cuid())
+  issuer         String
+  oidcConfig     String?       // JSON-encoded OIDC settings
+  samlConfig     String?       // JSON-encoded SAML settings
+  userId         String?
+  user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  providerId     String        @unique
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  domain         String
+  domainVerified Boolean       @default(true)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([organizationId])
+  @@index([domain])
+  @@map("sso_provider")
+}
+
+// ─── SSO Approval Workflow ─────────────────────────────────────────────────
+
+enum SSOApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model PendingSSOApproval {
+  id             String            @id @default(cuid())
+  organizationId String
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email          String
+  name           String?
+  idpGroups      String[]          @default([])
+  suggestedRole  String?
+  providerId     String
+  status         SSOApprovalStatus @default(PENDING)
+  reviewedById   String?
+  reviewedBy     User?             @relation("SSOReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt     DateTime?
+  reviewNote     String?
+  createdAt      DateTime          @default(now())
+
+  @@unique([organizationId, userId])
+  @@index([organizationId, status])
+  @@map("pending_sso_approval")
 }
 
 // ─── App Data Models ─────────────────────────────────────────────────────────

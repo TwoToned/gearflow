@@ -1,15 +1,17 @@
 # Authentication, Multi-Tenancy & Permissions
 
 ## Better Auth Configuration (`src/lib/auth.ts`)
-- Plugins: `organization()`, `twoFactor({ issuer: "GearFlow" })`, `admin()`, `passkey()`
+- Plugins: `organization()`, `twoFactor({ issuer: "GearFlow" })`, `admin()`, `passkey()`, `sso()`
 - Social providers: Google and Microsoft (conditional on env vars `GOOGLE_CLIENT_ID`, `MICROSOFT_CLIENT_ID`)
+- SSO: SAML 2.0 and OIDC via `@better-auth/sso` plugin — per-org provider configuration
+- Account linking: `accountLinking: { enabled: true, trustedProviders: ["sso"] }` — existing users with matching email auto-linked on SSO login
 - Email verification, password reset via Resend
 - Session stored in PostgreSQL `Session` table with `activeOrganizationId`
 - Passkey RP ID configurable via `PASSKEY_RP_ID` env var (defaults to `localhost`)
 
 ## Middleware (`src/middleware.ts`)
 - Checks cookies: `better-auth.session_token` or `__Secure-better-auth.session_token` (HTTPS)
-- Public routes exempted: `/login`, `/register`, `/api/auth`, `/invite`, `/two-factor`, `/no-organization`, `/onboarding`, `/api/platform-name`, `/api/registration-policy`
+- Public routes exempted: `/login`, `/register`, `/api/auth`, `/invite`, `/two-factor`, `/no-organization`, `/onboarding`, `/api/platform-name`, `/api/registration-policy`, `/pending-approval`
 - Unauthenticated requests redirect to `/login?callbackUrl=...`
 
 ## Session Helpers (`src/lib/auth-server.ts`)
@@ -43,7 +45,7 @@ Actions per resource: `create, read, update, delete` (varies by resource)
 - **manager**: All CRUD except orgSettings.delete, orgMembers.delete
 - **member**: Read + create + update on operational resources, no org settings
 - **viewer**: Read-only on all resources
-- **Custom roles**: JSON-stored permissions override defaults, managed via `src/server/custom-roles.ts`
+- **Custom roles**: JSON-stored permissions override defaults, managed via `src/server/custom-roles.ts`. Each custom role has an optional `ssoGroupClaim` field for automatic SSO group-to-role matching.
 
 ## Client-Side Permission Checking
 - `useCurrentRole()` hook from `src/lib/use-permissions.ts` — returns `{ permissions, isLoading }`
@@ -84,3 +86,46 @@ await requirePermission("asset", "create"); // throws if denied
 
 ### Account Page Sections
 The `/account` page is organized into: Profile (avatar + name), Security (password, 2FA, passkeys, connected accounts), Organizations, Active Sessions.
+
+## Enterprise SSO
+
+### Overview
+Per-org SAML 2.0 and OIDC SSO via `@better-auth/sso` plugin. Managed in `/settings/sso`.
+
+### Key Files
+- `src/lib/sso-types.ts` — `OrgSSOSettings` and `SSOGroupMapping` interfaces
+- `src/lib/sso-provisioning.ts` — `handleSSOProvisioning` hook (provisionUser)
+- `src/server/sso.ts` — SSO server actions (settings, providers, approvals)
+- `src/app/(app)/settings/sso/page.tsx` — SSO settings UI
+- `src/app/(auth)/login/[orgSlug]/` — Org-specific login page
+- `src/app/api/auth/sso/org-lookup/route.ts` — Email domain → org lookup
+
+### SSO Settings (stored in `Organization.metadata.sso`)
+- `enabled` — Master SSO toggle
+- `provisioningMode` — `AUTO_CREATE`, `REQUIRE_APPROVAL`, or `EXISTING_ONLY`
+- `defaultRole` — Fallback role when no group mapping matches
+- `roleSyncBehavior` — `SYNC_ON_LOGIN`, `INITIAL_ONLY`, or `MANUAL_ONLY`
+- `allowPasswordLogin` — Allow email/password alongside SSO
+- `enforceSSO` — Require SSO (must pass test login first via `ssoTestedSuccessfully`)
+- `groupMappings` — Array of IdP group → GearFlow role mappings
+- `oidcGroupsClaim` / `samlGroupsAttribute` — Claim names for group extraction
+
+### Provisioning Modes
+1. **AUTO_CREATE**: User is created as org member immediately on first SSO login
+2. **REQUIRE_APPROVAL**: Creates `PendingSSOApproval` record; admin must approve in `/settings/sso`
+3. **EXISTING_ONLY**: Only existing org members can sign in via SSO
+
+### Group-to-Role Matching (priority order)
+1. Custom roles with `ssoGroupClaim` matching an IdP group
+2. Explicit group mappings in SSO settings
+3. Default role fallback
+
+### Login Flow
+- `/login` — Two-step: email first, then checks for SSO org match via `/api/auth/sso/org-lookup`
+- `/login/[orgSlug]` — Org-specific page with prominent SSO button, optional social/password
+- `/pending-approval` — Shown when user authenticated but not yet approved
+
+### Database Models
+- `SSOProvider` (mapped to `sso_provider`) — Created by Better Auth SSO plugin
+- `PendingSSOApproval` (mapped to `pending_sso_approval`) — Pending approval records
+- `CustomRole.ssoGroupClaim` — Optional field for automatic IdP group matching

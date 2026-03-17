@@ -12,8 +12,12 @@
 - **Organization** — `id, name, slug (unique), logo, metadata (JSON)`. Metadata stores: `assetTagPrefix, assetTagDigits, assetTagCounter`, `testTag.*` settings, branding config
 - **Member** — `id, organizationId, userId, role (owner|admin|manager|member|staff|warehouse|viewer), createdAt`
 - **Invitation** — `id, organizationId, email, role, status (pending|accepted|rejected|cancelled), expiresAt, inviterId`
-- **CustomRole** — `id, organizationId, name, description, color, permissions (JSON)`. Unique: `[organizationId, name]`
+- **CustomRole** — `id, organizationId, name, description, color, permissions (JSON), ssoGroupClaim (optional)`. Unique: `[organizationId, name]`
 - **SiteSettings** — Singleton: `platformName, platformIcon, platformLogo, registrationPolicy, twoFactorGlobalPolicy, defaultCurrency, defaultTaxRate`
+
+## SSO Models
+- **SSOProvider** — `id, providerId (unique), issuer, domain, domainVerified, oidcConfig (JSON), samlConfig (JSON), organizationId, userId, createdAt, updatedAt`. Managed by Better Auth SSO plugin; mapped in Prisma as read-only model for type-safe queries
+- **PendingSSOApproval** — `id, organizationId, userId, email, name, idpGroups (JSON), suggestedRole, providerId, status (PENDING|APPROVED|REJECTED), reviewedById, reviewedAt, reviewNote, createdAt`. Unique: `[organizationId, userId]`
 
 ## Asset Models
 - **Category** — `id, organizationId, name, parentId (self-join), description, icon, sortOrder`

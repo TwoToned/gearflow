@@ -64,7 +64,9 @@ export function UserAvatar({ user, size = "sm", className }: UserAvatarProps) {
 
   return (
     <Avatar className={cn(sizeMap[size], className)}>
-      <AvatarImage src={user.image || ""} alt={user.name || "User"} />
+      {user.image && (
+        <AvatarImage src={user.image} alt={user.name || "User"} />
+      )}
       <AvatarFallback className={cn(textSizeMap[size], avatarColors[colorIndex])}>
         {initials}
       </AvatarFallback>

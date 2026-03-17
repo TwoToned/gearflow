@@ -18,7 +18,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Loader2, Fingerprint } from "lucide-react";
+import { Loader2, Fingerprint, ArrowLeft } from "lucide-react";
 
 async function fetchUserOrgs(): Promise<Array<{ id: string; name: string }>> {
   const res = await fetch("/api/auth/organization/list", {
@@ -46,6 +46,12 @@ async function handlePostLogin(router: ReturnType<typeof useRouter>) {
 
   await organization.setActive({ organizationId: orgs[0].id });
   router.push("/dashboard");
+}
+
+interface SSOOrg {
+  orgSlug: string;
+  orgName: string;
+  hasSSO: boolean;
 }
 
 function GoogleIcon({ className }: { className?: string }) {
@@ -79,6 +85,9 @@ export default function LoginPage() {
   const [socialLoading, setSocialLoading] = useState<string | null>(null);
   const [regOpen, setRegOpen] = useState(false);
   const [socialProviders, setSocialProviders] = useState<string[]>([]);
+  const [step, setStep] = useState<"email" | "password" | "org-picker">("email");
+  const [ssoOrgs, setSsoOrgs] = useState<SSOOrg[]>([]);
+  const [checkingSSO, setCheckingSSO] = useState(false);
 
   useEffect(() => {
     fetch("/api/registration-policy", { cache: "no-store" })
@@ -87,13 +96,49 @@ export default function LoginPage() {
       .catch(() => setRegOpen(false));
   }, []);
 
-  // Check which social providers are configured
   useEffect(() => {
     fetch("/api/auth/social-providers", { cache: "no-store" })
       .then((r) => r.ok ? r.json() : { providers: [] })
       .then((d) => setSocialProviders(d.providers || []))
       .catch(() => setSocialProviders([]));
   }, []);
+
+  const handleEmailContinue = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) return;
+
+    setCheckingSSO(true);
+    try {
+      const res = await fetch("/api/auth/sso/org-lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const orgs: SSOOrg[] = data.orgs || [];
+
+        if (orgs.length === 1) {
+          router.push(`/login/${orgs[0].orgSlug}?email=${encodeURIComponent(email)}`);
+          return;
+        }
+
+        if (orgs.length > 1) {
+          setSsoOrgs(orgs);
+          setStep("org-picker");
+          return;
+        }
+      }
+
+      // No SSO match — show password form
+      setStep("password");
+    } catch {
+      setStep("password");
+    } finally {
+      setCheckingSSO(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -157,93 +202,158 @@ export default function LoginPage() {
         <CardDescription>Sign in to your {platformName} account</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Social login buttons — always rendered, hidden via CSS to avoid React DOM mismatch */}
-        <div className={hasSocial ? "grid gap-2" : "hidden"}>
-          {socialProviders.includes("google") && (
+        {/* Org picker — shown when email matches multiple SSO orgs */}
+        {step === "org-picker" && (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground text-center">
+              Your email is associated with multiple organizations. Choose one to continue:
+            </p>
+            {ssoOrgs.map((org) => (
+              <Button
+                key={org.orgSlug}
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => router.push(`/login/${org.orgSlug}?email=${encodeURIComponent(email)}`)}
+              >
+                {org.orgName}
+              </Button>
+            ))}
+            <Button
+              variant="ghost"
+              className="w-full"
+              onClick={() => {
+                setStep("password");
+                setSsoOrgs([]);
+              }}
+            >
+              Sign in with password instead
+            </Button>
+          </div>
+        )}
+
+        {/* Email step — first step of the flow */}
+        {step === "email" && (
+          <form onSubmit={handleEmailContinue} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="you@company.com"
+                autoComplete="username webauthn"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={checkingSSO || !!socialLoading}>
+              {checkingSSO && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Continue
+            </Button>
+          </form>
+        )}
+
+        {/* Password step — shown after email check finds no SSO */}
+        {step === "password" && (
+          <>
+            <button
+              type="button"
+              onClick={() => setStep("email")}
+              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ArrowLeft className="h-3 w-3" />
+              Back
+            </button>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email-pw">Email</Label>
+                <Input
+                  id="email-pw"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="username"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </div>
+              <Button type="submit" className="w-full" disabled={loading || !!socialLoading}>
+                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Sign in
+              </Button>
+            </form>
+          </>
+        )}
+
+        {/* Social login + passkey — visible in email and password steps */}
+        {step !== "org-picker" && (
+          <>
+            <div className={hasSocial ? "relative" : "hidden"}>
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">or</span>
+              </div>
+            </div>
+            <div className={hasSocial ? "grid gap-2" : "hidden"}>
+              {socialProviders.includes("google") && (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => handleSocialLogin("google")}
+                  disabled={!!socialLoading || loading || checkingSSO}
+                >
+                  {socialLoading === "google" ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <GoogleIcon className="mr-2 h-4 w-4" />
+                  )}
+                  Continue with Google
+                </Button>
+              )}
+              {socialProviders.includes("microsoft") && (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => handleSocialLogin("microsoft")}
+                  disabled={!!socialLoading || loading || checkingSSO}
+                >
+                  {socialLoading === "microsoft" ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <MicrosoftIcon className="mr-2 h-4 w-4" />
+                  )}
+                  Continue with Microsoft
+                </Button>
+              )}
+            </div>
+
             <Button
               variant="outline"
               className="w-full"
-              onClick={() => handleSocialLogin("google")}
-              disabled={!!socialLoading || loading}
+              onClick={handlePasskeyLogin}
+              disabled={!!socialLoading || loading || checkingSSO}
             >
-              {socialLoading === "google" ? (
+              {socialLoading === "passkey" ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
-                <GoogleIcon className="mr-2 h-4 w-4" />
+                <Fingerprint className="mr-2 h-4 w-4" />
               )}
-              Continue with Google
+              Sign in with Passkey
             </Button>
-          )}
-          {socialProviders.includes("microsoft") && (
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => handleSocialLogin("microsoft")}
-              disabled={!!socialLoading || loading}
-            >
-              {socialLoading === "microsoft" ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <MicrosoftIcon className="mr-2 h-4 w-4" />
-              )}
-              Continue with Microsoft
-            </Button>
-          )}
-        </div>
-        <div className={hasSocial ? "relative" : "hidden"}>
-          <div className="absolute inset-0 flex items-center">
-            <span className="w-full border-t" />
-          </div>
-          <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-card px-2 text-muted-foreground">or</span>
-          </div>
-        </div>
-
-        {/* Email/password form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              placeholder="you@company.com"
-              autoComplete="username webauthn"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              type="password"
-              placeholder="Enter your password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </div>
-          <Button type="submit" className="w-full" disabled={loading || !!socialLoading}>
-            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Sign in
-          </Button>
-        </form>
-
-        {/* Passkey sign-in */}
-        <Button
-          variant="outline"
-          className="w-full"
-          onClick={handlePasskeyLogin}
-          disabled={!!socialLoading || loading}
-        >
-          {socialLoading === "passkey" ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Fingerprint className="mr-2 h-4 w-4" />
-          )}
-          Sign in with Passkey
-        </Button>
+          </>
+        )}
       </CardContent>
       {regOpen ? (
         <CardFooter className="justify-center">

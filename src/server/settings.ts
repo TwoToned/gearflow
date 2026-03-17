@@ -6,6 +6,7 @@ import { serialize } from "@/lib/serialize";
 import { sendEmail } from "@/lib/email";
 import { getPlatformName } from "@/lib/platform";
 import { logActivity } from "@/lib/activity-log";
+import type { OrgSSOSettings } from "@/lib/sso-types";
 
 export interface OrgBranding {
   primaryColor?: string;
@@ -50,6 +51,7 @@ export interface OrgSettings {
   icalToken?: string;
   icalEnabled?: boolean;
   prepKitCategoryId?: string;
+  sso?: OrgSSOSettings;
 }
 
 export async function getOrganization() {

@@ -1,15 +1,29 @@
 import { betterAuth } from "better-auth";
 import { organization, twoFactor, admin } from "better-auth/plugins";
 import { passkey } from "@better-auth/passkey";
+import { sso } from "@better-auth/sso";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { prisma } from "./prisma";
 import { sendEmail } from "./email";
 import { getPlatformName } from "./platform";
+import { handleSSOProvisioning } from "./sso-provisioning";
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
     provider: "postgresql",
   }),
+  account: {
+    accountLinking: {
+      enabled: true,
+      trustedProviders: async () => {
+        // Trust all SSO providers dynamically so account linking works with random provider IDs
+        const providers = await prisma.ssoProvider.findMany({
+          select: { providerId: true },
+        });
+        return providers.map((p) => p.providerId);
+      },
+    },
+  },
   emailAndPassword: {
     enabled: true,
     sendResetPassword: async ({ user, url }) => {
@@ -90,6 +104,17 @@ export const auth = betterAuth({
       rpName: process.env.PLATFORM_NAME || "GearFlow",
       origin: process.env.BETTER_AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
     }),
+    sso({
+      organizationProvisioning: {
+        disabled: true, // We handle provisioning manually in provisionUser
+      },
+      provisionUser: handleSSOProvisioning,
+      trustEmailVerified: true, // Trust email_verified from IdPs for account linking
+      saml: {
+        enableInResponseToValidation: true,
+        allowIdpInitiated: false,
+      },
+    }),
   ],
   socialProviders: {
     ...(process.env.GOOGLE_CLIENT_ID && {
@@ -130,21 +155,34 @@ export const auth = betterAuth({
             // Allow if this is the very first user (bootstrap)
             const count = await prisma.user.count();
             if (count > 0) {
-              // Allow if this user has a pending invitation (invited by org admin or site admin)
+              const email = (user as { email?: string }).email?.toLowerCase();
+
+              // Allow if this user has a pending invitation
               const pendingInvite = await prisma.invitation.findFirst({
                 where: {
-                  email: (user as { email?: string }).email?.toLowerCase(),
+                  email,
                   status: "pending",
                   expiresAt: { gte: new Date() },
                 },
               });
-              if (!pendingInvite) {
-                throw new Error(
-                  policy === "DISABLED"
-                    ? "Registration is currently disabled."
-                    : "Registration is invite-only. Contact an administrator.",
-                );
+              if (pendingInvite) return undefined;
+
+              // Allow if user is being created via SSO (email domain matches an SSO provider)
+              if (email) {
+                const domain = email.split("@")[1];
+                if (domain) {
+                  const ssoProvider = await prisma.ssoProvider.findFirst({
+                    where: { domain },
+                  });
+                  if (ssoProvider) return undefined;
+                }
               }
+
+              throw new Error(
+                policy === "DISABLED"
+                  ? "Registration is currently disabled."
+                  : "Registration is invite-only. Contact an administrator.",
+              );
             }
           }
           return undefined;
@@ -161,6 +199,48 @@ export const auth = betterAuth({
         },
       },
     },
+    account: {
+      create: {
+        after: async (account) => {
+          // When an SSO account is linked, mark ssoTestedSuccessfully for the org
+          const providerId = (account as { providerId?: string }).providerId;
+          if (!providerId?.startsWith("sso-")) return;
+          try {
+            const ssoProvider = await prisma.ssoProvider.findFirst({
+              where: { providerId },
+              select: { organizationId: true },
+            });
+            if (!ssoProvider?.organizationId) return;
+            const org = await prisma.organization.findUnique({
+              where: { id: ssoProvider.organizationId },
+            });
+            if (!org) return;
+            const settings = org.metadata ? JSON.parse(org.metadata) : {};
+            if (settings.sso && !settings.sso.ssoTestedSuccessfully) {
+              settings.sso.ssoTestedSuccessfully = true;
+              await prisma.organization.update({
+                where: { id: ssoProvider.organizationId },
+                data: { metadata: JSON.stringify(settings) },
+              });
+            }
+          } catch {
+            // Non-critical — don't block login
+          }
+        },
+      },
+    },
   },
-  trustedOrigins: [process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"],
+  trustedOrigins: [
+    process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+    // SSO IdP origins — wildcards cover all subdomains/endpoints used in OIDC discovery
+    "https://*.microsoftonline.com",
+    "https://*.microsoft.com",
+    "https://accounts.google.com",
+    "https://*.googleapis.com",
+    "https://*.okta.com",
+    "https://*.auth0.com",
+    "https://*.onelogin.com",
+    "https://*.duosecurity.com",
+    ...(process.env.SSO_TRUSTED_ORIGINS?.split(",").map((s) => s.trim()).filter(Boolean) || []),
+  ],
 });

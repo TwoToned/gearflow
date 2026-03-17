@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth-server";
 import { prisma } from "@/lib/prisma";
 import { rolePermissions, type PermissionMap } from "@/lib/permissions";
+import { getTheOrg } from "@/lib/single-org";
 
 export async function GET() {
   try {
@@ -10,7 +11,8 @@ export async function GET() {
       return NextResponse.json({ role: null, roleName: null, permissions: null });
     }
 
-    const orgId = session.session.activeOrganizationId;
+    const org = await getTheOrg();
+    const orgId = org?.id;
     if (!orgId) {
       return NextResponse.json({ role: null, roleName: null, permissions: null });
     }

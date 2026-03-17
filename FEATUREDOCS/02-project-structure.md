@@ -3,7 +3,7 @@
 ```
 src/
 ├── app/
-│   ├── (auth)/           # Public pages: login, register, onboarding, invite, no-org
+│   ├── (auth)/           # Public pages: login, register, onboarding, invite, pending-approval
 │   ├── (app)/            # Protected pages: dashboard, assets, projects, warehouse, etc.
 │   ├── (designer)/       # Full-screen template designer (no sidebar layout)
 │   ├── (admin)/admin/    # Site admin panel
@@ -17,7 +17,7 @@ src/
 │   ├── bookings/         # Availability calendar
 │   ├── clients/          # Client forms, tables
 │   ├── kits/             # Kit forms
-│   ├── layout/           # Sidebar, TopBar, MobileNav, CommandSearch, Notifications, OrgSwitcher, UserNav, ThemeToggle
+│   ├── layout/           # Sidebar, TopBar, MobileNav, CommandSearch, Notifications, UserNav, ThemeToggle
 │   ├── locations/        # Location forms, tables
 │   ├── maintenance/      # Maintenance form
 │   ├── media/            # MediaUploader, MediaThumbnail, MediaLightbox
@@ -35,6 +35,7 @@ src/
 │   ├── auth-client.ts    # Better Auth client
 │   ├── auth-server.ts    # getSession, requireSession, requireOrganization
 │   ├── admin-auth.ts     # requireSiteAdminApi
+│   ├── single-org.ts     # getTheOrg (cached singleton), invalidateOrgCache
 │   ├── org-context.ts    # getOrgContext, orgWhere, requireRole, requirePermission
 │   ├── permissions.ts    # rolePermissions map, hasPermission, Resource type
 │   ├── prisma.ts         # Singleton Prisma client
@@ -77,6 +78,7 @@ src/
 │   ├── tags.ts           # Org-wide tag autocomplete
 │   ├── changelog.ts      # Version/build info
 │   ├── site-admin.ts     # Platform admin operations
+│   ├── public-org.ts     # Public org info (no session required): getTheOrgId, getTheOrgInfo, getSingleOrgSSOInfo
 │   ├── org-members.ts    # Org member management
 │   ├── custom-roles.ts   # Custom role CRUD
 │   ├── user-profile.ts   # User account operations

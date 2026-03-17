@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { auth } from "./auth";
+import { getTheOrg } from "./single-org";
 
 export async function getSession() {
   const session = await auth.api.getSession({
@@ -17,15 +18,15 @@ export async function requireSession() {
 }
 
 export async function getActiveOrganizationId() {
-  const session = await getSession();
-  return session?.session?.activeOrganizationId ?? null;
+  const org = await getTheOrg();
+  return org?.id ?? null;
 }
 
 export async function requireOrganization() {
   const session = await requireSession();
-  const orgId = session.session.activeOrganizationId;
-  if (!orgId) {
-    throw new Error("No active organization");
+  const org = await getTheOrg();
+  if (!org) {
+    throw new Error("No organization configured. Please complete setup.");
   }
-  return { session, organizationId: orgId };
+  return { session, organizationId: org.id };
 }

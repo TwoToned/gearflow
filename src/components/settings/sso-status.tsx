@@ -7,15 +7,14 @@ import { useState } from "react";
 
 interface Props {
   enabled: boolean;
-  orgSlug: string;
   canUpdate: boolean;
   onToggle: (enabled: boolean) => void;
 }
 
-export function SSOStatusSection({ enabled, orgSlug, canUpdate, onToggle }: Props) {
+export function SSOStatusSection({ enabled, canUpdate, onToggle }: Props) {
   const [copied, setCopied] = useState(false);
   const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
-  const loginUrl = `${baseUrl}/login/${orgSlug}`;
+  const loginUrl = `${baseUrl}/login`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(loginUrl);
@@ -39,7 +38,7 @@ export function SSOStatusSection({ enabled, orgSlug, canUpdate, onToggle }: Prop
         />
       </div>
 
-      {enabled && orgSlug && (
+      {enabled && (
         <div className="rounded-md border p-3">
           <p className="text-xs font-medium text-muted-foreground mb-1">Organization Login URL</p>
           <div className="flex items-center gap-2">

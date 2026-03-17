@@ -63,7 +63,6 @@ export default function SSOSettingsPage() {
         <CardContent>
           <SSOStatusSection
             enabled={sso?.enabled ?? false}
-            orgSlug={orgSlug || ""}
             canUpdate={canUpdate}
             onToggle={(enabled) => updateMutation.mutate({ enabled })}
           />

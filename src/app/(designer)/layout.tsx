@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth-server";
+import { getTheOrg } from "@/lib/single-org";
 
 export default async function DesignerLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
@@ -8,8 +9,9 @@ export default async function DesignerLayout({ children }: { children: React.Rea
     redirect("/login");
   }
 
-  if (!session.session.activeOrganizationId) {
-    redirect("/no-organization");
+  const org = await getTheOrg();
+  if (!org) {
+    redirect("/onboarding");
   }
 
   return <>{children}</>;

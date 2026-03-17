@@ -44,7 +44,10 @@ import {
   adminRemoveMemberFromOrg,
   adminChangeMemberRole,
   adminTransferOwnership,
+  adminUpdateOrganization,
 } from "@/server/site-admin";
+import { Label } from "@/components/ui/label";
+import { Pencil } from "lucide-react";
 
 const BUILT_IN_ROLES = [
   { value: "owner", label: "Owner" },
@@ -108,6 +111,9 @@ export default function AdminOrgDetailPage({
   } | null>(null);
 
   const [exporting, setExporting] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editSlug, setEditSlug] = useState("");
 
   async function handleExport() {
     setExporting(true);
@@ -191,6 +197,18 @@ export default function AdminOrgDetailPage({
     onError: (e) => toast.error(e.message),
   });
 
+  const updateOrgMutation = useMutation({
+    mutationFn: (data: { name?: string; slug?: string }) =>
+      adminUpdateOrganization(orgId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-org-detail", orgId] });
+      queryClient.invalidateQueries({ queryKey: ["admin-the-org"] });
+      toast.success("Organization updated");
+      setEditOpen(false);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const members: any[] = org?.members ?? [];
   const counts = org?._count ?? {
@@ -221,10 +239,24 @@ export default function AdminOrgDetailPage({
             </div>
           </div>
           {org && (
-            <Button variant="outline" size="sm" className="shrink-0 self-start sm:self-auto" disabled={exporting} onClick={handleExport}>
-              <Download className="mr-2 h-4 w-4" />
-              {exporting ? "Exporting..." : "Export"}
-            </Button>
+            <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setEditName(org.name);
+                  setEditSlug(org.slug);
+                  setEditOpen(true);
+                }}
+              >
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit
+              </Button>
+              <Button variant="outline" size="sm" disabled={exporting} onClick={handleExport}>
+                <Download className="mr-2 h-4 w-4" />
+                {exporting ? "Exporting..." : "Export"}
+              </Button>
+            </div>
           )}
         </div>
 
@@ -631,6 +663,60 @@ export default function AdminOrgDetailPage({
               {transferMutation.isPending
                 ? "Transferring..."
                 : "Transfer Ownership"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Organization Dialog */}
+      <Dialog
+        open={editOpen}
+        onOpenChange={(open) => {
+          if (!open) setEditOpen(false);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Organization</DialogTitle>
+            <DialogDescription>
+              Update the organization name and URL slug.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-org-name">Name</Label>
+              <Input
+                id="edit-org-name"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-org-slug">URL Slug</Label>
+              <Input
+                id="edit-org-slug"
+                value={editSlug}
+                onChange={(e) => setEditSlug(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Only lowercase letters, numbers, and hyphens. Used internally.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!editName.trim() || !editSlug.trim() || updateOrgMutation.isPending}
+              onClick={() =>
+                updateOrgMutation.mutate({
+                  name: editName.trim(),
+                  slug: editSlug.trim(),
+                })
+              }
+            >
+              {updateOrgMutation.isPending ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>

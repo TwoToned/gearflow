@@ -4,6 +4,7 @@ import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { authClient, organization } from "@/lib/auth-client";
+import { getTheOrgId } from "@/server/public-org";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -45,10 +46,10 @@ export default function InviteAcceptPage({
       }
       setAccepted(true);
       toast.success("Invitation accepted!");
-      // Set the new org as active and redirect
-      const orgs = await fetch("/api/auth/organization/list", { credentials: "include" }).then(r => r.json());
-      if (orgs?.length > 0) {
-        await organization.setActive({ organizationId: orgs[orgs.length - 1].id });
+      // Set the single org as active and redirect
+      const orgData = await getTheOrgId();
+      if (orgData) {
+        await organization.setActive({ organizationId: orgData.id });
       }
       setTimeout(() => router.push("/dashboard"), 1500);
     } catch {

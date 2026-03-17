@@ -3,7 +3,8 @@
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { signUp } from "@/lib/auth-client";
+import { signUp, organization } from "@/lib/auth-client";
+import { getTheOrgId } from "@/server/public-org";
 import { usePlatformBranding } from "@/lib/use-platform-name";
 import { DynamicIcon } from "@/components/ui/dynamic-icon";
 import { Button } from "@/components/ui/button";
@@ -68,7 +69,12 @@ function RegisterContent() {
         if (inviteId) {
           router.push(`/invite/${inviteId}`);
         } else {
-          router.push("/no-organization");
+          // Activate the single org (auto-member hook added them during signup)
+          const orgData = await getTheOrgId();
+          if (orgData) {
+            await organization.setActive({ organizationId: orgData.id });
+          }
+          router.push("/dashboard");
         }
       }
     } catch {

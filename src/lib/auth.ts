@@ -71,7 +71,7 @@ export const auth = betterAuth({
   plugins: [
     organization({
       allowUserToCreateOrganization: false,
-      organizationLimit: 5,
+      organizationLimit: 1,
       creatorRole: "owner",
       memberRoleHierarchy: ["owner", "admin", "manager", "member", "staff", "warehouse", "viewer"],
       sendInvitationEmail: async (data) => {
@@ -195,6 +195,34 @@ export const auth = betterAuth({
               where: { id: user.id },
               data: { role: "admin" },
             });
+          }
+
+          // Single-org: auto-add new users as members of the org
+          try {
+            const org = await prisma.organization.findFirst({
+              select: { id: true },
+              orderBy: { createdAt: "asc" },
+            });
+            if (org) {
+              const existing = await prisma.member.findFirst({
+                where: { organizationId: org.id, userId: user.id },
+              });
+              if (!existing) {
+                // First user (owner) gets owner role, others get member
+                const hasOwner = await prisma.member.findFirst({
+                  where: { organizationId: org.id, role: "owner" },
+                });
+                await prisma.member.create({
+                  data: {
+                    organizationId: org.id,
+                    userId: user.id,
+                    role: hasOwner ? "member" : "owner",
+                  },
+                });
+              }
+            }
+          } catch {
+            // Non-critical — don't block registration
           }
         },
       },

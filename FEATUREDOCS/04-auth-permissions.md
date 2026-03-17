@@ -1,23 +1,42 @@
-# Authentication, Multi-Tenancy & Permissions
+# Authentication, Single-Org & Permissions
+
+## Single-Org Architecture
+
+This instance runs in **single-org mode**: exactly one `Organization` row exists, and all users belong to it. The Better Auth Organization plugin is retained for its membership, invitation, and role infrastructure, but multi-org features (org switching, org creation beyond bootstrap, org-specific login routes) are removed.
+
+### Core: `src/lib/single-org.ts`
+- `getTheOrg()` — Cached singleton returning the single org's `{ id, name, slug }` (5-minute TTL)
+- `invalidateOrgCache()` — Clears cache (called after import, rename, etc.)
+- All org resolution flows through this helper; session `activeOrganizationId` is no longer used for org lookup
+
+### Auto-Membership (`src/lib/auth.ts` database hook)
+- On user creation, the hook auto-adds the user as a member of the single org
+- First user (no existing owner) gets `"owner"` role; subsequent users get `"member"`
+- `organizationLimit: 1` in Better Auth config prevents creating additional orgs
+
+### Public Org Actions (`src/server/public-org.ts`)
+- `getTheOrgId()` — Returns `{ id }` for the single org (no session required, used by login/register/invite)
+- `getSingleOrgSSOInfo()` — Returns SSO config for the single org (used by login page for domain-based SSO detection)
 
 ## Better Auth Configuration (`src/lib/auth.ts`)
-- Plugins: `organization()`, `twoFactor({ issuer: "GearFlow" })`, `admin()`, `passkey()`, `sso()`
+- Plugins: `organization({ organizationLimit: 1 })`, `twoFactor({ issuer: "GearFlow" })`, `admin()`, `passkey()`, `sso()`
 - Social providers: Google and Microsoft (conditional on env vars `GOOGLE_CLIENT_ID`, `MICROSOFT_CLIENT_ID`)
-- SSO: SAML 2.0 and OIDC via `@better-auth/sso` plugin — per-org provider configuration
+- SSO: SAML 2.0 and OIDC via `@better-auth/sso` plugin — org provider configuration
 - Account linking: `accountLinking: { enabled: true, trustedProviders: ["sso"] }` — existing users with matching email auto-linked on SSO login
 - Email verification, password reset via Resend
-- Session stored in PostgreSQL `Session` table with `activeOrganizationId`
+- Session stored in PostgreSQL `Session` table
 - Passkey RP ID configurable via `PASSKEY_RP_ID` env var (defaults to `localhost`)
 
 ## Middleware (`src/middleware.ts`)
 - Checks cookies: `better-auth.session_token` or `__Secure-better-auth.session_token` (HTTPS)
-- Public routes exempted: `/login`, `/register`, `/api/auth`, `/invite`, `/two-factor`, `/no-organization`, `/onboarding`, `/api/platform-name`, `/api/registration-policy`, `/pending-approval`
+- Public routes exempted: `/login`, `/register`, `/api/auth`, `/invite`, `/two-factor`, `/onboarding`, `/api/platform-name`, `/api/registration-policy`, `/pending-approval`
 - Unauthenticated requests redirect to `/login?callbackUrl=...`
 
 ## Session Helpers (`src/lib/auth-server.ts`)
 - `getSession()` — Returns session + user or null
 - `requireSession()` — Throws if not authenticated
-- `requireOrganization()` — Throws if no `activeOrganizationId`
+- `requireOrganization()` — Returns `{ session, organizationId }` using `getTheOrg()` (does NOT read session's `activeOrganizationId`)
+- `getActiveOrganizationId()` — Returns the single org's ID via `getTheOrg()`
 
 ## Organization Context (`src/lib/org-context.ts`)
 - `getOrgContext()` — Returns `{ organizationId, userId, userName }` for the current request
@@ -25,11 +44,11 @@
 - `requireRole(roles)` — Validates member has one of the specified roles
 - `requirePermission(resource, action)` — Checks permission map, throws 403 if denied
 
-## Multi-Tenancy Rules
-- Every database query MUST include `organizationId` in its WHERE clause
+## Single-Org Data Rules
+- Every database query MUST include `organizationId` in its WHERE clause (kept for schema consistency)
 - Asset tags, project numbers, test tag IDs are unique per org (composite unique indexes)
 - File storage is org-prefixed: `{orgId}/{folder}/{entityId}/{filename}`
-- Users can belong to multiple orgs; `activeOrganizationId` on the session determines the current context
+- All users belong to the single org; `organization.setActive()` is called during login/register for Better Auth compatibility
 
 ## Two-Tier Permission Model
 1. **Site-level**: `User.role` = `"user"` or `"admin"`. Admin gets access to `/admin` panel
@@ -78,14 +97,14 @@ await requirePermission("asset", "create"); // throws if denied
 - Account page "Connected Accounts" section with Connect buttons via `authClient.linkSocial()`.
 - Better Auth auto-links social accounts to existing users with matching email.
 
-### Invitations & No-Org Flow
+### Invitations
 - **Invite-only registration**: Site admin can set registration policy to INVITE_ONLY.
-- **No-org page**: `src/app/(auth)/no-organization/page.tsx` — shown when user has no org memberships.
 - **Invite signup**: Registration page prefills and locks email when `invite` query param is present.
 - **Server actions**: `src/server/invitations.ts` — `getMyPendingInvitations()`, `getInvitationEmail()`, `checkIsSiteAdmin()`.
+- All invitations target the single org.
 
 ### Account Page Sections
-The `/account` page is organized into: Profile (avatar + name), Security (password, 2FA, passkeys, connected accounts), Organizations, Active Sessions.
+The `/account` page is organized into: Profile (avatar + name), Security (password, 2FA, passkeys, connected accounts), Active Sessions.
 
 ## Enterprise SSO
 
@@ -96,8 +115,8 @@ Per-org SAML 2.0 and OIDC SSO via `@better-auth/sso` plugin. Managed in `/settin
 - `src/lib/sso-types.ts` — `OrgSSOSettings` and `SSOGroupMapping` interfaces
 - `src/lib/sso-provisioning.ts` — `handleSSOProvisioning` hook (provisionUser)
 - `src/server/sso.ts` — SSO server actions (settings, providers, approvals)
+- `src/server/public-org.ts` — `getSingleOrgSSOInfo()` for login page SSO detection
 - `src/app/(app)/settings/sso/page.tsx` — SSO settings UI
-- `src/app/(auth)/login/[orgSlug]/` — Org-specific login page
 - `src/app/api/auth/sso/org-lookup/route.ts` — Email domain → org lookup
 
 ### SSO Settings (stored in `Organization.metadata.sso`)
@@ -121,9 +140,9 @@ Per-org SAML 2.0 and OIDC SSO via `@better-auth/sso` plugin. Managed in `/settin
 3. Default role fallback
 
 ### Login Flow
-- `/login` — Two-step: email first, then checks for SSO org match via `/api/auth/sso/org-lookup`
-- `/login/[orgSlug]` — Org-specific page with prominent SSO button, optional social/password
+- `/login` — Two-step: email first, then checks for SSO match via `getSingleOrgSSOInfo()` (domain-based detection)
 - `/pending-approval` — Shown when user authenticated but not yet approved
+- No org-specific login route — SSO is triggered automatically from the main login page
 
 ### Database Models
 - `SSOProvider` (mapped to `sso_provider`) — Created by Better Auth SSO plugin

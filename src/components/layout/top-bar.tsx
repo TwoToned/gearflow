@@ -50,6 +50,7 @@ const segmentLabels: Record<string, string> = {
   "pull-sheet": "Pull Sheet",
   timesheets: "Timesheets",
   planner: "Planner",
+  sso: "Single Sign-On",
 };
 
 function getPageTitle(pathname: string): string {

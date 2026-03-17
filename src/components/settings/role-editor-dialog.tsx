@@ -40,6 +40,7 @@ interface RoleEditorDialogProps {
     description: string | null;
     color: string | null;
     permissions: PermissionMap;
+    ssoGroupClaim?: string | null;
   } | null;
 }
 
@@ -73,6 +74,7 @@ export function RoleEditorDialog({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [color, setColor] = useState("blue");
+  const [ssoGroupClaim, setSsoGroupClaim] = useState("");
   const [permissions, setPermissions] = useState<PermissionMap>(emptyPermissions());
 
   // Reset form when dialog opens
@@ -82,11 +84,13 @@ export function RoleEditorDialog({
         setName(editingRole.name);
         setDescription(editingRole.description || "");
         setColor(editingRole.color || "blue");
+        setSsoGroupClaim(editingRole.ssoGroupClaim || "");
         setPermissions(editingRole.permissions);
       } else {
         setName("");
         setDescription("");
         setColor("blue");
+        setSsoGroupClaim("");
         setPermissions(emptyPermissions());
       }
     }
@@ -94,7 +98,7 @@ export function RoleEditorDialog({
 
   const createMut = useMutation({
     mutationFn: () =>
-      createCustomRole({ name, description, color, permissions }),
+      createCustomRole({ name, description, color, ssoGroupClaim: ssoGroupClaim || undefined, permissions }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["custom-roles"] });
       toast.success("Role created");
@@ -105,7 +109,7 @@ export function RoleEditorDialog({
 
   const updateMut = useMutation({
     mutationFn: () =>
-      updateCustomRole(editingRole!.id, { name, description, color, permissions }),
+      updateCustomRole(editingRole!.id, { name, description, color, ssoGroupClaim: ssoGroupClaim || undefined, permissions }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["custom-roles"] });
       queryClient.invalidateQueries({ queryKey: ["current-role"] });
@@ -183,6 +187,21 @@ export function RoleEditorDialog({
               placeholder="What this role is for..."
               maxLength={200}
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="role-sso-group">SSO Group Claim (optional)</Label>
+            <Input
+              id="role-sso-group"
+              value={ssoGroupClaim}
+              onChange={(e) => setSsoGroupClaim(e.target.value)}
+              placeholder="e.g. stage-managers"
+              maxLength={200}
+            />
+            <p className="text-xs text-muted-foreground">
+              When a user signs in via SSO and their identity provider returns this group name in the groups claim,
+              they will automatically be assigned this role.
+            </p>
           </div>
 
           {!isEditing && (

@@ -24,13 +24,15 @@ div.app-shell (fixed inset-0 on mobile, relative on desktop)
 ### Authentication
 | Path | Page |
 |------|------|
-| `/login` | Login form |
+| `/login` | Login form (two-step: email → password/SSO redirect) |
+| `/login/[orgSlug]` | Org-specific login with prominent SSO button |
 | `/register` | Registration (respects registration policy) |
 | `/register/admin` | Secret admin registration (token-gated) |
 | `/two-factor` | TOTP verification after login |
 | `/invite/[id]` | Accept team invitation |
 | `/onboarding` | First-time org setup |
 | `/no-organization` | No org memberships (shows pending invites) |
+| `/pending-approval` | SSO user pending admin approval |
 
 ### App (Protected)
 | Path | Page |
@@ -96,6 +98,7 @@ div.app-shell (fixed inset-0 on mobile, relative on desktop)
 | `/template-designer/[id]` | Full-screen pdfme template designer |
 | `/settings/branding` | Logo & colors |
 | `/settings/team` | Members, invites, roles, permission matrix |
+| `/settings/sso` | SSO configuration (providers, provisioning, group mapping, enforcement) |
 | `/account` | Profile, password, 2FA, sessions, organizations |
 | `/changelog` | Product changelog |
 

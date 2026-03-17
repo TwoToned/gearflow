@@ -4,7 +4,6 @@ import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
-import { OrgSwitcher } from "./org-switcher";
 import { ThemeToggle } from "./theme-toggle";
 import { CommandSearch } from "./command-search";
 import { Notifications } from "./notifications";
@@ -96,7 +95,6 @@ export function TopBar({ title }: { title?: string }) {
         <CommandSearch />
         <Notifications />
         <Separator orientation="vertical" className="h-4 hidden sm:block" />
-        <OrgSwitcher />
         <span className="hidden sm:flex"><ThemeToggle /></span>
       </div>
     </header>

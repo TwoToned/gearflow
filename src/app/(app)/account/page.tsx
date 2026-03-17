@@ -30,8 +30,6 @@ import {
   KeyRound,
   Monitor,
   LogOut,
-  Building2,
-  DoorOpen,
   Loader2,
   Fingerprint,
   Camera,
@@ -40,12 +38,10 @@ import {
   Pencil,
   Link2,
 } from "lucide-react";
-import { authClient, useSession, useActiveOrganization } from "@/lib/auth-client";
+import { authClient, useSession } from "@/lib/auth-client";
 import {
   getProfile,
   updateProfile,
-  getUserOrganizations,
-  leaveOrganization,
   getActiveSessions,
   revokeSession,
   revokeAllOtherSessions,
@@ -54,9 +50,7 @@ import {
 export default function AccountPage() {
   const queryClient = useQueryClient();
   const { data: session } = useSession();
-  const { data: activeOrg } = useActiveOrganization();
   const { name: platformName } = usePlatformBranding();
-  const orgId = activeOrg?.id;
   const [name, setName] = useState("");
   const [nameLoaded, setNameLoaded] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -81,28 +75,17 @@ export default function AccountPage() {
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [verifyCode, setVerifyCode] = useState("");
 
-  // Leave org dialog
-  const [leaveOrgTarget, setLeaveOrgTarget] = useState<{
-    id: string;
-    name: string;
-  } | null>(null);
-
   // Passkey rename
   const [renamePasskey, setRenamePasskey] = useState<{ id: string; name: string } | null>(null);
   const [passkeyNewName, setPasskeyNewName] = useState("");
 
   const profileQuery = useQuery({
-    queryKey: ["profile", orgId],
+    queryKey: ["profile"],
     queryFn: getProfile,
   });
 
-  const orgsQuery = useQuery({
-    queryKey: ["user-organizations", orgId],
-    queryFn: getUserOrganizations,
-  });
-
   const sessionsQuery = useQuery({
-    queryKey: ["active-sessions", orgId],
+    queryKey: ["active-sessions"],
     queryFn: getActiveSessions,
   });
 
@@ -175,16 +158,6 @@ export default function AccountPage() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const leaveOrgMutation = useMutation({
-    mutationFn: (orgId: string) => leaveOrganization(orgId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["user-organizations"] });
-      toast.success("Left organization");
-      setLeaveOrgTarget(null);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -668,64 +641,6 @@ export default function AccountPage() {
         </CardContent>
       </Card>
 
-      {/* Organizations */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Building2 className="h-5 w-5" />
-            Organizations
-          </CardTitle>
-          <CardDescription>
-            Organizations you belong to.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {orgsQuery.data?.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              You don&apos;t belong to any organizations.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {orgsQuery.data?.map(
-                (m: {
-                  id: string;
-                  role: string;
-                  organization: { id: string; name: string; slug: string };
-                }) => (
-                  <div
-                    key={m.id}
-                    className="flex items-center justify-between rounded-md border p-3"
-                  >
-                    <div>
-                      <div className="font-medium">{m.organization.name}</div>
-                      <div className="text-xs text-muted-foreground capitalize">
-                        {m.role}
-                      </div>
-                    </div>
-                    {m.role !== "owner" && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() =>
-                          setLeaveOrgTarget({
-                            id: m.organization.id,
-                            name: m.organization.name,
-                          })
-                        }
-                      >
-                        <DoorOpen className="mr-1 h-4 w-4" />
-                        Leave
-                      </Button>
-                    )}
-                  </div>
-                ),
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
       {/* Active Sessions */}
       <Card>
         <CardHeader>
@@ -835,38 +750,6 @@ export default function AccountPage() {
               disabled={verify2FAMutation.isPending || verifyCode.length !== 6}
             >
               {verify2FAMutation.isPending ? "Verifying..." : "Verify & Enable"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Leave Org Dialog */}
-      <Dialog
-        open={!!leaveOrgTarget}
-        onOpenChange={(open) => !open && setLeaveOrgTarget(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Leave Organization</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to leave{" "}
-              <strong>{leaveOrgTarget?.name}</strong>? You will lose access to
-              all organization data.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setLeaveOrgTarget(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() =>
-                leaveOrgTarget &&
-                leaveOrgMutation.mutate(leaveOrgTarget.id)
-              }
-              disabled={leaveOrgMutation.isPending}
-            >
-              {leaveOrgMutation.isPending ? "Leaving..." : "Leave Organization"}
             </Button>
           </DialogFooter>
         </DialogContent>

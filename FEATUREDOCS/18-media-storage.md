@@ -7,8 +7,8 @@
 4. Entity-specific media join table created (e.g., `ModelMedia`)
 
 ## File Proxy (`GET /api/files/[...path]`)
-- Validates `storageKey` starts with user's `activeOrganizationId`
-- Returns 403 if org mismatch (prevents cross-tenant access)
+- Validates `storageKey` starts with the single org's ID (via `getTheOrg()`)
+- Returns 403 if org mismatch (prevents unauthorized access)
 - Exception: `avatars/` prefix allowed without org validation (global)
 - Streams file from S3
 

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { signIn, organization, authClient } from "@/lib/auth-client";
+import { getTheOrgId, getTheOrgInfo, getSingleOrgSSOInfo } from "@/server/public-org";
 import { usePlatformBranding } from "@/lib/use-platform-name";
 import { DynamicIcon } from "@/components/ui/dynamic-icon";
 import { Button } from "@/components/ui/button";
@@ -20,38 +21,14 @@ import {
 import { toast } from "sonner";
 import { Loader2, Fingerprint, ArrowLeft } from "lucide-react";
 
-async function fetchUserOrgs(): Promise<Array<{ id: string; name: string }>> {
-  const res = await fetch("/api/auth/organization/list", {
-    credentials: "include",
-  });
-  if (!res.ok) return [];
-  const data = await res.json();
-  return data ?? [];
-}
-
 async function handlePostLogin(router: ReturnType<typeof useRouter>) {
-  const session = await authClient.getSession();
-  const activeOrgId = session.data?.session?.activeOrganizationId;
-  const orgs = await fetchUserOrgs();
-
-  if (orgs.length === 0) {
-    router.push("/no-organization");
+  const orgData = await getTheOrgId();
+  if (!orgData) {
+    router.push("/onboarding");
     return;
   }
-
-  if (activeOrgId && orgs.some((o) => o.id === activeOrgId)) {
-    router.push("/dashboard");
-    return;
-  }
-
-  await organization.setActive({ organizationId: orgs[0].id });
+  await organization.setActive({ organizationId: orgData.id });
   router.push("/dashboard");
-}
-
-interface SSOOrg {
-  orgSlug: string;
-  orgName: string;
-  hasSSO: boolean;
 }
 
 function GoogleIcon({ className }: { className?: string }) {
@@ -85,9 +62,15 @@ export default function LoginPage() {
   const [socialLoading, setSocialLoading] = useState<string | null>(null);
   const [regOpen, setRegOpen] = useState(false);
   const [socialProviders, setSocialProviders] = useState<string[]>([]);
-  const [step, setStep] = useState<"email" | "password" | "org-picker">("email");
-  const [ssoOrgs, setSsoOrgs] = useState<SSOOrg[]>([]);
+  const [step, setStep] = useState<"email" | "password">("email");
   const [checkingSSO, setCheckingSSO] = useState(false);
+  const [orgName, setOrgName] = useState<string | null>(null);
+
+  useEffect(() => {
+    getTheOrgInfo().then((info) => {
+      if (info) setOrgName(info.name);
+    });
+  }, []);
 
   useEffect(() => {
     fetch("/api/registration-policy", { cache: "no-store" })
@@ -109,24 +92,19 @@ export default function LoginPage() {
 
     setCheckingSSO(true);
     try {
-      const res = await fetch("/api/auth/sso/org-lookup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        const orgs: SSOOrg[] = data.orgs || [];
-
-        if (orgs.length === 1) {
-          router.push(`/login/${orgs[0].orgSlug}?email=${encodeURIComponent(email)}`);
-          return;
-        }
-
-        if (orgs.length > 1) {
-          setSsoOrgs(orgs);
-          setStep("org-picker");
+      // Single-org: check if the org has SSO configured for this email domain
+      const ssoInfo = await getSingleOrgSSOInfo();
+      if (ssoInfo && ssoInfo.ssoEnabled && ssoInfo.providers.length > 0) {
+        const domain = email.split("@")[1]?.toLowerCase();
+        const matchingProvider = ssoInfo.providers.find(
+          (p: { domain: string }) => p.domain === domain
+        );
+        if (matchingProvider) {
+          await authClient.signIn.sso({
+            providerId: matchingProvider.providerId,
+            callbackURL: "/dashboard",
+            loginHint: email,
+          });
           return;
         }
       }
@@ -198,39 +176,16 @@ export default function LoginPage() {
             platformName.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2)
           )}
         </div>
-        <CardTitle className="text-xl">Welcome back</CardTitle>
-        <CardDescription>Sign in to your {platformName} account</CardDescription>
+        <CardTitle className="text-xl">
+          {orgName ? `Sign in to ${orgName}` : "Welcome back"}
+        </CardTitle>
+        <CardDescription>
+          {orgName
+            ? `Enter your credentials to access ${orgName}`
+            : `Sign in to your ${platformName} account`}
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Org picker — shown when email matches multiple SSO orgs */}
-        {step === "org-picker" && (
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground text-center">
-              Your email is associated with multiple organizations. Choose one to continue:
-            </p>
-            {ssoOrgs.map((org) => (
-              <Button
-                key={org.orgSlug}
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => router.push(`/login/${org.orgSlug}?email=${encodeURIComponent(email)}`)}
-              >
-                {org.orgName}
-              </Button>
-            ))}
-            <Button
-              variant="ghost"
-              className="w-full"
-              onClick={() => {
-                setStep("password");
-                setSsoOrgs([]);
-              }}
-            >
-              Sign in with password instead
-            </Button>
-          </div>
-        )}
-
         {/* Email step — first step of the flow */}
         {step === "email" && (
           <form onSubmit={handleEmailContinue} className="space-y-4">
@@ -295,65 +250,61 @@ export default function LoginPage() {
           </>
         )}
 
-        {/* Social login + passkey — visible in email and password steps */}
-        {step !== "org-picker" && (
-          <>
-            <div className={hasSocial ? "relative" : "hidden"}>
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-card px-2 text-muted-foreground">or</span>
-              </div>
-            </div>
-            <div className={hasSocial ? "grid gap-2" : "hidden"}>
-              {socialProviders.includes("google") && (
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => handleSocialLogin("google")}
-                  disabled={!!socialLoading || loading || checkingSSO}
-                >
-                  {socialLoading === "google" ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <GoogleIcon className="mr-2 h-4 w-4" />
-                  )}
-                  Continue with Google
-                </Button>
-              )}
-              {socialProviders.includes("microsoft") && (
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => handleSocialLogin("microsoft")}
-                  disabled={!!socialLoading || loading || checkingSSO}
-                >
-                  {socialLoading === "microsoft" ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <MicrosoftIcon className="mr-2 h-4 w-4" />
-                  )}
-                  Continue with Microsoft
-                </Button>
-              )}
-            </div>
-
+        {/* Social login + passkey */}
+        <div className={hasSocial ? "relative" : "hidden"}>
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t" />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-card px-2 text-muted-foreground">or</span>
+          </div>
+        </div>
+        <div className={hasSocial ? "grid gap-2" : "hidden"}>
+          {socialProviders.includes("google") && (
             <Button
               variant="outline"
               className="w-full"
-              onClick={handlePasskeyLogin}
+              onClick={() => handleSocialLogin("google")}
               disabled={!!socialLoading || loading || checkingSSO}
             >
-              {socialLoading === "passkey" ? (
+              {socialLoading === "google" ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
-                <Fingerprint className="mr-2 h-4 w-4" />
+                <GoogleIcon className="mr-2 h-4 w-4" />
               )}
-              Sign in with Passkey
+              Continue with Google
             </Button>
-          </>
-        )}
+          )}
+          {socialProviders.includes("microsoft") && (
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => handleSocialLogin("microsoft")}
+              disabled={!!socialLoading || loading || checkingSSO}
+            >
+              {socialLoading === "microsoft" ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <MicrosoftIcon className="mr-2 h-4 w-4" />
+              )}
+              Continue with Microsoft
+            </Button>
+          )}
+        </div>
+
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={handlePasskeyLogin}
+          disabled={!!socialLoading || loading || checkingSSO}
+        >
+          {socialLoading === "passkey" ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Fingerprint className="mr-2 h-4 w-4" />
+          )}
+          Sign in with Passkey
+        </Button>
       </CardContent>
       {regOpen ? (
         <CardFooter className="justify-center">

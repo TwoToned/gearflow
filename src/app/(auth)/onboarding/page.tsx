@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
 import { organization } from "@/lib/auth-client";
-import { checkOrgCreationAllowed } from "@/server/site-admin";
+import { getTheOrgId } from "@/server/public-org";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,7 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Loader2, ShieldAlert } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 function slugify(text: string): string {
   return text
@@ -31,10 +30,12 @@ export default function OnboardingPage() {
   const [slug, setSlug] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const { data: orgPolicy, isLoading: policyLoading } = useQuery({
-    queryKey: ["org-creation-allowed"],
-    queryFn: checkOrgCreationAllowed,
-  });
+  // Redirect away if an org already exists
+  useEffect(() => {
+    getTheOrgId().then((org) => {
+      if (org) router.replace("/dashboard");
+    });
+  }, [router]);
 
   const handleNameChange = (value: string) => {
     setName(value);
@@ -67,46 +68,15 @@ export default function OnboardingPage() {
     }
   };
 
-  if (policyLoading) {
-    return (
-      <Card>
-        <CardContent className="flex items-center justify-center py-12">
-          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (orgPolicy && !orgPolicy.allowed) {
-    return (
-      <Card>
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-            <ShieldAlert className="h-5 w-5" />
-          </div>
-          <CardTitle className="text-xl">Organization Creation Disabled</CardTitle>
-          <CardDescription>
-            Organization creation is currently disabled. Contact a site administrator to have an organization created for you.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex justify-center">
-          <Button variant="outline" onClick={() => router.push("/no-organization")}>
-            Go Back
-          </Button>
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
     <Card>
       <CardHeader className="text-center">
         <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold">
           GF
         </div>
-        <CardTitle className="text-xl">Set up your organization</CardTitle>
+        <CardTitle className="text-xl">Set up your instance</CardTitle>
         <CardDescription>
-          Create your first organization to start managing assets and projects.
+          Create your organization to start managing gear and projects.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -133,8 +103,7 @@ export default function OnboardingPage() {
               required
             />
             <p className="text-xs text-muted-foreground">
-              This will be used in URLs. Only lowercase letters, numbers, and
-              hyphens.
+              Used internally. Only lowercase letters, numbers, and hyphens.
             </p>
           </div>
           <Button type="submit" className="w-full" disabled={loading}>

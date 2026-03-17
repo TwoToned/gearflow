@@ -36,7 +36,7 @@
 ## Site Admin Panel
 - **Access**: `User.role === "admin"` checked server-side in admin layout. First user auto-promoted.
 - `/admin` — Dashboard with org count, user count, storage stats
-- `/admin/organizations` — CRUD org list, per-row export/download, import dialog
+- `/admin/organizations` — Single-org view with stats, export/import, manage link
 - `/admin/organizations/[id]` — Org detail with member list, export button
 - `/admin/users` — User list, promote to admin, ban/unban, force-disable 2FA
 - `/admin/settings` — Platform name, icon, logo, registration policy, 2FA global policy, default currency/tax

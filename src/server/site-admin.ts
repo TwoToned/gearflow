@@ -6,6 +6,7 @@ import { serialize } from "@/lib/serialize";
 import { invalidatePlatformNameCache } from "@/lib/platform";
 import { sendEmail } from "@/lib/email";
 import { getPlatformName } from "@/lib/platform";
+import { getTheOrg, invalidateOrgCache } from "@/lib/single-org";
 
 /** Verify the current user is a site admin. Throws if not. */
 async function requireSiteAdmin() {
@@ -76,7 +77,9 @@ export async function updateSiteSettings(data: {
 
 // ─── Org Creation Policy ──────────────────────────────────────────────────
 
-/** Check whether the current user is allowed to create organizations. */
+/** Check whether the current user is allowed to create organizations.
+ * Single-org mode: only allowed if no org exists yet (bootstrap).
+ */
 export async function checkOrgCreationAllowed(): Promise<{ allowed: boolean; isSiteAdmin: boolean }> {
   try {
     const session = await requireSession();
@@ -85,13 +88,20 @@ export async function checkOrgCreationAllowed(): Promise<{ allowed: boolean; isS
       select: { role: true },
     });
     const admin = user?.role === "admin";
-    if (admin) return { allowed: true, isSiteAdmin: true };
-
-    const settings = await prisma.siteSettings.findFirst();
-    return { allowed: settings?.allowOrgCreation ?? true, isSiteAdmin: false };
+    const org = await getTheOrg();
+    // Only allow creation if no org exists (bootstrap)
+    return { allowed: !org && admin, isSiteAdmin: admin };
   } catch {
     return { allowed: false, isSiteAdmin: false };
   }
+}
+
+/** Get the single organization for admin pages. */
+export async function adminGetTheOrg() {
+  await requireSiteAdmin();
+  const org = await getTheOrg();
+  if (!org) return null;
+  return serialize(org);
 }
 
 // ─── Organization Management ───────────────────────────────────────────────
@@ -184,10 +194,22 @@ export async function adminUpdateOrganization(
 ) {
   await requireSiteAdmin();
 
+  if (data.slug) {
+    const normalizedSlug = data.slug.toLowerCase().replace(/[^a-z0-9-]/g, "").replace(/(^-|-$)/g, "");
+    if (!normalizedSlug) throw new Error("Invalid slug.");
+    const existing = await prisma.organization.findFirst({
+      where: { slug: normalizedSlug, id: { not: orgId } },
+    });
+    if (existing) throw new Error("An organization with this slug already exists.");
+    data.slug = normalizedSlug;
+  }
+
   const updated = await prisma.organization.update({
     where: { id: orgId },
     data,
   });
+
+  invalidateOrgCache();
 
   return serialize(updated);
 }
@@ -512,10 +534,9 @@ export async function adminInviteUser(email: string) {
   }
 
   // We need an organizationId for the invitation record (Better Auth requires it).
-  // Use the first available org as a placeholder — the user won't be auto-added to it.
-  const anyOrg = await prisma.organization.findFirst({ select: { id: true } });
+  const anyOrg = await getTheOrg();
   if (!anyOrg) {
-    throw new Error("No organizations exist yet. Create one first.");
+    throw new Error("No organization configured. Complete setup first.");
   }
 
   const session = await requireSession();

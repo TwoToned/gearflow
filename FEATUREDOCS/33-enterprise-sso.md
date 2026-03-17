@@ -1,7 +1,7 @@
 # Enterprise SSO
 
 ## Overview
-Per-organization SAML 2.0 and OIDC Single Sign-On via the `@better-auth/sso` plugin. Each org can configure one or more identity providers, control how new users are provisioned, and map IdP groups to GearFlow roles.
+SAML 2.0 and OIDC Single Sign-On via the `@better-auth/sso` plugin. The single org can configure one or more identity providers, control how new users are provisioned, and map IdP groups to GearFlow roles.
 
 ## Architecture
 
@@ -27,7 +27,6 @@ Stored as JSON in `Organization.metadata.sso` (type: `OrgSSOSettings` from `src/
 | `src/server/sso.ts` | Server actions: settings CRUD, provider management, approvals |
 | `src/app/(app)/settings/sso/page.tsx` | SSO settings page (6 sections) |
 | `src/components/settings/sso-*.tsx` | SSO settings sub-components |
-| `src/app/(auth)/login/[orgSlug]/` | Org-specific login page |
 | `src/app/(auth)/pending-approval/page.tsx` | Pending approval page |
 | `src/app/api/auth/sso/org-lookup/route.ts` | Email domain → org lookup API |
 | `src/lib/validations/sso.ts` | Zod schemas for SSO forms |
@@ -73,29 +72,23 @@ Priority order (in `resolveRoleFromGroups`):
 
 ## Login Flow
 
-### Global Login (`/login`)
+### Single-Org Login (`/login`)
 1. User enters email → "Continue"
-2. System checks `/api/auth/sso/org-lookup` for domain match
-3. If single org match → redirect to `/login/{orgSlug}`
-4. If multiple matches → show org picker
-5. If no match → show password form
-
-### Org Login (`/login/[orgSlug]`)
-- Prominent SSO button(s) at top (primary style, h-14)
-- "Other sign-in options" divider
-- Social login buttons (if not enforcing SSO)
-- Email/password form (if `allowPasswordLogin` and not enforcing SSO)
-- SSO button calls `authClient.signIn.sso({ providerId, callbackURL: "/dashboard" })`
+2. Login page calls `getSingleOrgSSOInfo()` to check if SSO is configured for the email domain
+3. If domain matches an SSO provider → `authClient.signIn.sso({ providerId, callbackURL: "/dashboard" })`
+4. If no match → show password form
+5. Social login and passkey buttons also available
 
 ### Post-Login
-- `handlePostLogin` checks org membership
-- If no membership → redirect to `/pending-approval`
-- If member → set active org → redirect to `/dashboard`
+- `handlePostLogin` calls `getTheOrgId()` to get the single org
+- Calls `organization.setActive()` for Better Auth compatibility
+- Redirects to `/dashboard`
+- If no org exists → redirects to `/onboarding`
 
 ## Settings UI (`/settings/sso`)
 
 Six card sections:
-1. **SSO Status** — Enable toggle + org login URL with copy button
+1. **SSO Status** — Enable toggle + login URL with copy button
 2. **Identity Providers** — Provider list + "Add Provider" dialog (OIDC/SAML tabs)
 3. **User Provisioning** — Radio group for 3 modes + default role dropdown
 4. **Group-to-Role Mapping** — Role sync behavior + claim config + mapping table

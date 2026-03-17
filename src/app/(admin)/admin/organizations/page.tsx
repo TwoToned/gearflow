@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,37 +16,52 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Search, Trash2, Building2, Eye, Upload, Download, Plus } from "lucide-react";
-import Link from "next/link";
 import { Label } from "@/components/ui/label";
+import { Upload, Download, Building2, Eye, Loader2 } from "lucide-react";
+import Link from "next/link";
 import {
-  getAllOrganizations,
-  adminDeleteOrganization,
-  adminCreateOrganization,
+  adminGetTheOrg,
+  adminGetOrganizationDetails,
 } from "@/server/site-admin";
 
 export default function AdminOrganizationsPage() {
   const queryClient = useQueryClient();
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
-  const [deleteTarget, setDeleteTarget] = useState<{
-    id: string;
-    name: string;
-  } | null>(null);
-  const [confirmName, setConfirmName] = useState("");
-  const [createOpen, setCreateOpen] = useState(false);
-  const [createName, setCreateName] = useState("");
-  const [createSlug, setCreateSlug] = useState("");
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
-  const [importName, setImportName] = useState("");
-  const [importSlug, setImportSlug] = useState("");
   const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["admin-organizations", search, page],
-    queryFn: () => getAllOrganizations({ page, pageSize: 20, search }),
+  const { data: theOrg, isLoading: orgLoading } = useQuery({
+    queryKey: ["admin-the-org"],
+    queryFn: adminGetTheOrg,
   });
+
+  const { data: orgDetails } = useQuery({
+    queryKey: ["admin-org-detail", theOrg?.id],
+    queryFn: () => adminGetOrganizationDetails(theOrg!.id),
+    enabled: !!theOrg?.id,
+  });
+
+  async function handleExport() {
+    if (!theOrg) return;
+    setExporting(true);
+    try {
+      const res = await fetch(`/api/admin/org-export/${theOrg.id}`);
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `org-export-${theOrg.slug}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Export downloaded");
+    } catch {
+      toast.error("Export failed");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   async function handleImport() {
     if (!importFile) return;
@@ -54,8 +69,6 @@ export default function AdminOrganizationsPage() {
     try {
       const formData = new FormData();
       formData.append("file", importFile);
-      if (importName.trim()) formData.append("name", importName.trim());
-      if (importSlug.trim()) formData.append("slug", importSlug.trim());
 
       const res = await fetch("/api/admin/org-import", {
         method: "POST",
@@ -64,12 +77,11 @@ export default function AdminOrganizationsPage() {
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "Import failed");
 
-      queryClient.invalidateQueries({ queryKey: ["admin-organizations"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-the-org"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-org-detail"] });
       toast.success(`Imported "${body.name}" successfully`);
       setImportOpen(false);
       setImportFile(null);
-      setImportName("");
-      setImportSlug("");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Import failed");
     } finally {
@@ -77,309 +89,99 @@ export default function AdminOrganizationsPage() {
     }
   }
 
-  const deleteMutation = useMutation({
-    mutationFn: (orgId: string) => adminDeleteOrganization(orgId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-organizations"] });
-      toast.success("Organization deleted");
-      setDeleteTarget(null);
-      setConfirmName("");
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const createMutation = useMutation({
-    mutationFn: () => adminCreateOrganization({ name: createName.trim(), slug: createSlug.trim() }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-organizations"] });
-      toast.success("Organization created");
-      setCreateOpen(false);
-      setCreateName("");
-      setCreateSlug("");
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  function slugify(text: string): string {
-    return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-  }
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const counts = (orgDetails as any)?._count ?? { assets: 0, bulkAssets: 0, projects: 0, kits: 0 };
+  const memberCount = (orgDetails as any)?.members?.length ?? 0;
+  const owner = (orgDetails as any)?.members?.find((m: any) => m.role === "owner");
 
   return (
     <AdminShell>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Organizations</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Organization</h1>
           <p className="text-muted-foreground">
-            Manage all organizations on the platform.
+            Manage the platform organization.
           </p>
         </div>
 
-        {/* Search + Import */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search organizations..."
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
-              }}
-              className="pl-9"
-            />
-          </div>
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Create
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
-            <Upload className="mr-2 h-4 w-4" />
-            Import
-          </Button>
-        </div>
-
-        {/* Table */}
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="p-3 text-left font-medium">Organization</th>
-                    <th className="p-3 text-left font-medium hidden sm:table-cell">Slug</th>
-                    <th className="p-3 text-left font-medium hidden md:table-cell">Owner</th>
-                    <th className="p-3 text-center font-medium hidden sm:table-cell">Members</th>
-                    <th className="p-3 text-left font-medium hidden lg:table-cell">Created</th>
-                    <th className="p-3 text-right font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {isLoading ? (
-                    <tr>
-                      <td colSpan={6} className="p-8 text-center text-muted-foreground">
-                        Loading...
-                      </td>
-                    </tr>
-                  ) : data?.organizations?.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="p-8 text-center text-muted-foreground">
-                        No organizations found.
-                      </td>
-                    </tr>
-                  ) : (
-                    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-                    data?.organizations?.map(
-                      (org: any) => (
-                        <tr key={org.id} className="border-b hover:bg-muted/30">
-                          <td className="p-3">
-                            <Link
-                              href={`/admin/organizations/${org.id}`}
-                              className="flex items-center gap-2 hover:underline"
-                            >
-                              <Building2 className="h-4 w-4 text-muted-foreground" />
-                              <span className="font-medium">{org.name}</span>
-                            </Link>
-                          </td>
-                          <td className="p-3 text-muted-foreground font-mono text-xs hidden sm:table-cell">
-                            {org.slug}
-                          </td>
-                          <td className="p-3 hidden md:table-cell">
-                            {org.members[0]?.user?.name || "-"}
-                          </td>
-                          <td className="p-3 text-center hidden sm:table-cell">
-                            <Badge variant="secondary">{org._count.members}</Badge>
-                          </td>
-                          <td className="p-3 text-muted-foreground hidden lg:table-cell">
-                            {new Date(org.createdAt).toLocaleDateString()}
-                          </td>
-                          <td className="p-3 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                title="Manage organization"
-                                render={<Link href={`/admin/organizations/${org.id}`} />}
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                title="Export backup"
-                                onClick={async () => {
-                                  try {
-                                    const res = await fetch(`/api/admin/org-export/${org.id}`);
-                                    if (!res.ok) throw new Error("Export failed");
-                                    const blob = await res.blob();
-                                    const url = URL.createObjectURL(blob);
-                                    const a = document.createElement("a");
-                                    a.href = url;
-                                    a.download = `org-export-${org.slug}.zip`;
-                                    a.click();
-                                    URL.revokeObjectURL(url);
-                                    toast.success("Export downloaded");
-                                  } catch {
-                                    toast.error("Export failed");
-                                  }
-                                }}
-                              >
-                                <Download className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="text-destructive hover:text-destructive"
-                                onClick={() =>
-                                  setDeleteTarget({ id: org.id, name: org.name })
-                                }
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ),
-                    )
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Pagination */}
-        {data && data.totalPages > 1 && (
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">
-              Showing {data.organizations?.length} of {data.total}
-            </p>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page <= 1}
-                onClick={() => setPage(page - 1)}
-              >
-                Previous
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= data.totalPages}
-                onClick={() => setPage(page + 1)}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
+        {orgLoading ? (
+          <Card>
+            <CardContent className="flex items-center justify-center py-12">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </CardContent>
+          </Card>
+        ) : !theOrg ? (
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              <Building2 className="mx-auto mb-3 h-8 w-8" />
+              <p>No organization configured yet.</p>
+              <p className="text-sm mt-1">The first user to log in will set up the organization during onboarding.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <>
+            {/* Org Overview */}
+            <Card>
+              <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary text-sm font-bold">
+                    {theOrg.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <CardTitle>{theOrg.name}</CardTitle>
+                    <p className="text-sm text-muted-foreground font-mono">{theOrg.slug}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" disabled={exporting} onClick={handleExport}>
+                    <Download className="mr-2 h-4 w-4" />
+                    {exporting ? "Exporting..." : "Export"}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+                    <Upload className="mr-2 h-4 w-4" />
+                    Import
+                  </Button>
+                  <Button size="sm" render={<Link href={`/admin/organizations/${theOrg.id}`} />}>
+                    <Eye className="mr-2 h-4 w-4" />
+                    Manage
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+                  <div>
+                    <p className="text-2xl font-bold">{memberCount}</p>
+                    <p className="text-xs text-muted-foreground">Members</p>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{counts.assets}</p>
+                    <p className="text-xs text-muted-foreground">Assets</p>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{counts.bulkAssets}</p>
+                    <p className="text-xs text-muted-foreground">Bulk Assets</p>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{counts.projects}</p>
+                    <p className="text-xs text-muted-foreground">Projects</p>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{counts.kits}</p>
+                    <p className="text-xs text-muted-foreground">Kits</p>
+                  </div>
+                </div>
+                {owner && (
+                  <div className="mt-4 pt-4 border-t">
+                    <p className="text-sm text-muted-foreground">
+                      Owner: <span className="text-foreground font-medium">{owner.user?.name || owner.user?.email || "Unknown"}</span>
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </>
         )}
       </div>
-
-      {/* Delete Confirmation Dialog */}
-      <Dialog
-        open={!!deleteTarget}
-        onOpenChange={(open) => {
-          if (!open) {
-            setDeleteTarget(null);
-            setConfirmName("");
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Organization</DialogTitle>
-            <DialogDescription>
-              This will permanently delete{" "}
-              <strong>{deleteTarget?.name}</strong> and all its data. This
-              action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <p className="text-sm">
-              Type <strong>{deleteTarget?.name}</strong> to confirm:
-            </p>
-            <Input
-              value={confirmName}
-              onChange={(e) => setConfirmName(e.target.value)}
-              placeholder="Organization name"
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={
-                confirmName !== deleteTarget?.name ||
-                deleteMutation.isPending
-              }
-              onClick={() =>
-                deleteTarget && deleteMutation.mutate(deleteTarget.id)
-              }
-            >
-              {deleteMutation.isPending ? "Deleting..." : "Delete Organization"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      {/* Create Organization Dialog */}
-      <Dialog
-        open={createOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            setCreateOpen(false);
-            setCreateName("");
-            setCreateSlug("");
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create Organization</DialogTitle>
-            <DialogDescription>
-              Create a new organization. You will be assigned as the owner.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="create-org-name">Organization Name</Label>
-              <Input
-                id="create-org-name"
-                placeholder="Two Toned Productions"
-                value={createName}
-                onChange={(e) => {
-                  setCreateName(e.target.value);
-                  setCreateSlug(slugify(e.target.value));
-                }}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="create-org-slug">URL Slug</Label>
-              <Input
-                id="create-org-slug"
-                placeholder="two-toned-productions"
-                value={createSlug}
-                onChange={(e) => setCreateSlug(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                Lowercase letters, numbers, and hyphens only.
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={!createName.trim() || !createSlug.trim() || createMutation.isPending}
-              onClick={() => createMutation.mutate()}
-            >
-              {createMutation.isPending ? "Creating..." : "Create Organization"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Import Organization Dialog */}
       <Dialog
@@ -388,8 +190,6 @@ export default function AdminOrganizationsPage() {
           if (!open) {
             setImportOpen(false);
             setImportFile(null);
-            setImportName("");
-            setImportSlug("");
           }
         }}
       >
@@ -397,39 +197,17 @@ export default function AdminOrganizationsPage() {
           <DialogHeader>
             <DialogTitle>Import Organization</DialogTitle>
             <DialogDescription>
-              Upload an organization export (.zip) to create a new organization
-              with all its data and media.
+              Upload an organization export (.zip) to overwrite the current
+              organization&apos;s data.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Export File</label>
+              <Label>Export File</Label>
               <Input
                 type="file"
                 accept=".zip"
                 onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                New Organization Name{" "}
-                <span className="text-muted-foreground font-normal">(optional)</span>
-              </label>
-              <Input
-                placeholder="Leave blank to auto-generate"
-                value={importName}
-                onChange={(e) => setImportName(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                New Slug{" "}
-                <span className="text-muted-foreground font-normal">(optional)</span>
-              </label>
-              <Input
-                placeholder="Leave blank to auto-generate"
-                value={importSlug}
-                onChange={(e) => setImportSlug(e.target.value)}
               />
             </div>
           </div>

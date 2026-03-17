@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireSiteAdminApi } from "@/lib/admin-auth";
 import { validateCsrfOrigin } from "@/lib/csrf";
 import { importOrganization } from "@/lib/org-import";
+import { invalidateOrgCache } from "@/lib/single-org";
 
 export async function POST(req: NextRequest) {
   const csrfError = validateCsrfOrigin(req);
@@ -36,6 +37,9 @@ export async function POST(req: NextRequest) {
       newOrgSlug: newOrgSlug || undefined,
       importedByUserId: userId,
     });
+
+    // Invalidate the cached org so the new org is picked up
+    invalidateOrgCache();
 
     return NextResponse.json(result);
   } catch (err) {

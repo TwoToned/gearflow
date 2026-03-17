@@ -25,13 +25,11 @@ div.app-shell (fixed inset-0 on mobile, relative on desktop)
 | Path | Page |
 |------|------|
 | `/login` | Login form (two-step: email → password/SSO redirect) |
-| `/login/[orgSlug]` | Org-specific login with prominent SSO button |
 | `/register` | Registration (respects registration policy) |
 | `/register/admin` | Secret admin registration (token-gated) |
 | `/two-factor` | TOTP verification after login |
 | `/invite/[id]` | Accept team invitation |
-| `/onboarding` | First-time org setup |
-| `/no-organization` | No org memberships (shows pending invites) |
+| `/onboarding` | First-time org setup (redirects to dashboard if org exists) |
 | `/pending-approval` | SSO user pending admin approval |
 
 ### App (Protected)
@@ -100,7 +98,7 @@ div.app-shell (fixed inset-0 on mobile, relative on desktop)
 | `/settings/displays` | Warehouse display token management |
 | `/settings/team` | Members, invites, roles, permission matrix |
 | `/settings/sso` | SSO configuration (providers, provisioning, group mapping, enforcement) |
-| `/account` | Profile, password, 2FA, sessions, organizations |
+| `/account` | Profile, password, 2FA, sessions |
 | `/changelog` | Product changelog |
 
 ### Public (Token-Authenticated)
@@ -112,7 +110,7 @@ div.app-shell (fixed inset-0 on mobile, relative on desktop)
 | Path | Page |
 |------|------|
 | `/admin` | Admin dashboard |
-| `/admin/organizations` | Org list (CRUD, export/import) |
+| `/admin/organizations` | Single-org view (stats, export/import, manage link) |
 | `/admin/organizations/[id]` | Org detail |
 | `/admin/users` | User list (promote, ban) |
 | `/admin/settings` | Platform settings |

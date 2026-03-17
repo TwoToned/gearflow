@@ -6,6 +6,7 @@ import { DynamicFavicon } from "@/components/layout/dynamic-favicon";
 import { MobileNav } from "@/components/layout/mobile-nav";
 import { BrandingProvider } from "@/components/providers/branding-provider";
 import { getSession } from "@/lib/auth-server";
+import { getTheOrg } from "@/lib/single-org";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
@@ -14,20 +15,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect("/login");
   }
 
-  // If user has no active org, check if they belong to any
-  if (!session.session.activeOrganizationId) {
-    const { prisma } = await import("@/lib/prisma");
-    const membership = await prisma.member.findFirst({
-      where: { userId: session.user.id },
-      select: { organizationId: true },
-    });
-
-    if (!membership) {
-      redirect("/no-organization");
-    }
-
-    // They have a membership but no active org set — this shouldn't normally happen
-    // but let them through so the org switcher can resolve it
+  // Single-org: if no org exists yet, redirect to onboarding
+  const org = await getTheOrg();
+  if (!org) {
+    redirect("/onboarding");
   }
 
   return (

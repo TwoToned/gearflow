@@ -51,6 +51,7 @@ model User {
   ssoProviders            SsoProvider[]
   pendingSSOApprovals     PendingSSOApproval[]
   reviewedSSOApprovals    PendingSSOApproval[] @relation("SSOReviewer")
+  warehouseDashboardTokens WarehouseDashboardToken[]
 
   @@map("user")
 }
@@ -148,9 +149,10 @@ model Organization {
   crewTimeEntries    CrewTimeEntry[]
   projectServices    ProjectService[]
   serviceTemplates   ServiceTemplate[]
-  documentTemplates    DocumentTemplate[]
-  ssoProviders         SsoProvider[]
-  pendingSSOApprovals  PendingSSOApproval[]
+  documentTemplates          DocumentTemplate[]
+  ssoProviders               SsoProvider[]
+  pendingSSOApprovals        PendingSSOApproval[]
+  warehouseDashboardTokens   WarehouseDashboardToken[]
   @@map("organization")
 }
 
@@ -848,7 +850,8 @@ model Location {
   bulkAssets BulkAsset[]
   kits       Kit[]
   projects   Project[]
-  media      LocationMedia[]
+  media                    LocationMedia[]
+  warehouseDashboardTokens WarehouseDashboardToken[]
 
   @@index([organizationId])
   @@index([parentId])
@@ -1915,6 +1918,30 @@ model DocumentTemplate {
 
   @@index([organizationId, type])
   @@map("document_template")
+}
+
+// ─── Warehouse Dashboard Display ─────────────────────────────────────────────
+
+model WarehouseDashboardToken {
+  id              String   @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name            String               // "Main Warehouse TV", "Loading Dock Screen"
+  token           String               // Raw access token (for URL display in settings)
+  tokenHash       String   @unique     // SHA-256 of the access token (for lookup)
+  locationId      String?              // Scope to a specific warehouse location
+  location        Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  isActive        Boolean  @default(true)
+  layout          String   @default("standard") // "standard", "compact", "dispatch-only"
+
+  createdById     String
+  createdBy       User     @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  lastAccessedAt  DateTime?
+  createdAt       DateTime @default(now())
+
+  @@index([organizationId])
+  @@map("warehouse_dashboard_token")
 }
 
 // ─── Prep System (Pre-Packing / Staging) ─────────────────────────────────────

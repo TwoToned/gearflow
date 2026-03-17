@@ -11,7 +11,7 @@ Multi-tenant asset and rental management platform for AV/theatre production comp
 | Database | PostgreSQL + Prisma v6 (client at `src/generated/prisma/`) |
 | Auth | Better Auth (Organization, TwoFactor, Admin, Passkey plugins) |
 | State | React Query (60s stale), React Hook Form + Zod |
-| PDF | @react-pdf/renderer (Helvetica only, no Unicode) |
+| PDF | pdfme (@pdfme/generator + custom plugins, Helvetica only, no Unicode) |
 | Storage | S3/MinIO, org-prefixed paths |
 
 ## Commands

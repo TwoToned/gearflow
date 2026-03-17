@@ -95,12 +95,18 @@ div.app-shell (fixed inset-0 on mobile, relative on desktop)
 | `/settings/test-and-tag` | T&T ID format, defaults |
 | `/settings/billing` | Currency & tax |
 | `/settings/documents` | Document template management — cards grouped by doc type |
-| `/template-designer/[id]` | Full-screen pdfme template designer |
+| `/template-designer/[id]` | Full-screen template editor (Zoho Books-style, `(designer)` route group with own layout — no sidebar) |
 | `/settings/branding` | Logo & colors |
+| `/settings/displays` | Warehouse display token management |
 | `/settings/team` | Members, invites, roles, permission matrix |
 | `/settings/sso` | SSO configuration (providers, provisioning, group mapping, enforcement) |
 | `/account` | Profile, password, 2FA, sessions, organizations |
 | `/changelog` | Product changelog |
+
+### Public (Token-Authenticated)
+| Path | Page |
+|------|------|
+| `/warehouse/display/[token]` | Warehouse TV dashboard (dark, auto-refresh, no login) |
 
 ### Admin
 | Path | Page |

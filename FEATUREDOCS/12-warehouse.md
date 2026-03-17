@@ -106,3 +106,53 @@ The warehouse page has a "Documents" dropdown with access to all project PDFs (P
 
 ## Online Pick List
 Dialog with full item list showing deployment status per line item. Mobile full-screen with safe area padding. Kit and prep-kit groups show as expandable sections with children.
+
+## Warehouse Dashboard Display (TV Screen)
+
+### Overview
+A public, token-authenticated dashboard page designed for wall-mounted TVs/monitors in the warehouse. Shows today's dispatch, returns, prep status, and upcoming schedule. Dark background, large text readable from 3+ metres, auto-refreshes every 60 seconds, no interactive elements.
+
+### Data Model
+`WarehouseDashboardToken` — stores access tokens scoped to an organization and optional location. Fields: `name`, `token` (raw hex token for URL display), `tokenHash` (SHA-256, unique, for lookup), `locationId` (optional location scope), `layout` ("standard", "compact", "dispatch-only"), `isActive`, `createdById`, `lastAccessedAt`.
+
+### Access
+- URL pattern: `/warehouse/display/{token}` (64-char hex token)
+- Token is generated in Settings > Displays
+- URL is viewable any time via the edit dialog (raw token stored in DB)
+- No login required — added to middleware public routes
+- API endpoint: `GET /api/warehouse/display/{token}` returns JSON data
+
+### Settings UI
+`/settings/displays` — create, list, edit, and revoke display tokens. Each token has a name, optional warehouse location scope, and layout selection.
+- **Create**: Shows URL on creation with copy button
+- **Edit** (pencil icon): Change name, location, and layout. Shows current display URL with copy button. Regenerate URL button (invalidates old URL, generates new one).
+- **Revoke** (trash icon): Deletes the token permanently
+
+### Display Layouts
+| Layout | Description |
+|--------|-------------|
+| **standard** | Full dashboard: dispatch, returns, prep status, 7-day upcoming, alerts |
+| **compact** | Dispatch + returns only, larger text |
+| **dispatch-only** | Today's dispatch with large prep status cards |
+
+### Dashboard Sections
+- **Today's Dispatch**: Projects with delivery services or loadIn/rentalStart today. Shows delivery time, destination, vehicle, pack progress (green/amber/red).
+- **Returns Due Today**: Projects with pickup services or loadOut/rentalEnd today. Shows due time and expected item count.
+- **Prep Status**: Compact cards for projects being prepped (CONFIRMED/PREPPING). Shows packed/total items with progress bar.
+- **Upcoming (7 days)**: Day grid showing dispatch and return counts per day.
+- **Alerts**: Unprepped dispatches, partially packed dispatches, overdue returns.
+
+### Server Actions (`src/server/warehouse-display.ts`)
+- `getDisplayTokens()` — list tokens for the org (includes raw token for URL display)
+- `createDisplayToken({ name, locationId?, layout? })` — generates token, stores raw + hash, returns raw token + record
+- `updateDisplayToken(id, { name?, locationId?, layout? })` — update display settings
+- `regenerateDisplayToken(id)` — generates new token (invalidates old URL), returns new raw token
+- `revokeDisplayToken(id)` — deletes the token
+- `getWarehouseDisplayData(orgId, locationId?)` — assembles all dashboard data
+- `validateDisplayToken(rawToken)` — hash-validates, updates lastAccessedAt
+
+### Integration Points
+- Services: Delivery/pickup services drive dispatch/return sections, falls back to project dates
+- Location scoping: Tokens with `locationId` filter to projects at that location
+- Activity log: Token creation/revocation logged
+- Middleware: `/warehouse/display/` and `/api/warehouse/display/` are public routes

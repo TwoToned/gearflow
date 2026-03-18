@@ -12,6 +12,10 @@
 
 All new features and non-trivial changes must go on a dedicated branch. Never commit feature work directly to `main`.
 
+## Commits
+
+Make atomic commits — one logical change per commit. The more commits the merrier. Prefer many small, focused commits over fewer large ones. Each commit should be independently understandable and revertable.
+
 ## Feature Documentation
 
 Every feature change **must** update the relevant `FEATUREDOCS/` file. If the feature doesn't have one yet, create a new numbered markdown file (e.g. `FEATUREDOCS/30-my-feature.md`) and add it to the table in `ARCHITECTURE.md`.

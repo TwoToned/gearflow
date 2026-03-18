@@ -66,34 +66,41 @@ export default function WarehouseDisplayPage({
   const [data, setData] = useState<DisplayData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [clock, setClock] = useState(new Date());
-
-  const fetchData = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/warehouse/display/${token}`);
-      if (!res.ok) {
-        setError(res.status === 404 ? "Display not found or revoked" : "Failed to load");
-        return;
-      }
-      const json = await res.json();
-      setData(json);
-      setLastUpdated(new Date());
-      setError(null);
-    } catch {
-      // Keep old data, show stale indicator
-      if (!data) setError("Unable to connect");
-    }
-  }, [token, data]);
+  // Initialize clock as null to avoid hydration mismatch (server vs client Date)
+  const [clock, setClock] = useState<Date | null>(null);
 
   // Initial fetch + 60s refresh
+  // fetchData depends only on `token` — NOT on `data`, which caused an infinite
+  // re-fetch loop (data changes → new fetchData → effect re-runs → fetch → data changes)
   useEffect(() => {
+    let hasData = false;
+
+    async function fetchData() {
+      try {
+        const res = await fetch(`/api/warehouse/display/${token}`);
+        if (!res.ok) {
+          setError(res.status === 404 ? "Display not found or revoked" : "Failed to load");
+          return;
+        }
+        const json = await res.json();
+        setData(json);
+        setLastUpdated(new Date());
+        setError(null);
+        hasData = true;
+      } catch {
+        // Keep old data, show stale indicator
+        if (!hasData) setError("Unable to connect");
+      }
+    }
+
     fetchData();
     const interval = setInterval(fetchData, 60_000);
     return () => clearInterval(interval);
-  }, [fetchData]);
+  }, [token]);
 
-  // Clock tick every second
+  // Clock tick every second — start on mount to avoid hydration mismatch
   useEffect(() => {
+    setClock(new Date());
     const interval = setInterval(() => setClock(new Date()), 1000);
     return () => clearInterval(interval);
   }, []);
@@ -138,7 +145,7 @@ function StandardLayout({
   lastUpdated,
 }: {
   data: DisplayData;
-  clock: Date;
+  clock: Date | null;
   lastUpdated: Date | null;
 }) {
   return (
@@ -220,7 +227,7 @@ function CompactLayout({
   lastUpdated,
 }: {
   data: DisplayData;
-  clock: Date;
+  clock: Date | null;
   lastUpdated: Date | null;
 }) {
   return (
@@ -276,7 +283,7 @@ function DispatchOnlyLayout({
   lastUpdated,
 }: {
   data: DisplayData;
-  clock: Date;
+  clock: Date | null;
   lastUpdated: Date | null;
 }) {
   return (
@@ -322,15 +329,16 @@ function DispatchOnlyLayout({
 
 // ─── Shared Components ───────────────────────────────────────────────────────
 
-function Header({ data, clock }: { data: DisplayData; clock: Date }) {
+function Header({ data, clock }: { data: DisplayData; clock: Date | null }) {
   const title = data.locationName || data.orgName;
-  const dateStr = clock.toLocaleDateString(undefined, {
+  const now = clock ?? new Date();
+  const dateStr = now.toLocaleDateString(undefined, {
     weekday: "short",
     day: "numeric",
     month: "short",
     year: "numeric",
   });
-  const timeStr = clock.toLocaleTimeString(undefined, {
+  const timeStr = now.toLocaleTimeString(undefined, {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",

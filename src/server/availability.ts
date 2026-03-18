@@ -142,7 +142,7 @@ export async function getAssetBookings(
       status: { not: "CANCELLED" },
       project: {
         isTemplate: false,
-        status: { notIn: ["CANCELLED"] },
+        status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
         rentalStartDate: { lte: end },
         rentalEndDate: { gte: start },
       },
@@ -197,7 +197,7 @@ export async function getKitBookings(
       status: { not: "CANCELLED" },
       project: {
         isTemplate: false,
-        status: { notIn: ["CANCELLED"] },
+        status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
         rentalStartDate: { lte: end },
         rentalEndDate: { gte: start },
       },

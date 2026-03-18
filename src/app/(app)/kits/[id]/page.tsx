@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState, useRef, useCallback, useMemo } from "react";
+import { use, useState, useRef, useCallback, useMemo, Suspense } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -84,6 +84,14 @@ function formatDate(date: Date | string | null | undefined) {
 }
 
 export default function KitDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  return (
+    <Suspense fallback={<div className="text-muted-foreground">Loading...</div>}>
+      <KitDetailContent params={params} />
+    </Suspense>
+  );
+}
+
+function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();

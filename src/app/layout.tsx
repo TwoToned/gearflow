@@ -58,20 +58,20 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+        <DomPatch />
       </head>
       <body
         className={`${dmSans.variable} ${geistMono.variable} antialiased`}
         suppressHydrationWarning
       >
-        <DomPatch />
         <GlobalErrorBoundary>
           <ThemeProvider>
             <GoogleMapsProvider>
               <QueryProvider>{children}</QueryProvider>
             </GoogleMapsProvider>
           </ThemeProvider>
+          <Toaster />
         </GlobalErrorBoundary>
-        <Toaster />
       </body>
     </html>
   );

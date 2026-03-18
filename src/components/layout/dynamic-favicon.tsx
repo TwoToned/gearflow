@@ -57,19 +57,25 @@ export function DynamicFavicon() {
   const primaryColor = settings?.branding?.primaryColor || "#0d9488";
 
   useEffect(() => {
-    const existing = document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]');
-    existing.forEach((el) => el.remove());
+    const FAVICON_ID = "gearflow-dynamic-favicon";
 
-    const link = document.createElement("link");
-    link.rel = "icon";
+    // Reuse our own managed element — never remove React-owned <link> nodes.
+    // Removing nodes that React tracks in its fiber tree causes the
+    // "Cannot read properties of null (reading 'removeChild')" crash
+    // when the reconciler tries to manipulate the <head> on navigation.
+    let link = document.getElementById(FAVICON_ID) as HTMLLinkElement | null;
+    if (!link) {
+      link = document.createElement("link");
+      link.id = FAVICON_ID;
+      link.rel = "icon";
+      link.type = "image/svg+xml";
+      document.head.appendChild(link);
+    }
 
     const iconPaths = platformIcon ? getIconPaths(platformIcon) : null;
     const fallbackLetter = platformName.charAt(0).toUpperCase();
     const svg = buildFaviconSvg(iconPaths, primaryColor, fallbackLetter);
     link.href = `data:image/svg+xml,${encodeURIComponent(svg)}`;
-    link.type = "image/svg+xml";
-
-    document.head.appendChild(link);
   }, [platformIcon, primaryColor, platformName]);
 
   return null;

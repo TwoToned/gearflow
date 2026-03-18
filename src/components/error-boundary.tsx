@@ -57,9 +57,10 @@ export class GlobalErrorBoundary extends React.Component<
 
   render() {
     if (this.state.hasError) {
-      // Return children immediately — the setTimeout above will clear the error
-      // state, triggering a clean re-render
-      return this.props.children;
+      // Render null so React unmounts the broken subtree.
+      // The setTimeout in componentDidUpdate will clear hasError,
+      // causing a clean remount of children on the next tick.
+      return null;
     }
     return this.props.children;
   }

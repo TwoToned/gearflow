@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useMemo } from "react";
+import { use, useMemo, Suspense } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -52,6 +52,14 @@ const statusColors: Record<string, string> = {
 };
 
 export default function ModelDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  return (
+    <Suspense fallback={<div className="text-muted-foreground">Loading...</div>}>
+      <ModelDetailContent params={params} />
+    </Suspense>
+  );
+}
+
+function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();

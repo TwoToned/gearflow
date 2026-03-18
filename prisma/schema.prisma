@@ -519,6 +519,7 @@ model Model {
   name                    String
   manufacturer            String?
   modelNumber             String?
+  sku                     String?
   categoryId              String?
   category                Category?    @relation(fields: [categoryId], references: [id])
   description             String?
@@ -551,6 +552,7 @@ model Model {
 
   supplierOrderItems  SupplierOrderItem[]
 
+  @@unique([organizationId, sku])
   @@index([organizationId])
   @@index([categoryId])
   @@index([isActive])

@@ -4,6 +4,7 @@ export const modelSchema = z.object({
   name: z.string().min(1, "Name is required").max(200),
   manufacturer: z.string().max(200).optional(),
   modelNumber: z.string().max(100).optional(),
+  sku: z.string().max(100).optional(),
   categoryId: z.string().optional(),
   description: z.string().max(2000).optional(),
   image: z.string().optional(),

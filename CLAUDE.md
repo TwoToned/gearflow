@@ -12,6 +12,10 @@
 
 All new features and non-trivial changes must go on a dedicated branch. Never commit feature work directly to `main`.
 
+## Commits
+
+Make atomic commits — one logical change per commit. The more commits the merrier. Prefer many small, focused commits over fewer large ones. Each commit should be independently understandable and revertable.
+
 ## Feature Documentation
 
 Every feature change **must** update the relevant `FEATUREDOCS/` file. If the feature doesn't have one yet, create a new numbered markdown file (e.g. `FEATUREDOCS/30-my-feature.md`) and add it to the table in `ARCHITECTURE.md`.
@@ -115,3 +119,30 @@ npx prisma migrate dev   # Apply all migrations + generate client
 - Kit join tables use `addedAt` (not `createdAt`)
 - Safe areas: use inline `style` with `env()`, not Tailwind arbitrary values
 - Project queries must add `isTemplate: false` to exclude templates
+
+## gstack
+
+**Always use `/browse` from gstack for web browsing. Never use `mcp__Claude_in_Chrome__*` tools.**
+
+### Available Skills
+- `/office-hours` — YC-style office hours (startup or builder mode)
+- `/plan-ceo-review` — CEO/founder-mode plan review
+- `/plan-eng-review` — Engineering manager plan review
+- `/plan-design-review` — Designer's eye plan review
+- `/design-consultation` — Design system creation
+- `/review` — Pre-landing PR review
+- `/ship` — Ship workflow (merge, test, review, PR)
+- `/browse` — Headless browser for testing and dogfooding
+- `/qa` — QA test + fix bugs
+- `/qa-only` — QA report only (no fixes)
+- `/design-review` — Visual QA + fix
+- `/setup-browser-cookies` — Import cookies from real browser
+- `/retro` — Weekly engineering retrospective
+- `/debug` — Systematic debugging with root cause investigation
+- `/document-release` — Post-ship documentation update
+
+### Troubleshooting
+If gstack skills aren't working, rebuild:
+```bash
+cd .claude/skills/gstack && ./setup
+```

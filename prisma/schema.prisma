@@ -1439,7 +1439,7 @@ model ActivityLog {
   user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   userName        String   // Denormalized — preserved if user is deleted
 
-  summary         String   // Human-readable: "Created asset TTP-00042"
+  summary         String   // Human-readable: "Created asset GF-00042"
   details         Json?    // Structured change data
   metadata        Json?    // Extra context
 

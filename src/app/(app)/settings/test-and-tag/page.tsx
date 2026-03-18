@@ -70,7 +70,7 @@ export default function TestTagSettingsPage() {
               id="ttPrefix"
               value={settings.testTag?.prefix || ""}
               onChange={(e) => updateTestTagSetting("prefix", e.target.value)}
-              placeholder="e.g. TTP-TT-"
+              placeholder="e.g. GF-TT-"
               disabled={!canEdit}
             />
           </div>

@@ -86,7 +86,7 @@ export default function OnboardingPage() {
             <Input
               id="org-name"
               type="text"
-              placeholder="Two Toned Productions"
+              placeholder="Acme Productions"
               value={name}
               onChange={(e) => handleNameChange(e.target.value)}
               required

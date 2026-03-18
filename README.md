@@ -1,7 +1,7 @@
 <div align="center">
 
 # GearFlow
-[![Deploy GearFlow](https://github.com/TwoToned/gearflow/actions/workflows/main.yml/badge.svg)](https://github.com/TwoToned/gearflow/actions/workflows/main.yml)
+[![Deploy GearFlow](https://github.com/gearflow-app/gearflow/actions/workflows/main.yml/badge.svg)](https://github.com/gearflow-app/gearflow/actions/workflows/main.yml)
 
 ### Equipment & Rental Management for Production Companies
 
@@ -97,8 +97,8 @@ A dedicated **admin panel** for platform-wide management — create and manage o
 ### 1. Clone & install
 
 ```bash
-git clone https://github.com/TwoToned/ttp-assetmanagement.git
-cd ttp-assetmanagement
+git clone https://github.com/gearflow-app/gearflow.git
+cd gearflow
 npm install
 ```
 

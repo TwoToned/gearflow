@@ -342,7 +342,7 @@ export function AddEquipmentDialog({
                   <Input
                     value={assetTagInput}
                     onChange={(e) => setAssetTagInput(e.target.value)}
-                    placeholder="e.g. TTP-AUD-001"
+                    placeholder="e.g. AV-AUD-001"
                     className="font-mono"
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {

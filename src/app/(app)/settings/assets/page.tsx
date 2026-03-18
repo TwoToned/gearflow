@@ -89,11 +89,11 @@ export default function AssetsSettingsPage() {
                 id="assetTagPrefix"
                 value={settings.assetTagPrefix || ""}
                 onChange={(e) => updateSetting("assetTagPrefix", e.target.value)}
-                placeholder="e.g. TTP-"
+                placeholder="e.g. GF-"
                 disabled={!canEdit}
               />
               <p className="text-xs text-muted-foreground">
-                Include any separator (e.g. &quot;TTP-&quot; or &quot;TTP&quot;)
+                Include any separator (e.g. &quot;GF-&quot; or &quot;GF&quot;)
               </p>
             </div>
             <div className="space-y-2">

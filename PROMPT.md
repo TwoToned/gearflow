@@ -1,8 +1,8 @@
-# Claude Code Initial Prompt — Two Toned Productions: Asset & Rental Management Platform
+# Claude Code Initial Prompt — GearFlow: Asset & Rental Management Platform
 
 ## Project Overview
 
-Build a full-stack **asset and rental management platform** for **Two Toned Productions**, a company in the **AV (Audio Visual) and Theatre production industry**. This is a SaaS-style application that will serve as the central source of truth for business operations — housing all assets, equipment information, and project management in one place.
+Build a full-stack **asset and rental management platform** for companies in the **AV (Audio Visual) and Theatre production industry**. This is a SaaS-style application that will serve as the central source of truth for business operations — housing all assets, equipment information, and project management in one place.
 
 **Think of this as a purpose-built alternative to CurrentRMS, Rentman, Flex Rental Solutions, and Snipe-IT** — but tailored specifically for small-to-mid AV and theatre rental companies that need professional-grade inventory management, project lifecycle tracking, and warehouse operations without the price tag or bloat of enterprise solutions.
 
@@ -101,7 +101,7 @@ Each unit is individually tracked with a unique serial/asset tag. Used for high-
 
 - `id`, `organizationId`
 - `modelId` → Model (inherits all model info)
-- `assetTag` (custom user-defined tag, e.g., "TTP-AUD-001" — unique within org)
+- `assetTag` (custom user-defined tag, e.g., "AV-AUD-001" — unique within org)
 - `serialNumber` (manufacturer serial number)
 - `customName` (optional friendly name, e.g., "FOH Console 1")
 - `status`: enum — `AVAILABLE`, `CHECKED_OUT`, `IN_MAINTENANCE`, `RETIRED`, `LOST`, `RESERVED`
@@ -126,7 +126,7 @@ For items tracked by quantity rather than individual serial numbers. Used for ca
 
 - `id`, `organizationId`
 - `modelId` → Model
-- `assetTag` (shared tag for all units of this type, e.g., "TTP-SM57")
+- `assetTag` (shared tag for all units of this type, e.g., "AV-SM57")
 - `totalQuantity` (total owned)
 - `availableQuantity` (calculated: total - checked out - in maintenance)
 - `purchasePricePerUnit`
@@ -183,7 +183,7 @@ Track all maintenance, repairs, and test & tag records for serialized assets.
 Projects are the core operational unit — representing a gig, show, event, installation, or any job that requires equipment.
 
 - `id`, `organizationId`
-- `projectNumber` (auto-generated sequential, e.g., "TTP-2025-0042")
+- `projectNumber` (auto-generated sequential, e.g., "GF-2025-0042")
 - `name` (e.g., "Corporate Gala — Hilton Sydney")
 - `clientId` → Client
 - `status`: enum — `ENQUIRY`, `QUOTING`, `QUOTED`, `CONFIRMED`, `PREPPING`, `CHECKED_OUT`, `ON_SITE`, `RETURNED`, `COMPLETED`, `INVOICED`, `CANCELLED`
@@ -358,7 +358,7 @@ This is a **professional business tool** — design it to be clean, efficient, a
 - Primary: Deep teal or electric blue (professional but distinctive — avoid generic purple SaaS look)
 - Neutral: Slate grays
 - Accent: Amber/orange for warnings, green for available/good, red for alerts/critical
-- The brand is "Two Toned Productions" — consider a two-tone design motif in the UI
+- The brand is "GearFlow" — consider a two-tone design motif in the UI
 
 ---
 
@@ -457,4 +457,4 @@ Build this as a modern, fast, professional-grade tool that a small AV company wo
 
 Start with Phase 1 and work through sequentially. Each phase should produce a working, usable increment. Ask clarifying questions if any business logic is ambiguous.
 
-The name of the platform can be **"GearFlow"** (working title — we can change this later). The first organization/tenant will be **Two Toned Productions**.
+The name of the platform is **"GearFlow"**.

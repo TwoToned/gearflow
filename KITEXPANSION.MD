@@ -2,7 +2,7 @@
 
 ## Context
 
-This is an extension to the existing GearFlow asset/rental management platform for Two Toned Productions. The core system (assets, models, projects, warehouse scanning, availability engine) is already implemented. This prompt adds **Kits** — physical containers (road cases, flight cases, pelican cases, racks, work boxes) that hold a fixed set of assets and travel as a single unit.
+This is an extension to the existing GearFlow asset/rental management platform for AV production companies. The core system (assets, models, projects, warehouse scanning, availability engine) is already implemented. This prompt adds **Kits** — physical containers (road cases, flight cases, pelican cases, racks, work boxes) that hold a fixed set of assets and travel as a single unit.
 
 ---
 
@@ -12,12 +12,12 @@ A Kit is a **physical container that is itself an asset**, with its own asset ta
 
 **Real-world examples in AV/Theatre:**
 
-- A flight case labelled `TTPKIT-DRUM01` containing 4x SM57s, 2x SM81s, 1x Beta 52A, all the necessary XLR cables, mic clips, and drum clamps — the full drum mic kit
-- A road case labelled `TTPKIT-RF01` containing 4x Sennheiser EW-D handheld wireless mics, the EM-D receiver, antenna distro, BNC cables, and spare batteries
-- A rack case labelled `TTPKIT-RACK-FOH01` containing a mixer, a system processor, a power conditioner — all bolted into a 12RU rack that never gets disassembled
-- A work box labelled `TTPKIT-TOOLS01` containing a multimeter, soldering iron, gaffer tape, cable ties, and a torch — the technician's toolkit
+- A flight case labelled `KIT-DRUM01` containing 4x SM57s, 2x SM81s, 1x Beta 52A, all the necessary XLR cables, mic clips, and drum clamps — the full drum mic kit
+- A road case labelled `KIT-RF01` containing 4x Sennheiser EW-D handheld wireless mics, the EM-D receiver, antenna distro, BNC cables, and spare batteries
+- A rack case labelled `KIT-RACK-FOH01` containing a mixer, a system processor, a power conditioner — all bolted into a 12RU rack that never gets disassembled
+- A work box labelled `KIT-TOOLS01` containing a multimeter, soldering iron, gaffer tape, cable ties, and a torch — the technician's toolkit
 
-**Key principle:** The contents of a Kit are **fixed and specific**. `TTPKIT-RF01` always contains `TTP-SENN-HH-001`, `TTP-SENN-HH-002`, `TTP-SENN-HH-003`, and `TTP-SENN-HH-004` — not just "any 4 Sennheiser handhelds." The system cannot substitute different serialized assets into a Kit. This is because in the real world, those specific units are physically packed inside that specific case. You open the case and those exact items are in there.
+**Key principle:** The contents of a Kit are **fixed and specific**. `KIT-RF01` always contains `GF-SENN-HH-001`, `GF-SENN-HH-002`, `GF-SENN-HH-003`, and `GF-SENN-HH-004` — not just "any 4 Sennheiser handhelds." The system cannot substitute different serialized assets into a Kit. This is because in the real world, those specific units are physically packed inside that specific case. You open the case and those exact items are in there.
 
 Bulk items inside a Kit work slightly differently — the Kit declares a quantity (e.g., "6x 3m XLR cables") and those are deducted from bulk stock when the Kit is created, but individual cables aren't tracked by serial number.
 
@@ -31,7 +31,7 @@ Bulk items inside a Kit work slightly differently — the Kit declares a quantit
 Kit
 - id                    String (cuid)
 - organizationId        String → Organization
-- assetTag              String (unique within org, e.g., "TTPKIT-RF01")
+- assetTag              String (unique within org, e.g., "KIT-RF01")
 - name                  String (e.g., "RF Wireless Kit 01")
 - description           String? (what this kit is for, how it's used)
 - categoryId            String → Category
@@ -169,7 +169,7 @@ When a user adds a Kit to a project:
 The availability engine must be updated:
 
 - **When checking Kit availability:** A Kit is available if the Kit itself is not booked on overlapping dates AND all of its serialized contents are not independently booked (they shouldn't be, because they're in a Kit — but guard against edge cases)
-- **When a serialized asset is inside a Kit:** That asset CANNOT be independently added to a project. The system must prevent this and show a message like "This asset is part of Kit TTPKIT-RF01. Add the Kit instead."
+- **When a serialized asset is inside a Kit:** That asset CANNOT be independently added to a project. The system must prevent this and show a message like "This asset is part of Kit KIT-RF01. Add the Kit instead."
 - **When checking a standalone serialized asset's availability:** If it's inside a Kit, it's only available when the Kit is available
 - **Bulk items in Kits:** The quantities allocated to Kits are permanently deducted from available stock (they're physically inside the case). They don't fluctuate with project dates — they're always allocated to the Kit regardless of whether the Kit is on a project or sitting in the warehouse
 
@@ -207,7 +207,7 @@ The existing check-out workflow needs to handle Kits:
 
 2. **Scanning an individual asset that's inside a Kit:**
    - The system should recognize the asset is part of a Kit
-   - Show a message: "This asset is part of Kit [TTPKIT-RF01]. Would you like to check out the entire Kit?"
+   - Show a message: "This asset is part of Kit [KIT-RF01]. Would you like to check out the entire Kit?"
    - If yes → check out the Kit (same as scanning the Kit barcode)
    - Do NOT allow checking out just the individual asset while it's assigned to a Kit
 
@@ -278,22 +278,22 @@ The project equipment list should now support this visual hierarchy:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ TTPKIT-RF01 — RF Wireless Kit 01              $200/day  Kit │
-│   ├── TTP-SENN-HH-001 — Sennheiser EW-D HH         (incl) │
-│   ├── TTP-SENN-HH-002 — Sennheiser EW-D HH         (incl) │
-│   ├── TTP-SENN-HH-003 — Sennheiser EW-D HH         (incl) │
-│   ├── TTP-SENN-HH-004 — Sennheiser EW-D HH         (incl) │
-│   ├── TTP-SENN-RX-001 — Sennheiser EM-D Receiver    (incl) │
+│ KIT-RF01 — RF Wireless Kit 01              $200/day  Kit │
+│   ├── GF-SENN-HH-001 — Sennheiser EW-D HH         (incl) │
+│   ├── GF-SENN-HH-002 — Sennheiser EW-D HH         (incl) │
+│   ├── GF-SENN-HH-003 — Sennheiser EW-D HH         (incl) │
+│   ├── GF-SENN-HH-004 — Sennheiser EW-D HH         (incl) │
+│   ├── GF-SENN-RX-001 — Sennheiser EM-D Receiver    (incl) │
 │   ├── 4x BNC Cable 1m                               (incl) │
 │   └── 8x AA Battery                                 (incl) │
 ├─────────────────────────────────────────────────────────────┤
-│ TTP-DLIVE-001 — Allen & Heath dLive S7000    $500/day      │
+│ GF-DLIVE-001 — Allen & Heath dLive S7000    $500/day      │
 ├─────────────────────────────────────────────────────────────┤
 │ 4x SM58 — Shure SM58                         $20/day each  │
 ├─────────────────────────────────────────────────────────────┤
-│ TTPKIT-DRUM01 — Drum Mic Kit                  $150/day  Kit │
-│   ├── TTP-SM57-001 — Shure SM57                     (incl) │
-│   ├── TTP-SM57-002 — Shure SM57                     (incl) │
+│ KIT-DRUM01 — Drum Mic Kit                  $150/day  Kit │
+│   ├── GF-SM57-001 — Shure SM57                     (incl) │
+│   ├── GF-SM57-002 — Shure SM57                     (incl) │
 │   ├── ...                                                   │
 │   └── 6x 5m XLR Cable                               (incl) │
 └─────────────────────────────────────────────────────────────┘
@@ -313,7 +313,7 @@ The project equipment list should now support this visual hierarchy:
 - When expanded, child items are indented and show "(included)" instead of individual prices (unless itemized pricing mode)
 
 ### Pull Sheet
-- Kits should appear as a single pull item: "Pull Kit TTPKIT-RF01 from Shelf B3"
+- Kits should appear as a single pull item: "Pull Kit KIT-RF01 from Shelf B3"
 - Optionally list contents below for verification during prep
 - Standalone assets and bulk items appear separately as usual
 
@@ -337,7 +337,7 @@ The project equipment list should now support this visual hierarchy:
 
 4. **Deleting/retiring a Kit**: Remove all assets from the Kit first (return them to standalone stock), then retire the Kit entity. Don't cascade delete the assets.
 
-5. **An asset is inside a Kit but someone tries to add that same asset individually to a project**: Block with clear error message — "Asset TTP-SENN-HH-001 is part of Kit TTPKIT-RF01. Remove it from the Kit first, or add the Kit to the project instead."
+5. **An asset is inside a Kit but someone tries to add that same asset individually to a project**: Block with clear error message — "Asset GF-SENN-HH-001 is part of Kit KIT-RF01. Remove it from the Kit first, or add the Kit to the project instead."
 
 6. **Nested Kits**: Do NOT support Kits inside Kits for v1. A Kit can only contain serialized assets and bulk items, not other Kits. This keeps the logic manageable. If needed later, this can be revisited.
 

@@ -1,24 +1,11 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
-import L from "leaflet";
+import { useEffect, useRef } from "react";
+import { Map, AdvancedMarker, Pin, InfoWindow, useMap } from "@vis.gl/react-google-maps";
 import { ExternalLink } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
-import "leaflet/dist/leaflet.css";
-
-// Fix Leaflet default marker icon paths
-const defaultIcon = L.icon({
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41],
-});
-L.Marker.prototype.options.icon = defaultIcon;
+import { useState } from "react";
 
 function getDirectionsUrl(lat: number, lng: number, label: string) {
   const isIOS =
@@ -29,12 +16,19 @@ function getDirectionsUrl(lat: number, lng: number, label: string) {
   return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 }
 
-// Keeps map centred when coordinates change
+// Keeps map centered when coordinates change
 function RecenterMap({ lat, lng }: { lat: number; lng: number }) {
   const map = useMap();
+  const prevRef = useRef({ lat, lng });
+
   useEffect(() => {
-    map.setView([lat, lng]);
+    if (!map) return;
+    if (prevRef.current.lat !== lat || prevRef.current.lng !== lng) {
+      map.panTo({ lat, lng });
+      prevRef.current = { lat, lng };
+    }
   }, [map, lat, lng]);
+
   return null;
 }
 
@@ -62,42 +56,42 @@ export default function AddressMapInner({
   className,
 }: Props) {
   const { resolvedTheme } = useTheme();
-
-  const tileUrl = useMemo(() => {
-    return resolvedTheme === "dark"
-      ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-      : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
-  }, [resolvedTheme]);
-
+  const [infoOpen, setInfoOpen] = useState(false);
+  const position = { lat: latitude, lng: longitude };
   const directionsUrl = getDirectionsUrl(latitude, longitude, label || address || "");
 
   return (
     <div className={cn("space-y-2", className)}>
       <div className="overflow-hidden rounded-md border" style={{ height }}>
-        <MapContainer
-          center={[latitude, longitude]}
-          zoom={zoom}
-          scrollWheelZoom={interactive}
-          dragging={interactive}
-          touchZoom={interactive}
-          doubleClickZoom={interactive}
-          zoomControl={interactive}
-          style={{ height: "100%", width: "100%" }}
+        <Map
+          defaultCenter={position}
+          defaultZoom={zoom}
+          gestureHandling={interactive ? "auto" : "none"}
+          disableDefaultUI={!interactive}
+          colorScheme={resolvedTheme === "dark" ? "DARK" : "LIGHT"}
+          mapId="gearflow-map"
+          style={{ width: "100%", height: "100%" }}
         >
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-            url={tileUrl}
-          />
-          <Marker position={[latitude, longitude]}>
-            <Popup>
+          <AdvancedMarker position={position} onClick={() => setInfoOpen(true)}>
+            <Pin
+              background="#0d9488"
+              borderColor="#0f766e"
+              glyphColor="#ffffff"
+            />
+          </AdvancedMarker>
+          {infoOpen && (
+            <InfoWindow
+              position={position}
+              onCloseClick={() => setInfoOpen(false)}
+            >
               <div className="text-sm">
                 {label && <div className="font-medium">{label}</div>}
-                {address && <div className="text-muted-foreground">{address}</div>}
+                {address && <div className="text-gray-600">{address}</div>}
               </div>
-            </Popup>
-          </Marker>
+            </InfoWindow>
+          )}
           <RecenterMap lat={latitude} lng={longitude} />
-        </MapContainer>
+        </Map>
       </div>
 
       {showDirectionsLink && (

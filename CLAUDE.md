@@ -56,6 +56,9 @@ npx prisma migrate dev   # Apply all migrations + generate client
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
 - `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`
 
+**Google Maps:**
+- `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` — API key with Maps JavaScript API + Places API (New) enabled
+
 **Other:**
 - `PASSKEY_RP_ID` — WebAuthn relying party ID (default: `localhost`)
 - `PLATFORM_NAME` — Display name (default: `GearFlow`)

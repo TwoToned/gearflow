@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { DM_Sans, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { QueryProvider } from "@/components/providers/query-provider";
+import { GoogleMapsProvider } from "@/components/providers/google-maps-provider";
 import { GlobalErrorBoundary } from "@/components/error-boundary";
 import { DomPatch } from "@/components/dom-patch";
 import { Toaster } from "@/components/ui/sonner";
@@ -65,7 +66,9 @@ export default function RootLayout({
         <DomPatch />
         <GlobalErrorBoundary>
           <ThemeProvider>
-            <QueryProvider>{children}</QueryProvider>
+            <GoogleMapsProvider>
+              <QueryProvider>{children}</QueryProvider>
+            </GoogleMapsProvider>
           </ThemeProvider>
         </GlobalErrorBoundary>
         <Toaster />

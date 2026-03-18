@@ -2,13 +2,20 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { MapPin } from "lucide-react";
+import { useMapsLibrary } from "@vis.gl/react-google-maps";
 import { cn } from "@/lib/utils";
 import {
-  searchAddresses,
   DEBOUNCE_MS,
   MIN_QUERY_LENGTH,
   type PlaceResult,
 } from "@/lib/address-autocomplete";
+
+interface Prediction {
+  placeId: string;
+  mainText: string;
+  secondaryText: string;
+  fullText: string;
+}
 
 interface AddressInputProps {
   value: string;
@@ -33,13 +40,16 @@ export function AddressInput({
   initialCoordinates,
   countryCode,
 }: AddressInputProps) {
-  const [suggestions, setSuggestions] = useState<PlaceResult[]>([]);
+  const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [isGeocoded, setIsGeocoded] = useState(!!initialCoordinates);
   const [activeIndex, setActiveIndex] = useState(-1);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const places = useMapsLibrary("places");
+  const placesReady = !!places;
 
   // Sync geocoded state when initialCoordinates changes
   useEffect(() => {
@@ -57,17 +67,78 @@ export function AddressInput({
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  const fetchSuggestions = useCallback(async (query: string) => {
-    if (query.length < MIN_QUERY_LENGTH) {
-      setSuggestions([]);
+  const fetchPredictions = useCallback(async (query: string) => {
+    if (query.length < MIN_QUERY_LENGTH || !placesReady) {
+      setPredictions([]);
       setIsOpen(false);
       return;
     }
-    const results = await searchAddresses(query, { countryCode });
-    setSuggestions(results);
-    setIsOpen(results.length > 0);
-    setActiveIndex(-1);
-  }, [countryCode]);
+
+    try {
+      const request: google.maps.places.AutocompleteRequest = {
+        input: query,
+        includedRegionCodes: countryCode ? [countryCode.toLowerCase()] : undefined,
+      };
+
+      const { suggestions } =
+        await google.maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions(request);
+
+      const mapped: Prediction[] = suggestions
+        .map((s) => {
+          const p = s.placePrediction;
+          if (!p) return null;
+          return {
+            placeId: p.placeId,
+            mainText: p.mainText?.text || "",
+            secondaryText: p.secondaryText?.text || "",
+            fullText: p.text?.text || "",
+          };
+        })
+        .filter((x): x is Prediction => x !== null);
+
+      setPredictions(mapped);
+      setIsOpen(mapped.length > 0);
+      setActiveIndex(-1);
+    } catch {
+      setPredictions([]);
+      setIsOpen(false);
+    }
+  }, [countryCode, placesReady]);
+
+  async function selectPlace(prediction: Prediction) {
+    try {
+      const place = new google.maps.places.Place({
+        id: prediction.placeId,
+      });
+
+      await place.fetchFields({
+        fields: ["location", "formattedAddress"],
+      });
+
+      const loc = place.location;
+      if (loc) {
+        const address = place.formattedAddress || prediction.fullText;
+        const result: PlaceResult = {
+          address,
+          latitude: loc.lat(),
+          longitude: loc.lng(),
+          placeId: prediction.placeId,
+        };
+        onChange(address);
+        setIsGeocoded(true);
+        setPredictions([]);
+        setIsOpen(false);
+        setActiveIndex(-1);
+        onPlaceSelect?.(result);
+      }
+    } catch {
+      // Fallback: use the prediction text without coordinates
+      onChange(prediction.fullText);
+      setPredictions([]);
+      setIsOpen(false);
+      setActiveIndex(-1);
+    }
+  }
 
   function handleInputChange(text: string) {
     onChange(text);
@@ -80,30 +151,21 @@ export function AddressInput({
 
     // Debounced autocomplete
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => fetchSuggestions(text), DEBOUNCE_MS);
-  }
-
-  function handleSelect(place: PlaceResult) {
-    onChange(place.address);
-    setIsGeocoded(true);
-    setSuggestions([]);
-    setIsOpen(false);
-    setActiveIndex(-1);
-    onPlaceSelect?.(place);
+    debounceRef.current = setTimeout(() => fetchPredictions(text), DEBOUNCE_MS);
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (!isOpen || suggestions.length === 0) return;
+    if (!isOpen || predictions.length === 0) return;
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setActiveIndex((i) => (i < suggestions.length - 1 ? i + 1 : 0));
+      setActiveIndex((i) => (i < predictions.length - 1 ? i + 1 : 0));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setActiveIndex((i) => (i > 0 ? i - 1 : suggestions.length - 1));
+      setActiveIndex((i) => (i > 0 ? i - 1 : predictions.length - 1));
     } else if (e.key === "Enter" && activeIndex >= 0) {
       e.preventDefault();
-      handleSelect(suggestions[activeIndex]);
+      selectPlace(predictions[activeIndex]);
     } else if (e.key === "Escape") {
       setIsOpen(false);
       setActiveIndex(-1);
@@ -119,7 +181,7 @@ export function AddressInput({
           value={value}
           onChange={(e) => handleInputChange(e.target.value)}
           onFocus={() => {
-            if (suggestions.length > 0) setIsOpen(true);
+            if (predictions.length > 0) setIsOpen(true);
           }}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
@@ -139,43 +201,36 @@ export function AddressInput({
         )}
       </div>
 
-      {isOpen && suggestions.length > 0 && (
+      {isOpen && predictions.length > 0 && (
         <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover shadow-md">
           <ul role="listbox" className="max-h-60 overflow-auto py-1">
-            {suggestions.map((place, i) => {
-              // Split display_name into primary name and rest
-              const parts = place.address.split(", ");
-              const primary = parts[0];
-              const secondary = parts.slice(1).join(", ");
-
-              return (
-                <li
-                  key={place.placeId ?? `${place.latitude}-${place.longitude}`}
-                  role="option"
-                  aria-selected={i === activeIndex}
-                  className={cn(
-                    "cursor-pointer px-3 py-2 text-sm",
-                    i === activeIndex
-                      ? "bg-accent text-accent-foreground"
-                      : "hover:bg-accent/50"
-                  )}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    handleSelect(place);
-                  }}
-                >
-                  <div className="font-medium">{primary}</div>
-                  {secondary && (
-                    <div className="text-xs text-muted-foreground truncate">
-                      {secondary}
-                    </div>
-                  )}
-                </li>
-              );
-            })}
+            {predictions.map((prediction, i) => (
+              <li
+                key={prediction.placeId}
+                role="option"
+                aria-selected={i === activeIndex}
+                className={cn(
+                  "cursor-pointer px-3 py-2 text-sm",
+                  i === activeIndex
+                    ? "bg-accent text-accent-foreground"
+                    : "hover:bg-accent/50"
+                )}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  selectPlace(prediction);
+                }}
+              >
+                <div className="font-medium">{prediction.mainText}</div>
+                {prediction.secondaryText && (
+                  <div className="text-xs text-muted-foreground truncate">
+                    {prediction.secondaryText}
+                  </div>
+                )}
+              </li>
+            ))}
           </ul>
-          <div className="border-t px-3 py-1.5 text-xs text-muted-foreground">
-            Type any address or select a suggestion
+          <div className="border-t px-3 py-1.5 text-[10px] text-muted-foreground">
+            Powered by Google
           </div>
         </div>
       )}

@@ -1,23 +1,33 @@
 # Maps Integration — Address Autocomplete & Interactive Maps
 
 ## Overview
-Universal address autocomplete (Nominatim) and interactive maps (Leaflet + OpenStreetMap) across Location, Client, and Supplier entities. Selecting a suggestion captures coordinates and displays a map on detail pages. Freeform text works without coordinates — no map, just text.
+Universal address autocomplete (Google Places API) and interactive maps (Google Maps) across Location, Client, and Supplier entities. Selecting a suggestion captures coordinates and displays a map on detail pages. Freeform text works without coordinates — no map, just text.
+
+## Environment Variables
+- `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` — Google Maps API key with **Maps JavaScript API** and **Places API** enabled. Without this key, address input works as plain text (no autocomplete or maps).
 
 ## Components
 
+### GoogleMapsProvider (`src/components/providers/google-maps-provider.tsx`)
+- Wraps the app in `@vis.gl/react-google-maps` `<APIProvider>` with the API key
+- Added to root layout inside `GlobalErrorBoundary`
+- Gracefully renders children without wrapping if no API key is configured
+
 ### AddressInput (`src/components/ui/address-input.tsx`)
-- Text input with inline autocomplete via Nominatim (free, no API key)
+- Text input with inline autocomplete via Google Places API (New)
+- Uses `useMapsLibrary("places")` from `@vis.gl/react-google-maps` to load the Places library
 - Debounced (300ms), minimum 3 characters before querying
 - Shows teal `MapPin` icon when geocoded; clears on manual edit
-- `countryCode` prop biases results to org's country (via `countrycodes` param)
+- `countryCode` prop biases results via `includedRegionCodes`
+- On selection: creates `Place` instance and calls `fetchFields()` to get `formattedAddress` + lat/lng
 - Keyboard navigation: arrow keys, enter to select, escape to close
-- Graceful degradation: works as plain text input if Nominatim is unavailable
+- Dropdown shows "Powered by Google" attribution (required by ToS)
 - Use with `Controller` from React Hook Form
 
 ### AddressMap (`src/components/ui/address-map.tsx`)
-- Leaflet + OpenStreetMap tiles, dynamically imported (no SSR)
-- Dark mode: CartoDB DarkMatter; Light mode: CartoDB Positron
-- Single marker with popup showing label + address
+- Google Maps via `@vis.gl/react-google-maps`, dynamically imported (no SSR)
+- Dark mode: `colorScheme: "DARK"` (built-in); Light mode: `colorScheme: "LIGHT"`
+- Teal-colored `AdvancedMarker` with `InfoWindow` popup showing label + address
 - "Get Directions" link (Apple Maps on iOS, Google Maps elsewhere)
 - Inner component at `src/components/ui/address-map-inner.tsx`
 
@@ -25,19 +35,11 @@ Universal address autocomplete (Nominatim) and interactive maps (Leaflet + OpenS
 - Conditional wrapper: map if coordinates exist, plain text if only address, nothing if empty
 - `compact` mode (150px, non-interactive) for cards/sidebars
 
-## Address Formatting (`src/lib/address-autocomplete.ts`)
-- Builds short addresses from Nominatim `addressdetails`: `{place name}, {number} {road}, {suburb} {STATE} {postcode}`
-- Place name (e.g. "Qtopia Sydney") is prepended when it differs from the street and locality
-- State abbreviations for AU, US, NZ (e.g. "New South Wales" -> "NSW")
-- Extracts leading house number from user query when Nominatim matches a road without one
-- Example: typing "15 bulah cl" -> "15 Bulah Close, Berowra Heights NSW 2082"
-- Example: searching "Qtopia Sydney" -> "Qtopia Sydney, 13 Southgate Ave, Cannon Hill QLD 4170"
-
 ## Country Bias
 - `OrgSettings.country` (ISO 3166-1 alpha-2, e.g. "AU") set in Settings -> General
 - `useOrgCountry()` hook (`src/lib/use-org-country.ts`) reads from cached org query
 - Passed as `countryCode` to `AddressInput` in all forms
-- Nominatim `countrycodes` parameter restricts results to that country
+- Google Places `includedRegionCodes` restricts results to that country
 
 ## Database Fields
 All coordinate fields are `Float?` (nullable). No coordinates = freeform text, no map.
@@ -82,6 +84,5 @@ All `Select` dropdowns must pass explicit label children to `<SelectValue>` beca
 - Project detail: location card shows address, map coordinates inherited from location (including parent inheritance), "Get Directions" link
 
 ## Dependencies
-- `leaflet` + `react-leaflet` (map rendering)
-- `@types/leaflet` (dev)
-- Nominatim API (free, rate-limited to 1 req/sec, User-Agent required)
+- `@vis.gl/react-google-maps` (map rendering + Places API loading)
+- Google Maps JavaScript API + Places API (New) (requires API key)

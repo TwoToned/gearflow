@@ -43,6 +43,8 @@ export async function updateWooCommerceIntegration(data: WooCommerceIntegrationF
       eventStartKey: parsed.eventStartKey || null,
       deliveryAddressKey: parsed.deliveryAddressKey || null,
       notesKey: parsed.notesKey || null,
+      locationMetaKey: parsed.locationMetaKey || null,
+      defaultLocationId: parsed.defaultLocationId || null,
     },
     update: {
       ...parsed,
@@ -53,6 +55,8 @@ export async function updateWooCommerceIntegration(data: WooCommerceIntegrationF
       eventStartKey: parsed.eventStartKey || null,
       deliveryAddressKey: parsed.deliveryAddressKey || null,
       notesKey: parsed.notesKey || null,
+      locationMetaKey: parsed.locationMetaKey || null,
+      defaultLocationId: parsed.defaultLocationId || null,
     },
   });
 
@@ -228,6 +232,8 @@ interface WooCommerceIntegrationConfig {
   eventStartKey: string | null;
   deliveryAddressKey: string | null;
   notesKey: string | null;
+  locationMetaKey: string | null;
+  defaultLocationId: string | null;
   dateFormat: string;
   defaultProjectType: string;
   autoConfirmEnquiry: boolean;
@@ -265,10 +271,13 @@ export async function processWooCommerceOrder(
     // 3. Match order line items to GearFlow models
     const matchResults = await matchProducts(orgId, order.line_items, integration);
 
-    // 4. Generate a project number
+    // 4. Resolve location (from meta field or default)
+    const locationId = await resolveLocation(orgId, order, integration);
+
+    // 5. Generate a project number
     const projectNumber = await generateWebOrderProjectNumber(orgId, order);
 
-    // 5. Create the project
+    // 6. Create the project
     const project = await prisma.project.create({
       data: {
         organizationId: orgId,
@@ -279,6 +288,7 @@ export async function processWooCommerceOrder(
         clientId: client.id,
         status: integration.autoConfirmEnquiry ? "QUOTING" : "ENQUIRY",
         type: integration.defaultProjectType as never,
+        locationId: locationId ?? null,
         rentalStartDate: dates.rentalStart ?? null,
         rentalEndDate: dates.rentalEnd ?? null,
         eventStartDate: dates.eventStart ?? null,
@@ -287,7 +297,7 @@ export async function processWooCommerceOrder(
       },
     });
 
-    // 6. Add line items for matched and unmatched products
+    // 7. Add line items for matched and unmatched products
     let sortOrder = 0;
     for (const match of matchResults) {
       await prisma.projectLineItem.create({
@@ -311,10 +321,10 @@ export async function processWooCommerceOrder(
       });
     }
 
-    // 7. Recalculate project totals
+    // 8. Recalculate project totals
     await recalculateProjectTotals(project.id);
 
-    // 8. Log success
+    // 9. Log success
     const matchedCount = matchResults.filter((m) => m.matched).length;
     const totalCount = matchResults.length;
 
@@ -329,7 +339,7 @@ export async function processWooCommerceOrder(
       },
     });
 
-    // 9. Log activity
+    // 10. Log activity
     await logActivity({
       organizationId: orgId,
       userId: "system",
@@ -342,7 +352,7 @@ export async function processWooCommerceOrder(
       projectId: project.id,
     });
 
-    // 10. Notify admins
+    // 11. Notify admins
     if (integration.notifyUserIds.length > 0) {
       await notifyNewWebsiteOrder(orgId, project, client, matchedCount, totalCount, integration.notifyUserIds);
     }
@@ -502,6 +512,122 @@ function diceCoefficient(a: Set<string>, b: Set<string>): number {
   }
 
   return (2 * intersection) / (a.size + b.size);
+}
+
+/**
+ * Resolve a project location from WooCommerce order meta.
+ * 1. If a locationMetaKey is configured, try to match the meta value to an existing Location
+ *    (exact name, address/substring, or bigram fuzzy match).
+ * 2. If no match found, auto-create a new VENUE location from the meta value.
+ * 3. Fall back to defaultLocationId if no meta key is set or the field is empty.
+ */
+async function resolveLocation(
+  orgId: string,
+  order: WooOrder,
+  integration: WooCommerceIntegrationConfig,
+): Promise<string | null> {
+  // Try to match from meta field
+  if (integration.locationMetaKey) {
+    const metaValue = order.meta_data?.find(
+      (m) => m.key === integration.locationMetaKey,
+    )?.value;
+
+    if (metaValue?.trim()) {
+      const locationName = metaValue.trim();
+
+      // 1. Exact name match (case-insensitive)
+      const exactName = await prisma.location.findFirst({
+        where: {
+          organizationId: orgId,
+          name: { equals: locationName, mode: "insensitive" },
+        },
+        select: { id: true },
+      });
+      if (exactName) return exactName.id;
+
+      // 2. Address match (case-insensitive)
+      const addressMatch = await prisma.location.findFirst({
+        where: {
+          organizationId: orgId,
+          address: { equals: locationName, mode: "insensitive" },
+        },
+        select: { id: true },
+      });
+      if (addressMatch) return addressMatch.id;
+
+      // 3. Fuzzy match against all locations (name + address)
+      const candidates = await prisma.location.findMany({
+        where: { organizationId: orgId },
+        select: { id: true, name: true, address: true },
+      });
+
+      const normalizedInput = locationName.toLowerCase().trim();
+      let bestMatch: { id: string; score: number } | null = null;
+
+      for (const candidate of candidates) {
+        const normalizedName = candidate.name.toLowerCase().trim();
+        const normalizedAddress = candidate.address?.toLowerCase().trim() ?? "";
+
+        // Substring match (either direction) on name or address
+        if (
+          normalizedName.includes(normalizedInput) ||
+          normalizedInput.includes(normalizedName) ||
+          (normalizedAddress && (
+            normalizedAddress.includes(normalizedInput) ||
+            normalizedInput.includes(normalizedAddress)
+          ))
+        ) {
+          return candidate.id;
+        }
+
+        // Bigram similarity on name
+        const inputBigrams = getBigrams(normalizedInput);
+        const nameBigrams = getBigrams(normalizedName);
+        const nameScore = diceCoefficient(inputBigrams, nameBigrams);
+
+        // Also try address similarity
+        let addrScore = 0;
+        if (normalizedAddress) {
+          const addrBigrams = getBigrams(normalizedAddress);
+          addrScore = diceCoefficient(inputBigrams, addrBigrams);
+        }
+
+        const bestScore = Math.max(nameScore, addrScore);
+        if (bestScore >= 0.6 && (!bestMatch || bestScore > bestMatch.score)) {
+          bestMatch = { id: candidate.id, score: bestScore };
+        }
+      }
+
+      if (bestMatch) return bestMatch.id;
+
+      // 4. No match — create a new VENUE location
+      const newLocation = await prisma.location.create({
+        data: {
+          organizationId: orgId,
+          name: locationName,
+          type: "VENUE",
+          // If the meta value looks like an address (contains comma or numbers), store as address too
+          address: /\d/.test(locationName) || locationName.includes(",") ? locationName : null,
+        },
+      });
+
+      await logActivity({
+        organizationId: orgId,
+        userId: "system",
+        userName: "WooCommerce",
+        action: "CREATE",
+        entityType: "location",
+        entityId: newLocation.id,
+        entityName: newLocation.name,
+        summary: `Auto-created venue location from WooCommerce order`,
+      });
+
+      return newLocation.id;
+    }
+  }
+
+  // Fall back to default location
+  return integration.defaultLocationId || null;
 }
 
 interface DateExtractionResult {

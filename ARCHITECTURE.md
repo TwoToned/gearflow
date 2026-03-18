@@ -62,6 +62,7 @@ Detailed docs for each system are in the [`FEATUREDOCS/`](./FEATUREDOCS/) folder
 | 32 | [Preps](./FEATUREDOCS/32-preps.md) | Prep-kits (temporary kits), case assets, project staging |
 | 33 | [Enterprise SSO](./FEATUREDOCS/33-enterprise-sso.md) | SAML 2.0/OIDC SSO, provisioning modes, group mapping, enforcement |
 | 34 | [Reporting System](./FEATUREDOCS/34-reporting-system.md) | Report engine, ~30 pre-built reports, custom report builder, CSV export |
+| 35 | [WooCommerce Integration](./FEATUREDOCS/35-woocommerce-integration.md) | Webhook-driven order import, client/product matching, location auto-creation |
 
 **When making changes**: Read the relevant feature doc(s) first, follow documented patterns, and update the relevant doc(s) after. If no doc exists for the feature you're working on, create a new numbered file in `FEATUREDOCS/` and add it to the table above.
 

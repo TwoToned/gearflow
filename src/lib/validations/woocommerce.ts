@@ -10,6 +10,8 @@ export const wooCommerceIntegrationSchema = z.object({
   eventStartKey: z.string().max(100).optional(),
   deliveryAddressKey: z.string().max(100).optional(),
   notesKey: z.string().max(100).optional(),
+  locationMetaKey: z.string().max(100).optional(),
+  defaultLocationId: z.string().optional().or(z.literal("")),
   dateFormat: z.enum(["auto", "DD/MM/YYYY", "MM/DD/YYYY", "ISO"]).default("auto"),
   defaultProjectType: z.enum([
     "DRY_HIRE", "WET_HIRE", "INSTALLATION", "TOUR",

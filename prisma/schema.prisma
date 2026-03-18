@@ -1976,6 +1976,10 @@ model WooCommerceIntegration {
   // Date format preference
   dateFormat        String  @default("auto")  // "auto", "DD/MM/YYYY", "MM/DD/YYYY", "ISO"
 
+  // Location mapping
+  locationMetaKey    String?                  // WooCommerce meta key containing venue/location name
+  defaultLocationId  String?                  // Fallback location if no meta key match
+
   // Defaults for created projects
   defaultProjectType String @default("DRY_HIRE")
   autoConfirmEnquiry Boolean @default(false)  // If true, set status to QUOTING instead of ENQUIRY

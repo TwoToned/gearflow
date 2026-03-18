@@ -25,7 +25,24 @@ export async function POST(request: Request) {
   const signature = request.headers.get("X-WC-Webhook-Signature");
   const topic = request.headers.get("X-WC-Webhook-Topic");
 
-  // 4. Determine org — single-org mode uses the only org, or fallback to ?org= param
+  // 4. Handle WooCommerce ping (sent on webhook creation to verify the URL is reachable)
+  //    Ping has topic "action.woocommerce_webhook_delivery" or no topic, and minimal/empty body.
+  //    We accept it without signature verification since it contains no sensitive data.
+  if (topic === "action.woocommerce_webhook_delivery") {
+    return Response.json({ ok: true, ping: true });
+  }
+
+  let parsed: WooOrder | undefined;
+  try {
+    parsed = JSON.parse(rawBody);
+  } catch {
+    // Not valid JSON — treat as ping if body is empty/minimal
+  }
+  if (!parsed?.id) {
+    return Response.json({ ok: true, ping: true });
+  }
+
+  // 5. Determine org — single-org mode uses the only org, or fallback to ?org= param
   let orgId = new URL(request.url).searchParams.get("org");
   if (!orgId) {
     const org = await getTheOrg();
@@ -35,7 +52,7 @@ export async function POST(request: Request) {
     orgId = org.id;
   }
 
-  // 5. Load the org's WooCommerce integration config
+  // 6. Load the org's WooCommerce integration config
   const integration = await prisma.wooCommerceIntegration.findUnique({
     where: { organizationId: orgId },
   });
@@ -43,7 +60,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Integration not enabled" }, { status: 404 });
   }
 
-  // 6. Verify HMAC-SHA256 signature
+  // 7. Verify HMAC-SHA256 signature
   if (!signature) {
     return Response.json({ error: "Missing signature" }, { status: 401 });
   }
@@ -55,18 +72,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid signature" }, { status: 401 });
   }
 
-  // 7. Parse the order payload
-  let order: WooOrder;
-  try {
-    order = JSON.parse(rawBody);
-  } catch {
-    return Response.json({ error: "Invalid JSON" }, { status: 400 });
-  }
-
-  // 8. Handle WooCommerce ping (sent on webhook creation — empty or minimal payload)
-  if (!order.id) {
-    return Response.json({ ok: true, ping: true });
-  }
+  const order = parsed;
 
   // 9. Store last payload for "Test & Detect" feature
   await prisma.wooCommerceIntegration.update({

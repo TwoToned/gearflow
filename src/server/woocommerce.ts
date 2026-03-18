@@ -364,11 +364,19 @@ function generateSecret(): string {
 }
 
 async function findOrCreateClient(orgId: string, billing: WooOrder["billing"]) {
-  // Try to find by email first
+  const hasCompany = !!billing.company?.trim();
+
+  // 1. Try exact email match first
   let client = await prisma.client.findFirst({
-    where: { organizationId: orgId, contactEmail: billing.email },
+    where: { organizationId: orgId, contactEmail: billing.email, isActive: true },
   });
 
+  // 2. If company name provided, try fuzzy company matching
+  if (!client && hasCompany) {
+    client = await fuzzyMatchCompany(orgId, billing.company!.trim());
+  }
+
+  // 3. If still no match, create a new client
   if (!client) {
     const address = [
       billing.address_1,
@@ -382,8 +390,8 @@ async function findOrCreateClient(orgId: string, billing: WooOrder["billing"]) {
     client = await prisma.client.create({
       data: {
         organizationId: orgId,
-        name: billing.company || `${billing.first_name} ${billing.last_name}`,
-        type: billing.company ? "COMPANY" : "INDIVIDUAL",
+        name: hasCompany ? billing.company!.trim() : `${billing.first_name} ${billing.last_name}`,
+        type: hasCompany ? "COMPANY" : "INDIVIDUAL",
         contactName: `${billing.first_name} ${billing.last_name}`,
         contactEmail: billing.email,
         contactPhone: billing.phone || null,
@@ -406,6 +414,89 @@ async function findOrCreateClient(orgId: string, billing: WooOrder["billing"]) {
   }
 
   return client;
+}
+
+/**
+ * Fuzzy-match a company name against existing COMPANY clients.
+ *
+ * Strategy:
+ * 1. Normalize both strings (lowercase, strip suffixes like Pty Ltd / Inc / LLC,
+ *    remove punctuation, collapse whitespace)
+ * 2. Try exact normalized match first
+ * 3. Fall back to bigram similarity (Dice coefficient) — threshold 0.7
+ */
+async function fuzzyMatchCompany(orgId: string, companyName: string) {
+  const candidates = await prisma.client.findMany({
+    where: { organizationId: orgId, type: "COMPANY", isActive: true },
+    select: { id: true, name: true },
+  });
+
+  if (candidates.length === 0) return null;
+
+  const normalizedInput = normalizeCompanyName(companyName);
+
+  // Exact normalized match
+  const exact = candidates.find(
+    (c) => normalizeCompanyName(c.name) === normalizedInput,
+  );
+  if (exact) {
+    return prisma.client.findUnique({ where: { id: exact.id } });
+  }
+
+  // Bigram similarity match
+  const inputBigrams = getBigrams(normalizedInput);
+  let bestMatch: { id: string; score: number } | null = null;
+
+  for (const candidate of candidates) {
+    const candidateNormalized = normalizeCompanyName(candidate.name);
+    const candidateBigrams = getBigrams(candidateNormalized);
+    const score = diceCoefficient(inputBigrams, candidateBigrams);
+
+    if (score >= 0.7 && (!bestMatch || score > bestMatch.score)) {
+      bestMatch = { id: candidate.id, score };
+    }
+  }
+
+  if (bestMatch) {
+    return prisma.client.findUnique({ where: { id: bestMatch.id } });
+  }
+
+  return null;
+}
+
+/** Strip common business suffixes, punctuation, and normalize whitespace */
+function normalizeCompanyName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(
+      /\b(pty\.?\s*ltd\.?|proprietary\s+limited|limited|ltd\.?|inc\.?|incorporated|llc\.?|l\.?l\.?c\.?|corp\.?|corporation|co\.?|company|gmbh|pty|p\/l|group|holdings|enterprises|services|solutions|international|intl\.?|australia|aus|nz|uk|usa)\b/gi,
+      "",
+    )
+    .replace(/[^\w\s]/g, "") // remove punctuation
+    .replace(/\s+/g, " ")   // collapse whitespace
+    .trim();
+}
+
+/** Generate character bigrams from a string */
+function getBigrams(str: string): Set<string> {
+  const bigrams = new Set<string>();
+  for (let i = 0; i < str.length - 1; i++) {
+    bigrams.add(str.substring(i, i + 2));
+  }
+  return bigrams;
+}
+
+/** Dice coefficient: 2 * |intersection| / (|A| + |B|) */
+function diceCoefficient(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 && b.size === 0) return 1;
+  if (a.size === 0 || b.size === 0) return 0;
+
+  let intersection = 0;
+  for (const bigram of a) {
+    if (b.has(bigram)) intersection++;
+  }
+
+  return (2 * intersection) / (a.size + b.size);
 }
 
 interface DateExtractionResult {

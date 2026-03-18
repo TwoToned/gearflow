@@ -14,6 +14,7 @@ import {
   CalendarSync,
   MonitorPlay,
   Shield,
+  ShoppingCart,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCanDo } from "@/lib/use-permissions";
@@ -29,6 +30,7 @@ const settingsNav = [
   { title: "Calendars", href: "/settings/calendars", icon: CalendarSync, permission: "orgSettings" as const },
   { title: "Displays", href: "/settings/displays", icon: MonitorPlay, permission: "orgSettings" as const },
   { title: "Team", href: "/settings/team", icon: Users, permission: "orgMembers" as const },
+  { title: "WooCommerce", href: "/settings/woocommerce", icon: ShoppingCart, permission: "orgSettings" as const },
   { title: "Single Sign-On", href: "/settings/sso", icon: Shield, permission: "orgSettings" as const },
 ];
 

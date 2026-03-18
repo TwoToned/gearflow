@@ -51,6 +51,7 @@ const segmentLabels: Record<string, string> = {
   planner: "Planner",
   sso: "Single Sign-On",
   displays: "Displays",
+  woocommerce: "WooCommerce",
 };
 
 function getPageTitle(pathname: string): string {

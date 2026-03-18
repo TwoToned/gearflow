@@ -367,9 +367,14 @@ async function findOrCreateClient(orgId: string, billing: WooOrder["billing"]) {
   const hasCompany = !!billing.company?.trim();
 
   // 1. Try exact email match first
+  //    But if the order has a company name and the email match is an INDIVIDUAL client,
+  //    skip it — we want to create/match a COMPANY client instead.
   let client = await prisma.client.findFirst({
     where: { organizationId: orgId, contactEmail: billing.email, isActive: true },
   });
+  if (client && hasCompany && client.type === "INDIVIDUAL") {
+    client = null; // skip personal match, fall through to company matching
+  }
 
   // 2. If company name provided, try fuzzy company matching
   if (!client && hasCompany) {

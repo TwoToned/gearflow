@@ -20,15 +20,17 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
       select: { rentalStartDate: true, rentalEndDate: true },
     });
 
-    if (project?.rentalStartDate && project?.rentalEndDate) {
-      if (parsed.assetId) {
-        // Check if asset is in a kit
-        const assetCheck = await prisma.asset.findUnique({ where: { id: parsed.assetId }, include: { kit: { select: { assetTag: true } } } });
-        if (assetCheck?.kitId) {
-          throw new Error(`Asset is part of Kit ${assetCheck.kit?.assetTag}. Remove it from the Kit first, or add the Kit to the project instead.`);
-        }
+    const hasDates = !!project?.rentalStartDate && !!project?.rentalEndDate;
 
-        // Specific asset — check if it's booked in an overlapping project
+    if (parsed.assetId) {
+      // Check if asset is in a kit
+      const assetCheck = await prisma.asset.findUnique({ where: { id: parsed.assetId }, include: { kit: { select: { assetTag: true } } } });
+      if (assetCheck?.kitId) {
+        throw new Error(`Asset is part of Kit ${assetCheck.kit?.assetTag}. Remove it from the Kit first, or add the Kit to the project instead.`);
+      }
+
+      // Specific asset — check if it's booked in an overlapping project (only when dates exist)
+      if (hasDates) {
         const conflict = await prisma.projectLineItem.findFirst({
           where: {
             organizationId,
@@ -36,8 +38,8 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
             status: { not: "CANCELLED" },
             project: {
               status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
-              rentalStartDate: { lte: project.rentalEndDate },
-              rentalEndDate: { gte: project.rentalStartDate },
+              rentalStartDate: { lte: project!.rentalEndDate! },
+              rentalEndDate: { gte: project!.rentalStartDate! },
               id: { not: projectId },
             },
           },
@@ -46,46 +48,56 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         if (conflict) {
           throw new Error(`Asset is already booked on ${conflict.project.projectNumber} - ${conflict.project.name}`);
         }
+      }
 
-        // Block truly unavailable assets (retired, lost, in maintenance) but allow checked-out ones
-        // — they may be deployed now but available by the project's dates
-        const asset = await prisma.asset.findUnique({ where: { id: parsed.assetId } });
-        if (asset && (asset.status === "RETIRED" || asset.status === "LOST")) {
-          throw new Error(`Asset is ${asset.status.replace("_", " ").toLowerCase()} and cannot be added`);
-        }
-      } else {
-        // Model-level — check quantity against available stock
-        const model = await prisma.model.findUnique({
-          where: { id: parsed.modelId },
-          include: {
-            assets: { where: { isActive: true } },
-            bulkAssets: { where: { isActive: true } },
-          },
-        });
+      // Block truly unavailable assets (retired, lost) but allow checked-out ones
+      const asset = await prisma.asset.findUnique({ where: { id: parsed.assetId } });
+      if (asset && (asset.status === "RETIRED" || asset.status === "LOST")) {
+        throw new Error(`Asset is ${asset.status.replace("_", " ").toLowerCase()} and cannot be added`);
+      }
+    } else {
+      // Model-level — check quantity against available stock
+      const model = await prisma.model.findUnique({
+        where: { id: parsed.modelId },
+        include: {
+          assets: { where: { isActive: true } },
+          bulkAssets: { where: { isActive: true } },
+        },
+      });
 
-        if (model) {
-          const overlapping = await prisma.projectLineItem.findMany({
-            where: {
-              organizationId,
-              modelId: parsed.modelId,
-              status: { not: "CANCELLED" },
-              project: {
-                status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
-                rentalStartDate: { lte: project.rentalEndDate },
-                rentalEndDate: { gte: project.rentalStartDate },
+      if (model) {
+        // When dates exist, check overlapping bookings across projects
+        // When no dates, check only this project's existing bookings against stock
+        const overlapping = hasDates
+          ? await prisma.projectLineItem.findMany({
+              where: {
+                organizationId,
+                modelId: parsed.modelId,
+                status: { not: "CANCELLED" },
+                project: {
+                  status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
+                  rentalStartDate: { lte: project!.rentalEndDate! },
+                  rentalEndDate: { gte: project!.rentalStartDate! },
+                },
               },
-            },
-          });
+            })
+          : await prisma.projectLineItem.findMany({
+              where: {
+                organizationId,
+                modelId: parsed.modelId,
+                status: { not: "CANCELLED" },
+                projectId,
+              },
+            });
 
-          const booked = overlapping.reduce((sum, li) => sum + li.quantity, 0);
-          const totalStock = model.assetType === "SERIALIZED"
-            ? model.assets.length
-            : model.bulkAssets.reduce((sum, ba) => sum + ba.totalQuantity, 0);
-          const available = Math.max(0, totalStock - booked);
+        const booked = overlapping.reduce((sum, li) => sum + li.quantity, 0);
+        const totalStock = model.assetType === "SERIALIZED"
+          ? model.assets.length
+          : model.bulkAssets.reduce((sum, ba) => sum + ba.totalQuantity, 0);
+        const available = Math.max(0, totalStock - booked);
 
-          if (parsed.quantity > available) {
-            throw new Error(`Only ${available} available (${booked} already booked out of ${totalStock} total)`);
-          }
+        if (parsed.quantity > available) {
+          throw new Error(`Only ${available} available (${booked} already booked out of ${totalStock} total)`);
         }
       }
     }
@@ -432,15 +444,15 @@ export async function reorderLineItems(
 
 export async function checkAvailability(
   modelId: string,
-  rentalStartDate: Date | string,
-  rentalEndDate: Date | string,
+  rentalStartDate?: Date | string | null,
+  rentalEndDate?: Date | string | null,
   excludeProjectId?: string
 ) {
   const { organizationId } = await getOrgContext();
 
-  // Ensure dates are proper Date objects (they may arrive as strings from server action serialization)
-  const startDate = new Date(rentalStartDate);
-  const endDate = new Date(rentalEndDate);
+  const hasDates = !!rentalStartDate && !!rentalEndDate;
+  const startDate = hasDates ? new Date(rentalStartDate) : null;
+  const endDate = hasDates ? new Date(rentalEndDate) : null;
 
   // Get the model with asset type info
   const model = await prisma.model.findUnique({
@@ -452,27 +464,42 @@ export async function checkAvailability(
   });
 
   if (!model) {
-    return serialize({ totalStock: 0, effectiveStock: 0, booked: 0, available: 0, bookedOnThisProject: 0, unavailable: 0, inMaintenance: 0, lost: 0, conflicts: [] as string[] });
+    return serialize({ totalStock: 0, effectiveStock: 0, booked: 0, available: 0, bookedOnThisProject: 0, unavailable: 0, inMaintenance: 0, lost: 0, conflicts: [] as string[], dateless: !hasDates });
   }
 
   // Find overlapping projects (where the project rental period overlaps with the given dates)
   // Include both regular items AND kit children — they all consume stock
-  const overlappingLineItems = await prisma.projectLineItem.findMany({
-    where: {
-      organizationId,
-      modelId,
-      status: { not: "CANCELLED" },
-      project: {
-        isTemplate: false,
-        status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
-        rentalStartDate: { lte: endDate },
-        rentalEndDate: { gte: startDate },
-      },
-    },
-    include: {
-      project: { select: { id: true, name: true, projectNumber: true } },
-    },
-  });
+  // When no dates: only count bookings on the current project (stock-only check)
+  const overlappingLineItems = hasDates
+    ? await prisma.projectLineItem.findMany({
+        where: {
+          organizationId,
+          modelId,
+          status: { not: "CANCELLED" },
+          project: {
+            isTemplate: false,
+            status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
+            rentalStartDate: { lte: endDate! },
+            rentalEndDate: { gte: startDate! },
+          },
+        },
+        include: {
+          project: { select: { id: true, name: true, projectNumber: true } },
+        },
+      })
+    : excludeProjectId
+      ? await prisma.projectLineItem.findMany({
+          where: {
+            organizationId,
+            modelId,
+            status: { not: "CANCELLED" },
+            projectId: excludeProjectId,
+          },
+          include: {
+            project: { select: { id: true, name: true, projectNumber: true } },
+          },
+        })
+      : [];
 
   const bookedOnThisProject = excludeProjectId
     ? overlappingLineItems
@@ -480,16 +507,18 @@ export async function checkAvailability(
         .reduce((sum, li) => sum + li.quantity, 0)
     : 0;
 
-  const conflicts = [
-    ...new Map(
-      overlappingLineItems
-        .filter((li) => !excludeProjectId || li.project.id !== excludeProjectId)
-        .map((li) => [
-          li.project.id,
-          `${li.project.projectNumber} - ${li.project.name}`,
-        ])
-    ).values(),
-  ];
+  const conflicts = hasDates
+    ? [
+        ...new Map(
+          overlappingLineItems
+            .filter((li) => !excludeProjectId || li.project.id !== excludeProjectId)
+            .map((li) => [
+              li.project.id,
+              `${li.project.projectNumber} - ${li.project.name}`,
+            ])
+        ).values(),
+      ]
+    : [];
 
   const booked = overlappingLineItems.reduce(
     (sum, li) => sum + li.quantity,
@@ -507,7 +536,7 @@ export async function checkAvailability(
 
     return serialize({
       totalStock, effectiveStock, booked, available, bookedOnThisProject,
-      unavailable, inMaintenance, lost, conflicts,
+      unavailable, inMaintenance, lost, conflicts, dateless: !hasDates,
     });
   } else {
     // BULK: sum up total quantity across all bulk assets
@@ -519,7 +548,7 @@ export async function checkAvailability(
 
     return serialize({
       totalStock, effectiveStock: totalStock, booked, available, bookedOnThisProject,
-      unavailable: 0, inMaintenance: 0, lost: 0, conflicts,
+      unavailable: 0, inMaintenance: 0, lost: 0, conflicts, dateless: !hasDates,
     });
   }
 }

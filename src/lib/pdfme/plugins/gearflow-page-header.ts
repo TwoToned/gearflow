@@ -91,7 +91,12 @@ async function pdfRender(arg: PDFRenderProps<PageHeaderSchema>) {
     }
 
     // Right side: doc title + meta (aligned to the same row as org name)
-    const titleSize = 22;
+    // Auto-scale title to fit within right half of header
+    const maxTitleWidth = width * 0.55;
+    let titleSize = 22;
+    while (titleSize > 10 && fonts.bold.widthOfTextAtSize(config.docTitle, titleSize) > maxTitleWidth) {
+      titleSize -= 1;
+    }
     const titleWidth = fonts.bold.widthOfTextAtSize(config.docTitle, titleSize);
     page.drawText(config.docTitle, {
       x: x + width - titleWidth,
@@ -180,7 +185,12 @@ async function pdfRender(arg: PDFRenderProps<PageHeaderSchema>) {
   }
 
   // Right side: doc title + meta
-  const titleSize = 22;
+  // Auto-scale title to fit within right half of header
+  const maxTitleWidth = width * 0.55;
+  let titleSize = 22;
+  while (titleSize > 10 && fonts.bold.widthOfTextAtSize(config.docTitle, titleSize) > maxTitleWidth) {
+    titleSize -= 1;
+  }
   const titleWidth = fonts.bold.widthOfTextAtSize(config.docTitle, titleSize);
   page.drawText(config.docTitle, {
     x: x + width - titleWidth,

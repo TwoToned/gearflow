@@ -48,8 +48,6 @@ export async function computeOverbookedStatus(
 ): Promise<Map<string, OverbookedInfo>> {
   const overbookedMap = new Map<string, OverbookedInfo>();
 
-  if (!rentalStartDate || !rentalEndDate) return overbookedMap;
-
   // Collect ALL equipment line items with a modelId (including kit children)
   const relevantItems = lineItems.filter(
     (li) => li.modelId && li.status !== "CANCELLED",
@@ -57,27 +55,39 @@ export async function computeOverbookedStatus(
   if (relevantItems.length === 0) return overbookedMap;
 
   const modelIds = [...new Set(relevantItems.map((li) => li.modelId!))];
+  const hasDates = !!rentalStartDate && !!rentalEndDate;
 
   // Batch query: all overlapping bookings for these models across all projects
   // Include BOTH regular items AND kit children — they all consume stock
-  const overlappingBookings = await prisma.projectLineItem.findMany({
-    where: {
-      organizationId,
-      modelId: { in: modelIds },
-      status: { not: "CANCELLED" },
-      project: {
-        isTemplate: false,
-        status: {
-          notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"],
+  // When no dates: only count THIS project's bookings (no date overlap possible)
+  const overlappingBookings = hasDates
+    ? await prisma.projectLineItem.findMany({
+        where: {
+          organizationId,
+          modelId: { in: modelIds },
+          status: { not: "CANCELLED" },
+          project: {
+            isTemplate: false,
+            status: {
+              notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"],
+            },
+            rentalStartDate: { lte: rentalEndDate },
+            rentalEndDate: { gte: rentalStartDate },
+          },
         },
-        rentalStartDate: { lte: rentalEndDate },
-        rentalEndDate: { gte: rentalStartDate },
-      },
-    },
-    select: { modelId: true, quantity: true, projectId: true },
-  });
+        select: { modelId: true, quantity: true, projectId: true },
+      })
+    : await prisma.projectLineItem.findMany({
+        where: {
+          organizationId,
+          modelId: { in: modelIds },
+          status: { not: "CANCELLED" },
+          projectId,
+        },
+        select: { modelId: true, quantity: true, projectId: true },
+      });
 
-  // Sum booked per model (total across all projects)
+  // Sum booked per model (total across all projects, or just this project when dateless)
   const totalBookedByModel = new Map<string, number>();
   const thisProjectBookedByModel = new Map<string, number>();
   for (const booking of overlappingBookings) {

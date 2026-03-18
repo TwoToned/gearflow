@@ -112,7 +112,7 @@ export function EditLineItemDialog({
   const [overbookConfirmed, setOverbookConfirmed] = useState(false);
   const requestedQty = Number(form.watch("quantity")) || 1;
 
-  // Availability check for equipment items with a model
+  // Availability check for equipment items with a model (works with or without dates)
   const { data: availability } = useQuery({
     queryKey: [
       "availability",
@@ -125,11 +125,11 @@ export function EditLineItemDialog({
     queryFn: () =>
       checkAvailability(
         lineItem!.modelId!,
-        rentalStartDate!,
-        rentalEndDate!,
+        rentalStartDate ?? null,
+        rentalEndDate ?? null,
         projectId,
       ),
-    enabled: open && !!lineItem?.modelId && !!rentalStartDate && !!rentalEndDate,
+    enabled: open && !!lineItem?.modelId,
   });
 
   // Available for this edit = total stock minus all other bookings (excluding this item's current qty)

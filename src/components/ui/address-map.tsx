@@ -14,7 +14,7 @@ interface AddressMapProps {
   className?: string;
 }
 
-// Dynamic import to avoid SSR issues with Leaflet
+// Dynamic import to avoid SSR issues with Google Maps
 const MapInner = dynamic(() => import("./address-map-inner"), {
   ssr: false,
   loading: () => (

@@ -116,7 +116,7 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
           </div>
           <div className="space-y-2">
             <Label htmlFor="assetTag">Asset Tag *</Label>
-            <ScanInput id="assetTag" {...form.register("assetTag")} onScan={(v) => form.setValue("assetTag", v)} scannerTitle="Scan asset tag" placeholder="e.g. TTP-SM57" />
+            <ScanInput id="assetTag" {...form.register("assetTag")} onScan={(v) => form.setValue("assetTag", v)} scannerTitle="Scan asset tag" placeholder="e.g. AV-SM57" />
             {form.formState.errors.assetTag && (
               <p className="text-xs text-destructive">{form.formState.errors.assetTag.message}</p>
             )}

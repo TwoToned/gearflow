@@ -263,7 +263,7 @@ Virtual folders are auto-created when files are attached to entities. They're NO
 - Models: `"{name}"` → "Shure SM58"
 - Kits: `"{assetTag} {name}"` → "KIT-001 Drum Kit A"
 - Clients: `"{name}"` → "Acme Events"
-- Assets: `"{assetTag} {customName || model.name}"` → "TTP-00042 SM58 #3"
+- Assets: `"{assetTag} {customName || model.name}"` → "GF-00042 SM58 #3"
 - Locations: `"{name}"` → "Main Warehouse"
 
 **Virtual folder auto-grouping:**

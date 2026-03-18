@@ -187,6 +187,8 @@ export const PERMISSION_REGISTRY: Record<
     actions: [
       { key: "view", label: "View" },
       { key: "export", label: "Export" },
+      { key: "create", label: "Create Saved Reports" },
+      { key: "delete", label: "Delete Saved Reports" },
     ],
   },
 };
@@ -214,7 +216,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     orgMembers: ["read", "invite", "update_role", "remove"],
     supplier: ALL_CRUD,
     crew: ALL_CRUD,
-    reports: ["view", "export"],
+    reports: ["view", "export", "create", "delete"],
   },
   admin: {
     asset: ALL_ASSET,
@@ -232,7 +234,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     orgMembers: ["read", "invite", "update_role", "remove"],
     supplier: ALL_CRUD,
     crew: ALL_CRUD,
-    reports: ["view", "export"],
+    reports: ["view", "export", "create", "delete"],
   },
   manager: {
     asset: ["create", "read", "update", "import", "export"],
@@ -250,7 +252,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     orgMembers: ["read"],
     supplier: ["create", "read", "update"],
     crew: ["create", "read", "update"],
-    reports: ["view", "export"],
+    reports: ["view", "export", "create", "delete"],
   },
   member: {
     asset: ["create", "read", "update"],

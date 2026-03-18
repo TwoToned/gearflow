@@ -52,6 +52,7 @@ model User {
   pendingSSOApprovals     PendingSSOApproval[]
   reviewedSSOApprovals    PendingSSOApproval[] @relation("SSOReviewer")
   warehouseDashboardTokens WarehouseDashboardToken[]
+  savedReports             SavedReport[]
 
   @@map("user")
 }
@@ -153,6 +154,7 @@ model Organization {
   ssoProviders               SsoProvider[]
   pendingSSOApprovals        PendingSSOApproval[]
   warehouseDashboardTokens   WarehouseDashboardToken[]
+  savedReports               SavedReport[]
   @@map("organization")
 }
 
@@ -1942,6 +1944,31 @@ model WarehouseDashboardToken {
 
   @@index([organizationId])
   @@map("warehouse_dashboard_token")
+}
+
+// ─── Saved Reports ──────────────────────────────────────────────────────────
+
+model SavedReport {
+  id              String   @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name            String
+  description     String?
+  dataSource      String           // "assets", "models", "projects", "kits", "lineItems", "clients", "locations", "maintenance", "activityLog", "crew", "crewAssignments"
+  config          Json             // Full ReportConfig JSON
+  createdById     String?
+  createdBy       User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  isShared        Boolean  @default(false)
+  isPinned        Boolean  @default(false)
+
+  lastRunAt       DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([organizationId, createdById])
+  @@map("saved_report")
 }
 
 // ─── Prep System (Pre-Packing / Staging) ─────────────────────────────────────

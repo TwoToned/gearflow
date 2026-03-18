@@ -92,9 +92,20 @@ npx prisma migrate dev   # Apply all migrations + generate client
 - **When adding new providers or scripts to the root layout**: place them inside `<GlobalErrorBoundary>` to ensure coverage
 - **Never remove** `DomPatch` or `GlobalErrorBoundary` from `layout.tsx` — they are critical for navigation stability
 
+### Select — ALWAYS pass explicit label children to `SelectValue`
+`SelectValue` in shadcn/ui v4 **cannot** resolve labels from portal-rendered `SelectItem` children. Without explicit children, it shows the raw `value` (e.g. an ID or enum key) instead of the human-readable label. **Every `<SelectValue>` must have explicit children**:
+```tsx
+// BAD — shows raw value like "createdAt" or "CHECKED_OUT"
+<SelectValue />
+<SelectValue placeholder="Select..." />
+
+// GOOD — shows resolved label
+<SelectValue>{items.find(i => i.value === selected)?.label ?? selected}</SelectValue>
+<SelectValue placeholder="Select...">{selected ? labelMap[selected] : "Select..."}</SelectValue>
+```
+
 ### Key Gotchas
 - No `AlertDialog` — use `Dialog` with confirm/cancel buttons
-- `SelectValue` can't resolve portal-rendered items — pass explicit label children
 - `DropdownMenuLabel` must be inside `DropdownMenuGroup`
 - `@react-pdf/renderer` — Helvetica only, no Unicode symbols
 - Server action dates arrive as strings — wrap with `new Date()`

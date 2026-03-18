@@ -78,6 +78,7 @@ export function ModelForm({ initialData }: ModelFormProps) {
       name: "",
       manufacturer: "",
       modelNumber: "",
+      sku: "",
       categoryId: "",
       description: "",
       assetType: "SERIALIZED",
@@ -120,6 +121,10 @@ export function ModelForm({ initialData }: ModelFormProps) {
           <div className="space-y-2">
             <Label htmlFor="modelNumber">Model Number</Label>
             <Input id="modelNumber" {...form.register("modelNumber")} placeholder="e.g. SM58-LC" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="sku">SKU</Label>
+            <Input id="sku" {...form.register("sku")} placeholder="e.g. SHR-SM58-LC" />
           </div>
           <div className="space-y-2">
             <Label>Category</Label>

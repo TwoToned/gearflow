@@ -49,6 +49,7 @@ export async function getModels(params?: {
         { name: { contains: search, mode: "insensitive" } },
         { manufacturer: { contains: search, mode: "insensitive" } },
         { modelNumber: { contains: search, mode: "insensitive" } },
+        { sku: { contains: search, mode: "insensitive" } },
       ],
     }),
   };
@@ -110,6 +111,7 @@ export async function createModel(data: ModelFormValues) {
       name: parsed.name,
       manufacturer: parsed.manufacturer,
       modelNumber: parsed.modelNumber,
+      sku: parsed.sku || null,
       categoryId: parsed.categoryId || null,
       description: parsed.description,
       image: parsed.image,
@@ -162,6 +164,7 @@ export async function updateModel(id: string, data: ModelFormValues) {
       name: parsed.name,
       manufacturer: parsed.manufacturer,
       modelNumber: parsed.modelNumber,
+      sku: parsed.sku || null,
       categoryId: parsed.categoryId || null,
       description: parsed.description,
       image: parsed.image,

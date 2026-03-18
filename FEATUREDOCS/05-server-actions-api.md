@@ -57,6 +57,7 @@ export async function getItems({ page, pageSize, search, sort, order }) {
 | `test-tag-records.ts` | `createTestTagRecord`, `recalculateTestTagStatus` |
 | `test-tag-reports.ts` | 10 report functions + CSV exports |
 | `document-templates.ts` | `getDocumentTemplates`, `getDocumentTemplate`, `createDocumentTemplate`, `updateDocumentTemplate`, `publishDocumentTemplate`, `setDefaultTemplate`, `unsetDefaultTemplate`, `deleteDocumentTemplate`, `duplicateSystemDefault`, `getPublishedTemplatesForDropdown` |
+| `woocommerce.ts` | `getWooCommerceIntegration`, `updateWooCommerceIntegration`, `regenerateWebhookSecret`, `getWooCommerceOrderLogs`, `retryFailedOrder`, `getLastPayloadMetaKeys`, `processWooCommerceOrder`, `verifyWebhookSignature`, `flexibleDateParse` |
 
 ## API Routes
 | Route | Method | Purpose |
@@ -77,3 +78,4 @@ export async function getItems({ page, pageSize, search, sort, order }) {
 | `/api/admin/org-import` | POST | Import org from ZIP (site admin only, FormData) |
 | `/api/admin-register/verify` | GET | Verify admin registration token |
 | `/api/admin-register/promote` | POST | Promote user to site admin (token-gated) |
+| `/api/integrations/woocommerce/webhook` | POST | WooCommerce order webhook (public, HMAC-SHA256 verified) |

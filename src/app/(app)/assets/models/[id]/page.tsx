@@ -149,7 +149,7 @@ export default function ModelDetailPage({ params }: { params: Promise<{ id: stri
             {!model.isActive && <Badge variant="destructive">Archived</Badge>}
           </div>
           <p className="text-muted-foreground">
-            {[model.manufacturer, model.modelNumber].filter(Boolean).join(" — ") || "No manufacturer info"}
+            {[model.manufacturer, model.modelNumber, model.sku && `SKU: ${model.sku}`].filter(Boolean).join(" — ") || "No manufacturer info"}
             {model.category && <> &middot; {model.category.name}</>}
           </p>
           </div>

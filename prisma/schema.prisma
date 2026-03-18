@@ -154,6 +154,8 @@ model Organization {
   ssoProviders               SsoProvider[]
   pendingSSOApprovals        PendingSSOApproval[]
   warehouseDashboardTokens   WarehouseDashboardToken[]
+  wooCommerceIntegration     WooCommerceIntegration?
+  wooCommerceOrderLogs       WooCommerceOrderLog[]
   savedReports               SavedReport[]
   @@map("organization")
 }
@@ -521,6 +523,7 @@ model Model {
   name                    String
   manufacturer            String?
   modelNumber             String?
+  sku                     String?
   categoryId              String?
   category                Category?    @relation(fields: [categoryId], references: [id])
   description             String?
@@ -553,6 +556,7 @@ model Model {
 
   supplierOrderItems  SupplierOrderItem[]
 
+  @@unique([organizationId, sku])
   @@index([organizationId])
   @@index([categoryId])
   @@index([isActive])
@@ -993,6 +997,7 @@ model Project {
   supplierOrders   SupplierOrder[]
   crewAssignments  CrewAssignment[]
   services         ProjectService[]
+  wooCommerceOrderLogs WooCommerceOrderLog[]
 
   @@unique([organizationId, projectNumber])
   @@index([organizationId])
@@ -1944,6 +1949,82 @@ model WarehouseDashboardToken {
 
   @@index([organizationId])
   @@map("warehouse_dashboard_token")
+}
+
+// ─── WooCommerce Integration ─────────────────────────────────────────────────
+
+model WooCommerceIntegration {
+  id              String       @id @default(cuid())
+  organizationId  String       @unique
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  isEnabled       Boolean  @default(false)
+  webhookSecret   String                     // Shared secret for HMAC verification
+  storeUrl        String?                    // WooCommerce store URL (for reference/display)
+
+  // Matching strategy
+  productMatchField String  @default("sku")  // "sku", "custom_field", "name"
+  customFieldKey    String?                   // If productMatchField = "custom_field", which meta key
+
+  // Date field mapping (WooCommerce meta_data keys → project fields)
+  rentalStartKey    String?                   // e.g. "rental_start_date"
+  rentalEndKey      String?                   // e.g. "rental_end_date"
+  eventStartKey     String?                   // e.g. "event_date"
+  deliveryAddressKey String?                  // e.g. "delivery_address"
+  notesKey          String?                   // e.g. "order_notes" or "customer_note"
+
+  // Date format preference
+  dateFormat        String  @default("auto")  // "auto", "DD/MM/YYYY", "MM/DD/YYYY", "ISO"
+
+  // Defaults for created projects
+  defaultProjectType String @default("DRY_HIRE")
+  autoConfirmEnquiry Boolean @default(false)  // If true, set status to QUOTING instead of ENQUIRY
+
+  // Notification
+  notifyUserIds     String[] @default([])     // User IDs to notify on new website orders
+
+  // Last webhook payload (for "Test & Detect" feature)
+  lastPayload       Json?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("woocommerce_integration")
+}
+
+model WooCommerceOrderLog {
+  id              String   @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  wooOrderId      Int                        // WooCommerce order ID
+  wooOrderNumber  String?                    // WooCommerce order number (may differ from ID)
+  status          WooOrderLogStatus          // RECEIVED, PROCESSING, COMPLETED, FAILED, DUPLICATE
+
+  // What was created
+  projectId       String?
+  project         Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  clientId        String?
+
+  // Debugging
+  payload         Json                       // Full webhook payload (for debugging)
+  errorMessage    String?                    // If FAILED
+  matchResults    Json?                      // Which products matched which models
+  dateExtraction  Json?                      // Date parsing results for display
+
+  createdAt       DateTime @default(now())
+
+  @@index([organizationId])
+  @@index([wooOrderId])
+  @@map("woocommerce_order_log")
+}
+
+enum WooOrderLogStatus {
+  RECEIVED
+  PROCESSING
+  COMPLETED
+  FAILED
+  DUPLICATE
 }
 
 // ─── Saved Reports ──────────────────────────────────────────────────────────

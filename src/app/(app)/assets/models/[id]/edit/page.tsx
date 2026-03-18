@@ -25,6 +25,7 @@ export default function EditModelPage({ params }: { params: Promise<{ id: string
     name: model.name,
     manufacturer: model.manufacturer || "",
     modelNumber: model.modelNumber || "",
+    sku: model.sku || "",
     categoryId: model.categoryId || "",
     description: model.description || "",
     image: model.image || "",

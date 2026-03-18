@@ -57,7 +57,7 @@ export async function getItems({ page, pageSize, search, sort, order }) {
 | `test-tag-records.ts` | `createTestTagRecord`, `recalculateTestTagStatus` |
 | `test-tag-reports.ts` | 10 report functions + CSV exports |
 | `document-templates.ts` | `getDocumentTemplates`, `getDocumentTemplate`, `createDocumentTemplate`, `updateDocumentTemplate`, `publishDocumentTemplate`, `setDefaultTemplate`, `unsetDefaultTemplate`, `deleteDocumentTemplate`, `duplicateSystemDefault`, `getPublishedTemplatesForDropdown` |
-| `woocommerce.ts` | `getWooCommerceIntegration`, `updateWooCommerceIntegration`, `regenerateWebhookSecret`, `getWooCommerceOrderLogs`, `retryFailedOrder`, `getLastPayloadMetaKeys`, `processWooCommerceOrder`, `verifyWebhookSignature`, `flexibleDateParse` |
+| `woocommerce.ts` | `getWooCommerceIntegration`, `updateWooCommerceIntegration`, `regenerateWebhookSecret`, `getWooCommerceOrderLogs`, `retryFailedOrder`, `getLastPayloadMetaKeys`, `processWooCommerceOrder` |
 
 ## API Routes
 | Route | Method | Purpose |

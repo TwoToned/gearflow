@@ -33,6 +33,7 @@ import {
   getLastPayloadMetaKeys,
   retryFailedOrder,
 } from "@/server/woocommerce";
+import { getLocations } from "@/server/locations";
 import { useActiveOrganization } from "@/lib/auth-client";
 
 import { Button } from "@/components/ui/button";
@@ -94,6 +95,13 @@ export default function WooCommerceSettingsPage() {
     enabled: !!orgId && showMetaDetect,
   });
 
+  const { data: locationsData } = useQuery({
+    queryKey: ["locations", orgId],
+    queryFn: () => getLocations({ pageSize: 200 }),
+    enabled: !!orgId,
+  });
+  const locationsList = locationsData?.locations as { id: string; name: string }[] | undefined;
+
   const form = useForm<WooCommerceIntegrationFormValues>({
     resolver: zodResolver(wooCommerceIntegrationSchema),
     defaultValues: {
@@ -106,6 +114,8 @@ export default function WooCommerceSettingsPage() {
       eventStartKey: "",
       deliveryAddressKey: "",
       notesKey: "",
+      locationMetaKey: "",
+      defaultLocationId: "",
       dateFormat: "auto",
       defaultProjectType: "DRY_HIRE",
       autoConfirmEnquiry: false,
@@ -122,6 +132,8 @@ export default function WooCommerceSettingsPage() {
           eventStartKey: integration.eventStartKey || "",
           deliveryAddressKey: integration.deliveryAddressKey || "",
           notesKey: integration.notesKey || "",
+          locationMetaKey: integration.locationMetaKey || "",
+          defaultLocationId: integration.defaultLocationId || "",
           dateFormat: (integration.dateFormat || "auto") as "auto" | "DD/MM/YYYY" | "MM/DD/YYYY" | "ISO",
           defaultProjectType: integration.defaultProjectType as WooCommerceIntegrationFormValues["defaultProjectType"],
           autoConfirmEnquiry: integration.autoConfirmEnquiry,
@@ -418,6 +430,62 @@ export default function WooCommerceSettingsPage() {
                 {...form.register("notesKey")}
                 placeholder="e.g. order_notes"
               />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Location Mapping */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Location Mapping</CardTitle>
+            <CardDescription>
+              Map a WooCommerce order meta field to a project location. If the value matches an existing
+              location it will be used; otherwise a new venue location is created automatically.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="locationMetaKey">Location Meta Key</Label>
+              <Input
+                id="locationMetaKey"
+                {...form.register("locationMetaKey")}
+                placeholder="e.g. venue_name or delivery_location"
+              />
+              <p className="text-xs text-muted-foreground">
+                The WooCommerce order meta key containing the venue or delivery location name/address.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Default Location (fallback)</Label>
+              <Controller
+                name="defaultLocationId"
+                control={form.control}
+                render={({ field }) => (
+                  <Select value={field.value || ""} onValueChange={field.onChange}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue>
+                        {field.value
+                          ? locationsList?.find(
+                              (l) => l.id === field.value,
+                            )?.name ?? "Unknown"
+                          : "None (no fallback)"}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">None (no fallback)</SelectItem>
+                      {locationsList?.map((loc) => (
+                        <SelectItem key={loc.id} value={loc.id}>
+                          {loc.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+              <p className="text-xs text-muted-foreground">
+                Used when no location meta key is set, or the meta field is empty.
+              </p>
             </div>
           </CardContent>
         </Card>

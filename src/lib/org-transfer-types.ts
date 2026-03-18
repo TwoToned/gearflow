@@ -37,6 +37,8 @@ export interface OrgExportManifest {
   clientMedia: Record<string, unknown>[];
   locationMedia: Record<string, unknown>[];
 
+  savedReports: Record<string, unknown>[];
+
   /** Members with user email for matching on import */
   members: Array<{
     role: string;

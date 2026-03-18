@@ -36,6 +36,7 @@ const segmentLabels: Record<string, string> = {
   "quick-test": "Quick Test",
   categories: "Categories",
   reports: "Reports",
+  builder: "Report Builder",
   settings: "Settings",
   billing: "Billing",
   services: "Services",

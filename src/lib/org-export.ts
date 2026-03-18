@@ -53,6 +53,7 @@ export async function exportOrganization(orgId: string) {
     projectMedia,
     clientMedia,
     locationMedia,
+    savedReports,
     members,
   ] = await Promise.all([
     prisma.customRole.findMany({ where: { organizationId: orgId } }),
@@ -87,6 +88,7 @@ export async function exportOrganization(orgId: string) {
     prisma.projectMedia.findMany({ where: { organizationId: orgId } }),
     prisma.clientMedia.findMany({ where: { organizationId: orgId } }),
     prisma.locationMedia.findMany({ where: { organizationId: orgId } }),
+    prisma.savedReport.findMany({ where: { organizationId: orgId } }),
     prisma.member.findMany({
       where: { organizationId: orgId },
       include: { user: { select: { id: true, email: true, name: true } } },
@@ -116,6 +118,7 @@ export async function exportOrganization(orgId: string) {
   collectUserIds(supplierOrders as unknown as Record<string, unknown>[], ["createdById"]);
   collectUserIds(activityLogs as unknown as Record<string, unknown>[], ["userId"]);
   collectUserIds(fileUploads as unknown as Record<string, unknown>[], ["uploadedById"]);
+  collectUserIds(savedReports as unknown as Record<string, unknown>[], ["createdById"]);
 
   const users = await prisma.user.findMany({
     where: { id: { in: [...userIds] } },
@@ -160,6 +163,7 @@ export async function exportOrganization(orgId: string) {
     projectMedia: clean(projectMedia) as Record<string, unknown>[],
     clientMedia: clean(clientMedia) as Record<string, unknown>[],
     locationMedia: clean(locationMedia) as Record<string, unknown>[],
+    savedReports: clean(savedReports) as Record<string, unknown>[],
 
     members: members.map((m) => ({
       role: m.role,

@@ -242,6 +242,15 @@ export const PAGE_COMMANDS: PageCommand[] = [
     aliases: ["reports", "report", "analytics", "stats", "metrics"],
     icon: "BarChart3",
     description: "Business reports and analytics",
+    children: [
+      {
+        label: "Custom Report Builder",
+        href: "/reports/builder",
+        aliases: ["builder", "customreport", "newreport", "createreport", "buildreport"],
+        icon: "BarChart3",
+        description: "Build a custom report",
+      },
+    ],
   },
   {
     label: "Activity Log",

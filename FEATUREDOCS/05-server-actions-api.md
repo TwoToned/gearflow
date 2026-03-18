@@ -46,6 +46,7 @@ export async function getItems({ page, pageSize, search, sort, order }) {
 | `scan-lookup.ts` | `scanLookup(value)` — resolves barcode to `{ url, label }` by checking Asset → Kit → BulkAsset → TestTagAsset |
 | `notifications.ts` | `getNotifications()` — 5 types: overdue_maintenance, overdue_return, upcoming_project, low_stock, pending_invitation |
 | `dashboard.ts` | `getDashboardStats`, `getRecentActivity`, `getUpcomingProjects` |
+| `reports.ts` | `getReportsSummary`, `runReport`, `runReportCSV`, `getSavedReports`, `getSavedReportById`, `saveReport`, `updateSavedReport`, `deleteSavedReport`, `togglePinReport`, `updateReportLastRun` |
 | `csv.ts` | `exportModelsCSV`, `exportAssetsCSV`, `exportBulkAssetsCSV`, `importModelsCSV`, `importAssetsCSV` |
 | `settings.ts` | `getOrgSettings`, `updateOrgSettings`, `getBrandingSettings`, `updateBrandingSettings` |
 | `site-admin.ts` | `getOrganizations`, `getUsers`, `promoteToSiteAdmin`, `banUser`, `getSiteSettings`, `updateSiteSettings` |
@@ -69,6 +70,7 @@ export async function getItems({ page, pageSize, search, sort, order }) {
 | `/api/documents/[projectId]` | GET | PDF generation via pdfme (query: `type=quote\|invoice\|pull-slip\|return-sheet\|delivery-docket`, `templateId` optional) |
 | `/api/documents/call-sheet/[projectId]` | GET | Call sheet PDF via pdfme (query: `date` optional, `templateId` optional) |
 | `/api/documents/template-preview` | POST | Template preview PDF (body: `{ docType, settings }`, returns binary PDF) |
+| `/api/reports/pdf` | POST | Report PDF generation via pdfme (body: `{ config, title, subtitle }`) |
 | `/api/test-tag-reports/[reportType]` | GET | T&T report PDF/CSV via pdfme (10 types, query: `format=pdf\|csv`) |
 | `/api/platform-name` | GET | Public site settings (name, icon, logo, policies) |
 | `/api/registration-policy` | GET | Public registration policy only |

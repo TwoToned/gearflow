@@ -57,5 +57,5 @@
 
 ## Dashboard & Reporting
 - **Dashboard** (`/dashboard`): Stats cards (Total Assets, Checked Out, Active Projects, Maintenance Due), recent activity feed, upcoming projects
-- **Reports** (`/reports`): Project stats by status, revenue calculations, asset utilization
+- **Reports** (`/reports`): Full reporting system with quick stats, pre-built report library (~30 reports), saved reports with pin/share, and custom report builder. See `FEATUREDOCS/30-reporting-system.md` for full details.
 - Notification-driven alerts surface the same data as the notification system

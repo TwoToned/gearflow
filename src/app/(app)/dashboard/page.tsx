@@ -54,7 +54,7 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <div>
         <h1 className="t-title text-fg">Dashboard</h1>
-        <p className="text-muted-foreground">
+        <p className="text-[13px] text-fg-3">
           Overview of your operations.
         </p>
       </div>

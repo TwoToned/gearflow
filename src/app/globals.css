@@ -353,6 +353,30 @@
   100% { background-position: -200% 0; }
 }
 
+/* ═══════════════════════════════════════════════════════
+   Page entrance animation — subtle fade-up on mount
+   ═══════════════════════════════════════════════════════ */
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-page-enter {
+  animation: page-enter 0.2s cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-page-enter {
+    animation: none;
+  }
+}
+
 /* Touch device optimizations */
 @media (hover: none) and (pointer: coarse) {
   /* Larger checkboxes on touch devices */

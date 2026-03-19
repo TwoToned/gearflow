@@ -105,8 +105,11 @@ function useModelColumns(
       accessorKey: "defaultRentalPrice",
       sortKey: "defaultRentalPrice",
       align: "right",
-      cell: (row) =>
-        row.defaultRentalPrice ? `$${Number(row.defaultRentalPrice).toFixed(2)}` : "\u2014",
+      cell: (row) => (
+        <span className="t-data">
+          {row.defaultRentalPrice ? `$${Number(row.defaultRentalPrice).toFixed(2)}` : "\u2014"}
+        </span>
+      ),
     },
     {
       id: "tags",

@@ -152,28 +152,28 @@ export default function ReportsPage() {
                 <p className="text-sm font-medium text-fg-2">Serialized Assets</p>
                 <Package className="h-4 w-4 text-fg-3" />
               </div>
-              <div className="text-2xl font-bold">{d.totalSerializedAssets as number}</div>
+              <div className="text-2xl font-bold t-data">{d.totalSerializedAssets as number}</div>
             </div>
             <div className="rounded-lg bg-bg-surface p-4 surface-ring">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-sm font-medium text-fg-2">Bulk Assets</p>
                 <Boxes className="h-4 w-4 text-fg-3" />
               </div>
-              <div className="text-2xl font-bold">{d.totalBulkAssets as number}</div>
+              <div className="text-2xl font-bold t-data">{d.totalBulkAssets as number}</div>
             </div>
             <div className="rounded-lg bg-bg-surface p-4 surface-ring">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-sm font-medium text-fg-2">Clients</p>
                 <Users className="h-4 w-4 text-fg-3" />
               </div>
-              <div className="text-2xl font-bold">{d.totalClients as number}</div>
+              <div className="text-2xl font-bold t-data">{d.totalClients as number}</div>
             </div>
             <div className="rounded-lg bg-bg-surface p-4 surface-ring">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-sm font-medium text-fg-2">Total Revenue</p>
                 <DollarSign className="h-4 w-4 text-fg-3" />
               </div>
-              <div className="text-2xl font-bold">
+              <div className="text-2xl font-bold t-data">
                 ${((d.totalRevenue as number) || 0).toLocaleString("en-AU", {
                   minimumFractionDigits: 2,
                   maximumFractionDigits: 2,

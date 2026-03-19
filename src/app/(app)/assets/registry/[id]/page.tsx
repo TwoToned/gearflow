@@ -263,7 +263,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 </div>
                 <div className="flex justify-between">
                   <span>Price</span>
-                  <span className="font-medium">
+                  <span className="font-medium t-data">
                     {asset.purchasePrice ? `$${Number(asset.purchasePrice).toFixed(2)}` : "—"}
                   </span>
                 </div>

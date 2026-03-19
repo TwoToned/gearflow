@@ -526,7 +526,7 @@ function AssignmentRow({
           </div>
         )}
       </TableCell>
-      <TableCell className="text-sm">
+      <TableCell className="text-sm t-data">
         {a.rateOverride != null && Number(a.rateOverride) > 0 ? (
           <>
             {formatCurrency(a.rateOverride as number)}{" "}
@@ -538,7 +538,7 @@ function AssignmentRow({
           <span className="text-fg-3">Default</span>
         )}
       </TableCell>
-      <TableCell className="text-sm font-medium">
+      <TableCell className="text-sm font-medium t-data">
         {formatCurrency(a.estimatedCost as number | null)}
       </TableCell>
       <TableCell>

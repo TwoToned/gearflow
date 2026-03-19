@@ -223,7 +223,7 @@ export default function CategoriesPage() {
                   <TableCell className="hidden sm:table-cell text-fg-3 max-w-[200px] truncate">
                     {cat.description || "\u2014"}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right t-data">
                     {cat._count.models > 0 ? (
                       <Badge variant="secondary" className="gap-1">
                         <Boxes className="h-3 w-3" />
@@ -233,7 +233,7 @@ export default function CategoriesPage() {
                       <span className="text-fg-3">0</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-right hidden sm:table-cell">
+                  <TableCell className="text-right hidden sm:table-cell t-data">
                     {cat._count.kits > 0 ? (
                       <Badge variant="secondary" className="gap-1">
                         <Container className="h-3 w-3" />
@@ -243,7 +243,7 @@ export default function CategoriesPage() {
                       <span className="text-fg-3">0</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-right hidden md:table-cell">
+                  <TableCell className="text-right hidden md:table-cell t-data">
                     {cat._count.children > 0 ? cat._count.children : "\u2014"}
                   </TableCell>
                   <TableCell className="hidden lg:table-cell">

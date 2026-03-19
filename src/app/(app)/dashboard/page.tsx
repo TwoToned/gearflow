@@ -381,7 +381,7 @@ function StatCard({
         <p className="text-sm font-medium text-fg-2">{title}</p>
         <Icon className={`h-4 w-4 ${alert ? "text-destructive" : "text-fg-3"}`} />
       </div>
-      <div className={`text-2xl font-bold ${alert ? "text-destructive" : ""}`}>
+      <div className={`text-2xl font-bold t-data ${alert ? "text-destructive" : ""}`}>
         {value}
       </div>
       <p className="text-xs text-fg-3">{description}</p>

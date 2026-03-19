@@ -281,7 +281,7 @@ export default function TimesheetsPage() {
       sortKey: "totalHours",
       align: "right",
       cell: (row: any) => (
-        <span className="text-sm font-mono">
+        <span className="text-sm font-mono t-data">
           {row.totalHours != null
             ? `${Number(row.totalHours).toFixed(1)}h`
             : "\u2014"}

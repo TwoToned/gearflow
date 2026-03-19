@@ -288,7 +288,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                           <TableCell className="hidden md:table-cell text-fg-3">
                             {order._count?.items ?? 0}
                           </TableCell>
-                          <TableCell className="text-right hidden sm:table-cell">
+                          <TableCell className="text-right hidden sm:table-cell t-data">
                             {order.total != null ? `$${Number(order.total).toFixed(2)}` : "\u2014"}
                           </TableCell>
                           <TableCell className="text-fg-3 hidden md:table-cell">
@@ -373,7 +373,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                             </Link>
                           </TableCell>
                           <TableCell>{item.model?.name || item.description}</TableCell>
-                          <TableCell className="text-right">{item.quantity}</TableCell>
+                          <TableCell className="text-right t-data">{item.quantity}</TableCell>
                           <TableCell className="text-fg-3 hidden md:table-cell font-mono text-sm">
                             {item.subhireOrderNumber || "\u2014"}
                           </TableCell>

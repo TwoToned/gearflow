@@ -521,7 +521,7 @@ function ServiceCard({
             {service.lineTotal != null && (
               <div className="flex items-center gap-1 text-sm">
                 <DollarSign className="h-3 w-3 text-fg-3" />
-                <span className="font-medium">{formatCurrency(service.lineTotal)}</span>
+                <span className="font-medium t-data">{formatCurrency(service.lineTotal)}</span>
                 {service.pricingType && (
                   <span className="text-fg-3">
                     {PRICING_TYPE_LABELS[service.pricingType] || ""}

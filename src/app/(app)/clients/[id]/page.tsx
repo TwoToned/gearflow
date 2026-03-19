@@ -250,7 +250,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                             {projectStatusLabels[project.status] || formatLabel(project.status)}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right">{project._count.lineItems}</TableCell>
+                        <TableCell className="text-right t-data">{project._count.lineItems}</TableCell>
                         <TableCell className="text-fg-3">
                           {new Date(project.createdAt).toLocaleDateString()}
                         </TableCell>

@@ -322,7 +322,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
             <div className="space-y-1 text-sm">
               <div className="flex justify-between">
                 <span>Purchase Price</span>
-                <span className="font-medium">
+                <span className="font-medium t-data">
                   {kit.purchasePrice ? `$${Number(kit.purchasePrice).toFixed(2)}` : "—"}
                 </span>
               </div>
@@ -431,7 +431,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     {kit.bulkItems.map((item) => (
                       <TableRow key={item.id}>
                         <TableCell>{item.bulkAsset.model.name}</TableCell>
-                        <TableCell className="text-right font-medium">
+                        <TableCell className="text-right font-medium t-data">
                           {item.quantity}
                         </TableCell>
                         <TableCell className="text-fg-3">

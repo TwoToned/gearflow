@@ -206,19 +206,19 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span>Rental (per day)</span>
-                  <span className="font-medium">
+                  <span className="font-medium t-data">
                     {model.defaultRentalPrice ? `$${Number(model.defaultRentalPrice).toFixed(2)}` : "—"}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Purchase price</span>
-                  <span className="font-medium">
+                  <span className="font-medium t-data">
                     {model.defaultPurchasePrice ? `$${Number(model.defaultPurchasePrice).toFixed(2)}` : "—"}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Replacement cost</span>
-                  <span className="font-medium">
+                  <span className="font-medium t-data">
                     {model.replacementCost ? `$${Number(model.replacementCost).toFixed(2)}` : "—"}
                   </span>
                 </div>
@@ -352,8 +352,8 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                             {ba.assetTag}
                           </span>
                         </TableCell>
-                        <TableCell className="text-right font-medium">{ba.availableQuantity}</TableCell>
-                        <TableCell className="text-right text-fg-3">{ba.totalQuantity}</TableCell>
+                        <TableCell className="text-right font-medium t-data">{ba.availableQuantity}</TableCell>
+                        <TableCell className="text-right text-fg-3 t-data">{ba.totalQuantity}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className={statusColors[ba.status] || ""}>
                             {bulkAssetStatusLabels[ba.status] || formatLabel(ba.status)}

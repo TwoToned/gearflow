@@ -176,10 +176,13 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     header: "Total",
     sortKey: "total",
     align: "right",
-    cell: (row) =>
-      (row.invoicedTotal != null || row.total != null)
-        ? `$${Number(row.invoicedTotal ?? row.total).toLocaleString("en-AU", { minimumFractionDigits: 2 })}`
-        : "—",
+    cell: (row) => (
+      <span className="t-data">
+        {(row.invoicedTotal != null || row.total != null)
+          ? `$${Number(row.invoicedTotal ?? row.total).toLocaleString("en-AU", { minimumFractionDigits: 2 })}`
+          : "—"}
+      </span>
+    ),
   },
   {
     id: "tags",

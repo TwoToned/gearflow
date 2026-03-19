@@ -447,8 +447,8 @@ function SortableItemRow({
             )}
           </div>
         </TableCell>
-        <TableCell className="text-center">{item.quantity}</TableCell>
-        <TableCell className="text-right hidden md:table-cell">
+        <TableCell className="text-center t-data">{item.quantity}</TableCell>
+        <TableCell className="text-right hidden md:table-cell t-data">
           {formatCurrency(item.unitPrice as number | null)}
           {item.unitPrice != null && (
             <span className="text-xs text-fg-3 ml-0.5">
@@ -456,8 +456,8 @@ function SortableItemRow({
             </span>
           )}
         </TableCell>
-        <TableCell className="text-center hidden lg:table-cell">{item.duration}</TableCell>
-        <TableCell className="text-right font-medium hidden sm:table-cell">
+        <TableCell className="text-center hidden lg:table-cell t-data">{item.duration}</TableCell>
+        <TableCell className="text-right font-medium hidden sm:table-cell t-data">
           {formatCurrency(item.lineTotal as number | null)}
         </TableCell>
         <TableCell className="hidden sm:table-cell">
@@ -554,16 +554,16 @@ function SortableItemRow({
                     </div>
                   </div>
                 </TableCell>
-                <TableCell className="text-center text-sm">
+                <TableCell className="text-center text-sm t-data">
                   {isNestedKit ? nestedChildren.length : child.quantity}
                 </TableCell>
-                <TableCell className="text-right text-sm hidden md:table-cell">
+                <TableCell className="text-right text-sm hidden md:table-cell t-data">
                   {formatCurrency(child.unitPrice as number | null)}
                 </TableCell>
-                <TableCell className="text-center text-sm hidden lg:table-cell">
+                <TableCell className="text-center text-sm hidden lg:table-cell t-data">
                   {child.duration}
                 </TableCell>
-                <TableCell className="text-right text-sm hidden sm:table-cell">
+                <TableCell className="text-right text-sm hidden sm:table-cell t-data">
                   {formatCurrency(child.lineTotal as number | null)}
                 </TableCell>
                 <TableCell className="hidden sm:table-cell" />
@@ -590,16 +590,16 @@ function SortableItemRow({
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="text-center text-sm text-fg-3">
+                  <TableCell className="text-center text-sm text-fg-3 t-data">
                     {nested.quantity}
                   </TableCell>
-                  <TableCell className="text-right text-sm hidden md:table-cell text-fg-3">
+                  <TableCell className="text-right text-sm hidden md:table-cell text-fg-3 t-data">
                     {formatCurrency(nested.unitPrice as number | null)}
                   </TableCell>
-                  <TableCell className="text-center text-sm hidden lg:table-cell text-fg-3">
+                  <TableCell className="text-center text-sm hidden lg:table-cell text-fg-3 t-data">
                     {nested.duration}
                   </TableCell>
-                  <TableCell className="text-right text-sm hidden sm:table-cell text-fg-3">
+                  <TableCell className="text-right text-sm hidden sm:table-cell text-fg-3 t-data">
                     {formatCurrency(nested.lineTotal as number | null)}
                   </TableCell>
                   <TableCell className="hidden sm:table-cell" />
@@ -687,12 +687,12 @@ function SortableGroupHeader({
                   <span className="text-sm">{name}</span>
                 </div>
               </TableCell>
-              <TableCell className="text-center text-sm">{item.quantity}</TableCell>
-              <TableCell className="text-right text-sm hidden md:table-cell">
+              <TableCell className="text-center text-sm t-data">{item.quantity}</TableCell>
+              <TableCell className="text-right text-sm hidden md:table-cell t-data">
                 {formatCurrency(item.unitPrice as number | null)}
               </TableCell>
-              <TableCell className="text-center text-sm hidden lg:table-cell">{item.duration}</TableCell>
-              <TableCell className="text-right text-sm font-medium hidden sm:table-cell">
+              <TableCell className="text-center text-sm hidden lg:table-cell t-data">{item.duration}</TableCell>
+              <TableCell className="text-right text-sm font-medium hidden sm:table-cell t-data">
                 {formatCurrency(item.lineTotal as number | null)}
               </TableCell>
               <TableCell className="hidden sm:table-cell">
@@ -1205,7 +1205,7 @@ export function LineItemsPanel({
                 <div className="space-y-1 text-sm max-w-xs ml-auto">
                   <div className="flex justify-between">
                     <span className="text-fg-3">Subtotal</span>
-                    <span className="font-medium">
+                    <span className="font-medium t-data">
                       {formatCurrency(project.subtotal as number | null)}
                     </span>
                   </div>
@@ -1215,7 +1215,7 @@ export function LineItemsPanel({
                         <span>
                           Discount ({Number(project.discountPercent)}%)
                         </span>
-                        <span>
+                        <span className="t-data">
                           -
                           {formatCurrency(
                             project.discountAmount as number | null,
@@ -1225,14 +1225,14 @@ export function LineItemsPanel({
                     )}
                   <div className="flex justify-between text-fg-3">
                     <span>GST (10%)</span>
-                    <span>
+                    <span className="t-data">
                       {formatCurrency(project.taxAmount as number | null)}
                     </span>
                   </div>
                   <div className="my-1 h-px bg-border" />
                   <div className="flex justify-between text-base">
                     <span className="font-semibold">Total</span>
-                    <span className="font-semibold">
+                    <span className="font-semibold t-data">
                       {formatCurrency(project.total as number | null)}
                     </span>
                   </div>
@@ -1241,7 +1241,7 @@ export function LineItemsPanel({
                       <div className="my-1 h-px bg-border" />
                       <div className="flex justify-between text-base">
                         <span className="font-semibold text-primary">Invoiced Total</span>
-                        <span className="font-semibold text-primary">
+                        <span className="font-semibold text-primary t-data">
                           {formatCurrency(project.invoicedTotal as unknown as number | null)}
                         </span>
                       </div>

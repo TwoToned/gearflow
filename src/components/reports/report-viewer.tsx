@@ -199,11 +199,16 @@ export function ReportViewer({ config, initialResult, title, autoRun }: ReportVi
                 ) : (
                   result.rows.map((row, i) => (
                     <TableRow key={i}>
-                      {result.columns.map((col) => (
-                        <TableCell key={col.field} className="whitespace-nowrap">
-                          {formatValue(row[col.field], col.field)}
-                        </TableCell>
-                      ))}
+                      {result.columns.map((col) => {
+                        const fd = fieldDefs.find((f) => f.field === col.field);
+                        const val = row[col.field];
+                        const isNumeric = fd?.type === "number" || typeof val === "number";
+                        return (
+                          <TableCell key={col.field} className={`whitespace-nowrap${isNumeric ? " t-data" : ""}`}>
+                            {formatValue(val, col.field)}
+                          </TableCell>
+                        );
+                      })}
                     </TableRow>
                   ))
                 )}

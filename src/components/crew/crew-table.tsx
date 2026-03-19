@@ -113,10 +113,13 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     header: "Day Rate",
     align: "right",
     responsiveHide: "lg",
-    cell: (row) =>
-      row.defaultDayRate != null
-        ? `$${Number(row.defaultDayRate).toFixed(2)}`
-        : "\u2014",
+    cell: (row) => (
+      <span className="t-data">
+        {row.defaultDayRate != null
+          ? `$${Number(row.defaultDayRate).toFixed(2)}`
+          : "\u2014"}
+      </span>
+    ),
   },
   {
     id: "skills",

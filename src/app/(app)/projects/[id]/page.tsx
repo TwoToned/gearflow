@@ -555,13 +555,13 @@ export default function ProjectDetailPage({
                 <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-8 text-sm">
                   <div>
                     <span className="text-fg-3">Subtotal</span>
-                    <p className="font-medium">
+                    <p className="font-medium t-data">
                       {formatCurrency(project.subtotal as number | null)}
                     </p>
                   </div>
                   <div>
                     <span className="text-fg-3">Discount</span>
-                    <p className="font-medium">
+                    <p className="font-medium t-data">
                       {project.discountPercent != null
                         ? `${Number(project.discountPercent)}%`
                         : "—"}
@@ -571,19 +571,19 @@ export default function ProjectDetailPage({
                   </div>
                   <div>
                     <span className="text-fg-3">Tax</span>
-                    <p className="font-medium">
+                    <p className="font-medium t-data">
                       {formatCurrency(project.taxAmount as number | null)}
                     </p>
                   </div>
                   <div>
                     <span className="text-fg-3">Total</span>
-                    <p className="font-semibold text-base">
+                    <p className="font-semibold text-base t-data">
                       {formatCurrency(project.total as number | null)}
                     </p>
                   </div>
                   <div>
                     <span className="text-fg-3">Invoiced Total</span>
-                    <p className="font-semibold text-base">
+                    <p className="font-semibold text-base t-data">
                       {project.invoicedTotal != null
                         ? formatCurrency(project.invoicedTotal as unknown as number)
                         : "—"}
@@ -593,7 +593,7 @@ export default function ProjectDetailPage({
                     <span className="text-fg-3">
                       Deposit
                     </span>
-                    <p className="font-medium">
+                    <p className="font-medium t-data">
                       {project.depositPercent != null
                         ? `${Number(project.depositPercent)}%`
                         : "—"}
@@ -603,7 +603,7 @@ export default function ProjectDetailPage({
                     <span className="text-fg-3">
                       Deposit Paid
                     </span>
-                    <p className="font-medium">
+                    <p className="font-medium t-data">
                       {formatCurrency(project.depositPaid as number | null)}
                     </p>
                   </div>

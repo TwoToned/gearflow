@@ -1022,7 +1022,7 @@ function StatCard({
         />
       </div>
       <div
-        className={`text-2xl font-bold ${alert ? "text-destructive" : ""}`}
+        className={`text-2xl font-bold t-data ${alert ? "text-destructive" : ""}`}
       >
         {value}
       </div>

@@ -600,7 +600,7 @@ export default function CrewMemberDetailPage({
             <div className="space-y-1 text-sm">
               <div className="flex justify-between">
                 <span>Day Rate</span>
-                <span className="font-medium">
+                <span className="font-medium t-data">
                   {member.defaultDayRate != null
                     ? `$${Number(member.defaultDayRate).toFixed(2)}`
                     : "\u2014"}
@@ -608,7 +608,7 @@ export default function CrewMemberDetailPage({
               </div>
               <div className="flex justify-between">
                 <span>Hourly Rate</span>
-                <span className="font-medium">
+                <span className="font-medium t-data">
                   {member.defaultHourlyRate != null
                     ? `$${Number(member.defaultHourlyRate).toFixed(2)}`
                     : "\u2014"}
@@ -1281,7 +1281,7 @@ export default function CrewMemberDetailPage({
                               ? `${entry.breakMinutes}m`
                               : "—"}
                           </TableCell>
-                          <TableCell className="text-sm font-mono">
+                          <TableCell className="text-sm font-mono t-data">
                             {entry.totalHours != null
                               ? `${Number(entry.totalHours).toFixed(1)}h`
                               : "—"}

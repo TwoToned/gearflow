@@ -211,7 +211,7 @@ export default function CrewSettingsPage() {
                       <TableCell className="hidden md:table-cell">
                         {role.defaultRate != null &&
                         Number(role.defaultRate) > 0 ? (
-                          <span>
+                          <span className="t-data">
                             ${Number(role.defaultRate).toFixed(2)}{" "}
                             <span className="text-fg-3 text-xs">
                               {crewRateTypeLabels[role.rateType || "DAILY"] ||

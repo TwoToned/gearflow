@@ -307,13 +307,15 @@ export function computePageLayout(
           tableStartIndex: 0,
         });
 
-        // Continuation pages
-        const headerRowHeight = TABLE_ROW_HEIGHT_MM + 4;
-        const rowsOnFirstPage = Math.max(1, Math.floor((availableHeight - headerRowHeight) / TABLE_ROW_HEIGHT_MM));
+        // Continuation pages — use correct row height for the table type
+        const isCrewTable = section.type === "crew-table";
+        const itemRowHeight = isCrewTable ? CREW_ROW_HEIGHT_MM : TABLE_ROW_HEIGHT_MM;
+        const headerRowHeight = itemRowHeight + 4;
+        const rowsOnFirstPage = Math.max(1, Math.floor((availableHeight - headerRowHeight) / itemRowHeight));
         const remainingHeight = rowHeight - availableHeight;
         const continuationContentHeight = maxY - MARGIN - (headerSection ? estimateSectionHeight(headerSection, data) + SECTION_GAP : 0);
         const extraPages = Math.ceil(remainingHeight / continuationContentHeight);
-        const rowsPerContinuation = Math.max(1, Math.floor((continuationContentHeight - headerRowHeight) / TABLE_ROW_HEIGHT_MM));
+        const rowsPerContinuation = Math.max(1, Math.floor((continuationContentHeight - headerRowHeight) / itemRowHeight));
 
         let currentStartIndex = rowsOnFirstPage;
         for (let i = 0; i < extraPages; i++) {
@@ -705,10 +707,14 @@ function buildSectionInput(
     }
 
     case "crew-table": {
-      return JSON.stringify({
+      const crewConfig: { crew: typeof data.crew; documentColor: string; startIndex?: number } = {
         crew: data.crew || [],
         documentColor: docColor,
-      });
+      };
+      if (tableStartIndex) {
+        crewConfig.startIndex = tableStartIndex;
+      }
+      return JSON.stringify(crewConfig);
     }
 
     case "spacer":

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Archive, Mail, Phone, MapPin, FileText } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
 import { AddressDisplay } from "@/components/ui/address-display";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -231,7 +232,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
             </CardHeader>
             <CardContent>
               {client.projects.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">No projects yet.</p>
+                <EmptyState preset="projects" heading="No projects yet" description="Projects for this client will appear here." />
               ) : (
                 <div className="rounded-md border">
                   <Table>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Mail, Phone, Globe, MapPin, Trash2, Plus } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
 import { AddressDisplay } from "@/components/ui/address-display";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -263,7 +264,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
               </CardHeader>
               <CardContent>
                 {orders.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">No orders yet.</p>
+                  <EmptyState preset="suppliers" heading="No orders yet" description="Purchase and subhire orders from this supplier will appear here." />
                 ) : (
                   <div className="rounded-md border">
                     <Table>
@@ -323,7 +324,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
               </CardHeader>
               <CardContent>
                 {assets.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">No assets from this supplier.</p>
+                  <EmptyState preset="assets" heading="No assets from this supplier" description="Assets purchased from this supplier will appear here." />
                 ) : (
                   <div className="rounded-md border">
                     <Table>
@@ -371,7 +372,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
               </CardHeader>
               <CardContent>
                 {subhires.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">No subhire items from this supplier.</p>
+                  <EmptyState preset="suppliers" heading="No subhire items" description="Subhire line items from this supplier will appear here." />
                 ) : (
                   <div className="rounded-md border">
                     <Table>

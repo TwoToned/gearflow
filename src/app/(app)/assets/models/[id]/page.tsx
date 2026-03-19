@@ -5,6 +5,7 @@ import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Archive, Plus, Package, Trash2, RotateCcw } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -274,16 +275,12 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
         <TabsContent value="assets" className="mt-4">
           {model.assetType === "SERIALIZED" ? (
             model.assets.length === 0 ? (
-              <Card>
-                <CardContent className="flex flex-col items-center gap-3 py-8">
-                  <Package className="h-8 w-8 text-muted-foreground" />
-                  <p className="text-sm text-muted-foreground">No assets created from this model yet.</p>
-                  <Button size="sm" render={<Link href={`/assets/registry/new?modelId=${model.id}&type=serialized`} />}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Create Asset
-                  </Button>
-                </CardContent>
-              </Card>
+              <EmptyState
+                preset="assets"
+                heading="No assets yet"
+                description="Create individual tracked assets from this model."
+                action={{ label: "Create Asset", onClick: () => window.location.href = `/assets/registry/new?modelId=${model.id}&type=serialized` }}
+              />
             ) : (
               <div className="rounded-md border">
                 <Table>
@@ -339,16 +336,12 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
             )
           ) : (
             model.bulkAssets.length === 0 ? (
-              <Card>
-                <CardContent className="flex flex-col items-center gap-3 py-8">
-                  <Package className="h-8 w-8 text-muted-foreground" />
-                  <p className="text-sm text-muted-foreground">No bulk stock entries for this model yet.</p>
-                  <Button size="sm" render={<Link href={`/assets/registry/new?modelId=${model.id}&type=bulk`} />}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Create Bulk Asset
-                  </Button>
-                </CardContent>
-              </Card>
+              <EmptyState
+                preset="assets"
+                heading="No bulk stock"
+                description="Create bulk quantity entries for this model."
+                action={{ label: "Create Bulk Asset", onClick: () => window.location.href = `/assets/registry/new?modelId=${model.id}&type=bulk` }}
+              />
             ) : (
               <div className="rounded-md border">
                 <Table>

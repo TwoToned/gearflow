@@ -13,6 +13,7 @@ import {
   Container,
   FolderOpen,
 } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
 import { AddressDisplay } from "@/components/ui/address-display";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -241,7 +242,7 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
             </CardHeader>
             <CardContent>
               {(location.assets?.length || 0) === 0 && (location.bulkAssets?.length || 0) === 0 && (location.kits?.length || 0) === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">No assets at this location.</p>
+                <EmptyState preset="assets" heading="No assets here" description="Assets checked in to this location will appear here." />
               ) : (
                 <div className="rounded-md border">
                   <Table>
@@ -322,7 +323,7 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
             </CardHeader>
             <CardContent>
               {(location.projects?.length || 0) === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">No projects at this location.</p>
+                <EmptyState preset="projects" heading="No projects here" description="Projects using this as a venue or delivery address will appear here." />
               ) : (
                 <div className="rounded-md border">
                   <Table>

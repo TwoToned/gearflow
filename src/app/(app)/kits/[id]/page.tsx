@@ -6,6 +6,7 @@ import { PageMeta } from "@/components/layout/page-meta";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Trash2, Loader2, X, ScanBarcode, Camera, RotateCcw } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
 import { toast } from "sonner";
 
 import {
@@ -354,9 +355,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
               </CanDo>
             </div>
             {kit.serializedItems.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">
-                No serialized items in this kit.
-              </p>
+              <EmptyState preset="assets" heading="No serialized items" description="Add individual tracked assets to this kit." />
             ) : (
               <div className="rounded-md border">
                 <Table>
@@ -423,9 +422,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
               </CanDo>
             </div>
             {kit.bulkItems.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">
-                No bulk items in this kit.
-              </p>
+              <EmptyState preset="assets" heading="No bulk items" description="Add consumable or quantity-tracked items to this kit." />
             ) : (
               <div className="rounded-md border">
                 <Table>
@@ -480,9 +477,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
         </CardHeader>
         <CardContent>
           {kit.lineItems.length === 0 && kit.scanLogs.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">
-              No history for this kit yet.
-            </p>
+            <EmptyState preset="history" />
           ) : (
             <div className="space-y-4">
               {kit.lineItems.length > 0 && (

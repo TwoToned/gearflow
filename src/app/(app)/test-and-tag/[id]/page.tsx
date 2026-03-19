@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Zap, Pencil, ArchiveX, Trash2, Loader2 } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
 
 import { getTestTagAsset, retireTestTagAsset, deleteTestTagAsset } from "@/server/test-tag-assets";
 import { CanDo } from "@/components/auth/permission-gate";
@@ -255,9 +256,7 @@ export default function TestTagDetailPage({ params }: { params: Promise<{ id: st
         </CardHeader>
         <CardContent>
           {item.testRecords.length === 0 ? (
-            <p className="py-8 text-center text-muted-foreground">
-              No test records yet. Record the first test to get started.
-            </p>
+            <EmptyState preset="maintenance" heading="No test records" description="Record the first test to start tracking compliance." />
           ) : (
             <div className="overflow-x-auto">
               <Table>

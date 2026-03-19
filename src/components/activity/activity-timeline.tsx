@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getEntityActivityLog } from "@/server/activity-log";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils";
 
 const actionColors: Record<string, string> = {
@@ -48,7 +49,7 @@ export function ActivityTimeline({ entityType, entityId }: ActivityTimelineProps
   }
 
   if (!logs || logs.length === 0) {
-    return <p className="text-sm text-muted-foreground">No activity recorded yet.</p>;
+    return <EmptyState preset="activity" />;
   }
 
   return (

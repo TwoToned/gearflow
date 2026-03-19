@@ -11,6 +11,7 @@ import {
   FolderOpen,
   ArrowLeft,
 } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
 
 import { getCategory } from "@/server/categories";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
@@ -218,15 +219,12 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
               </CardContent>
             </Card>
           ) : (
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                <Boxes className="h-10 w-10 text-muted-foreground/50 mb-3" />
-                <p className="text-sm text-muted-foreground">No models in this category.</p>
-                <Button variant="outline" size="sm" className="mt-3" render={<Link href="/assets/models/new" />}>
-                  Add Model
-                </Button>
-              </CardContent>
-            </Card>
+            <EmptyState
+              preset="models"
+              heading="No models in this category"
+              description="Models group identical assets — create one to start adding units."
+              action={{ label: "Add Model", onClick: () => window.location.href = "/assets/models/new" }}
+            />
           )}
         </TabsContent>
 
@@ -278,15 +276,12 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
               </CardContent>
             </Card>
           ) : (
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                <Container className="h-10 w-10 text-muted-foreground/50 mb-3" />
-                <p className="text-sm text-muted-foreground">No kits in this category.</p>
-                <Button variant="outline" size="sm" className="mt-3" render={<Link href="/kits/new" />}>
-                  Add Kit
-                </Button>
-              </CardContent>
-            </Card>
+            <EmptyState
+              preset="kits"
+              heading="No kits in this category"
+              description="Kits bundle assets that always go together — build one to speed up checkout."
+              action={{ label: "Add Kit", onClick: () => window.location.href = "/kits/new" }}
+            />
           )}
         </TabsContent>
       </Tabs>

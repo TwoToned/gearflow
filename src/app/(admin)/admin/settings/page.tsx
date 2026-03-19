@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AdminShell } from "@/components/admin/admin-shell";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -66,21 +65,21 @@ export default function AdminSettingsPage() {
           <h1 className="t-title text-fg">
             Platform Settings
           </h1>
-          <p className="text-muted-foreground">
+          <p className="text-fg-3">
             Global configuration for the platform.
           </p>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Branding</CardTitle>
-            <CardDescription>
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <div className="mb-4">
+            <h3 className="t-heading">Branding</h3>
+            <p className="text-sm text-fg-3">
               Configure the platform name and icon shown across the app.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
+            </p>
+          </div>
+          <div className="space-y-6">
             {/* Preview */}
-            <div className="flex items-center gap-3 rounded-lg border p-4 bg-muted/30">
+            <div className="flex items-center gap-3 rounded-lg border p-4 bg-bg-inset/30">
               <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary text-primary-foreground font-bold text-sm">
                 {form.platformIcon ? (
                   <DynamicIcon name={form.platformIcon} className="h-5 w-5" />
@@ -101,7 +100,7 @@ export default function AdminSettingsPage() {
                   setForm((f) => ({ ...f, platformName: e.target.value }))
                 }
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-fg-3">
                 Shown in the sidebar, login page, and emails.
               </p>
             </div>
@@ -114,21 +113,21 @@ export default function AdminSettingsPage() {
                   setForm((f) => ({ ...f, platformIcon: icon }))
                 }
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-fg-3">
                 Replaces the text initials in the sidebar and auth pages. Leave empty to show initials.
               </p>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Registration</CardTitle>
-            <CardDescription>
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <div className="mb-4">
+            <h3 className="t-heading">Registration</h3>
+            <p className="text-sm text-fg-3">
               Control who can create accounts on this platform.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+            </p>
+          </div>
+          <div className="space-y-4">
             <div className="space-y-2">
               <Label>Registration Policy</Label>
               <select
@@ -148,27 +147,27 @@ export default function AdminSettingsPage() {
             </div>
             <Separator />
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">
+              <span className="text-sm text-fg-3">
                 Secret admin registration link:
               </span>
               <Badge variant={adminRegEnabled ? "default" : "secondary"}>
                 {adminRegEnabled ? "Enabled" : "Disabled"}
               </Badge>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-xs text-fg-3">
                 (configured via .env)
               </span>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Social Login</CardTitle>
-            <CardDescription>
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <div className="mb-4">
+            <h3 className="t-heading">Social Login</h3>
+            <p className="text-sm text-fg-3">
               Enable or disable social login providers. Providers also require environment variables to be configured.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+            </p>
+          </div>
+          <div className="space-y-4">
             <div className="flex items-center justify-between rounded-md border p-3">
               <div className="flex items-center gap-3">
                 <svg className="h-5 w-5" viewBox="0 0 24 24">
@@ -180,7 +179,7 @@ export default function AdminSettingsPage() {
                 <div>
                   <span className="text-sm font-medium">Google</span>
                   {!process.env.NEXT_PUBLIC_GOOGLE_CONFIGURED && (
-                    <p className="text-xs text-muted-foreground">Env vars not configured</p>
+                    <p className="text-xs text-fg-3">Env vars not configured</p>
                   )}
                 </div>
               </div>
@@ -191,7 +190,7 @@ export default function AdminSettingsPage() {
                   checked={form.socialLoginGoogle}
                   onChange={(e) => setForm((f) => ({ ...f, socialLoginGoogle: e.target.checked }))}
                 />
-                <div className="w-9 h-5 bg-muted rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-background after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
+                <div className="w-9 h-5 bg-bg-inset rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-background after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
               </label>
             </div>
             <div className="flex items-center justify-between rounded-md border p-3">
@@ -205,7 +204,7 @@ export default function AdminSettingsPage() {
                 <div>
                   <span className="text-sm font-medium">Microsoft</span>
                   {!process.env.NEXT_PUBLIC_MICROSOFT_CONFIGURED && (
-                    <p className="text-xs text-muted-foreground">Env vars not configured</p>
+                    <p className="text-xs text-fg-3">Env vars not configured</p>
                   )}
                 </div>
               </div>
@@ -216,23 +215,23 @@ export default function AdminSettingsPage() {
                   checked={form.socialLoginMicrosoft}
                   onChange={(e) => setForm((f) => ({ ...f, socialLoginMicrosoft: e.target.checked }))}
                 />
-                <div className="w-9 h-5 bg-muted rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-background after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
+                <div className="w-9 h-5 bg-bg-inset rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-background after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
               </label>
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-fg-3">
               Social login requires both the admin toggle above AND the corresponding environment variables (GOOGLE_CLIENT_ID, MICROSOFT_CLIENT_ID, etc.) to be set.
             </p>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Defaults</CardTitle>
-            <CardDescription>
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <div className="mb-4">
+            <h3 className="t-heading">Defaults</h3>
+            <p className="text-sm text-fg-3">
               Default currency and tax rate for the platform.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+            </p>
+          </div>
+          <div className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="defaultCurrency">Default Currency</Label>
@@ -263,8 +262,8 @@ export default function AdminSettingsPage() {
                 />
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         <div className="flex justify-end">
           <Button

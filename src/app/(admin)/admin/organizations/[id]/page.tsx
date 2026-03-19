@@ -5,7 +5,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import Link from "next/link";
 import { AdminShell } from "@/components/admin/admin-shell";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -232,7 +231,7 @@ export default function AdminOrgDetailPage({
                 {isLoading ? "Loading..." : org?.name}
               </h1>
               {org && (
-                <p className="text-muted-foreground text-sm font-mono truncate">
+                <p className="text-fg-3 text-sm font-mono truncate">
                   {org.slug}
                 </p>
               )}
@@ -263,59 +262,59 @@ export default function AdminOrgDetailPage({
         {/* Stats */}
         {org && (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <Card>
-              <CardContent className="flex items-center gap-3 p-4">
-                <Package className="h-5 w-5 text-muted-foreground" />
+            <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+              <div className="flex items-center gap-3">
+                <Package className="h-5 w-5 text-fg-3" />
                 <div>
                   <p className="text-2xl font-bold">{counts.assets}</p>
-                  <p className="text-xs text-muted-foreground">Assets</p>
+                  <p className="text-xs text-fg-3">Assets</p>
                 </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="flex items-center gap-3 p-4">
-                <Boxes className="h-5 w-5 text-muted-foreground" />
+              </div>
+            </div>
+            <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+              <div className="flex items-center gap-3">
+                <Boxes className="h-5 w-5 text-fg-3" />
                 <div>
                   <p className="text-2xl font-bold">{counts.bulkAssets}</p>
-                  <p className="text-xs text-muted-foreground">Bulk Assets</p>
+                  <p className="text-xs text-fg-3">Bulk Assets</p>
                 </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="flex items-center gap-3 p-4">
-                <FolderKanban className="h-5 w-5 text-muted-foreground" />
+              </div>
+            </div>
+            <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+              <div className="flex items-center gap-3">
+                <FolderKanban className="h-5 w-5 text-fg-3" />
                 <div>
                   <p className="text-2xl font-bold">{counts.projects}</p>
-                  <p className="text-xs text-muted-foreground">Projects</p>
+                  <p className="text-xs text-fg-3">Projects</p>
                 </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="flex items-center gap-3 p-4">
-                <BoxIcon className="h-5 w-5 text-muted-foreground" />
+              </div>
+            </div>
+            <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+              <div className="flex items-center gap-3">
+                <BoxIcon className="h-5 w-5 text-fg-3" />
                 <div>
                   <p className="text-2xl font-bold">{counts.kits}</p>
-                  <p className="text-xs text-muted-foreground">Kits</p>
+                  <p className="text-xs text-fg-3">Kits</p>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           </div>
         )}
 
         {/* Members */}
-        <Card>
-          <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
-            <CardTitle>Members ({members.length})</CardTitle>
+        <div className="rounded-lg bg-bg-surface surface-ring">
+          <div className="flex flex-wrap items-center justify-between gap-2 p-5 sm:p-6 pb-0 sm:pb-0">
+            <h3 className="t-heading">Members ({members.length})</h3>
             <Button size="sm" onClick={() => setAddOpen(true)}>
               <UserPlus className="mr-2 h-4 w-4" />
               Add
             </Button>
-          </CardHeader>
-          <CardContent className="p-0">
+          </div>
+          <div className="p-0">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b bg-muted/50">
+                  <tr className="border-b bg-bg-inset/50">
                     <th className="p-3 text-left font-medium">User</th>
                     <th className="p-3 text-left font-medium hidden md:table-cell">Email</th>
                     <th className="p-3 text-left font-medium">Role</th>
@@ -328,7 +327,7 @@ export default function AdminOrgDetailPage({
                     <tr>
                       <td
                         colSpan={5}
-                        className="p-8 text-center text-muted-foreground"
+                        className="p-8 text-center text-fg-3"
                       >
                         Loading...
                       </td>
@@ -337,7 +336,7 @@ export default function AdminOrgDetailPage({
                     <tr>
                       <td
                         colSpan={5}
-                        className="p-8 text-center text-muted-foreground"
+                        className="p-8 text-center text-fg-3"
                       >
                         No members.
                       </td>
@@ -353,7 +352,7 @@ export default function AdminOrgDetailPage({
                       return (
                         <tr
                           key={m.id}
-                          className="border-b hover:bg-muted/30"
+                          className="border-b hover:bg-bg-elevated/30"
                         >
                           <td className="p-3">
                             <div className="flex items-center gap-2">
@@ -364,7 +363,7 @@ export default function AdminOrgDetailPage({
                                   className="h-7 w-7 rounded-full shrink-0"
                                 />
                               ) : (
-                                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
+                                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-bg-inset text-xs font-medium">
                                   {(m.user.name || "?")[0].toUpperCase()}
                                 </div>
                               )}
@@ -377,13 +376,13 @@ export default function AdminOrgDetailPage({
                                     <Crown className="h-3.5 w-3.5 shrink-0 text-yellow-500" />
                                   )}
                                 </div>
-                                <div className="text-xs text-muted-foreground truncate md:hidden">
+                                <div className="text-xs text-fg-3 truncate md:hidden">
                                   {m.user.email}
                                 </div>
                               </div>
                             </div>
                           </td>
-                          <td className="p-3 text-muted-foreground hidden md:table-cell">
+                          <td className="p-3 text-fg-3 hidden md:table-cell">
                             {m.user.email}
                           </td>
                           <td className="p-3">
@@ -446,7 +445,7 @@ export default function AdminOrgDetailPage({
                               </Select>
                             )}
                           </td>
-                          <td className="p-3 text-muted-foreground hidden sm:table-cell">
+                          <td className="p-3 text-fg-3 hidden sm:table-cell">
                             {new Date(m.createdAt).toLocaleDateString()}
                           </td>
                           <td className="p-3 text-right">
@@ -492,36 +491,32 @@ export default function AdminOrgDetailPage({
                 </tbody>
               </table>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         {/* Custom Roles Info */}
         {customRoles.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Shield className="h-4 w-4" />
-                Custom Roles ({customRoles.length})
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap gap-2">
-                {customRoles.map((cr: any) => (
-                  <Badge
-                    key={cr.id}
-                    variant="secondary"
-                    style={
-                      cr.color
-                        ? { backgroundColor: cr.color, color: "#fff" }
-                        : undefined
-                    }
-                  >
-                    {cr.name}
-                  </Badge>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+          <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+            <h3 className="t-heading flex items-center gap-2 mb-4">
+              <Shield className="h-4 w-4" />
+              Custom Roles ({customRoles.length})
+            </h3>
+            <div className="flex flex-wrap gap-2">
+              {customRoles.map((cr: any) => (
+                <Badge
+                  key={cr.id}
+                  variant="secondary"
+                  style={
+                    cr.color
+                      ? { backgroundColor: cr.color, color: "#fff" }
+                      : undefined
+                  }
+                >
+                  {cr.name}
+                </Badge>
+              ))}
+            </div>
+          </div>
         )}
       </div>
 
@@ -698,7 +693,7 @@ export default function AdminOrgDetailPage({
                 value={editSlug}
                 onChange={(e) => setEditSlug(e.target.value)}
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-fg-3">
                 Only lowercase letters, numbers, and hyphens. Used internally.
               </p>
             </div>

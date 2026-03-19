@@ -48,7 +48,7 @@ function BuiltInRoleCard({ role }: { role: string }) {
     <div className="rounded-md border p-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Shield className="h-4 w-4 text-muted-foreground" />
+          <Shield className="h-4 w-4 text-fg-3" />
           <span className="font-medium text-sm">{roleLabels[role]}</span>
           <Badge variant="outline" className="text-xs">Built-in</Badge>
         </div>
@@ -127,7 +127,7 @@ export function RoleManager() {
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-sm font-medium">Custom Roles</h3>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-fg-3">
               Create roles with specific permission sets for your team
             </p>
           </div>
@@ -147,7 +147,7 @@ export function RoleManager() {
           </div>
         ) : roles.length === 0 ? (
           <div className="rounded-md border border-dashed p-6 text-center">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-fg-3">
               No custom roles yet. Create one to assign specific permissions to team members.
             </p>
           </div>
@@ -166,7 +166,7 @@ export function RoleManager() {
                     {role.name}
                   </Badge>
                   {role.description && (
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-xs text-fg-3">
                       {role.description}
                     </span>
                   )}
@@ -217,7 +217,7 @@ export function RoleManager() {
       <div className="space-y-3">
         <div>
           <h3 className="text-sm font-medium">Built-in Roles</h3>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-fg-3">
             Default roles with fixed permissions — expand to see what each role can do
           </p>
         </div>

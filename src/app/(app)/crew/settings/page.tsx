@@ -29,7 +29,7 @@ import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -118,18 +118,18 @@ export default function CrewSettingsPage() {
       <PageMeta title="Crew Settings" />
       <div className="space-y-8">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Crew Settings</h1>
-          <p className="text-muted-foreground">
+          <h1 className="t-title text-fg">Crew Settings</h1>
+          <p className="text-fg-3">
             Manage crew roles, skills, and other crew configuration.
           </p>
         </div>
 
         {/* ─── Roles Section ──────────────────────────────────────────────── */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <div className="flex items-center justify-between mb-4">
             <div>
-              <CardTitle className="text-base">Crew Roles</CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">
+              <h3 className="t-heading text-fg">Crew Roles</h3>
+              <p className="text-[13px] text-fg-3 mt-1">
                 Define roles that can be assigned to crew members and project
                 assignments. Each role can have a default rate.
               </p>
@@ -146,141 +146,139 @@ export default function CrewSettingsPage() {
                 Add Role
               </Button>
             </CanDo>
-          </CardHeader>
-          <CardContent>
-            {rolesLoading ? (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                Loading...
-              </p>
-            ) : !roles || roles.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                No roles defined yet. Create your first role to get started.
-              </p>
-            ) : (
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead className="hidden md:table-cell">
-                        Department
-                      </TableHead>
-                      <TableHead className="hidden md:table-cell">
-                        Default Rate
-                      </TableHead>
-                      <TableHead className="hidden md:table-cell">
-                        Members
-                      </TableHead>
-                      <TableHead className="w-20" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {(
-                      roles as {
-                        id: string;
-                        name: string;
-                        department: string | null;
-                        color: string | null;
-                        defaultRate: number | null;
-                        rateType: string | null;
-                        description: string | null;
-                        _count: { crewMembers: number };
-                      }[]
-                    ).map((role) => (
-                      <TableRow key={role.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            {role.color && (
-                              <div
-                                className="h-3 w-3 rounded-full"
-                                style={{ backgroundColor: role.color }}
-                              />
-                            )}
-                            <div>
-                              <span className="font-medium">{role.name}</span>
-                              {role.description && (
-                                <p className="text-xs text-muted-foreground">
-                                  {role.description}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="hidden md:table-cell text-muted-foreground">
-                          {role.department || "\u2014"}
-                        </TableCell>
-                        <TableCell className="hidden md:table-cell">
-                          {role.defaultRate != null &&
-                          Number(role.defaultRate) > 0 ? (
-                            <span>
-                              ${Number(role.defaultRate).toFixed(2)}{" "}
-                              <span className="text-muted-foreground text-xs">
-                                {crewRateTypeLabels[role.rateType || "DAILY"] ||
-                                  ""}
-                              </span>
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">
-                              {"\u2014"}
-                            </span>
+          </div>
+          {rolesLoading ? (
+            <p className="text-sm text-fg-3 text-center py-4">
+              Loading...
+            </p>
+          ) : !roles || roles.length === 0 ? (
+            <p className="text-sm text-fg-3 text-center py-4">
+              No roles defined yet. Create your first role to get started.
+            </p>
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead className="hidden md:table-cell">
+                      Department
+                    </TableHead>
+                    <TableHead className="hidden md:table-cell">
+                      Default Rate
+                    </TableHead>
+                    <TableHead className="hidden md:table-cell">
+                      Members
+                    </TableHead>
+                    <TableHead className="w-20" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(
+                    roles as {
+                      id: string;
+                      name: string;
+                      department: string | null;
+                      color: string | null;
+                      defaultRate: number | null;
+                      rateType: string | null;
+                      description: string | null;
+                      _count: { crewMembers: number };
+                    }[]
+                  ).map((role) => (
+                    <TableRow key={role.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          {role.color && (
+                            <div
+                              className="h-3 w-3 rounded-full"
+                              style={{ backgroundColor: role.color }}
+                            />
                           )}
-                        </TableCell>
-                        <TableCell className="hidden md:table-cell">
-                          <Badge variant="secondary" className="text-xs">
-                            <Users className="mr-1 h-3 w-3" />
-                            {role._count.crewMembers}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1">
-                            <CanDo resource="crew" action="update">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7"
-                                onClick={() => {
-                                  setEditingRole(role);
-                                  setRoleDialogOpen(true);
-                                }}
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
-                            </CanDo>
-                            <CanDo resource="crew" action="delete">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 text-destructive"
-                                disabled={role._count.crewMembers > 0}
-                                onClick={() => {
-                                  if (
-                                    confirm(
-                                      `Delete role "${role.name}"? This cannot be undone.`
-                                    )
-                                  )
-                                    deleteRoleMut.mutate(role.id);
-                                }}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </CanDo>
+                          <div>
+                            <span className="font-medium">{role.name}</span>
+                            {role.description && (
+                              <p className="text-xs text-fg-3">
+                                {role.description}
+                              </p>
+                            )}
                           </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                        </div>
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell text-fg-3">
+                        {role.department || "\u2014"}
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        {role.defaultRate != null &&
+                        Number(role.defaultRate) > 0 ? (
+                          <span className="t-data">
+                            ${Number(role.defaultRate).toFixed(2)}{" "}
+                            <span className="text-fg-3 text-xs">
+                              {crewRateTypeLabels[role.rateType || "DAILY"] ||
+                                ""}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="text-fg-3">
+                            {"\u2014"}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        <Badge variant="secondary" className="text-xs">
+                          <Users className="mr-1 h-3 w-3" />
+                          {role._count.crewMembers}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <CanDo resource="crew" action="update">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => {
+                                setEditingRole(role);
+                                setRoleDialogOpen(true);
+                              }}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          </CanDo>
+                          <CanDo resource="crew" action="delete">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-destructive"
+                              disabled={role._count.crewMembers > 0}
+                              onClick={() => {
+                                if (
+                                  confirm(
+                                    `Delete role "${role.name}"? This cannot be undone.`
+                                  )
+                                )
+                                  deleteRoleMut.mutate(role.id);
+                              }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </CanDo>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
 
         {/* ─── Skills Section ─────────────────────────────────────────────── */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <div className="flex items-center justify-between mb-4">
             <div>
-              <CardTitle className="text-base">Crew Skills</CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">
+              <h3 className="t-heading text-fg">Crew Skills</h3>
+              <p className="text-[13px] text-fg-3 mt-1">
                 Skills are tags that describe what a crew member can do. Use them
                 to filter when searching for available crew.
               </p>
@@ -291,82 +289,80 @@ export default function CrewSettingsPage() {
                 Add Skill
               </Button>
             </CanDo>
-          </CardHeader>
-          <CardContent>
-            {skillsLoading ? (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                Loading...
-              </p>
-            ) : !skills || skills.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                No skills defined yet. Create skills that crew members can be
-                tagged with.
-              </p>
-            ) : (
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead className="hidden md:table-cell">
-                        Category
-                      </TableHead>
-                      <TableHead className="hidden md:table-cell">
-                        Members
-                      </TableHead>
-                      <TableHead className="w-10" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {(
-                      skills as {
-                        id: string;
-                        name: string;
-                        category: string | null;
-                        _count: { crewMembers: number };
-                      }[]
-                    ).map((skill) => (
-                      <TableRow key={skill.id}>
-                        <TableCell className="font-medium">
-                          {skill.name}
-                        </TableCell>
-                        <TableCell className="hidden md:table-cell text-muted-foreground">
-                          {skill.category || "\u2014"}
-                        </TableCell>
-                        <TableCell className="hidden md:table-cell">
-                          <Badge variant="secondary" className="text-xs">
-                            <Users className="mr-1 h-3 w-3" />
-                            {skill._count.crewMembers}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <CanDo resource="crew" action="delete">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-destructive"
-                              disabled={skill._count.crewMembers > 0}
-                              onClick={() => {
-                                if (
-                                  confirm(
-                                    `Delete skill "${skill.name}"? This cannot be undone.`
-                                  )
+          </div>
+          {skillsLoading ? (
+            <p className="text-sm text-fg-3 text-center py-4">
+              Loading...
+            </p>
+          ) : !skills || skills.length === 0 ? (
+            <p className="text-sm text-fg-3 text-center py-4">
+              No skills defined yet. Create skills that crew members can be
+              tagged with.
+            </p>
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead className="hidden md:table-cell">
+                      Category
+                    </TableHead>
+                    <TableHead className="hidden md:table-cell">
+                      Members
+                    </TableHead>
+                    <TableHead className="w-10" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(
+                    skills as {
+                      id: string;
+                      name: string;
+                      category: string | null;
+                      _count: { crewMembers: number };
+                    }[]
+                  ).map((skill) => (
+                    <TableRow key={skill.id}>
+                      <TableCell className="font-medium">
+                        {skill.name}
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell text-fg-3">
+                        {skill.category || "\u2014"}
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        <Badge variant="secondary" className="text-xs">
+                          <Users className="mr-1 h-3 w-3" />
+                          {skill._count.crewMembers}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <CanDo resource="crew" action="delete">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive"
+                            disabled={skill._count.crewMembers > 0}
+                            onClick={() => {
+                              if (
+                                confirm(
+                                  `Delete skill "${skill.name}"? This cannot be undone.`
                                 )
-                                  deleteSkillMut.mutate(skill.id);
-                              }}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </CanDo>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                              )
+                                deleteSkillMut.mutate(skill.id);
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </CanDo>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ─── Role Dialog ────────────────────────────────────────────────── */}

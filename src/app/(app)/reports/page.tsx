@@ -32,12 +32,14 @@ import {
   Play,
   Edit,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/layout/page-header";
+import { SectionHeader } from "@/components/layout/page-layouts";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog";
-import { Separator } from "@/components/ui/separator";
 import { RequirePermission } from "@/components/auth/require-permission";
+import { FadeIn, StaggerList, StaggerItem, AnimatedNumber } from "@/components/ui/motion";
 import { useActiveOrganization } from "@/lib/auth-client";
 import {
   getReportsSummary,
@@ -130,274 +132,286 @@ export default function ReportsPage() {
 
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
+  // Build contextual description
+  const totalAssets = !summaryLoading && d
+    ? ((d.totalSerializedAssets as number) || 0) + ((d.totalBulkAssets as number) || 0)
+    : 0;
+  const categoryCount = Object.keys(reportsByCategory).length;
+  const reportCount = PRE_BUILT_REPORTS.length;
+  const description = !summaryLoading && d
+    ? `${totalAssets.toLocaleString()} assets tracked across ${reportCount} available reports`
+    : "Utilisation, revenue, and operational insights";
+
   return (
     <RequirePermission resource="reports" action="view">
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Reports</h1>
-            <p className="text-muted-foreground">Business reports and analytics</p>
-          </div>
-          <Button render={<Link href="/reports/builder" />}>
-            <Plus className="mr-1.5 h-4 w-4" /> Custom Report
-          </Button>
-        </div>
+      <div className="space-y-8">
+        <FadeIn>
+          <PageHeader
+            title="Reports"
+            description={description}
+            actions={
+              <Button render={<Link href="/reports/builder" />}>
+                <Plus className="mr-1.5 h-4 w-4" /> Custom Report
+              </Button>
+            }
+          />
+        </FadeIn>
 
         {/* Quick Stats */}
         {!summaryLoading && d && (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Serialized Assets</CardTitle>
-                <Package className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{d.totalSerializedAssets as number}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Bulk Assets</CardTitle>
-                <Boxes className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{d.totalBulkAssets as number}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Clients</CardTitle>
-                <Users className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{d.totalClients as number}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-                <DollarSign className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  ${((d.totalRevenue as number) || 0).toLocaleString("en-AU", {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
+          <FadeIn delay={0.05}>
+            <SectionHeader label="Overview" />
+            <StaggerList className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <StaggerItem>
+                <div className="flex items-center gap-3 py-2">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
+                    <Package className="h-4 w-4 text-primary" />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold t-data leading-tight">
+                      <AnimatedNumber value={d.totalSerializedAssets as number} />
+                    </div>
+                    <p className="text-xs text-fg-3">Serialized Assets</p>
+                  </div>
                 </div>
-                <p className="text-xs text-muted-foreground">Completed &amp; invoiced projects</p>
-              </CardContent>
-            </Card>
-          </div>
+              </StaggerItem>
+              <StaggerItem>
+                <div className="flex items-center gap-3 py-2">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
+                    <Boxes className="h-4 w-4 text-primary" />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold t-data leading-tight">
+                      <AnimatedNumber value={d.totalBulkAssets as number} />
+                    </div>
+                    <p className="text-xs text-fg-3">Bulk Assets</p>
+                  </div>
+                </div>
+              </StaggerItem>
+              <StaggerItem>
+                <div className="flex items-center gap-3 py-2">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
+                    <Users className="h-4 w-4 text-primary" />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold t-data leading-tight">
+                      <AnimatedNumber value={d.totalClients as number} />
+                    </div>
+                    <p className="text-xs text-fg-3">Clients</p>
+                  </div>
+                </div>
+              </StaggerItem>
+              <StaggerItem>
+                <div className="flex items-center gap-3 py-2">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
+                    <DollarSign className="h-4 w-4 text-primary" />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold t-data leading-tight">
+                      ${((d.totalRevenue as number) || 0).toLocaleString("en-AU", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </div>
+                    <p className="text-xs text-fg-3">Total Revenue</p>
+                  </div>
+                </div>
+              </StaggerItem>
+            </StaggerList>
+          </FadeIn>
         )}
 
         {/* Status Breakdowns */}
         {!summaryLoading && d && (
-          <div className="grid gap-4 lg:grid-cols-3">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
+          <FadeIn delay={0.1}>
+            <SectionHeader label="Status Breakdown" />
+            <div className="mt-3 grid gap-6 lg:grid-cols-3">
+              <div>
+                <h3 className="t-heading text-fg flex items-center gap-2 mb-3">
                   <Package className="h-4 w-4" /> Assets by Status
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
+                </h3>
                 {assetsByStatus.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No assets yet.</p>
+                  <p className="text-sm text-fg-3">No assets yet.</p>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     {assetsByStatus.map((g) => (
-                      <div key={g.status} className="flex items-center justify-between">
+                      <div key={g.status} className="flex items-center justify-between py-1">
                         <span className="text-sm">{assetStatusLabels[g.status] || formatLabel(g.status)}</span>
                         <Badge variant="secondary">{g.count}</Badge>
                       </div>
                     ))}
                   </div>
                 )}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
+              </div>
+              <div>
+                <h3 className="t-heading text-fg flex items-center gap-2 mb-3">
                   <FolderOpen className="h-4 w-4" /> Projects by Status
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
+                </h3>
                 {projectsByStatus.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No projects yet.</p>
+                  <p className="text-sm text-fg-3">No projects yet.</p>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     {projectsByStatus.map((g) => (
-                      <div key={g.status} className="flex items-center justify-between">
+                      <div key={g.status} className="flex items-center justify-between py-1">
                         <span className="text-sm">{projectStatusLabels[g.status] || formatLabel(g.status)}</span>
                         <Badge variant="secondary">{g.count}</Badge>
                       </div>
                     ))}
                   </div>
                 )}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
+              </div>
+              <div>
+                <h3 className="t-heading text-fg flex items-center gap-2 mb-3">
                   <Wrench className="h-4 w-4" /> Maintenance
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
+                </h3>
                 {maintenanceSummary.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No records yet.</p>
+                  <p className="text-sm text-fg-3">No records yet.</p>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     {maintenanceSummary.map((g) => (
-                      <div key={g.status} className="flex items-center justify-between">
+                      <div key={g.status} className="flex items-center justify-between py-1">
                         <span className="text-sm">{maintenanceStatusLabels[g.status] || formatLabel(g.status)}</span>
                         <Badge variant="secondary">{g.count}</Badge>
                       </div>
                     ))}
                   </div>
                 )}
-              </CardContent>
-            </Card>
-          </div>
+              </div>
+            </div>
+          </FadeIn>
         )}
 
         {/* Pinned Reports */}
         {pinnedReports.length > 0 && (
-          <>
-            <Separator />
-            <div>
-              <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                <Pin className="h-4 w-4" /> Pinned Reports
-              </h2>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {pinnedReports.map((report) => (
-                  <Card
-                    key={report.id}
-                    className="cursor-pointer transition-colors hover:border-primary"
+          <FadeIn delay={0.15}>
+            <SectionHeader label="Pinned" />
+            <StaggerList className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {pinnedReports.map((report) => (
+                <StaggerItem key={report.id}>
+                  <div
+                    className="rounded-lg border-l-2 border-l-primary bg-bg-surface p-4 surface-ring cursor-pointer transition-colors hover:ring-primary/50"
                     onClick={() => setActiveReport({ config: report.config, title: report.name })}
                   >
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <p className="font-medium">{report.name}</p>
-                          {report.description && (
-                            <p className="text-sm text-muted-foreground mt-0.5">{report.description}</p>
-                          )}
-                        </div>
-                        <Badge variant="outline">{report.dataSource}</Badge>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className="font-medium">{report.name}</p>
+                        {report.description && (
+                          <p className="text-sm text-fg-3 mt-0.5">{report.description}</p>
+                        )}
                       </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          </>
+                      <Badge variant="outline">{report.dataSource}</Badge>
+                    </div>
+                  </div>
+                </StaggerItem>
+              ))}
+            </StaggerList>
+          </FadeIn>
         )}
 
         {/* Pre-built Reports */}
-        <Separator />
-        <div>
-          <h2 className="text-lg font-semibold mb-3">Report Library</h2>
-          {Object.entries(reportsByCategory).map(([category, reports]) => (
-            <div key={category} className="mb-6">
-              <h3 className="text-sm font-medium text-muted-foreground uppercase mb-2">{category}</h3>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {reports.map((report) => (
-                  <Card
-                    key={report.id}
-                    className="cursor-pointer transition-colors hover:border-primary"
-                    onClick={() => setActiveReport({ config: report.config, title: report.name })}
-                  >
-                    <CardContent className="flex items-start gap-3 p-4">
-                      <div className="text-muted-foreground mt-0.5">
-                        {ICON_MAP[report.icon] || <BarChart3 className="h-4 w-4" />}
+        <FadeIn delay={0.2}>
+          <SectionHeader label="Report Library" />
+          <div className="mt-3">
+            {Object.entries(reportsByCategory).map(([category, reports]) => (
+              <div key={category} className="mb-6 last:mb-0">
+                <h3 className="text-[13px] font-medium text-fg-3 uppercase mb-2">{category}</h3>
+                <StaggerList className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {reports.map((report) => (
+                    <StaggerItem key={report.id}>
+                      <div
+                        className="group rounded-lg p-4 cursor-pointer transition-colors hover:bg-bg-surface"
+                        onClick={() => setActiveReport({ config: report.config, title: report.name })}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="text-fg-3 mt-0.5 transition-colors group-hover:text-primary">
+                            {ICON_MAP[report.icon] || <BarChart3 className="h-4 w-4" />}
+                          </div>
+                          <div>
+                            <p className="font-medium text-sm">{report.name}</p>
+                            <p className="text-xs text-fg-3">{report.description}</p>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-medium text-sm">{report.name}</p>
-                        <p className="text-xs text-muted-foreground">{report.description}</p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                    </StaggerItem>
+                  ))}
+                </StaggerList>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </FadeIn>
 
         {/* My Reports / Saved Reports */}
         {myReports.length > 0 && (
-          <>
-            <Separator />
-            <div>
-              <h2 className="text-lg font-semibold mb-3">My Reports</h2>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {myReports.map((report) => (
-                  <Card key={report.id}>
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between mb-2">
-                        <div>
-                          <p className="font-medium text-sm">{report.name}</p>
-                          {report.description && (
-                            <p className="text-xs text-muted-foreground">{report.description}</p>
-                          )}
-                        </div>
-                        <div className="flex gap-1">
-                          {report.isShared && <Badge variant="outline">Shared</Badge>}
-                        </div>
+          <FadeIn delay={0.25}>
+            <SectionHeader label="My Reports" />
+            <StaggerList className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {myReports.map((report) => (
+                <StaggerItem key={report.id}>
+                  <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <p className="font-medium text-sm">{report.name}</p>
+                        {report.description && (
+                          <p className="text-xs text-fg-3">{report.description}</p>
+                        )}
                       </div>
-                      <div className="flex gap-1 mt-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setActiveReport({ config: report.config, title: report.name })}
-                        >
-                          <Play className="mr-1 h-3 w-3" /> Run
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          render={<Link href={`/reports/builder/${report.id}`} />}
-                        >
-                          <Edit className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => pinMutation.mutate(report.id)}
-                        >
-                          {report.isPinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
-                        </Button>
-                        <Dialog open={deleteTarget === report.id} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-                          <DialogTrigger render={<Button variant="ghost" size="sm" onClick={() => setDeleteTarget(report.id)} />}>
-                            <Trash2 className="h-3 w-3" />
-                          </DialogTrigger>
-                          <DialogContent>
-                            <DialogHeader>
-                              <DialogTitle>Delete Report</DialogTitle>
-                            </DialogHeader>
-                            <p className="text-sm text-muted-foreground">
-                              Are you sure you want to delete &quot;{report.name}&quot;?
-                            </p>
-                            <div className="flex justify-end gap-2 mt-4">
-                              <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
-                              <Button
-                                variant="destructive"
-                                onClick={() => {
-                                  deleteMutation.mutate(report.id);
-                                  setDeleteTarget(null);
-                                }}
-                              >
-                                Delete
-                              </Button>
-                            </div>
-                          </DialogContent>
-                        </Dialog>
+                      <div className="flex gap-1">
+                        {report.isShared && <Badge variant="outline">Shared</Badge>}
                       </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          </>
+                    </div>
+                    <div className="flex gap-1 mt-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setActiveReport({ config: report.config, title: report.name })}
+                      >
+                        <Play className="mr-1 h-3 w-3" /> Run
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        render={<Link href={`/reports/builder/${report.id}`} />}
+                      >
+                        <Edit className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => pinMutation.mutate(report.id)}
+                      >
+                        {report.isPinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
+                      </Button>
+                      <Dialog open={deleteTarget === report.id} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+                        <DialogTrigger render={<Button variant="ghost" size="sm" onClick={() => setDeleteTarget(report.id)} />}>
+                          <Trash2 className="h-3 w-3" />
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Delete Report</DialogTitle>
+                          </DialogHeader>
+                          <p className="text-sm text-fg-3">
+                            Are you sure you want to delete &quot;{report.name}&quot;?
+                          </p>
+                          <div className="flex justify-end gap-2 mt-4">
+                            <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+                            <Button
+                              variant="destructive"
+                              onClick={() => {
+                                deleteMutation.mutate(report.id);
+                                setDeleteTarget(null);
+                              }}
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+                  </div>
+                </StaggerItem>
+              ))}
+            </StaggerList>
+          </FadeIn>
         )}
 
         {/* Active Report Dialog */}

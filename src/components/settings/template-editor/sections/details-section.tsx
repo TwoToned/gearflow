@@ -32,7 +32,7 @@ export function DetailsSection({ settings, templateType, onSettingsChange }: Det
       {!isCallSheet && !isDelivery && (
         <>
           <div className="space-y-1">
-            <Label className="text-xs font-medium text-muted-foreground">Client Information</Label>
+            <Label className="text-xs font-medium text-fg-3">Client Information</Label>
             <div className="space-y-0.5">
               <SettingRow
                 label="Client name"
@@ -68,7 +68,7 @@ export function DetailsSection({ settings, templateType, onSettingsChange }: Det
 
       {/* Project Fields */}
       <div className="space-y-1">
-        <Label className="text-xs font-medium text-muted-foreground">Project Information</Label>
+        <Label className="text-xs font-medium text-fg-3">Project Information</Label>
         <div className="space-y-0.5">
           <SettingRow
             label="Project name"

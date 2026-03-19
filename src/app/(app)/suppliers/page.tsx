@@ -1,20 +1,26 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { SupplierTable } from "@/components/suppliers/supplier-table";
 import { RequirePermission } from "@/components/auth/require-permission";
+import { ListPageLayout } from "@/components/layout/page-layouts";
+import { useKeyboardShortcut } from "@/hooks/use-keyboard-shortcut";
+import { FadeIn } from "@/components/ui/motion";
 
 export default function SuppliersPage() {
+  const router = useRouter();
+  useKeyboardShortcut("n", () => router.push("/suppliers/new"));
+
   return (
-    <RequirePermission resource="supplier" action="read">
-      <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Suppliers</h1>
-          <p className="text-muted-foreground">
-            Manage your suppliers and vendors.
-          </p>
-        </div>
-        <SupplierTable />
-      </div>
-    </RequirePermission>
+    <FadeIn>
+      <RequirePermission resource="supplier" action="read">
+        <ListPageLayout
+          title="Suppliers"
+          description="Vendors and suppliers you purchase or hire from."
+        >
+          <SupplierTable />
+        </ListPageLayout>
+      </RequirePermission>
+    </FadeIn>
   );
 }

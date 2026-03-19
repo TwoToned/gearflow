@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCanDo } from "@/lib/use-permissions";
+import { useActiveOrganization } from "@/lib/auth-client";
 
 const settingsNav = [
   { title: "General", href: "/settings", icon: Building2, permission: "orgSettings" as const },
@@ -39,12 +40,13 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   const canReadSettings = useCanDo("orgSettings", "read");
   const canReadMembers = useCanDo("orgMembers", "read");
   const canManageTemplates = useCanDo("document", "manage_templates");
+  const { data: activeOrg } = useActiveOrganization();
 
   if (!canReadSettings && !canReadMembers) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
         <h2 className="text-xl font-semibold">Access Denied</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
+        <p className="mt-2 text-sm text-fg-3">
           You don&apos;t have permission to access settings.
         </p>
       </div>
@@ -58,13 +60,20 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     return true;
   });
 
+  const orgInitial = activeOrg?.name?.charAt(0)?.toUpperCase() ?? "O";
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-        <p className="text-muted-foreground">
-          Manage your organization and team.
-        </p>
+      <div className="flex items-center gap-3">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-sm font-bold text-primary">
+          {orgInitial}
+        </div>
+        <div>
+          <h1 className="t-title text-fg">Settings</h1>
+          <p className="text-[13px] text-fg-3">
+            {activeOrg?.name ?? "Organization"}
+          </p>
+        </div>
       </div>
 
       <div className="flex flex-col md:flex-row gap-6">
@@ -81,8 +90,8 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
                 className={cn(
                   "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap",
                   isActive
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground"
+                    ? "bg-bg-elevated text-fg"
+                    : "text-fg-2 hover:bg-bg-elevated/50 hover:text-fg"
                 )}
               >
                 <item.icon className="h-4 w-4" />

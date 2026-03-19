@@ -7,7 +7,7 @@ import {
   Package, Boxes, FolderOpen, Box, List, Users, MapPin,
   Wrench, ScrollText, HardHat, UserCheck, Plus, X, Save,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -197,24 +197,24 @@ export function ReportBuilder({ initialConfig, savedReportId, savedReportName }:
           <h2 className="text-lg font-semibold mb-4">Choose Data Source</h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {DATA_SOURCES.map((ds) => (
-              <Card
+              <div
                 key={ds}
-                className="cursor-pointer transition-colors hover:border-primary"
+                className="rounded-lg bg-bg-surface p-4 surface-ring cursor-pointer transition-colors hover:ring-primary"
                 onClick={() => handleSelectDataSource(ds)}
               >
-                <CardContent className="flex items-start gap-3 p-4">
-                  <div className="text-muted-foreground mt-0.5">
+                <div className="flex items-start gap-3">
+                  <div className="text-fg-3 mt-0.5">
                     {ICON_MAP[DATA_SOURCE_ICON_MAP[ds]]}
                   </div>
                   <div>
                     <p className="font-medium">{DATA_SOURCE_LABELS[ds]}</p>
-                    <p className="text-sm text-muted-foreground">{DATA_SOURCE_DESCRIPTIONS[ds]}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
+                    <p className="text-sm text-fg-3">{DATA_SOURCE_DESCRIPTIONS[ds]}</p>
+                    <p className="text-xs text-fg-3 mt-1">
                       {FIELD_DEFINITIONS[ds].length} fields
                     </p>
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             ))}
           </div>
         </div>
@@ -235,18 +235,15 @@ export function ReportBuilder({ initialConfig, savedReportId, savedReportName }:
           </div>
 
           {/* Columns */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Columns</CardTitle>
-            </CardHeader>
-            <CardContent>
+          <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+            <h3 className="t-heading text-fg mb-4">Columns</h3>
               <div className="space-y-3">
                 {["core", "related", "computed"].map((section) => {
                   const sectionFields = fields.filter((f) => f.section === section);
                   if (sectionFields.length === 0) return null;
                   return (
                     <div key={section}>
-                      <p className="text-xs font-medium text-muted-foreground uppercase mb-2">
+                      <p className="text-xs font-medium text-fg-3 uppercase mb-2">
                         {section === "core" ? "Core Fields" : section === "related" ? "Related Data" : "Computed Fields"}
                       </p>
                       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -267,22 +264,18 @@ export function ReportBuilder({ initialConfig, savedReportId, savedReportName }:
                   );
                 })}
               </div>
-            </CardContent>
-          </Card>
+          </div>
 
           {/* Filters */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base">Filters</CardTitle>
-                <Button variant="outline" size="sm" onClick={addFilter}>
-                  <Plus className="mr-1.5 h-3.5 w-3.5" /> Add Filter
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
+          <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="t-heading text-fg">Filters</h3>
+              <Button variant="outline" size="sm" onClick={addFilter}>
+                <Plus className="mr-1.5 h-3.5 w-3.5" /> Add Filter
+              </Button>
+            </div>
               {filters.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No filters applied. All records will be included.</p>
+                <p className="text-sm text-fg-3">No filters applied. All records will be included.</p>
               ) : (
                 <div className="space-y-3">
                   {filters.map((filter, i) => {
@@ -367,6 +360,7 @@ export function ReportBuilder({ initialConfig, savedReportId, savedReportName }:
 
               {/* Date Range */}
               <Separator className="my-4" />
+
               <div>
                 <Label className="text-sm font-medium">Date Range (optional)</Label>
                 <div className="flex flex-wrap items-end gap-2 mt-2">
@@ -434,28 +428,25 @@ export function ReportBuilder({ initialConfig, savedReportId, savedReportName }:
                   )}
                 </div>
               </div>
-            </CardContent>
-          </Card>
+          </div>
 
           {/* Grouping */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center gap-3">
-                <CardTitle className="text-base">Group & Aggregate</CardTitle>
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <Checkbox
-                    checked={enableGrouping}
-                    onCheckedChange={(checked) => {
-                      setEnableGrouping(!!checked);
-                      if (!checked) setGroupBy(undefined);
-                    }}
-                  />
-                  Enable grouping
-                </label>
-              </div>
-            </CardHeader>
+          <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <h3 className="t-heading text-fg">Group & Aggregate</h3>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <Checkbox
+                  checked={enableGrouping}
+                  onCheckedChange={(checked) => {
+                    setEnableGrouping(!!checked);
+                    if (!checked) setGroupBy(undefined);
+                  }}
+                />
+                Enable grouping
+              </label>
+            </div>
             {enableGrouping && (
-              <CardContent>
+              <div>
                 <div className="flex flex-wrap items-end gap-2">
                   <div className="min-w-[200px]">
                     <Label className="text-xs">Group By Field</Label>
@@ -581,16 +572,13 @@ export function ReportBuilder({ initialConfig, savedReportId, savedReportName }:
                     </div>
                   </div>
                 )}
-              </CardContent>
+              </div>
             )}
-          </Card>
+          </div>
 
           {/* Sort & Limit */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Sort & Limit</CardTitle>
-            </CardHeader>
-            <CardContent>
+          <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+            <h3 className="t-heading text-fg mb-4">Sort & Limit</h3>
               <div className="flex flex-wrap items-end gap-2">
                 <div className="min-w-[200px]">
                   <Label className="text-xs">Sort By</Label>
@@ -645,8 +633,7 @@ export function ReportBuilder({ initialConfig, savedReportId, savedReportName }:
                   Include inactive
                 </label>
               </div>
-            </CardContent>
-          </Card>
+          </div>
 
           {/* Actions */}
           <div className="flex flex-wrap gap-2">

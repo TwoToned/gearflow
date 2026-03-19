@@ -2,7 +2,7 @@
 
 import { useState, Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Download, ChevronDown, ChevronRight } from "lucide-react";
+import { Download } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 
@@ -10,23 +10,10 @@ import { getActivityLogs, exportActivityLogCSV } from "@/server/activity-log";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
-
-const actionColors: Record<string, string> = {
-  CREATE: "bg-emerald-500/15 text-emerald-500",
-  UPDATE: "bg-blue-500/15 text-blue-500",
-  DELETE: "bg-red-500/15 text-red-500",
-  STATUS_CHANGE: "bg-purple-500/15 text-purple-500",
-  CHECK_OUT: "bg-amber-500/15 text-amber-500",
-  CHECK_IN: "bg-amber-500/15 text-amber-500",
-  SCAN: "bg-gray-500/15 text-gray-500",
-  ASSIGN: "bg-teal-500/15 text-teal-500",
-  UNASSIGN: "bg-teal-500/15 text-teal-500",
-  EXPORT: "bg-blue-500/15 text-blue-500",
-  IMPORT: "bg-blue-500/15 text-blue-500",
-  INVITE: "bg-purple-500/15 text-purple-500",
-};
+import { PageHeader } from "@/components/layout/page-header";
+import { FadeIn } from "@/components/ui/motion";
 
 const entityTypeLabels: Record<string, string> = {
   asset: "Asset",
@@ -64,36 +51,6 @@ const actionLabels: Record<string, string> = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyLog = Record<string, any>;
 
-function formatDetails(details: unknown): { field: string; from: string; to: string }[] | null {
-  if (!details || typeof details !== "object") return null;
-  const d = details as Record<string, unknown>;
-
-  if (Array.isArray(d.changes)) {
-    return d.changes.map((c: Record<string, unknown>) => ({
-      field: String(c.field ?? ""),
-      from: String(c.from ?? ""),
-      to: String(c.to ?? ""),
-    }));
-  }
-
-  if (d.before && d.after && typeof d.before === "object" && typeof d.after === "object") {
-    const before = d.before as Record<string, unknown>;
-    const after = d.after as Record<string, unknown>;
-    const allKeys = new Set([...Object.keys(before), ...Object.keys(after)]);
-    const changes: { field: string; from: string; to: string }[] = [];
-    for (const key of allKeys) {
-      if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) {
-        changes.push({ field: key, from: String(before[key] ?? ""), to: String(after[key] ?? "") });
-      }
-    }
-    return changes.length > 0 ? changes : null;
-  }
-
-  const entries = Object.entries(d);
-  if (entries.length === 0) return null;
-  return entries.map(([key, value]) => ({ field: key, from: "", to: String(value ?? "") }));
-}
-
 function useActivityColumns(): ColumnDef<AnyLog>[] {
   return [
     {
@@ -113,7 +70,7 @@ function useActivityColumns(): ColumnDef<AnyLog>[] {
       responsiveHide: "sm",
       sortable: false,
       cell: (row) => (
-        <span className="text-sm">{row.user?.name || row.userName || "—"}</span>
+        <span className="text-sm">{row.user?.name || row.userName || "\u2014"}</span>
       ),
     },
     {
@@ -124,9 +81,7 @@ function useActivityColumns(): ColumnDef<AnyLog>[] {
       filterType: "enum",
       filterOptions: Object.entries(actionLabels).map(([value, label]) => ({ value, label })),
       cell: (row) => (
-        <Badge variant="outline" className={actionColors[row.action] || "bg-gray-500/15 text-gray-500"}>
-          {actionLabels[row.action] || row.action}
-        </Badge>
+        <StatusIndicator category="activity" value={row.action} label={actionLabels[row.action] || row.action} variant="pill" />
       ),
     },
     {
@@ -138,7 +93,7 @@ function useActivityColumns(): ColumnDef<AnyLog>[] {
       responsiveHide: "md",
       filterOptions: Object.entries(entityTypeLabels).map(([value, label]) => ({ value, label })),
       cell: (row) => (
-        <span className="text-sm text-muted-foreground">
+        <span className="text-sm text-fg-3">
           {entityTypeLabels[row.entityType] || row.entityType}
         </span>
       ),
@@ -213,16 +168,17 @@ function ActivityLogContent() {
     }
   }
 
+  // Build contextual description
+  const description = total > 0
+    ? `${total.toLocaleString()} recorded ${total === 1 ? "event" : "events"} across your workspace`
+    : "Audit trail of every action taken by your team.";
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Activity Log</h1>
-          <p className="text-muted-foreground">
-            Track all changes and actions across your organization.
-          </p>
-        </div>
-      </div>
+    <FadeIn className="space-y-6">
+      <PageHeader
+        title="Activity Log"
+        description={description}
+      />
 
       <DataTable
         data={items}
@@ -244,7 +200,7 @@ function ActivityLogContent() {
         onToggleColumnVisibility={toggleColumnVisibility}
         onResetPreferences={resetPreferences}
         isLoading={isLoading}
-        emptyTitle="No activity logs found"
+        emptyPreset="activity"
         toolbarActions={
           <Button
             variant="outline"
@@ -258,13 +214,13 @@ function ActivityLogContent() {
           </Button>
         }
       />
-    </div>
+    </FadeIn>
   );
 }
 
 export default function ActivityLogPage() {
   return (
-    <Suspense fallback={<div className="p-6 text-muted-foreground">Loading...</div>}>
+    <Suspense fallback={<div className="p-6 text-fg-3">Loading...</div>}>
       <ActivityLogContent />
     </Suspense>
   );

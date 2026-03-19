@@ -9,6 +9,7 @@ import { getProjectPullSheet } from "@/server/warehouse";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import {
   Tooltip,
   TooltipContent,
@@ -23,14 +24,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-
-const statusColors: Record<string, string> = {
-  CONFIRMED: "bg-green-500/10 text-green-500 border-green-500/20",
-  PREPPING: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  CHECKED_OUT: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  ON_SITE: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  RETURNED: "bg-teal-500/10 text-teal-500 border-teal-500/20",
-};
 
 const statusLabels: Record<string, string> = {
   CONFIRMED: "Confirmed",
@@ -142,11 +135,11 @@ export default function PullSheetPage({
   });
 
   if (isLoading) {
-    return <div className="text-muted-foreground">Loading...</div>;
+    return <div className="text-fg-3">Loading...</div>;
   }
 
   if (!data) {
-    return <div className="text-muted-foreground">Project not found.</div>;
+    return <div className="text-fg-3">Project not found.</div>;
   }
 
   const project = data.project;
@@ -168,7 +161,7 @@ export default function PullSheetPage({
         >
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <span className="text-sm text-muted-foreground">
+        <span className="text-sm text-fg-3">
           Back to warehouse view
         </span>
         <div className="ml-auto">
@@ -181,25 +174,20 @@ export default function PullSheetPage({
 
       {/* Print header */}
       <div className="print:mb-6">
-        <h1 className="text-2xl font-bold tracking-tight print:text-xl">
+        <h1 className="t-title text-fg print:text-xl">
           Pull Sheet
         </h1>
         <div className="flex items-center gap-3 mt-1">
-          <span className="font-mono text-sm text-muted-foreground">
+          <span className="font-mono text-sm text-fg-3">
             {project.projectNumber}
           </span>
-          <Badge
-            variant="outline"
-            className={statusColors[project.status] || ""}
-          >
-            {statusLabels[project.status] || project.status}
-          </Badge>
+          <StatusIndicator category="project" value={project.status} label={statusLabels[project.status] || project.status} variant="pill" />
         </div>
         <p className="text-lg font-semibold mt-1">{project.name}</p>
         {project.client && (
-          <p className="text-muted-foreground">{project.client.name}</p>
+          <p className="text-fg-3">{project.client.name}</p>
         )}
-        <div className="flex gap-6 text-sm text-muted-foreground mt-2">
+        <div className="flex gap-6 text-sm text-fg-3 mt-2">
           <span>
             Rental: {formatDate(project.rentalStartDate as unknown as string | null)} –{" "}
             {formatDate(project.rentalEndDate as unknown as string | null)}
@@ -212,13 +200,13 @@ export default function PullSheetPage({
 
       {/* Equipment grouped */}
       {allGroups.length === 0 ? (
-        <p className="text-muted-foreground text-center py-8">
+        <p className="text-fg-3 text-center py-8">
           No equipment items on this project.
         </p>
       ) : (
         allGroups.map((group) => (
           <div key={group.name}>
-            <h3 className="text-sm font-semibold text-muted-foreground mb-2 print:text-black">
+            <h3 className="text-sm font-semibold text-fg-3 mb-2 print:text-black">
               {group.name}
             </h3>
             <div className="rounded-md border print:border-black">
@@ -252,11 +240,11 @@ export default function PullSheetPage({
 
                     return (
                       <React.Fragment key={item.id as string}>
-                        <TableRow className={isGroupParent ? "bg-muted/30" : ""}>
+                        <TableRow className={isGroupParent ? "bg-bg-inset/30" : ""}>
                           <TableCell className="text-center">
                             {isGroupParent
-                              ? <Container className="h-4 w-4 text-muted-foreground print:text-black" />
-                              : <Square className="h-4 w-4 text-muted-foreground print:text-black" />}
+                              ? <Container className="h-4 w-4 text-fg-3 print:text-black" />
+                              : <Square className="h-4 w-4 text-fg-3 print:text-black" />}
                           </TableCell>
                           <TableCell>
                             <span className={isGroupParent ? "font-bold" : "font-medium"}>
@@ -267,10 +255,10 @@ export default function PullSheetPage({
                           <TableCell className="text-center">
                             {isGroupParent ? children.length : qty}
                           </TableCell>
-                          <TableCell className="font-mono text-sm text-muted-foreground">
+                          <TableCell className="font-mono text-sm text-fg-3">
                             {isGroupParent ? (kit?.assetTag || "—") : (assetTag || "—")}
                           </TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
+                          <TableCell className="text-sm text-fg-3">
                             {asset?.location?.name || "—"}
                           </TableCell>
                         </TableRow>
@@ -287,17 +275,17 @@ export default function PullSheetPage({
                             <React.Fragment key={child.id as string}>
                               <TableRow>
                                 <TableCell className="text-center">
-                                  <Square className="h-3.5 w-3.5 text-muted-foreground print:text-black" />
+                                  <Square className="h-3.5 w-3.5 text-fg-3 print:text-black" />
                                 </TableCell>
                                 <TableCell className="pl-8">
-                                  <span className="text-sm text-muted-foreground">{childName}</span>
+                                  <span className="text-sm text-fg-3">{childName}</span>
                                   {childOverbookedInfo && <PullSheetOverbookedBadge info={childOverbookedInfo} />}
                                 </TableCell>
                                 <TableCell className="text-center text-sm">{childQty}</TableCell>
-                                <TableCell className="font-mono text-xs text-muted-foreground">
+                                <TableCell className="font-mono text-xs text-fg-3">
                                   {childAsset?.assetTag || childBulk?.assetTag || "—"}
                                 </TableCell>
-                                <TableCell className="text-xs text-muted-foreground">
+                                <TableCell className="text-xs text-fg-3">
                                   {childAsset?.location?.name || "—"}
                                 </TableCell>
                               </TableRow>
@@ -305,10 +293,10 @@ export default function PullSheetPage({
                               {childQty > 1 && Array.from({ length: childQty }).map((_, i) => (
                                 <TableRow key={`${child.id}-${i}`}>
                                   <TableCell className="text-center">
-                                    <Square className="h-3 w-3 text-muted-foreground/50 print:text-black" />
+                                    <Square className="h-3 w-3 text-fg-3/50 print:text-black" />
                                   </TableCell>
                                   <TableCell className="pl-12">
-                                    <span className="text-xs text-muted-foreground">{childName} - {i + 1}</span>
+                                    <span className="text-xs text-fg-3">{childName} - {i + 1}</span>
                                   </TableCell>
                                   <TableCell />
                                   <TableCell />
@@ -322,10 +310,10 @@ export default function PullSheetPage({
                         {!isKit && qty > 1 && Array.from({ length: qty }).map((_, i) => (
                           <TableRow key={`${item.id}-sub-${i}`}>
                             <TableCell className="text-center">
-                              <Square className="h-3 w-3 text-muted-foreground/50 print:text-black" />
+                              <Square className="h-3 w-3 text-fg-3/50 print:text-black" />
                             </TableCell>
                             <TableCell className="pl-8">
-                              <span className="text-xs text-muted-foreground">{itemName} - {i + 1}</span>
+                              <span className="text-xs text-fg-3">{itemName} - {i + 1}</span>
                             </TableCell>
                             <TableCell />
                             <TableCell />
@@ -343,7 +331,7 @@ export default function PullSheetPage({
       )}
 
       {/* Print footer */}
-      <div className="hidden print:block text-xs text-muted-foreground border-t pt-2 mt-8">
+      <div className="hidden print:block text-xs text-fg-3 border-t pt-2 mt-8">
         <p>
           Printed {new Date().toLocaleDateString("en-AU")} — {project.name} (
           {project.projectNumber})

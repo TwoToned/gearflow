@@ -13,29 +13,16 @@ import { forceReturnKit } from "@/server/warehouse";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { MediaThumbnail } from "@/components/media/media-thumbnail";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
-
-const statusColors: Record<string, string> = {
-  AVAILABLE: "bg-green-500/10 text-green-500 border-green-500/20",
-  CHECKED_OUT: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  IN_MAINTENANCE: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  RETIRED: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  INCOMPLETE: "bg-red-500/10 text-red-500 border-red-500/20",
-};
+import { PageHeader } from "@/components/layout/page-header";
+import { FadeIn } from "@/components/ui/motion";
 
 import { kitStatusLabels, conditionLabels, formatLabel } from "@/lib/status-labels";
-
-const conditionColors: Record<string, string> = {
-  NEW: "bg-green-500/10 text-green-500 border-green-500/20",
-  GOOD: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  FAIR: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  POOR: "bg-orange-500/10 text-orange-500 border-orange-500/20",
-  DAMAGED: "bg-red-500/10 text-red-500 border-red-500/20",
-};
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyKit = Record<string, any>;
@@ -79,7 +66,7 @@ function useKitColumns(
       filterable: true,
       filterType: "enum",
       filterOptions: categories.map((c) => ({ value: c.id, label: c.name })),
-      cell: (row) => <span className="text-muted-foreground">{row.category?.name || "—"}</span>,
+      cell: (row) => <span className="text-fg-3">{row.category?.name || "—"}</span>,
     },
     {
       id: "status",
@@ -96,9 +83,7 @@ function useKitColumns(
         { value: "INCOMPLETE", label: "Incomplete", color: "bg-red-500" },
       ],
       cell: (row) => (
-        <Badge variant="outline" className={statusColors[row.status] || ""}>
-          {kitStatusLabels[row.status] || formatLabel(row.status)}
-        </Badge>
+        <StatusIndicator category="kit" value={row.status} label={kitStatusLabels[row.status] || formatLabel(row.status)} variant="pill" />
       ),
     },
     {
@@ -117,9 +102,7 @@ function useKitColumns(
         { value: "DAMAGED", label: "Damaged", color: "bg-red-500" },
       ],
       cell: (row) => (
-        <Badge variant="outline" className={conditionColors[row.condition] || ""}>
-          {conditionLabels[row.condition] || formatLabel(row.condition)}
-        </Badge>
+        <StatusIndicator category="condition" value={row.condition} label={conditionLabels[row.condition] || formatLabel(row.condition)} variant="pill" />
       ),
     },
     {
@@ -129,7 +112,7 @@ function useKitColumns(
       filterable: true,
       filterType: "enum",
       filterOptions: locations.map((loc) => ({ value: loc.id, label: loc.name })),
-      cell: (row) => <span className="text-muted-foreground">{row.location?.name || "—"}</span>,
+      cell: (row) => <span className="text-fg-3">{row.location?.name || "—"}</span>,
     },
     {
       id: "items",
@@ -137,7 +120,7 @@ function useKitColumns(
       sortable: false,
       align: "right",
       cell: (row) => (
-        <span className="text-muted-foreground">
+        <span className="text-fg-3">
           {(row._count?.serializedItems || 0) + (row._count?.bulkItems || 0)}
         </span>
       ),
@@ -229,19 +212,16 @@ export default function KitsPage() {
   const total = data?.total || 0;
 
   return (
-    <RequirePermission resource="kit" action="read">
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Kits</h1>
-            <p className="text-muted-foreground">
-              Manage pre-configured kits and cases.
-            </p>
-          </div>
-        </div>
+    <FadeIn>
+      <RequirePermission resource="kit" action="read">
+        <div className="space-y-4">
+        <PageHeader
+          title="Kits"
+          description="Bundled sets of gear that always travel together."
+        />
 
         {selectedIds.size > 0 && (
-          <div className="flex items-center gap-3 rounded-md border bg-muted/50 px-4 py-2">
+          <div className="flex items-center gap-3 rounded-md border bg-bg-inset/50 px-4 py-2">
             <span className="text-sm font-medium">{selectedIds.size} selected</span>
             <CanDo resource="warehouse" action="check_in">
               <Button
@@ -284,7 +264,7 @@ export default function KitsPage() {
           onToggleColumnVisibility={toggleColumnVisibility}
           onResetPreferences={resetPreferences}
           isLoading={isLoading}
-          emptyTitle="No kits found"
+          emptyPreset="kits"
           enableRowSelection
           selectedRows={selectedIds}
           onSelectionChange={setSelectedIds}
@@ -299,5 +279,6 @@ export default function KitsPage() {
         />
       </div>
     </RequirePermission>
+    </FadeIn>
   );
 }

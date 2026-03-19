@@ -5,6 +5,7 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  /* Base shadcn color mappings */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-dm-sans);
@@ -38,84 +39,239 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Surface depth colors */
+  --color-bg-inset: var(--bg-inset);
+  --color-bg-base: var(--bg-base);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-bg-popover: var(--bg-popover);
+
+  /* Foreground hierarchy */
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-fg-3: var(--fg-3);
+  --color-fg-4: var(--fg-4);
+
+  /* Teal ramp */
+  --color-teal-50: var(--teal-50);
+  --color-teal-100: var(--teal-100);
+  --color-teal-200: var(--teal-200);
+  --color-teal-300: var(--teal-300);
+  --color-teal-400: var(--teal-400);
+  --color-teal-500: var(--teal-500);
+  --color-teal-600: var(--teal-600);
+  --color-teal-700: var(--teal-700);
+  --color-teal-800: var(--teal-800);
+  --color-teal-900: var(--teal-900);
+  --color-teal-subtle: var(--teal-subtle);
+
+  /* Semantic colors */
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-error: var(--error);
+  --color-info: var(--info);
+  --color-success-subtle: var(--success-subtle);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-error-subtle: var(--error-subtle);
+  --color-info-subtle: var(--info-subtle);
+
+  /* Border strong */
+  --color-border-strong: var(--border-strong);
+
+  /* Radius — tighter scale per DESIGN.md */
+  --radius-sm: calc(var(--radius) * 0.667);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) * 1.333);
+  --radius-xl: calc(var(--radius) * 2);
+  --radius-2xl: calc(var(--radius) * 2.667);
+  --radius-3xl: calc(var(--radius) * 3.333);
+  --radius-4xl: calc(var(--radius) * 4);
 }
 
-/* Light theme — deep teal primary */
+/* Light theme — Industrial Calm */
 :root {
-  --background: oklch(0.98 0.005 200);
-  --foreground: oklch(0.15 0.015 220);
+  /* Surface depth (5 levels: inset < base < surface < elevated < popover) */
+  --background: oklch(0.975 0.003 220);
+  --foreground: oklch(0.12 0.02 220);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.15 0.015 220);
+  --card-foreground: oklch(0.12 0.02 220);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.15 0.015 220);
+  --popover-foreground: oklch(0.12 0.02 220);
+
+  /* Surface depth custom properties */
+  --bg-inset: oklch(0.955 0.005 220);
+  --bg-base: oklch(0.975 0.003 220);
+  --bg-surface: oklch(1 0 0);
+  --bg-elevated: oklch(0.985 0.002 210);
+  --bg-popover: oklch(1 0 0);
+
+  /* Foreground hierarchy */
+  --fg: oklch(0.12 0.02 220);
+  --fg-2: oklch(0.35 0.015 220);
+  --fg-3: oklch(0.52 0.008 220);
+  --fg-4: oklch(0.68 0.005 220);
+
+  /* Primary teal */
   --primary: oklch(0.45 0.12 195);
   --primary-foreground: oklch(0.98 0.005 200);
+
+  /* Teal ramp */
+  --teal-50: oklch(0.96 0.02 195);
+  --teal-100: oklch(0.87 0.06 195);
+  --teal-200: oklch(0.77 0.10 195);
+  --teal-300: oklch(0.67 0.12 195);
+  --teal-400: oklch(0.58 0.13 195);
+  --teal-500: oklch(0.45 0.12 195);
+  --teal-600: oklch(0.38 0.10 195);
+  --teal-700: oklch(0.30 0.08 195);
+  --teal-800: oklch(0.22 0.06 195);
+  --teal-900: oklch(0.14 0.04 195);
+  --teal-subtle: oklch(0.96 0.02 195);
+
+  /* Secondary & muted */
   --secondary: oklch(0.95 0.01 200);
   --secondary-foreground: oklch(0.20 0.02 220);
-  --muted: oklch(0.96 0.005 220);
-  --muted-foreground: oklch(0.50 0.01 220);
+  --muted: oklch(0.955 0.005 220);
+  --muted-foreground: oklch(0.52 0.008 220);
   --accent: oklch(0.94 0.015 200);
   --accent-foreground: oklch(0.20 0.02 220);
+
+  /* Semantic colors */
   --destructive: oklch(0.58 0.22 27);
-  --border: oklch(0.90 0.01 220);
-  --input: oklch(0.90 0.01 220);
+  --success: oklch(0.55 0.16 155);
+  --warning: oklch(0.72 0.17 70);
+  --error: oklch(0.58 0.22 27);
+  --info: oklch(0.55 0.14 255);
+
+  /* Semantic subtle backgrounds (8-10% opacity) */
+  --success-subtle: oklch(0.55 0.16 155 / 10%);
+  --warning-subtle: oklch(0.72 0.17 70 / 10%);
+  --error-subtle: oklch(0.58 0.22 27 / 8%);
+  --info-subtle: oklch(0.55 0.14 255 / 8%);
+
+  /* Borders — opacity-based for consistency */
+  --border: oklch(0 0 0 / 6%);
+  --border-strong: oklch(0 0 0 / 10%);
+  --input: oklch(0 0 0 / 10%);
   --ring: oklch(0.45 0.12 195);
+
+  /* Shadows */
+  --shadow-xs: 0 1px 2px oklch(0 0 0 / 3%);
+  --shadow-sm: 0 1px 3px oklch(0 0 0 / 5%), 0 1px 2px oklch(0 0 0 / 3%);
+  --shadow-md: 0 4px 12px oklch(0 0 0 / 6%), 0 1px 3px oklch(0 0 0 / 4%);
+  --shadow-focus: 0 0 0 2px var(--bg-base), 0 0 0 4px oklch(0.45 0.12 195 / 40%);
+
+  /* Charts */
   --chart-1: oklch(0.45 0.12 195);
-  --chart-2: oklch(0.65 0.15 160);
-  --chart-3: oklch(0.70 0.14 80);
-  --chart-4: oklch(0.60 0.18 30);
-  --chart-5: oklch(0.55 0.20 320);
-  --radius: 0.5rem;
+  --chart-2: oklch(0.55 0.16 155);
+  --chart-3: oklch(0.72 0.17 70);
+  --chart-4: oklch(0.58 0.22 27);
+  --chart-5: oklch(0.55 0.14 255);
+
+  /* Radius — tighter than shadcn defaults */
+  --radius: 0.375rem;
+
+  /* Sidebar */
   --sidebar: oklch(0.97 0.008 200);
-  --sidebar-foreground: oklch(0.15 0.015 220);
+  --sidebar-foreground: oklch(0.12 0.02 220);
   --sidebar-primary: oklch(0.45 0.12 195);
   --sidebar-primary-foreground: oklch(0.98 0.005 200);
   --sidebar-accent: oklch(0.93 0.015 200);
   --sidebar-accent-foreground: oklch(0.20 0.02 220);
-  --sidebar-border: oklch(0.90 0.01 220);
+  --sidebar-border: oklch(0 0 0 / 6%);
   --sidebar-ring: oklch(0.45 0.12 195);
 }
 
-/* Dark theme — deep teal primary */
+/* Dark theme — Industrial Calm with layered depth */
 .dark {
-  --background: oklch(0.13 0.015 220);
-  --foreground: oklch(0.95 0.005 200);
-  --card: oklch(0.17 0.015 220);
-  --card-foreground: oklch(0.95 0.005 200);
-  --popover: oklch(0.17 0.015 220);
-  --popover-foreground: oklch(0.95 0.005 200);
-  --primary: oklch(0.55 0.14 195);
+  /* Surface depth (5 levels with warm undertone hue 240) */
+  --background: oklch(0.115 0.01 240);
+  --foreground: oklch(0.94 0.005 220);
+  --card: oklch(0.155 0.01 240);
+  --card-foreground: oklch(0.94 0.005 220);
+  --popover: oklch(0.20 0.012 235);
+  --popover-foreground: oklch(0.94 0.005 220);
+
+  /* Surface depth custom properties */
+  --bg-inset: oklch(0.095 0.01 240);
+  --bg-base: oklch(0.115 0.01 240);
+  --bg-surface: oklch(0.155 0.01 240);
+  --bg-elevated: oklch(0.185 0.01 240);
+  --bg-popover: oklch(0.20 0.012 235);
+
+  /* Foreground hierarchy */
+  --fg: oklch(0.94 0.005 220);
+  --fg-2: oklch(0.72 0.006 220);
+  --fg-3: oklch(0.52 0.005 220);
+  --fg-4: oklch(0.38 0.004 220);
+
+  /* Primary teal — boosted for dark mode vibrancy */
+  --primary: oklch(0.60 0.14 195);
   --primary-foreground: oklch(0.13 0.015 220);
-  --secondary: oklch(0.22 0.015 220);
-  --secondary-foreground: oklch(0.95 0.005 200);
-  --muted: oklch(0.22 0.015 220);
-  --muted-foreground: oklch(0.65 0.01 220);
-  --accent: oklch(0.25 0.02 200);
-  --accent-foreground: oklch(0.95 0.005 200);
-  --destructive: oklch(0.70 0.19 22);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.55 0.14 195);
-  --chart-1: oklch(0.55 0.14 195);
-  --chart-2: oklch(0.65 0.15 160);
-  --chart-3: oklch(0.70 0.14 80);
-  --chart-4: oklch(0.65 0.18 30);
-  --chart-5: oklch(0.60 0.20 320);
-  --sidebar: oklch(0.15 0.015 220);
-  --sidebar-foreground: oklch(0.95 0.005 200);
-  --sidebar-primary: oklch(0.55 0.14 195);
+
+  /* Teal ramp (dark adjusted) */
+  --teal-50: oklch(0.20 0.02 195);
+  --teal-100: oklch(0.25 0.04 195);
+  --teal-200: oklch(0.30 0.06 195);
+  --teal-300: oklch(0.40 0.08 195);
+  --teal-400: oklch(0.50 0.11 195);
+  --teal-500: oklch(0.60 0.14 195);
+  --teal-600: oklch(0.67 0.12 195);
+  --teal-700: oklch(0.77 0.10 195);
+  --teal-800: oklch(0.87 0.06 195);
+  --teal-900: oklch(0.94 0.03 195);
+  --teal-subtle: oklch(0.60 0.14 195 / 10%);
+
+  /* Secondary & muted */
+  --secondary: oklch(0.22 0.015 240);
+  --secondary-foreground: oklch(0.94 0.005 220);
+  --muted: oklch(0.185 0.01 240);
+  --muted-foreground: oklch(0.52 0.005 220);
+  --accent: oklch(0.22 0.02 235);
+  --accent-foreground: oklch(0.94 0.005 220);
+
+  /* Semantic colors (boosted for dark) */
+  --destructive: oklch(0.68 0.20 25);
+  --success: oklch(0.65 0.17 155);
+  --warning: oklch(0.78 0.15 70);
+  --error: oklch(0.68 0.20 25);
+  --info: oklch(0.62 0.14 255);
+
+  /* Semantic subtle backgrounds */
+  --success-subtle: oklch(0.65 0.17 155 / 10%);
+  --warning-subtle: oklch(0.78 0.15 70 / 10%);
+  --error-subtle: oklch(0.68 0.20 25 / 8%);
+  --info-subtle: oklch(0.62 0.14 255 / 8%);
+
+  /* Borders — white at low opacity (not gray) */
+  --border: oklch(1 0 0 / 6%);
+  --border-strong: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 10%);
+  --ring: oklch(0.60 0.14 195);
+
+  /* Shadows — stronger in dark mode */
+  --shadow-xs: 0 1px 2px oklch(0 0 0 / 15%);
+  --shadow-sm: 0 1px 3px oklch(0 0 0 / 20%), 0 1px 2px oklch(0 0 0 / 15%);
+  --shadow-md: 0 4px 12px oklch(0 0 0 / 25%), 0 1px 3px oklch(0 0 0 / 20%);
+  --shadow-focus: 0 0 0 2px var(--bg-base), 0 0 0 4px oklch(0.60 0.14 195 / 40%);
+
+  /* Charts */
+  --chart-1: oklch(0.60 0.14 195);
+  --chart-2: oklch(0.65 0.17 155);
+  --chart-3: oklch(0.78 0.15 70);
+  --chart-4: oklch(0.68 0.20 25);
+  --chart-5: oklch(0.62 0.14 255);
+
+  /* Sidebar */
+  --sidebar: oklch(0.095 0.01 240);
+  --sidebar-foreground: oklch(0.94 0.005 220);
+  --sidebar-primary: oklch(0.60 0.14 195);
   --sidebar-primary-foreground: oklch(0.13 0.015 220);
-  --sidebar-accent: oklch(0.22 0.02 200);
-  --sidebar-accent-foreground: oklch(0.95 0.005 200);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.55 0.14 195);
+  --sidebar-accent: oklch(0.185 0.01 240);
+  --sidebar-accent-foreground: oklch(0.94 0.005 220);
+  --sidebar-border: oklch(1 0 0 / 6%);
+  --sidebar-ring: oklch(0.60 0.14 195);
 }
 
 @layer base {
@@ -125,7 +281,99 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+    font-size: 13.5px;
+    line-height: 1.55;
     -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   Design System — Typography utilities
+   ═══════════════════════════════════════════════════════ */
+@layer components {
+  /* Typography scale from DESIGN.md */
+  .t-display { font-size: 32px; font-weight: 800; letter-spacing: -0.035em; line-height: 1.1; }
+  .t-title { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
+  .t-heading { font-size: 14px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.3; }
+  .t-body { font-size: 13.5px; font-weight: 400; line-height: 1.55; }
+  .t-small { font-size: 12px; font-weight: 500; line-height: 1.4; }
+  .t-micro { font-size: 11px; font-weight: 500; letter-spacing: 0.005em; line-height: 1.3; }
+  .t-overline {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    line-height: 1.2;
+  }
+  .t-data { font-variant-numeric: tabular-nums; }
+
+  /* Shadow + border ring pattern for surfaces */
+  .surface-ring {
+    box-shadow: var(--shadow-sm), 0 0 0 1px var(--border);
+  }
+  .surface-ring-xs {
+    box-shadow: var(--shadow-xs), 0 0 0 1px var(--border);
+  }
+
+  /* Focus ring — double-ring pattern */
+  .focus-ring:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+
+  /* Section header with extending line */
+  .section-label {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   Design System — Skeleton shimmer animation
+   ═══════════════════════════════════════════════════════ */
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--bg-elevated) 0%,
+    var(--bg-popover) 40%,
+    var(--bg-elevated) 80%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ═══════════════════════════════════════════════════════
+   Page entrance animation — subtle fade-up on mount
+   ═══════════════════════════════════════════════════════ */
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-page-enter {
+  animation: page-enter 0.2s cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-page-enter {
+    animation: none;
   }
 }
 

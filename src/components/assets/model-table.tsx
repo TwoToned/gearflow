@@ -43,7 +43,7 @@ function useModelColumns(
               {row.name}
             </Link>
             {row.modelNumber && (
-              <span className="ml-2 text-xs text-muted-foreground">{row.modelNumber}</span>
+              <span className="ml-2 text-xs text-fg-3">{row.modelNumber}</span>
             )}
           </div>
         </div>
@@ -55,7 +55,7 @@ function useModelColumns(
       accessorKey: "manufacturer",
       sortKey: "manufacturer",
       cell: (row) => (
-        <span className="text-muted-foreground">{row.manufacturer || "\u2014"}</span>
+        <span className="text-fg-3">{row.manufacturer || "\u2014"}</span>
       ),
     },
     {
@@ -72,7 +72,7 @@ function useModelColumns(
         row.category ? (
           <Badge variant="secondary">{row.category.name}</Badge>
         ) : (
-          <span className="text-muted-foreground">{"\u2014"}</span>
+          <span className="text-fg-3">{"\u2014"}</span>
         ),
     },
     {
@@ -105,8 +105,11 @@ function useModelColumns(
       accessorKey: "defaultRentalPrice",
       sortKey: "defaultRentalPrice",
       align: "right",
-      cell: (row) =>
-        row.defaultRentalPrice ? `$${Number(row.defaultRentalPrice).toFixed(2)}` : "\u2014",
+      cell: (row) => (
+        <span className="t-data">
+          {row.defaultRentalPrice ? `$${Number(row.defaultRentalPrice).toFixed(2)}` : "\u2014"}
+        </span>
+      ),
     },
     {
       id: "tags",
@@ -216,8 +219,7 @@ export function ModelTable() {
         onToggleColumnVisibility={toggleColumnVisibility}
         onResetPreferences={resetPreferences}
         isLoading={isLoading}
-        emptyTitle="No models found"
-        emptyDescription="Create one to get started."
+        emptyPreset="models"
         toolbarActions={toolbarActions}
       />
 

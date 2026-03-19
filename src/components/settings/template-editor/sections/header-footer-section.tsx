@@ -62,7 +62,7 @@ export function HeaderFooterSection({ settings, onSettingsChange }: HeaderFooter
 
         {/* Org detail toggles */}
         <div className="space-y-1">
-          <Label className="text-xs font-medium text-muted-foreground">Organisation Details</Label>
+          <Label className="text-xs font-medium text-fg-3">Organisation Details</Label>
           <div className="space-y-0.5">
             <SettingRow
               label="Show organisation name"

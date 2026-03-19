@@ -4,10 +4,10 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FormSection } from "@/components/layout/page-layouts";
 import {
   getOrganization,
   updateOrganization,
@@ -15,6 +15,7 @@ import {
 } from "@/server/settings";
 import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { FadeIn } from "@/components/ui/motion";
 
 export default function BillingSettingsPage() {
   const queryClient = useQueryClient();
@@ -51,15 +52,10 @@ export default function BillingSettingsPage() {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Billing</CardTitle>
-        <CardDescription>
-          Currency and tax configuration for quotes and invoices.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-3">
+    <FadeIn>
+    <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+      <div className="space-y-6">
+        <FormSection title="Billing" description="Currency and tax configuration for quotes and invoices.">
           <div className="space-y-2">
             <Label htmlFor="currency">Currency</Label>
             <Input
@@ -89,18 +85,20 @@ export default function BillingSettingsPage() {
               disabled={!canEdit}
             />
           </div>
+        </FormSection>
+      </div>
+
+      {canEdit && (
+        <div className="mt-6 flex justify-end border-t border-border pt-4">
+          <Button
+            onClick={() => updateMutation.mutate()}
+            disabled={updateMutation.isPending}
+          >
+            {updateMutation.isPending ? "Saving..." : "Save Changes"}
+          </Button>
         </div>
-        {canEdit && (
-          <div className="flex justify-end">
-            <Button
-              onClick={() => updateMutation.mutate()}
-              disabled={updateMutation.isPending}
-            >
-              {updateMutation.isPending ? "Saving..." : "Save Changes"}
-            </Button>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      )}
+    </div>
+    </FadeIn>
   );
 }

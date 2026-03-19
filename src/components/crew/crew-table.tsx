@@ -12,18 +12,12 @@ import { crewMemberStatusLabels, crewMemberTypeLabels, formatLabel } from "@/lib
 import { Button } from "@/components/ui/button";
 import { CanDo } from "@/components/auth/permission-gate";
 import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyCrewMember = Record<string, any>;
-
-const statusColors: Record<string, string> = {
-  ACTIVE: "bg-green-500/10 text-green-500 border-green-500/20",
-  INACTIVE: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  ON_LEAVE: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  ARCHIVED: "bg-red-500/10 text-red-500 border-red-500/20",
-};
 
 const columns: ColumnDef<AnyCrewMember>[] = [
   {
@@ -35,16 +29,24 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     cell: (row) => {
       const avatarSrc = row.user?.image || row.image;
       const displayName = row.user?.name || `${row.firstName} ${row.lastName}`;
+      const subtitle = [row.crewRole?.name, row.department].filter(Boolean).join(" \u00b7 ");
       return (
-        <Link href={`/crew/${row.id}`} className="flex items-center gap-2 font-medium hover:underline" onClick={(e) => e.stopPropagation()}>
-          <Avatar className="size-7">
+        <div className="flex items-center gap-3">
+          <Avatar className="size-8">
             {avatarSrc ? <AvatarImage src={avatarSrc} alt={displayName} /> : null}
-            <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+            <AvatarFallback className="text-[10px] font-medium bg-primary/10 text-primary">
               {row.firstName?.[0]}{row.lastName?.[0]}
             </AvatarFallback>
           </Avatar>
-          {displayName}
-        </Link>
+          <div className="min-w-0">
+            <Link href={`/crew/${row.id}`} className="font-medium text-sm hover:underline block truncate" onClick={(e) => e.stopPropagation()}>
+              {displayName}
+            </Link>
+            {subtitle && (
+              <p className="text-xs text-fg-3 truncate">{subtitle}</p>
+            )}
+          </div>
+        </div>
       );
     },
   },
@@ -54,7 +56,7 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     sortable: false,
     responsiveHide: "md",
     cell: (row) => (
-      <span className="text-muted-foreground">
+      <span className="text-fg-3">
         {row.crewRole?.name || "\u2014"}
       </span>
     ),
@@ -86,7 +88,7 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     filterType: "enum",
     responsiveHide: "lg",
     cell: (row) => (
-      <span className="text-muted-foreground">{row.department || "\u2014"}</span>
+      <span className="text-fg-3">{row.department || "\u2014"}</span>
     ),
   },
   {
@@ -96,7 +98,7 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     sortKey: "email",
     responsiveHide: "lg",
     cell: (row) => (
-      <span className="text-muted-foreground">{row.email || "\u2014"}</span>
+      <span className="text-fg-3">{row.email || "\u2014"}</span>
     ),
   },
   {
@@ -105,7 +107,7 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     accessorKey: "phone",
     responsiveHide: "lg",
     cell: (row) => (
-      <span className="text-muted-foreground">{row.phone || "\u2014"}</span>
+      <span className="text-fg-3">{row.phone || "\u2014"}</span>
     ),
   },
   {
@@ -113,10 +115,13 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     header: "Day Rate",
     align: "right",
     responsiveHide: "lg",
-    cell: (row) =>
-      row.defaultDayRate != null
-        ? `$${Number(row.defaultDayRate).toFixed(2)}`
-        : "\u2014",
+    cell: (row) => (
+      <span className="t-data">
+        {row.defaultDayRate != null
+          ? `$${Number(row.defaultDayRate).toFixed(2)}`
+          : "\u2014"}
+      </span>
+    ),
   },
   {
     id: "skills",
@@ -137,6 +142,22 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     ),
   },
   {
+    id: "certifications",
+    header: "Certs",
+    sortable: false,
+    defaultVisible: true,
+    responsiveHide: "lg",
+    cell: (row) => {
+      const count = row._count?.certifications ?? 0;
+      if (count === 0) return <span className="text-fg-4">&mdash;</span>;
+      return (
+        <Badge variant="secondary" className="text-xs tabular-nums">
+          {count}
+        </Badge>
+      );
+    },
+  },
+  {
     id: "status",
     header: "Status",
     accessorKey: "status",
@@ -150,9 +171,7 @@ const columns: ColumnDef<AnyCrewMember>[] = [
       { value: "ARCHIVED", label: "Archived" },
     ],
     cell: (row) => (
-      <Badge variant="outline" className={statusColors[row.status] || ""}>
-        {crewMemberStatusLabels[row.status] || formatLabel(row.status)}
-      </Badge>
+      <StatusIndicator category="crewMember" value={row.status} label={crewMemberStatusLabels[row.status] || formatLabel(row.status)} variant="pill" />
     ),
   },
   {
@@ -230,7 +249,7 @@ export function CrewTable() {
       onToggleColumnVisibility={toggleColumnVisibility}
       onResetPreferences={resetPreferences}
       isLoading={isLoading}
-      emptyTitle="No crew members found"
+      emptyPreset="crew"
       toolbarActions={toolbarActions}
     />
   );

@@ -28,7 +28,7 @@ export default function DesignerPage({
       <div className="flex items-center justify-center h-screen bg-background">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="h-6 w-6 animate-spin text-primary/50" />
-          <p className="text-sm text-muted-foreground">Loading template…</p>
+          <p className="text-sm text-fg-3">Loading template…</p>
         </div>
       </div>
     );

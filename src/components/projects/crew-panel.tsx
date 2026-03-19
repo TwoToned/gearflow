@@ -55,7 +55,7 @@ import { CanDo } from "@/components/auth/permission-gate";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -90,15 +90,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-const statusColors: Record<string, string> = {
-  PENDING: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  OFFERED: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  ACCEPTED: "bg-teal-500/10 text-teal-500 border-teal-500/20",
-  DECLINED: "bg-red-500/10 text-red-500 border-red-500/20",
-  CONFIRMED: "bg-green-500/10 text-green-500 border-green-500/20",
-  CANCELLED: "bg-red-500/10 text-red-500 border-red-500/20",
-  COMPLETED: "bg-green-500/10 text-green-500 border-green-500/20",
-};
 
 const allStatuses = [
   "PENDING",
@@ -213,14 +204,14 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
     : null;
 
   if (isLoading) {
-    return <div className="text-muted-foreground py-8 text-center">Loading crew...</div>;
+    return <div className="text-fg-3 py-8 text-center">Loading crew...</div>;
   }
 
   return (
     <div className="space-y-4">
       {/* Summary bar */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+        <div className="flex items-center gap-4 text-sm text-fg-3">
           <span className="flex items-center gap-1">
             <Users className="h-4 w-4" />
             {assignments?.length || 0} crew
@@ -283,8 +274,8 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
 
       {/* Assignments table */}
       {(!assignments || assignments.length === 0) ? (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <div className="py-12 text-center text-fg-3">
             <Users className="mx-auto h-8 w-8 mb-2 opacity-50" />
             <p>No crew assigned to this project yet.</p>
             <CanDo resource="crew" action="create">
@@ -298,10 +289,10 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
                 Add Crew Member
               </Button>
             </CanDo>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       ) : (
-        <Card>
+        <div className="rounded-lg bg-bg-surface surface-ring overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
@@ -373,7 +364,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
                 ))}
             </TableBody>
           </Table>
-        </Card>
+        </div>
       )}
 
       {/* Add dialog */}
@@ -425,9 +416,9 @@ function PhaseGroup({
   if (assignments.length === 0) return null;
   return (
     <>
-      <TableRow className="bg-muted/30 hover:bg-muted/30">
+      <TableRow className="bg-bg-inset/30 hover:bg-bg-inset/30">
         <TableCell colSpan={8} className="py-1.5">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <span className="text-xs font-semibold uppercase tracking-wide text-fg-3">
             {phaseLabels[phase] || phase}
           </span>
         </TableCell>
@@ -503,7 +494,7 @@ function AssignmentRow({
             {role.name}
           </Badge>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-fg-3">—</span>
         )}
       </TableCell>
       <TableCell className="text-sm">
@@ -513,33 +504,33 @@ function AssignmentRow({
       </TableCell>
       <TableCell className="text-sm">
         <div className="flex items-center gap-1">
-          <Calendar className="h-3 w-3 text-muted-foreground" />
+          <Calendar className="h-3 w-3 text-fg-3" />
           {formatDate(a.startDate as string | null)}
           {a.endDate && a.endDate !== a.startDate
             ? ` – ${formatDate(a.endDate as string | null)}`
             : ""}
         </div>
         {a.startTime && (
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1 text-xs text-fg-3">
             <Clock className="h-3 w-3" />
             {a.startTime as string}
             {a.endTime ? ` – ${a.endTime as string}` : ""}
           </div>
         )}
       </TableCell>
-      <TableCell className="text-sm">
+      <TableCell className="text-sm t-data">
         {a.rateOverride != null && Number(a.rateOverride) > 0 ? (
           <>
             {formatCurrency(a.rateOverride as number)}{" "}
-            <span className="text-muted-foreground text-xs">
+            <span className="text-fg-3 text-xs">
               {crewRateTypeLabels[(a.rateType as string) || "DAILY"] || ""}
             </span>
           </>
         ) : (
-          <span className="text-muted-foreground">Default</span>
+          <span className="text-fg-3">Default</span>
         )}
       </TableCell>
-      <TableCell className="text-sm font-medium">
+      <TableCell className="text-sm font-medium t-data">
         {formatCurrency(a.estimatedCost as number | null)}
       </TableCell>
       <TableCell>
@@ -547,23 +538,15 @@ function AssignmentRow({
           resource="crew"
           action="update"
           fallback={
-            <Badge
-              variant="outline"
-              className={statusColors[a.status as string] || ""}
-            >
-              {assignmentStatusLabels[a.status as string] || (a.status as string)}
-            </Badge>
+            <StatusIndicator category="assignment" value={a.status as string} label={assignmentStatusLabels[a.status as string] || (a.status as string)} variant="pill" />
           }
         >
           <DropdownMenu>
             <DropdownMenuTrigger render={<Button variant="ghost" size="sm" className="h-auto px-2 py-0.5" />}>
-              <Badge
-                variant="outline"
-                className={`pointer-events-none ${statusColors[a.status as string] || ""}`}
-              >
-                {assignmentStatusLabels[a.status as string] || (a.status as string)}
+              <span className="pointer-events-none inline-flex items-center">
+                <StatusIndicator category="assignment" value={a.status as string} label={assignmentStatusLabels[a.status as string] || (a.status as string)} variant="pill" />
                 <ChevronDown className="ml-1 h-3 w-3" />
-              </Badge>
+              </span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {allStatuses.map((s) => (
@@ -1243,7 +1226,7 @@ function BulkMessageDialog({
           <DialogTitle>Message Project Crew</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-fg-3">
             Send an email to all active crew members on this project.
           </p>
           <div className="space-y-1.5">

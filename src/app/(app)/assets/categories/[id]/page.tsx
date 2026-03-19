@@ -11,11 +11,13 @@ import {
   FolderOpen,
   ArrowLeft,
 } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
 
 import { getCategory } from "@/server/categories";
+import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import {
   Table,
   TableBody,
@@ -28,13 +30,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MediaThumbnail } from "@/components/media/media-thumbnail";
 import { resolveModelPhotoUrl } from "@/lib/media-utils";
 import { useActiveOrganization } from "@/lib/auth-client";
-
-const kitStatusColors: Record<string, string> = {
-  AVAILABLE: "bg-green-500/10 text-green-500 border-green-500/20",
-  CHECKED_OUT: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  IN_MAINTENANCE: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  RETIRED: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-};
+import { SectionHeader } from "@/components/layout/page-layouts";
+import { FadeIn, StaggerList, StaggerItem } from "@/components/ui/motion";
 
 import { kitStatusLabels, formatLabel } from "@/lib/status-labels";
 
@@ -50,11 +47,11 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
   });
 
   if (isLoading) {
-    return <div className="p-6 text-muted-foreground">Loading...</div>;
+    return <DetailPageSkeleton />;
   }
 
   if (!category) {
-    return <div className="p-6 text-muted-foreground">Category not found.</div>;
+    return <div className="text-fg-3 py-12 text-center">Category not found.</div>;
   }
 
   const parentHref = category.parent
@@ -62,113 +59,113 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
     : "/assets/categories";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Header */}
-      <div className="flex items-start gap-4">
-        <Button variant="ghost" size="icon" onClick={() => router.push(parentHref)}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-            <Link href="/assets/categories" className="hover:text-foreground transition-colors">
-              Categories
-            </Link>
-            {category.parent && (
-              <>
-                <ChevronRight className="h-3 w-3" />
-                <Link
-                  href={`/assets/categories/${category.parent.id}`}
-                  className="hover:text-foreground transition-colors"
-                >
-                  {category.parent.name}
-                </Link>
-              </>
+      <FadeIn>
+        <div className="flex items-start gap-4">
+          <Button variant="ghost" size="icon" onClick={() => router.push(parentHref)}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 text-sm text-fg-3 mb-1">
+              <Link href="/assets/categories" className="hover:text-fg transition-colors">
+                Categories
+              </Link>
+              {category.parent && (
+                <>
+                  <ChevronRight className="h-3 w-3" />
+                  <Link
+                    href={`/assets/categories/${category.parent.id}`}
+                    className="hover:text-fg transition-colors"
+                  >
+                    {category.parent.name}
+                  </Link>
+                </>
+              )}
+              <ChevronRight className="h-3 w-3" />
+              <span className="text-fg">{category.name}</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">{category.icon || "\uD83D\uDCC1"}</span>
+              <h1 className="t-title text-fg">{category.name}</h1>
+            </div>
+            {category.description && (
+              <p className="text-fg-3 mt-1">{category.description}</p>
             )}
-            <ChevronRight className="h-3 w-3" />
-            <span className="text-foreground">{category.name}</span>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">{category.icon || "📁"}</span>
-            <h1 className="text-2xl font-bold tracking-tight">{category.name}</h1>
+          <div className="flex items-center gap-2">
+            {category._count.models > 0 && (
+              <Badge variant="secondary" className="gap-1">
+                <Boxes className="h-3 w-3" />
+                {category._count.models} model{category._count.models !== 1 ? "s" : ""}
+              </Badge>
+            )}
+            {category._count.kits > 0 && (
+              <Badge variant="secondary" className="gap-1">
+                <Container className="h-3 w-3" />
+                {category._count.kits} kit{category._count.kits !== 1 ? "s" : ""}
+              </Badge>
+            )}
+            {category._count.children > 0 && (
+              <Badge variant="outline" className="gap-1">
+                <FolderOpen className="h-3 w-3" />
+                {category._count.children} subcategori{category._count.children !== 1 ? "es" : "y"}
+              </Badge>
+            )}
           </div>
-          {category.description && (
-            <p className="text-muted-foreground mt-1">{category.description}</p>
-          )}
         </div>
-        <div className="flex items-center gap-2">
-          {category._count.models > 0 && (
-            <Badge variant="secondary" className="gap-1">
-              <Boxes className="h-3 w-3" />
-              {category._count.models} model{category._count.models !== 1 ? "s" : ""}
-            </Badge>
-          )}
-          {category._count.kits > 0 && (
-            <Badge variant="secondary" className="gap-1">
-              <Container className="h-3 w-3" />
-              {category._count.kits} kit{category._count.kits !== 1 ? "s" : ""}
-            </Badge>
-          )}
-          {category._count.children > 0 && (
-            <Badge variant="outline" className="gap-1">
-              <FolderOpen className="h-3 w-3" />
-              {category._count.children} subcategori{category._count.children !== 1 ? "es" : "y"}
-            </Badge>
-          )}
-        </div>
-      </div>
+      </FadeIn>
 
       {/* Subcategories */}
       {category.children && category.children.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Subcategories</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-              {category.children.map((child: any) => (
+        <FadeIn delay={0.05}>
+          <SectionHeader label="Subcategories" />
+          <StaggerList className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 mt-4" delay={0.08}>
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+            {category.children.map((child: any) => (
+              <StaggerItem key={child.id}>
                 <Link
-                  key={child.id}
                   href={`/assets/categories/${child.id}`}
                   className="flex items-center gap-3 rounded-lg border p-3 hover:bg-accent/50 transition-colors group"
                 >
-                  <span className="text-lg">{child.icon || "📂"}</span>
+                  <span className="text-lg">{child.icon || "\uD83D\uDCC2"}</span>
                   <div className="flex-1 min-w-0">
                     <span className="text-sm font-medium group-hover:text-primary transition-colors">
                       {child.name}
                     </span>
                     <div className="flex items-center gap-2 mt-0.5">
                       {child._count.models > 0 && (
-                        <span className="text-xs text-muted-foreground">{child._count.models} models</span>
+                        <span className="text-xs text-fg-3">{child._count.models} models</span>
                       )}
                       {child._count.kits > 0 && (
-                        <span className="text-xs text-muted-foreground">{child._count.kits} kits</span>
+                        <span className="text-xs text-fg-3">{child._count.kits} kits</span>
                       )}
                     </div>
                   </div>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  <ChevronRight className="h-4 w-4 text-fg-3" />
                 </Link>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+              </StaggerItem>
+            ))}
+          </StaggerList>
+        </FadeIn>
       )}
 
       {/* Models & Kits tabs */}
-      <Tabs defaultValue="models">
-        <TabsList>
-          <TabsTrigger value="models">
-            Models ({category._count.models})
-          </TabsTrigger>
-          <TabsTrigger value="kits">
-            Kits ({category._count.kits})
-          </TabsTrigger>
-        </TabsList>
+      <FadeIn delay={0.1}>
+        <Tabs defaultValue="models">
+          <TabsList>
+            <TabsTrigger value="models">
+              Models ({category._count.models})
+            </TabsTrigger>
+            <TabsTrigger value="kits">
+              Kits ({category._count.kits})
+            </TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="models">
-          {category.models && category.models.length > 0 ? (
-            <Card>
-              <CardContent className="p-0">
+          <TabsContent value="models">
+            {category.models && category.models.length > 0 ? (
+              <>
+                <SectionHeader label="Models" className="mb-3" />
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -200,10 +197,10 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
                               {model.name}
                             </Link>
                           </TableCell>
-                          <TableCell className="hidden sm:table-cell text-muted-foreground">
+                          <TableCell className="hidden sm:table-cell text-fg-3">
                             {model.manufacturer || "\u2014"}
                           </TableCell>
-                          <TableCell className="hidden md:table-cell text-muted-foreground">
+                          <TableCell className="hidden md:table-cell text-fg-3">
                             {model.modelNumber || "\u2014"}
                           </TableCell>
                           <TableCell className="text-right">
@@ -214,25 +211,21 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
                     })}
                   </TableBody>
                 </Table>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                <Boxes className="h-10 w-10 text-muted-foreground/50 mb-3" />
-                <p className="text-sm text-muted-foreground">No models in this category.</p>
-                <Button variant="outline" size="sm" className="mt-3" render={<Link href="/assets/models/new" />}>
-                  Add Model
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
+              </>
+            ) : (
+              <EmptyState
+                preset="models"
+                heading="No models in this category"
+                description="Models group identical assets — create one to start adding units."
+                action={{ label: "Add Model", onClick: () => window.location.href = "/assets/models/new" }}
+              />
+            )}
+          </TabsContent>
 
-        <TabsContent value="kits">
-          {category.kits && category.kits.length > 0 ? (
-            <Card>
-              <CardContent className="p-0">
+          <TabsContent value="kits">
+            {category.kits && category.kits.length > 0 ? (
+              <>
+                <SectionHeader label="Kits" className="mb-3" />
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -256,14 +249,12 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
                               {kit.name}
                             </Link>
                           </TableCell>
-                          <TableCell className="hidden sm:table-cell text-muted-foreground">
+                          <TableCell className="hidden sm:table-cell text-fg-3">
                             {kit.assetTag || "\u2014"}
                           </TableCell>
                           <TableCell className="hidden md:table-cell">
                             {kit.status && (
-                              <Badge className={kitStatusColors[kit.status] || ""}>
-                                {kitStatusLabels[kit.status] || formatLabel(kit.status)}
-                              </Badge>
+                              <StatusIndicator category="kit" value={kit.status} label={kitStatusLabels[kit.status] || formatLabel(kit.status)} variant="pill" />
                             )}
                           </TableCell>
                           <TableCell className="text-right">
@@ -274,21 +265,18 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
                     })}
                   </TableBody>
                 </Table>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                <Container className="h-10 w-10 text-muted-foreground/50 mb-3" />
-                <p className="text-sm text-muted-foreground">No kits in this category.</p>
-                <Button variant="outline" size="sm" className="mt-3" render={<Link href="/kits/new" />}>
-                  Add Kit
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
-      </Tabs>
+              </>
+            ) : (
+              <EmptyState
+                preset="kits"
+                heading="No kits in this category"
+                description="Kits bundle assets that always go together — build one to speed up checkout."
+                action={{ label: "Add Kit", onClick: () => window.location.href = "/kits/new" }}
+              />
+            )}
+          </TabsContent>
+        </Tabs>
+      </FadeIn>
     </div>
   );
 }

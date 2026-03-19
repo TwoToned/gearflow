@@ -107,10 +107,10 @@ function SortableMediaItem({
     <div
       ref={setNodeRef}
       style={style}
-      className="group relative flex items-center gap-2 rounded-lg border bg-card p-2"
+      className="group relative flex items-center gap-2 rounded-lg border bg-bg-surface p-2"
     >
       <button
-        className="cursor-grab touch-none text-muted-foreground hover:text-foreground"
+        className="cursor-grab touch-none text-fg-3 hover:text-fg"
         {...attributes}
         {...listeners}
       >
@@ -119,7 +119,7 @@ function SortableMediaItem({
 
       {isImage ? (
         <div
-          className="h-16 w-16 flex-shrink-0 cursor-pointer overflow-hidden rounded-md bg-muted"
+          className="h-16 w-16 flex-shrink-0 cursor-pointer overflow-hidden rounded-md bg-bg-inset"
           onClick={onImageClick}
         >
           <img
@@ -129,8 +129,8 @@ function SortableMediaItem({
           />
         </div>
       ) : (
-        <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-md bg-muted">
-          <FileText className="h-6 w-6 text-muted-foreground" />
+        <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-md bg-bg-inset">
+          <FileText className="h-6 w-6 text-fg-3" />
         </div>
       )}
 
@@ -138,7 +138,7 @@ function SortableMediaItem({
         <p className="truncate text-sm font-medium">
           {item.displayName || item.file.fileName}
         </p>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-fg-3">
           {formatFileSize(item.file.fileSize)}
         </p>
         {item.isPrimary && showPrimary && (
@@ -152,7 +152,7 @@ function SortableMediaItem({
         {showPrimary && !item.isPrimary && onSetPrimary && isImage && (
           <button
             onClick={() => onSetPrimary(item.id)}
-            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="rounded p-1 text-fg-3 hover:bg-accent hover:text-fg"
             title="Set as primary"
           >
             <Star className="h-4 w-4" />
@@ -161,7 +161,7 @@ function SortableMediaItem({
         <button
           onClick={() => onRemove(item.id)}
           disabled={isRemoving}
-          className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          className="rounded p-1 text-fg-3 hover:bg-destructive/10 hover:text-destructive"
           title="Remove"
         >
           {isRemoving ? (
@@ -296,18 +296,18 @@ export function MediaUploader({
     return (
       <div className="space-y-3">
         {existingMedia.length === 0 && (
-          <p className="text-sm text-muted-foreground">No files.</p>
+          <p className="text-sm text-fg-3">No files.</p>
         )}
         {existingMedia.map((item) => {
           const isImage = item.file.mimeType.startsWith("image/");
           return (
             <div
               key={item.id}
-              className="flex items-center gap-2 rounded-lg border bg-card p-2"
+              className="flex items-center gap-2 rounded-lg border bg-bg-surface p-2"
             >
               {isImage ? (
                 <div
-                  className="h-16 w-16 flex-shrink-0 cursor-pointer overflow-hidden rounded-md bg-muted"
+                  className="h-16 w-16 flex-shrink-0 cursor-pointer overflow-hidden rounded-md bg-bg-inset"
                   onClick={() => {
                     const idx = imageMedia.findIndex((m) => m.id === item.id);
                     openLightbox(
@@ -323,15 +323,15 @@ export function MediaUploader({
                   />
                 </div>
               ) : (
-                <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-md bg-muted">
-                  <FileText className="h-6 w-6 text-muted-foreground" />
+                <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-md bg-bg-inset">
+                  <FileText className="h-6 w-6 text-fg-3" />
                 </div>
               )}
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">
                   {item.displayName || item.file.fileName}
                 </p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-fg-3">
                   {formatFileSize(item.file.fileSize)}
                 </p>
                 {item.isPrimary && showPrimary && (
@@ -371,13 +371,13 @@ export function MediaUploader({
         }`}
       >
         {uploadMutation.isPending ? (
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <Loader2 className="h-8 w-8 animate-spin text-fg-3" />
         ) : (
           <>
             {accept.includes("image") ? (
-              <ImageIcon className="h-8 w-8 text-muted-foreground" />
+              <ImageIcon className="h-8 w-8 text-fg-3" />
             ) : (
-              <Upload className="h-8 w-8 text-muted-foreground" />
+              <Upload className="h-8 w-8 text-fg-3" />
             )}
           </>
         )}
@@ -387,7 +387,7 @@ export function MediaUploader({
               ? "Uploading..."
               : "Drop files here or click to browse"}
           </p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-fg-3">
             {accept === "image/*"
               ? "JPEG, PNG, WebP, GIF"
               : accept.includes(".pdf")

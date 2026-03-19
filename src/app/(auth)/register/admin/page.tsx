@@ -7,17 +7,11 @@ import { signUp } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Loader2, Shield } from "lucide-react";
 import { Suspense } from "react";
+import { FadeIn } from "@/components/ui/motion";
 
 function AdminRegisterForm() {
   const router = useRouter();
@@ -51,21 +45,17 @@ function AdminRegisterForm() {
 
   if (checking) {
     return (
-      <Card>
-        <CardContent className="p-8 text-center">
-          <Loader2 className="mx-auto h-8 w-8 animate-spin text-muted-foreground" />
-        </CardContent>
-      </Card>
+      <div className="rounded-lg bg-bg-surface p-8 surface-ring text-center">
+        <Loader2 className="mx-auto h-8 w-8 animate-spin text-fg-3" />
+      </div>
     );
   }
 
   if (!verified) {
     return (
-      <Card>
-        <CardContent className="p-8 text-center text-muted-foreground">
-          Page not found.
-        </CardContent>
-      </Card>
+      <div className="rounded-lg bg-bg-surface p-8 surface-ring text-center text-fg-3">
+        Page not found.
+      </div>
     );
   }
 
@@ -100,20 +90,20 @@ function AdminRegisterForm() {
   };
 
   return (
-    <Card>
-      <CardHeader className="text-center">
+    <div className="rounded-lg bg-bg-surface p-6 surface-ring sm:p-8">
+      <div className="mb-6 text-center">
         <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-destructive text-destructive-foreground">
           <Shield className="h-5 w-5" />
         </div>
-        <CardTitle className="text-xl">Site Admin Registration</CardTitle>
-        <CardDescription>
+        <h2 className="text-xl font-semibold tracking-tight">Site Admin Registration</h2>
+        <p className="text-sm text-fg-3">
           Create a site administrator account.
-        </CardDescription>
+        </p>
         <Badge className="mx-auto mt-2 bg-red-500/10 text-red-500 border-red-500/20">
           Site Admin Account
         </Badge>
-      </CardHeader>
-      <CardContent>
+      </div>
+      <div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="name">Full name</Label>
@@ -154,23 +144,23 @@ function AdminRegisterForm() {
             Create Admin Account
           </Button>
         </form>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
 export default function AdminRegisterPage() {
   return (
+    <FadeIn>
     <Suspense
       fallback={
-        <Card>
-          <CardContent className="p-8 text-center">
-            <Loader2 className="mx-auto h-8 w-8 animate-spin text-muted-foreground" />
-          </CardContent>
-        </Card>
+        <div className="rounded-lg bg-bg-surface p-8 surface-ring text-center">
+          <Loader2 className="mx-auto h-8 w-8 animate-spin text-fg-3" />
+        </div>
       }
     >
       <AdminRegisterForm />
     </Suspense>
+    </FadeIn>
   );
 }

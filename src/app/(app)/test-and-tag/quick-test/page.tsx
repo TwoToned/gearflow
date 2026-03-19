@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScanInput } from "@/components/ui/scan-input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -503,13 +503,13 @@ function QuickTestInner() {
   const isSaving = saveRecordMutation.isPending;
 
   return (
-    <CanDo resource="testTag" action="create" fallback={<div className="p-8 text-center text-muted-foreground">You don&apos;t have permission to perform this action.</div>}>
+    <CanDo resource="testTag" action="create" fallback={<div className="p-8 text-center text-fg-3">You don&apos;t have permission to perform this action.</div>}>
     <div className="flex flex-col gap-6 max-w-4xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <ShieldCheck className="h-6 w-6 text-primary shrink-0" />
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight truncate">QUICK TEST</h1>
+          <h1 className="text-xl sm:t-title text-fg truncate">QUICK TEST</h1>
         </div>
         <Button variant="outline" size="sm" render={<Link href="/test-and-tag" />}>
           <ArrowLeft className="h-4 w-4 sm:mr-2" />
@@ -519,7 +519,7 @@ function QuickTestInner() {
 
       {/* Tester Name */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-        <Label htmlFor="testerName" className="whitespace-nowrap text-sm text-muted-foreground">
+        <Label htmlFor="testerName" className="whitespace-nowrap text-sm text-fg-3">
           Tester:
         </Label>
         <Input
@@ -532,8 +532,7 @@ function QuickTestInner() {
       </div>
 
       {/* Scan Input */}
-      <Card>
-        <CardContent className="pt-6">
+      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
           <div className="flex gap-3">
             <ScanInput
               ref={scanInputRef}
@@ -561,16 +560,13 @@ function QuickTestInner() {
               )}
             </Button>
           </div>
-        </CardContent>
-      </Card>
+      </div>
 
       {/* Item Not Found — Create New */}
       {isCreatingNew && !currentItem && (
-        <Card className="border-yellow-600/50">
-          <CardHeader>
-            <CardTitle className="text-yellow-400">Item Not Found — Create New</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6 border-yellow-600/50">
+          <h3 className="t-heading text-yellow-400 mb-4">Item Not Found — Create New</h3>
+          <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label>Test Tag ID</Label>
@@ -630,67 +626,60 @@ function QuickTestInner() {
                 Cancel
               </Button>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {/* Item Details */}
       {currentItem && (
         <>
-          <Card>
-            <CardHeader>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <CardTitle className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-lg">{currentItem.testTagId}</span>
+          <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-lg font-semibold">{currentItem.testTagId}</span>
                   <Badge variant="outline">{currentItem.equipmentClass.replace(/_/g, " ")}</Badge>
                   <Badge variant="outline">{currentItem.applianceType.replace(/_/g, " ")}</Badge>
-                </CardTitle>
+                </div>
                 <StatusBadge status={currentItem.status} />
               </div>
-            </CardHeader>
-            <CardContent>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
                 <div>
-                  <span className="text-muted-foreground">Description</span>
+                  <span className="text-fg-3">Description</span>
                   <p className="font-medium">{currentItem.description}</p>
                 </div>
                 {currentItem.make && (
                   <div>
-                    <span className="text-muted-foreground">Make</span>
+                    <span className="text-fg-3">Make</span>
                     <p className="font-medium">{currentItem.make}</p>
                   </div>
                 )}
                 {currentItem.modelName && (
                   <div>
-                    <span className="text-muted-foreground">Model</span>
+                    <span className="text-fg-3">Model</span>
                     <p className="font-medium">{currentItem.modelName}</p>
                   </div>
                 )}
                 <div>
-                  <span className="text-muted-foreground">Last Tested</span>
+                  <span className="text-fg-3">Last Tested</span>
                   <p className="font-medium">{formatDate(currentItem.lastTestDate)}</p>
                 </div>
                 <div>
-                  <span className="text-muted-foreground">Next Due</span>
+                  <span className="text-fg-3">Next Due</span>
                   <p className="font-medium">{formatDate(currentItem.nextDueDate)}</p>
                 </div>
               </div>
-            </CardContent>
-          </Card>
+          </div>
 
           {/* Visual Inspection */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Visual Inspection</CardTitle>
+          <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="t-heading text-fg">Visual Inspection</h3>
                 <Button size="sm" variant="outline" onClick={passAllVisual}>
                   <Check className="h-3 w-3 mr-1" />
                   Pass All
-                  <kbd className="ml-2 text-[10px] text-muted-foreground hidden sm:inline">Ctrl+Shift+P</kbd>
+                  <kbd className="ml-2 text-[10px] text-fg-3 hidden sm:inline">Ctrl+Shift+P</kbd>
                 </Button>
               </div>
-            </CardHeader>
-            <CardContent>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 <VisualCheck label="Cord condition" checked={visualCordCondition} onChange={setVisualCordCondition} />
                 <VisualCheck label="Plug condition" checked={visualPlugCondition} onChange={setVisualPlugCondition} />
@@ -711,15 +700,12 @@ function QuickTestInner() {
                   <Badge className="bg-red-600/20 text-red-400 border-red-600/30">Visual: FAIL</Badge>
                 )}
               </div>
-            </CardContent>
-          </Card>
+          </div>
 
           {/* Electrical Tests */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Electrical Tests</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
+          <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+            <h3 className="t-heading text-fg mb-4">Electrical Tests</h3>
+            <div className="space-y-4">
               {/* Test Method */}
               <div className="space-y-1.5">
                 <Label>Test Method</Label>
@@ -749,7 +735,7 @@ function QuickTestInner() {
                         placeholder="Reading"
                         className="w-32"
                       />
-                      <span className="text-sm text-muted-foreground whitespace-nowrap">
+                      <span className="text-sm text-fg-3 whitespace-nowrap">
                         Pass: &lt; 1.0 &Omega;
                       </span>
                       {earthContinuityReading !== "" && (
@@ -776,7 +762,7 @@ function QuickTestInner() {
                         placeholder="Reading"
                         className="w-32"
                       />
-                      <span className="text-sm text-muted-foreground whitespace-nowrap">
+                      <span className="text-sm text-fg-3 whitespace-nowrap">
                         Pass: &ge; 1.0 M&Omega;
                       </span>
                       {insulationReading !== "" && (
@@ -803,7 +789,7 @@ function QuickTestInner() {
                         placeholder="Reading"
                         className="w-32"
                       />
-                      <span className="text-sm text-muted-foreground whitespace-nowrap">
+                      <span className="text-sm text-fg-3 whitespace-nowrap">
                         Pass: &le; {leakageLimit} mA
                       </span>
                       {leakageCurrentReading !== "" && (
@@ -844,7 +830,7 @@ function QuickTestInner() {
                         placeholder="Reading"
                         className="w-32"
                       />
-                      <span className="text-sm text-muted-foreground whitespace-nowrap">
+                      <span className="text-sm text-fg-3 whitespace-nowrap">
                         Pass: &le; 300 ms
                       </span>
                       {rcdTripTimeReading !== "" && (
@@ -858,15 +844,14 @@ function QuickTestInner() {
                   </div>
                 )}
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
           {/* Overall Result */}
-          <Card>
-            <CardContent className="pt-6">
+          <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium text-muted-foreground">Overall:</span>
+                  <span className="text-sm font-medium text-fg-3">Overall:</span>
                   {overallResult === "PASS" ? (
                     <Badge className="bg-green-600/20 text-green-400 border-green-600/30 text-lg px-4 py-1">
                       PASS
@@ -878,20 +863,17 @@ function QuickTestInner() {
                   )}
                 </div>
                 <div className="hidden sm:flex items-center gap-3">
-                  <Volume2 className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-xs text-muted-foreground">Audio feedback enabled</span>
+                  <Volume2 className="h-4 w-4 text-fg-3" />
+                  <span className="text-xs text-fg-3">Audio feedback enabled</span>
                 </div>
               </div>
-            </CardContent>
-          </Card>
+          </div>
 
           {/* Failure Fields */}
           {overallResult === "FAIL" && (
-            <Card className="border-red-600/30">
-              <CardHeader>
-                <CardTitle className="text-red-400">Failure Details</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
+            <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6 border-red-600/30">
+              <h3 className="t-heading text-red-400 mb-4">Failure Details</h3>
+              <div className="space-y-4">
                 <div className="space-y-1.5">
                   <Label>Failure Action</Label>
                   <Select value={failureAction} onValueChange={(v) => v && setFailureAction(v)}>
@@ -916,8 +898,8 @@ function QuickTestInner() {
                     rows={3}
                   />
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           )}
 
           {/* Action Buttons */}
@@ -949,10 +931,9 @@ function QuickTestInner() {
 
       {/* Session Log */}
       {sessionLog.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span>Session Log ({sessionLog.length} items)</span>
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="t-heading text-fg">Session Log ({sessionLog.length} items)</h3>
               <div className="flex gap-2 text-sm font-normal">
                 <Badge className="bg-green-600/20 text-green-400 border-green-600/30">
                   {sessionLog.filter((e) => e.result === "PASS").length} Pass
@@ -961,21 +942,19 @@ function QuickTestInner() {
                   {sessionLog.filter((e) => e.result === "FAIL").length} Fail
                 </Badge>
               </div>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+            </div>
             <div className="space-y-2">
               {sessionLog.map((entry, i) => (
                 <div
                   key={`${entry.testTagId}-${i}`}
-                  className="flex items-center justify-between gap-2 py-2 px-3 rounded-md bg-muted/50"
+                  className="flex items-center justify-between gap-2 py-2 px-3 rounded-md bg-bg-inset/50"
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="font-mono text-sm shrink-0">{entry.testTagId}</span>
-                    <span className="text-sm text-muted-foreground truncate hidden sm:inline">{entry.description}</span>
+                    <span className="text-sm text-fg-3 truncate hidden sm:inline">{entry.description}</span>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-xs text-muted-foreground hidden sm:inline">
+                    <span className="text-xs text-fg-3 hidden sm:inline">
                       {entry.testDate.toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" })}
                     </span>
                     {entry.result === "PASS" ? (
@@ -987,15 +966,14 @@ function QuickTestInner() {
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
+        </div>
       )}
 
       {/* Keyboard shortcuts help — desktop only */}
-      <div className="text-xs text-muted-foreground flex-wrap gap-4 hidden sm:flex">
-        <span><kbd className="px-1.5 py-0.5 rounded bg-muted border text-[10px]">Ctrl+Shift+P</kbd> Pass All Visual</span>
-        <span><kbd className="px-1.5 py-0.5 rounded bg-muted border text-[10px]">Ctrl+Enter</kbd> Save & Next</span>
-        <span><kbd className="px-1.5 py-0.5 rounded bg-muted border text-[10px]">Ctrl+Shift+F</kbd> Save as Fail</span>
+      <div className="text-xs text-fg-3 flex-wrap gap-4 hidden sm:flex">
+        <span><kbd className="px-1.5 py-0.5 rounded bg-bg-inset border text-[10px]">Ctrl+Shift+P</kbd> Pass All Visual</span>
+        <span><kbd className="px-1.5 py-0.5 rounded bg-bg-inset border text-[10px]">Ctrl+Enter</kbd> Save & Next</span>
+        <span><kbd className="px-1.5 py-0.5 rounded bg-bg-inset border text-[10px]">Ctrl+Shift+F</kbd> Save as Fail</span>
       </div>
     </div>
     </CanDo>
@@ -1016,7 +994,7 @@ function VisualCheck({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <label className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/50 cursor-pointer">
+    <label className="flex items-center gap-3 p-2 rounded-md hover:bg-bg-elevated/50 cursor-pointer">
       <Checkbox checked={checked} onCheckedChange={(c) => onChange(!!c)} />
       <span className="text-sm">{label}</span>
       {checked ? (
@@ -1057,7 +1035,7 @@ export default function QuickTestPage() {
     <Suspense
       fallback={
         <div className="flex items-center justify-center min-h-[60vh]">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <Loader2 className="h-8 w-8 animate-spin text-fg-3" />
         </div>
       }
     >

@@ -6,7 +6,6 @@ import { Save } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useIsViewer } from "@/lib/use-permissions";
 
 interface NotesEditorProps {
@@ -46,43 +45,35 @@ export function NotesEditor({
 
   if (isViewer) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{title}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-            {initialNotes || "No notes."}
-          </p>
-        </CardContent>
-      </Card>
+      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <h3 className="t-heading text-fg mb-4">{title}</h3>
+        <p className="whitespace-pre-wrap text-sm text-fg-3">
+          {initialNotes || "No notes."}
+        </p>
+      </div>
     );
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base">{title}</CardTitle>
-          <Button
-            size="sm"
-            onClick={() => mutation.mutate()}
-            disabled={mutation.isPending || !hasChanges}
-          >
-            <Save className="mr-1.5 h-3.5 w-3.5" />
-            {mutation.isPending ? "Saving..." : "Save"}
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          rows={rows}
-          placeholder={placeholder}
-          className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-y"
-        />
-      </CardContent>
-    </Card>
+    <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="t-heading text-fg">{title}</h3>
+        <Button
+          size="sm"
+          onClick={() => mutation.mutate()}
+          disabled={mutation.isPending || !hasChanges}
+        >
+          <Save className="mr-1.5 h-3.5 w-3.5" />
+          {mutation.isPending ? "Saving..." : "Save"}
+        </Button>
+      </div>
+      <textarea
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        rows={rows}
+        placeholder={placeholder}
+        className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-fg-3 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-y"
+      />
+    </div>
   );
 }

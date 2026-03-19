@@ -164,7 +164,7 @@ function TagInput({
                 e.stopPropagation()
                 removeTag(tag)
               }}
-              className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20"
+              className="ml-0.5 rounded-full p-0.5 hover:bg-fg-3/20"
               disabled={disabled}
               aria-label={`Remove ${tag}`}
             >

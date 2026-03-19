@@ -32,7 +32,8 @@ import {
 } from "@/server/availability";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { StatusIndicator } from "@/components/ui/status-indicator";
+
 import { Input } from "@/components/ui/input";
 import { useActiveOrganization } from "@/lib/auth-client";
 import {
@@ -57,18 +58,6 @@ const statusColors: Record<string, string> = {
   INVOICED: "bg-green-400",
 };
 
-const badgeColors: Record<string, string> = {
-  ENQUIRY: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  QUOTING: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  QUOTED: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  CONFIRMED: "bg-green-500/10 text-green-500 border-green-500/20",
-  PREPPING: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  CHECKED_OUT: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  ON_SITE: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  RETURNED: "bg-teal-500/10 text-teal-500 border-teal-500/20",
-  COMPLETED: "bg-green-500/10 text-green-500 border-green-500/20",
-  INVOICED: "bg-green-500/10 text-green-500 border-green-500/20",
-};
 
 const statusLabels: Record<string, string> = {
   ENQUIRY: "Enquiry",
@@ -287,7 +276,7 @@ export function BookingCalendar({
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-4 text-xs text-fg-3">
         {entityType === "model" && totalStock > 0 && (
           <>
             <span>Stock: {effectiveStock}{effectiveStock !== totalStock ? ` of ${totalStock}` : ""}</span>
@@ -316,10 +305,9 @@ export function BookingCalendar({
       {viewMode === "calendar" ? (
         <div className="flex gap-4 flex-col lg:flex-row">
           {/* Calendar Grid */}
-          <Card className="flex-1">
-            <CardContent className="p-2 sm:p-4">
+          <div className="rounded-lg bg-bg-surface p-2 surface-ring sm:p-4 flex-1">
               {isLoading ? (
-                <div className="py-20 text-center text-muted-foreground">
+                <div className="py-20 text-center text-fg-3">
                   Loading...
                 </div>
               ) : (
@@ -330,7 +318,7 @@ export function BookingCalendar({
                       (d) => (
                         <div
                           key={d}
-                          className="text-center text-xs font-medium text-muted-foreground py-2"
+                          className="text-center text-xs font-medium text-fg-3 py-2"
                         >
                           {d}
                         </div>
@@ -375,7 +363,7 @@ export function BookingCalendar({
                               className={`
                                 text-sm tabular-nums leading-none
                                 ${isToday ? "bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center font-bold" : ""}
-                                ${!isToday && inMonth ? "text-foreground" : ""}
+                                ${!isToday && inMonth ? "text-fg" : ""}
                               `}
                             >
                               {format(day, "d")}
@@ -398,7 +386,7 @@ export function BookingCalendar({
                                     />
                                   ))}
                                   {count + dayModelBookings.length > 4 && (
-                                    <span className="text-[9px] text-muted-foreground leading-none">
+                                    <span className="text-[9px] text-fg-3 leading-none">
                                       +{count + dayModelBookings.length - 4}
                                     </span>
                                   )}
@@ -406,7 +394,7 @@ export function BookingCalendar({
 
                                 {/* Model: show booked count */}
                                 {entityType === "model" && bookedQty > 0 && (
-                                  <span className="text-[9px] text-muted-foreground mt-0.5">
+                                  <span className="text-[9px] text-fg-3 mt-0.5">
                                     {bookedQty}/{effectiveStock}
                                   </span>
                                 )}
@@ -430,7 +418,7 @@ export function BookingCalendar({
                                     </div>
                                   ))}
                                   {count + dayModelBookings.length > 2 && (
-                                    <div className="text-[9px] text-muted-foreground text-center">
+                                    <div className="text-[9px] text-fg-3 text-center">
                                       +{count + dayModelBookings.length - 2} more
                                     </div>
                                   )}
@@ -444,17 +432,15 @@ export function BookingCalendar({
                   ))}
                 </div>
               )}
-            </CardContent>
-          </Card>
+          </div>
 
           {/* Day Detail Panel */}
-          <Card className="lg:w-[340px] shrink-0">
-            <CardContent className="p-4">
+          <div className="rounded-lg bg-bg-surface p-4 surface-ring lg:w-[340px] shrink-0">
               {selectedDay ? (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                      <CalendarDays className="h-4 w-4 text-fg-3" />
                       <h3 className="font-semibold">
                         {format(selectedDay, "EEEE, d MMMM yyyy")}
                       </h3>
@@ -470,7 +456,7 @@ export function BookingCalendar({
                   </div>
 
                   {entityType === "model" && (
-                    <div className="text-sm text-muted-foreground">
+                    <div className="text-sm text-fg-3">
                       {(() => {
                         const booked = selectedBookings.reduce((s, b) => s + b.quantity, 0);
                         const available = Math.max(0, effectiveStock - booked);
@@ -484,13 +470,13 @@ export function BookingCalendar({
                   )}
 
                   {selectedBookings.length === 0 && selectedModelBookings.length === 0 ? (
-                    <p className="text-sm text-muted-foreground py-4 text-center">
+                    <p className="text-sm text-fg-3 py-4 text-center">
                       No bookings on this day.
                     </p>
                   ) : (
                     <div className="space-y-2">
                       {selectedBookings.length > 0 && (
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-xs text-fg-3">
                           {entityType === "asset" ? "This asset" : selectedBookings.length + " booking" + (selectedBookings.length !== 1 ? "s" : "")}
                         </p>
                       )}
@@ -504,20 +490,15 @@ export function BookingCalendar({
                             <span className="font-medium text-sm">
                               {b.projectNumber}
                             </span>
-                            <Badge
-                              variant="outline"
-                              className={`text-[10px] ${badgeColors[b.projectStatus] || ""}`}
-                            >
-                              {statusLabels[b.projectStatus] || b.projectStatus}
-                            </Badge>
+                            <StatusIndicator category="project" value={b.projectStatus} label={statusLabels[b.projectStatus] || b.projectStatus} variant="pill" />
                           </div>
                           <p className="text-sm truncate">{b.projectName}</p>
                           {b.clientName && (
-                            <p className="text-xs text-muted-foreground">
+                            <p className="text-xs text-fg-3">
                               {b.clientName}
                             </p>
                           )}
-                          <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <div className="flex items-center justify-between text-xs text-fg-3">
                             <span>
                               {format(new Date(b.rentalStartDate), "d MMM")} —{" "}
                               {format(new Date(b.rentalEndDate), "d MMM")}
@@ -554,11 +535,11 @@ export function BookingCalendar({
                               </div>
                               <p className="text-sm truncate">{b.projectName}</p>
                               {b.clientName && (
-                                <p className="text-xs text-muted-foreground">
+                                <p className="text-xs text-fg-3">
                                   {b.clientName}
                                 </p>
                               )}
-                              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                              <div className="flex items-center justify-between text-xs text-fg-3">
                                 <span>
                                   {format(new Date(b.rentalStartDate), "d MMM")} —{" "}
                                   {format(new Date(b.rentalEndDate), "d MMM")}
@@ -573,24 +554,22 @@ export function BookingCalendar({
                   )}
                 </div>
               ) : (
-                <div className="py-8 text-center text-sm text-muted-foreground">
+                <div className="py-8 text-center text-sm text-fg-3">
                   <CalendarDays className="mx-auto mb-2 h-8 w-8 opacity-50" />
                   Click a day to see booking details.
                 </div>
               )}
-            </CardContent>
-          </Card>
+          </div>
         </div>
       ) : (
         /* List View */
-        <Card>
-          <CardContent className="p-0">
+        <div className="rounded-lg bg-bg-surface surface-ring overflow-hidden">
             {isLoading ? (
-              <div className="py-12 text-center text-muted-foreground">
+              <div className="py-12 text-center text-fg-3">
                 Loading...
               </div>
             ) : bookings.length === 0 ? (
-              <div className="py-12 text-center text-sm text-muted-foreground">
+              <div className="py-12 text-center text-sm text-fg-3">
                 No bookings in {format(currentMonth, "MMMM yyyy")}.
               </div>
             ) : (
@@ -617,21 +596,16 @@ export function BookingCalendar({
                           <span className="font-mono text-sm font-medium">
                             {b.projectNumber}
                           </span>
-                          <p className="text-sm text-muted-foreground truncate max-w-[200px]">
+                          <p className="text-sm text-fg-3 truncate max-w-[200px]">
                             {b.projectName}
                           </p>
                         </div>
                       </TableCell>
-                      <TableCell className="text-muted-foreground">
+                      <TableCell className="text-fg-3">
                         {b.clientName || "—"}
                       </TableCell>
                       <TableCell>
-                        <Badge
-                          variant="outline"
-                          className={badgeColors[b.projectStatus] || ""}
-                        >
-                          {statusLabels[b.projectStatus] || b.projectStatus}
-                        </Badge>
+                        <StatusIndicator category="project" value={b.projectStatus} label={statusLabels[b.projectStatus] || b.projectStatus} variant="pill" />
                       </TableCell>
                       <TableCell>
                         {b.rentalStartDate
@@ -653,8 +627,7 @@ export function BookingCalendar({
                 </TableBody>
               </Table>
             )}
-          </CardContent>
-        </Card>
+        </div>
       )}
     </div>
   );

@@ -29,7 +29,7 @@ export function OtherSection({ settings, templateType, onSettingsChange }: Other
       </div>
 
       <div className="space-y-1">
-        <Label className="text-xs font-medium text-muted-foreground">Notes</Label>
+        <Label className="text-xs font-medium text-fg-3">Notes</Label>
         <div className="space-y-0.5">
           <SettingRow
             label="Client notes"
@@ -52,7 +52,7 @@ export function OtherSection({ settings, templateType, onSettingsChange }: Other
 
       <div className="space-y-4">
         <div className="space-y-1">
-          <Label className="text-xs font-medium text-muted-foreground">Signatures</Label>
+          <Label className="text-xs font-medium text-fg-3">Signatures</Label>
           <SettingRow
             label="Signature section"
             description="Add signature lines at the bottom"

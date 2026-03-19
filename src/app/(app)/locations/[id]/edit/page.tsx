@@ -1,10 +1,13 @@
 "use client";
 
 import { use } from "react";
+import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { getLocation } from "@/server/locations";
 import { LocationForm } from "@/components/locations/location-form";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { FadeIn } from "@/components/ui/motion";
 import type { LocationFormValues } from "@/lib/validations/asset";
 
 export default function EditLocationPage({ params }: { params: Promise<{ id: string }> }) {
@@ -17,8 +20,8 @@ export default function EditLocationPage({ params }: { params: Promise<{ id: str
     queryFn: () => getLocation(id),
   });
 
-  if (isLoading) return <div className="text-muted-foreground">Loading...</div>;
-  if (!location) return <div className="text-muted-foreground">Location not found.</div>;
+  if (isLoading) return <div className="text-fg-3">Loading...</div>;
+  if (!location) return <div className="text-fg-3">Location not found.</div>;
 
   const initialData: LocationFormValues & { id: string } = {
     id: location.id,
@@ -34,12 +37,21 @@ export default function EditLocationPage({ params }: { params: Promise<{ id: str
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Edit Location</h1>
-        <p className="text-muted-foreground">{location.name}</p>
+    <FadeIn>
+      <div className="mx-auto max-w-3xl space-y-4">
+        <div className="flex items-center gap-2 text-sm text-fg-3 mb-4">
+          <Link href="/locations" className="hover:text-fg transition-colors">Locations</Link>
+          <ChevronRight className="h-3 w-3" />
+          <Link href={`/locations/${id}`} className="hover:text-fg transition-colors">{location.name}</Link>
+          <ChevronRight className="h-3 w-3" />
+          <span className="text-fg">Edit</span>
+        </div>
+        <div>
+          <h1 className="t-title text-fg">Edit Location</h1>
+          <p className="text-[13px] text-fg-3">{location.name}</p>
+        </div>
+        <LocationForm initialData={initialData} />
       </div>
-      <LocationForm initialData={initialData} />
-    </div>
+    </FadeIn>
   );
 }

@@ -18,7 +18,7 @@ interface AddressMapProps {
 const MapInner = dynamic(() => import("./address-map-inner"), {
   ssr: false,
   loading: () => (
-    <div className="flex items-center justify-center rounded-md border bg-muted/30 text-sm text-muted-foreground" style={{ height: 250 }}>
+    <div className="flex items-center justify-center rounded-md border bg-bg-inset/30 text-sm text-fg-3" style={{ height: 250 }}>
       Loading map...
     </div>
   ),

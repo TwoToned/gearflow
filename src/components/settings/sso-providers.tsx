@@ -58,13 +58,13 @@ export function SSOProviderSection({ providers, loading, canUpdate, providerMeta
   const [addOpen, setAddOpen] = useState(false);
 
   if (loading) {
-    return <div className="h-20 animate-pulse rounded bg-muted" />;
+    return <div className="h-20 animate-pulse rounded bg-bg-inset" />;
   }
 
   return (
     <div className="space-y-4">
       {providers.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-fg-3">
           No SSO providers configured. Add one to enable SSO for your organization.
         </p>
       ) : (
@@ -124,13 +124,12 @@ function ProviderRow({ provider, meta, canUpdate }: { provider: Provider; meta?:
     <>
       <div className="flex items-center justify-between rounded-md border p-3">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-muted shrink-0">
-            {/* eslint-disable-next-line react-hooks/static-components */}
+          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-bg-inset shrink-0">
             <IconComp className="h-4 w-4" />
           </div>
           <div className="min-w-0">
             <p className="text-sm font-medium truncate">{displayName}</p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-fg-3">
               {provider.type.toUpperCase()} &middot; {provider.domain}
             </p>
           </div>
@@ -180,7 +179,7 @@ function ProviderRow({ provider, meta, canUpdate }: { provider: Provider; meta?:
           <DialogHeader>
             <DialogTitle>Delete Provider</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-fg-3">
             Are you sure you want to delete <strong>{displayName}</strong>? Users will no longer be able to sign in via this provider.
           </p>
           <div className="flex justify-end gap-2 mt-4">
@@ -348,10 +347,10 @@ function EditProviderForm({
       {/* Provider config */}
       <div className="space-y-3 rounded-md border p-3">
         <div className="flex items-center justify-between">
-          <p className="text-xs font-medium text-muted-foreground">
+          <p className="text-xs font-medium text-fg-3">
             {provider.type.toUpperCase()} Configuration
           </p>
-          <span className="text-xs font-mono text-muted-foreground">{provider.providerId}</span>
+          <span className="text-xs font-mono text-fg-3">{provider.providerId}</span>
         </div>
 
         <div className="space-y-1">
@@ -393,7 +392,7 @@ function EditProviderForm({
                 value={oidcClientSecret}
                 onChange={(e) => setOidcClientSecret(e.target.value)}
               />
-              <p className="text-xs text-muted-foreground">Only fill this in if you need to rotate the secret.</p>
+              <p className="text-xs text-fg-3">Only fill this in if you need to rotate the secret.</p>
             </div>
             <div className="space-y-1">
               <Label htmlFor="edit-email-claim">Email Claim</Label>
@@ -403,9 +402,9 @@ function EditProviderForm({
                 value={oidcEmailClaim}
                 onChange={(e) => setOidcEmailClaim(e.target.value)}
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-fg-3">
                 Override which OIDC claim is used for the user&apos;s email. For Microsoft Entra, use{" "}
-                <code className="text-xs bg-muted px-1 rounded">preferred_username</code>.
+                <code className="text-xs bg-bg-inset px-1 rounded">preferred_username</code>.
               </p>
             </div>
           </>
@@ -431,7 +430,7 @@ function EditProviderForm({
                 onChange={(e) => setSamlCert(e.target.value)}
                 className="font-mono text-xs"
               />
-              <p className="text-xs text-muted-foreground">Only fill this in if the certificate has been rotated.</p>
+              <p className="text-xs text-fg-3">Only fill this in if the certificate has been rotated.</p>
             </div>
           </>
         )}
@@ -439,7 +438,7 @@ function EditProviderForm({
 
       {/* Callback URLs */}
       <div className="rounded-md border border-dashed p-3 space-y-1.5 min-w-0 overflow-hidden">
-        <p className="text-xs font-medium text-muted-foreground">Callback URLs</p>
+        <p className="text-xs font-medium text-fg-3">Callback URLs</p>
         {provider.type === "saml" ? (
           <>
             <CopyField label="ACS URL" value={`${baseUrl}/api/auth/sso/saml2/callback/${provider.providerId}`} />
@@ -464,8 +463,8 @@ function CopyField({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="flex items-center gap-2 min-w-0">
-      <span className="text-xs text-muted-foreground shrink-0">{label}:</span>
-      <code className="text-xs bg-muted px-1.5 py-0.5 rounded min-w-0 truncate">{value}</code>
+      <span className="text-xs text-fg-3 shrink-0">{label}:</span>
+      <code className="text-xs bg-bg-inset px-1.5 py-0.5 rounded min-w-0 truncate">{value}</code>
       <button
         type="button"
         onClick={(e) => {
@@ -475,7 +474,7 @@ function CopyField({ label, value }: { label: string; value: string }) {
           setCopied(true);
           setTimeout(() => setCopied(false), 1500);
         }}
-        className="shrink-0 text-muted-foreground hover:text-foreground"
+        className="shrink-0 text-fg-3 hover:text-fg"
       >
         {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
       </button>
@@ -530,12 +529,11 @@ function IconPickerDropdown({ value, onChange }: { value: string; onChange: (id:
           open && "ring-2 ring-ring"
         )}
       >
-        <div className="flex h-6 w-6 items-center justify-center rounded bg-muted shrink-0">
-          {/* eslint-disable-next-line react-hooks/static-components */}
+        <div className="flex h-6 w-6 items-center justify-center rounded bg-bg-inset shrink-0">
           <SelectedIcon className="h-4 w-4" />
         </div>
         <span className="flex-1 text-left">{selected?.label || "Select icon..."}</span>
-        <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        <Search className="h-3.5 w-3.5 text-fg-3 shrink-0" />
       </button>
 
       {open && (
@@ -551,7 +549,7 @@ function IconPickerDropdown({ value, onChange }: { value: string; onChange: (id:
           </div>
           <div className="max-h-48 overflow-y-auto p-1">
             {filtered.length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-3">No icons found</p>
+              <p className="text-xs text-fg-3 text-center py-3">No icons found</p>
             ) : (
               filtered.map(({ id, label, Icon }) => (
                 <button
@@ -566,10 +564,10 @@ function IconPickerDropdown({ value, onChange }: { value: string; onChange: (id:
                     "flex items-center gap-2.5 w-full rounded px-2 py-1.5 text-sm transition-colors",
                     value === id
                       ? "bg-primary/10 text-primary"
-                      : "hover:bg-accent text-foreground"
+                      : "hover:bg-accent text-fg"
                   )}
                 >
-                  <div className="flex h-6 w-6 items-center justify-center rounded bg-muted shrink-0">
+                  <div className="flex h-6 w-6 items-center justify-center rounded bg-bg-inset shrink-0">
                     <Icon className="h-4 w-4" />
                   </div>
                   <span>{label}</span>
@@ -733,16 +731,16 @@ function AddProviderForm({ onSuccess }: { onSuccess: () => void }) {
             <div className="space-y-1">
               <Label htmlFor="oidc-email-claim">Email Claim (optional)</Label>
               <Input id="oidc-email-claim" placeholder="email (default)" value={oidcEmailClaim} onChange={(e) => setOidcEmailClaim(e.target.value)} />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-fg-3">
                 Override which OIDC claim is used for the user&apos;s email. For Microsoft Entra, use{" "}
-                <code className="text-xs bg-muted px-1 rounded">preferred_username</code> or{" "}
-                <code className="text-xs bg-muted px-1 rounded">upn</code>.
+                <code className="text-xs bg-bg-inset px-1 rounded">preferred_username</code> or{" "}
+                <code className="text-xs bg-bg-inset px-1 rounded">upn</code>.
               </p>
             </div>
 
             {/* Callback URL display */}
             <div className="rounded-md border border-dashed p-3 space-y-1.5 min-w-0 overflow-hidden">
-              <p className="text-xs font-medium text-muted-foreground">Add this Redirect URI to your identity provider</p>
+              <p className="text-xs font-medium text-fg-3">Add this Redirect URI to your identity provider</p>
               <CopyField label="Redirect URI" value={callbackUrl} />
             </div>
 
@@ -774,7 +772,7 @@ function AddProviderForm({ onSuccess }: { onSuccess: () => void }) {
 
             {/* Callback URLs display */}
             <div className="rounded-md border border-dashed p-3 space-y-1.5 min-w-0 overflow-hidden">
-              <p className="text-xs font-medium text-muted-foreground">Add these URLs to your identity provider</p>
+              <p className="text-xs font-medium text-fg-3">Add these URLs to your identity provider</p>
               <CopyField label="ACS URL" value={`${baseUrl}/api/auth/sso/saml2/callback/${providerId}`} />
               <CopyField label="Metadata" value={`${baseUrl}/api/auth/sso/saml2/sp/metadata?providerId=${providerId}`} />
             </div>

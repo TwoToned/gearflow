@@ -36,7 +36,7 @@ const columns: ColumnDef<AnySupplier>[] = [
     sortKey: "contactName",
     responsiveHide: "md",
     cell: (row) => (
-      <span className="text-muted-foreground">{row.contactName || "\u2014"}</span>
+      <span className="text-fg-3">{row.contactName || "\u2014"}</span>
     ),
   },
   {
@@ -46,7 +46,7 @@ const columns: ColumnDef<AnySupplier>[] = [
     sortKey: "email",
     responsiveHide: "md",
     cell: (row) => (
-      <span className="text-muted-foreground">{row.email || "\u2014"}</span>
+      <span className="text-fg-3">{row.email || "\u2014"}</span>
     ),
   },
   {
@@ -55,7 +55,7 @@ const columns: ColumnDef<AnySupplier>[] = [
     accessorKey: "phone",
     responsiveHide: "lg",
     cell: (row) => (
-      <span className="text-muted-foreground">{row.phone || "\u2014"}</span>
+      <span className="text-fg-3">{row.phone || "\u2014"}</span>
     ),
   },
   {
@@ -64,7 +64,7 @@ const columns: ColumnDef<AnySupplier>[] = [
     accessorKey: "accountNumber",
     responsiveHide: "lg",
     cell: (row) => (
-      <span className="font-mono text-sm text-muted-foreground">{row.accountNumber || "\u2014"}</span>
+      <span className="font-mono text-sm text-fg-3">{row.accountNumber || "\u2014"}</span>
     ),
   },
   {
@@ -172,7 +172,7 @@ export function SupplierTable() {
       onToggleColumnVisibility={toggleColumnVisibility}
       onResetPreferences={resetPreferences}
       isLoading={isLoading}
-      emptyTitle="No suppliers found"
+      emptyPreset="suppliers"
       toolbarActions={toolbarActions}
     />
   );

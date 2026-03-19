@@ -6,9 +6,9 @@ export default function OfflinePage() {
   return (
     <div className="flex min-h-svh items-center justify-center p-4">
       <div className="text-center space-y-4">
-        <WifiOff className="mx-auto h-12 w-12 text-muted-foreground" />
+        <WifiOff className="mx-auto h-12 w-12 text-fg-3" />
         <h1 className="text-2xl font-bold">You&apos;re offline</h1>
-        <p className="text-muted-foreground max-w-sm">
+        <p className="text-fg-3 max-w-sm">
           Check your internet connection and try again.
         </p>
         <button

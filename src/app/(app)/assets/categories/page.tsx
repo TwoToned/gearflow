@@ -33,6 +33,8 @@ import {
 } from "@/components/ui/table";
 import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { PageHeader } from "@/components/layout/page-header";
+import { FadeIn } from "@/components/ui/motion";
 
 export default function CategoriesPage() {
   const queryClient = useQueryClient();
@@ -144,26 +146,23 @@ export default function CategoriesPage() {
     : rows;
 
   return (
+    <FadeIn>
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Categories</h1>
-          <p className="text-muted-foreground">
-            Organize your equipment into categories and subcategories.
-          </p>
-        </div>
-        {canCreate && (
+      <PageHeader
+        title="Categories"
+        description="Group gear by type — audio, lighting, video, staging."
+        actions={canCreate ? (
           <Button onClick={() => openCreate()}>
             <Plus className="mr-2 h-4 w-4" />
             Add Category
           </Button>
-        )}
-      </div>
+        ) : undefined}
+      />
 
       {/* Search */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-fg-3" />
           <Input
             placeholder="Search categories..."
             value={search}
@@ -192,13 +191,13 @@ export default function CategoriesPage() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground">Loading...</TableCell>
+                <TableCell colSpan={7} className="text-center text-fg-3">Loading...</TableCell>
               </TableRow>
             ) : filteredRows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground py-12">
+                <TableCell colSpan={7} className="text-center text-fg-3 py-12">
                   <div className="flex flex-col items-center gap-2">
-                    <FolderOpen className="h-10 w-10 text-muted-foreground/50" />
+                    <FolderOpen className="h-10 w-10 text-fg-3/50" />
                     <p>{search ? "No matching categories." : "No categories yet."}</p>
                     {!search && canCreate && (
                       <Button size="sm" className="mt-2" onClick={() => openCreate()}>
@@ -223,30 +222,30 @@ export default function CategoriesPage() {
                       </Link>
                     </div>
                   </TableCell>
-                  <TableCell className="hidden sm:table-cell text-muted-foreground max-w-[200px] truncate">
+                  <TableCell className="hidden sm:table-cell text-fg-3 max-w-[200px] truncate">
                     {cat.description || "\u2014"}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right t-data">
                     {cat._count.models > 0 ? (
                       <Badge variant="secondary" className="gap-1">
                         <Boxes className="h-3 w-3" />
                         {cat._count.models}
                       </Badge>
                     ) : (
-                      <span className="text-muted-foreground">0</span>
+                      <span className="text-fg-3">0</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-right hidden sm:table-cell">
+                  <TableCell className="text-right hidden sm:table-cell t-data">
                     {cat._count.kits > 0 ? (
                       <Badge variant="secondary" className="gap-1">
                         <Container className="h-3 w-3" />
                         {cat._count.kits}
                       </Badge>
                     ) : (
-                      <span className="text-muted-foreground">0</span>
+                      <span className="text-fg-3">0</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-right hidden md:table-cell">
+                  <TableCell className="text-right hidden md:table-cell t-data">
                     {cat._count.children > 0 ? cat._count.children : "\u2014"}
                   </TableCell>
                   <TableCell className="hidden lg:table-cell">
@@ -321,7 +320,7 @@ export default function CategoriesPage() {
               <Input id="cat-sort" type="number" {...form.register("sortOrder")} className="w-24" />
             </div>
             {parentId && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-fg-3">
                 {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                 Subcategory of: {(categories as any[]).find((c) => c.id === parentId)?.name}
               </p>
@@ -338,5 +337,6 @@ export default function CategoriesPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </FadeIn>
   );
 }

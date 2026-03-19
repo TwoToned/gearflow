@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Pencil, Loader2, Download, Upload, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
+import { cn } from "@/lib/utils";
 import { getAssets, bulkUpdateAssets } from "@/server/assets";
 import { bulkForceReturnAssets } from "@/server/warehouse";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -19,6 +20,7 @@ import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import {
   Dialog,
@@ -29,27 +31,7 @@ import {
 } from "@/components/ui/dialog";
 import { MediaThumbnail } from "@/components/media/media-thumbnail";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
-import { assetStatusLabels, bulkAssetStatusLabels, conditionLabels, formatLabel } from "@/lib/status-labels";
-
-const statusColors: Record<string, string> = {
-  AVAILABLE: "bg-green-500/10 text-green-500 border-green-500/20",
-  CHECKED_OUT: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  IN_MAINTENANCE: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  RESERVED: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  RETIRED: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  LOST: "bg-red-500/10 text-red-500 border-red-500/20",
-  ACTIVE: "bg-green-500/10 text-green-500 border-green-500/20",
-  LOW_STOCK: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  OUT_OF_STOCK: "bg-red-500/10 text-red-500 border-red-500/20",
-};
-
-const conditionColors: Record<string, string> = {
-  NEW: "bg-green-500/10 text-green-500 border-green-500/20",
-  GOOD: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  FAIR: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  POOR: "bg-orange-500/10 text-orange-500 border-orange-500/20",
-  DAMAGED: "bg-red-500/10 text-red-500 border-red-500/20",
-};
+import { assetStatusLabels, bulkAssetStatusLabels, conditionLabels } from "@/lib/status-labels";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyAsset = Record<string, any>;
@@ -74,11 +56,11 @@ function useAssetColumns(
             size={32}
           />
           <div>
-            <Link href={`/assets/registry/${row.id}`} className="font-mono font-medium text-sm hover:underline" onClick={(e) => e.stopPropagation()}>
+            <Link href={`/assets/registry/${row.id}`} className="font-mono text-xs text-fg-3 font-medium hover:underline hover:text-fg-1" onClick={(e) => e.stopPropagation()}>
               {row.assetTag}
             </Link>
             {row.customName && (
-              <p className="text-xs text-muted-foreground">{row.customName}</p>
+              <p className="text-xs text-fg-3 truncate max-w-[180px]">{row.customName}</p>
             )}
           </div>
         </div>
@@ -94,7 +76,7 @@ function useAssetColumns(
             {row.model?.name}
           </Link>
           {row.model?.category && (
-            <p className="text-xs text-muted-foreground">{row.model.category.name}</p>
+            <p className="text-xs text-fg-3">{row.model.category.name}</p>
           )}
         </div>
       ),
@@ -106,7 +88,7 @@ function useAssetColumns(
       sortKey: "serialNumber",
       defaultVisible: true,
       cell: (row) => (
-        <span className="font-mono text-sm text-muted-foreground">
+        <span className="font-mono text-sm text-fg-3">
           {row.serialNumber || "—"}
         </span>
       ),
@@ -127,10 +109,30 @@ function useAssetColumns(
         { value: "LOST", label: "Lost", color: "bg-red-500" },
       ],
       cell: (row) => (
-        <Badge variant="outline" className={statusColors[row.status] || ""}>
-          {assetStatusLabels[row.status] || formatLabel(row.status)}
-        </Badge>
+        <StatusIndicator category="asset" value={row.status} label={assetStatusLabels[row.status]} variant="pill" />
       ),
+    },
+    {
+      id: "utilization",
+      header: "Utilization",
+      sortable: false,
+      defaultVisible: true,
+      responsiveHide: "md",
+      cell: (row) => {
+        if (row.status === "CHECKED_OUT") {
+          return <span className="text-xs font-medium text-purple-400">Deployed</span>;
+        }
+        if (row.status === "RESERVED") {
+          return <span className="text-xs font-medium text-blue-400">Reserved</span>;
+        }
+        if (row.status === "IN_MAINTENANCE") {
+          return <span className="text-xs font-medium text-amber-400">Maintenance</span>;
+        }
+        if (row.status === "RETIRED" || row.status === "LOST") {
+          return <span className="text-xs text-fg-4">&mdash;</span>;
+        }
+        return <span className="text-xs text-fg-3">Available</span>;
+      },
     },
     {
       id: "condition",
@@ -148,9 +150,7 @@ function useAssetColumns(
         { value: "DAMAGED", label: "Damaged", color: "bg-red-500" },
       ],
       cell: (row) => (
-        <Badge variant="outline" className={conditionColors[row.condition] || ""}>
-          {conditionLabels[row.condition] || formatLabel(row.condition)}
-        </Badge>
+        <StatusIndicator category="condition" value={row.condition} label={conditionLabels[row.condition]} variant="pill" />
       ),
     },
     {
@@ -165,7 +165,7 @@ function useAssetColumns(
       })),
       responsiveHide: "md",
       cell: (row) => (
-        <span className="text-muted-foreground">{row.location?.name || "—"}</span>
+        <span className="text-fg-3">{row.location?.name || "—"}</span>
       ),
     },
     {
@@ -177,7 +177,7 @@ function useAssetColumns(
       defaultVisible: false,
       responsiveHide: "lg",
       cell: (row) => (
-        <span className="text-muted-foreground">{row.model?.category?.name || "—"}</span>
+        <span className="text-fg-3">{row.model?.category?.name || "—"}</span>
       ),
     },
     {
@@ -211,7 +211,7 @@ function useBulkAssetColumns(
       alwaysVisible: true,
       sortKey: "assetTag",
       cell: (row) => (
-        <Link href={`/assets/registry/${row.id}?type=bulk`} className="font-mono font-medium text-sm hover:underline" onClick={(e) => e.stopPropagation()}>
+        <Link href={`/assets/registry/${row.id}?type=bulk`} className="font-mono text-xs text-fg-3 font-medium hover:underline hover:text-fg-1" onClick={(e) => e.stopPropagation()}>
           {row.assetTag}
         </Link>
       ),
@@ -226,7 +226,7 @@ function useBulkAssetColumns(
             {row.model?.name}
           </Link>
           {row.model?.category && (
-            <p className="text-xs text-muted-foreground">{row.model.category.name}</p>
+            <p className="text-xs text-fg-3">{row.model.category.name}</p>
           )}
         </div>
       ),
@@ -237,7 +237,28 @@ function useBulkAssetColumns(
       accessorKey: "availableQuantity",
       sortKey: "availableQuantity",
       align: "right",
-      cell: (row) => <span className="font-medium">{row.availableQuantity}</span>,
+      cell: (row) => {
+        const avail = row.availableQuantity ?? 0;
+        const total = row.totalQuantity ?? 0;
+        const deployed = total - avail;
+        const pct = total > 0 ? Math.round((deployed / total) * 100) : 0;
+        return (
+          <div className="flex items-center justify-end gap-2">
+            <span className="font-medium tabular-nums">{avail}</span>
+            {total > 0 && (
+              <div className="w-12 h-1.5 rounded-full bg-border overflow-hidden" title={`${pct}% deployed`}>
+                <div
+                  className={cn(
+                    "h-full rounded-full transition-all",
+                    pct === 0 ? "bg-success/60" : pct >= 80 ? "bg-error/60" : "bg-primary/60",
+                  )}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            )}
+          </div>
+        );
+      },
     },
     {
       id: "totalQuantity",
@@ -245,7 +266,7 @@ function useBulkAssetColumns(
       accessorKey: "totalQuantity",
       sortKey: "totalQuantity",
       align: "right",
-      cell: (row) => <span className="text-muted-foreground">{row.totalQuantity}</span>,
+      cell: (row) => <span className="text-fg-3 tabular-nums">{row.totalQuantity}</span>,
     },
     {
       id: "status",
@@ -261,9 +282,7 @@ function useBulkAssetColumns(
         { value: "RETIRED", label: "Retired", color: "bg-gray-500" },
       ],
       cell: (row) => (
-        <Badge variant="outline" className={statusColors[row.status] || ""}>
-          {bulkAssetStatusLabels[row.status] || formatLabel(row.status)}
-        </Badge>
+        <StatusIndicator category="bulkAsset" value={row.status} label={bulkAssetStatusLabels[row.status]} variant="pill" />
       ),
     },
     {
@@ -277,7 +296,7 @@ function useBulkAssetColumns(
         label: loc.parent ? `${loc.parent.name} > ${loc.name}` : loc.name,
       })),
       cell: (row) => (
-        <span className="text-muted-foreground">{row.location?.name || "—"}</span>
+        <span className="text-fg-3">{row.location?.name || "—"}</span>
       ),
     },
     {
@@ -433,7 +452,7 @@ export function AssetTable() {
     <div className="space-y-4">
       {/* Bulk Edit Bar */}
       {view === "serialized" && selectedIds.size > 0 && (
-        <div className="flex items-center gap-3 rounded-md border bg-muted/50 px-4 py-2">
+        <div className="flex items-center gap-3 rounded-md border bg-bg-inset/50 px-4 py-2">
           <span className="text-sm font-medium">{selectedIds.size} selected</span>
           <CanDo resource="asset" action="update">
             <Button size="sm" variant="outline" onClick={() => setBulkEditOpen(true)}>
@@ -483,7 +502,7 @@ export function AssetTable() {
           onToggleColumnVisibility={toggleColumnVisibility}
           onResetPreferences={resetPreferences}
           isLoading={isLoading}
-          emptyTitle="No assets found"
+          emptyPreset="assets"
           enableRowSelection
           selectedRows={selectedIds}
           onSelectionChange={setSelectedIds}
@@ -511,7 +530,7 @@ export function AssetTable() {
           onToggleColumnVisibility={toggleColumnVisibility}
           onResetPreferences={resetPreferences}
           isLoading={isLoading}
-          emptyTitle="No bulk assets found"
+          emptyPreset="assets"
           toolbarPrefix={viewToggle}
           toolbarActions={actionButtons}
         />
@@ -602,7 +621,7 @@ function BulkEditDialog({
         <DialogHeader>
           <DialogTitle>Bulk Edit {selectedIds.size} Assets</DialogTitle>
         </DialogHeader>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-fg-3">
           Only fields you change will be updated. Leave a field unchanged to keep existing values.
         </p>
         <div className="space-y-4 py-2">

@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,16 +23,7 @@ import { changeMemberRole, removeOrgMember } from "@/server/org-members";
 import { getCustomRoles } from "@/server/custom-roles";
 import { ROLE_COLORS } from "./role-editor-dialog";
 import type { PermissionMap } from "@/lib/permissions";
-
-const roleColors: Record<string, string> = {
-  owner: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  admin: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  manager: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  member: "bg-green-500/10 text-green-500 border-green-500/20",
-  staff: "bg-green-500/10 text-green-500 border-green-500/20",
-  warehouse: "bg-orange-500/10 text-orange-500 border-orange-500/20",
-  viewer: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-};
+import type { ColorIntent } from "@/lib/status-colors";
 
 const builtInAssignableRoles = [
   { value: "admin", label: "Admin" },
@@ -47,9 +39,19 @@ interface CustomRoleData {
   permissions: PermissionMap;
 }
 
-function getCustomRoleColorClasses(color: string | null): string {
-  const entry = ROLE_COLORS.find((c) => c.value === color);
-  return entry?.classes ?? "bg-gray-500/10 text-gray-500 border-gray-500/20";
+const customRoleColorToIntent: Record<string, ColorIntent> = {
+  blue: "info",
+  purple: "primary",
+  green: "success",
+  orange: "warning",
+  red: "error",
+  pink: "error",
+  teal: "primary",
+  amber: "warning",
+};
+
+function getCustomRoleIntent(color: string | null): ColorIntent {
+  return (color ? customRoleColorToIntent[color] : undefined) ?? "neutral";
 }
 
 function getRoleDisplay(role: string, customRolesMap: Map<string, CustomRoleData>) {
@@ -58,12 +60,14 @@ function getRoleDisplay(role: string, customRolesMap: Map<string, CustomRoleData
     const cr = customRolesMap.get(id);
     return {
       label: cr?.name ?? "Unknown Role",
-      colorClass: cr ? getCustomRoleColorClasses(cr.color) : roleColors.viewer,
+      isCustom: true,
+      intent: cr ? getCustomRoleIntent(cr.color) : "neutral" as ColorIntent,
     };
   }
   return {
     label: role.charAt(0).toUpperCase() + role.slice(1),
-    colorClass: roleColors[role] || "",
+    isCustom: false,
+    intent: undefined as ColorIntent | undefined,
   };
 }
 
@@ -157,7 +161,7 @@ export function MemberList() {
 
   if (items.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
+      <p className="text-sm text-fg-3">
         No team members yet. Add someone above.
       </p>
     );
@@ -173,25 +177,27 @@ export function MemberList() {
       {invites.length > 0 && (
         <>
           {invites.map((inv) => {
-            const display = inv.role ? getRoleDisplay(inv.role, customRolesMap) : { label: "Member", colorClass: roleColors.member };
+            const display = inv.role ? getRoleDisplay(inv.role, customRolesMap) : { label: "Member", isCustom: false, intent: undefined };
             return (
               <div
                 key={inv.id}
                 className="flex items-center justify-between rounded-md border border-dashed p-3"
               >
                 <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
-                    <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-bg-inset">
+                    <Mail className="h-3.5 w-3.5 text-fg-3" />
                   </div>
                   <div>
                     <p className="text-sm font-medium">{inv.email}</p>
-                    <p className="text-xs text-muted-foreground">Invited</p>
+                    <p className="text-xs text-fg-3">Invited</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge variant="outline" className={display.colorClass}>
-                    {display.label}
-                  </Badge>
+                  <StatusIndicator
+                    {...(display.isCustom ? { intent: display.intent } : { category: "memberRole", value: inv.role || "member" })}
+                    label={display.label}
+                    variant="pill"
+                  />
                   <Badge variant="secondary" className="text-xs">
                     Pending
                   </Badge>
@@ -227,24 +233,21 @@ export function MemberList() {
               <UserAvatar user={member.user} size="sm" />
               <div>
                 <p className="text-sm font-medium">{member.user.name || "Unnamed"}</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-fg-3">
                   {member.user.email}
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
               {member.role === "owner" ? (
-                <Badge
-                  variant="outline"
-                  className={display.colorClass}
-                >
-                  {display.label}
-                </Badge>
+                <StatusIndicator category="memberRole" value="owner" label={display.label} variant="pill" />
               ) : (
                 <NotViewer fallback={
-                  <Badge variant="outline" className={display.colorClass}>
-                    {display.label}
-                  </Badge>
+                  <StatusIndicator
+                    {...(display.isCustom ? { intent: display.intent } : { category: "memberRole", value: member.role })}
+                    label={display.label}
+                    variant="pill"
+                  />
                 }>
                   <Select
                     value={member.role}

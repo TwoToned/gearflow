@@ -7,6 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import { ThemeToggle } from "./theme-toggle";
 import { CommandSearch } from "./command-search";
 import { Notifications } from "./notifications";
+import { ShortcutsDialog } from "./shortcuts-dialog";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -95,6 +96,7 @@ export function TopBar({ title }: { title?: string }) {
       </Breadcrumb>
       <div className="ml-auto flex items-center gap-1 sm:gap-2">
         <CommandSearch />
+        <ShortcutsDialog />
         <Notifications />
         <Separator orientation="vertical" className="h-4 hidden sm:block" />
         <span className="hidden sm:flex"><ThemeToggle /></span>

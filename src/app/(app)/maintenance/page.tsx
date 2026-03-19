@@ -22,11 +22,12 @@ import {
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
+import { PageHeader } from "@/components/layout/page-header";
+import { FadeIn } from "@/components/ui/motion";
 
 const statusConfig: Record<
   string,
@@ -103,11 +104,11 @@ function useMaintenanceColumns(
             {assets.slice(0, 2).map((link: AnyRecord) => (
               <div key={link.id}>
                 <span className="font-mono text-xs">{link.asset?.assetTag}</span>
-                <span className="text-muted-foreground text-xs ml-2">{link.asset?.model?.name}</span>
+                <span className="text-fg-3 text-xs ml-2">{link.asset?.model?.name}</span>
               </div>
             ))}
             {assets.length > 2 && (
-              <span className="text-xs text-muted-foreground">+{assets.length - 2} more</span>
+              <span className="text-xs text-fg-3">+{assets.length - 2} more</span>
             )}
           </div>
         );
@@ -135,7 +136,7 @@ function useMaintenanceColumns(
       sortKey: "reportedBy",
       defaultVisible: false,
       responsiveHide: "md",
-      cell: (row) => <span className="text-sm text-muted-foreground">{row.reportedBy?.name || "—"}</span>,
+      cell: (row) => <span className="text-sm text-fg-3">{row.reportedBy?.name || "—"}</span>,
     },
     {
       id: "status",
@@ -171,7 +172,7 @@ function useMaintenanceColumns(
       header: "Scheduled",
       sortKey: "scheduledDate",
       cell: (row) => (
-        <span className="text-sm text-muted-foreground">
+        <span className="text-sm text-fg-3">
           {row.scheduledDate ? format(new Date(row.scheduledDate), "MMM d, yyyy") : "—"}
         </span>
       ),
@@ -182,7 +183,7 @@ function useMaintenanceColumns(
       sortKey: "completedDate",
       defaultVisible: false,
       cell: (row) => (
-        <span className="text-sm text-muted-foreground">
+        <span className="text-sm text-fg-3">
           {row.completedDate ? format(new Date(row.completedDate), "MMM d, yyyy") : "—"}
         </span>
       ),
@@ -242,7 +243,7 @@ function useMaintenanceColumns(
               }
             }}
           >
-            <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+            <Trash2 className="h-4 w-4 text-fg-3 hover:text-destructive" />
           </Button>
         </CanDo>
       ),
@@ -298,27 +299,22 @@ export default function MaintenancePage() {
   }).length;
 
   return (
-    <RequirePermission resource="maintenance" action="read">
-      <div className="space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Maintenance</h1>
-            <p className="text-muted-foreground">
-              Track repairs, inspections, and preventative maintenance.
-            </p>
-          </div>
-        </div>
+    <FadeIn>
+      <RequirePermission resource="maintenance" action="read">
+        <div className="space-y-6">
+        <PageHeader
+          title="Maintenance"
+          description="Repairs, inspections, and scheduled servicing."
+        />
 
         {overdueMaintenance > 0 && (
-          <Card className="border-destructive/50">
-            <CardContent className="flex items-center gap-3 py-3">
-              <AlertTriangle className="h-5 w-5 text-destructive" />
-              <span className="text-sm font-medium">
-                {overdueMaintenance} overdue maintenance{" "}
-                {overdueMaintenance === 1 ? "record" : "records"}
-              </span>
-            </CardContent>
-          </Card>
+          <div className="rounded-lg bg-bg-surface surface-ring border-destructive/50 flex items-center gap-3 py-3 px-4">
+            <AlertTriangle className="h-5 w-5 text-destructive" />
+            <span className="text-sm font-medium">
+              {overdueMaintenance} overdue maintenance{" "}
+              {overdueMaintenance === 1 ? "record" : "records"}
+            </span>
+          </div>
         )}
 
         <DataTable
@@ -341,7 +337,7 @@ export default function MaintenancePage() {
           onToggleColumnVisibility={toggleColumnVisibility}
           onResetPreferences={resetPreferences}
           isLoading={isLoading}
-          emptyTitle="No maintenance records found"
+          emptyPreset="maintenance"
           toolbarActions={
             <CanDo resource="maintenance" action="create">
               <Button size="sm" className="h-8" render={<Link href="/maintenance/new" />}>
@@ -353,5 +349,6 @@ export default function MaintenancePage() {
         />
       </div>
     </RequirePermission>
+    </FadeIn>
   );
 }

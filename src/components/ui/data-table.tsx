@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { FadeIn } from "@/components/ui/motion";
 import {
   Table,
   TableBody,
@@ -27,6 +28,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { FilterValue, FilterType } from "@/lib/table-utils";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
 
 // ─── Column Definition ──────────────────────────────────────────────
 
@@ -90,6 +93,7 @@ export interface DataTableProps<TData> {
   isLoading?: boolean;
   emptyTitle?: string;
   emptyDescription?: string;
+  emptyPreset?: string;
   toolbarActions?: React.ReactNode;
   toolbarPrefix?: React.ReactNode;
 }
@@ -233,14 +237,14 @@ function FilterPopover({
             <div className="flex items-center justify-between mb-1 px-1">
               <button
                 type="button"
-                className="text-[10px] text-muted-foreground hover:text-foreground"
+                className="text-[10px] text-fg-3 hover:text-fg"
                 onClick={selectAll}
               >
                 Select all
               </button>
               <button
                 type="button"
-                className="text-[10px] text-muted-foreground hover:text-foreground"
+                className="text-[10px] text-fg-3 hover:text-fg"
                 onClick={clearAll}
               >
                 Clear
@@ -270,7 +274,7 @@ function FilterPopover({
                 );
               })}
               {filteredOptions.length === 0 && (
-                <p className="text-xs text-muted-foreground px-2 py-1">No options found</p>
+                <p className="text-xs text-fg-3 px-2 py-1">No options found</p>
               )}
             </div>
           </div>,
@@ -347,7 +351,7 @@ function ColumnVisibilityPopover<TData>({
             className="fixed z-50 w-52 rounded-lg border bg-popover p-2 shadow-lg"
             style={{ top: pos.top, right: pos.right }}
           >
-            <p className="text-xs font-medium text-muted-foreground mb-1.5 px-1">Toggle columns</p>
+            <p className="text-xs font-medium text-fg-3 mb-1.5 px-1">Toggle columns</p>
             <div className="max-h-64 overflow-y-auto space-y-0.5">
               {columns.map((col) => (
                 <button
@@ -375,7 +379,7 @@ function ColumnVisibilityPopover<TData>({
                 <div className="my-1.5 h-px bg-border" />
                 <button
                   type="button"
-                  className="w-full text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-accent text-left"
+                  className="w-full text-xs text-fg-3 hover:text-fg px-2 py-1 rounded hover:bg-accent text-left"
                   onClick={() => {
                     onReset();
                     setOpen(false);
@@ -427,7 +431,7 @@ function FilterChips<TData>({
             <span className="font-medium">{col.header}:</span> {labels}
             <button
               type="button"
-              className="ml-0.5 rounded-sm hover:bg-muted-foreground/20 p-0.5"
+              className="ml-0.5 rounded-sm hover:bg-fg-3/20 p-0.5"
               onClick={() => onFilterChange(key, undefined)}
             >
               <X className="h-3 w-3" />
@@ -437,7 +441,7 @@ function FilterChips<TData>({
       })}
       <button
         type="button"
-        className="text-xs text-muted-foreground hover:text-foreground"
+        className="text-xs text-fg-3 hover:text-fg"
         onClick={onClearAll}
       >
         Clear all
@@ -480,6 +484,7 @@ export function DataTable<TData>({
   isLoading = false,
   emptyTitle = "No results found",
   emptyDescription,
+  emptyPreset,
   toolbarActions,
   toolbarPrefix,
 }: DataTableProps<TData>) {
@@ -550,13 +555,13 @@ export function DataTable<TData>({
   });
 
   return (
-    <div className="space-y-3">
+    <FadeIn className="space-y-3">
       {/* Toolbar */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
         {toolbarPrefix}
         {enableSearch && onSearchChange && (
           <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-fg-3" />
             <Input
               placeholder={searchPlaceholder}
               value={searchValue ?? ""}
@@ -597,7 +602,7 @@ export function DataTable<TData>({
       )}
 
       {/* Table */}
-      <div className="rounded-md border">
+      <div className="overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
@@ -627,7 +632,7 @@ export function DataTable<TData>({
                       <button
                         type="button"
                         onClick={() => handleSort(sortKey)}
-                        className="inline-flex items-center gap-1 hover:text-foreground transition-colors -ml-1 px-1 py-0.5 rounded"
+                        className="inline-flex items-center gap-1 hover:text-fg transition-colors -ml-1 px-1 py-0.5 rounded"
                       >
                         {col.header}
                         {isActive ? (
@@ -650,20 +655,23 @@ export function DataTable<TData>({
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={colSpan} className="text-center text-muted-foreground h-24">
-                  Loading...
-                </TableCell>
-              </TableRow>
+              Array.from({ length: 5 }).map((_, r) => (
+                <TableRow key={r}>
+                  {Array.from({ length: colSpan }).map((_, c) => (
+                    <TableCell key={c}>
+                      <Skeleton className="h-3.5 rounded" style={{ width: `${50 + ((r * 7 + c * 13) % 60)}px` }} />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
             ) : data.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={colSpan} className="text-center h-24">
-                  <div className="text-muted-foreground">
-                    <p>{emptyTitle}</p>
-                    {emptyDescription && (
-                      <p className="text-sm mt-1">{emptyDescription}</p>
-                    )}
-                  </div>
+                <TableCell colSpan={colSpan} className="h-auto border-0">
+                  <EmptyState
+                    preset={emptyPreset as "assets" | "models" | "projects" | "clients" | "kits" | "search" | undefined}
+                    heading={emptyTitle}
+                    description={emptyDescription}
+                  />
                 </TableCell>
               </TableRow>
             ) : (
@@ -674,8 +682,9 @@ export function DataTable<TData>({
                   <TableRow
                     key={rowId}
                     className={cn(
-                      onRowClick && "cursor-pointer hover:bg-muted/50",
-                      isSelected && "bg-muted/50",
+                      "group/row relative",
+                      onRowClick && "cursor-pointer",
+                      isSelected && "bg-teal-subtle",
                     )}
                     onClick={onRowClick ? () => onRowClick(row) : undefined}
                   >
@@ -718,7 +727,7 @@ export function DataTable<TData>({
           <div className="flex items-center gap-4">
             {onPageSizeChange && (
               <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Show</span>
+                <span className="text-sm text-fg-3">Show</span>
                 <select
                   value={pageSize}
                   onChange={(e) => onPageSizeChange(Number(e.target.value))}
@@ -729,10 +738,10 @@ export function DataTable<TData>({
                   <option value={50}>50</option>
                   <option value={100}>100</option>
                 </select>
-                <span className="text-sm text-muted-foreground">per page</span>
+                <span className="text-sm text-fg-3">per page</span>
               </div>
             )}
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-fg-3">
               Page {page} of {totalPages} ({totalRows ?? data.length} total)
             </p>
           </div>
@@ -748,6 +757,6 @@ export function DataTable<TData>({
           )}
         </div>
       )}
-    </div>
+    </FadeIn>
   );
 }

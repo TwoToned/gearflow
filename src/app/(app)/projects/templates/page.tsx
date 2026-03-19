@@ -12,7 +12,8 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import { CanDo } from "@/components/auth/permission-gate";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { FadeIn } from "@/components/ui/motion";
+
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -84,11 +85,12 @@ export default function TemplatesPage() {
 
   return (
     <RequirePermission resource="project" action="read">
+      <FadeIn>
       <div className="space-y-4">
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Templates</h1>
-            <p className="text-muted-foreground">
+            <h1 className="t-title text-fg">Templates</h1>
+            <p className="text-fg-3">
               Reusable project templates with pre-configured line items.
             </p>
           </div>
@@ -100,8 +102,7 @@ export default function TemplatesPage() {
           </CanDo>
         </div>
 
-        <Card>
-          <CardContent className="p-0">
+        <div className="rounded-lg bg-bg-surface surface-ring">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -116,13 +117,13 @@ export default function TemplatesPage() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={6} className="text-center text-fg-3 py-8">
                       Loading...
                     </TableCell>
                   </TableRow>
                 ) : !templates?.length ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={6} className="text-center text-fg-3 py-8">
                       <BookTemplate className="mx-auto h-8 w-8 mb-2 opacity-50" />
                       No templates yet. Save a project as a template or create one from scratch.
                     </TableCell>
@@ -148,10 +149,10 @@ export default function TemplatesPage() {
                           {typeLabels[t.type] || t.type}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-muted-foreground">
+                      <TableCell className="text-fg-3">
                         {t.client?.name || "—"}
                       </TableCell>
-                      <TableCell className="text-center text-muted-foreground">
+                      <TableCell className="text-center text-fg-3">
                         {t._count?.lineItems ?? 0}
                       </TableCell>
                       <TableCell className="text-right">
@@ -201,9 +202,9 @@ export default function TemplatesPage() {
                 )}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
+        </div>
       </div>
+      </FadeIn>
 
       {/* Create Project from Template */}
       <Dialog open={!!createFrom} onOpenChange={(open) => !open && setCreateFrom(null)}>

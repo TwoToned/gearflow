@@ -24,17 +24,17 @@ export function MediaThumbnail({
   if (!src) {
     return (
       <div
-        className={`flex items-center justify-center rounded-md bg-muted ${className}`}
+        className={`flex items-center justify-center rounded-md bg-bg-inset ${className}`}
         style={{ width: size, height: size }}
       >
-        <ImageIcon className="h-4 w-4 text-muted-foreground" />
+        <ImageIcon className="h-4 w-4 text-fg-3" />
       </div>
     );
   }
 
   return (
     <div
-      className={`overflow-hidden rounded-md bg-muted ${className} ${onClick ? "cursor-pointer" : ""}`}
+      className={`overflow-hidden rounded-md bg-bg-inset ${className} ${onClick ? "cursor-pointer" : ""}`}
       style={{ width: size, height: size }}
       onClick={onClick}
     >

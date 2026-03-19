@@ -20,9 +20,9 @@ import {
   Download,
   Loader2,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+
 import { Button } from "@/components/ui/button";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -42,6 +42,8 @@ import {
 } from "@/components/ui/select";
 import { CrewTable } from "@/components/crew/crew-table";
 import { RequirePermission } from "@/components/auth/require-permission";
+import { ListPageLayout } from "@/components/layout/page-layouts";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   getCrewDashboardStats,
   getPendingTimeEntries,
@@ -67,13 +69,8 @@ import {
 } from "@/lib/status-labels";
 import { format } from "date-fns";
 import { toast } from "sonner";
+import { FadeIn } from "@/components/ui/motion";
 
-const assignmentStatusColors: Record<string, string> = {
-  PENDING: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  OFFERED: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  ACCEPTED: "bg-teal-500/10 text-teal-500 border-teal-500/20",
-  CONFIRMED: "bg-green-500/10 text-green-500 border-green-500/20",
-};
 
 function formatDate(date: string | Date | null | undefined): string {
   if (!date) return "—";
@@ -84,9 +81,11 @@ export default function CrewPage() {
   const canManage = useCanDo("crew", "update");
 
   return (
-    <RequirePermission resource="crew" action="read">
-      {canManage ? <CrewDashboard /> : <CrewListView />}
-    </RequirePermission>
+    <FadeIn>
+      <RequirePermission resource="crew" action="read">
+        {canManage ? <CrewDashboard /> : <CrewListView />}
+      </RequirePermission>
+    </FadeIn>
   );
 }
 
@@ -94,15 +93,12 @@ export default function CrewPage() {
 
 function CrewListView() {
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Crew</h1>
-        <p className="text-muted-foreground">
-          Manage your crew members, freelancers, and contractors.
-        </p>
-      </div>
+    <ListPageLayout
+      title="Crew"
+      description="Freelancers, employees, and contractors on your roster."
+    >
       <CrewTable />
-    </div>
+    </ListPageLayout>
   );
 }
 
@@ -185,29 +181,26 @@ function CrewDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Crew</h1>
-          <p className="text-muted-foreground">
-            Overview of crew, assignments, and timesheets.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => setExportOpen(true)}>
-            <Download className="mr-2 h-3.5 w-3.5" />
-            Export Timesheets
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setLogTimeOpen(true)}>
-            <Clock className="mr-2 h-3.5 w-3.5" />
-            Log Time
-          </Button>
-          <Button size="sm" render={<Link href="/crew/new" />}>
-            <Plus className="mr-2 h-3.5 w-3.5" />
-            Add Crew
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Crew"
+        description="Overview of crew, assignments, and timesheets."
+        actions={
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setExportOpen(true)}>
+              <Download className="mr-2 h-3.5 w-3.5" />
+              Export Timesheets
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setLogTimeOpen(true)}>
+              <Clock className="mr-2 h-3.5 w-3.5" />
+              Log Time
+            </Button>
+            <Button size="sm" render={<Link href="/crew/new" />}>
+              <Plus className="mr-2 h-3.5 w-3.5" />
+              Add Crew
+            </Button>
+          </div>
+        }
+      />
 
       {/* Stat Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
@@ -255,9 +248,9 @@ function CrewDashboard() {
       {/* Two-column grid */}
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Pending Timesheets */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base">Pending Timesheets</CardTitle>
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="t-heading text-fg">Pending Timesheets</h3>
             {pendingTime && pendingTime.length > 0 && (
               <Button
                 variant="outline"
@@ -272,249 +265,237 @@ function CrewDashboard() {
                 Approve All
               </Button>
             )}
-          </CardHeader>
-          <CardContent>
-            {!pendingTime || pendingTime.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No timesheets awaiting approval.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {pendingTime.map((entry: any) => (
-                  <div
-                    key={entry.id}
-                    className="flex items-center justify-between rounded-md border p-3"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">
-                        {entry.crewMember?.firstName}{" "}
-                        {entry.crewMember?.lastName}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {entry.assignment
-                          ? `${entry.assignment.project?.projectNumber} — ${entry.assignment.project?.name}`
-                          : entry.description || "General"}
-                        {" · "}
-                        {formatDate(entry.date)}
-                        {" · "}
-                        {entry.startTime}–{entry.endTime}
-                        {entry.totalHours != null &&
-                          ` · ${Number(entry.totalHours).toFixed(1)}h`}
-                      </p>
-                    </div>
-                    <div className="flex gap-1 ml-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-green-500 hover:text-green-600"
-                        onClick={() => approveMutation.mutate([entry.id])}
-                        disabled={approveMutation.isPending}
-                      >
-                        <CheckCircle className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-amber-500 hover:text-amber-600"
-                        onClick={() => disputeMutation.mutate(entry.id)}
-                        disabled={disputeMutation.isPending}
-                      >
-                        <AlertTriangle className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
+          </div>
+          {!pendingTime || pendingTime.length === 0 ? (
+            <p className="text-sm text-fg-3">
+              No timesheets awaiting approval.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {pendingTime.map((entry: any) => (
+                <div
+                  key={entry.id}
+                  className="flex items-center justify-between rounded-md border p-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">
+                      {entry.crewMember?.firstName}{" "}
+                      {entry.crewMember?.lastName}
+                    </p>
+                    <p className="text-xs text-fg-3">
+                      {entry.assignment
+                        ? `${entry.assignment.project?.projectNumber} — ${entry.assignment.project?.name}`
+                        : entry.description || "General"}
+                      {" · "}
+                      {formatDate(entry.date)}
+                      {" · "}
+                      {entry.startTime}–{entry.endTime}
+                      {entry.totalHours != null &&
+                        ` · ${Number(entry.totalHours).toFixed(1)}h`}
+                    </p>
                   </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  <div className="flex gap-1 ml-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-green-500 hover:text-green-600"
+                      onClick={() => approveMutation.mutate([entry.id])}
+                      disabled={approveMutation.isPending}
+                    >
+                      <CheckCircle className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-amber-500 hover:text-amber-600"
+                      onClick={() => disputeMutation.mutate(entry.id)}
+                      disabled={disputeMutation.isPending}
+                    >
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* Active Assignments */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base">Active Assignments</CardTitle>
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="t-heading text-fg">Active Assignments</h3>
             <Link
               href="/crew/planner"
-              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+              className="text-xs text-fg-3 hover:text-fg flex items-center gap-1"
             >
               Planner <ArrowRight className="h-3 w-3" />
             </Link>
-          </CardHeader>
-          <CardContent>
-            {!activeAssignments || activeAssignments.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No active assignments.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {activeAssignments.map((a: any) => (
-                  <Link
-                    key={a.id}
-                    href={`/projects/${a.project?.id}`}
-                    className="flex items-center justify-between rounded-md border p-3 hover:bg-accent/50 transition-colors"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">
-                        {a.crewMember?.firstName} {a.crewMember?.lastName}
-                        {a.crewRole && (
-                          <span className="text-muted-foreground font-normal">
-                            {" "}
-                            — {a.crewRole.name}
-                          </span>
-                        )}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {a.project?.projectNumber} — {a.project?.name}
-                        {a.phase && ` · ${phaseLabels[a.phase] || formatLabel(a.phase)}`}
-                        {a.startDate && ` · ${formatDate(a.startDate)}`}
-                        {a.endDate && `–${formatDate(a.endDate)}`}
-                      </p>
-                    </div>
-                    <Badge
-                      variant="outline"
-                      className={assignmentStatusColors[a.status] || ""}
-                    >
-                      {assignmentStatusLabels[a.status] || formatLabel(a.status)}
-                    </Badge>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+          </div>
+          {!activeAssignments || activeAssignments.length === 0 ? (
+            <p className="text-sm text-fg-3">
+              No active assignments.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {activeAssignments.map((a: any) => (
+                <Link
+                  key={a.id}
+                  href={`/projects/${a.project?.id}`}
+                  className="flex items-center justify-between rounded-md border p-3 hover:bg-bg-elevated/50 transition-colors"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">
+                      {a.crewMember?.firstName} {a.crewMember?.lastName}
+                      {a.crewRole && (
+                        <span className="text-fg-3 font-normal">
+                          {" "}
+                          — {a.crewRole.name}
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-xs text-fg-3">
+                      {a.project?.projectNumber} — {a.project?.name}
+                      {a.phase && ` · ${phaseLabels[a.phase] || formatLabel(a.phase)}`}
+                      {a.startDate && ` · ${formatDate(a.startDate)}`}
+                      {a.endDate && `–${formatDate(a.endDate)}`}
+                    </p>
+                  </div>
+                  <StatusIndicator
+                    category="assignment"
+                    value={a.status}
+                    label={assignmentStatusLabels[a.status] || formatLabel(a.status)}
+                    variant="pill"
+                  />
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Second row */}
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Upcoming Shifts */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base">Upcoming Shifts</CardTitle>
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="t-heading text-fg">Upcoming Shifts</h3>
             <Link
               href="/crew/planner"
-              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+              className="text-xs text-fg-3 hover:text-fg flex items-center gap-1"
             >
               Planner <ArrowRight className="h-3 w-3" />
             </Link>
-          </CardHeader>
-          <CardContent>
-            {!upcomingShifts || upcomingShifts.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No upcoming shifts scheduled.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {groupShiftsByAssignment(upcomingShifts).map((group: any) => (
-                  <div
-                    key={group.key}
-                    className="flex items-center justify-between rounded-md border p-3"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">
-                        {group.crewMember}
-                        {group.crewRole && (
-                          <span className="text-muted-foreground font-normal">
-                            {" "}
-                            — {group.crewRole}
-                          </span>
-                        )}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {group.projectNumber} — {group.projectName}
-                      </p>
-                    </div>
-                    <div className="text-right text-sm shrink-0 ml-2">
-                      <p className="font-mono text-xs">
-                        {group.startDate === group.endDate
-                          ? formatDate(group.startDate)
-                          : `${formatDate(group.startDate)} – ${formatDate(group.endDate)}`}
-                      </p>
-                      <p className="text-xs text-muted-foreground font-mono">
-                        {group.callTime || "—"}–{group.endTime || "—"}
-                        {group.shiftCount > 1 && ` · ${group.shiftCount} days`}
-                      </p>
-                    </div>
+          </div>
+          {!upcomingShifts || upcomingShifts.length === 0 ? (
+            <p className="text-sm text-fg-3">
+              No upcoming shifts scheduled.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {groupShiftsByAssignment(upcomingShifts).map((group: any) => (
+                <div
+                  key={group.key}
+                  className="flex items-center justify-between rounded-md border p-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">
+                      {group.crewMember}
+                      {group.crewRole && (
+                        <span className="text-fg-3 font-normal">
+                          {" "}
+                          — {group.crewRole}
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-xs text-fg-3">
+                      {group.projectNumber} — {group.projectName}
+                    </p>
                   </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  <div className="text-right text-sm shrink-0 ml-2">
+                    <p className="font-mono text-xs">
+                      {group.startDate === group.endDate
+                        ? formatDate(group.startDate)
+                        : `${formatDate(group.startDate)} – ${formatDate(group.endDate)}`}
+                    </p>
+                    <p className="text-xs text-fg-3 font-mono">
+                      {group.callTime || "—"}–{group.endTime || "—"}
+                      {group.shiftCount > 1 && ` · ${group.shiftCount} days`}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* Pending Offers */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Pending Offers</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {!pendingOffers || pendingOffers.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No pending offers.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {pendingOffers.map((a: any) => (
-                  <div
-                    key={a.id}
-                    className="flex items-center justify-between rounded-md border p-3"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">
-                        {a.crewMember?.firstName} {a.crewMember?.lastName}
-                        {a.crewRole && (
-                          <span className="text-muted-foreground font-normal">
-                            {" "}
-                            — {a.crewRole.name}
-                          </span>
-                        )}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {a.project?.projectNumber} — {a.project?.name}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 ml-2">
-                      <Badge
-                        variant="outline"
-                        className={assignmentStatusColors[a.status] || ""}
-                      >
-                        {assignmentStatusLabels[a.status] || formatLabel(a.status)}
-                      </Badge>
-                      {a.status === "PENDING" && a.crewMember?.email && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7"
-                          onClick={() => sendOfferMutation.mutate(a.id)}
-                          disabled={sendOfferMutation.isPending}
-                        >
-                          <Send className="mr-1 h-3 w-3" />
-                          Send
-                        </Button>
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <h3 className="t-heading text-fg mb-4">Pending Offers</h3>
+          {!pendingOffers || pendingOffers.length === 0 ? (
+            <p className="text-sm text-fg-3">
+              No pending offers.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {pendingOffers.map((a: any) => (
+                <div
+                  key={a.id}
+                  className="flex items-center justify-between rounded-md border p-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">
+                      {a.crewMember?.firstName} {a.crewMember?.lastName}
+                      {a.crewRole && (
+                        <span className="text-fg-3 font-normal">
+                          {" "}
+                          — {a.crewRole.name}
+                        </span>
                       )}
-                    </div>
+                    </p>
+                    <p className="text-xs text-fg-3">
+                      {a.project?.projectNumber} — {a.project?.name}
+                    </p>
                   </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  <div className="flex items-center gap-2 ml-2">
+                    <StatusIndicator
+                      category="assignment"
+                      value={a.status}
+                      label={assignmentStatusLabels[a.status] || formatLabel(a.status)}
+                      variant="pill"
+                    />
+                    {a.status === "PENDING" && a.crewMember?.email && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7"
+                        onClick={() => sendOfferMutation.mutate(a.id)}
+                        disabled={sendOfferMutation.isPending}
+                      >
+                        <Send className="mr-1 h-3 w-3" />
+                        Send
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Crew List */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">All Crew Members</CardTitle>
+      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="t-heading text-fg">All Crew Members</h3>
           <Link
             href="/crew/settings"
-            className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+            className="text-xs text-fg-3 hover:text-fg flex items-center gap-1"
           >
             Roles & Skills <ArrowRight className="h-3 w-3" />
           </Link>
-        </CardHeader>
-        <CardContent>
-          <CrewTable />
-        </CardContent>
-      </Card>
+        </div>
+        <CrewTable />
+      </div>
 
       {/* Log Time Dialog */}
       <LogTimeDialog
@@ -615,7 +596,7 @@ function ExportTimesheetDialog({
               onChange={(e) => setDateTo(e.target.value)}
             />
           </div>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-fg-3">
             Leave empty to export all time entries.
           </p>
         </div>
@@ -799,7 +780,7 @@ function LogTimeDialog({
                       <p className="text-sm font-medium">
                         {c.firstName} {c.lastName}
                       </p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-fg-3">
                         {c.crewRole?.name || c.department || "No role"}
                       </p>
                     </div>
@@ -807,7 +788,7 @@ function LogTimeDialog({
                 );
               })}
               {(!filteredCrew || filteredCrew.length === 0) && (
-                <p className="text-sm text-muted-foreground py-4 text-center">
+                <p className="text-sm text-fg-3 py-4 text-center">
                   No crew members found.
                 </p>
               )}
@@ -925,7 +906,7 @@ function LogTimeDialog({
                   </Select>
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground rounded-md border p-3">
+                <p className="text-xs text-fg-3 rounded-md border p-3">
                   Project assignment selection is not available for multiple crew members. Each member&apos;s entry will be created without a linked assignment, or switch to General mode.
                 </p>
               )
@@ -1028,26 +1009,24 @@ function StatCard({
   alert?: boolean;
 }) {
   const content = (
-    <Card
-      className={`${href ? "hover:bg-accent/50 transition-colors" : ""} ${alert ? "border-destructive/50" : ""}`}
+    <div
+      className={`rounded-lg bg-bg-surface p-4 surface-ring ${href ? "hover:bg-bg-elevated transition-colors" : ""} ${alert ? "ring-destructive/50" : ""}`}
     >
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-sm font-medium">{title}</span>
         <Icon
-          className={`h-4 w-4 ${alert ? "text-destructive" : "text-muted-foreground"}`}
+          className={`h-4 w-4 ${alert ? "text-destructive" : "text-fg-3"}`}
         />
-      </CardHeader>
-      <CardContent>
-        <div
-          className={`text-2xl font-bold ${alert ? "text-destructive" : ""}`}
-        >
-          {value}
-        </div>
-        {description && (
-          <p className="text-xs text-muted-foreground">{description}</p>
-        )}
-      </CardContent>
-    </Card>
+      </div>
+      <div
+        className={`text-2xl font-bold t-data ${alert ? "text-destructive" : ""}`}
+      >
+        {value}
+      </div>
+      {description && (
+        <p className="text-xs text-fg-3">{description}</p>
+      )}
+    </div>
   );
 
   if (href) {

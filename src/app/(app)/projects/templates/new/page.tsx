@@ -8,8 +8,8 @@ export default function NewTemplatePage() {
     <RequirePermission resource="project" action="create">
       <div className="mx-auto max-w-3xl space-y-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">New Template</h1>
-          <p className="text-muted-foreground">
+          <h1 className="t-title text-fg">New Template</h1>
+          <p className="text-[13px] text-fg-3">
             Create a reusable project template. Dates are optional for templates.
           </p>
         </div>

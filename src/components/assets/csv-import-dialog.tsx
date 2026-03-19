@@ -101,23 +101,23 @@ export function CSVImportDialog({ type, open, onOpenChange }: CSVImportDialogPro
             />
             {file ? (
               <>
-                <FileText className="h-8 w-8 text-muted-foreground" />
+                <FileText className="h-8 w-8 text-fg-3" />
                 <p className="text-sm font-medium">{file.name}</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-fg-3">
                   {(file.size / 1024).toFixed(1)} KB - Click to change
                 </p>
               </>
             ) : (
               <>
-                <Upload className="h-8 w-8 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">
+                <Upload className="h-8 w-8 text-fg-3" />
+                <p className="text-sm text-fg-3">
                   Click to select a CSV file
                 </p>
               </>
             )}
           </div>
 
-          <div className="text-xs text-muted-foreground space-y-1">
+          <div className="text-xs text-fg-3 space-y-1">
             {type === "models" ? (
               <>
                 <p className="font-medium">Expected columns:</p>

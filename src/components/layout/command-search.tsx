@@ -1052,18 +1052,18 @@ export function CommandSearch() {
       {/* Desktop search trigger */}
       <button
         onClick={() => setOpen(true)}
-        className="hidden md:flex items-center gap-2 text-muted-foreground rounded-md border border-input bg-transparent px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground transition-colors"
+        className="hidden md:flex items-center gap-2 text-fg-3 rounded-md border border-input bg-transparent px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground transition-colors"
       >
         <Search className="h-4 w-4" />
         <span>Search...</span>
-        <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground sm:flex">
+        <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border bg-bg-inset px-1.5 font-mono text-[10px] font-medium text-fg-3 sm:flex">
           <span className="text-xs">&#8984;</span>K
         </kbd>
       </button>
       {/* Mobile search trigger */}
       <button
         onClick={() => setOpen(true)}
-        className="md:hidden flex items-center justify-center h-9 w-9 rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+        className="md:hidden flex items-center justify-center h-9 w-9 rounded-md text-fg-3 hover:bg-accent hover:text-accent-foreground transition-colors"
         aria-label="Search"
       >
         <Search className="h-5 w-5" />
@@ -1077,7 +1077,7 @@ export function CommandSearch() {
             ) : isAtMode && !breadcrumb ? (
               <AtSign className="h-4 w-4 shrink-0 text-primary" />
             ) : (
-              <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <Search className="h-4 w-4 shrink-0 text-fg-3" />
             )}
             {breadcrumb && (
               <button
@@ -1086,8 +1086,8 @@ export function CommandSearch() {
               >
                 <breadcrumb.icon className="h-3 w-3" />
                 <span className="max-w-[150px] truncate">{breadcrumb.label}</span>
-                <ChevronRight className="h-3 w-3 text-muted-foreground" />
-                <X className="h-3 w-3 text-muted-foreground/60 hover:text-foreground" />
+                <ChevronRight className="h-3 w-3 text-fg-3" />
+                <X className="h-3 w-3 text-fg-3/60 hover:text-fg" />
               </button>
             )}
             <Input
@@ -1104,20 +1104,20 @@ export function CommandSearch() {
               }
               className="h-11 border-0 shadow-none focus-visible:ring-0 px-2"
             />
-            {isLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+            {isLoading && <Loader2 className="h-4 w-4 animate-spin text-fg-3" />}
             {/* @ and / buttons — especially useful on mobile where these are hard to type */}
             {!isAtMode && !isSlashMode && !isDrilling && !isAtEntityMode && (
               <>
                 <button
                   onClick={() => { setQuery("/"); inputRef.current?.focus(); }}
-                  className="shrink-0 h-8 w-8 flex items-center justify-center rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-colors font-semibold text-sm"
+                  className="shrink-0 h-8 w-8 flex items-center justify-center rounded-md hover:bg-accent text-fg-3 hover:text-primary transition-colors font-semibold text-sm"
                   title="Page actions (/)"
                 >
                   /
                 </button>
                 <button
                   onClick={() => { setQuery("@"); inputRef.current?.focus(); }}
-                  className="shrink-0 h-8 w-8 flex items-center justify-center rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-colors font-semibold text-sm"
+                  className="shrink-0 h-8 w-8 flex items-center justify-center rounded-md hover:bg-accent text-fg-3 hover:text-primary transition-colors font-semibold text-sm"
                   title="Navigate to page (@)"
                 >
                   @
@@ -1127,7 +1127,7 @@ export function CommandSearch() {
             {showExpandToggle && (
               <button
                 onClick={() => { setExpanded((prev) => !prev); setSelectedIndex(0); }}
-                className="shrink-0 p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+                className="shrink-0 p-1 rounded hover:bg-accent text-fg-3 hover:text-fg transition-colors"
                 title={expanded ? "Collapse children (⌘L)" : "Expand children (⌘L)"}
               >
                 <ChevronsUpDown className="h-4 w-4" />
@@ -1137,7 +1137,7 @@ export function CommandSearch() {
             {isMobile && (
               <button
                 onClick={() => setOpen(false)}
-                className="shrink-0 h-8 w-8 flex items-center justify-center rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+                className="shrink-0 h-8 w-8 flex items-center justify-center rounded-md hover:bg-accent text-fg-3 hover:text-fg transition-colors"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -1147,23 +1147,23 @@ export function CommandSearch() {
           {/* Results */}
           <div className={`overflow-y-auto ${isMobile ? "flex-1" : "max-h-[60vh]"}`}>
             {showEmptySearch && (
-              <div className="py-6 text-center text-sm text-muted-foreground">No results found.</div>
+              <div className="py-6 text-center text-sm text-fg-3">No results found.</div>
             )}
             {isAtEntityMode && drillQuery.length >= 2 && visibleItems.length === 0 && !isLoading && (
-              <div className="py-6 text-center text-sm text-muted-foreground">No results found.</div>
+              <div className="py-6 text-center text-sm text-fg-3">No results found.</div>
             )}
             {isDrilling && !isAtEntityMode && drillQuery && filteredDrillChildren.length === 0 && (
-              <div className="py-6 text-center text-sm text-muted-foreground">No matching children.</div>
+              <div className="py-6 text-center text-sm text-fg-3">No matching children.</div>
             )}
             {visibleItems.length > 0 && (
               <div className="p-1">
                 {showAtHint && (
-                  <div className="px-3 pt-1 pb-2 text-xs text-muted-foreground">
+                  <div className="px-3 pt-1 pb-2 text-xs text-fg-3">
                     Type a page name to navigate · Add a space to search entities (e.g. <span className="font-medium text-primary">@project drum hire</span>)
                   </div>
                 )}
                 {showSlashHint && (
-                  <div className="px-3 pt-1 pb-2 text-xs text-muted-foreground">
+                  <div className="px-3 pt-1 pb-2 text-xs text-fg-3">
                     Type a command name to filter (e.g. <span className="font-medium text-primary">/quote</span>)
                   </div>
                 )}
@@ -1174,7 +1174,7 @@ export function CommandSearch() {
                   return (
                     <div key={`${item.id}-${idx}`}>
                       {sectionLabel && (
-                        <div className="px-3 pt-2 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        <div className="px-3 pt-2 pb-1 text-xs font-semibold text-fg-3 uppercase tracking-wider">
                           {sectionLabel}
                         </div>
                       )}
@@ -1206,39 +1206,39 @@ export function CommandSearch() {
                         } ${
                           idx === selectedIndex
                             ? "bg-accent text-accent-foreground"
-                            : "text-foreground hover:bg-accent/50"
+                            : "text-fg hover:bg-accent/50"
                         }`}
                       >
                         <item.icon className={`h-3.5 w-3.5 shrink-0 ${
-                          isChild ? "text-muted-foreground/50" : "text-muted-foreground"
+                          isChild ? "text-fg-3/50" : "text-fg-3"
                         }`} />
                         <div className="flex-1 min-w-0">
                           <div className={`truncate ${isChild ? "text-xs" : "text-sm font-medium"}`}>
                             {item.title}
                           </div>
                           {item.subtitle && (
-                            <div className="truncate text-xs text-muted-foreground">
+                            <div className="truncate text-xs text-fg-3">
                               {item.subtitle}
                             </div>
                           )}
                         </div>
                         {isSlashMode && item.id.startsWith("slash-") && (
-                          <span className="shrink-0 rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                          <span className="shrink-0 rounded border bg-bg-inset px-1.5 py-0.5 font-mono text-[10px] text-fg-3">
                             /{slashMatches.find((m) => `slash-${m.command.id}` === item.id)?.command.command}
                           </span>
                         )}
                         {!isChild && item.typeLabel && !isAtMode && !isSlashMode && (
-                          <span className="shrink-0 text-xs text-muted-foreground/60">
+                          <span className="shrink-0 text-xs text-fg-3/60">
                             {item.typeLabel}
                           </span>
                         )}
                         {item.hasChildren && idx === selectedIndex && !isMobile && (
-                          <kbd className="shrink-0 rounded border bg-muted px-1 font-mono text-[10px] text-muted-foreground">
+                          <kbd className="shrink-0 rounded border bg-bg-inset px-1 font-mono text-[10px] text-fg-3">
                             Tab →
                           </kbd>
                         )}
                         {item.hasChildren && isMobile && (
-                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60" />
+                          <ChevronRight className="h-4 w-4 shrink-0 text-fg-3/60" />
                         )}
                       </button>
                     </div>
@@ -1247,12 +1247,12 @@ export function CommandSearch() {
               </div>
             )}
             {showTyping && (
-              <div className="py-6 text-center text-sm text-muted-foreground">
+              <div className="py-6 text-center text-sm text-fg-3">
                 Type to search... <span className="font-medium text-primary">@</span> pages · <span className="font-medium text-primary">/</span> actions
               </div>
             )}
             {isAtEntityMode && drillQuery.length < 2 && (
-              <div className="py-6 text-center text-sm text-muted-foreground">
+              <div className="py-6 text-center text-sm text-fg-3">
                 Type to search {atEntityPage?.label}...
               </div>
             )}
@@ -1260,7 +1260,7 @@ export function CommandSearch() {
 
           {/* Footer hints */}
           {(visibleItems.length > 0 || isDrilling || isAtEntityMode) && (
-            <div className={`border-t px-3 py-1.5 flex items-center gap-3 text-xs text-muted-foreground flex-wrap ${isMobile ? "pb-[calc(0.375rem+env(safe-area-inset-bottom))]" : ""}`}>
+            <div className={`border-t px-3 py-1.5 flex items-center gap-3 text-xs text-fg-3 flex-wrap ${isMobile ? "pb-[calc(0.375rem+env(safe-area-inset-bottom))]" : ""}`}>
               {isMobile ? (
                 <>
                   <span>Tap to open</span>
@@ -1271,34 +1271,34 @@ export function CommandSearch() {
               ) : (
                 <>
                   <span className="flex items-center gap-1">
-                    <kbd className="rounded border bg-muted px-1 font-mono text-[10px]">↑↓</kbd>
+                    <kbd className="rounded border bg-bg-inset px-1 font-mono text-[10px]">↑↓</kbd>
                     navigate
                   </span>
                   {!isDrilling && !isAtEntityMode && !isAtMode && (
                     <span className="flex items-center gap-1">
-                      <kbd className="rounded border bg-muted px-1 font-mono text-[10px]">⇧↑↓</kbd>
+                      <kbd className="rounded border bg-bg-inset px-1 font-mono text-[10px]">⇧↑↓</kbd>
                       skip
                     </span>
                   )}
                   <span className="flex items-center gap-1">
-                    <kbd className="rounded border bg-muted px-1 font-mono text-[10px]">⏎</kbd>
+                    <kbd className="rounded border bg-bg-inset px-1 font-mono text-[10px]">⏎</kbd>
                     open
                   </span>
                   {selectedHasChildren && (
                     <span className="flex items-center gap-1">
-                      <kbd className="rounded border bg-muted px-1 font-mono text-[10px]">Tab</kbd>
+                      <kbd className="rounded border bg-bg-inset px-1 font-mono text-[10px]">Tab</kbd>
                       drill in
                     </span>
                   )}
                   {(isDrilling || isAtEntityMode) && (
                     <span className="flex items-center gap-1">
-                      <kbd className="rounded border bg-muted px-1 font-mono text-[10px]">Esc</kbd>
+                      <kbd className="rounded border bg-bg-inset px-1 font-mono text-[10px]">Esc</kbd>
                       back
                     </span>
                   )}
                   {showExpandToggle && (
                     <span className="flex items-center gap-1">
-                      <kbd className="rounded border bg-muted px-1 font-mono text-[10px]">⇧←→</kbd>
+                      <kbd className="rounded border bg-bg-inset px-1 font-mono text-[10px]">⇧←→</kbd>
                       {expanded ? "collapse" : "expand"}
                     </span>
                   )}

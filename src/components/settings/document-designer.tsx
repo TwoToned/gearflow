@@ -222,12 +222,12 @@ export function DocumentDesigner({ template }: { template: TemplateData }) {
   return (
     <div className="flex flex-col h-screen bg-background designer-shell">
       {/* ───── Top toolbar ───── */}
-      <div className="designer-toolbar flex items-center gap-2 border-b border-border/60 px-3 py-2 shrink-0 bg-card/80 backdrop-blur-sm">
+      <div className="designer-toolbar flex items-center gap-2 border-b border-border/60 px-3 py-2 shrink-0 bg-bg-surface/80 backdrop-blur-sm">
         {/* Back */}
         <Button
           variant="ghost"
           size="sm"
-          className="gap-1.5 text-muted-foreground hover:text-foreground transition-colors"
+          className="gap-1.5 text-fg-3 hover:text-fg transition-colors"
           render={<Link href="/settings/documents" />}
         >
           <ArrowLeft className="h-3.5 w-3.5" />
@@ -248,7 +248,7 @@ export function DocumentDesigner({ template }: { template: TemplateData }) {
               setName(e.target.value);
               setHasChanges(true);
             }}
-            className="h-7 w-56 rounded-md border-0 bg-transparent px-2 text-sm font-semibold tracking-tight text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 transition-all hover:bg-muted/50"
+            className="h-7 w-56 rounded-md border-0 bg-transparent px-2 text-sm font-semibold tracking-tight text-fg placeholder:text-fg-3/50 focus:outline-none focus:ring-1 focus:ring-primary/30 transition-all hover:bg-bg-inset/50"
             placeholder="Template name"
           />
         )}
@@ -273,7 +273,7 @@ export function DocumentDesigner({ template }: { template: TemplateData }) {
               </Badge>
             )}
             {hasChanges && (
-              <div className="flex items-center gap-1 text-[10px] text-muted-foreground/70">
+              <div className="flex items-center gap-1 text-[10px] text-fg-3/70">
                 <div className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
                 Unsaved
               </div>
@@ -291,8 +291,8 @@ export function DocumentDesigner({ template }: { template: TemplateData }) {
 
         {/* Keyboard shortcut hint */}
         {!isReadOnly && hasChanges && (
-          <span className="hidden lg:flex items-center gap-1 text-[10px] text-muted-foreground/50 mr-1">
-            <kbd className="px-1 py-0.5 rounded bg-muted/80 text-[9px] font-mono">
+          <span className="hidden lg:flex items-center gap-1 text-[10px] text-fg-3/50 mr-1">
+            <kbd className="px-1 py-0.5 rounded bg-bg-inset/80 text-[9px] font-mono">
               Ctrl+S
             </kbd>
             to save
@@ -333,7 +333,7 @@ export function DocumentDesigner({ template }: { template: TemplateData }) {
         )}
 
         {isReadOnly && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded-md px-3 py-1.5">
+          <div className="flex items-center gap-2 text-xs text-fg-3 bg-bg-inset/50 rounded-md px-3 py-1.5">
             <Eye className="h-3.5 w-3.5" />
             Read-only preview — go back and click Customise to edit
           </div>
@@ -344,17 +344,17 @@ export function DocumentDesigner({ template }: { template: TemplateData }) {
       <div className="flex-1 relative overflow-hidden">
         {isReadOnly ? (
           <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-6">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-muted/50 border border-border/40">
-              <Eye className="h-7 w-7 text-muted-foreground/60" />
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-bg-inset/50 border border-border/40">
+              <Eye className="h-7 w-7 text-fg-3/60" />
             </div>
             <div className="space-y-1.5">
-              <p className="text-sm font-medium text-foreground">
+              <p className="text-sm font-medium text-fg">
                 System default template
               </p>
-              <p className="text-sm text-muted-foreground max-w-sm">
+              <p className="text-sm text-fg-3 max-w-sm">
                 System templates can&apos;t be edited directly. Go back to
                 templates and click{" "}
-                <span className="font-medium text-foreground">Customise</span>{" "}
+                <span className="font-medium text-fg">Customise</span>{" "}
                 to create your own editable copy.
               </p>
             </div>
@@ -378,10 +378,10 @@ export function DocumentDesigner({ template }: { template: TemplateData }) {
                   </div>
                 </div>
                 <div className="space-y-1 text-center">
-                  <p className="text-sm font-medium text-foreground">
+                  <p className="text-sm font-medium text-fg">
                     Loading designer
                   </p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-fg-3">
                     Setting up the template editor...
                   </p>
                 </div>

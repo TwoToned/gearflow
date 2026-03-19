@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FormSection, SectionHeader } from "@/components/layout/page-layouts";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { QuickCreateClient } from "@/components/clients/quick-create-client";
 import { QuickCreateLocation } from "@/components/assets/quick-create-location";
@@ -140,374 +140,353 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
     <>
       <form
         onSubmit={form.handleSubmit((d) => mutation.mutate(d))}
-        className="space-y-6"
       >
-        {/* Project Details */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Project Details</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            {!isTemplate && (
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <div className="space-y-8">
+            {/* Project Details */}
+            <SectionHeader label="Project Details" />
+            <FormSection>
+              {!isTemplate && (
+                <div className="space-y-2">
+                  <Label htmlFor="projectNumber">Project Code *</Label>
+                  <Input
+                    id="projectNumber"
+                    {...form.register("projectNumber")}
+                    placeholder="e.g. PROJ-2026-0001"
+                    className="font-mono"
+                  />
+                  {form.formState.errors.projectNumber && (
+                    <p className="text-xs text-destructive">
+                      {form.formState.errors.projectNumber.message}
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="space-y-2">
-                <Label htmlFor="projectNumber">Project Code *</Label>
+                <Label htmlFor="name">Name *</Label>
                 <Input
-                  id="projectNumber"
-                  {...form.register("projectNumber")}
-                  placeholder="e.g. PROJ-2026-0001"
-                  className="font-mono"
+                  id="name"
+                  {...form.register("name")}
+                  placeholder="e.g. Summer Festival 2026"
                 />
-                {form.formState.errors.projectNumber && (
+                {form.formState.errors.name && (
                   <p className="text-xs text-destructive">
-                    {form.formState.errors.projectNumber.message}
+                    {form.formState.errors.name.message}
                   </p>
                 )}
               </div>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="name">Name *</Label>
-              <Input
-                id="name"
-                {...form.register("name")}
-                placeholder="e.g. Summer Festival 2026"
-              />
-              {form.formState.errors.name && (
-                <p className="text-xs text-destructive">
-                  {form.formState.errors.name.message}
-                </p>
+              <div className="space-y-2">
+                <Label>Client</Label>
+                <Controller
+                  control={form.control}
+                  name="clientId"
+                  render={({ field }) => (
+                    <ComboboxPicker
+                      value={field.value || ""}
+                      onChange={field.onChange}
+                      options={clientOptions}
+                      placeholder="Select client..."
+                      searchPlaceholder="Search clients..."
+                      allowClear
+                      onCreateNew={() => setQuickCreateClientOpen(true)}
+                      createNewLabel="New client"
+                      emptyMessage="No clients found."
+                    />
+                  )}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="type">Type</Label>
+                <select
+                  id="type"
+                  {...form.register("type")}
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <option value="DRY_HIRE">Dry Hire</option>
+                  <option value="WET_HIRE">Wet Hire</option>
+                  <option value="INSTALLATION">Installation</option>
+                  <option value="TOUR">Tour</option>
+                  <option value="CORPORATE">Corporate</option>
+                  <option value="THEATRE">Theatre</option>
+                  <option value="FESTIVAL">Festival</option>
+                  <option value="CONFERENCE">Conference</option>
+                  <option value="OTHER">Other</option>
+                </select>
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  {...form.register("description")}
+                  placeholder="Brief description of the project"
+                  rows={3}
+                />
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label>Tags</Label>
+                <Controller
+                  name="tags"
+                  control={form.control}
+                  render={({ field }) => (
+                    <TagInput
+                      value={field.value ?? []}
+                      onChange={field.onChange}
+                      suggestions={orgTags}
+                      placeholder="Add tags..."
+                    />
+                  )}
+                />
+              </div>
+            </FormSection>
+
+            {/* Rental Period */}
+            <SectionHeader label="Rental Period" />
+            <FormSection>
+              <div className="space-y-2">
+                <Label htmlFor="rentalStartDate">Rental Start</Label>
+                <Input
+                  id="rentalStartDate"
+                  type="date"
+                  {...form.register("rentalStartDate")}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="rentalEndDate">Rental End</Label>
+                <Input
+                  id="rentalEndDate"
+                  type="date"
+                  {...form.register("rentalEndDate")}
+                />
+              </div>
+            </FormSection>
+
+            {/* Dates & Times */}
+            <SectionHeader label="Dates & Times" />
+            <FormSection>
+              <div className="space-y-2">
+                <Label htmlFor="loadInDate">Load In</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="loadInDate"
+                    type="date"
+                    {...form.register("loadInDate")}
+                    className="flex-1"
+                  />
+                  <Input
+                    id="loadInTime"
+                    type="time"
+                    {...form.register("loadInTime")}
+                    className="w-32"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="loadOutDate">Load Out</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="loadOutDate"
+                    type="date"
+                    {...form.register("loadOutDate")}
+                    className="flex-1"
+                  />
+                  <Input
+                    id="loadOutTime"
+                    type="time"
+                    {...form.register("loadOutTime")}
+                    className="w-32"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="eventStartDate">Event Start</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="eventStartDate"
+                    type="date"
+                    {...form.register("eventStartDate")}
+                    className="flex-1"
+                  />
+                  <Input
+                    id="eventStartTime"
+                    type="time"
+                    {...form.register("eventStartTime")}
+                    className="w-32"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="eventEndDate">Event End</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="eventEndDate"
+                    type="date"
+                    {...form.register("eventEndDate")}
+                    className="flex-1"
+                  />
+                  <Input
+                    id="eventEndTime"
+                    type="time"
+                    {...form.register("eventEndTime")}
+                    className="w-32"
+                  />
+                </div>
+              </div>
+            </FormSection>
+
+            {/* Location & Site Contact */}
+            <SectionHeader label="Location & Site Contact" />
+            <FormSection>
+              <div className="space-y-2 sm:col-span-2">
+                <Label>Location</Label>
+                <Controller
+                  control={form.control}
+                  name="locationId"
+                  render={({ field }) => (
+                    <ComboboxPicker
+                      value={field.value || ""}
+                      onChange={field.onChange}
+                      options={locationOptions}
+                      placeholder="Select location..."
+                      searchPlaceholder="Search locations..."
+                      allowClear
+                      onCreateNew={() => setQuickCreateLocationOpen(true)}
+                      createNewLabel="New location"
+                      emptyMessage="No locations found."
+                    />
+                  )}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="siteContactName">Site Contact Name</Label>
+                <Input
+                  id="siteContactName"
+                  {...form.register("siteContactName")}
+                  placeholder="Contact person on site"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="siteContactPhone">Site Contact Phone</Label>
+                <Input
+                  id="siteContactPhone"
+                  {...form.register("siteContactPhone")}
+                  placeholder="+61 400 000 000"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="siteContactEmail">Site Contact Email</Label>
+                <Input
+                  id="siteContactEmail"
+                  type="email"
+                  {...form.register("siteContactEmail")}
+                  placeholder="contact@example.com"
+                />
+                {form.formState.errors.siteContactEmail && (
+                  <p className="text-xs text-destructive">
+                    {form.formState.errors.siteContactEmail.message}
+                  </p>
+                )}
+              </div>
+            </FormSection>
+
+            {/* Notes */}
+            <SectionHeader label="Notes" />
+            <FormSection>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="crewNotes">Crew Notes</Label>
+                <Textarea
+                  id="crewNotes"
+                  {...form.register("crewNotes")}
+                  placeholder="Notes visible to crew members"
+                  rows={3}
+                />
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="internalNotes">Internal Notes</Label>
+                <Textarea
+                  id="internalNotes"
+                  {...form.register("internalNotes")}
+                  placeholder="Internal notes (not visible to client)"
+                  rows={3}
+                />
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="clientNotes">Client Notes</Label>
+                <Textarea
+                  id="clientNotes"
+                  {...form.register("clientNotes")}
+                  placeholder="Notes visible on client-facing documents"
+                  rows={3}
+                />
+              </div>
+            </FormSection>
+
+            {/* Financial */}
+            <SectionHeader label="Financial" />
+            <FormSection className="[&>div:last-child]:lg:grid-cols-4">
+              <div className="space-y-2">
+                <Label htmlFor="discountPercent">Discount (%)</Label>
+                <Input
+                  id="discountPercent"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  {...form.register("discountPercent")}
+                  placeholder="0"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="depositPercent">Deposit (%)</Label>
+                <Input
+                  id="depositPercent"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  {...form.register("depositPercent")}
+                  placeholder="0"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="depositPaid">Deposit Paid ($)</Label>
+                <Input
+                  id="depositPaid"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  {...form.register("depositPaid")}
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="invoicedTotal">Invoiced Total ($)</Label>
+                <Input
+                  id="invoicedTotal"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  {...form.register("invoicedTotal")}
+                  placeholder="0.00"
+                />
+              </div>
+            </FormSection>
+          </div>
+
+          <div className="mt-6 flex gap-3 border-t border-border pt-4">
+            <Button type="submit" disabled={mutation.isPending}>
+              {mutation.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
-            </div>
-            <div className="space-y-2">
-              <Label>Client</Label>
-              <Controller
-                control={form.control}
-                name="clientId"
-                render={({ field }) => (
-                  <ComboboxPicker
-                    value={field.value || ""}
-                    onChange={field.onChange}
-                    options={clientOptions}
-                    placeholder="Select client..."
-                    searchPlaceholder="Search clients..."
-                    allowClear
-                    onCreateNew={() => setQuickCreateClientOpen(true)}
-                    createNewLabel="New client"
-                    emptyMessage="No clients found."
-                  />
-                )}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="type">Type</Label>
-              <select
-                id="type"
-                {...form.register("type")}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                <option value="DRY_HIRE">Dry Hire</option>
-                <option value="WET_HIRE">Wet Hire</option>
-                <option value="INSTALLATION">Installation</option>
-                <option value="TOUR">Tour</option>
-                <option value="CORPORATE">Corporate</option>
-                <option value="THEATRE">Theatre</option>
-                <option value="FESTIVAL">Festival</option>
-                <option value="CONFERENCE">Conference</option>
-                <option value="OTHER">Other</option>
-              </select>
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                {...form.register("description")}
-                placeholder="Brief description of the project"
-                rows={3}
-              />
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label>Tags</Label>
-              <Controller
-                name="tags"
-                control={form.control}
-                render={({ field }) => (
-                  <TagInput
-                    value={field.value ?? []}
-                    onChange={field.onChange}
-                    suggestions={orgTags}
-                    placeholder="Add tags..."
-                  />
-                )}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Rental Period */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Rental Period</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="rentalStartDate">Rental Start</Label>
-              <Input
-                id="rentalStartDate"
-                type="date"
-                {...form.register("rentalStartDate")}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="rentalEndDate">Rental End</Label>
-              <Input
-                id="rentalEndDate"
-                type="date"
-                {...form.register("rentalEndDate")}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Dates & Times */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Dates &amp; Times</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="loadInDate">Load In</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="loadInDate"
-                  type="date"
-                  {...form.register("loadInDate")}
-                  className="flex-1"
-                />
-                <Input
-                  id="loadInTime"
-                  type="time"
-                  {...form.register("loadInTime")}
-                  className="w-32"
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="loadOutDate">Load Out</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="loadOutDate"
-                  type="date"
-                  {...form.register("loadOutDate")}
-                  className="flex-1"
-                />
-                <Input
-                  id="loadOutTime"
-                  type="time"
-                  {...form.register("loadOutTime")}
-                  className="w-32"
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="eventStartDate">Event Start</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="eventStartDate"
-                  type="date"
-                  {...form.register("eventStartDate")}
-                  className="flex-1"
-                />
-                <Input
-                  id="eventStartTime"
-                  type="time"
-                  {...form.register("eventStartTime")}
-                  className="w-32"
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="eventEndDate">Event End</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="eventEndDate"
-                  type="date"
-                  {...form.register("eventEndDate")}
-                  className="flex-1"
-                />
-                <Input
-                  id="eventEndTime"
-                  type="time"
-                  {...form.register("eventEndTime")}
-                  className="w-32"
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Location & Site Contact */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Location &amp; Site Contact</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2 sm:col-span-2">
-              <Label>Location</Label>
-              <Controller
-                control={form.control}
-                name="locationId"
-                render={({ field }) => (
-                  <ComboboxPicker
-                    value={field.value || ""}
-                    onChange={field.onChange}
-                    options={locationOptions}
-                    placeholder="Select location..."
-                    searchPlaceholder="Search locations..."
-                    allowClear
-                    onCreateNew={() => setQuickCreateLocationOpen(true)}
-                    createNewLabel="New location"
-                    emptyMessage="No locations found."
-                  />
-                )}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="siteContactName">Site Contact Name</Label>
-              <Input
-                id="siteContactName"
-                {...form.register("siteContactName")}
-                placeholder="Contact person on site"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="siteContactPhone">Site Contact Phone</Label>
-              <Input
-                id="siteContactPhone"
-                {...form.register("siteContactPhone")}
-                placeholder="+61 400 000 000"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="siteContactEmail">Site Contact Email</Label>
-              <Input
-                id="siteContactEmail"
-                type="email"
-                {...form.register("siteContactEmail")}
-                placeholder="contact@example.com"
-              />
-              {form.formState.errors.siteContactEmail && (
-                <p className="text-xs text-destructive">
-                  {form.formState.errors.siteContactEmail.message}
-                </p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Notes */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Notes</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="crewNotes">Crew Notes</Label>
-              <Textarea
-                id="crewNotes"
-                {...form.register("crewNotes")}
-                placeholder="Notes visible to crew members"
-                rows={3}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="internalNotes">Internal Notes</Label>
-              <Textarea
-                id="internalNotes"
-                {...form.register("internalNotes")}
-                placeholder="Internal notes (not visible to client)"
-                rows={3}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="clientNotes">Client Notes</Label>
-              <Textarea
-                id="clientNotes"
-                {...form.register("clientNotes")}
-                placeholder="Notes visible on client-facing documents"
-                rows={3}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Financial */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Financial</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="space-y-2">
-              <Label htmlFor="discountPercent">Discount (%)</Label>
-              <Input
-                id="discountPercent"
-                type="number"
-                step="0.01"
-                min="0"
-                max="100"
-                {...form.register("discountPercent")}
-                placeholder="0"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="depositPercent">Deposit (%)</Label>
-              <Input
-                id="depositPercent"
-                type="number"
-                step="0.01"
-                min="0"
-                max="100"
-                {...form.register("depositPercent")}
-                placeholder="0"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="depositPaid">Deposit Paid ($)</Label>
-              <Input
-                id="depositPaid"
-                type="number"
-                step="0.01"
-                min="0"
-                {...form.register("depositPaid")}
-                placeholder="0.00"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="invoicedTotal">Invoiced Total ($)</Label>
-              <Input
-                id="invoicedTotal"
-                type="number"
-                step="0.01"
-                min="0"
-                {...form.register("invoicedTotal")}
-                placeholder="0.00"
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        <div className="flex gap-3">
-          <Button type="submit" disabled={mutation.isPending}>
-            {mutation.isPending && (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            )}
-            {isEditing ? "Update Project" : "Create Project"}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => router.back()}
-          >
-            Cancel
-          </Button>
+              {isEditing ? "Update Project" : "Create Project"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => router.back()}
+            >
+              Cancel
+            </Button>
+          </div>
         </div>
       </form>
 

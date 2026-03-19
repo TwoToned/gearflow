@@ -60,12 +60,12 @@ export function SSOPendingApprovals() {
   });
 
   if (isLoading) {
-    return <div className="h-20 animate-pulse rounded-md bg-muted" />;
+    return <div className="h-20 animate-pulse rounded-md bg-bg-inset" />;
   }
 
   if (!approvals || approvals.length === 0) {
     return (
-      <div className="text-center py-6 text-sm text-muted-foreground">
+      <div className="text-center py-6 text-sm text-fg-3">
         <Clock className="mx-auto h-8 w-8 mb-2 opacity-50" />
         No pending approvals.
       </div>
@@ -81,7 +81,7 @@ export function SSOPendingApprovals() {
             <div className="flex items-center gap-2">
               <p className="text-sm font-medium">{approval.name || approval.email}</p>
               {approval.name && (
-                <span className="text-xs text-muted-foreground">{approval.email}</span>
+                <span className="text-xs text-fg-3">{approval.email}</span>
               )}
             </div>
             <div className="flex items-center gap-2">
@@ -91,12 +91,12 @@ export function SSOPendingApprovals() {
                 </Badge>
               )}
               {approval.idpGroups.length > 0 && (
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs text-fg-3">
                   Groups: {approval.idpGroups.join(", ")}
                 </span>
               )}
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-fg-3">
               {new Date(approval.createdAt).toLocaleDateString()}
             </p>
           </div>

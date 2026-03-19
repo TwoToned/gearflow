@@ -24,8 +24,10 @@ import {
 
 import { getCalendarData, type CalendarProject } from "@/server/availability";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { StatusIndicator } from "@/components/ui/status-indicator";
+import { SectionHeader } from "@/components/layout/page-layouts";
+import { FadeIn } from "@/components/ui/motion";
+
 import { RequirePermission } from "@/components/auth/require-permission";
 import { useActiveOrganization } from "@/lib/auth-client";
 
@@ -55,18 +57,6 @@ const statusLabels: Record<string, string> = {
   INVOICED: "Invoiced",
 };
 
-const badgeColors: Record<string, string> = {
-  ENQUIRY: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  QUOTING: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  QUOTED: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  CONFIRMED: "bg-green-500/10 text-green-500 border-green-500/20",
-  PREPPING: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  CHECKED_OUT: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  ON_SITE: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  RETURNED: "bg-teal-500/10 text-teal-500 border-teal-500/20",
-  COMPLETED: "bg-green-500/10 text-green-500 border-green-500/20",
-  INVOICED: "bg-green-500/10 text-green-500 border-green-500/20",
-};
 
 function getProjectsForDay(
   projects: CalendarProject[],
@@ -82,12 +72,16 @@ function getProjectsForDay(
   });
 }
 
-/** Intensity of the day based on how many projects overlap */
+/** Intensity of the day based on how many projects overlap — gradient heat stripe */
 function dayIntensity(count: number): string {
   if (count === 0) return "";
-  if (count === 1) return "bg-blue-500/10 dark:bg-blue-500/15";
-  if (count === 2) return "bg-amber-500/10 dark:bg-amber-500/15";
-  return "bg-red-500/10 dark:bg-red-500/15";
+  if (count === 1)
+    return "bg-gradient-to-b from-blue-500/5 to-blue-500/15 dark:from-blue-500/10 dark:to-blue-500/20";
+  if (count === 2)
+    return "bg-gradient-to-b from-amber-500/5 to-amber-500/15 dark:from-amber-500/10 dark:to-amber-500/20";
+  if (count <= 4)
+    return "bg-gradient-to-b from-red-500/8 to-red-500/20 dark:from-red-500/12 dark:to-red-500/25";
+  return "bg-gradient-to-b from-red-500/15 to-red-500/30 dark:from-red-500/20 dark:to-red-500/35";
 }
 
 export default function AvailabilityPageWrapper() {
@@ -169,69 +163,69 @@ function AvailabilityPage() {
   return (
     <RequirePermission resource="asset" action="read">
     <div className="space-y-4">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">
-          Availability Calendar
-        </h1>
-        <p className="text-muted-foreground">
-          See when projects are active and equipment is out.
-        </p>
-      </div>
-
-      {/* Month Navigation */}
-      <div className="flex items-center gap-3">
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => setCurrentMonth(addMonths(currentMonth, -1))}
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
-        <h2 className="text-lg font-semibold min-w-[180px] text-center">
-          {format(currentMonth, "MMMM yyyy")}
-        </h2>
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
-        >
-          <ChevronRight className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            setCurrentMonth(startOfMonth(today));
-            setSelectedDay(today);
-          }}
-        >
-          Today
-        </Button>
-      </div>
+      {/* Header — contextual month with overline */}
+      <FadeIn>
+        <div>
+          <p className="t-overline text-primary mb-1">Availability</p>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setCurrentMonth(addMonths(currentMonth, -1))}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <h1 className="t-title text-fg min-w-[220px]">
+              {format(currentMonth, "MMMM yyyy")}
+            </h1>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setCurrentMonth(startOfMonth(today));
+                setSelectedDay(today);
+              }}
+            >
+              Today
+            </Button>
+          </div>
+          <p className="text-fg-3 mt-1">
+            See when projects are active and equipment is out.
+          </p>
+        </div>
+      </FadeIn>
 
       {/* Legend */}
-      <div className="flex items-center gap-4 text-xs text-muted-foreground">
-        <div className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded-sm bg-blue-500/15 border border-blue-500/30" />
-          1 project
+      <FadeIn delay={0.05}>
+        <div className="flex items-center gap-4 text-xs text-fg-3">
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded-sm bg-gradient-to-b from-blue-500/5 to-blue-500/15 border border-blue-500/30" />
+            1 project
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded-sm bg-gradient-to-b from-amber-500/5 to-amber-500/15 border border-amber-500/30" />
+            2 projects
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded-sm bg-gradient-to-b from-red-500/8 to-red-500/20 border border-red-500/30" />
+            3+ projects
+          </div>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded-sm bg-amber-500/15 border border-amber-500/30" />
-          2 projects
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded-sm bg-red-500/15 border border-red-500/30" />
-          3+ projects
-        </div>
-      </div>
+      </FadeIn>
 
-      <div className="flex gap-4 flex-col lg:flex-row">
-        {/* Calendar Grid */}
-        <Card className="flex-1">
-          <CardContent className="p-2 sm:p-4">
+      <FadeIn delay={0.1}>
+        <div className="flex gap-4 flex-col lg:flex-row">
+          {/* Calendar Grid — borderless, no surface wrapper */}
+          <div className="flex-1">
             {isLoading ? (
-              <div className="py-20 text-center text-muted-foreground">
+              <div className="py-20 text-center text-fg-3">
                 Loading...
               </div>
             ) : (
@@ -242,7 +236,7 @@ function AvailabilityPage() {
                     (d) => (
                       <div
                         key={d}
-                        className="text-center text-xs font-medium text-muted-foreground py-2"
+                        className="text-center text-xs font-medium text-fg-3 py-2"
                       >
                         {d}
                       </div>
@@ -278,7 +272,7 @@ function AvailabilityPage() {
                             className={`
                               text-sm tabular-nums leading-none
                               ${isToday ? "bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center font-bold" : ""}
-                              ${!isToday && inMonth ? "text-foreground" : ""}
+                              ${!isToday && inMonth ? "text-fg" : ""}
                             `}
                           >
                             {format(day, "d")}
@@ -294,7 +288,7 @@ function AvailabilityPage() {
                                 />
                               ))}
                               {count > 4 && (
-                                <span className="text-[9px] text-muted-foreground leading-none">
+                                <span className="text-[9px] text-fg-3 leading-none">
                                   +{count - 4}
                                 </span>
                               )}
@@ -312,7 +306,7 @@ function AvailabilityPage() {
                               </div>
                             ))}
                             {count > 2 && (
-                              <div className="text-[9px] text-muted-foreground text-center">
+                              <div className="text-[9px] text-fg-3 text-center">
                                 +{count - 2} more
                               </div>
                             )}
@@ -324,85 +318,75 @@ function AvailabilityPage() {
                 ))}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
 
-        {/* Day Detail Panel */}
-        <Card className="lg:w-[340px] shrink-0">
-          <CardContent className="p-4">
-            {selectedDay ? (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <CalendarDays className="h-4 w-4 text-muted-foreground" />
-                    <h3 className="font-semibold">
-                      {format(selectedDay, "EEEE, d MMMM yyyy")}
-                    </h3>
+          {/* Day Detail Panel — keeps surface treatment */}
+          <div className="rounded-lg bg-bg-surface surface-ring lg:w-[340px] shrink-0">
+            <div className="p-4">
+              {selectedDay ? (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <SectionHeader label={format(selectedDay, "EEEE, d MMMM")} />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0 ml-2"
+                      onClick={() => setSelectedDay(null)}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() => setSelectedDay(null)}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
 
-                {selectedProjects.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-4 text-center">
-                    No projects on this day.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    <p className="text-xs text-muted-foreground">
-                      {selectedProjects.length} project
-                      {selectedProjects.length !== 1 ? "s" : ""} active
+                  {selectedProjects.length === 0 ? (
+                    <p className="text-sm text-fg-3 py-4 text-center">
+                      No projects on this day.
                     </p>
-                    {selectedProjects.map((p) => (
-                      <button
-                        key={p.id}
-                        onClick={() => router.push(`/projects/${p.id}`)}
-                        className="w-full text-left rounded-lg border p-3 hover:bg-accent/50 transition-colors cursor-pointer space-y-1.5"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium text-sm">
-                            {p.projectNumber}
-                          </span>
-                          <Badge
-                            variant="outline"
-                            className={`text-[10px] ${badgeColors[p.status] || ""}`}
-                          >
-                            {statusLabels[p.status] || p.status}
-                          </Badge>
-                        </div>
-                        <p className="text-sm truncate">{p.name}</p>
-                        {p.clientName && (
-                          <p className="text-xs text-muted-foreground">
-                            {p.clientName}
-                          </p>
-                        )}
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>
-                            {format(new Date(p.rentalStartDate), "d MMM")} —{" "}
-                            {format(new Date(p.rentalEndDate), "d MMM")}
-                          </span>
-                          <span>{p.lineItemCount} items</span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="py-8 text-center text-sm text-muted-foreground">
-                <CalendarDays className="mx-auto mb-2 h-8 w-8 opacity-50" />
-                Click a day to see project details.
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-xs text-fg-3">
+                        {selectedProjects.length} project
+                        {selectedProjects.length !== 1 ? "s" : ""} active
+                      </p>
+                      {selectedProjects.map((p) => (
+                        <button
+                          key={p.id}
+                          onClick={() => router.push(`/projects/${p.id}`)}
+                          className="w-full text-left rounded-lg border p-3 hover:bg-accent/50 transition-colors cursor-pointer space-y-1.5"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium text-sm">
+                              {p.projectNumber}
+                            </span>
+                            <StatusIndicator category="project" value={p.status} label={statusLabels[p.status] || p.status} variant="pill" />
+                          </div>
+                          <p className="text-sm truncate">{p.name}</p>
+                          {p.clientName && (
+                            <p className="text-xs text-fg-3">
+                              {p.clientName}
+                            </p>
+                          )}
+                          <div className="flex items-center justify-between text-xs text-fg-3">
+                            <span>
+                              {format(new Date(p.rentalStartDate), "d MMM")} —{" "}
+                              {format(new Date(p.rentalEndDate), "d MMM")}
+                            </span>
+                            <span>{p.lineItemCount} items</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="py-8 text-center text-sm text-fg-3">
+                  <CalendarDays className="mx-auto mb-2 h-8 w-8 opacity-50" />
+                  Click a day to see project details.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </FadeIn>
     </div>
     </RequirePermission>
   );

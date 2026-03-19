@@ -1,15 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { FormSection } from "@/components/layout/page-layouts";
 import { BrandingSettings } from "@/components/settings/branding-settings";
 import {
   getOrganization,
   type OrgSettings,
 } from "@/server/settings";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { FadeIn } from "@/components/ui/motion";
 
 export default function BrandingSettingsPage() {
   const { data: activeOrg } = useActiveOrganization();
@@ -31,20 +32,21 @@ export default function BrandingSettingsPage() {
   }, [org]);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Branding & Colors</CardTitle>
-        <CardDescription>
-          Customize your organization&apos;s colors across the UI and PDF documents.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <BrandingSettings
-          orgName={name}
-          settings={settings}
-          onBrandingChange={(branding) => setSettings((prev) => ({ ...prev, branding }))}
-        />
-      </CardContent>
-    </Card>
+    <FadeIn>
+    <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+      <FormSection
+        title="Branding & Colors"
+        description="Customize your organization's colors across the UI and PDF documents."
+      >
+        <div className="sm:col-span-2">
+          <BrandingSettings
+            orgName={name}
+            settings={settings}
+            onBrandingChange={(branding) => setSettings((prev) => ({ ...prev, branding }))}
+          />
+        </div>
+      </FormSection>
+    </div>
+    </FadeIn>
   );
 }

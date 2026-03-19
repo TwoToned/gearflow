@@ -1,20 +1,26 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { ModelTable } from "@/components/assets/model-table";
 import { RequirePermission } from "@/components/auth/require-permission";
+import { ListPageLayout } from "@/components/layout/page-layouts";
+import { useKeyboardShortcut } from "@/hooks/use-keyboard-shortcut";
+import { FadeIn } from "@/components/ui/motion";
 
 export default function ModelsPage() {
+  const router = useRouter();
+  useKeyboardShortcut("n", () => router.push("/assets/models/new"));
+
   return (
-    <RequirePermission resource="model" action="read">
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Equipment Models</h1>
-        <p className="text-muted-foreground">
-          Manage your equipment model library — templates for creating assets.
-        </p>
-      </div>
-      <ModelTable />
-    </div>
-    </RequirePermission>
+    <FadeIn>
+      <RequirePermission resource="model" action="read">
+        <ListPageLayout
+          title="Equipment Models"
+          description="Templates for your equipment — each model defines a type of gear."
+        >
+          <ModelTable />
+        </ListPageLayout>
+      </RequirePermission>
+    </FadeIn>
   );
 }

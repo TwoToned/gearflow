@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { getChangelog, type ChangelogEntry } from "@/server/changelog";
 
@@ -18,14 +17,14 @@ export default function ChangelogPage() {
     <RequirePermission resource="asset" action="read">
       <div className="mx-auto max-w-3xl px-4 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold tracking-tight">Changelog</h1>
-          <p className="mt-2 text-muted-foreground">
+          <h1 className="t-title">Changelog</h1>
+          <p className="mt-2 text-fg-3">
             Build history for GearFlow.
           </p>
         </div>
 
         {loading ? (
-          <div className="py-20 text-center text-muted-foreground">Loading...</div>
+          <div className="py-20 text-center text-fg-3">Loading...</div>
         ) : (
           <div className="relative">
             {entries.map((entry, i) => (
@@ -38,13 +37,13 @@ export default function ChangelogPage() {
                   <div className="relative z-10 mt-1 flex-shrink-0">
                     <div
                       className={`h-[10px] w-[10px] rounded-full ring-4 ring-background ${
-                        i === 0 ? "bg-primary" : "bg-muted-foreground/40"
+                        i === 0 ? "bg-primary" : "bg-fg-3/40"
                       }`}
                     />
                   </div>
 
-                  <Card className={`mb-4 flex-1 ${i === 0 ? "ring-primary/30" : ""}`}>
-                    <CardHeader className="pb-2">
+                  <div className={`rounded-lg bg-bg-surface surface-ring mb-4 flex-1 ${i === 0 ? "ring-primary/30" : ""}`}>
+                    <div className="p-4 pb-2">
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge
                           variant="secondary"
@@ -60,15 +59,15 @@ export default function ChangelogPage() {
                             Latest
                           </Badge>
                         )}
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-xs text-fg-3">
                           {entry.date}
                         </span>
                       </div>
-                      <CardTitle className="mt-1 text-sm font-medium">
+                      <p className="mt-1 text-sm font-medium">
                         {entry.message}
-                      </CardTitle>
-                    </CardHeader>
-                  </Card>
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
             ))}
@@ -76,7 +75,7 @@ export default function ChangelogPage() {
             {/* Timeline end cap */}
             <div className="relative flex items-center gap-4 pb-4">
               <div className="relative z-10 flex-shrink-0">
-                <div className="ml-[3px] h-1 w-1 rounded-full bg-muted-foreground/40" />
+                <div className="ml-[3px] h-1 w-1 rounded-full bg-fg-3/40" />
               </div>
             </div>
           </div>

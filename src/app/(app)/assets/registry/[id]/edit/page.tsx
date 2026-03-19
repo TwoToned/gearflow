@@ -1,6 +1,7 @@
 "use client";
 
 import { use, Suspense } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { getAsset } from "@/server/assets";
@@ -8,12 +9,21 @@ import { getBulkAsset } from "@/server/bulk-assets";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { AssetForm } from "@/components/assets/asset-form";
 import { BulkAssetForm } from "@/components/assets/bulk-asset-form";
+import { FadeIn } from "@/components/ui/motion";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 import type { AssetFormValues } from "@/lib/validations/asset";
 import type { BulkAssetFormValues } from "@/lib/validations/asset";
 
 export default function EditAssetPage({ params }: { params: Promise<{ id: string }> }) {
   return (
-    <Suspense fallback={<div className="text-muted-foreground">Loading...</div>}>
+    <Suspense fallback={<div className="text-[13px] text-fg-3">Loading...</div>}>
       <EditAssetContent params={params} />
     </Suspense>
   );
@@ -39,11 +49,11 @@ function EditAssetContent({ params }: { params: Promise<{ id: string }> }) {
   });
 
   const isLoading = isBulk ? bulkQuery.isLoading : assetQuery.isLoading;
-  if (isLoading) return <div className="text-muted-foreground">Loading...</div>;
+  if (isLoading) return <div className="text-[13px] text-fg-3">Loading...</div>;
 
   if (isBulk) {
     const ba = bulkQuery.data;
-    if (!ba) return <div className="text-muted-foreground">Bulk asset not found.</div>;
+    if (!ba) return <div className="text-[13px] text-fg-3">Bulk asset not found.</div>;
 
     const initialData: BulkAssetFormValues & { id: string } = {
       id: ba.id,
@@ -60,18 +70,35 @@ function EditAssetContent({ params }: { params: Promise<{ id: string }> }) {
     };
 
     return (
-      <div className="mx-auto max-w-3xl space-y-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Edit Bulk Asset</h1>
-          <p className="text-muted-foreground font-mono">{ba.assetTag}</p>
+      <FadeIn>
+        <div className="mx-auto max-w-3xl space-y-4">
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink render={<Link href="/assets/registry" />}>Assets</BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbLink render={<Link href={`/assets/registry/${id}?type=bulk`} />}>{ba.assetTag}</BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbPage>Edit</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+          <div>
+            <h1 className="t-title text-fg">Edit Bulk Asset</h1>
+            <p className="text-[13px] text-fg-3 font-mono">{ba.assetTag}</p>
+          </div>
+          <BulkAssetForm initialData={initialData} />
         </div>
-        <BulkAssetForm initialData={initialData} />
-      </div>
+      </FadeIn>
     );
   }
 
   const asset = assetQuery.data;
-  if (!asset) return <div className="text-muted-foreground">Asset not found.</div>;
+  if (!asset) return <div className="text-[13px] text-fg-3">Asset not found.</div>;
 
   const formatDateForInput = (date: Date | string | null | undefined) => {
     if (!date) return undefined;
@@ -101,12 +128,29 @@ function EditAssetContent({ params }: { params: Promise<{ id: string }> }) {
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Edit Asset</h1>
-        <p className="text-muted-foreground font-mono">{asset.assetTag}</p>
+    <FadeIn>
+      <div className="mx-auto max-w-3xl space-y-4">
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink render={<Link href="/assets/registry" />}>Assets</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbLink render={<Link href={`/assets/registry/${asset.id}`} />}>{asset.assetTag}</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Edit</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+        <div>
+          <h1 className="t-title text-fg">Edit Asset</h1>
+          <p className="text-[13px] text-fg-3 font-mono">{asset.assetTag}</p>
+        </div>
+        <AssetForm initialData={initialData} />
       </div>
-      <AssetForm initialData={initialData} />
-    </div>
+    </FadeIn>
   );
 }

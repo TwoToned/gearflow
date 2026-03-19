@@ -95,7 +95,7 @@ export function ReportViewer({ config, initialResult, title, autoRun }: ReportVi
   const fieldDefs = FIELD_DEFINITIONS[config.dataSource] || [];
 
   const formatValue = (value: unknown, field: string): React.ReactNode => {
-    if (value == null) return <span className="text-muted-foreground">-</span>;
+    if (value == null) return <span className="text-fg-3">-</span>;
 
     const fieldDef = fieldDefs.find((f) => f.field === field);
 
@@ -161,7 +161,7 @@ export function ReportViewer({ config, initialResult, title, autoRun }: ReportVi
               {pdfMutation.isPending ? "Generating..." : "Export PDF"}
             </Button>
 
-            <span className="ml-auto text-sm text-muted-foreground">
+            <span className="ml-auto text-sm text-fg-3">
               {result.totalRows.toLocaleString()} row{result.totalRows !== 1 ? "s" : ""}
             </span>
           </>
@@ -192,18 +192,23 @@ export function ReportViewer({ config, initialResult, title, autoRun }: ReportVi
               <TableBody>
                 {result.rows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={result.columns.length} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={result.columns.length} className="text-center text-fg-3 py-8">
                       No data found
                     </TableCell>
                   </TableRow>
                 ) : (
                   result.rows.map((row, i) => (
                     <TableRow key={i}>
-                      {result.columns.map((col) => (
-                        <TableCell key={col.field} className="whitespace-nowrap">
-                          {formatValue(row[col.field], col.field)}
-                        </TableCell>
-                      ))}
+                      {result.columns.map((col) => {
+                        const fd = fieldDefs.find((f) => f.field === col.field);
+                        const val = row[col.field];
+                        const isNumeric = fd?.type === "number" || typeof val === "number";
+                        return (
+                          <TableCell key={col.field} className={`whitespace-nowrap${isNumeric ? " t-data" : ""}`}>
+                            {formatValue(val, col.field)}
+                          </TableCell>
+                        );
+                      })}
                     </TableRow>
                   ))
                 )}
@@ -213,7 +218,7 @@ export function ReportViewer({ config, initialResult, title, autoRun }: ReportVi
 
           {/* Aggregation summary */}
           {result.aggregations && Object.keys(result.aggregations).length > 1 && (
-            <div className="flex flex-wrap gap-4 rounded-md border bg-muted/50 p-3">
+            <div className="flex flex-wrap gap-4 rounded-md border bg-bg-inset/50 p-3">
               {Object.entries(result.aggregations)
                 .filter(([key]) => key.startsWith("sum:"))
                 .map(([key, value]) => {
@@ -221,7 +226,7 @@ export function ReportViewer({ config, initialResult, title, autoRun }: ReportVi
                   const label = fieldDefs.find((f) => f.field === field)?.label || field;
                   return (
                     <div key={key} className="text-sm">
-                      <span className="text-muted-foreground">Total {label}:</span>{" "}
+                      <span className="text-fg-3">Total {label}:</span>{" "}
                       <span className="font-medium">{formatValue(value, field)}</span>
                     </div>
                   );
@@ -232,7 +237,7 @@ export function ReportViewer({ config, initialResult, title, autoRun }: ReportVi
           {/* Pagination */}
           {totalPages > 1 && (
             <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-fg-3">
                 Page {page} of {totalPages}
               </p>
               <div className="flex gap-1">

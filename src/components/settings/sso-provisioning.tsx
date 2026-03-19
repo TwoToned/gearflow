@@ -69,7 +69,7 @@ export function SSOProvisioningSection({ provisioningMode, defaultRole, canUpdat
             />
             <div>
               <p className="text-sm font-medium">{mode.label}</p>
-              <p className="text-xs text-muted-foreground">{mode.description}</p>
+              <p className="text-xs text-fg-3">{mode.description}</p>
             </div>
           </label>
         ))}
@@ -77,7 +77,7 @@ export function SSOProvisioningSection({ provisioningMode, defaultRole, canUpdat
 
       <div className="space-y-2">
         <Label>Default Role for SSO Users</Label>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-fg-3">
           Role assigned when no group mapping matches.
         </p>
         <Select

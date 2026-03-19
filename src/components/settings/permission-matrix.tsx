@@ -120,7 +120,7 @@ export function PermissionMatrix({
             <div key={resource} className="rounded-lg border p-3 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="font-medium text-sm">{reg.label}</span>
-                <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+                <label className="flex items-center gap-1.5 text-xs text-fg-3 cursor-pointer">
                   All
                   <Checkbox
                     checked={allRowChecked}

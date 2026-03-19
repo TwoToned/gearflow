@@ -15,13 +15,6 @@ import {
   RefreshCw,
 } from "lucide-react";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,6 +27,7 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { useCanDo } from "@/lib/use-permissions";
+import { FadeIn } from "@/components/ui/motion";
 import {
   getDisplayTokens,
   createDisplayToken,
@@ -93,7 +87,7 @@ function LayoutPicker({
           className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${
             value === l.value
               ? "border-primary bg-primary/5"
-              : "hover:bg-muted/50"
+              : "hover:bg-bg-inset/50"
           }`}
         >
           <input
@@ -106,7 +100,7 @@ function LayoutPicker({
           />
           <div>
             <div className="text-sm font-medium">{l.label}</div>
-            <div className="text-xs text-muted-foreground">{l.description}</div>
+            <div className="text-xs text-fg-3">{l.description}</div>
           </div>
         </label>
       ))}
@@ -142,7 +136,7 @@ function LocationSelect({
             </option>
           ))}
       </select>
-      <p className="text-xs text-muted-foreground">
+      <p className="text-xs text-fg-3">
         Scope to a warehouse location to only show relevant projects.
       </p>
     </div>
@@ -277,21 +271,22 @@ export default function DisplaySettingsPage() {
   const tokenList = (tokens as unknown as DisplayToken[]) ?? [];
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <MonitorPlay className="h-5 w-5" />
+    <FadeIn>
+    <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+      <div className="mb-4">
+        <h3 className="t-heading text-fg flex items-center gap-2">
+          <MonitorPlay className="h-4 w-4" />
           Warehouse Displays
-        </CardTitle>
-        <CardDescription>
+        </h3>
+        <p className="mt-0.5 text-[12px] text-fg-3">
           Create shareable URLs for wall-mounted TVs and monitors in your
           warehouse. Each display auto-refreshes and requires no login.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
+        </p>
+      </div>
+      <div className="space-y-6">
         {isLoading ? (
           <div className="flex justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <Loader2 className="h-6 w-6 animate-spin text-fg-3" />
           </div>
         ) : (
           <>
@@ -305,13 +300,13 @@ export default function DisplaySettingsPage() {
                   >
                     <div className="space-y-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <MonitorPlay className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <MonitorPlay className="h-4 w-4 text-fg-3 shrink-0" />
                         <span className="font-medium truncate">{t.name}</span>
-                        <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                        <span className="text-xs text-fg-3 bg-bg-inset px-1.5 py-0.5 rounded">
                           {t.layout}
                         </span>
                       </div>
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-3">
                         {t.location && (
                           <span className="flex items-center gap-1">
                             <MapPin className="h-3 w-3" />
@@ -379,7 +374,7 @@ export default function DisplaySettingsPage() {
 
                   {newToken ? (
                     <div className="space-y-4">
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-sm text-fg-3">
                         Copy this URL and open it on your warehouse TV or
                         monitor. You can regenerate this URL later from the edit
                         menu.
@@ -521,7 +516,7 @@ export default function DisplaySettingsPage() {
                       </Button>
                     </div>
                     {regeneratedUrl && (
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-fg-3">
                         New URL generated. The previous URL no longer works.
                       </p>
                     )}
@@ -573,7 +568,8 @@ export default function DisplaySettingsPage() {
             </Dialog>
           </>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
+    </FadeIn>
   );
 }

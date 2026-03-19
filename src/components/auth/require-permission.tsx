@@ -22,7 +22,7 @@ export function RequirePermission({
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
         <h2 className="text-xl font-semibold">Access Denied</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
+        <p className="mt-2 text-sm text-fg-3">
           You don&apos;t have permission to access this page.
         </p>
       </div>

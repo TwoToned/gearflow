@@ -1,0 +1,118 @@
+import { describe, it, expect } from "vitest";
+import {
+  getStatusIntent,
+  getStatusColor,
+  intentStyles,
+  type ColorIntent,
+} from "./status-colors";
+
+describe("status-colors", () => {
+  // ─── getStatusIntent ───────────────────────────────────────────────
+
+  describe("getStatusIntent", () => {
+    it("returns correct intent for known asset statuses", () => {
+      expect(getStatusIntent("asset", "AVAILABLE")).toBe("success");
+      expect(getStatusIntent("asset", "CHECKED_OUT")).toBe("primary");
+      expect(getStatusIntent("asset", "IN_MAINTENANCE")).toBe("warning");
+      expect(getStatusIntent("asset", "RESERVED")).toBe("info");
+      expect(getStatusIntent("asset", "RETIRED")).toBe("neutral");
+      expect(getStatusIntent("asset", "LOST")).toBe("error");
+    });
+
+    it("returns correct intent for known project statuses", () => {
+      expect(getStatusIntent("project", "CONFIRMED")).toBe("success");
+      expect(getStatusIntent("project", "DRAFT")).toBe("neutral");
+      expect(getStatusIntent("project", "CANCELLED")).toBe("error");
+      expect(getStatusIntent("project", "CHECKED_OUT")).toBe("primary");
+    });
+
+    it("returns correct intent for maintenance statuses", () => {
+      expect(getStatusIntent("maintenance", "COMPLETED")).toBe("success");
+      expect(getStatusIntent("maintenance", "IN_PROGRESS")).toBe("warning");
+      expect(getStatusIntent("maintenance", "SCHEDULED")).toBe("info");
+      expect(getStatusIntent("maintenance", "CANCELLED")).toBe("error");
+    });
+
+    it("returns 'neutral' for unknown status values", () => {
+      expect(getStatusIntent("asset", "NONEXISTENT_STATUS")).toBe("neutral");
+      expect(getStatusIntent("project", "MADE_UP")).toBe("neutral");
+    });
+
+    it("returns 'neutral' for unknown category", () => {
+      // @ts-expect-error testing invalid category
+      expect(getStatusIntent("invalidCategory", "AVAILABLE")).toBe("neutral");
+    });
+
+    it("covers all color intents across categories", () => {
+      const allIntents = new Set<ColorIntent>();
+      // Collect intents from various known statuses
+      const testCases: [string, string][] = [
+        ["asset", "AVAILABLE"],       // success
+        ["asset", "IN_MAINTENANCE"],  // warning
+        ["asset", "LOST"],            // error
+        ["asset", "RESERVED"],        // info
+        ["asset", "RETIRED"],         // neutral
+        ["project", "CHECKED_OUT"],   // primary
+      ];
+      for (const [cat, val] of testCases) {
+        allIntents.add(getStatusIntent(cat as any, val));
+      }
+      expect(allIntents.size).toBe(6);
+    });
+  });
+
+  // ─── getStatusColor ────────────────────────────────────────────────
+
+  describe("getStatusColor", () => {
+    it("returns full style object for a known status", () => {
+      const styles = getStatusColor("asset", "AVAILABLE");
+      expect(styles).toEqual(intentStyles.success);
+      expect(styles.dot).toBe("bg-success");
+      expect(styles.text).toBe("text-success");
+      expect(styles.pill).toContain("bg-success-subtle");
+      expect(styles.bg).toBe("bg-success-subtle");
+    });
+
+    it("returns neutral styles for unknown status", () => {
+      const styles = getStatusColor("asset", "UNKNOWN_VALUE");
+      expect(styles).toEqual(intentStyles.neutral);
+    });
+
+    it("returns correct styles for each intent type", () => {
+      // success
+      expect(getStatusColor("asset", "AVAILABLE").text).toBe("text-success");
+      // primary
+      expect(getStatusColor("asset", "CHECKED_OUT").text).toBe("text-primary");
+      // error
+      expect(getStatusColor("asset", "LOST").text).toBe("text-error");
+      // warning
+      expect(getStatusColor("asset", "IN_MAINTENANCE").text).toBe("text-warning");
+      // info
+      expect(getStatusColor("asset", "RESERVED").text).toBe("text-info");
+    });
+  });
+
+  // ─── intentStyles ──────────────────────────────────────────────────
+
+  describe("intentStyles", () => {
+    it("has all 6 intent keys", () => {
+      const intents: ColorIntent[] = ["success", "warning", "error", "info", "neutral", "primary"];
+      for (const intent of intents) {
+        expect(intentStyles[intent]).toBeDefined();
+        expect(intentStyles[intent].dot).toBeDefined();
+        expect(intentStyles[intent].text).toBeDefined();
+        expect(intentStyles[intent].pill).toBeDefined();
+        expect(intentStyles[intent].bg).toBeDefined();
+      }
+    });
+
+    it("all style values are non-empty strings", () => {
+      for (const [, styles] of Object.entries(intentStyles)) {
+        expect(styles.dot.length).toBeGreaterThan(0);
+        expect(styles.text.length).toBeGreaterThan(0);
+        expect(styles.pill.length).toBeGreaterThan(0);
+        expect(styles.bg.length).toBeGreaterThan(0);
+      }
+    });
+  });
+});

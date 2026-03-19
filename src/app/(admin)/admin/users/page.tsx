@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AdminShell } from "@/components/admin/admin-shell";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -142,15 +141,15 @@ export default function AdminUsersPage() {
     <AdminShell>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Users</h1>
-          <p className="text-muted-foreground">
+          <h1 className="t-title text-fg">Users</h1>
+          <p className="text-fg-3">
             Manage all users across the platform.
           </p>
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-3" />
             <Input
               placeholder="Search users..."
               value={search}
@@ -169,228 +168,224 @@ export default function AdminUsersPage() {
 
         {/* Pending Invitations */}
         {((pendingInvitations || []) as any[]).length > 0 && (
-          <Card>
-            <CardContent className="p-4">
-              <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-                <Mail className="h-4 w-4 text-muted-foreground" />
-                Pending Invitations
-              </h3>
-              <div className="space-y-2">
-                {((pendingInvitations || []) as any[]).map((inv: any) => (
-                  <div
-                    key={inv.id}
-                    className="flex items-center gap-3 rounded-md border border-dashed p-3"
-                  >
-                    <div className="hidden sm:flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
-                      <Mail className="h-3.5 w-3.5 text-muted-foreground" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate">{inv.email}</p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        Invited to {inv.organization.name}
-                        {inv.role ? ` as ${inv.role.charAt(0).toUpperCase() + inv.role.slice(1)}` : ""}
-                        {" - "}
-                        {new Date(inv.createdAt).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="shrink-0 text-destructive"
-                      onClick={() => {
-                        if (confirm(`Revoke invitation for ${inv.email}?`)) {
-                          revokeMutation.mutate(inv.id);
-                        }
-                      }}
-                    >
-                      <X className="h-3.5 w-3.5 sm:mr-1" />
-                      <span className="hidden sm:inline">Revoke</span>
-                    </Button>
+          <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+            <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+              <Mail className="h-4 w-4 text-fg-3" />
+              Pending Invitations
+            </h3>
+            <div className="space-y-2">
+              {((pendingInvitations || []) as any[]).map((inv: any) => (
+                <div
+                  key={inv.id}
+                  className="flex items-center gap-3 rounded-md border border-dashed p-3"
+                >
+                  <div className="hidden sm:flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-bg-inset">
+                    <Mail className="h-3.5 w-3.5 text-fg-3" />
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">{inv.email}</p>
+                    <p className="text-xs text-fg-3 truncate">
+                      Invited to {inv.organization.name}
+                      {inv.role ? ` as ${inv.role.charAt(0).toUpperCase() + inv.role.slice(1)}` : ""}
+                      {" - "}
+                      {new Date(inv.createdAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0 text-destructive"
+                    onClick={() => {
+                      if (confirm(`Revoke invitation for ${inv.email}?`)) {
+                        revokeMutation.mutate(inv.id);
+                      }
+                    }}
+                  >
+                    <X className="h-3.5 w-3.5 sm:mr-1" />
+                    <span className="hidden sm:inline">Revoke</span>
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
 
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="p-3 text-left font-medium">User</th>
-                    <th className="p-3 text-left font-medium">Role</th>
-                    <th className="p-3 text-left font-medium hidden lg:table-cell">Organizations</th>
-                    <th className="p-3 text-center font-medium hidden sm:table-cell">2FA</th>
-                    <th className="p-3 text-center font-medium hidden sm:table-cell">Status</th>
-                    <th className="p-3 text-left font-medium hidden md:table-cell">Joined</th>
-                    <th className="p-3 text-right font-medium">Actions</th>
+        <div className="rounded-lg bg-bg-surface p-0 surface-ring">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-bg-inset/50">
+                  <th className="p-3 text-left font-medium">User</th>
+                  <th className="p-3 text-left font-medium">Role</th>
+                  <th className="p-3 text-left font-medium hidden lg:table-cell">Organizations</th>
+                  <th className="p-3 text-center font-medium hidden sm:table-cell">2FA</th>
+                  <th className="p-3 text-center font-medium hidden sm:table-cell">Status</th>
+                  <th className="p-3 text-left font-medium hidden md:table-cell">Joined</th>
+                  <th className="p-3 text-right font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={7} className="p-8 text-center text-fg-3">
+                      Loading...
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {isLoading ? (
-                    <tr>
-                      <td colSpan={7} className="p-8 text-center text-muted-foreground">
-                        Loading...
-                      </td>
-                    </tr>
-                  ) : data?.users?.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="p-8 text-center text-muted-foreground">
-                        No users found.
-                      </td>
-                    </tr>
-                  ) : (
-                    data?.users?.map((user: UserRow) => (
-                      <tr key={user.id} className="border-b hover:bg-muted/30">
-                        <td className="p-3">
-                          <div>
-                            <div className="font-medium">{user.name}</div>
-                            <div className="text-xs text-muted-foreground truncate max-w-[200px]">
-                              {user.email}
-                            </div>
-                            <div className="flex gap-1 mt-1 sm:hidden">
-                              {user.banned && <Badge variant="destructive" className="text-[10px] px-1.5 py-0">Banned</Badge>}
-                              {user.twoFactorEnabled && <Badge variant="outline" className="text-[10px] px-1.5 py-0">2FA</Badge>}
-                            </div>
+                ) : data?.users?.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-8 text-center text-fg-3">
+                      No users found.
+                    </td>
+                  </tr>
+                ) : (
+                  data?.users?.map((user: UserRow) => (
+                    <tr key={user.id} className="border-b hover:bg-bg-elevated/30">
+                      <td className="p-3">
+                        <div>
+                          <div className="font-medium">{user.name}</div>
+                          <div className="text-xs text-fg-3 truncate max-w-[200px]">
+                            {user.email}
                           </div>
-                        </td>
-                        <td className="p-3">
-                          {user.role === "admin" ? (
-                            <Badge className="bg-red-500/10 text-red-500 border-red-500/20">
-                              Site Admin
-                            </Badge>
-                          ) : (
-                            <Badge variant="secondary">User</Badge>
-                          )}
-                        </td>
-                        <td className="p-3 hidden lg:table-cell">
-                          <div className="flex flex-wrap gap-1">
-                            {user.members?.length === 0 ? (
-                              <span className="text-xs text-muted-foreground">None</span>
-                            ) : (
-                              user.members?.map(
-                                (
-                                  m: {
-                                    role: string;
-                                    organization: { id: string; name: string };
-                                  },
-                                  i: number,
-                                ) => (
-                                  <Badge
-                                    key={i}
-                                    variant="outline"
-                                    className="text-xs"
-                                  >
-                                    {m.organization.name} ({m.role.charAt(0).toUpperCase() + m.role.slice(1)})
-                                  </Badge>
-                                ),
-                              )
-                            )}
+                          <div className="flex gap-1 mt-1 sm:hidden">
+                            {user.banned && <Badge variant="destructive" className="text-[10px] px-1.5 py-0">Banned</Badge>}
+                            {user.twoFactorEnabled && <Badge variant="outline" className="text-[10px] px-1.5 py-0">2FA</Badge>}
                           </div>
-                        </td>
-                        <td className="p-3 text-center hidden sm:table-cell">
-                          {user.twoFactorEnabled ? (
-                            <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
-                              On
-                            </Badge>
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        {user.role === "admin" ? (
+                          <Badge className="bg-red-500/10 text-red-500 border-red-500/20">
+                            Site Admin
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary">User</Badge>
+                        )}
+                      </td>
+                      <td className="p-3 hidden lg:table-cell">
+                        <div className="flex flex-wrap gap-1">
+                          {user.members?.length === 0 ? (
+                            <span className="text-xs text-fg-3">None</span>
                           ) : (
-                            <Badge variant="secondary">Off</Badge>
-                          )}
-                        </td>
-                        <td className="p-3 text-center hidden sm:table-cell">
-                          {user.banned ? (
-                            <Badge variant="destructive">Banned</Badge>
-                          ) : (
-                            <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
-                              Active
-                            </Badge>
-                          )}
-                        </td>
-                        <td className="p-3 text-muted-foreground hidden md:table-cell">
-                          {new Date(user.createdAt).toLocaleDateString()}
-                        </td>
-                        <td className="p-3 text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger
-                              render={
-                                <Button variant="ghost" size="icon" />
-                              }
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuGroup>
-                                {user.role !== "admin" ? (
-                                  <DropdownMenuItem
-                                    onClick={() =>
-                                      promoteMutation.mutate(user.id)
-                                    }
-                                  >
-                                    <Shield className="mr-2 h-4 w-4" />
-                                    Promote to Site Admin
-                                  </DropdownMenuItem>
-                                ) : (
-                                  <DropdownMenuItem
-                                    onClick={() =>
-                                      demoteMutation.mutate(user.id)
-                                    }
-                                  >
-                                    <ShieldOff className="mr-2 h-4 w-4" />
-                                    Demote from Site Admin
-                                  </DropdownMenuItem>
-                                )}
-                                {!user.banned ? (
-                                  <DropdownMenuItem
-                                    onClick={() => banMutation.mutate(user.id)}
-                                  >
-                                    <Ban className="mr-2 h-4 w-4" />
-                                    Ban User
-                                  </DropdownMenuItem>
-                                ) : (
-                                  <DropdownMenuItem
-                                    onClick={() =>
-                                      unbanMutation.mutate(user.id)
-                                    }
-                                  >
-                                    <CheckCircle className="mr-2 h-4 w-4" />
-                                    Unban User
-                                  </DropdownMenuItem>
-                                )}
-                                {user.twoFactorEnabled && (
-                                  <DropdownMenuItem
-                                    onClick={() =>
-                                      disable2FAMutation.mutate(user.id)
-                                    }
-                                  >
-                                    <KeyRound className="mr-2 h-4 w-4" />
-                                    Force Disable 2FA
-                                  </DropdownMenuItem>
-                                )}
-                                <DropdownMenuItem
-                                  className="text-destructive"
-                                  onClick={() => setDeleteTarget(user)}
+                            user.members?.map(
+                              (
+                                m: {
+                                  role: string;
+                                  organization: { id: string; name: string };
+                                },
+                                i: number,
+                              ) => (
+                                <Badge
+                                  key={i}
+                                  variant="outline"
+                                  className="text-xs"
                                 >
-                                  <Trash2 className="mr-2 h-4 w-4" />
-                                  Delete User
+                                  {m.organization.name} ({m.role.charAt(0).toUpperCase() + m.role.slice(1)})
+                                </Badge>
+                              ),
+                            )
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-3 text-center hidden sm:table-cell">
+                        {user.twoFactorEnabled ? (
+                          <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
+                            On
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary">Off</Badge>
+                        )}
+                      </td>
+                      <td className="p-3 text-center hidden sm:table-cell">
+                        {user.banned ? (
+                          <Badge variant="destructive">Banned</Badge>
+                        ) : (
+                          <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
+                            Active
+                          </Badge>
+                        )}
+                      </td>
+                      <td className="p-3 text-fg-3 hidden md:table-cell">
+                        {new Date(user.createdAt).toLocaleDateString()}
+                      </td>
+                      <td className="p-3 text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            render={
+                              <Button variant="ghost" size="icon" />
+                            }
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuGroup>
+                              {user.role !== "admin" ? (
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    promoteMutation.mutate(user.id)
+                                  }
+                                >
+                                  <Shield className="mr-2 h-4 w-4" />
+                                  Promote to Site Admin
                                 </DropdownMenuItem>
-                              </DropdownMenuGroup>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
+                              ) : (
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    demoteMutation.mutate(user.id)
+                                  }
+                                >
+                                  <ShieldOff className="mr-2 h-4 w-4" />
+                                  Demote from Site Admin
+                                </DropdownMenuItem>
+                              )}
+                              {!user.banned ? (
+                                <DropdownMenuItem
+                                  onClick={() => banMutation.mutate(user.id)}
+                                >
+                                  <Ban className="mr-2 h-4 w-4" />
+                                  Ban User
+                                </DropdownMenuItem>
+                              ) : (
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    unbanMutation.mutate(user.id)
+                                  }
+                                >
+                                  <CheckCircle className="mr-2 h-4 w-4" />
+                                  Unban User
+                                </DropdownMenuItem>
+                              )}
+                              {user.twoFactorEnabled && (
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    disable2FAMutation.mutate(user.id)
+                                  }
+                                >
+                                  <KeyRound className="mr-2 h-4 w-4" />
+                                  Force Disable 2FA
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem
+                                className="text-destructive"
+                                onClick={() => setDeleteTarget(user)}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete User
+                              </DropdownMenuItem>
+                            </DropdownMenuGroup>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
         {data && data.totalPages > 1 && (
           <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-fg-3">
               Showing {data.users?.length} of {data.total}
             </p>
             <div className="flex gap-2">

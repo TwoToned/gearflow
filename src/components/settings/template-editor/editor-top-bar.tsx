@@ -33,12 +33,12 @@ export function EditorTopBar({
   onBack,
 }: EditorTopBarProps) {
   return (
-    <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border/50 bg-card px-4">
+    <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border/50 bg-bg-surface px-4">
       {/* Back */}
       <Button
         variant="ghost"
         size="icon"
-        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+        className="h-8 w-8 text-fg-3 hover:text-fg"
         onClick={onBack}
       >
         <ArrowLeft className="h-4 w-4" />
@@ -70,13 +70,13 @@ export function EditorTopBar({
           Default
         </Badge>
       )}
-      <span className="text-[10px] text-muted-foreground shrink-0">v{version}</span>
+      <span className="text-[10px] text-fg-3 shrink-0">v{version}</span>
 
       {/* Spacer */}
       <div className="flex-1" />
 
       {/* Save state indicator */}
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
+      <div className="flex items-center gap-1.5 text-xs text-fg-3 shrink-0">
         {saveState === "saving" && (
           <>
             <Loader2 className="h-3 w-3 animate-spin" />

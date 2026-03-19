@@ -21,7 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FormSection } from "@/components/layout/page-layouts";
 import {
   Select,
   SelectContent,
@@ -100,13 +100,12 @@ export function ModelForm({ initialData }: ModelFormProps) {
   });
 
   return (
-    <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))} className="space-y-6">
+    <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))}>
+      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <div className="space-y-6">
       {/* Basic Info */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Basic Information</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
+      <FormSection title="Basic Information">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="name">Name *</Label>
             <Input id="name" {...form.register("name")} placeholder="e.g. Shure SM58" />
@@ -171,15 +170,12 @@ export function ModelForm({ initialData }: ModelFormProps) {
               )}
             />
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </FormSection>
 
       {/* Pricing */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Pricing</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-3">
+      <FormSection title="Pricing">
+        <div className="grid gap-4 sm:grid-cols-3">
           <div className="space-y-2">
             <Label htmlFor="defaultRentalPrice">Rental Price ($/day)</Label>
             <Input id="defaultRentalPrice" type="number" step="0.01" {...form.register("defaultRentalPrice")} />
@@ -192,15 +188,12 @@ export function ModelForm({ initialData }: ModelFormProps) {
             <Label htmlFor="replacementCost">Replacement Cost ($)</Label>
             <Input id="replacementCost" type="number" step="0.01" {...form.register("replacementCost")} />
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </FormSection>
 
       {/* Technical */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Technical Details</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
+      <FormSection title="Technical Details">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="weight">Weight (kg)</Label>
             <Input id="weight" type="number" step="0.01" {...form.register("weight")} />
@@ -263,51 +256,48 @@ export function ModelForm({ initialData }: ModelFormProps) {
                 <div className="space-y-2">
                   <Label htmlFor="testAndTagIntervalDays">Test Validity (days)</Label>
                   <Input id="testAndTagIntervalDays" type="number" min={1} {...form.register("testAndTagIntervalDays")} placeholder="Use org default" />
-                  <p className="text-xs text-muted-foreground">Leave blank to use org T&T settings</p>
+                  <p className="text-xs text-fg-3">Leave blank to use org T&T settings</p>
                 </div>
               </div>
             )}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </FormSection>
 
       {/* Specifications */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Specifications</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <FormSection title="Specifications">
           <SpecificationsEditor
             value={(form.watch("specifications") as Record<string, string>) || {}}
             onChange={(specs) => form.setValue("specifications", specs)}
           />
-        </CardContent>
-      </Card>
+      </FormSection>
 
       {/* Status */}
-      <Card>
-        <CardContent className="flex items-center justify-between pt-6">
+      <FormSection title="Status">
+        <div className="flex items-center justify-between">
           <div>
             <Label htmlFor="isActive">Active</Label>
-            <p className="text-xs text-muted-foreground">Inactive models are hidden from asset creation</p>
+            <p className="text-xs text-fg-3">Inactive models are hidden from asset creation</p>
           </div>
           <Switch
             id="isActive"
             checked={form.watch("isActive")}
             onCheckedChange={(v) => form.setValue("isActive", v)}
           />
-        </CardContent>
-      </Card>
+        </div>
+      </FormSection>
 
-      {/* Submit */}
-      <div className="flex gap-3">
-        <Button type="submit" disabled={mutation.isPending}>
-          {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {isEditing ? "Update Model" : "Create Model"}
-        </Button>
-        <Button type="button" variant="outline" onClick={() => router.back()}>
-          Cancel
-        </Button>
+        </div>
+        {/* Submit */}
+        <div className="mt-6 flex gap-3 border-t border-border pt-4">
+          <Button type="submit" disabled={mutation.isPending}>
+            {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {isEditing ? "Update Model" : "Create Model"}
+          </Button>
+          <Button type="button" variant="outline" onClick={() => router.back()}>
+            Cancel
+          </Button>
+        </div>
       </div>
 
       <QuickCreateCategory

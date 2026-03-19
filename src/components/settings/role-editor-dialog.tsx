@@ -198,7 +198,7 @@ export function RoleEditorDialog({
               placeholder="e.g. stage-managers"
               maxLength={200}
             />
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-fg-3">
               When a user signs in via SSO and their identity provider returns this group name in the groups claim,
               they will automatically be assigned this role.
             </p>

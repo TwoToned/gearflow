@@ -61,7 +61,7 @@ export function UserNav() {
         />
         <div className="grid flex-1 text-left text-sm leading-tight">
           <span className="truncate font-medium">{user?.name || "User"}</span>
-          <span className="truncate text-xs text-muted-foreground">
+          <span className="truncate text-xs text-fg-3">
             {user?.email}
           </span>
         </div>
@@ -77,7 +77,7 @@ export function UserNav() {
           <DropdownMenuLabel className="font-normal">
             <div className="flex flex-col space-y-1">
               <p className="text-sm font-medium">{user?.name}</p>
-              <p className="text-xs text-muted-foreground">{user?.email}</p>
+              <p className="text-xs text-fg-3">{user?.email}</p>
             </div>
           </DropdownMenuLabel>
         </DropdownMenuGroup>

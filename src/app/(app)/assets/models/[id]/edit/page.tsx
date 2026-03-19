@@ -1,10 +1,13 @@
 "use client";
 
 import { use } from "react";
+import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { getModel } from "@/server/models";
 import { ModelForm } from "@/components/assets/model-form";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { FadeIn } from "@/components/ui/motion";
 import type { ModelFormValues } from "@/lib/validations/model";
 
 export default function EditModelPage({ params }: { params: Promise<{ id: string }> }) {
@@ -17,8 +20,8 @@ export default function EditModelPage({ params }: { params: Promise<{ id: string
     queryFn: () => getModel(id),
   });
 
-  if (isLoading) return <div className="text-muted-foreground">Loading...</div>;
-  if (!model) return <div className="text-muted-foreground">Model not found.</div>;
+  if (isLoading) return <div className="text-[13px] text-fg-3">Loading...</div>;
+  if (!model) return <div className="text-[13px] text-fg-3">Model not found.</div>;
 
   const initialData: ModelFormValues & { id: string } = {
     id: model.id,
@@ -50,12 +53,23 @@ export default function EditModelPage({ params }: { params: Promise<{ id: string
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Edit Model</h1>
-        <p className="text-muted-foreground">{model.name}</p>
+    <FadeIn>
+      <div className="mx-auto max-w-3xl space-y-4">
+        <div className="flex items-center gap-2 text-sm text-fg-3 mb-4">
+          <Link href="/assets" className="hover:text-fg transition-colors">Assets</Link>
+          <ChevronRight className="h-3 w-3" />
+          <Link href="/assets/models" className="hover:text-fg transition-colors">Models</Link>
+          <ChevronRight className="h-3 w-3" />
+          <Link href={`/assets/models/${id}`} className="hover:text-fg transition-colors">{model.name}</Link>
+          <ChevronRight className="h-3 w-3" />
+          <span className="text-fg">Edit</span>
+        </div>
+        <div>
+          <h1 className="t-title text-fg">Edit Model</h1>
+          <p className="text-[13px] text-fg-3">{model.name}</p>
+        </div>
+        <ModelForm initialData={initialData} />
       </div>
-      <ModelForm initialData={initialData} />
-    </div>
+    </FadeIn>
   );
 }

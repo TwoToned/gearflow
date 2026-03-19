@@ -27,7 +27,7 @@ export function SSOStatusSection({ enabled, canUpdate, onToggle }: Props) {
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-medium">Enable SSO</p>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-fg-3">
             Allow members to sign in using your identity provider.
           </p>
         </div>
@@ -40,16 +40,16 @@ export function SSOStatusSection({ enabled, canUpdate, onToggle }: Props) {
 
       {enabled && (
         <div className="rounded-md border p-3">
-          <p className="text-xs font-medium text-muted-foreground mb-1">Organization Login URL</p>
+          <p className="text-xs font-medium text-fg-3 mb-1">Organization Login URL</p>
           <div className="flex items-center gap-2">
-            <code className="flex-1 text-sm bg-muted px-2 py-1 rounded truncate">
+            <code className="flex-1 text-sm bg-bg-inset px-2 py-1 rounded truncate">
               {loginUrl}
             </code>
             <Button variant="outline" size="sm" onClick={handleCopy}>
               {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
+          <p className="text-xs text-fg-3 mt-1">
             Share this URL with your team for direct SSO access.
           </p>
         </div>

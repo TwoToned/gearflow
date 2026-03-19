@@ -77,7 +77,7 @@ function ComboboxPicker({
       <Popover.Trigger
         disabled={disabled}
         className={cn(
-          "flex h-9 w-full items-center justify-between gap-1.5 rounded-md border border-input bg-transparent py-2 pr-2 pl-2.5 text-sm whitespace-nowrap transition-colors outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-placeholder:text-muted-foreground dark:bg-input/30 dark:hover:bg-input/50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+          "flex h-9 w-full items-center justify-between gap-1.5 rounded-md border border-input bg-transparent py-2 pr-2 pl-2.5 text-sm whitespace-nowrap transition-colors outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-placeholder:text-fg-3 dark:bg-input/30 dark:hover:bg-input/50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
           className
         )}
         data-placeholder={!displayLabel ? "" : undefined}
@@ -88,7 +88,7 @@ function ComboboxPicker({
         {allowClear && displayLabel ? (
           <span
             role="button"
-            className="pointer-events-auto size-4 text-muted-foreground hover:text-foreground"
+            className="pointer-events-auto size-4 text-fg-3 hover:text-fg"
             onPointerDown={(e) => {
               e.stopPropagation()
               e.preventDefault()
@@ -98,7 +98,7 @@ function ComboboxPicker({
             <XIcon className="size-4" />
           </span>
         ) : (
-          <ChevronDownIcon className="pointer-events-none size-4 text-muted-foreground" />
+          <ChevronDownIcon className="pointer-events-none size-4 text-fg-3" />
         )}
       </Popover.Trigger>
 
@@ -119,7 +119,7 @@ function ComboboxPicker({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={searchPlaceholder}
-                className="flex h-8 w-full rounded-md border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+                className="flex h-8 w-full rounded-md border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none transition-colors placeholder:text-fg-3 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
                 onKeyDown={(e) => {
                   if (e.key === "Escape") {
                     setOpen(false)
@@ -155,7 +155,7 @@ function ComboboxPicker({
 
             <div className="max-h-60 overflow-y-auto scroll-py-1 p-1">
               {filtered.length === 0 ? (
-                <div className="px-2 py-4 text-center text-sm text-muted-foreground">
+                <div className="px-2 py-4 text-center text-sm text-fg-3">
                   {emptyMessage}
                 </div>
               ) : (
@@ -174,7 +174,7 @@ function ComboboxPicker({
                     <div className="flex flex-1 flex-col items-start">
                       <span>{option.label}</span>
                       {option.description && (
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-xs text-fg-3">
                           {option.description}
                         </span>
                       )}
@@ -301,7 +301,7 @@ function MultiComboboxPicker({
         <Popover.Trigger
           disabled={disabled}
           className={cn(
-            "flex h-9 w-full items-center justify-between gap-1.5 rounded-md border border-input bg-transparent py-2 pr-2 pl-2.5 text-sm whitespace-nowrap transition-colors outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-placeholder:text-muted-foreground dark:bg-input/30 dark:hover:bg-input/50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+            "flex h-9 w-full items-center justify-between gap-1.5 rounded-md border border-input bg-transparent py-2 pr-2 pl-2.5 text-sm whitespace-nowrap transition-colors outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-placeholder:text-fg-3 dark:bg-input/30 dark:hover:bg-input/50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
             className
           )}
           data-placeholder={values.length === 0 ? "" : undefined}
@@ -311,7 +311,7 @@ function MultiComboboxPicker({
               ? placeholder
               : `${values.length} selected`}
           </span>
-          <ChevronDownIcon className="pointer-events-none size-4 text-muted-foreground" />
+          <ChevronDownIcon className="pointer-events-none size-4 text-fg-3" />
         </Popover.Trigger>
 
         <Popover.Portal>
@@ -331,7 +331,7 @@ function MultiComboboxPicker({
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder={searchPlaceholder}
-                  className="flex h-8 w-full rounded-md border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+                  className="flex h-8 w-full rounded-md border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none transition-colors placeholder:text-fg-3 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
                   onKeyDown={(e) => {
                     if (e.key === "Escape") {
                       setOpen(false)
@@ -342,7 +342,7 @@ function MultiComboboxPicker({
 
               <div className="max-h-60 overflow-y-auto scroll-py-1 p-1">
                 {filtered.length === 0 ? (
-                  <div className="px-2 py-4 text-center text-sm text-muted-foreground">
+                  <div className="px-2 py-4 text-center text-sm text-fg-3">
                     {emptyMessage}
                   </div>
                 ) : (
@@ -362,7 +362,7 @@ function MultiComboboxPicker({
                         <div className="flex flex-1 flex-col items-start">
                           <span>{option.label}</span>
                           {option.description && (
-                            <span className="text-xs text-muted-foreground">
+                            <span className="text-xs text-fg-3">
                               {option.description}
                             </span>
                           )}
@@ -397,7 +397,7 @@ function MultiComboboxPicker({
                 <button
                   type="button"
                   onClick={() => handleRemove(v)}
-                  className="ml-0.5 text-muted-foreground hover:text-foreground"
+                  className="ml-0.5 text-fg-3 hover:text-fg"
                 >
                   <XIcon className="size-3" />
                 </button>

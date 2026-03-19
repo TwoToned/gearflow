@@ -11,14 +11,8 @@ import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
 import { CanDo } from "@/components/auth/permission-gate";
 import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
-
-const typeColors: Record<string, string> = {
-  COMPANY: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  INDIVIDUAL: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  VENUE: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  PRODUCTION_COMPANY: "bg-green-500/10 text-green-500 border-green-500/20",
-};
 
 const typeLabels: Record<string, string> = {
   COMPANY: "Company",
@@ -57,9 +51,7 @@ const columns: ColumnDef<AnyClient>[] = [
       { value: "PRODUCTION_COMPANY", label: "Production Company", color: "bg-green-500" },
     ],
     cell: (row) => (
-      <Badge variant="outline" className={typeColors[row.type] || ""}>
-        {typeLabels[row.type] || row.type}
-      </Badge>
+      <StatusIndicator category="clientType" value={row.type} label={typeLabels[row.type] || row.type} variant="pill" />
     ),
   },
   {
@@ -69,7 +61,7 @@ const columns: ColumnDef<AnyClient>[] = [
     sortKey: "contactName",
     responsiveHide: "md",
     cell: (row) => (
-      <span className="text-muted-foreground">
+      <span className="text-fg-3">
         {row.contactName || "\u2014"}
       </span>
     ),
@@ -81,7 +73,7 @@ const columns: ColumnDef<AnyClient>[] = [
     sortKey: "contactEmail",
     responsiveHide: "md",
     cell: (row) => (
-      <span className="text-muted-foreground">
+      <span className="text-fg-3">
         {row.contactEmail || "\u2014"}
       </span>
     ),
@@ -178,7 +170,7 @@ export function ClientTable() {
       onToggleColumnVisibility={toggleColumnVisibility}
       onResetPreferences={resetPreferences}
       isLoading={isLoading}
-      emptyTitle="No clients found"
+      emptyPreset="clients"
       toolbarActions={toolbarActions}
     />
   );

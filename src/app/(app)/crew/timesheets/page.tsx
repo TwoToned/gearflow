@@ -23,8 +23,8 @@ import {
   Plus,
   ArrowRight,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -43,6 +43,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   Select,
   SelectContent,
@@ -66,14 +67,8 @@ import {
 } from "@/lib/validations/crew";
 import { timeEntryStatusLabels, formatLabel } from "@/lib/status-labels";
 import { toast } from "sonner";
+import { FadeIn } from "@/components/ui/motion";
 
-const timeEntryStatusColors: Record<string, string> = {
-  DRAFT: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  SUBMITTED: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  APPROVED: "bg-green-500/10 text-green-500 border-green-500/20",
-  DISPUTED: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  EXPORTED: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-};
 
 function formatDate(date: string | Date | null | undefined): string {
   if (!date) return "\u2014";
@@ -237,7 +232,7 @@ export default function TimesheetsPage() {
             {row.assignment.project?.name}
           </Link>
         ) : (
-          <span className="text-sm text-muted-foreground italic">
+          <span className="text-sm text-fg-3 italic">
             {row.description || "General"}
           </span>
         ),
@@ -248,7 +243,7 @@ export default function TimesheetsPage() {
       sortable: false,
       responsiveHide: "md",
       cell: (row: any) => (
-        <span className="text-sm text-muted-foreground">
+        <span className="text-sm text-fg-3">
           {row.assignment?.crewRole?.name || "\u2014"}
         </span>
       ),
@@ -280,7 +275,7 @@ export default function TimesheetsPage() {
       sortKey: "totalHours",
       align: "right",
       cell: (row: any) => (
-        <span className="text-sm font-mono">
+        <span className="text-sm font-mono t-data">
           {row.totalHours != null
             ? `${Number(row.totalHours).toFixed(1)}h`
             : "\u2014"}
@@ -301,12 +296,12 @@ export default function TimesheetsPage() {
         { value: "EXPORTED", label: "Exported" },
       ],
       cell: (row: any) => (
-        <Badge
-          variant="outline"
-          className={timeEntryStatusColors[row.status] || ""}
-        >
-          {timeEntryStatusLabels[row.status] || formatLabel(row.status)}
-        </Badge>
+        <StatusIndicator
+          category="timeEntry"
+          value={row.status}
+          label={timeEntryStatusLabels[row.status] || formatLabel(row.status)}
+          variant="pill"
+        />
       ),
     },
     {
@@ -316,7 +311,7 @@ export default function TimesheetsPage() {
       responsiveHide: "lg",
       defaultVisible: false,
       cell: (row: any) => (
-        <span className="text-sm text-muted-foreground">
+        <span className="text-sm text-fg-3">
           {row.approvedBy?.name || "\u2014"}
         </span>
       ),
@@ -328,7 +323,7 @@ export default function TimesheetsPage() {
       responsiveHide: "lg",
       defaultVisible: false,
       cell: (row: any) => (
-        <span className="text-sm text-muted-foreground truncate max-w-[200px] block">
+        <span className="text-sm text-fg-3 truncate max-w-[200px] block">
           {row.notes || "\u2014"}
         </span>
       ),
@@ -422,14 +417,12 @@ export default function TimesheetsPage() {
 
   return (
     <RequirePermission resource="crew" action="read">
+      <FadeIn>
       <div className="space-y-4">
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Timesheets</h1>
-          <p className="text-muted-foreground">
-            All time entries across crew members.
-          </p>
-        </div>
+        <PageHeader
+          title="Timesheets"
+          description="All time entries across crew members."
+        />
 
         <DataTable
           data={entries}
@@ -454,11 +447,13 @@ export default function TimesheetsPage() {
           onToggleColumnVisibility={toggleColumnVisibility}
           onResetPreferences={resetPreferences}
           isLoading={isLoading}
-          emptyTitle="No time entries found"
+          emptyPreset="crew"
+          emptyTitle="No time entries"
           emptyDescription="Time entries will appear here once crew members log time."
           toolbarActions={toolbarActions}
         />
       </div>
+      </FadeIn>
 
       {/* Edit Dialog */}
       <EditTimeEntryDialog
@@ -599,11 +594,11 @@ function EditTimeEntryDialog({
                 <Input
                   readOnly
                   value={`${entry.assignment.project?.projectNumber} — ${entry.assignment.project?.name}`}
-                  className="bg-muted"
+                  className="bg-bg-inset"
                 />
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-fg-3">
                 No assignment linked. Switch to General to add a description.
               </p>
             )
@@ -848,7 +843,7 @@ function LogTimeDialog({
                       <p className="text-sm font-medium">
                         {c.firstName} {c.lastName}
                       </p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-fg-3">
                         {c.crewRole?.name || c.department || "No role"}
                       </p>
                     </div>
@@ -856,7 +851,7 @@ function LogTimeDialog({
                 );
               })}
               {(!filteredCrew || filteredCrew.length === 0) && (
-                <p className="text-sm text-muted-foreground py-4 text-center">
+                <p className="text-sm text-fg-3 py-4 text-center">
                   No crew members found.
                 </p>
               )}
@@ -980,7 +975,7 @@ function LogTimeDialog({
                   </Select>
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground rounded-md border p-3">
+                <p className="text-xs text-fg-3 rounded-md border p-3">
                   Assignment selection is not available for multiple crew
                   members. Switch to General mode or select one member.
                 </p>
@@ -1113,7 +1108,7 @@ function ExportDialog({
               onChange={(e) => setDateTo(e.target.value)}
             />
           </div>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-fg-3">
             Leave empty to export all time entries.
           </p>
         </div>

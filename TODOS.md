@@ -22,6 +22,46 @@ Deferred work items tracked from engineering reviews and planning sessions.
 **Depends on:** Test infrastructure (completed in v0.2.0). Needs test data seeding strategy.
 **Estimate:** human ~3 weeks / CC ~2-3 hours
 
+## UI / UX
+
+### Warehouse "Today" Date Boundary Bug
+**What:** The warehouse urgency grouping uses `tomorrow.setDate(today.getDate() + 2)`, creating a 2-day window for "today" (includes today + tomorrow). The label says "today" but it means "today and tomorrow."
+**Why:** Users may be confused by a project starting tomorrow appearing in the "today" group. Either the window should be 1 day (true "today"), or the label should say "Next 48 hours" / "Today & Tomorrow."
+**Pros:** Clearer urgency grouping, less user confusion.
+**Cons:** Trivial fix. If the 2-day window is intentional (prep window), just relabel.
+**Context:** In `src/app/(app)/warehouse/page.tsx`, function `getProjectUrgency()`. The `+2` was present in the original code before the UX redesign — it's inherited, not new.
+**Depends on:** Nothing.
+**Estimate:** human ~15 min / CC ~2 min
+
+### Extract DetailLayout and SidebarSection Components
+**What:** All 10 detail pages copy-paste the same 2-column layout and sidebar section styling. Extract reusable `DetailLayout` and `SidebarSection` components.
+**Why:** ~80 duplicated border/spacing declarations across 10 files. One styling change requires editing 10 places.
+**Pros:** DRY, consistent styling enforced in one place, each detail page shrinks ~30 lines.
+**Cons:** Adds abstraction layer. Minor risk of over-constraining future detail pages.
+**Context:** Accepted in eng review (issue #2). Pattern: main content (flex-1) + sticky sidebar (lg:w-[340px]) with `border-b border-border pb-4 space-y-2` section dividers.
+**Depends on:** Nothing.
+**Estimate:** human ~3 hours / CC ~15 min
+
+### Extract Shared Formatters
+**What:** Six+ pages define their own `formatDate()` and `formatCurrency()` with identical AU locale/AUD logic. Extract to `src/lib/formatters.ts`.
+**Why:** DRY violation. One locale/currency change requires editing 6+ files.
+**Pros:** Single source of truth for formatting, easier to add new formats later.
+**Cons:** Minor refactor. No risk.
+**Context:** Accepted in eng review (issue #3).
+**Depends on:** Nothing.
+**Estimate:** human ~1 hour / CC ~5 min
+
+### Add ReducedMotionProvider Context
+**What:** All 6 motion components in `motion.tsx` each call `useReducedMotion()` individually. Extract to a React context provider so it's read once.
+**Why:** DRY — 6 hooks reading the same value. Minor perf improvement (1 media query listener vs 6).
+**Pros:** Cleaner code, single source of truth for motion preference.
+**Cons:** Adds provider wrapper to component tree.
+**Context:** Accepted in eng review (issue #1).
+**Depends on:** Nothing.
+**Estimate:** human ~1 hour / CC ~5 min
+
+## Testing Expansion
+
 ### Component Tests with React Testing Library
 **What:** Add component tests for the 123 component files using React Testing Library + happy-dom in Vitest.
 **Why:** Tests complex stateful components (warehouse scanner, availability calendar, kit builder) that have significant client-side logic beyond simple rendering.

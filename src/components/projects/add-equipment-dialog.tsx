@@ -253,7 +253,7 @@ export function AddEquipmentDialog({
               {selectedModelId && (
                 <div className="rounded-md border p-3 text-sm">
                   {availabilityLoading ? (
-                    <div className="flex items-center gap-2 text-muted-foreground">
+                    <div className="flex items-center gap-2 text-fg-3">
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       Checking availability...
                     </div>
@@ -265,12 +265,12 @@ export function AddEquipmentDialog({
                         <span className="font-semibold">{availability.effectiveStock ?? availability.totalStock}</span>{" "}
                         {availability.dateless ? "in stock" : "usable"}
                         {availability.bookedOnThisProject > 0 && (
-                          <span className="text-muted-foreground font-normal">
+                          <span className="text-fg-3 font-normal">
                             {" "}({availability.bookedOnThisProject} already on this project)
                           </span>
                         )}
                         {availability.dateless && (
-                          <span className="text-muted-foreground font-normal">
+                          <span className="text-fg-3 font-normal">
                             {" "}(no dates set — showing stock only)
                           </span>
                         )}
@@ -361,7 +361,7 @@ export function AddEquipmentDialog({
               {lookupTag && (
                 <div className="rounded-md border p-3 text-sm">
                   {lookupLoading ? (
-                    <div className="flex items-center gap-2 text-muted-foreground">
+                    <div className="flex items-center gap-2 text-fg-3">
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       Looking up asset...
                     </div>
@@ -369,13 +369,13 @@ export function AddEquipmentDialog({
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{assetLookup.asset.model.name}</span>
-                        <span className="font-mono text-xs text-muted-foreground">{assetLookup.asset.assetTag}</span>
+                        <span className="font-mono text-xs text-fg-3">{assetLookup.asset.assetTag}</span>
                       </div>
                       {assetLookup.asset.customName && (
-                        <p className="text-xs text-muted-foreground">{assetLookup.asset.customName}</p>
+                        <p className="text-xs text-fg-3">{assetLookup.asset.customName}</p>
                       )}
                       {assetLookup.asset.serialNumber && (
-                        <p className="text-xs text-muted-foreground">S/N: {assetLookup.asset.serialNumber}</p>
+                        <p className="text-xs text-fg-3">S/N: {assetLookup.asset.serialNumber}</p>
                       )}
                       {assetLookup.available ? (
                         <div className="flex items-center gap-1.5 text-green-600 dark:text-green-400">

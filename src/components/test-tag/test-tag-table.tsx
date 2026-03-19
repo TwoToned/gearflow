@@ -17,8 +17,8 @@ function StatusBadge({ status }: { status: string }) {
     DUE_SOON: { label: "Due Soon", className: "bg-amber-500/15 text-amber-600 border-amber-500/30" },
     OVERDUE: { label: "Overdue", className: "bg-red-500/15 text-red-600 border-red-500/30" },
     FAILED: { label: "Failed", className: "bg-red-500/15 text-red-600 border-red-500/30 border-dashed" },
-    NOT_YET_TESTED: { label: "Not Tested", className: "bg-muted text-muted-foreground" },
-    RETIRED: { label: "Retired", className: "bg-muted text-muted-foreground opacity-60" },
+    NOT_YET_TESTED: { label: "Not Tested", className: "bg-bg-inset text-fg-3" },
+    RETIRED: { label: "Retired", className: "bg-bg-inset text-fg-3 opacity-60" },
   };
   const { label, className } = map[status] || { label: status, className: "" };
   return <Badge variant="outline" className={className}>{label}</Badge>;
@@ -83,7 +83,7 @@ function useTestTagColumns(): ColumnDef<AnyItem>[] {
         { value: "LEAD_CORD_ASSEMBLY", label: "Lead / Cord" },
       ],
       cell: (row) => (
-        <span className="text-sm text-muted-foreground">
+        <span className="text-sm text-fg-3">
           {formatEquipmentClass(row.equipmentClass)}
         </span>
       ),
@@ -107,7 +107,7 @@ function useTestTagColumns(): ColumnDef<AnyItem>[] {
         { value: "OTHER", label: "Other" },
       ],
       cell: (row) => (
-        <span className="text-sm text-muted-foreground">
+        <span className="text-sm text-fg-3">
           {formatApplianceType(row.applianceType)}
         </span>
       ),
@@ -135,7 +135,7 @@ function useTestTagColumns(): ColumnDef<AnyItem>[] {
       defaultVisible: false,
       sortable: false,
       cell: (row) => (
-        <span className="text-sm text-muted-foreground">{formatDate(row.lastTestDate)}</span>
+        <span className="text-sm text-fg-3">{formatDate(row.lastTestDate)}</span>
       ),
     },
     {
@@ -144,7 +144,7 @@ function useTestTagColumns(): ColumnDef<AnyItem>[] {
       responsiveHide: "sm",
       sortable: false,
       cell: (row) => (
-        <span className="text-sm text-muted-foreground">{formatDate(row.nextDueDate)}</span>
+        <span className="text-sm text-fg-3">{formatDate(row.nextDueDate)}</span>
       ),
     },
     {
@@ -175,7 +175,7 @@ function useTestTagColumns(): ColumnDef<AnyItem>[] {
             </Link>
           );
         }
-        return <span className="text-muted-foreground">{"\u2014"}</span>;
+        return <span className="text-fg-3">{"\u2014"}</span>;
       },
     },
   ];
@@ -250,7 +250,7 @@ export function TestTagTable() {
     <Suspense
       fallback={
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <Loader2 className="h-6 w-6 animate-spin text-fg-3" />
         </div>
       }
     >

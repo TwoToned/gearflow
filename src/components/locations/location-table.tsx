@@ -113,7 +113,7 @@ const columns: ColumnDef<LocationRow>[] = [
     sortKey: "address",
     responsiveHide: "md",
     cell: (row) => (
-      <span className="text-muted-foreground">{row.address || "\u2014"}</span>
+      <span className="text-fg-3">{row.address || "\u2014"}</span>
     ),
   },
   {

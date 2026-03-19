@@ -103,7 +103,7 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-8 text-muted-foreground">
+      <div className="flex items-center justify-center py-8 text-fg-3">
         <Loader2 className="h-5 w-5 animate-spin mr-2" />
         Loading pick list...
       </div>
@@ -159,13 +159,13 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
     <div className="space-y-4">
       {/* Progress bar */}
       <div className="flex items-center gap-3">
-        <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+        <div className="flex-1 h-2 rounded-full bg-bg-inset overflow-hidden">
           <div
             className="h-full rounded-full bg-primary transition-all duration-300"
             style={{ width: `${progress}%` }}
           />
         </div>
-        <span className="text-sm text-muted-foreground shrink-0">
+        <span className="text-sm text-fg-3 shrink-0">
           {checkedItems}/{totalItems}
         </span>
         {progress === 100 && (
@@ -174,13 +174,13 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
       </div>
 
       {allGroups.length === 0 ? (
-        <p className="text-muted-foreground text-center py-8">
+        <p className="text-fg-3 text-center py-8">
           No equipment items on this project.
         </p>
       ) : (
         allGroups.map((group) => (
           <div key={group.name}>
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+            <h3 className="text-xs font-semibold text-fg-3 uppercase tracking-wider mb-2">
               {group.name}
             </h3>
             <div className="space-y-1">
@@ -209,14 +209,14 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
                       return (
                         <button
                           onClick={() => toggleKit(item)}
-                          className={`flex w-full items-center gap-2 rounded-md bg-muted/50 px-3 py-2.5 mt-2 text-left transition-colors hover:bg-accent/50 active:bg-accent ${
+                          className={`flex w-full items-center gap-2 rounded-md bg-bg-inset/50 px-3 py-2.5 mt-2 text-left transition-colors hover:bg-accent/50 active:bg-accent ${
                             groupChecked ? "opacity-60" : ""
                           }`}
                         >
                           <Checkbox checked={groupChecked} className="shrink-0 pointer-events-none" />
-                          <Container className="h-4 w-4 text-muted-foreground shrink-0" />
-                          <span className={`font-semibold text-sm flex-1 ${groupChecked ? "line-through text-muted-foreground" : ""}`}>{itemName}</span>
-                          {isKit && <span className="font-mono text-xs text-muted-foreground">{kit?.assetTag}</span>}
+                          <Container className="h-4 w-4 text-fg-3 shrink-0" />
+                          <span className={`font-semibold text-sm flex-1 ${groupChecked ? "line-through text-fg-3" : ""}`}>{itemName}</span>
+                          {isKit && <span className="font-mono text-xs text-fg-3">{kit?.assetTag}</span>}
                         </button>
                       );
                     })()}
@@ -297,7 +297,7 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
       {checkedItems > 0 && (
         <button
           onClick={() => setChecked(new Set())}
-          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+          className="text-xs text-fg-3 hover:text-fg transition-colors"
         >
           Clear all checks
         </button>
@@ -330,14 +330,14 @@ function PickListRow({
       style={indent ? { paddingLeft: `${indent * 1.25 + 0.75}rem` } : undefined}
     >
       <Checkbox checked={checked} className="shrink-0 pointer-events-none" />
-      <span className={`flex-1 text-sm ${checked ? "line-through text-muted-foreground" : "font-medium"}`}>
+      <span className={`flex-1 text-sm ${checked ? "line-through text-fg-3" : "font-medium"}`}>
         {label}
       </span>
       {tag && (
-        <span className="font-mono text-xs text-muted-foreground shrink-0">{tag}</span>
+        <span className="font-mono text-xs text-fg-3 shrink-0">{tag}</span>
       )}
       {location && !tag && (
-        <span className="text-xs text-muted-foreground shrink-0">{location}</span>
+        <span className="text-xs text-fg-3 shrink-0">{location}</span>
       )}
     </button>
   );

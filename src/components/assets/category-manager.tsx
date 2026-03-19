@@ -121,7 +121,7 @@ export function CategoryManager() {
   const childrenOf = (id: string) => categories.filter((c) => c.parentId === id);
 
   if (isLoading) {
-    return <div className="text-sm text-muted-foreground">Loading categories...</div>;
+    return <div className="text-sm text-fg-3">Loading categories...</div>;
   }
 
   return (
@@ -173,7 +173,7 @@ export function CategoryManager() {
                 <Input id="cat-sort" type="number" {...form.register("sortOrder")} className="w-24" />
               </div>
               {parentId && (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-fg-3">
                   Subcategory of: {categories.find((c) => c.id === parentId)?.name}
                 </p>
               )}
@@ -191,7 +191,7 @@ export function CategoryManager() {
       </div>
 
       {topLevel.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No categories yet. Create one to get started.</p>
+        <p className="text-sm text-fg-3">No categories yet. Create one to get started.</p>
       ) : (
         <div className="space-y-1">
           {topLevel.map((cat) => {
@@ -230,7 +230,7 @@ export function CategoryManager() {
                   <div className="ml-6 mt-1 space-y-1">
                     {children.map((child) => (
                       <div key={child.id} className="flex items-center gap-2 rounded-md border border-dashed p-2 hover:bg-accent/50">
-                        <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                        <ChevronRight className="h-3 w-3 text-fg-3" />
                         <span className="text-base">{child.icon || "📂"}</span>
                         <span className="text-sm flex-1">{child.name}</span>
                         <Badge variant="secondary" className="text-xs">

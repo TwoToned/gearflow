@@ -45,7 +45,7 @@ export function ActivityTimeline({ entityType, entityId }: ActivityTimelineProps
   });
 
   if (isLoading) {
-    return <p className="text-sm text-muted-foreground">Loading activity...</p>;
+    return <p className="text-sm text-fg-3">Loading activity...</p>;
   }
 
   if (!logs || logs.length === 0) {
@@ -70,18 +70,18 @@ export function ActivityTimeline({ entityType, entityId }: ActivityTimelineProps
                 <Badge variant="secondary" className={cn("text-xs", actionColors[action])}>
                   {action.replace(/_/g, " ")}
                 </Badge>
-                <span className="text-muted-foreground text-xs">
+                <span className="text-fg-3 text-xs">
                   {formatDate(log.createdAt as string)}
                 </span>
               </div>
               <p className="mt-0.5">{String(log.summary)}</p>
               {typeof log.userName === "string" && log.userName && (
-                <p className="text-xs text-muted-foreground">by {log.userName}</p>
+                <p className="text-xs text-fg-3">by {log.userName}</p>
               )}
               {changes && changes.length > 0 && (
                 <div className="mt-1 space-y-0.5">
                   {changes.map((c, i) => (
-                    <p key={i} className="text-xs text-muted-foreground">
+                    <p key={i} className="text-xs text-fg-3">
                       <span className="font-medium">{c.field}</span>:{" "}
                       <span className="line-through">{c.fromLabel || String(c.from ?? "—")}</span>
                       {" → "}

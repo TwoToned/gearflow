@@ -115,7 +115,7 @@ export function Notifications() {
           <DropdownMenuLabel>Notifications</DropdownMenuLabel>
           <DropdownMenuSeparator />
           {count === 0 ? (
-            <div className="py-6 text-center text-sm text-muted-foreground">
+            <div className="py-6 text-center text-sm text-fg-3">
               All clear — no notifications.
             </div>
           ) : (
@@ -133,8 +133,8 @@ export function Notifications() {
                   <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${severityColors[n.severity] || ""}`} />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{n.title}</p>
-                    <p className="text-xs text-muted-foreground truncate">{n.description}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
+                    <p className="text-xs text-fg-3 truncate">{n.description}</p>
+                    <p className="text-xs text-fg-3 mt-0.5">
                       {formatDistanceToNow(new Date(n.timestamp), { addSuffix: true })}
                     </p>
                   </div>

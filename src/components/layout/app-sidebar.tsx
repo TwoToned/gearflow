@@ -256,7 +256,7 @@ export function AppSidebar() {
           </Link>
           <Link
             href="/changelog"
-            className="ml-auto text-[10px] font-mono font-medium text-muted-foreground hover:text-foreground transition-colors bg-muted/50 hover:bg-muted px-1.5 py-0.5 rounded-md"
+            className="ml-auto text-[10px] font-mono font-medium text-fg-3 hover:text-fg transition-colors bg-bg-inset/50 hover:bg-bg-inset px-1.5 py-0.5 rounded-md"
           >
             {buildLabel}
           </Link>

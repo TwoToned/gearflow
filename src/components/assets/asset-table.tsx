@@ -59,7 +59,7 @@ function useAssetColumns(
               {row.assetTag}
             </Link>
             {row.customName && (
-              <p className="text-xs text-muted-foreground">{row.customName}</p>
+              <p className="text-xs text-fg-3">{row.customName}</p>
             )}
           </div>
         </div>
@@ -75,7 +75,7 @@ function useAssetColumns(
             {row.model?.name}
           </Link>
           {row.model?.category && (
-            <p className="text-xs text-muted-foreground">{row.model.category.name}</p>
+            <p className="text-xs text-fg-3">{row.model.category.name}</p>
           )}
         </div>
       ),
@@ -87,7 +87,7 @@ function useAssetColumns(
       sortKey: "serialNumber",
       defaultVisible: true,
       cell: (row) => (
-        <span className="font-mono text-sm text-muted-foreground">
+        <span className="font-mono text-sm text-fg-3">
           {row.serialNumber || "—"}
         </span>
       ),
@@ -142,7 +142,7 @@ function useAssetColumns(
       })),
       responsiveHide: "md",
       cell: (row) => (
-        <span className="text-muted-foreground">{row.location?.name || "—"}</span>
+        <span className="text-fg-3">{row.location?.name || "—"}</span>
       ),
     },
     {
@@ -154,7 +154,7 @@ function useAssetColumns(
       defaultVisible: false,
       responsiveHide: "lg",
       cell: (row) => (
-        <span className="text-muted-foreground">{row.model?.category?.name || "—"}</span>
+        <span className="text-fg-3">{row.model?.category?.name || "—"}</span>
       ),
     },
     {
@@ -203,7 +203,7 @@ function useBulkAssetColumns(
             {row.model?.name}
           </Link>
           {row.model?.category && (
-            <p className="text-xs text-muted-foreground">{row.model.category.name}</p>
+            <p className="text-xs text-fg-3">{row.model.category.name}</p>
           )}
         </div>
       ),
@@ -222,7 +222,7 @@ function useBulkAssetColumns(
       accessorKey: "totalQuantity",
       sortKey: "totalQuantity",
       align: "right",
-      cell: (row) => <span className="text-muted-foreground">{row.totalQuantity}</span>,
+      cell: (row) => <span className="text-fg-3">{row.totalQuantity}</span>,
     },
     {
       id: "status",
@@ -252,7 +252,7 @@ function useBulkAssetColumns(
         label: loc.parent ? `${loc.parent.name} > ${loc.name}` : loc.name,
       })),
       cell: (row) => (
-        <span className="text-muted-foreground">{row.location?.name || "—"}</span>
+        <span className="text-fg-3">{row.location?.name || "—"}</span>
       ),
     },
     {
@@ -408,7 +408,7 @@ export function AssetTable() {
     <div className="space-y-4">
       {/* Bulk Edit Bar */}
       {view === "serialized" && selectedIds.size > 0 && (
-        <div className="flex items-center gap-3 rounded-md border bg-muted/50 px-4 py-2">
+        <div className="flex items-center gap-3 rounded-md border bg-bg-inset/50 px-4 py-2">
           <span className="text-sm font-medium">{selectedIds.size} selected</span>
           <CanDo resource="asset" action="update">
             <Button size="sm" variant="outline" onClick={() => setBulkEditOpen(true)}>
@@ -577,7 +577,7 @@ function BulkEditDialog({
         <DialogHeader>
           <DialogTitle>Bulk Edit {selectedIds.size} Assets</DialogTitle>
         </DialogHeader>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-fg-3">
           Only fields you change will be updated. Leave a field unchanged to keep existing values.
         </p>
         <div className="space-y-4 py-2">

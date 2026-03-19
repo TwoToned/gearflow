@@ -167,7 +167,7 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
           <div className="space-y-2 sm:col-span-2">
             <div className="flex items-center gap-2">
               <Label className="flex-none">Asset Tag *</Label>
-              <Label className="flex-none text-muted-foreground">/ Serial Number</Label>
+              <Label className="flex-none text-fg-3">/ Serial Number</Label>
             </div>
             <div className="space-y-2">
               <div className="flex gap-2">

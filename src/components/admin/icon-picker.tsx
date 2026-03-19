@@ -55,14 +55,14 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
           {value ? (
             <DynamicIcon name={value} className="h-5 w-5" />
           ) : (
-            <span className="text-xs text-muted-foreground">None</span>
+            <span className="text-xs text-fg-3">None</span>
           )}
         </Button>
         <div className="flex-1">
           <p className="text-sm font-medium">
             {value || "No icon selected"}
           </p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-fg-3">
             Click to choose a Lucide icon
           </p>
         </div>
@@ -84,7 +84,7 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
             <DialogTitle>Choose an Icon</DialogTitle>
           </DialogHeader>
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-3" />
             <Input
               placeholder="Search icons..."
               value={search}
@@ -111,14 +111,14 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
                   title={name}
                 >
                   <DynamicIcon name={name} className="h-5 w-5" />
-                  <span className="text-[9px] text-muted-foreground truncate w-full text-center">
+                  <span className="text-[9px] text-fg-3 truncate w-full text-center">
                     {name}
                   </span>
                 </button>
               ))}
             </div>
             {filtered.length === 0 && (
-              <p className="text-center text-sm text-muted-foreground py-8">
+              <p className="text-center text-sm text-fg-3 py-8">
                 No icons found. Try a different search term.
               </p>
             )}

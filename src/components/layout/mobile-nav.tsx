@@ -79,7 +79,7 @@ export function MobileNav() {
                 className={`flex flex-col items-center justify-center gap-0.5 py-2 px-3 transition-colors ${
                   isActive
                     ? "text-primary"
-                    : "text-muted-foreground"
+                    : "text-fg-3"
                 }`}
               >
                 <item.icon className="h-5 w-5" />

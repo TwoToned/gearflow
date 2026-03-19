@@ -105,7 +105,7 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     header: "Client",
     sortKey: "client",
     cell: (row) => (
-      <span className="text-muted-foreground">
+      <span className="text-fg-3">
         {row.client?.name || "—"}
       </span>
     ),
@@ -163,7 +163,7 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     header: "Dates",
     sortKey: "rentalStartDate",
     cell: (row) => (
-      <span className="text-muted-foreground text-sm">
+      <span className="text-fg-3 text-sm">
         {formatDateRange(
           row.rentalStartDate as string | null,
           row.rentalEndDate as string | null

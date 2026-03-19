@@ -54,7 +54,7 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     sortable: false,
     responsiveHide: "md",
     cell: (row) => (
-      <span className="text-muted-foreground">
+      <span className="text-fg-3">
         {row.crewRole?.name || "\u2014"}
       </span>
     ),
@@ -86,7 +86,7 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     filterType: "enum",
     responsiveHide: "lg",
     cell: (row) => (
-      <span className="text-muted-foreground">{row.department || "\u2014"}</span>
+      <span className="text-fg-3">{row.department || "\u2014"}</span>
     ),
   },
   {
@@ -96,7 +96,7 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     sortKey: "email",
     responsiveHide: "lg",
     cell: (row) => (
-      <span className="text-muted-foreground">{row.email || "\u2014"}</span>
+      <span className="text-fg-3">{row.email || "\u2014"}</span>
     ),
   },
   {
@@ -105,7 +105,7 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     accessorKey: "phone",
     responsiveHide: "lg",
     cell: (row) => (
-      <span className="text-muted-foreground">{row.phone || "\u2014"}</span>
+      <span className="text-fg-3">{row.phone || "\u2014"}</span>
     ),
   },
   {

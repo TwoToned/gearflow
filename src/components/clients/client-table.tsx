@@ -69,7 +69,7 @@ const columns: ColumnDef<AnyClient>[] = [
     sortKey: "contactName",
     responsiveHide: "md",
     cell: (row) => (
-      <span className="text-muted-foreground">
+      <span className="text-fg-3">
         {row.contactName || "\u2014"}
       </span>
     ),
@@ -81,7 +81,7 @@ const columns: ColumnDef<AnyClient>[] = [
     sortKey: "contactEmail",
     responsiveHide: "md",
     cell: (row) => (
-      <span className="text-muted-foreground">
+      <span className="text-fg-3">
         {row.contactEmail || "\u2014"}
       </span>
     ),

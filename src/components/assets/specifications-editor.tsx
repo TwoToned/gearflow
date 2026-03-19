@@ -68,7 +68,7 @@ export function SpecificationsEditor({ value, onChange }: SpecificationsEditorPr
         </Button>
       </div>
       {entries.length === 0 && (
-        <p className="text-xs text-muted-foreground">Add key-value pairs for technical specifications.</p>
+        <p className="text-xs text-fg-3">Add key-value pairs for technical specifications.</p>
       )}
     </div>
   );

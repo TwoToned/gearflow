@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { Clock } from "lucide-react";
+import { FadeIn } from "@/components/ui/motion";
 
 export default function PendingApprovalPage() {
   return (
+    <FadeIn>
     <div className="rounded-lg bg-bg-surface p-6 surface-ring sm:p-8">
       <div className="mb-6 text-center">
         <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400">
@@ -27,5 +29,6 @@ export default function PendingApprovalPage() {
         </Link>
       </div>
     </div>
+    </FadeIn>
   );
 }

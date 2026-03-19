@@ -8,6 +8,7 @@ import { getTheOrgId } from "@/server/public-org";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Loader2, CheckCircle, XCircle } from "lucide-react";
+import { FadeIn } from "@/components/ui/motion";
 
 export default function InviteAcceptPage({
   params,
@@ -54,14 +55,17 @@ export default function InviteAcceptPage({
 
   if (isAuthenticated === null) {
     return (
+      <FadeIn>
       <div className="rounded-lg bg-bg-surface p-8 surface-ring text-center">
         <Loader2 className="mx-auto h-8 w-8 animate-spin text-fg-3" />
       </div>
+      </FadeIn>
     );
   }
 
   if (accepted) {
     return (
+      <FadeIn>
       <div className="rounded-lg bg-bg-surface p-8 surface-ring text-center space-y-4">
         <CheckCircle className="mx-auto h-12 w-12 text-green-500" />
         <div>
@@ -71,11 +75,13 @@ export default function InviteAcceptPage({
           </p>
         </div>
       </div>
+      </FadeIn>
     );
   }
 
   if (error) {
     return (
+      <FadeIn>
       <div className="rounded-lg bg-bg-surface p-8 surface-ring text-center space-y-4">
         <XCircle className="mx-auto h-12 w-12 text-destructive" />
         <div>
@@ -86,11 +92,13 @@ export default function InviteAcceptPage({
           Go to Login
         </Button>
       </div>
+      </FadeIn>
     );
   }
 
   if (!isAuthenticated) {
     return (
+      <FadeIn>
       <div className="rounded-lg bg-bg-surface p-6 surface-ring sm:p-8">
         <div className="mb-6 text-center">
           <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold">
@@ -117,10 +125,12 @@ export default function InviteAcceptPage({
           </Button>
         </div>
       </div>
+      </FadeIn>
     );
   }
 
   return (
+    <FadeIn>
     <div className="rounded-lg bg-bg-surface p-6 surface-ring sm:p-8">
       <div className="mb-6 text-center">
         <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold">
@@ -149,5 +159,6 @@ export default function InviteAcceptPage({
         </Button>
       </div>
     </div>
+    </FadeIn>
   );
 }

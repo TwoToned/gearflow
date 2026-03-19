@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
+import { FadeIn } from "@/components/ui/motion";
 
 function slugify(text: string): string {
   return text
@@ -62,6 +63,7 @@ export default function OnboardingPage() {
   };
 
   return (
+    <FadeIn>
     <div className="rounded-lg bg-bg-surface p-6 surface-ring sm:p-8">
       <div className="mb-6 text-center">
         <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold">
@@ -106,5 +108,6 @@ export default function OnboardingPage() {
         </form>
       </div>
     </div>
+    </FadeIn>
   );
 }

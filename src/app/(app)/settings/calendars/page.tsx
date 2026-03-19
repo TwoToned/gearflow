@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FormSection } from "@/components/layout/page-layouts";
 import { useCanDo } from "@/lib/use-permissions";
+import { FadeIn } from "@/components/ui/motion";
 import {
   getOrgIcalSettings,
   enableOrgIcalFeed,
@@ -113,6 +114,7 @@ export default function CalendarSettingsPage() {
   const enabled = icalSettings?.icalEnabled && icalSettings?.icalToken;
 
   return (
+    <FadeIn>
     <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
       <FormSection
         title="Calendar Feeds"
@@ -189,5 +191,6 @@ export default function CalendarSettingsPage() {
         </div>
       </FormSection>
     </div>
+    </FadeIn>
   );
 }

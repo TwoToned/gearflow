@@ -15,6 +15,7 @@ import {
 } from "@/server/settings";
 import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { FadeIn } from "@/components/ui/motion";
 
 export default function BillingSettingsPage() {
   const queryClient = useQueryClient();
@@ -51,6 +52,7 @@ export default function BillingSettingsPage() {
   };
 
   return (
+    <FadeIn>
     <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
       <div className="space-y-6">
         <FormSection title="Billing" description="Currency and tax configuration for quotes and invoices.">
@@ -97,5 +99,6 @@ export default function BillingSettingsPage() {
         </div>
       )}
     </div>
+    </FadeIn>
   );
 }

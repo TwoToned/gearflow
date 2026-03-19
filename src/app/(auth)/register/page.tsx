@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Loader2, ShieldX } from "lucide-react";
+import { FadeIn } from "@/components/ui/motion";
 
 function RegisterContent() {
   const router = useRouter();
@@ -210,6 +211,7 @@ function RegisterContent() {
 
 export default function RegisterPage() {
   return (
+    <FadeIn>
     <Suspense fallback={
       <div className="rounded-lg bg-bg-surface p-8 surface-ring text-center">
         <Loader2 className="mx-auto h-8 w-8 animate-spin text-fg-3" />
@@ -217,5 +219,6 @@ export default function RegisterPage() {
     }>
       <RegisterContent />
     </Suspense>
+    </FadeIn>
   );
 }

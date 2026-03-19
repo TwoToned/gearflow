@@ -24,6 +24,7 @@ import {
 import { getCategories } from "@/server/categories";
 import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { FadeIn } from "@/components/ui/motion";
 
 export default function AssetsSettingsPage() {
   const queryClient = useQueryClient();
@@ -72,6 +73,7 @@ export default function AssetsSettingsPage() {
   };
 
   return (
+    <FadeIn>
     <div className="space-y-6">
       <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
         <div className="space-y-6">
@@ -188,5 +190,6 @@ export default function AssetsSettingsPage() {
         </div>
       )}
     </div>
+    </FadeIn>
   );
 }

@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Loader2, Shield } from "lucide-react";
 import { Suspense } from "react";
+import { FadeIn } from "@/components/ui/motion";
 
 function AdminRegisterForm() {
   const router = useRouter();
@@ -150,6 +151,7 @@ function AdminRegisterForm() {
 
 export default function AdminRegisterPage() {
   return (
+    <FadeIn>
     <Suspense
       fallback={
         <div className="rounded-lg bg-bg-surface p-8 surface-ring text-center">
@@ -159,5 +161,6 @@ export default function AdminRegisterPage() {
     >
       <AdminRegisterForm />
     </Suspense>
+    </FadeIn>
   );
 }

@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { FileText } from "lucide-react";
 import { getDocumentTemplates } from "@/server/document-templates";
 import { DocumentTemplateManager } from "@/components/settings/document-template-manager";
+import { FadeIn } from "@/components/ui/motion";
 
 export default function DocumentsSettingsPage() {
   const { data: templates, isLoading } = useQuery({
@@ -12,6 +13,7 @@ export default function DocumentsSettingsPage() {
   });
 
   return (
+    <FadeIn>
     <div className="space-y-6">
       <div className="space-y-1">
         <h2 className="t-heading text-fg">
@@ -28,5 +30,6 @@ export default function DocumentsSettingsPage() {
         isLoading={isLoading}
       />
     </div>
+    </FadeIn>
   );
 }

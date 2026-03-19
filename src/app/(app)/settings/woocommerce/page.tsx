@@ -49,6 +49,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { FadeIn } from "@/components/ui/motion";
 
 const projectTypeOptions = [
   { value: "DRY_HIRE", label: "Dry Hire" },
@@ -178,6 +179,7 @@ export default function WooCommerceSettingsPage() {
   }
 
   return (
+    <FadeIn>
     <div className="space-y-6">
       <div>
         <h2 className="t-heading text-fg">WooCommerce Integration</h2>
@@ -647,6 +649,7 @@ export default function WooCommerceSettingsPage() {
         </FormSection>
       </div>
     </div>
+    </FadeIn>
   );
 }
 

@@ -27,6 +27,7 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { useCanDo } from "@/lib/use-permissions";
+import { FadeIn } from "@/components/ui/motion";
 import {
   getDisplayTokens,
   createDisplayToken,
@@ -270,6 +271,7 @@ export default function DisplaySettingsPage() {
   const tokenList = (tokens as unknown as DisplayToken[]) ?? [];
 
   return (
+    <FadeIn>
     <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
       <div className="mb-4">
         <h3 className="t-heading text-fg flex items-center gap-2">
@@ -568,5 +570,6 @@ export default function DisplaySettingsPage() {
         )}
       </div>
     </div>
+    </FadeIn>
   );
 }

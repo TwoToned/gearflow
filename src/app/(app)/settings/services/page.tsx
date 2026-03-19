@@ -30,6 +30,7 @@ import {
 } from "@/lib/validations/project-service";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useCanDo } from "@/lib/use-permissions";
+import { FadeIn } from "@/components/ui/motion";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -115,6 +116,7 @@ export default function ServiceTemplatesPage() {
   });
 
   return (
+    <FadeIn>
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
@@ -253,6 +255,7 @@ export default function ServiceTemplatesPage() {
         editing={editing}
       />
     </div>
+    </FadeIn>
   );
 }
 

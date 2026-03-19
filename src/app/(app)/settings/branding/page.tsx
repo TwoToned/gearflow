@@ -10,6 +10,7 @@ import {
   type OrgSettings,
 } from "@/server/settings";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { FadeIn } from "@/components/ui/motion";
 
 export default function BrandingSettingsPage() {
   const { data: activeOrg } = useActiveOrganization();
@@ -31,6 +32,7 @@ export default function BrandingSettingsPage() {
   }, [org]);
 
   return (
+    <FadeIn>
     <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
       <FormSection
         title="Branding & Colors"
@@ -45,5 +47,6 @@ export default function BrandingSettingsPage() {
         </div>
       </FormSection>
     </div>
+    </FadeIn>
   );
 }

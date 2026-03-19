@@ -10,6 +10,7 @@ import { SSOGroupMappingSection } from "@/components/settings/sso-group-mapping"
 import { SSOLoginBehaviorSection } from "@/components/settings/sso-login-behavior";
 import { SSOPendingApprovals } from "@/components/settings/sso-pending-approvals";
 import { FormSection } from "@/components/layout/page-layouts";
+import { FadeIn } from "@/components/ui/motion";
 import type { OrgSSOSettings } from "@/lib/sso-types";
 import { toast } from "sonner";
 
@@ -50,6 +51,7 @@ export default function SSOSettingsPage() {
   const sso = data?.sso;
 
   return (
+    <FadeIn>
     <div className="space-y-6">
       <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
         <div className="space-y-6">
@@ -144,5 +146,6 @@ export default function SSOSettingsPage() {
         </div>
       )}
     </div>
+    </FadeIn>
   );
 }

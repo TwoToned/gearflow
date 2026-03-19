@@ -18,6 +18,10 @@
   - Full-row background tint on table hover (use left-edge glow)
   - Centered-everything layouts
   - Placeholder emoji or decorative icons
+  - 7-column stat card grid (use inline metrics strip instead)
+  - Full-width-only detail pages (use 2-column with sidebar)
+  - Static "Dashboard" / "Settings" titles (use contextual, dynamic headers)
+  - Floating-card-in-space login (use split-panel)
 
 ## Typography
 - **Display/Hero:** DM Sans — 32px, weight 800, tracking -0.035em
@@ -168,6 +172,19 @@ Surfaces use `box-shadow: var(--shadow-xs), 0 0 0 1px var(--border)` — shadow 
 ### Reduced Motion
 All animations MUST respect `prefers-reduced-motion`. Use `useReducedMotion()` hook. When enabled, animations degrade to instant transitions (opacity only, no transforms).
 
+### Motion Utilities
+All entry animations use components from `@/components/ui/motion`:
+- **`FadeIn`** — every page wrapped for entrance animation (`delay` prop for staggering)
+- **`StaggerList` + `StaggerItem`** — grid/list items appear sequentially (30ms/item)
+- **`AnimatedNumber`** — stat values count up on load
+- **`SurfaceLift`** — interactive cards lift on hover
+
+### Data Visualization
+Inline charts from `@/components/ui/sparkline` (no charting library):
+- **`Sparkline`** — tiny line chart for trends
+- **`UtilizationBar`** — thin progress bar for percentages
+- **`DateRangeBar`** — visualizes date ranges relative to a reference window
+
 ## Component Patterns
 
 ### Surfaces (replacing Card overuse)
@@ -214,6 +231,12 @@ All animations MUST respect `prefers-reduced-motion`. Use `useReducedMotion()` h
 - **Description:** 11px, `fg-3` color. Domain-specific copy (not "No results found").
 - **CTA:** Primary button below when an action makes sense.
 
+### Empty State Illustrations
+Domain-specific SVG spot illustrations from `@/components/ui/spot-illustrations`:
+- Monochrome teal, 56px display size, `text-primary/60`
+- 10 illustrations: assets, projects, crew, maintenance, calendar, documents, clients, kits, locations, notifications
+- Replace generic icons with contextual imagery for each domain
+
 ### Skeleton Loading
 - **Pattern:** Linear gradient shimmer (200% background-size, 1.5s animation)
 - **Colors:** `var(--bg-elevated)` → `var(--bg-popover)` → `var(--bg-elevated)`
@@ -225,6 +248,29 @@ All animations MUST respect `prefers-reduced-motion`. Use `useReducedMotion()` h
 - **ListPageLayout:** PageHeader + filters + DataTable + empty state fallback.
 - **DetailPageLayout:** Breadcrumb + header with status + tabs + content.
 - **FormPageLayout:** PageHeader + surface container with flat form sections.
+
+### Detail Page Layout (2-column)
+All detail pages (project, asset, model, kit, client, crew, maintenance, supplier, location, T&T) use asymmetric 2-column layout:
+- **LEFT (~63%):** Main content with tabs
+- **RIGHT (~37%, 340px):** Sticky sidebar with key facts, quick actions, activity timeline
+- Sidebar sections separated by `border-b border-border pb-4` (NOT surface boxes)
+- Each section uses `SectionHeader` overline label
+- Responsive: sidebar stacks below on mobile
+
+### Dashboard Layout
+- Dynamic greeting (Good morning/afternoon/evening) + date
+- Alert badges (red/amber) only shown when problems exist
+- Inline metrics strip (single surface, vertical dividers) instead of stat cards
+- Projects shown with `DateRangeBar` for visual period
+- Activity feed with staggered entrance
+
+### Breadcrumb Navigation
+All pages have contextual breadcrumbs:
+```
+Parent > Current Page
+Parent > Entity Name > Edit
+```
+Using `ChevronRight` (3x3) separator, `text-sm text-fg-3`, links `hover:text-fg`.
 
 ### Section Headers
 - **Style:** Teal label chip (10px/700/uppercase, teal text on teal-subtle background, 4px radius) with extending line (`flex: 1; height: 1px; background: var(--border)`).
@@ -256,3 +302,12 @@ All animations MUST respect `prefers-reduced-motion`. Use `useReducedMotion()` h
 | 2026-03-19 | Shadow + border ring | Surfaces use shadow + 1px ring instead of plain border. More depth. |
 | 2026-03-19 | Inner highlight on primary buttons | Inset white shadow creates physical depth. Not flat. |
 | 2026-03-19 | Danger button escalation | Starts muted, escalates to filled on hover. Progressive disclosure. |
+| 2026-03-19 | 2-column detail layout | Stripe/Linear pattern — sidebar shows key facts without tabbing |
+| 2026-03-19 | Kill stat card grid | Dashboard uses inline metrics strip — distinctive, not generic |
+| 2026-03-19 | Breadcrumbs everywhere | Spatial navigation aids for deep page hierarchy |
+| 2026-03-19 | FadeIn on all pages | Subtle entrance animation removes the "instant paint" feeling |
+| 2026-03-19 | DateRangeBar in tables | Visual context for rental periods without reading dates |
+| 2026-03-19 | Split-panel login | Brand identity on auth — not floating card in space |
+| 2026-03-19 | Sidebar reorganization | 5 sections with overline labels + Quick Create dropdown |
+| 2026-03-19 | Spot illustrations | Domain-specific SVGs replace generic icons in empty states |
+| 2026-03-19 | Urgency grouping | Warehouse groups by overdue/today/upcoming with color-coded borders |

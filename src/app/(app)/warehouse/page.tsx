@@ -19,7 +19,6 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -193,7 +192,7 @@ export default function WarehousePage() {
 
       {/* Search */}
       <div className="relative max-w-md">
-        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-fg-3" />
         <Input
           placeholder="Search by project name or number..."
           value={search}
@@ -204,24 +203,24 @@ export default function WarehousePage() {
 
       {/* Project cards */}
       {isLoading ? (
-        <div className="text-muted-foreground">Loading...</div>
+        <div className="text-fg-3">Loading...</div>
       ) : projects.length === 0 ? (
-        <Card>
-          <CardContent className="py-8 text-center text-muted-foreground">
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <div className="py-8 text-center text-fg-3">
             <WarehouseIcon className="mx-auto mb-2 h-8 w-8 opacity-50" />
             <p>No projects ready for warehouse operations.</p>
             <p className="text-xs mt-1">
               Projects will appear here when they reach Confirmed status.
             </p>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {projects.map((project) => (
-            <Card key={project.id} className="hover:shadow-md transition-shadow">
-              <CardHeader className="pb-2">
+            <div key={project.id} className="rounded-lg bg-bg-surface p-4 surface-ring hover:bg-bg-elevated transition-shadow">
+              <div className="pb-2">
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-xs text-muted-foreground">
+                  <span className="font-mono text-xs text-fg-3">
                     {project.projectNumber}
                   </span>
                   <Badge
@@ -231,22 +230,22 @@ export default function WarehousePage() {
                     {statusLabels[project.status] || project.status}
                   </Badge>
                 </div>
-                <CardTitle className="text-base">
+                <h3 className="text-base font-semibold">
                   <Link
                     href={`/warehouse/${project.id}`}
                     className="hover:underline"
                   >
                     {project.name}
                   </Link>
-                </CardTitle>
+                </h3>
                 {project.client && (
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-sm text-fg-3">
                     {project.client.name}
                   </p>
                 )}
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              </div>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-sm text-fg-3">
                   <CalendarDays className="h-3.5 w-3.5" />
                   <span>
                     {formatDateRange(
@@ -300,8 +299,8 @@ export default function WarehousePage() {
                     </DropdownMenu>
                   </CanDo>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           ))}
         </div>
       )}

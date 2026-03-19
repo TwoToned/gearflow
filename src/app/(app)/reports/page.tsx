@@ -32,7 +32,7 @@ import {
   Play,
   Edit,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/page-header";
@@ -147,117 +147,97 @@ export default function ReportsPage() {
         {/* Quick Stats */}
         {!summaryLoading && d && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Serialized Assets</CardTitle>
-                <Package className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{d.totalSerializedAssets as number}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Bulk Assets</CardTitle>
-                <Boxes className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{d.totalBulkAssets as number}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Clients</CardTitle>
-                <Users className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{d.totalClients as number}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-                <DollarSign className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  ${((d.totalRevenue as number) || 0).toLocaleString("en-AU", {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </div>
-                <p className="text-xs text-muted-foreground">Completed &amp; invoiced projects</p>
-              </CardContent>
-            </Card>
+            <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-fg-2">Serialized Assets</p>
+                <Package className="h-4 w-4 text-fg-3" />
+              </div>
+              <div className="text-2xl font-bold">{d.totalSerializedAssets as number}</div>
+            </div>
+            <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-fg-2">Bulk Assets</p>
+                <Boxes className="h-4 w-4 text-fg-3" />
+              </div>
+              <div className="text-2xl font-bold">{d.totalBulkAssets as number}</div>
+            </div>
+            <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-fg-2">Clients</p>
+                <Users className="h-4 w-4 text-fg-3" />
+              </div>
+              <div className="text-2xl font-bold">{d.totalClients as number}</div>
+            </div>
+            <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-fg-2">Total Revenue</p>
+                <DollarSign className="h-4 w-4 text-fg-3" />
+              </div>
+              <div className="text-2xl font-bold">
+                ${((d.totalRevenue as number) || 0).toLocaleString("en-AU", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </div>
+              <p className="text-xs text-fg-3">Completed &amp; invoiced projects</p>
+            </div>
           </div>
         )}
 
         {/* Status Breakdowns */}
         {!summaryLoading && d && (
           <div className="grid gap-4 lg:grid-cols-3">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Package className="h-4 w-4" /> Assets by Status
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {assetsByStatus.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No assets yet.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {assetsByStatus.map((g) => (
-                      <div key={g.status} className="flex items-center justify-between">
-                        <span className="text-sm">{assetStatusLabels[g.status] || formatLabel(g.status)}</span>
-                        <Badge variant="secondary">{g.count}</Badge>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <FolderOpen className="h-4 w-4" /> Projects by Status
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {projectsByStatus.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No projects yet.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {projectsByStatus.map((g) => (
-                      <div key={g.status} className="flex items-center justify-between">
-                        <span className="text-sm">{projectStatusLabels[g.status] || formatLabel(g.status)}</span>
-                        <Badge variant="secondary">{g.count}</Badge>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Wrench className="h-4 w-4" /> Maintenance
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {maintenanceSummary.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No records yet.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {maintenanceSummary.map((g) => (
-                      <div key={g.status} className="flex items-center justify-between">
-                        <span className="text-sm">{maintenanceStatusLabels[g.status] || formatLabel(g.status)}</span>
-                        <Badge variant="secondary">{g.count}</Badge>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+              <h3 className="t-heading text-fg flex items-center gap-2 mb-4">
+                <Package className="h-4 w-4" /> Assets by Status
+              </h3>
+              {assetsByStatus.length === 0 ? (
+                <p className="text-sm text-fg-3">No assets yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {assetsByStatus.map((g) => (
+                    <div key={g.status} className="flex items-center justify-between">
+                      <span className="text-sm">{assetStatusLabels[g.status] || formatLabel(g.status)}</span>
+                      <Badge variant="secondary">{g.count}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+              <h3 className="t-heading text-fg flex items-center gap-2 mb-4">
+                <FolderOpen className="h-4 w-4" /> Projects by Status
+              </h3>
+              {projectsByStatus.length === 0 ? (
+                <p className="text-sm text-fg-3">No projects yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {projectsByStatus.map((g) => (
+                    <div key={g.status} className="flex items-center justify-between">
+                      <span className="text-sm">{projectStatusLabels[g.status] || formatLabel(g.status)}</span>
+                      <Badge variant="secondary">{g.count}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+              <h3 className="t-heading text-fg flex items-center gap-2 mb-4">
+                <Wrench className="h-4 w-4" /> Maintenance
+              </h3>
+              {maintenanceSummary.length === 0 ? (
+                <p className="text-sm text-fg-3">No records yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {maintenanceSummary.map((g) => (
+                    <div key={g.status} className="flex items-center justify-between">
+                      <span className="text-sm">{maintenanceStatusLabels[g.status] || formatLabel(g.status)}</span>
+                      <Badge variant="secondary">{g.count}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -271,23 +251,21 @@ export default function ReportsPage() {
               </h2>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {pinnedReports.map((report) => (
-                  <Card
+                  <div
                     key={report.id}
-                    className="cursor-pointer transition-colors hover:border-primary"
+                    className="rounded-lg bg-bg-surface p-4 surface-ring cursor-pointer transition-colors hover:ring-primary/50"
                     onClick={() => setActiveReport({ config: report.config, title: report.name })}
                   >
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <p className="font-medium">{report.name}</p>
-                          {report.description && (
-                            <p className="text-sm text-muted-foreground mt-0.5">{report.description}</p>
-                          )}
-                        </div>
-                        <Badge variant="outline">{report.dataSource}</Badge>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className="font-medium">{report.name}</p>
+                        {report.description && (
+                          <p className="text-sm text-fg-3 mt-0.5">{report.description}</p>
+                        )}
                       </div>
-                    </CardContent>
-                  </Card>
+                      <Badge variant="outline">{report.dataSource}</Badge>
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
@@ -300,24 +278,24 @@ export default function ReportsPage() {
           <h2 className="text-lg font-semibold mb-3">Report Library</h2>
           {Object.entries(reportsByCategory).map(([category, reports]) => (
             <div key={category} className="mb-6">
-              <h3 className="text-sm font-medium text-muted-foreground uppercase mb-2">{category}</h3>
+              <h3 className="text-[13px] font-medium text-fg-3 uppercase mb-2">{category}</h3>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {reports.map((report) => (
-                  <Card
+                  <div
                     key={report.id}
-                    className="cursor-pointer transition-colors hover:border-primary"
+                    className="rounded-lg bg-bg-surface p-4 surface-ring cursor-pointer transition-colors hover:ring-primary/50"
                     onClick={() => setActiveReport({ config: report.config, title: report.name })}
                   >
-                    <CardContent className="flex items-start gap-3 p-4">
-                      <div className="text-muted-foreground mt-0.5">
+                    <div className="flex items-start gap-3">
+                      <div className="text-fg-3 mt-0.5">
                         {ICON_MAP[report.icon] || <BarChart3 className="h-4 w-4" />}
                       </div>
                       <div>
                         <p className="font-medium text-sm">{report.name}</p>
-                        <p className="text-xs text-muted-foreground">{report.description}</p>
+                        <p className="text-xs text-fg-3">{report.description}</p>
                       </div>
-                    </CardContent>
-                  </Card>
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
@@ -332,69 +310,67 @@ export default function ReportsPage() {
               <h2 className="text-lg font-semibold mb-3">My Reports</h2>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {myReports.map((report) => (
-                  <Card key={report.id}>
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between mb-2">
-                        <div>
-                          <p className="font-medium text-sm">{report.name}</p>
-                          {report.description && (
-                            <p className="text-xs text-muted-foreground">{report.description}</p>
-                          )}
-                        </div>
-                        <div className="flex gap-1">
-                          {report.isShared && <Badge variant="outline">Shared</Badge>}
-                        </div>
+                  <div key={report.id} className="rounded-lg bg-bg-surface p-4 surface-ring">
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <p className="font-medium text-sm">{report.name}</p>
+                        {report.description && (
+                          <p className="text-xs text-fg-3">{report.description}</p>
+                        )}
                       </div>
-                      <div className="flex gap-1 mt-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setActiveReport({ config: report.config, title: report.name })}
-                        >
-                          <Play className="mr-1 h-3 w-3" /> Run
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          render={<Link href={`/reports/builder/${report.id}`} />}
-                        >
-                          <Edit className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => pinMutation.mutate(report.id)}
-                        >
-                          {report.isPinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
-                        </Button>
-                        <Dialog open={deleteTarget === report.id} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-                          <DialogTrigger render={<Button variant="ghost" size="sm" onClick={() => setDeleteTarget(report.id)} />}>
-                            <Trash2 className="h-3 w-3" />
-                          </DialogTrigger>
-                          <DialogContent>
-                            <DialogHeader>
-                              <DialogTitle>Delete Report</DialogTitle>
-                            </DialogHeader>
-                            <p className="text-sm text-muted-foreground">
-                              Are you sure you want to delete &quot;{report.name}&quot;?
-                            </p>
-                            <div className="flex justify-end gap-2 mt-4">
-                              <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
-                              <Button
-                                variant="destructive"
-                                onClick={() => {
-                                  deleteMutation.mutate(report.id);
-                                  setDeleteTarget(null);
-                                }}
-                              >
-                                Delete
-                              </Button>
-                            </div>
-                          </DialogContent>
-                        </Dialog>
+                      <div className="flex gap-1">
+                        {report.isShared && <Badge variant="outline">Shared</Badge>}
                       </div>
-                    </CardContent>
-                  </Card>
+                    </div>
+                    <div className="flex gap-1 mt-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setActiveReport({ config: report.config, title: report.name })}
+                      >
+                        <Play className="mr-1 h-3 w-3" /> Run
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        render={<Link href={`/reports/builder/${report.id}`} />}
+                      >
+                        <Edit className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => pinMutation.mutate(report.id)}
+                      >
+                        {report.isPinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
+                      </Button>
+                      <Dialog open={deleteTarget === report.id} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+                        <DialogTrigger render={<Button variant="ghost" size="sm" onClick={() => setDeleteTarget(report.id)} />}>
+                          <Trash2 className="h-3 w-3" />
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Delete Report</DialogTitle>
+                          </DialogHeader>
+                          <p className="text-sm text-fg-3">
+                            Are you sure you want to delete &quot;{report.name}&quot;?
+                          </p>
+                          <div className="flex justify-end gap-2 mt-4">
+                            <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+                            <Button
+                              variant="destructive"
+                              onClick={() => {
+                                deleteMutation.mutate(report.id);
+                                setDeleteTarget(null);
+                              }}
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>

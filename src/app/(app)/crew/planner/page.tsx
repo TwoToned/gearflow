@@ -15,7 +15,7 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import { PageMeta } from "@/components/layout/page-meta";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
+
 import {
   Tooltip,
   TooltipContent,
@@ -110,7 +110,7 @@ export default function CrewPlannerPage() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="t-title text-fg">Crew Planner</h1>
-            <p className="text-muted-foreground">
+            <p className="text-fg-3">
               Overview of crew assignments and availability.
             </p>
           </div>
@@ -124,18 +124,18 @@ export default function CrewPlannerPage() {
             <Button variant="outline" size="icon" onClick={goForward}>
               <ChevronRight className="h-4 w-4" />
             </Button>
-            <span className="text-sm text-muted-foreground ml-2">
+            <span className="text-sm text-fg-3 ml-2">
               {formatDateShort(days[0])} &ndash; {formatDateShort(days[days.length - 1])}
             </span>
           </div>
         </div>
 
-        <Card className="overflow-x-auto">
+        <div className="rounded-lg bg-bg-surface surface-ring overflow-x-auto">
           <TooltipProvider>
             <table className="w-full border-collapse min-w-[800px]">
               <thead>
                 <tr className="border-b">
-                  <th className="text-left text-xs font-medium text-muted-foreground p-2 w-48 sticky left-0 bg-card z-10">
+                  <th className="text-left text-xs font-medium text-fg-3 p-2 w-48 sticky left-0 bg-bg-surface z-10">
                     Crew Member
                   </th>
                   {days.map((day) => (
@@ -145,8 +145,8 @@ export default function CrewPlannerPage() {
                         isSameDay(day, today)
                           ? "bg-primary/10 text-primary"
                           : isWeekend(day)
-                            ? "text-muted-foreground/60 bg-muted/30"
-                            : "text-muted-foreground"
+                            ? "text-fg-3/60 bg-bg-inset/30"
+                            : "text-fg-3"
                       }`}
                     >
                       <div>{formatDayOfWeek(day)}</div>
@@ -160,7 +160,7 @@ export default function CrewPlannerPage() {
                   <tr>
                     <td
                       colSpan={DAYS_TO_SHOW + 1}
-                      className="text-center text-muted-foreground py-12"
+                      className="text-center text-fg-3 py-12"
                     >
                       Loading...
                     </td>
@@ -169,7 +169,7 @@ export default function CrewPlannerPage() {
                   <tr>
                     <td
                       colSpan={DAYS_TO_SHOW + 1}
-                      className="text-center text-muted-foreground py-12"
+                      className="text-center text-fg-3 py-12"
                     >
                       <CalendarRange className="mx-auto h-8 w-8 mb-2 opacity-50" />
                       <p>No active crew members found.</p>
@@ -188,9 +188,9 @@ export default function CrewPlannerPage() {
               </tbody>
             </table>
           </TooltipProvider>
-        </Card>
+        </div>
 
-        <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+        <div className="flex flex-wrap gap-4 text-xs text-fg-3">
           <span className="flex items-center gap-1.5">
             <span className="h-3 w-3 rounded-sm bg-primary/70" />
             Assignment
@@ -292,8 +292,8 @@ function PlannerRow({
   }, [member, days]);
 
   return (
-    <tr className="border-b hover:bg-muted/20">
-      <td className="p-2 sticky left-0 bg-card z-10">
+    <tr className="border-b hover:bg-bg-elevated/20">
+      <td className="p-2 sticky left-0 bg-bg-surface z-10">
         <Link
           href={`/crew/${member.id}`}
           className="text-sm font-medium hover:underline block"
@@ -301,7 +301,7 @@ function PlannerRow({
           {member.firstName} {member.lastName}
         </Link>
         {member.crewRole && (
-          <span className="text-xs text-muted-foreground">
+          <span className="text-xs text-fg-3">
             {member.crewRole.name}
           </span>
         )}
@@ -365,7 +365,7 @@ function DayCell({
 
   const cellClasses = [
     "p-1 text-center relative h-10",
-    isToday ? "bg-primary/5" : weekend ? "bg-muted/30" : "",
+    isToday ? "bg-primary/5" : weekend ? "bg-bg-inset/30" : "",
     bgClass,
   ]
     .filter(Boolean)

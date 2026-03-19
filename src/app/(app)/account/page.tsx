@@ -4,13 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { usePlatformBranding } from "@/lib/use-platform-name";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -298,18 +292,16 @@ export default function AccountPage() {
     <div className="space-y-6 max-w-2xl">
       <div>
         <h1 className="t-title text-fg">Account Settings</h1>
-        <p className="text-muted-foreground">
+        <p className="text-fg-3">
           Manage your profile, security, and sessions.
         </p>
       </div>
 
       {/* Profile */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Profile</CardTitle>
-          <CardDescription>Your personal information.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <h3 className="t-heading text-fg mb-1">Profile</h3>
+        <p className="text-[13px] text-fg-3 mb-4">Your personal information.</p>
+        <div className="space-y-4">
           <div className="flex items-center gap-4">
             <div className="relative group">
               <UserAvatar
@@ -337,7 +329,7 @@ export default function AccountPage() {
             </div>
             <div className="flex-1">
               <p className="font-medium">{profile?.name}</p>
-              <p className="text-sm text-muted-foreground">{profile?.email}</p>
+              <p className="text-sm text-fg-3">{profile?.email}</p>
               {profile?.role === "admin" && (
                 <Badge className="mt-1 bg-red-500/10 text-red-500 border-red-500/20">
                   Site Admin
@@ -388,18 +380,16 @@ export default function AccountPage() {
               {updateProfileMutation.isPending ? "Saving..." : "Update Profile"}
             </Button>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Security */}
-      <Card id="security">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Shield className="h-5 w-5" />
-            Security
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
+      <div id="security" className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <h3 className="t-heading text-fg flex items-center gap-2 mb-4">
+          <Shield className="h-5 w-5" />
+          Security
+        </h3>
+        <div className="space-y-6">
           {/* Password Change */}
           <div className="space-y-4">
             <h3 className="text-sm font-semibold">Change Password</h3>
@@ -461,7 +451,7 @@ export default function AccountPage() {
                   <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
                     Enabled
                   </Badge>
-                  <span className="text-sm text-muted-foreground">
+                  <span className="text-sm text-fg-3">
                     Your account is protected with 2FA.
                   </span>
                 </div>
@@ -472,13 +462,13 @@ export default function AccountPage() {
                 >
                   Disable 2FA
                 </Button>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-fg-3">
                   Enter your current password above, then click Disable 2FA.
                 </p>
               </div>
             ) : (
               <div className="space-y-3">
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-fg-3">
                   Add an extra layer of security to your account using a TOTP authenticator app.
                 </p>
                 <Button
@@ -493,7 +483,7 @@ export default function AccountPage() {
                   )}
                   Enable 2FA
                 </Button>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-fg-3">
                   Enter your current password above, then click Enable 2FA.
                 </p>
               </div>
@@ -523,11 +513,11 @@ export default function AccountPage() {
                 Add Passkey
               </Button>
             </div>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-fg-3">
               Use Touch ID, Face ID, or a security key for passwordless sign-in.
             </p>
             {passkeys.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic">
+              <p className="text-sm text-fg-3 italic">
                 No passkeys registered.
               </p>
             ) : (
@@ -539,13 +529,13 @@ export default function AccountPage() {
                   >
                     <div>
                       <div className="flex items-center gap-2">
-                        <Fingerprint className="h-4 w-4 text-muted-foreground" />
+                        <Fingerprint className="h-4 w-4 text-fg-3" />
                         <span className="text-sm font-medium">
                           {pk.name || "Unnamed Passkey"}
                         </span>
                       </div>
                       {pk.createdAt && (
-                        <p className="text-xs text-muted-foreground mt-0.5">
+                        <p className="text-xs text-fg-3 mt-0.5">
                           Added {new Date(pk.createdAt).toLocaleDateString()}
                         </p>
                       )}
@@ -588,7 +578,7 @@ export default function AccountPage() {
                   <Link2 className="h-4 w-4" />
                   Connected Accounts
                 </h3>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-fg-3">
                   Link social accounts for easier sign-in.
                 </p>
                 <div className="space-y-2">
@@ -638,21 +628,19 @@ export default function AccountPage() {
               </div>
             </>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Active Sessions */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Monitor className="h-5 w-5" />
-            Active Sessions
-          </CardTitle>
-          <CardDescription>
-            Devices where you&apos;re currently logged in.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <h3 className="t-heading text-fg flex items-center gap-2 mb-1">
+          <Monitor className="h-5 w-5" />
+          Active Sessions
+        </h3>
+        <p className="text-[13px] text-fg-3 mb-4">
+          Devices where you&apos;re currently logged in.
+        </p>
+        <div className="space-y-4">
           {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
           {sessionsQuery.data?.map(
             (s: any) => (
@@ -674,7 +662,7 @@ export default function AccountPage() {
                       </Badge>
                     )}
                   </div>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-xs text-fg-3">
                     {s.ipAddress || "Unknown IP"} -{" "}
                     {new Date(s.createdAt).toLocaleString()}
                   </div>
@@ -699,8 +687,8 @@ export default function AccountPage() {
           >
             Sign out all other sessions
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* 2FA Setup Dialog */}
       <Dialog open={show2FASetup} onOpenChange={setShow2FASetup}>
@@ -721,10 +709,10 @@ export default function AccountPage() {
                   </div>
                 )}
                 <details className="text-center">
-                  <summary className="text-xs text-muted-foreground cursor-pointer">
+                  <summary className="text-xs text-fg-3 cursor-pointer">
                     Can&apos;t scan? Show manual entry key
                   </summary>
-                  <p className="mt-2 text-xs break-all font-mono bg-muted p-2 rounded-md">
+                  <p className="mt-2 text-xs break-all font-mono bg-bg-inset p-2 rounded-md">
                     {totpURI}
                   </p>
                 </details>

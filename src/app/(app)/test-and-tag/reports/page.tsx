@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -200,7 +200,7 @@ export default function TestTagReportsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="t-title text-fg">Test & Tag Reports</h1>
-          <p className="text-muted-foreground">Generate compliance reports and exports</p>
+          <p className="text-fg-3">Generate compliance reports and exports</p>
         </div>
         <Button variant="outline" render={<Link href="/test-and-tag" />}>
           <ArrowLeft className="h-4 w-4 mr-2" />
@@ -210,31 +210,27 @@ export default function TestTagReportsPage() {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {reportConfigs.map((config) => (
-          <Card
+          <div
             key={config.key}
-            className="hover:border-primary/50 transition-colors cursor-pointer"
+            className="rounded-lg bg-bg-surface p-4 surface-ring hover:ring-primary/50 transition-colors cursor-pointer"
             onClick={() => openDialog(config)}
           >
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-3">
-                <config.icon className="h-5 w-5 text-primary" />
-                <CardTitle className="text-base">{config.title}</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground mb-3">{config.description}</p>
-              <div className="flex gap-2">
-                {config.formats.map((format) => (
-                  <span
-                    key={format}
-                    className="text-xs px-2 py-0.5 rounded-full border border-border text-muted-foreground"
-                  >
-                    {format}
-                  </span>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+            <div className="flex items-center gap-3 mb-2">
+              <config.icon className="h-5 w-5 text-primary" />
+              <h3 className="text-base font-semibold">{config.title}</h3>
+            </div>
+            <p className="text-sm text-fg-3 mb-3">{config.description}</p>
+            <div className="flex gap-2">
+              {config.formats.map((format) => (
+                <span
+                  key={format}
+                  className="text-xs px-2 py-0.5 rounded-full border border-border text-fg-3"
+                >
+                  {format}
+                </span>
+              ))}
+            </div>
+          </div>
         ))}
       </div>
 
@@ -251,7 +247,7 @@ export default function TestTagReportsPage() {
               </DialogHeader>
 
               <div className="space-y-4 py-2">
-                <p className="text-sm text-muted-foreground">{activeReport.description}</p>
+                <p className="text-sm text-fg-3">{activeReport.description}</p>
 
                 {/* Date From/To */}
                 {activeReport.filters.includes("dateFrom") && (
@@ -307,14 +303,14 @@ export default function TestTagReportsPage() {
                         {searchResults.items.map((item) => (
                           <button
                             key={item.id}
-                            className="w-full text-left px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-bg-elevated/50 transition-colors"
                             onClick={() => {
                               setFilters((f) => ({ ...f, testTagAssetId: item.id }));
                               setSearchInput(`${item.testTagId} - ${item.description}`);
                             }}
                           >
                             <span className="font-medium">{item.testTagId}</span>
-                            <span className="text-muted-foreground ml-2">{item.description}</span>
+                            <span className="text-fg-3 ml-2">{item.description}</span>
                           </button>
                         ))}
                       </div>
@@ -341,7 +337,7 @@ export default function TestTagReportsPage() {
                         ).map((ba) => (
                           <button
                             key={ba.id}
-                            className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/50 transition-colors ${filters.bulkAssetId === ba.id ? "bg-primary/10" : ""}`}
+                            className={`w-full text-left px-3 py-2 text-sm hover:bg-bg-elevated/50 transition-colors ${filters.bulkAssetId === ba.id ? "bg-primary/10" : ""}`}
                             onClick={() => setFilters((f) => ({ ...f, bulkAssetId: ba.id }))}
                           >
                             <span className="font-medium">{ba.assetTag}</span>
@@ -349,7 +345,7 @@ export default function TestTagReportsPage() {
                         ))}
                       </div>
                     ) : (
-                      <p className="text-sm text-muted-foreground">No bulk assets with T&T items found.</p>
+                      <p className="text-sm text-fg-3">No bulk assets with T&T items found.</p>
                     )}
                   </div>
                 )}

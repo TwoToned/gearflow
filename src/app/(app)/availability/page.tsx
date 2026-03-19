@@ -25,7 +25,7 @@ import {
 import { getCalendarData, type CalendarProject } from "@/server/availability";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+
 import { RequirePermission } from "@/components/auth/require-permission";
 import { useActiveOrganization } from "@/lib/auth-client";
 
@@ -174,7 +174,7 @@ function AvailabilityPage() {
         <h1 className="t-title text-fg">
           Availability Calendar
         </h1>
-        <p className="text-muted-foreground">
+        <p className="text-fg-3">
           See when projects are active and equipment is out.
         </p>
       </div>
@@ -211,7 +211,7 @@ function AvailabilityPage() {
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+      <div className="flex items-center gap-4 text-xs text-fg-3">
         <div className="flex items-center gap-1.5">
           <span className="inline-block h-3 w-3 rounded-sm bg-blue-500/15 border border-blue-500/30" />
           1 project
@@ -228,10 +228,10 @@ function AvailabilityPage() {
 
       <div className="flex gap-4 flex-col lg:flex-row">
         {/* Calendar Grid */}
-        <Card className="flex-1">
-          <CardContent className="p-2 sm:p-4">
+        <div className="rounded-lg bg-bg-surface surface-ring flex-1">
+          <div className="p-2 sm:p-4">
             {isLoading ? (
-              <div className="py-20 text-center text-muted-foreground">
+              <div className="py-20 text-center text-fg-3">
                 Loading...
               </div>
             ) : (
@@ -242,7 +242,7 @@ function AvailabilityPage() {
                     (d) => (
                       <div
                         key={d}
-                        className="text-center text-xs font-medium text-muted-foreground py-2"
+                        className="text-center text-xs font-medium text-fg-3 py-2"
                       >
                         {d}
                       </div>
@@ -294,7 +294,7 @@ function AvailabilityPage() {
                                 />
                               ))}
                               {count > 4 && (
-                                <span className="text-[9px] text-muted-foreground leading-none">
+                                <span className="text-[9px] text-fg-3 leading-none">
                                   +{count - 4}
                                 </span>
                               )}
@@ -312,7 +312,7 @@ function AvailabilityPage() {
                               </div>
                             ))}
                             {count > 2 && (
-                              <div className="text-[9px] text-muted-foreground text-center">
+                              <div className="text-[9px] text-fg-3 text-center">
                                 +{count - 2} more
                               </div>
                             )}
@@ -324,17 +324,17 @@ function AvailabilityPage() {
                 ))}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         {/* Day Detail Panel */}
-        <Card className="lg:w-[340px] shrink-0">
-          <CardContent className="p-4">
+        <div className="rounded-lg bg-bg-surface surface-ring lg:w-[340px] shrink-0">
+          <div className="p-4">
             {selectedDay ? (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                    <CalendarDays className="h-4 w-4 text-fg-3" />
                     <h3 className="font-semibold">
                       {format(selectedDay, "EEEE, d MMMM yyyy")}
                     </h3>
@@ -350,12 +350,12 @@ function AvailabilityPage() {
                 </div>
 
                 {selectedProjects.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-4 text-center">
+                  <p className="text-sm text-fg-3 py-4 text-center">
                     No projects on this day.
                   </p>
                 ) : (
                   <div className="space-y-2">
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-fg-3">
                       {selectedProjects.length} project
                       {selectedProjects.length !== 1 ? "s" : ""} active
                     </p>
@@ -378,11 +378,11 @@ function AvailabilityPage() {
                         </div>
                         <p className="text-sm truncate">{p.name}</p>
                         {p.clientName && (
-                          <p className="text-xs text-muted-foreground">
+                          <p className="text-xs text-fg-3">
                             {p.clientName}
                           </p>
                         )}
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <div className="flex items-center justify-between text-xs text-fg-3">
                           <span>
                             {format(new Date(p.rentalStartDate), "d MMM")} —{" "}
                             {format(new Date(p.rentalEndDate), "d MMM")}
@@ -395,13 +395,13 @@ function AvailabilityPage() {
                 )}
               </div>
             ) : (
-              <div className="py-8 text-center text-sm text-muted-foreground">
+              <div className="py-8 text-center text-sm text-fg-3">
                 <CalendarDays className="mx-auto mb-2 h-8 w-8 opacity-50" />
                 Click a day to see project details.
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     </div>
     </RequirePermission>

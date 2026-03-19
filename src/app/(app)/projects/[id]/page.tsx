@@ -39,6 +39,7 @@ import {
 } from "@/server/projects";
 import { getProjectLabourCost } from "@/server/crew-assignments";
 import { DuplicateProjectDialog } from "@/components/projects/duplicate-project-dialog";
+import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -200,11 +201,11 @@ export default function ProjectDetailPage({
   });
 
   if (isLoading) {
-    return <div className="text-muted-foreground">Loading...</div>;
+    return <DetailPageSkeleton />;
   }
 
   if (!project) {
-    return <div className="text-muted-foreground">Project not found.</div>;
+    return <div className="text-muted-foreground py-12 text-center">Project not found.</div>;
   }
 
   const currentStatus = project.status;
@@ -233,7 +234,7 @@ export default function ProjectDetailPage({
               </Badge>
             )}
           </div>
-          <h1 className="text-2xl font-bold tracking-tight mt-1">
+          <h1 className="t-title text-fg mt-1">
             {project.name}
           </h1>
           {project.client && (

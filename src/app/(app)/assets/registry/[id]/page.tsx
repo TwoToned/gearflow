@@ -18,6 +18,7 @@ import {
   removeAssetMedia,
   setAssetPrimaryPhoto,
 } from "@/server/asset-media";
+import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -73,7 +74,7 @@ function formatDate(date: Date | string | null | undefined) {
 export default function AssetDetailPage({ params }: { params: Promise<{ id: string }> }) {
   return (
     <RequirePermission resource="asset" action="read">
-    <Suspense fallback={<div className="text-muted-foreground">Loading...</div>}>
+    <Suspense fallback={<DetailPageSkeleton />}>
       <AssetDetailContent params={params} />
     </Suspense>
     </RequirePermission>
@@ -151,16 +152,16 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
   }, [bulkModelId, router]);
 
   const isLoading = isBulk ? bulkQuery.isLoading : assetQuery.isLoading;
-  if (isLoading) return <div className="text-muted-foreground">Loading...</div>;
+  if (isLoading) return <DetailPageSkeleton />;
 
   if (isBulk) {
-    if (!bulkQuery.data) return <div className="text-muted-foreground">Bulk asset not found.</div>;
+    if (!bulkQuery.data) return <div className="text-muted-foreground py-12 text-center">Bulk asset not found.</div>;
     return <div className="text-muted-foreground">Redirecting to model...</div>;
   }
 
   // ─── Serialized Asset Detail ─────────────────────────────────────────
   const asset = assetQuery.data;
-  if (!asset) return <div className="text-muted-foreground">Asset not found.</div>;
+  if (!asset) return <div className="text-muted-foreground py-12 text-center">Asset not found.</div>;
 
   const assetPhotos = ((asset.media || []) as MediaItem[]).filter((m) => m.type === "PHOTO");
   const photoUrl = resolveAssetPhotoUrl(asset, false);
@@ -180,7 +181,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
           />
           <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight font-mono">{asset.assetTag}</h1>
+            <h1 className="t-title text-fg font-mono">{asset.assetTag}</h1>
             <Badge variant="outline" className={statusColors[asset.status] || ""}>
               {assetStatusLabels[asset.status] || formatLabel(asset.status)}
             </Badge>

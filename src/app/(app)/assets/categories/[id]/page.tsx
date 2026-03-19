@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { getCategory } from "@/server/categories";
+import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -50,11 +51,11 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
   });
 
   if (isLoading) {
-    return <div className="p-6 text-muted-foreground">Loading...</div>;
+    return <DetailPageSkeleton />;
   }
 
   if (!category) {
-    return <div className="p-6 text-muted-foreground">Category not found.</div>;
+    return <div className="text-muted-foreground py-12 text-center">Category not found.</div>;
   }
 
   const parentHref = category.parent
@@ -89,7 +90,7 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
           </div>
           <div className="flex items-center gap-3">
             <span className="text-2xl">{category.icon || "📁"}</span>
-            <h1 className="text-2xl font-bold tracking-tight">{category.name}</h1>
+            <h1 className="t-title text-fg">{category.name}</h1>
           </div>
           {category.description && (
             <p className="text-muted-foreground mt-1">{category.description}</p>

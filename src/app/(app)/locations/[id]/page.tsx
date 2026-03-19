@@ -24,6 +24,7 @@ import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { addLocationMedia, removeLocationMedia } from "@/server/location-media";
 import { NotesEditor } from "@/components/ui/notes-editor";
+import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -89,11 +90,11 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
   });
 
   if (isLoading) {
-    return <div className="text-muted-foreground">Loading...</div>;
+    return <DetailPageSkeleton />;
   }
 
   if (!location) {
-    return <div className="text-muted-foreground">Location not found.</div>;
+    return <div className="text-muted-foreground py-12 text-center">Location not found.</div>;
   }
 
   const assetCount = (location._count?.assets || 0) + (location._count?.bulkAssets || 0) + (location._count?.kits || 0);
@@ -105,7 +106,7 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight">{location.name}</h1>
+            <h1 className="t-title text-fg">{location.name}</h1>
             <Badge variant="outline" className={typeColors[location.type] || ""}>
               {typeLabels[location.type] || location.type}
             </Badge>

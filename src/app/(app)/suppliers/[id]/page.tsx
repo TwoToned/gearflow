@@ -15,6 +15,7 @@ import { getSupplierOrders } from "@/server/supplier-orders";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
+import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -97,8 +98,8 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
     onError: (e) => toast.error(e.message),
   });
 
-  if (isLoading) return <div className="text-muted-foreground">Loading...</div>;
-  if (!supplier) return <div className="text-muted-foreground">Supplier not found.</div>;
+  if (isLoading) return <DetailPageSkeleton />;
+  if (!supplier) return <div className="text-muted-foreground py-12 text-center">Supplier not found.</div>;
 
   const orders = ordersData?.orders || [];
   const assets = assetsData?.assets || [];
@@ -112,7 +113,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold tracking-tight">{supplier.name}</h1>
+              <h1 className="t-title text-fg">{supplier.name}</h1>
               {!supplier.isActive && <Badge variant="destructive">Archived</Badge>}
             </div>
             <p className="text-muted-foreground">

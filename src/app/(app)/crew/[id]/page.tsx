@@ -104,6 +104,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -426,9 +427,9 @@ export default function CrewMemberDetailPage({
   });
 
   if (isLoading)
-    return <div className="text-muted-foreground">Loading...</div>;
+    return <DetailPageSkeleton />;
   if (!member)
-    return <div className="text-muted-foreground">Crew member not found.</div>;
+    return <div className="py-20 text-center text-muted-foreground">Crew member not found.</div>;
 
   const isOwnProfile = !!(member as { isOwnProfile?: boolean }).isOwnProfile;
 
@@ -524,7 +525,7 @@ export default function CrewMemberDetailPage({
 
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold tracking-tight">{fullName}</h1>
+                <h1 className="t-title text-fg">{fullName}</h1>
                 <Badge
                   variant="outline"
                   className={statusColors[member.status] || ""}

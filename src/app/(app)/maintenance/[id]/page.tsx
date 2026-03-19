@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
+import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import type { MaintenanceFormValues } from "@/lib/validations/maintenance";
 
 export default function MaintenanceDetailPage({
@@ -39,8 +40,8 @@ export default function MaintenanceDetailPage({
     onError: (e) => toast.error(e.message),
   });
 
-  if (isLoading) return <div className="text-muted-foreground">Loading...</div>;
-  if (!record) return <div className="text-muted-foreground">Record not found.</div>;
+  if (isLoading) return <DetailPageSkeleton />;
+  if (!record) return <div className="py-20 text-center text-muted-foreground">Record not found.</div>;
 
   const r = record as Record<string, unknown>;
   const assetLinks = (r.assets as Array<{ assetId: string }>) || [];
@@ -74,7 +75,7 @@ export default function MaintenanceDetailPage({
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Edit Maintenance Record</h1>
+            <h1 className="t-title text-fg">Edit Maintenance Record</h1>
             <p className="text-muted-foreground">{r.title as string}</p>
           </div>
           <CanDo resource="maintenance" action="delete">

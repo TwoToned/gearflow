@@ -7,6 +7,7 @@ import { Edit, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { RequirePermission } from "@/components/auth/require-permission";
+import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { ReportViewer } from "@/components/reports/report-viewer";
 import { getSavedReportById } from "@/server/reports";
 import { DATA_SOURCE_LABELS, type ReportConfig, type DataSource } from "@/lib/report-types";
@@ -19,8 +20,8 @@ export default function SavedReportPage({ params }: { params: Promise<{ id: stri
     queryFn: () => getSavedReportById(id),
   });
 
-  if (isLoading) return <div className="text-muted-foreground">Loading...</div>;
-  if (!report) return <div className="text-destructive">Report not found</div>;
+  if (isLoading) return <DetailPageSkeleton />;
+  if (!report) return <div className="py-20 text-center text-muted-foreground">Report not found.</div>;
 
   const r = report as unknown as {
     id: string;
@@ -41,7 +42,7 @@ export default function SavedReportPage({ params }: { params: Promise<{ id: stri
               <Button variant="ghost" size="sm" render={<Link href="/reports" />}>
                 <ArrowLeft className="h-4 w-4" />
               </Button>
-              <h1 className="text-2xl font-bold tracking-tight">{r.name}</h1>
+              <h1 className="t-title text-fg">{r.name}</h1>
             </div>
             {r.description && (
               <p className="text-muted-foreground">{r.description}</p>

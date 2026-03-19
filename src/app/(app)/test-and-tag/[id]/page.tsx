@@ -125,7 +125,7 @@ export default function TestTagDetailPage({ params }: { params: Promise<{ id: st
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-1">
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold tracking-tight">{item.testTagId}</h1>
+            <h1 className="t-title text-fg">{item.testTagId}</h1>
             <StatusBadge status={item.status} />
           </div>
           <p className="text-muted-foreground">{item.description}</p>

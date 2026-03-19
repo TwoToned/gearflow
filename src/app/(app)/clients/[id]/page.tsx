@@ -16,6 +16,7 @@ import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { NotesEditor } from "@/components/ui/notes-editor";
 import { addClientMedia, removeClientMedia } from "@/server/client-media";
+import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -80,11 +81,11 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
   });
 
   if (isLoading) {
-    return <div className="text-muted-foreground">Loading...</div>;
+    return <DetailPageSkeleton />;
   }
 
   if (!client) {
-    return <div className="text-muted-foreground">Client not found.</div>;
+    return <div className="text-muted-foreground py-12 text-center">Client not found.</div>;
   }
 
   return (
@@ -95,7 +96,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight">{client.name}</h1>
+            <h1 className="t-title text-fg">{client.name}</h1>
             <Badge variant="outline" className={typeColors[client.type] || ""}>
               {typeLabels[client.type] || client.type}
             </Badge>

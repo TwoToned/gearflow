@@ -18,6 +18,7 @@ import {
   setModelPrimaryPhoto,
   reorderModelMedia,
 } from "@/server/model-media";
+import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,7 +54,7 @@ const statusColors: Record<string, string> = {
 
 export default function ModelDetailPage({ params }: { params: Promise<{ id: string }> }) {
   return (
-    <Suspense fallback={<div className="text-muted-foreground">Loading...</div>}>
+    <Suspense fallback={<DetailPageSkeleton />}>
       <ModelDetailContent params={params} />
     </Suspense>
   );
@@ -122,11 +123,11 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
   });
 
   if (isLoading) {
-    return <div className="text-muted-foreground">Loading...</div>;
+    return <DetailPageSkeleton />;
   }
 
   if (!model) {
-    return <div className="text-muted-foreground">Model not found.</div>;
+    return <div className="text-muted-foreground py-12 text-center">Model not found.</div>;
   }
 
   const specs = (model.specifications as Record<string, string>) || {};
@@ -150,7 +151,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
           />
           <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight">{model.name}</h1>
+            <h1 className="t-title text-fg">{model.name}</h1>
             <Badge variant={model.assetType === "SERIALIZED" ? "default" : "outline"}>
               {model.assetType === "SERIALIZED" ? "Serialized" : "Bulk"}
             </Badge>

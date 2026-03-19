@@ -35,6 +35,7 @@ import { MediaUploader, type MediaItem } from "@/components/media/media-uploader
 import { MediaThumbnail } from "@/components/media/media-thumbnail";
 import { resolveKitPhotoUrl } from "@/lib/media-utils";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
+import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { BookingCalendar } from "@/components/bookings/booking-calendar";
@@ -85,7 +86,7 @@ function formatDate(date: Date | string | null | undefined) {
 
 export default function KitDetailPage({ params }: { params: Promise<{ id: string }> }) {
   return (
-    <Suspense fallback={<div className="text-muted-foreground">Loading...</div>}>
+    <Suspense fallback={<DetailPageSkeleton />}>
       <KitDetailContent params={params} />
     </Suspense>
   );
@@ -227,8 +228,8 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
     onError: (e) => toast.error(e.message),
   });
 
-  if (isLoading) return <div className="text-muted-foreground">Loading...</div>;
-  if (!kit) return <div className="text-muted-foreground">Kit not found.</div>;
+  if (isLoading) return <DetailPageSkeleton />;
+  if (!kit) return <div className="py-20 text-center text-muted-foreground">Kit not found.</div>;
 
   const kitPhotos = ((kit.media || []) as MediaItem[]).filter((m) => m.type === "PHOTO");
   const kitPhotoUrl = resolveKitPhotoUrl(kit, false);
@@ -248,7 +249,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
           />
           <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight font-mono">{kit.assetTag}</h1>
+            <h1 className="t-title text-fg font-mono">{kit.assetTag}</h1>
             <CanDo resource="kit" action="update" fallback={
               <Badge variant="outline" className={statusColors[kit.status] || ""}>
                 {kitStatusLabels[kit.status] || formatLabel(kit.status)}

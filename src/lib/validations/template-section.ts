@@ -173,7 +173,7 @@ export const SETTINGS_SCHEMA_MAP = {
 export function validateSectionSettings(
   type: string,
   settings: unknown,
-): z.SafeParseReturnType<unknown, unknown> {
+): z.ZodSafeParseResult<unknown> {
   const schema =
     SETTINGS_SCHEMA_MAP[type as keyof typeof SETTINGS_SCHEMA_MAP];
   if (!schema) {

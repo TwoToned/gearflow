@@ -122,7 +122,7 @@ interface InnerCardProps {
   block: TemplateBlock;
   isSelected: boolean;
   isDragging: boolean;
-  dragAttributes: Record<string, unknown>;
+  dragAttributes: React.HTMLAttributes<HTMLElement>;
   dragListeners: Record<string, unknown> | undefined;
   onSelect: () => void;
   onDuplicate: () => void;

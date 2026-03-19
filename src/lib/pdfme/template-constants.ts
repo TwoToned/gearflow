@@ -104,6 +104,24 @@ export const SECTION_MIN_WIDTHS: Record<SectionType, number> = {
   spacer: 25,
 };
 
+/**
+ * Approximate section heights in mm — used by the HTML preview for proportional sizing.
+ * Not used for actual PDF pagination (that uses estimateSectionHeight with real data).
+ */
+export const SECTION_HEIGHT_ESTIMATES: Record<SectionType, number> = {
+  header: 30,
+  "client-details": 25,
+  "project-details": 25,
+  table: 80,
+  totals: 20,
+  notes: 15,
+  signature: 20,
+  "custom-text": 10,
+  "crew-table": 60,
+  spacer: 5,
+  "page-break": 0,
+};
+
 /** Maximum number of columns per row */
 export const MAX_COLUMNS_PER_ROW = 4;
 

@@ -177,6 +177,20 @@ export function SectionBuilder({
     [sections, updateSections]
   );
 
+  const addSections = useCallback(
+    (newSections: TemplateSection[]) => {
+      const appended = [
+        ...sections,
+        ...newSections.map((s, i) => ({ ...s, order: sections.length + i })),
+      ];
+      updateSections(appended);
+      if (newSections.length > 0) {
+        setSelectedId(newSections[0].id);
+      }
+    },
+    [sections, updateSections]
+  );
+
   const duplicateSection = useCallback(
     (sectionId: string) => {
       const section = sections.find((s) => s.id === sectionId);
@@ -403,7 +417,11 @@ export function SectionBuilder({
           </div>
 
           <div className="shrink-0 border-t border-border/30 p-2">
-            <SectionLibrary onAddSection={addSection} />
+            <SectionLibrary
+              onAddSection={addSection}
+              onAddSections={addSections}
+              currentSections={sections}
+            />
           </div>
         </div>
 

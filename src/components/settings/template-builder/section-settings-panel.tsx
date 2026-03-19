@@ -418,10 +418,9 @@ function ClientDetailsSettings({
 }) {
   const labels = settings.customLabels || {};
   const updateLabel = (key: string, value: string) => {
-    const next = { ...labels, [key]: value || undefined };
-    // Clean empty values
-    for (const k of Object.keys(next)) {
-      if (!next[k]) delete next[k];
+    const next: Record<string, string> = {};
+    for (const [k, v] of Object.entries({ ...labels, [key]: value })) {
+      if (v) next[k] = v;
     }
     onUpdate({ customLabels: Object.keys(next).length > 0 ? next : undefined });
   };
@@ -474,9 +473,9 @@ function ProjectDetailsSettings({
 }) {
   const labels = settings.customLabels || {};
   const updateLabel = (key: string, value: string) => {
-    const next = { ...labels, [key]: value || undefined };
-    for (const k of Object.keys(next)) {
-      if (!next[k]) delete next[k];
+    const next: Record<string, string> = {};
+    for (const [k, v] of Object.entries({ ...labels, [key]: value })) {
+      if (v) next[k] = v;
     }
     onUpdate({ customLabels: Object.keys(next).length > 0 ? next : undefined });
   };

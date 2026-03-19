@@ -152,6 +152,7 @@ model Organization {
   serviceTemplates   ServiceTemplate[]
   documentTemplates          DocumentTemplate[]
   brandTemplates             BrandTemplate[]
+  sectionPresets             SectionPreset[]
   ssoProviders               SsoProvider[]
   pendingSSOApprovals        PendingSSOApproval[]
   warehouseDashboardTokens   WarehouseDashboardToken[]
@@ -1956,6 +1957,23 @@ model DocumentTemplate {
 
   @@index([organizationId, type])
   @@map("document_template")
+}
+
+// ─── Section Presets (reusable custom sections across templates) ──────────────
+
+model SectionPreset {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name           String   // e.g. "Bank Details", "Terms & Conditions"
+  description    String?  // optional description
+  sections       String   @db.Text  // JSON — TemplateSection[] (one or more sections)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId])
+  @@map("section_preset")
 }
 
 // ─── Warehouse Dashboard Display ─────────────────────────────────────────────

@@ -157,7 +157,7 @@ export function MemberList() {
 
   if (items.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
+      <p className="text-sm text-fg-3">
         No team members yet. Add someone above.
       </p>
     );
@@ -180,12 +180,12 @@ export function MemberList() {
                 className="flex items-center justify-between rounded-md border border-dashed p-3"
               >
                 <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
-                    <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-bg-inset">
+                    <Mail className="h-3.5 w-3.5 text-fg-3" />
                   </div>
                   <div>
                     <p className="text-sm font-medium">{inv.email}</p>
-                    <p className="text-xs text-muted-foreground">Invited</p>
+                    <p className="text-xs text-fg-3">Invited</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -227,7 +227,7 @@ export function MemberList() {
               <UserAvatar user={member.user} size="sm" />
               <div>
                 <p className="text-sm font-medium">{member.user.name || "Unnamed"}</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-fg-3">
                   {member.user.email}
                 </p>
               </div>

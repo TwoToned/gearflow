@@ -110,7 +110,7 @@ export function PdfViewer({ pdfData, className }: PdfViewerProps) {
     <div className={className}>
       <div ref={containerRef} />
       {pageCount > 1 && (
-        <div className="mt-2 text-center text-xs text-muted-foreground">
+        <div className="mt-2 text-center text-xs text-fg-3">
           {pageCount} pages
         </div>
       )}

@@ -194,7 +194,7 @@ export function BrandingSettings({ orgName, settings, onBrandingChange }: Brandi
               None
             </label>
           </div>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-fg-3">
             Choose how your branding appears on PDF documents.
           </p>
         </div>
@@ -239,7 +239,7 @@ export function BrandingSettings({ orgName, settings, onBrandingChange }: Brandi
 
       {/* Preview */}
       <div className="flex items-center gap-3 rounded-md border p-3">
-        <span className="text-xs text-muted-foreground">Preview:</span>
+        <span className="text-xs text-fg-3">Preview:</span>
         <div className="flex items-center gap-2">
           <div
             className="h-6 w-6 rounded-md border"
@@ -302,7 +302,7 @@ function LogoUpload({
     <div className="space-y-2">
       <Label>{label}</Label>
       <div className="flex items-center gap-3">
-        <div className="relative flex h-16 w-24 items-center justify-center rounded-md border border-dashed border-input bg-muted/30">
+        <div className="relative flex h-16 w-24 items-center justify-center rounded-md border border-dashed border-input bg-bg-inset/30">
           {url ? (
             <>
               <img
@@ -319,7 +319,7 @@ function LogoUpload({
               </button>
             </>
           ) : (
-            <ImageIcon className="h-6 w-6 text-muted-foreground" />
+            <ImageIcon className="h-6 w-6 text-fg-3" />
           )}
         </div>
         <Button
@@ -332,7 +332,7 @@ function LogoUpload({
           {uploading ? "Uploading..." : url ? "Replace" : "Upload"}
         </Button>
       </div>
-      <p className="text-xs text-muted-foreground">{description}</p>
+      <p className="text-xs text-fg-3">{description}</p>
     </div>
   );
 }
@@ -375,21 +375,21 @@ function ColorPicker({
               onChange(defaultValue);
             }
           }}
-          className="w-20 font-mono text-sm bg-transparent border-b border-input px-0 py-0.5 text-muted-foreground focus:text-foreground focus:outline-none"
+          className="w-20 font-mono text-sm bg-transparent border-b border-input px-0 py-0.5 text-fg-3 focus:text-fg focus:outline-none"
           maxLength={7}
         />
         {value !== defaultValue && (
           <button
             type="button"
             onClick={() => onChange(defaultValue)}
-            className="ml-auto text-muted-foreground hover:text-foreground"
+            className="ml-auto text-fg-3 hover:text-fg"
             title="Reset to default"
           >
             <RotateCcw className="h-3.5 w-3.5" />
           </button>
         )}
       </div>
-      <p className="text-xs text-muted-foreground">{description}</p>
+      <p className="text-xs text-fg-3">{description}</p>
     </div>
   );
 }

@@ -142,7 +142,7 @@ export function SSOGroupMappingSection({
             />
             <div>
               <p className="text-sm font-medium">{opt.label}</p>
-              <p className="text-xs text-muted-foreground">{opt.description}</p>
+              <p className="text-xs text-fg-3">{opt.description}</p>
             </div>
           </label>
         ))}
@@ -158,7 +158,7 @@ export function SSOGroupMappingSection({
             placeholder="groups"
             disabled={!canUpdate}
           />
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-fg-3">
             The claim name in the OIDC token that contains group memberships.
           </p>
         </div>
@@ -170,7 +170,7 @@ export function SSOGroupMappingSection({
             placeholder="groups"
             disabled={!canUpdate}
           />
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-fg-3">
             The SAML assertion attribute that contains group memberships.
           </p>
         </div>
@@ -207,12 +207,12 @@ export function SSOGroupMappingSection({
         </div>
 
         {localMappings.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4 text-center border rounded-md">
+          <p className="text-sm text-fg-3 py-4 text-center border rounded-md">
             No group mappings configured. Groups will be auto-discovered when users sign in via SSO.
           </p>
         ) : (
           <div className="space-y-2">
-            <div className="grid grid-cols-[1fr_1fr_auto] gap-2 text-xs font-medium text-muted-foreground px-1">
+            <div className="grid grid-cols-[1fr_1fr_auto] gap-2 text-xs font-medium text-fg-3 px-1">
               <span>IdP Group {groupValueType === "id" ? "ID" : "Name"}</span>
               <span>GearFlow Role</span>
               <span className="w-8" />
@@ -261,7 +261,7 @@ export function SSOGroupMappingSection({
                 </Select>
                 {canUpdate && (
                   <Button variant="ghost" size="sm" onClick={() => removeMapping(i)}>
-                    <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                    <Trash2 className="h-3.5 w-3.5 text-fg-3" />
                   </Button>
                 )}
               </div>
@@ -295,14 +295,14 @@ export function SSOGroupMappingSection({
       {/* Notes */}
       <div className="space-y-1.5">
         {localMappings.some((m) => m.unmapped) && (
-          <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+          <p className="text-xs text-fg-3 flex items-center gap-1.5">
             <Radar className="h-3.5 w-3.5 text-amber-500 shrink-0" />
             Groups with a <span className="text-amber-600 font-medium">radar icon</span> were auto-discovered from IdP logins.
             Assign a role and save to activate them.
           </p>
         )}
         {customRoles && customRoles.length > 0 && (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-fg-3">
             Custom roles with an SSO Group Claim configured in Team Settings will be matched automatically,
             in addition to the mappings above.
           </p>

@@ -165,7 +165,7 @@ export function DocumentTemplateManager({
   return (
     <>
       <Tabs defaultValue={DOCUMENT_TYPES[0]}>
-        <TabsList className="flex-wrap h-auto gap-1 bg-muted/50 p-1">
+        <TabsList className="flex-wrap h-auto gap-1 bg-bg-inset/50 p-1">
           {DOCUMENT_TYPES.map((type) => {
             const customs = (byType.get(type) || []).filter(
               (e) => !e.isSystemDefault
@@ -225,11 +225,11 @@ export function DocumentTemplateManager({
               ))}
 
               {customs.length === 0 && (
-                <div className="flex items-center gap-3 rounded-lg border border-dashed border-border/60 bg-muted/20 p-4">
-                  <Sparkles className="h-4 w-4 text-muted-foreground/50 shrink-0" />
-                  <p className="text-sm text-muted-foreground">
+                <div className="flex items-center gap-3 rounded-lg border border-dashed border-border/60 bg-bg-inset/20 p-4">
+                  <Sparkles className="h-4 w-4 text-fg-3/50 shrink-0" />
+                  <p className="text-sm text-fg-3">
                     No custom templates yet. Click{" "}
-                    <span className="font-medium text-foreground">
+                    <span className="font-medium text-fg">
                       Customise
                     </span>{" "}
                     above to create one from the system default.
@@ -298,10 +298,10 @@ function TemplateCard({
     letter: "?",
     color: "from-gray-500/20 to-gray-600/5",
   };
-  const accentColor = DOC_TYPE_ACCENT[template.type] || "text-foreground";
+  const accentColor = DOC_TYPE_ACCENT[template.type] || "text-fg";
 
   return (
-    <div className="group relative flex items-center gap-4 rounded-xl border border-border/50 bg-card p-4 transition-all hover:border-border hover:shadow-sm">
+    <div className="group relative flex items-center gap-4 rounded-xl border border-border/50 bg-bg-surface p-4 transition-all hover:border-border hover:shadow-sm">
       {/* Icon */}
       <div
         className={`flex h-12 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-b ${icon.color} border border-border/30`}
@@ -326,7 +326,7 @@ function TemplateCard({
           {isSystem && (
             <Badge
               variant="outline"
-              className="text-[9px] font-medium tracking-wide uppercase border-border/50 text-muted-foreground px-1.5 py-0"
+              className="text-[9px] font-medium tracking-wide uppercase border-border/50 text-fg-3 px-1.5 py-0"
             >
               System
             </Badge>
@@ -337,7 +337,7 @@ function TemplateCard({
             </Badge>
           )}
         </div>
-        <p className="text-xs text-muted-foreground mt-0.5">
+        <p className="text-xs text-fg-3 mt-0.5">
           {isSystem ? (
             "Built-in template included with the system"
           ) : (
@@ -379,7 +379,7 @@ function TemplateCard({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  className="h-8 w-8 text-fg-3 hover:text-fg"
                 />
               }
             >

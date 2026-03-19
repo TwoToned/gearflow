@@ -41,7 +41,7 @@ export function EditorNavSidebar({
   );
 
   return (
-    <nav className="flex w-[60px] shrink-0 flex-col items-center gap-1 border-r border-border/50 bg-card/50 py-3">
+    <nav className="flex w-[60px] shrink-0 flex-col items-center gap-1 border-r border-border/50 bg-bg-surface/50 py-3">
       {visibleSections.map((section) => {
         const isActive = activeSection === section.id;
         const Icon = section.icon;
@@ -52,7 +52,7 @@ export function EditorNavSidebar({
             className={`group flex w-[48px] flex-col items-center gap-0.5 rounded-lg px-1 py-2 transition-all ${
               isActive
                 ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                : "text-fg-3 hover:bg-bg-inset/50 hover:text-fg"
             }`}
           >
             <Icon className="h-4 w-4" />

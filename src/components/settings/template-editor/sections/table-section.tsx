@@ -28,7 +28,7 @@ export function TableSection({ settings, templateType, onSettingsChange }: Table
       </div>
 
       <div className="space-y-1">
-        <Label className="text-xs font-medium text-muted-foreground">Layout</Label>
+        <Label className="text-xs font-medium text-fg-3">Layout</Label>
         <div className="space-y-0.5">
           <SettingRow
             label="Group headers"
@@ -53,7 +53,7 @@ export function TableSection({ settings, templateType, onSettingsChange }: Table
       <div className="h-px bg-border/30" />
 
       <div className="space-y-1">
-        <Label className="text-xs font-medium text-muted-foreground">Columns</Label>
+        <Label className="text-xs font-medium text-fg-3">Columns</Label>
         <div className="space-y-0.5">
           {showPricingOption && (
             <SettingRow
@@ -89,7 +89,7 @@ export function TableSection({ settings, templateType, onSettingsChange }: Table
       <div className="h-px bg-border/30" />
 
       <div className="space-y-1">
-        <Label className="text-xs font-medium text-muted-foreground">Checkboxes</Label>
+        <Label className="text-xs font-medium text-fg-3">Checkboxes</Label>
         <div className="space-y-0.5">
           <SettingRow
             label="Row checkboxes"

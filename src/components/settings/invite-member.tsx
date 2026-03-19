@@ -107,7 +107,7 @@ export function InviteMember() {
             {hasCustomRoles && (
               <>
                 <Separator className="my-1" />
-                <div className="px-2 py-1 text-xs text-muted-foreground font-medium">
+                <div className="px-2 py-1 text-xs text-fg-3 font-medium">
                   Custom Roles
                 </div>
                 {customRolesList.map((cr) => (

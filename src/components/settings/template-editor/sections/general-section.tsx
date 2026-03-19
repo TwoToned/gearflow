@@ -23,7 +23,7 @@ export function GeneralSection({ settings, onSettingsChange }: GeneralSectionPro
       {/* Accent Color */}
       <div className="space-y-2">
         <Label className="text-xs font-medium">Accent Colour</Label>
-        <p className="text-[11px] text-muted-foreground leading-relaxed">
+        <p className="text-[11px] text-fg-3 leading-relaxed">
           Used for headers, lines, and highlighted elements. Leave empty to use your organisation&apos;s brand colour.
         </p>
         <div className="flex items-center gap-3">
@@ -44,7 +44,7 @@ export function GeneralSection({ settings, onSettingsChange }: GeneralSectionPro
           {settings.accentColor && (
             <button
               onClick={() => onSettingsChange({ accentColor: "" })}
-              className="text-[11px] text-muted-foreground hover:text-foreground underline"
+              className="text-[11px] text-fg-3 hover:text-fg underline"
             >
               Reset
             </button>

@@ -25,7 +25,7 @@ export function SSOLoginBehaviorSection({
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-medium">Allow password login</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-fg-3">
             Let users sign in with email and password in addition to SSO.
           </p>
         </div>
@@ -39,7 +39,7 @@ export function SSOLoginBehaviorSection({
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-medium">Enforce SSO</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-fg-3">
             Require all users to authenticate via SSO. Password and social logins will be disabled.
           </p>
           {!ssoTestedSuccessfully && (

@@ -14,7 +14,6 @@ import {
   Zap,
   HardHat,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   getDashboardStats,
@@ -116,19 +115,18 @@ export default function DashboardPage() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Upcoming Projects */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base">Upcoming Projects</CardTitle>
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="t-heading text-fg">Upcoming Projects</h3>
             <Link
               href="/projects"
-              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+              className="text-xs text-fg-3 hover:text-fg flex items-center gap-1"
             >
               View all <ArrowRight className="h-3 w-3" />
             </Link>
-          </CardHeader>
-          <CardContent>
+          </div>
             {!upcoming || upcoming.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-fg-3">
                 No upcoming projects.
               </p>
             ) : (
@@ -141,7 +139,7 @@ export default function DashboardPage() {
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs text-muted-foreground">
+                        <span className="font-mono text-xs text-fg-3">
                           {project.projectNumber as string}
                         </span>
                         <Badge
@@ -154,7 +152,7 @@ export default function DashboardPage() {
                       <p className="font-medium text-sm truncate">
                         {project.name as string}
                       </p>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                      <div className="flex items-center gap-2 text-xs text-fg-3 mt-0.5">
                         {(() => {
                           const client = project.client as Record<string, string> | null;
                           return client?.name ? <span>{client.name}</span> : null;
@@ -166,22 +164,18 @@ export default function DashboardPage() {
                         ) : null}
                       </div>
                     </div>
-                    <div className="text-xs text-muted-foreground ml-2">
+                    <div className="text-xs text-fg-3 ml-2">
                       {(project._count as Record<string, number>)?.lineItems || 0} items
                     </div>
                   </Link>
                 ))}
               </div>
             )}
-          </CardContent>
-        </Card>
+        </div>
 
         {/* Recent Activity */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Recent Activity</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <h3 className="t-heading text-fg mb-4">Recent Activity</h3>
             {(() => {
               const logs = (activity as Record<string, unknown> | undefined)?.logs as Record<string, unknown>[] | undefined;
               const testRecords = (activity as Record<string, unknown> | undefined)?.testRecords as Record<string, unknown>[] | undefined;
@@ -203,7 +197,7 @@ export default function DashboardPage() {
 
               if (displayed.length === 0) {
                 return (
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-sm text-fg-3">
                     No recent activity. Scan assets to see activity here.
                   </p>
                 );
@@ -242,7 +236,7 @@ export default function DashboardPage() {
                                 {model?.name as string || "Asset"}
                               </span>
                               {" "}
-                              <span className="text-muted-foreground">
+                              <span className="text-fg-3">
                                 {isCheckOut ? "deployed to" : "returned from"}
                               </span>
                               {" "}
@@ -254,10 +248,10 @@ export default function DashboardPage() {
                                   {project.name as string}
                                 </Link>
                               ) : (
-                                <span className="text-muted-foreground">unknown project</span>
+                                <span className="text-fg-3">unknown project</span>
                               )}
                             </p>
-                            <p className="text-xs text-muted-foreground">
+                            <p className="text-xs text-fg-3">
                               {user?.name as string || "Unknown"} &middot;{" "}
                               {formatDistanceToNow(item.time, { addSuffix: true })}
                             </p>
@@ -289,13 +283,13 @@ export default function DashboardPage() {
                                 {ttAsset?.description as string || ttAsset?.testTagId as string || "Item"}
                               </span>
                               {" "}
-                              <span className="text-muted-foreground">tested —</span>
+                              <span className="text-fg-3">tested —</span>
                               {" "}
                               <span className={`font-medium ${resultColor}`}>
                                 {result}
                               </span>
                             </p>
-                            <p className="text-xs text-muted-foreground">
+                            <p className="text-xs text-fg-3">
                               {tester?.name as string || "Unknown"} &middot;{" "}
                               {formatDistanceToNow(item.time, { addSuffix: true })}
                             </p>
@@ -337,19 +331,19 @@ export default function DashboardPage() {
                               {mr.title as string}
                             </Link>
                             {" "}
-                            <span className="text-muted-foreground">—</span>
+                            <span className="text-fg-3">—</span>
                             {" "}
                             <span className={`font-medium ${mrStatusColor}`}>
                               {mrStatusLabel[mrStatus] || mrStatus}
                             </span>
                           </p>
-                          <p className="text-xs text-muted-foreground truncate">
+                          <p className="text-xs text-fg-3 truncate">
                             {firstModel
                               ? `${firstAsset?.assetTag as string} ${firstModel.name as string}`
                               : ""}
                             {mrAssets.length > 1 ? ` + ${mrAssets.length - 1} more` : ""}
                           </p>
-                          <p className="text-xs text-muted-foreground">
+                          <p className="text-xs text-fg-3">
                             {reporter?.name as string || "Unknown"} &middot;{" "}
                             {formatDistanceToNow(item.time, { addSuffix: true })}
                           </p>
@@ -360,8 +354,7 @@ export default function DashboardPage() {
                 </div>
               );
             })()}
-          </CardContent>
-        </Card>
+        </div>
       </div>
     </div>
   );
@@ -383,19 +376,15 @@ function StatCard({
   alert?: boolean;
 }) {
   return (
-    <Link href={href}>
-      <Card className={`hover:bg-accent/50 transition-colors ${alert ? "border-destructive/50" : ""}`}>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">{title}</CardTitle>
-          <Icon className={`h-4 w-4 ${alert ? "text-destructive" : "text-muted-foreground"}`} />
-        </CardHeader>
-        <CardContent>
-          <div className={`text-2xl font-bold ${alert ? "text-destructive" : ""}`}>
-            {value}
-          </div>
-          <p className="text-xs text-muted-foreground">{description}</p>
-        </CardContent>
-      </Card>
+    <Link href={href} className={`rounded-lg bg-bg-surface p-4 surface-ring hover:bg-bg-elevated transition-colors ${alert ? "ring-destructive/50" : ""}`}>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-sm font-medium text-fg-2">{title}</p>
+        <Icon className={`h-4 w-4 ${alert ? "text-destructive" : "text-fg-3"}`} />
+      </div>
+      <div className={`text-2xl font-bold ${alert ? "text-destructive" : ""}`}>
+        {value}
+      </div>
+      <p className="text-xs text-fg-3">{description}</p>
     </Link>
   );
 }

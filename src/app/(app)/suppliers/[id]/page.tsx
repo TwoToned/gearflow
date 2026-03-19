@@ -20,7 +20,7 @@ import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -94,7 +94,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   });
 
   if (isLoading) return <DetailPageSkeleton />;
-  if (!supplier) return <div className="text-muted-foreground py-12 text-center">Supplier not found.</div>;
+  if (!supplier) return <div className="text-fg-3 py-12 text-center">Supplier not found.</div>;
 
   const orders = ordersData?.orders || [];
   const assets = assetsData?.assets || [];
@@ -111,7 +111,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
               <h1 className="t-title text-fg">{supplier.name}</h1>
               {!supplier.isActive && <Badge variant="destructive">Archived</Badge>}
             </div>
-            <p className="text-muted-foreground">
+            <p className="text-[13px] text-fg-3">
               {supplier.contactName || "No primary contact"}
               {supplier.accountNumber && <> &middot; Acct: {supplier.accountNumber}</>}
             </p>
@@ -138,26 +138,24 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
 
         {/* Info Cards */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Contact</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
+          <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+            <p className="text-[13px] font-medium text-fg-3 mb-3">Contact</p>
+            <div className="space-y-2 text-sm">
               {supplier.contactName && <p className="font-medium">{supplier.contactName}</p>}
               {supplier.email && (
-                <div className="flex items-center gap-2 text-muted-foreground">
+                <div className="flex items-center gap-2 text-fg-3">
                   <Mail className="h-3.5 w-3.5" />
                   <a href={`mailto:${supplier.email}`} className="hover:underline">{supplier.email}</a>
                 </div>
               )}
               {supplier.phone && (
-                <div className="flex items-center gap-2 text-muted-foreground">
+                <div className="flex items-center gap-2 text-fg-3">
                   <Phone className="h-3.5 w-3.5" />
                   <a href={`tel:${supplier.phone}`} className="hover:underline">{supplier.phone}</a>
                 </div>
               )}
               {supplier.website && (
-                <div className="flex items-center gap-2 text-muted-foreground">
+                <div className="flex items-center gap-2 text-fg-3">
                   <Globe className="h-3.5 w-3.5" />
                   <a href={supplier.website} target="_blank" rel="noopener noreferrer" className="hover:underline truncate">{supplier.website}</a>
                 </div>
@@ -174,16 +172,14 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                 </div>
               )}
               {!supplier.contactName && !supplier.email && !supplier.phone && (
-                <p className="text-muted-foreground">No contact info</p>
+                <p className="text-fg-3">No contact info</p>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Account Details</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-1 text-sm">
+          <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+            <p className="text-[13px] font-medium text-fg-3 mb-3">Account Details</p>
+            <div className="space-y-1 text-sm">
               <div className="flex justify-between">
                 <span>Account #</span>
                 <span className="font-medium">{supplier.accountNumber || "\u2014"}</span>
@@ -196,14 +192,12 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                 <span>Lead Time</span>
                 <span className="font-medium">{supplier.defaultLeadTime || "\u2014"}</span>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Summary</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-1 text-sm">
+          <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+            <p className="text-[13px] font-medium text-fg-3 mb-3">Summary</p>
+            <div className="space-y-1 text-sm">
               <div className="flex justify-between">
                 <span>Orders</span>
                 <span className="font-medium">{supplier._count?.orders ?? 0}</span>
@@ -216,8 +210,8 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                 <span>Subhire Items</span>
                 <span className="font-medium">{supplier._count?.lineItems ?? 0}</span>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
 
         {/* Tags */}
@@ -231,14 +225,10 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
 
         {/* Notes */}
         {supplier.notes && (
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Notes</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm whitespace-pre-wrap">{supplier.notes}</p>
-            </CardContent>
-          </Card>
+          <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+            <p className="text-[13px] font-medium text-fg-3 mb-3">Notes</p>
+            <p className="text-sm whitespace-pre-wrap">{supplier.notes}</p>
+          </div>
         )}
 
         {/* Tabs */}
@@ -250,167 +240,155 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
           </TabsList>
 
           <TabsContent value="orders" className="mt-4">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">Purchase Orders</CardTitle>
-                  <CanDo resource="supplier" action="create">
-                    <Button size="sm" render={<Link href={`/suppliers/${id}/orders/new`} />}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      New Order
-                    </Button>
-                  </CanDo>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {orders.length === 0 ? (
-                  <EmptyState preset="suppliers" heading="No orders yet" description="Purchase and subhire orders from this supplier will appear here." />
-                ) : (
-                  <div className="rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Order #</TableHead>
-                          <TableHead>Type</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead className="hidden md:table-cell">Project</TableHead>
-                          <TableHead className="hidden md:table-cell">Items</TableHead>
-                          <TableHead className="text-right hidden sm:table-cell">Total</TableHead>
-                          <TableHead className="hidden md:table-cell">Date</TableHead>
+            <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="t-heading text-fg">Purchase Orders</h3>
+                <CanDo resource="supplier" action="create">
+                  <Button size="sm" render={<Link href={`/suppliers/${id}/orders/new`} />}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    New Order
+                  </Button>
+                </CanDo>
+              </div>
+              {orders.length === 0 ? (
+                <EmptyState preset="suppliers" heading="No orders yet" description="Purchase and subhire orders from this supplier will appear here." />
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Order #</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="hidden md:table-cell">Project</TableHead>
+                        <TableHead className="hidden md:table-cell">Items</TableHead>
+                        <TableHead className="text-right hidden sm:table-cell">Total</TableHead>
+                        <TableHead className="hidden md:table-cell">Date</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {orders.map((order) => (
+                        <TableRow key={order.id}>
+                          <TableCell>
+                            <span className="font-mono text-sm font-medium">{order.orderNumber}</span>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{orderTypeLabels[order.type] || order.type}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <StatusIndicator category="supplierOrder" value={order.status} label={supplierOrderStatusLabels[order.status] || formatLabel(order.status)} />
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell">
+                            {order.project ? (
+                              <Link href={`/projects/${order.project.id}`} className="hover:underline text-sm">
+                                {order.project.projectNumber}
+                              </Link>
+                            ) : "\u2014"}
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell text-fg-3">
+                            {order._count?.items ?? 0}
+                          </TableCell>
+                          <TableCell className="text-right hidden sm:table-cell">
+                            {order.total != null ? `$${Number(order.total).toFixed(2)}` : "\u2014"}
+                          </TableCell>
+                          <TableCell className="text-fg-3 hidden md:table-cell">
+                            {order.orderDate ? new Date(order.orderDate).toLocaleDateString() : "\u2014"}
+                          </TableCell>
                         </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {orders.map((order) => (
-                          <TableRow key={order.id}>
-                            <TableCell>
-                              <span className="font-mono text-sm font-medium">{order.orderNumber}</span>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline">{orderTypeLabels[order.type] || order.type}</Badge>
-                            </TableCell>
-                            <TableCell>
-                              <StatusIndicator category="supplierOrder" value={order.status} label={supplierOrderStatusLabels[order.status] || formatLabel(order.status)} />
-                            </TableCell>
-                            <TableCell className="hidden md:table-cell">
-                              {order.project ? (
-                                <Link href={`/projects/${order.project.id}`} className="hover:underline text-sm">
-                                  {order.project.projectNumber}
-                                </Link>
-                              ) : "\u2014"}
-                            </TableCell>
-                            <TableCell className="hidden md:table-cell text-muted-foreground">
-                              {order._count?.items ?? 0}
-                            </TableCell>
-                            <TableCell className="text-right hidden sm:table-cell">
-                              {order.total != null ? `$${Number(order.total).toFixed(2)}` : "\u2014"}
-                            </TableCell>
-                            <TableCell className="text-muted-foreground hidden md:table-cell">
-                              {order.orderDate ? new Date(order.orderDate).toLocaleDateString() : "\u2014"}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
           </TabsContent>
 
           <TabsContent value="assets" className="mt-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Purchased Assets</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {assets.length === 0 ? (
-                  <EmptyState preset="assets" heading="No assets from this supplier" description="Assets purchased from this supplier will appear here." />
-                ) : (
-                  <div className="rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Asset Tag</TableHead>
-                          <TableHead>Model</TableHead>
-                          <TableHead className="hidden md:table-cell">Manufacturer</TableHead>
-                          <TableHead className="hidden md:table-cell">PO #</TableHead>
-                          <TableHead>Status</TableHead>
+            <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+              <h3 className="t-heading text-fg mb-4">Purchased Assets</h3>
+              {assets.length === 0 ? (
+                <EmptyState preset="assets" heading="No assets from this supplier" description="Assets purchased from this supplier will appear here." />
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Asset Tag</TableHead>
+                        <TableHead>Model</TableHead>
+                        <TableHead className="hidden md:table-cell">Manufacturer</TableHead>
+                        <TableHead className="hidden md:table-cell">PO #</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {assets.map((asset) => (
+                        <TableRow key={asset.id}>
+                          <TableCell>
+                            <Link href={`/assets/registry/${asset.id}`} className="font-mono text-sm font-medium hover:underline">
+                              {asset.assetTag}
+                            </Link>
+                          </TableCell>
+                          <TableCell>{asset.model?.name}</TableCell>
+                          <TableCell className="text-fg-3 hidden md:table-cell">
+                            {asset.model?.manufacturer || "\u2014"}
+                          </TableCell>
+                          <TableCell className="text-fg-3 hidden md:table-cell font-mono text-sm">
+                            {asset.purchaseOrderNumber || "\u2014"}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{assetStatusLabels[asset.status] || formatLabel(asset.status)}</Badge>
+                          </TableCell>
                         </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {assets.map((asset) => (
-                          <TableRow key={asset.id}>
-                            <TableCell>
-                              <Link href={`/assets/registry/${asset.id}`} className="font-mono text-sm font-medium hover:underline">
-                                {asset.assetTag}
-                              </Link>
-                            </TableCell>
-                            <TableCell>{asset.model?.name}</TableCell>
-                            <TableCell className="text-muted-foreground hidden md:table-cell">
-                              {asset.model?.manufacturer || "\u2014"}
-                            </TableCell>
-                            <TableCell className="text-muted-foreground hidden md:table-cell font-mono text-sm">
-                              {asset.purchaseOrderNumber || "\u2014"}
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline">{assetStatusLabels[asset.status] || formatLabel(asset.status)}</Badge>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
           </TabsContent>
 
           <TabsContent value="subhires" className="mt-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Subhire Line Items</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {subhires.length === 0 ? (
-                  <EmptyState preset="suppliers" heading="No subhire items" description="Subhire line items from this supplier will appear here." />
-                ) : (
-                  <div className="rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Project</TableHead>
-                          <TableHead>Model</TableHead>
-                          <TableHead className="text-right">Qty</TableHead>
-                          <TableHead className="hidden md:table-cell">Order #</TableHead>
-                          <TableHead>Status</TableHead>
+            <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+              <h3 className="t-heading text-fg mb-4">Subhire Line Items</h3>
+              {subhires.length === 0 ? (
+                <EmptyState preset="suppliers" heading="No subhire items" description="Subhire line items from this supplier will appear here." />
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Project</TableHead>
+                        <TableHead>Model</TableHead>
+                        <TableHead className="text-right">Qty</TableHead>
+                        <TableHead className="hidden md:table-cell">Order #</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {subhires.map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell>
+                            <Link href={`/projects/${item.project?.id}`} className="hover:underline text-sm">
+                              {item.project?.projectNumber} - {item.project?.name}
+                            </Link>
+                          </TableCell>
+                          <TableCell>{item.model?.name || item.description}</TableCell>
+                          <TableCell className="text-right">{item.quantity}</TableCell>
+                          <TableCell className="text-fg-3 hidden md:table-cell font-mono text-sm">
+                            {item.subhireOrderNumber || "\u2014"}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={projectStatusColors[item.project?.status] || ""}>
+                              {item.project?.status ? (projectStatusLabels[item.project.status] || formatLabel(item.project.status)) : ""}
+                            </Badge>
+                          </TableCell>
                         </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {subhires.map((item) => (
-                          <TableRow key={item.id}>
-                            <TableCell>
-                              <Link href={`/projects/${item.project?.id}`} className="hover:underline text-sm">
-                                {item.project?.projectNumber} - {item.project?.name}
-                              </Link>
-                            </TableCell>
-                            <TableCell>{item.model?.name || item.description}</TableCell>
-                            <TableCell className="text-right">{item.quantity}</TableCell>
-                            <TableCell className="text-muted-foreground hidden md:table-cell font-mono text-sm">
-                              {item.subhireOrderNumber || "\u2014"}
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className={projectStatusColors[item.project?.status] || ""}>
-                                {item.project?.status ? (projectStatusLabels[item.project.status] || formatLabel(item.project.status)) : ""}
-                              </Badge>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
           </TabsContent>
         </Tabs>
       </div>

@@ -43,7 +43,6 @@ import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Tabs,
   TabsList,
@@ -199,7 +198,7 @@ export default function ProjectDetailPage({
   }
 
   if (!project) {
-    return <div className="text-muted-foreground py-12 text-center">Project not found.</div>;
+    return <div className="text-fg-3 py-12 text-center">Project not found.</div>;
   }
 
   const currentStatus = project.status;
@@ -212,7 +211,7 @@ export default function ProjectDetailPage({
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <span className="font-mono text-sm text-muted-foreground">
+            <span className="font-mono text-sm text-fg-3">
               {project.projectNumber}
             </span>
             <StatusIndicator category="project" value={project.status} label={projectStatusLabels[project.status] || formatLabel(project.status)} />
@@ -227,7 +226,7 @@ export default function ProjectDetailPage({
             {project.name}
           </h1>
           {project.client && (
-            <p className="text-muted-foreground">
+            <p className="text-fg-3">
               <Link
                 href={`/clients/${project.client.id}`}
                 className="hover:underline"
@@ -385,9 +384,9 @@ export default function ProjectDetailPage({
           <div className="space-y-6 pt-4">
             {/* Status */}
             {!project.isTemplate && (
-              <Card>
-                <CardContent className="flex items-center gap-3 py-4">
-                  <span className="text-sm font-medium text-muted-foreground">
+              <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-fg-3">
                     Status:
                   </span>
                   <CanDo resource="project" action="update" fallback={
@@ -406,20 +405,16 @@ export default function ProjectDetailPage({
                       ))}
                     </select>
                   </CanDo>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             )}
 
             {/* Info cards */}
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {/* Client Info */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Client
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-1 text-sm">
+              <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+                <p className="text-[13px] font-medium text-fg-3 mb-3">Client</p>
+                <div className="space-y-1 text-sm">
                   {project.client ? (
                     <>
                       <Link
@@ -429,40 +424,36 @@ export default function ProjectDetailPage({
                         {project.client.name}
                       </Link>
                       {project.client.contactEmail && (
-                        <div className="flex items-center gap-2 text-muted-foreground">
+                        <div className="flex items-center gap-2 text-fg-3">
                           <Mail className="h-3.5 w-3.5" />
                           <span>{project.client.contactEmail}</span>
                         </div>
                       )}
                       {project.client.contactPhone && (
-                        <div className="flex items-center gap-2 text-muted-foreground">
+                        <div className="flex items-center gap-2 text-fg-3">
                           <Phone className="h-3.5 w-3.5" />
                           <span>{project.client.contactPhone}</span>
                         </div>
                       )}
                     </>
                   ) : (
-                    <p className="text-muted-foreground">No client assigned</p>
+                    <p className="text-fg-3">No client assigned</p>
                   )}
-                </CardContent>
-              </Card>
+                </div>
+              </div>
 
               {/* Location & Site Contact */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Location &amp; Site Contact
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-1 text-sm">
+              <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+                <p className="text-[13px] font-medium text-fg-3 mb-3">Location &amp; Site Contact</p>
+                <div className="space-y-1 text-sm">
                   {project.location ? (
                     <>
                       <div className="flex items-center gap-2">
-                        <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+                        <MapPin className="h-3.5 w-3.5 text-fg-3" />
                         <span className="font-medium">{project.location.name}</span>
                       </div>
                       {project.location.address && (
-                        <p className="text-muted-foreground">
+                        <p className="text-fg-3">
                           {project.location.address}
                         </p>
                       )}
@@ -480,41 +471,37 @@ export default function ProjectDetailPage({
                     </>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="text-muted-foreground">No location set</span>
+                      <MapPin className="h-3.5 w-3.5 text-fg-3" />
+                      <span className="text-fg-3">No location set</span>
                     </div>
                   )}
                   {project.siteContactName && (
                     <div className="mt-2 pt-2 border-t border-border">
                       <p className="font-medium">{project.siteContactName}</p>
                       {project.siteContactPhone && (
-                        <div className="flex items-center gap-2 text-muted-foreground">
+                        <div className="flex items-center gap-2 text-fg-3">
                           <Phone className="h-3.5 w-3.5" />
                           <span>{project.siteContactPhone}</span>
                         </div>
                       )}
                       {project.siteContactEmail && (
-                        <div className="flex items-center gap-2 text-muted-foreground">
+                        <div className="flex items-center gap-2 text-fg-3">
                           <Mail className="h-3.5 w-3.5" />
                           <span>{project.siteContactEmail}</span>
                         </div>
                       )}
                     </div>
                   )}
-                </CardContent>
-              </Card>
+                </div>
+              </div>
 
               {/* Dates */}
               {!project.isTemplate && (
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">
-                      Dates
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-1 text-sm">
+                <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+                  <p className="text-[13px] font-medium text-fg-3 mb-3">Dates</p>
+                  <div className="space-y-1 text-sm">
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground flex items-center gap-1">
+                      <span className="text-fg-3 flex items-center gap-1">
                         <CalendarDays className="h-3.5 w-3.5" />
                         Rental Period
                       </span>
@@ -525,21 +512,21 @@ export default function ProjectDetailPage({
                     </div>
                     <div className="my-1 h-px bg-border" />
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Load In</span>
+                      <span className="text-fg-3">Load In</span>
                       <span className="font-medium">
                         {formatDate(project.loadInDate as string | null)}
                         {project.loadInTime && ` ${project.loadInTime}`}
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Load Out</span>
+                      <span className="text-fg-3">Load Out</span>
                       <span className="font-medium">
                         {formatDate(project.loadOutDate as string | null)}
                         {project.loadOutTime && ` ${project.loadOutTime}`}
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Event Start</span>
+                      <span className="text-fg-3">Event Start</span>
                       <span className="font-medium">
                         {formatDate(project.eventStartDate as string | null)}
                         {project.eventStartTime &&
@@ -547,137 +534,123 @@ export default function ProjectDetailPage({
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Event End</span>
+                      <span className="text-fg-3">Event End</span>
                       <span className="font-medium">
                         {formatDate(project.eventEndDate as string | null)}
                         {project.eventEndTime && ` ${project.eventEndTime}`}
                       </span>
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               )}
 
               {/* Financial */}
-              {!project.isTemplate && <Card className="sm:col-span-2 lg:col-span-3">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    <div className="flex items-center gap-1">
-                      <DollarSign className="h-3.5 w-3.5" />
-                      Financial Summary
-                    </div>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-8 text-sm">
-                    <div>
-                      <span className="text-muted-foreground">Subtotal</span>
-                      <p className="font-medium">
-                        {formatCurrency(project.subtotal as number | null)}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Discount</span>
-                      <p className="font-medium">
-                        {project.discountPercent != null
-                          ? `${Number(project.discountPercent)}%`
-                          : "—"}
-                        {project.discountAmount != null &&
-                          ` (${formatCurrency(project.discountAmount as unknown as number)})`}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Tax</span>
-                      <p className="font-medium">
-                        {formatCurrency(project.taxAmount as number | null)}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Total</span>
-                      <p className="font-semibold text-base">
-                        {formatCurrency(project.total as number | null)}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Invoiced Total</span>
-                      <p className="font-semibold text-base">
-                        {project.invoicedTotal != null
-                          ? formatCurrency(project.invoicedTotal as unknown as number)
-                          : "—"}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">
-                        Deposit
-                      </span>
-                      <p className="font-medium">
-                        {project.depositPercent != null
-                          ? `${Number(project.depositPercent)}%`
-                          : "—"}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">
-                        Deposit Paid
-                      </span>
-                      <p className="font-medium">
-                        {formatCurrency(project.depositPaid as number | null)}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">
-                        Est. Labour
-                      </span>
-                      <LabourCostDisplay projectId={id} />
-                    </div>
+              {!project.isTemplate && <div className="rounded-lg bg-bg-surface p-4 surface-ring sm:col-span-2 lg:col-span-3">
+                <p className="text-[13px] font-medium text-fg-3 mb-3">
+                  <span className="flex items-center gap-1">
+                    <DollarSign className="h-3.5 w-3.5" />
+                    Financial Summary
+                  </span>
+                </p>
+                <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-8 text-sm">
+                  <div>
+                    <span className="text-fg-3">Subtotal</span>
+                    <p className="font-medium">
+                      {formatCurrency(project.subtotal as number | null)}
+                    </p>
                   </div>
-                </CardContent>
-              </Card>}
+                  <div>
+                    <span className="text-fg-3">Discount</span>
+                    <p className="font-medium">
+                      {project.discountPercent != null
+                        ? `${Number(project.discountPercent)}%`
+                        : "—"}
+                      {project.discountAmount != null &&
+                        ` (${formatCurrency(project.discountAmount as unknown as number)})`}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-fg-3">Tax</span>
+                    <p className="font-medium">
+                      {formatCurrency(project.taxAmount as number | null)}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-fg-3">Total</span>
+                    <p className="font-semibold text-base">
+                      {formatCurrency(project.total as number | null)}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-fg-3">Invoiced Total</span>
+                    <p className="font-semibold text-base">
+                      {project.invoicedTotal != null
+                        ? formatCurrency(project.invoicedTotal as unknown as number)
+                        : "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-fg-3">
+                      Deposit
+                    </span>
+                    <p className="font-medium">
+                      {project.depositPercent != null
+                        ? `${Number(project.depositPercent)}%`
+                        : "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-fg-3">
+                      Deposit Paid
+                    </span>
+                    <p className="font-medium">
+                      {formatCurrency(project.depositPaid as number | null)}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-fg-3">
+                      Est. Labour
+                    </span>
+                    <LabourCostDisplay projectId={id} />
+                  </div>
+                </div>
+              </div>}
             </div>
 
             {/* Description */}
             {project.description && (
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Description
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm whitespace-pre-wrap">
-                    {project.description}
-                  </p>
-                </CardContent>
-              </Card>
+              <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+                <p className="text-[13px] font-medium text-fg-3 mb-3">Description</p>
+                <p className="text-sm whitespace-pre-wrap">
+                  {project.description}
+                </p>
+              </div>
             )}
 
             {/* Project Info */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Project Info
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-sm space-y-1">
+            <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+              <p className="text-[13px] font-medium text-fg-3 mb-3">Project Info</p>
+              <div className="text-sm space-y-1">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Type</span>
+                  <span className="text-fg-3">Type</span>
                   <span className="font-medium">
                     {typeLabels[project.type] || project.type}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Created</span>
+                  <span className="text-fg-3">Created</span>
                   <span className="font-medium">
                     {formatDate(project.createdAt as unknown as string)}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Last Updated</span>
+                  <span className="text-fg-3">Last Updated</span>
                   <span className="font-medium">
                     {formatDate(project.updatedAt as unknown as string)}
                   </span>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           </div>
         </TabsContent>
 
@@ -756,30 +729,26 @@ export default function ProjectDetailPage({
         {/* Files Tab */}
         <TabsContent value="files">
           <div className="space-y-4 pt-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Project Files & Documents</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <MediaUploader
-                  entityType="project"
-                  entityId={id}
-                  accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.dwg,.dxf,.txt"
-                  existingMedia={(project.media || []) as MediaItem[]}
-                  queryKey={["project", orgId, id]}
-                  onUploadComplete={async (fileUpload) => {
-                    await addProjectMedia({
-                      projectId: id,
-                      fileId: fileUpload.id,
-                      type: "OTHER" as ProjectMediaType,
-                    });
-                  }}
-                  onRemove={async (mediaId) => {
-                    await removeProjectMedia(mediaId);
-                  }}
-                />
-              </CardContent>
-            </Card>
+            <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+              <h3 className="t-heading text-fg mb-4">Project Files & Documents</h3>
+              <MediaUploader
+                entityType="project"
+                entityId={id}
+                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.dwg,.dxf,.txt"
+                existingMedia={(project.media || []) as MediaItem[]}
+                queryKey={["project", orgId, id]}
+                onUploadComplete={async (fileUpload) => {
+                  await addProjectMedia({
+                    projectId: id,
+                    fileId: fileUpload.id,
+                    type: "OTHER" as ProjectMediaType,
+                  });
+                }}
+                onRemove={async (mediaId) => {
+                  await removeProjectMedia(mediaId);
+                }}
+              />
+            </div>
           </div>
         </TabsContent>
       </Tabs>

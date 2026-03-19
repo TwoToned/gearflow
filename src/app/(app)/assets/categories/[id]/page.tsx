@@ -17,7 +17,6 @@ import { getCategory } from "@/server/categories";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -56,7 +55,7 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
   }
 
   if (!category) {
-    return <div className="text-muted-foreground py-12 text-center">Category not found.</div>;
+    return <div className="text-fg-3 py-12 text-center">Category not found.</div>;
   }
 
   const parentHref = category.parent
@@ -71,7 +70,7 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+          <div className="flex items-center gap-2 text-sm text-fg-3 mb-1">
             <Link href="/assets/categories" className="hover:text-foreground transition-colors">
               Categories
             </Link>
@@ -94,7 +93,7 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
             <h1 className="t-title text-fg">{category.name}</h1>
           </div>
           {category.description && (
-            <p className="text-muted-foreground mt-1">{category.description}</p>
+            <p className="text-fg-3 mt-1">{category.description}</p>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -121,11 +120,8 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
 
       {/* Subcategories */}
       {category.children && category.children.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Subcategories</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <h3 className="t-heading text-fg mb-4">Subcategories</h3>
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
               {category.children.map((child: any) => (
@@ -141,19 +137,18 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
                     </span>
                     <div className="flex items-center gap-2 mt-0.5">
                       {child._count.models > 0 && (
-                        <span className="text-xs text-muted-foreground">{child._count.models} models</span>
+                        <span className="text-xs text-fg-3">{child._count.models} models</span>
                       )}
                       {child._count.kits > 0 && (
-                        <span className="text-xs text-muted-foreground">{child._count.kits} kits</span>
+                        <span className="text-xs text-fg-3">{child._count.kits} kits</span>
                       )}
                     </div>
                   </div>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  <ChevronRight className="h-4 w-4 text-fg-3" />
                 </Link>
               ))}
             </div>
-          </CardContent>
-        </Card>
+        </div>
       )}
 
       {/* Models & Kits tabs */}
@@ -169,8 +164,7 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
 
         <TabsContent value="models">
           {category.models && category.models.length > 0 ? (
-            <Card>
-              <CardContent className="p-0">
+            <div className="rounded-lg bg-bg-surface surface-ring overflow-hidden">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -202,10 +196,10 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
                               {model.name}
                             </Link>
                           </TableCell>
-                          <TableCell className="hidden sm:table-cell text-muted-foreground">
+                          <TableCell className="hidden sm:table-cell text-fg-3">
                             {model.manufacturer || "\u2014"}
                           </TableCell>
-                          <TableCell className="hidden md:table-cell text-muted-foreground">
+                          <TableCell className="hidden md:table-cell text-fg-3">
                             {model.modelNumber || "\u2014"}
                           </TableCell>
                           <TableCell className="text-right">
@@ -216,8 +210,7 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
                     })}
                   </TableBody>
                 </Table>
-              </CardContent>
-            </Card>
+            </div>
           ) : (
             <EmptyState
               preset="models"
@@ -230,8 +223,7 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
 
         <TabsContent value="kits">
           {category.kits && category.kits.length > 0 ? (
-            <Card>
-              <CardContent className="p-0">
+            <div className="rounded-lg bg-bg-surface surface-ring overflow-hidden">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -255,7 +247,7 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
                               {kit.name}
                             </Link>
                           </TableCell>
-                          <TableCell className="hidden sm:table-cell text-muted-foreground">
+                          <TableCell className="hidden sm:table-cell text-fg-3">
                             {kit.assetTag || "\u2014"}
                           </TableCell>
                           <TableCell className="hidden md:table-cell">
@@ -273,8 +265,7 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
                     })}
                   </TableBody>
                 </Table>
-              </CardContent>
-            </Card>
+            </div>
           ) : (
             <EmptyState
               preset="kits"

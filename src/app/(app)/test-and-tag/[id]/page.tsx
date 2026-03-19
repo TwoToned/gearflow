@@ -14,7 +14,6 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -30,8 +29,8 @@ function StatusBadge({ status }: { status: string }) {
     DUE_SOON: { label: "Due Soon", className: "bg-amber-500/15 text-amber-600 border-amber-500/30" },
     OVERDUE: { label: "Overdue", className: "bg-red-500/15 text-red-600 border-red-500/30" },
     FAILED: { label: "Failed", className: "bg-red-500/15 text-red-600 border-red-500/30 border-dashed" },
-    NOT_YET_TESTED: { label: "Not Tested", className: "bg-muted text-muted-foreground" },
-    RETIRED: { label: "Retired", className: "bg-muted text-muted-foreground opacity-60" },
+    NOT_YET_TESTED: { label: "Not Tested", className: "bg-muted text-fg-3" },
+    RETIRED: { label: "Retired", className: "bg-muted text-fg-3 opacity-60" },
   };
   const { label, className } = map[status] || { label: status, className: "" };
   return <Badge variant="outline" className={className}>{label}</Badge>;
@@ -67,8 +66,8 @@ function formatDate(date: Date | string | null | undefined) {
 function resultBadge(result: string) {
   if (result === "PASS") return <Badge className="bg-green-600/20 text-green-400 border-green-600/30">Pass</Badge>;
   if (result === "FAIL") return <Badge variant="destructive">Fail</Badge>;
-  if (result === "NOT_APPLICABLE") return <span className="text-muted-foreground text-xs">N/A</span>;
-  return <span className="text-muted-foreground text-xs">{result}</span>;
+  if (result === "NOT_APPLICABLE") return <span className="text-fg-3 text-xs">N/A</span>;
+  return <span className="text-fg-3 text-xs">{result}</span>;
 }
 
 export default function TestTagDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -106,14 +105,14 @@ export default function TestTagDetailPage({ params }: { params: Promise<{ id: st
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <Loader2 className="h-6 w-6 animate-spin text-fg-3" />
       </div>
     );
   }
 
   if (error || !item) {
     return (
-      <div className="py-20 text-center text-muted-foreground">
+      <div className="py-20 text-center text-fg-3">
         {error ? error.message : "Test tag asset not found"}
       </div>
     );
@@ -129,7 +128,7 @@ export default function TestTagDetailPage({ params }: { params: Promise<{ id: st
             <h1 className="t-title text-fg">{item.testTagId}</h1>
             <StatusBadge status={item.status} />
           </div>
-          <p className="text-muted-foreground">{item.description}</p>
+          <p className="text-fg-3">{item.description}</p>
         </div>
         <div className="flex items-center gap-2">
           <CanDo resource="testTag" action="update">
@@ -175,52 +174,49 @@ export default function TestTagDetailPage({ params }: { params: Promise<{ id: st
         </div>
       </div>
 
-      {/* Details Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Details</CardTitle>
-        </CardHeader>
-        <CardContent>
+      {/* Details */}
+      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <h3 className="t-heading text-fg mb-4">Details</h3>
           <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div>
-              <dt className="text-sm text-muted-foreground">Equipment Class</dt>
+              <dt className="text-sm text-fg-3">Equipment Class</dt>
               <dd className="font-medium">{equipmentClassLabels[item.equipmentClass] || item.equipmentClass}</dd>
             </div>
             <div>
-              <dt className="text-sm text-muted-foreground">Appliance Type</dt>
+              <dt className="text-sm text-fg-3">Appliance Type</dt>
               <dd className="font-medium">{applianceTypeLabels[item.applianceType] || item.applianceType}</dd>
             </div>
             <div>
-              <dt className="text-sm text-muted-foreground">Make</dt>
+              <dt className="text-sm text-fg-3">Make</dt>
               <dd className="font-medium">{item.make || "\u2014"}</dd>
             </div>
             <div>
-              <dt className="text-sm text-muted-foreground">Model</dt>
+              <dt className="text-sm text-fg-3">Model</dt>
               <dd className="font-medium">{item.modelName || "\u2014"}</dd>
             </div>
             <div>
-              <dt className="text-sm text-muted-foreground">Serial Number</dt>
+              <dt className="text-sm text-fg-3">Serial Number</dt>
               <dd className="font-medium">{item.serialNumber || "\u2014"}</dd>
             </div>
             <div>
-              <dt className="text-sm text-muted-foreground">Location</dt>
+              <dt className="text-sm text-fg-3">Location</dt>
               <dd className="font-medium">{item.location || "\u2014"}</dd>
             </div>
             <div>
-              <dt className="text-sm text-muted-foreground">Test Interval</dt>
+              <dt className="text-sm text-fg-3">Test Interval</dt>
               <dd className="font-medium">{item.testIntervalMonths} months</dd>
             </div>
             <div>
-              <dt className="text-sm text-muted-foreground">Next Due Date</dt>
+              <dt className="text-sm text-fg-3">Next Due Date</dt>
               <dd className="font-medium">{formatDate(item.nextDueDate)}</dd>
             </div>
             <div>
-              <dt className="text-sm text-muted-foreground">Last Tested</dt>
+              <dt className="text-sm text-fg-3">Last Tested</dt>
               <dd className="font-medium">{formatDate(item.lastTestDate)}</dd>
             </div>
             {item.asset && (
               <div>
-                <dt className="text-sm text-muted-foreground">Linked Asset</dt>
+                <dt className="text-sm text-fg-3">Linked Asset</dt>
                 <dd>
                   <Link
                     href={`/assets/registry/${item.asset.id}`}
@@ -234,7 +230,7 @@ export default function TestTagDetailPage({ params }: { params: Promise<{ id: st
             )}
             {item.bulkAsset && (
               <div>
-                <dt className="text-sm text-muted-foreground">Linked Bulk Asset</dt>
+                <dt className="text-sm text-fg-3">Linked Bulk Asset</dt>
                 <dd>
                   <Link
                     href={`/assets/registry/${item.bulkAsset.id}?type=bulk`}
@@ -246,15 +242,11 @@ export default function TestTagDetailPage({ params }: { params: Promise<{ id: st
               </div>
             )}
           </dl>
-        </CardContent>
-      </Card>
+      </div>
 
       {/* Test History */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Test History ({item._count.testRecords})</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <h3 className="t-heading text-fg mb-4">Test History ({item._count.testRecords})</h3>
           {item.testRecords.length === 0 ? (
             <EmptyState preset="maintenance" heading="No test records" description="Record the first test to start tracking compliance." />
           ) : (
@@ -295,7 +287,7 @@ export default function TestTagDetailPage({ params }: { params: Promise<{ id: st
                       <TableCell>{resultBadge(record.insulationResult)}</TableCell>
                       <TableCell>{resultBadge(record.leakageCurrentResult)}</TableCell>
                       <TableCell>{resultBadge(record.result)}</TableCell>
-                      <TableCell className="max-w-48 truncate text-xs text-muted-foreground">
+                      <TableCell className="max-w-48 truncate text-xs text-fg-3">
                         {record.failureNotes || record.functionalTestNotes || record.visualNotes || "\u2014"}
                       </TableCell>
                     </TableRow>
@@ -304,8 +296,7 @@ export default function TestTagDetailPage({ params }: { params: Promise<{ id: st
               </Table>
             </div>
           )}
-        </CardContent>
-      </Card>
+      </div>
     </div>
     </RequirePermission>
   );

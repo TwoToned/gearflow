@@ -29,7 +29,6 @@ import { NotesEditor } from "@/components/ui/notes-editor";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MediaUploader, type MediaItem } from "@/components/media/media-uploader";
 import {
@@ -83,7 +82,7 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
   }
 
   if (!location) {
-    return <div className="text-muted-foreground py-12 text-center">Location not found.</div>;
+    return <div className="text-fg-3 py-12 text-center">Location not found.</div>;
   }
 
   const assetCount = (location._count?.assets || 0) + (location._count?.bulkAssets || 0) + (location._count?.kits || 0);
@@ -101,7 +100,7 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
               <Star className="h-4 w-4 fill-amber-500 text-amber-500" />
             )}
           </div>
-          <p className="text-muted-foreground">
+          <p className="text-fg-3">
             {location.address || "No address"}
             {location.parent && <> &middot; Sub-location of {location.parent.name}</>}
           </p>
@@ -134,69 +133,50 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
 
       {/* Info Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Assets</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+          <p className="text-[13px] font-medium text-fg-3 mb-3">Assets</p>
             <div className="flex items-center gap-2">
-              <Package className="h-4 w-4 text-muted-foreground" />
+              <Package className="h-4 w-4 text-fg-3" />
               <span className="text-2xl font-bold">{location._count?.assets || 0}</span>
-              <span className="text-sm text-muted-foreground">serialized</span>
+              <span className="text-sm text-fg-3">serialized</span>
             </div>
-          </CardContent>
-        </Card>
+        </div>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Bulk Assets</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+          <p className="text-[13px] font-medium text-fg-3 mb-3">Bulk Assets</p>
             <div className="flex items-center gap-2">
-              <Boxes className="h-4 w-4 text-muted-foreground" />
+              <Boxes className="h-4 w-4 text-fg-3" />
               <span className="text-2xl font-bold">{location._count?.bulkAssets || 0}</span>
-              <span className="text-sm text-muted-foreground">types</span>
+              <span className="text-sm text-fg-3">types</span>
             </div>
-          </CardContent>
-        </Card>
+        </div>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Kits</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+          <p className="text-[13px] font-medium text-fg-3 mb-3">Kits</p>
             <div className="flex items-center gap-2">
-              <Container className="h-4 w-4 text-muted-foreground" />
+              <Container className="h-4 w-4 text-fg-3" />
               <span className="text-2xl font-bold">{location._count?.kits || 0}</span>
             </div>
-          </CardContent>
-        </Card>
+        </div>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Projects</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+          <p className="text-[13px] font-medium text-fg-3 mb-3">Projects</p>
             <div className="flex items-center gap-2">
-              <FolderOpen className="h-4 w-4 text-muted-foreground" />
+              <FolderOpen className="h-4 w-4 text-fg-3" />
               <span className="text-2xl font-bold">{location._count?.projects || 0}</span>
             </div>
-          </CardContent>
-        </Card>
+        </div>
       </div>
 
       {/* Sub-locations */}
       {location.children && location.children.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <h3 className="t-heading text-fg mb-4">
               <div className="flex items-center gap-2">
                 <MapPin className="h-4 w-4" />
                 Sub-locations ({location.children.length})
               </div>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+          </h3>
             <div className="space-y-1">
               {location.children.map((child: { id: string; name: string; _count?: { assets?: number; bulkAssets?: number } }) => (
                 <Link
@@ -205,14 +185,13 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
                   className="flex items-center justify-between rounded-md border px-3 py-2 hover:bg-accent/50"
                 >
                   <span className="text-sm font-medium">{child.name}</span>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-xs text-fg-3">
                     {(child._count?.assets || 0) + (child._count?.bulkAssets || 0)} assets
                   </span>
                 </Link>
               ))}
             </div>
-          </CardContent>
-        </Card>
+        </div>
       )}
 
       {/* Tabs */}
@@ -231,16 +210,13 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
         </TabsList>
 
         <TabsContent value="assets" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">
+          <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+            <h3 className="t-heading text-fg mb-4">
                 <div className="flex items-center gap-2">
                   <Package className="h-4 w-4" />
                   Assets at this Location
                 </div>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
+            </h3>
               {(location.assets?.length || 0) === 0 && (location.bulkAssets?.length || 0) === 0 && (location.kits?.length || 0) === 0 ? (
                 <EmptyState preset="assets" heading="No assets here" description="Assets checked in to this location will appear here." />
               ) : (
@@ -307,21 +283,17 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
                   </Table>
                 </div>
               )}
-            </CardContent>
-          </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="projects" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">
+          <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+            <h3 className="t-heading text-fg mb-4">
                 <div className="flex items-center gap-2">
                   <FolderOpen className="h-4 w-4" />
                   Projects at this Location
                 </div>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
+            </h3>
               {(location.projects?.length || 0) === 0 ? (
                 <EmptyState preset="projects" heading="No projects here" description="Projects using this as a venue or delivery address will appear here." />
               ) : (
@@ -345,13 +317,13 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
                             </Link>
                           </TableCell>
                           <TableCell>{project.name}</TableCell>
-                          <TableCell className="text-muted-foreground">{project.client?.name || "\u2014"}</TableCell>
+                          <TableCell className="text-fg-3">{project.client?.name || "\u2014"}</TableCell>
                           <TableCell>
                             <Badge variant="outline" className={projectStatusColors[project.status] || ""}>
                               {projectStatusLabels[project.status] || formatLabel(project.status)}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-muted-foreground">
+                          <TableCell className="text-fg-3">
                             {new Date(project.createdAt).toLocaleDateString()}
                           </TableCell>
                         </TableRow>
@@ -360,8 +332,7 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
                   </Table>
                 </div>
               )}
-            </CardContent>
-          </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="notes" className="mt-4">
@@ -374,11 +345,8 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
         </TabsContent>
 
         <TabsContent value="files" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Files</CardTitle>
-            </CardHeader>
-            <CardContent>
+          <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+            <h3 className="t-heading text-fg mb-4">Files</h3>
               <MediaUploader
                 entityType="location"
                 entityId={id}
@@ -395,8 +363,7 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
                   await removeLocationMedia(mediaId);
                 }}
               />
-            </CardContent>
-          </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

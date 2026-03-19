@@ -85,7 +85,6 @@ import { CanDo } from "@/components/auth/permission-gate";
 import { useCanDo } from "@/lib/use-permissions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -413,7 +412,7 @@ export default function CrewMemberDetailPage({
   if (isLoading)
     return <DetailPageSkeleton />;
   if (!member)
-    return <div className="py-20 text-center text-muted-foreground">Crew member not found.</div>;
+    return <div className="py-20 text-center text-fg-3">Crew member not found.</div>;
 
   const isOwnProfile = !!(member as { isOwnProfile?: boolean }).isOwnProfile;
 
@@ -422,7 +421,7 @@ export default function CrewMemberDetailPage({
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
         <h2 className="text-xl font-semibold">Access Denied</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
+        <p className="mt-2 text-sm text-fg-3">
           You don&apos;t have permission to access this page.
         </p>
       </div>
@@ -519,12 +518,12 @@ export default function CrewMemberDetailPage({
                   {crewMemberTypeLabels[member.type] || formatLabel(member.type)}
                 </Badge>
               </div>
-              <p className="text-muted-foreground">
+              <p className="text-fg-3">
                 {member.crewRole?.name || "No role assigned"}
                 {member.department && <> &middot; {member.department}</>}
               </p>
               {member.user && !isOwnProfile && (
-                <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                <p className="text-xs text-fg-3 mt-1 flex items-center gap-1">
                   <LinkIcon className="h-3 w-3" />
                   Linked to {member.user.name || member.user.email}
                 </p>
@@ -563,15 +562,11 @@ export default function CrewMemberDetailPage({
 
         {/* Info Cards */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Contact
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
+          <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+            <p className="text-[13px] font-medium text-fg-3 mb-3">Contact</p>
+            <div className="space-y-2 text-sm">
               {displayEmail && (
-                <div className="flex items-center gap-2 text-muted-foreground">
+                <div className="flex items-center gap-2 text-fg-3">
                   <Mail className="h-3.5 w-3.5" />
                   <a
                     href={`mailto:${displayEmail}`}
@@ -582,7 +577,7 @@ export default function CrewMemberDetailPage({
                 </div>
               )}
               {member.phone && (
-                <div className="flex items-center gap-2 text-muted-foreground">
+                <div className="flex items-center gap-2 text-fg-3">
                   <Phone className="h-3.5 w-3.5" />
                   <a href={`tel:${member.phone}`} className="hover:underline">
                     {member.phone}
@@ -590,23 +585,19 @@ export default function CrewMemberDetailPage({
                 </div>
               )}
               {member.address && (
-                <p className="text-sm text-muted-foreground mt-2 whitespace-pre-wrap">
+                <p className="text-sm text-fg-3 mt-2 whitespace-pre-wrap">
                   {member.address}
                 </p>
               )}
               {!displayEmail && !member.phone && !member.address && (
-                <p className="text-muted-foreground">No contact info</p>
+                <p className="text-fg-3">No contact info</p>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Rates
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-1 text-sm">
+          <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+            <p className="text-[13px] font-medium text-fg-3 mb-3">Rates</p>
+            <div className="space-y-1 text-sm">
               <div className="flex justify-between">
                 <span>Day Rate</span>
                 <span className="font-medium">
@@ -631,21 +622,17 @@ export default function CrewMemberDetailPage({
                     : "\u2014"}
                 </span>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Emergency Contact
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-1 text-sm">
+          <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+            <p className="text-[13px] font-medium text-fg-3 mb-3">Emergency Contact</p>
+            <div className="space-y-1 text-sm">
               {member.emergencyContactName ? (
                 <>
                   <p className="font-medium">{member.emergencyContactName}</p>
                   {member.emergencyContactPhone && (
-                    <div className="flex items-center gap-2 text-muted-foreground">
+                    <div className="flex items-center gap-2 text-fg-3">
                       <Phone className="h-3.5 w-3.5" />
                       <a
                         href={`tel:${member.emergencyContactPhone}`}
@@ -657,16 +644,16 @@ export default function CrewMemberDetailPage({
                   )}
                 </>
               ) : (
-                <p className="text-muted-foreground">Not set</p>
+                <p className="text-fg-3">Not set</p>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
 
         {/* Skills */}
         <div>
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-medium text-muted-foreground">
+            <h3 className="text-sm font-medium text-fg-3">
               Skills
             </h3>
             <CanDo resource="crew" action="update">
@@ -695,7 +682,7 @@ export default function CrewMemberDetailPage({
               )}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-fg-3">
               No skills assigned.{" "}
               <CanDo resource="crew" action="update">
                 <Link
@@ -722,16 +709,10 @@ export default function CrewMemberDetailPage({
 
         {/* Notes */}
         {member.notes && (
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Notes
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm whitespace-pre-wrap">{member.notes}</p>
-            </CardContent>
-          </Card>
+          <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+            <p className="text-[13px] font-medium text-fg-3 mb-3">Notes</p>
+            <p className="text-sm whitespace-pre-wrap">{member.notes}</p>
+          </div>
         )}
 
         {/* Tabs */}
@@ -754,15 +735,10 @@ export default function CrewMemberDetailPage({
 
           {/* Assignments Tab */}
           <TabsContent value="assignments" className="mt-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  Project Assignments
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
+            <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+              <h3 className="t-heading text-fg mb-4">Project Assignments</h3>
                 {assignments.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">
+                  <p className="text-sm text-fg-3 text-center py-4">
                     No project assignments yet.
                   </p>
                 ) : (
@@ -822,10 +798,10 @@ export default function CrewMemberDetailPage({
                                   className="font-medium hover:underline"
                                 >
                                   <div className="flex items-center gap-2">
-                                    <Briefcase className="h-3.5 w-3.5 text-muted-foreground" />
+                                    <Briefcase className="h-3.5 w-3.5 text-fg-3" />
                                     <div>
                                       <div>{a.project.name}</div>
-                                      <div className="text-xs text-muted-foreground font-mono">
+                                      <div className="text-xs text-fg-3 font-mono">
                                         {a.project.projectNumber}
                                       </div>
                                     </div>
@@ -849,7 +825,7 @@ export default function CrewMemberDetailPage({
                                     {a.crewRole.name}
                                   </Badge>
                                 ) : (
-                                  <span className="text-muted-foreground">
+                                  <span className="text-fg-3">
                                     {"\u2014"}
                                   </span>
                                 )}
@@ -941,17 +917,14 @@ export default function CrewMemberDetailPage({
                     </Table>
                   </div>
                 )}
-              </CardContent>
-            </Card>
+            </div>
           </TabsContent>
 
           {/* Availability Tab */}
           <TabsContent value="availability" className="mt-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="text-base">
-                  Availability Blocks
-                </CardTitle>
+            <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="t-heading text-fg">Availability Blocks</h3>
                 <CanDo resource="crew" action="update">
                   <Button
                     size="sm"
@@ -962,10 +935,9 @@ export default function CrewMemberDetailPage({
                     Add Block
                   </Button>
                 </CanDo>
-              </CardHeader>
-              <CardContent>
+              </div>
                 {!availabilityRecords || availabilityRecords.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">
+                  <p className="text-sm text-fg-3 text-center py-4">
                     No availability blocks set. Add blocks to indicate when this
                     crew member is unavailable, tentative, or preferred.
                   </p>
@@ -1016,12 +988,12 @@ export default function CrewMemberDetailPage({
                                   ? ` \u2013 ${formatDate(av.endDate)}`
                                   : ""}
                               </TableCell>
-                              <TableCell className="text-sm text-muted-foreground hidden md:table-cell">
+                              <TableCell className="text-sm text-fg-3 hidden md:table-cell">
                                 {av.isAllDay
                                   ? "All Day"
                                   : `${av.startTime || ""} \u2013 ${av.endTime || ""}`}
                               </TableCell>
-                              <TableCell className="text-sm text-muted-foreground hidden md:table-cell">
+                              <TableCell className="text-sm text-fg-3 hidden md:table-cell">
                                 {av.reason || "\u2014"}
                               </TableCell>
                               <TableCell>
@@ -1050,17 +1022,14 @@ export default function CrewMemberDetailPage({
                     </Table>
                   </div>
                 )}
-              </CardContent>
-            </Card>
+            </div>
           </TabsContent>
 
           {/* Certifications Tab */}
           <TabsContent value="certifications" className="mt-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="text-base">
-                  Certifications & Qualifications
-                </CardTitle>
+            <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="t-heading text-fg">Certifications & Qualifications</h3>
                 <CanDo resource="crew" action="update">
                   <Button
                     size="sm"
@@ -1071,10 +1040,9 @@ export default function CrewMemberDetailPage({
                     Add Certification
                   </Button>
                 </CanDo>
-              </CardHeader>
-              <CardContent>
+              </div>
                 {certifications.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">
+                  <p className="text-sm text-fg-3 text-center py-4">
                     No certifications recorded.
                   </p>
                 ) : (
@@ -1112,20 +1080,20 @@ export default function CrewMemberDetailPage({
                               <TableCell className="font-medium">
                                 {cert.name}
                               </TableCell>
-                              <TableCell className="text-muted-foreground hidden md:table-cell">
+                              <TableCell className="text-fg-3 hidden md:table-cell">
                                 {cert.issuedBy || "\u2014"}
                               </TableCell>
-                              <TableCell className="text-muted-foreground hidden md:table-cell font-mono text-sm">
+                              <TableCell className="text-fg-3 hidden md:table-cell font-mono text-sm">
                                 {cert.certificateNumber || "\u2014"}
                               </TableCell>
-                              <TableCell className="text-muted-foreground hidden md:table-cell">
+                              <TableCell className="text-fg-3 hidden md:table-cell">
                                 {cert.issuedDate
                                   ? new Date(
                                       cert.issuedDate
                                     ).toLocaleDateString()
                                   : "\u2014"}
                               </TableCell>
-                              <TableCell className="text-muted-foreground">
+                              <TableCell className="text-fg-3">
                                 {cert.expiryDate
                                   ? new Date(
                                       cert.expiryDate
@@ -1169,19 +1137,18 @@ export default function CrewMemberDetailPage({
                     </Table>
                   </div>
                 )}
-              </CardContent>
-            </Card>
+            </div>
           </TabsContent>
 
           {/* Calendar Tab */}
           {/* Time Entries Tab */}
           <TabsContent value="time-entries" className="mt-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="text-base flex items-center gap-2">
+            <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="t-heading text-fg flex items-center gap-2">
                   <Clock className="h-4 w-4" />
                   Time Entries
-                </CardTitle>
+                </h3>
                 <div className="flex gap-2">
                   {timeEntries && timeEntries.length > 0 && (
                     <Button
@@ -1261,10 +1228,9 @@ export default function CrewMemberDetailPage({
                     </Button>
                   </CanDo>
                 </div>
-              </CardHeader>
-              <CardContent>
+              </div>
                 {!timeEntries || timeEntries.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-4 text-center">
+                  <p className="text-sm text-fg-3 py-4 text-center">
                     No time entries recorded yet.
                   </p>
                 ) : (
@@ -1296,7 +1262,7 @@ export default function CrewMemberDetailPage({
                                 {entry.assignment.project?.name}
                               </>
                             ) : (
-                              <span className="text-muted-foreground italic">
+                              <span className="text-fg-3 italic">
                                 {entry.description || "General"}
                               </span>
                             )}
@@ -1405,20 +1371,17 @@ export default function CrewMemberDetailPage({
                     </TableBody>
                   </Table>
                 )}
-              </CardContent>
-            </Card>
+            </div>
           </TabsContent>
 
           <TabsContent value="calendar" className="mt-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <CalendarSync className="h-4 w-4" />
-                  iCal Feed
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground">
+            <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+              <h3 className="t-heading text-fg flex items-center gap-2 mb-4">
+                <CalendarSync className="h-4 w-4" />
+                iCal Feed
+              </h3>
+              <div className="space-y-4">
+                <p className="text-sm text-fg-3">
                   Enable an iCal feed URL that can be subscribed to from Google
                   Calendar, Apple Calendar, Outlook, or any calendar app. The
                   feed includes all confirmed assignments.
@@ -1427,7 +1390,7 @@ export default function CrewMemberDetailPage({
                 {icalSettings?.icalEnabled && icalSettings?.icalToken ? (
                   <div className="space-y-3">
                     <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground">
+                      <Label className="text-xs text-fg-3">
                         Feed URL
                       </Label>
                       <div className="flex gap-2">
@@ -1496,8 +1459,8 @@ export default function CrewMemberDetailPage({
                     </Button>
                   </CanDo>
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           </TabsContent>
         </Tabs>
       </div>

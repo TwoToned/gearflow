@@ -21,7 +21,6 @@ import {
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -136,13 +135,13 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
   if (isLoading) return <DetailPageSkeleton />;
 
   if (isBulk) {
-    if (!bulkQuery.data) return <div className="text-muted-foreground py-12 text-center">Bulk asset not found.</div>;
-    return <div className="text-muted-foreground">Redirecting to model...</div>;
+    if (!bulkQuery.data) return <div className="text-fg-3 py-12 text-center">Bulk asset not found.</div>;
+    return <div className="text-fg-3">Redirecting to model...</div>;
   }
 
   // ─── Serialized Asset Detail ─────────────────────────────────────────
   const asset = assetQuery.data;
-  if (!asset) return <div className="text-muted-foreground py-12 text-center">Asset not found.</div>;
+  if (!asset) return <div className="text-fg-3 py-12 text-center">Asset not found.</div>;
 
   const assetPhotos = ((asset.media || []) as MediaItem[]).filter((m) => m.type === "PHOTO");
   const photoUrl = resolveAssetPhotoUrl(asset, false);
@@ -166,7 +165,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
             <StatusIndicator category="asset" value={asset.status} label={assetStatusLabels[asset.status] || formatLabel(asset.status)} />
             <StatusIndicator category="condition" value={asset.condition} label={conditionLabels[asset.condition] || asset.condition} />
           </div>
-          <p className="text-muted-foreground truncate">
+          <p className="text-fg-3 truncate">
             {asset.customName && <>{asset.customName} &middot; </>}
             <Link href={`/assets/models/${asset.modelId}`} className="hover:underline">
               {asset.model.name}
@@ -234,11 +233,9 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
         <TabsContent value="details" className="space-y-4 mt-4">
           <BookingCalendar entityType="asset" entityId={id} modelId={asset.modelId} initialDate={initialDate} />
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-muted-foreground">Identity</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1 text-sm">
+            <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+              <p className="text-[13px] font-medium text-fg-3 mb-3">Identity</p>
+                <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span>Asset Tag</span>
                   <span className="font-mono font-medium">{asset.assetTag}</span>
@@ -255,13 +252,11 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   <span>Barcode</span>
                   <span className="font-mono font-medium">{asset.barcode || "—"}</span>
                 </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-muted-foreground">Purchase</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1 text-sm">
+              </div>
+            </div>
+            <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+              <p className="text-[13px] font-medium text-fg-3 mb-3">Purchase</p>
+                <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span>Date</span>
                   <span className="font-medium">{formatDate(asset.purchaseDate)}</span>
@@ -280,13 +275,11 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   <span>Warranty</span>
                   <span className="font-medium">{formatDate(asset.warrantyExpiry)}</span>
                 </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-muted-foreground">Test & Tag</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1 text-sm">
+              </div>
+            </div>
+            <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+              <p className="text-[13px] font-medium text-fg-3 mb-3">Test & Tag</p>
+                <div className="space-y-1 text-sm">
                 {asset.testTagAsset ? (
                   <>
                     <div className="flex justify-between">
@@ -312,7 +305,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   </>
                 ) : (
                   <>
-                    <p className="text-muted-foreground">Not registered</p>
+                    <p className="text-fg-3">Not registered</p>
                     {asset.model?.requiresTestAndTag && (
                       <Button
                         variant="outline"
@@ -325,19 +318,19 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     )}
                   </>
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           </div>
 
         </TabsContent>
 
         <TabsContent value="history" className="mt-4">
           {asset.lineItems.length === 0 ? (
-            <Card>
-              <CardContent className="py-8 text-center text-sm text-muted-foreground">
+            <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+              <p className="py-8 text-center text-sm text-fg-3">
                 This asset hasn&apos;t been assigned to any projects yet.
-              </CardContent>
-            </Card>
+              </p>
+            </div>
           ) : (
             <div className="rounded-md border overflow-x-auto">
               <Table>
@@ -356,7 +349,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                         <Link href={`/projects/${li.projectId}`} className="hover:underline">
                           {li.project.name}
                         </Link>
-                        <p className="text-xs text-muted-foreground">{li.project.projectNumber}</p>
+                        <p className="text-xs text-fg-3">{li.project.projectNumber}</p>
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline">{lineItemStatusLabels[li.status] || formatLabel(li.status)}</Badge>
@@ -373,11 +366,11 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
 
         <TabsContent value="maintenance" className="mt-4">
           {asset.maintenanceLinks.length === 0 ? (
-            <Card>
-              <CardContent className="py-8 text-center text-sm text-muted-foreground">
+            <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+              <p className="py-8 text-center text-sm text-fg-3">
                 No maintenance records for this asset.
-              </CardContent>
-            </Card>
+              </p>
+            </div>
           ) : (
             <div className="rounded-md border overflow-x-auto">
               <Table>
@@ -431,23 +424,20 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
         </TabsContent>
 
         <TabsContent value="photos" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">
+          <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+            <h3 className="t-heading text-fg mb-4">
                 Asset Photos
                 {!hasCustomPhoto && photoUrl && (
-                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  <span className="ml-2 text-xs font-normal text-fg-3">
                     Showing model photo — upload a custom photo to override
                   </span>
                 )}
                 {hasCustomPhoto && (
-                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  <span className="ml-2 text-xs font-normal text-fg-3">
                     Custom photo — remove to revert to model photo
                   </span>
                 )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
+            </h3>
               <MediaUploader
                 entityType="asset"
                 entityId={id}
@@ -468,26 +458,22 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   await setAssetPrimaryPhoto(id, mediaId);
                 }}
               />
-            </CardContent>
-          </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="documents" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">
+          <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+            <h3 className="t-heading text-fg mb-4">
                 Model Documents
-                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                <span className="ml-2 text-xs font-normal text-fg-3">
                   From {asset.model.name} — manage on the model page
                 </span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
+            </h3>
               {(() => {
                 const modelDocs = (asset.model?.media || []).filter((m: MediaItem) => m.type !== "PHOTO");
                 if (modelDocs.length === 0) {
                   return (
-                    <p className="text-sm text-muted-foreground py-4 text-center">
+                    <p className="text-sm text-fg-3 py-4 text-center">
                       No documents attached to this model.
                     </p>
                   );
@@ -502,12 +488,12 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                         rel="noopener noreferrer"
                         className="flex items-center gap-3 rounded-lg border p-3 hover:bg-accent/50 transition-colors"
                       >
-                        <FileText className="h-5 w-5 text-muted-foreground" />
+                        <FileText className="h-5 w-5 text-fg-3" />
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium">
                             {doc.displayName || doc.file.fileName}
                           </p>
-                          <p className="text-xs text-muted-foreground">
+                          <p className="text-xs text-fg-3">
                             {mediaTypeLabels[doc.type] || formatLabel(doc.type)} — {(doc.file.fileSize / 1024).toFixed(0)} KB
                           </p>
                         </div>
@@ -516,8 +502,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   </div>
                 );
               })()}
-            </CardContent>
-          </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="qr" className="mt-4">

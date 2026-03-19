@@ -31,7 +31,6 @@ import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { NotesEditor } from "@/components/ui/notes-editor";
 import { MediaUploader, type MediaItem } from "@/components/media/media-uploader";
 import { MediaThumbnail } from "@/components/media/media-thumbnail";
@@ -216,7 +215,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
   });
 
   if (isLoading) return <DetailPageSkeleton />;
-  if (!kit) return <div className="py-20 text-center text-muted-foreground">Kit not found.</div>;
+  if (!kit) return <div className="py-20 text-center text-fg-3">Kit not found.</div>;
 
   const kitPhotos = ((kit.media || []) as MediaItem[]).filter((m) => m.type === "PHOTO");
   const kitPhotoUrl = resolveKitPhotoUrl(kit, false);
@@ -258,7 +257,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
               <Badge variant="secondary">{kit.caseType}</Badge>
             )}
           </div>
-          <p className="text-muted-foreground">
+          <p className="text-fg-3">
             {kit.name}
             {kit.category && <> &middot; {kit.category.name}</>}
           </p>
@@ -287,11 +286,8 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
       </div>
 
       {/* Kit Info Card */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm text-muted-foreground">Kit Information</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <p className="text-[13px] font-medium text-fg-3 mb-3">Kit Information</p>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-1 text-sm">
               <div className="flex justify-between">
@@ -332,17 +328,14 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
               </div>
             </div>
           </div>
-        </CardContent>
-      </Card>
+      </div>
 
       <BookingCalendar entityType="kit" entityId={id} initialDate={initialDate} />
 
       {/* Contents Card */}
-      <Card id="kit-contents">
-        <CardHeader>
-          <CardTitle className="text-base">Contents</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
+      <div id="kit-contents" className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <h3 className="t-heading text-fg mb-4">Contents</h3>
+        <div className="space-y-6">
           {/* Serialized Items */}
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -380,7 +373,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                           </Link>
                         </TableCell>
                         <TableCell>{item.asset.model.name}</TableCell>
-                        <TableCell className="text-muted-foreground">
+                        <TableCell className="text-fg-3">
                           {item.position || "—"}
                         </TableCell>
                         <TableCell>
@@ -441,7 +434,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                         <TableCell className="text-right font-medium">
                           {item.quantity}
                         </TableCell>
-                        <TableCell className="text-muted-foreground">
+                        <TableCell className="text-fg-3">
                           {item.position || "—"}
                         </TableCell>
                         <TableCell>
@@ -467,15 +460,12 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
               </div>
             )}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* History Card */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm text-muted-foreground">History</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <p className="text-[13px] font-medium text-fg-3 mb-3">History</p>
           {kit.lineItems.length === 0 && kit.scanLogs.length === 0 ? (
             <EmptyState preset="history" />
           ) : (
@@ -500,7 +490,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                               <Link href={`/projects/${li.projectId}`} className="hover:underline">
                                 {li.project.name}
                               </Link>
-                              <p className="text-xs text-muted-foreground">{li.project.projectNumber}</p>
+                              <p className="text-xs text-fg-3">{li.project.projectNumber}</p>
                             </TableCell>
                             <TableCell>
                               <Badge variant="outline">{lineItemStatusLabels[li.status] || formatLabel(li.status)}</Badge>
@@ -550,15 +540,11 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
               )}
             </div>
           )}
-        </CardContent>
-      </Card>
+      </div>
 
       {/* Photos */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Photos ({kitPhotos.length})</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <h3 className="t-heading text-fg mb-4">Photos ({kitPhotos.length})</h3>
           <MediaUploader
             entityType="kit"
             entityId={id}
@@ -579,8 +565,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
               await setKitPrimaryPhoto(id, mediaId);
             }}
           />
-        </CardContent>
-      </Card>
+      </div>
 
       {/* Notes */}
       <NotesEditor
@@ -602,7 +587,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
           <DialogHeader>
             <DialogTitle>Add Items to Kit</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-fg-3">
             Scan a barcode or search for an asset to add it to the list. Repeat for multiple items.
           </p>
           <ScanInput
@@ -621,12 +606,12 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 <div key={item.assetId} className="flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm">
                   <div className="min-w-0 flex-1">
                     <span className="font-mono font-medium">{item.assetTag}</span>
-                    <span className="text-muted-foreground ml-2 break-words">{item.modelName}</span>
+                    <span className="text-fg-3 ml-2 break-words">{item.modelName}</span>
                   </div>
                   <button
                     type="button"
                     onClick={() => setStagedItems((prev) => prev.filter((_, j) => j !== i))}
-                    className="shrink-0 text-muted-foreground hover:text-destructive"
+                    className="shrink-0 text-fg-3 hover:text-destructive"
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -793,7 +778,7 @@ function ScanInput({
     <div className="space-y-2">
       <div className="relative">
         <div className="relative">
-          <ScanBarcode className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <ScanBarcode className="absolute left-2.5 top-2.5 h-4 w-4 text-fg-3" />
           <Input
             ref={inputRef}
             value={search}
@@ -814,7 +799,7 @@ function ScanInput({
           <button
             type="button"
             onClick={() => setCameraOpen((v) => !v)}
-            className={`absolute right-2 top-2 rounded p-0.5 transition-colors ${cameraOpen ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"}`}
+            className={`absolute right-2 top-2 rounded p-0.5 transition-colors ${cameraOpen ? "text-primary bg-primary/10" : "text-fg-3 hover:text-foreground"}`}
           >
             <Camera className="h-4 w-4" />
           </button>
@@ -822,7 +807,7 @@ function ScanInput({
         {showResults && search && (
           <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover shadow-md max-h-48 overflow-y-auto">
             {filtered.length === 0 ? (
-              <div className="px-3 py-4 text-center text-sm text-muted-foreground">
+              <div className="px-3 py-4 text-center text-sm text-fg-3">
                 No matching available assets.
               </div>
             ) : (
@@ -835,7 +820,7 @@ function ScanInput({
                   className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground text-left"
                 >
                   <span className="font-mono font-medium">{asset.assetTag}</span>
-                  <span className="text-muted-foreground">{asset.model.name}</span>
+                  <span className="text-fg-3">{asset.model.name}</span>
                 </button>
               ))
             )}

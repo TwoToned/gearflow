@@ -21,7 +21,7 @@ import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MediaUploader, type MediaItem } from "@/components/media/media-uploader";
 import {
@@ -74,7 +74,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
   }
 
   if (!client) {
-    return <div className="text-muted-foreground py-12 text-center">Client not found.</div>;
+    return <div className="text-fg-3 py-12 text-center">Client not found.</div>;
   }
 
   return (
@@ -89,7 +89,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
             <StatusIndicator category="clientType" value={client.type} label={clientTypeLabels[client.type] || client.type} />
             {!client.isActive && <Badge variant="destructive">Archived</Badge>}
           </div>
-          <p className="text-muted-foreground">
+          <p className="text-[13px] text-fg-3">
             {client.contactName || "No primary contact"}
             {client.contactEmail && <> &middot; {client.contactEmail}</>}
           </p>
@@ -116,39 +116,35 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
 
       {/* Info Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Contact</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
+        <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+          <p className="text-[13px] font-medium text-fg-3 mb-3">Contact</p>
+          <div className="space-y-2 text-sm">
             {client.contactName && (
               <div className="flex items-center gap-2">
                 <span className="font-medium">{client.contactName}</span>
               </div>
             )}
             {client.contactEmail && (
-              <div className="flex items-center gap-2 text-muted-foreground">
+              <div className="flex items-center gap-2 text-fg-3">
                 <Mail className="h-3.5 w-3.5" />
                 <a href={`mailto:${client.contactEmail}`} className="hover:underline">{client.contactEmail}</a>
               </div>
             )}
             {client.contactPhone && (
-              <div className="flex items-center gap-2 text-muted-foreground">
+              <div className="flex items-center gap-2 text-fg-3">
                 <Phone className="h-3.5 w-3.5" />
                 <a href={`tel:${client.contactPhone}`} className="hover:underline">{client.contactPhone}</a>
               </div>
             )}
             {!client.contactName && !client.contactEmail && !client.contactPhone && (
-              <p className="text-muted-foreground">No contact info</p>
+              <p className="text-fg-3">No contact info</p>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Billing</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1 text-sm">
+        <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+          <p className="text-[13px] font-medium text-fg-3 mb-3">Billing</p>
+          <div className="space-y-1 text-sm">
             <div className="flex justify-between">
               <span>ABN</span>
               <span className="font-medium">{client.taxId || "\u2014"}</span>
@@ -163,17 +159,15 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                 {client.defaultDiscount != null ? `${Number(client.defaultDiscount)}%` : "\u2014"}
               </span>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Addresses</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
+        <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+          <p className="text-[13px] font-medium text-fg-3 mb-3">Addresses</p>
+          <div className="space-y-3 text-sm">
             {client.billingAddress && (
               <div>
-                <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
+                <div className="flex items-center gap-1 text-xs text-fg-3 mb-1">
                   <MapPin className="h-3 w-3" />
                   Billing
                 </div>
@@ -188,7 +182,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
             )}
             {client.shippingAddress && (
               <div>
-                <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
+                <div className="flex items-center gap-1 text-xs text-fg-3 mb-1">
                   <MapPin className="h-3 w-3" />
                   Shipping
                 </div>
@@ -202,10 +196,10 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
               </div>
             )}
             {!client.billingAddress && !client.shippingAddress && (
-              <p className="text-muted-foreground">No addresses</p>
+              <p className="text-fg-3">No addresses</p>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -221,56 +215,52 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
         </TabsList>
 
         <TabsContent value="projects" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">
-                <div className="flex items-center gap-2">
-                  <FileText className="h-4 w-4" />
-                  Recent Projects
-                </div>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {client.projects.length === 0 ? (
-                <EmptyState preset="projects" heading="No projects yet" description="Projects for this client will appear here." />
-              ) : (
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Project #</TableHead>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Line Items</TableHead>
-                        <TableHead>Created</TableHead>
+          <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+            <h3 className="t-heading text-fg mb-4">
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4" />
+                Recent Projects
+              </div>
+            </h3>
+            {client.projects.length === 0 ? (
+              <EmptyState preset="projects" heading="No projects yet" description="Projects for this client will appear here." />
+            ) : (
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Project #</TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Line Items</TableHead>
+                      <TableHead>Created</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {client.projects.map((project) => (
+                      <TableRow key={project.id}>
+                        <TableCell>
+                          <Link href={`/projects/${project.id}`} className="font-mono text-sm font-medium hover:underline">
+                            {project.projectNumber}
+                          </Link>
+                        </TableCell>
+                        <TableCell>{project.name}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={projectStatusColors[project.status] || ""}>
+                            {projectStatusLabels[project.status] || formatLabel(project.status)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">{project._count.lineItems}</TableCell>
+                        <TableCell className="text-fg-3">
+                          {new Date(project.createdAt).toLocaleDateString()}
+                        </TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {client.projects.map((project) => (
-                        <TableRow key={project.id}>
-                          <TableCell>
-                            <Link href={`/projects/${project.id}`} className="font-mono text-sm font-medium hover:underline">
-                              {project.projectNumber}
-                            </Link>
-                          </TableCell>
-                          <TableCell>{project.name}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={projectStatusColors[project.status] || ""}>
-                              {projectStatusLabels[project.status] || formatLabel(project.status)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">{project._count.lineItems}</TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {new Date(project.createdAt).toLocaleDateString()}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
         </TabsContent>
 
         <TabsContent value="notes" className="mt-4">
@@ -283,29 +273,25 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
         </TabsContent>
 
         <TabsContent value="files" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Files</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <MediaUploader
-                entityType="client"
-                entityId={id}
-                accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,image/*"
-                existingMedia={(client.media || []).map((m: MediaItem) => m)}
-                queryKey={["client", orgId, id]}
-                onUploadComplete={async (fileUpload) => {
-                  await addClientMedia({
-                    clientId: id,
-                    fileId: fileUpload.id,
-                  });
-                }}
-                onRemove={async (mediaId) => {
-                  await removeClientMedia(mediaId);
-                }}
-              />
-            </CardContent>
-          </Card>
+          <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+            <h3 className="t-heading text-fg mb-4">Files</h3>
+            <MediaUploader
+              entityType="client"
+              entityId={id}
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,image/*"
+              existingMedia={(client.media || []).map((m: MediaItem) => m)}
+              queryKey={["client", orgId, id]}
+              onUploadComplete={async (fileUpload) => {
+                await addClientMedia({
+                  clientId: id,
+                  fileId: fileUpload.id,
+                });
+              }}
+              onRemove={async (mediaId) => {
+                await removeClientMedia(mediaId);
+              }}
+            />
+          </div>
         </TabsContent>
       </Tabs>
     </div>

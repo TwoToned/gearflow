@@ -22,7 +22,6 @@ import {
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -128,7 +127,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
   }
 
   if (!model) {
-    return <div className="text-muted-foreground py-12 text-center">Model not found.</div>;
+    return <div className="text-fg-3 py-12 text-center">Model not found.</div>;
   }
 
   const specs = (model.specifications as Record<string, string>) || {};
@@ -158,7 +157,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
             </Badge>
             {!model.isActive && <Badge variant="destructive">Archived</Badge>}
           </div>
-          <p className="text-muted-foreground">
+          <p className="text-fg-3">
             {[model.manufacturer, model.modelNumber, model.sku && `SKU: ${model.sku}`].filter(Boolean).join(" — ") || "No manufacturer info"}
             {model.category && <> &middot; {model.category.name}</>}
           </p>
@@ -202,11 +201,9 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
         <TabsContent value="details" className="space-y-4 mt-4">
           <BookingCalendar entityType="model" entityId={id} initialDate={initialDate} />
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Pricing</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1 text-sm">
+            <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+              <p className="text-[13px] font-medium text-fg-3 mb-3">Pricing</p>
+              <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span>Rental (per day)</span>
                   <span className="font-medium">
@@ -225,13 +222,11 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     {model.replacementCost ? `$${Number(model.replacementCost).toFixed(2)}` : "—"}
                   </span>
                 </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Technical</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1 text-sm">
+              </div>
+            </div>
+            <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+              <p className="text-[13px] font-medium text-fg-3 mb-3">Technical</p>
+              <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span>Weight</span>
                   <span className="font-medium">{model.weight ? `${Number(model.weight)} kg` : "—"}</span>
@@ -240,13 +235,11 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   <span>Power draw</span>
                   <span className="font-medium">{model.powerDraw ? `${model.powerDraw}W` : "—"}</span>
                 </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Maintenance</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1 text-sm">
+              </div>
+            </div>
+            <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+              <p className="text-[13px] font-medium text-fg-3 mb-3">Maintenance</p>
+              <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span>Requires T&T</span>
                   <span className="font-medium">{model.requiresTestAndTag ? "Yes" : "No"}</span>
@@ -257,18 +250,14 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     {model.maintenanceIntervalDays ? `${model.maintenanceIntervalDays} days` : "—"}
                   </span>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           </div>
           {model.description && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Description</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm whitespace-pre-wrap">{model.description}</p>
-              </CardContent>
-            </Card>
+            <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+              <p className="text-[13px] font-medium text-fg-3 mb-3">Description</p>
+              <p className="text-sm whitespace-pre-wrap">{model.description}</p>
+            </div>
           )}
         </TabsContent>
 
@@ -303,13 +292,13 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                           </Link>
                         </TableCell>
                         <TableCell>{asset.customName || "—"}</TableCell>
-                        <TableCell className="font-mono text-sm text-muted-foreground">{asset.serialNumber || "—"}</TableCell>
+                        <TableCell className="font-mono text-sm text-fg-3">{asset.serialNumber || "—"}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className={statusColors[asset.status] || ""}>
                             {assetStatusLabels[asset.status] || formatLabel(asset.status)}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-muted-foreground">{asset.location?.name || "—"}</TableCell>
+                        <TableCell className="text-fg-3">{asset.location?.name || "—"}</TableCell>
                         <TableCell className="text-right">
                           <CanDo resource="warehouse" action="check_in">
                             {asset.status === "CHECKED_OUT" && (
@@ -364,13 +353,13 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                           </span>
                         </TableCell>
                         <TableCell className="text-right font-medium">{ba.availableQuantity}</TableCell>
-                        <TableCell className="text-right text-muted-foreground">{ba.totalQuantity}</TableCell>
+                        <TableCell className="text-right text-fg-3">{ba.totalQuantity}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className={statusColors[ba.status] || ""}>
                             {bulkAssetStatusLabels[ba.status] || formatLabel(ba.status)}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-muted-foreground">{ba.location?.name || "—"}</TableCell>
+                        <TableCell className="text-fg-3">{ba.location?.name || "—"}</TableCell>
                         <TableCell className="text-right">
                           <CanDo resource="asset" action="update">
                             <div className="flex justify-end gap-1">
@@ -421,33 +410,28 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
 
         <TabsContent value="specs" className="mt-4">
           {Object.keys(specs).length === 0 ? (
-            <Card>
-              <CardContent className="py-8 text-center text-sm text-muted-foreground">
+            <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+              <p className="py-8 text-center text-sm text-fg-3">
                 No specifications defined. Edit this model to add them.
-              </CardContent>
-            </Card>
+              </p>
+            </div>
           ) : (
-            <Card>
-              <CardContent className="pt-6">
+            <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
                 <div className="space-y-2">
                   {Object.entries(specs).map(([key, val]) => (
                     <div key={key} className="flex justify-between border-b pb-2 last:border-0">
-                      <span className="text-sm text-muted-foreground">{key}</span>
+                      <span className="text-sm text-fg-3">{key}</span>
                       <span className="text-sm font-medium">{val}</span>
                     </div>
                   ))}
                 </div>
-              </CardContent>
-            </Card>
+            </div>
           )}
         </TabsContent>
 
         <TabsContent value="photos" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Model Photos</CardTitle>
-            </CardHeader>
-            <CardContent>
+          <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+            <h3 className="t-heading text-fg mb-4">Model Photos</h3>
               <MediaUploader
                 entityType="model"
                 entityId={id}
@@ -471,16 +455,12 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   await reorderModelMedia(id, orderedIds);
                 }}
               />
-            </CardContent>
-          </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="documents" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Manuals & Documents</CardTitle>
-            </CardHeader>
-            <CardContent>
+          <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+            <h3 className="t-heading text-fg mb-4">Manuals & Documents</h3>
               <MediaUploader
                 entityType="model"
                 entityId={id}
@@ -498,8 +478,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   await removeModelMedia(mediaId);
                 }}
               />
-            </CardContent>
-          </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { getTemplateForEditor } from "@/server/document-templates";
 import { TemplateEditor } from "@/components/settings/template-editor/template-editor";
-import { SectionBuilder } from "@/components/settings/template-builder/section-builder";
+import { BlockEditor } from "@/components/settings/template-builder/block-editor";
 import { getDefaultSections } from "@/lib/pdfme/section-types";
 import type { DocumentType } from "@/lib/pdfme/types";
 import type { TemplateSection } from "@/lib/pdfme/section-types";
@@ -52,7 +52,7 @@ export default function DesignerPage({
   if (sections || template.isSystemDefault) {
     const docType = template.type as DocumentType;
     return (
-      <SectionBuilder
+      <BlockEditor
         templateId={template.id}
         templateName={template.name}
         templateType={docType}

@@ -185,8 +185,8 @@ describe("estimateSectionHeight", () => {
         showRowNumbers: false,
       });
       const d = makeData({ line_items: [] });
-      // 0 items: padding(8) + headerRow(~6.7mm) + 0 content + padding(4) ≈ 18.7mm
-      expect(estimateSectionHeight(section, d)).toBeCloseTo(18.7, 0);
+      // 0 items: headerRow(~6.7mm) + 0 content + safetyMargin(1) ≈ 7.7mm
+      expect(estimateSectionHeight(section, d)).toBeCloseTo(7.7, 0);
     });
 
     it("returns correct height for N items", () => {
@@ -205,8 +205,8 @@ describe("estimateSectionHeight", () => {
       });
       const items = [makeLineItem({ id: "1" }), makeLineItem({ id: "2" }), makeLineItem({ id: "3" })];
       const d = makeData({ line_items: items });
-      // 3 parent items: padding(8) + header(~6.7) + 3*parentRow(~6.0) + padding(4) ≈ 36.7mm
-      expect(estimateSectionHeight(section, d)).toBeCloseTo(36.7, 0);
+      // 3 parent items: header(~6.7) + 3*parentRow(~6.0) + safetyMargin(1) ≈ 25.7mm
+      expect(estimateSectionHeight(section, d)).toBeCloseTo(25.7, 0);
     });
 
     it("includes kit children in height when showKitChildren is true", () => {
@@ -230,8 +230,8 @@ describe("estimateSectionHeight", () => {
       ];
       const d = makeData({ line_items: items });
       // 1 parent item (children are filtered as isKitChild but no kitId on parent):
-      // padding(8) + header(~6.7) + 1*parentRow(~6.0) + padding(4) ≈ 24.7mm
-      expect(estimateSectionHeight(section, d)).toBeCloseTo(24.7, 0);
+      // header(~6.7) + 1*parentRow(~6.0) + safetyMargin(1) ≈ 13.7mm
+      expect(estimateSectionHeight(section, d)).toBeCloseTo(13.7, 0);
     });
 
     it("excludes kit children from height when showKitChildren is false", () => {
@@ -254,8 +254,8 @@ describe("estimateSectionHeight", () => {
         makeLineItem({ id: "3", isKitChild: true }),
       ];
       const d = makeData({ line_items: items });
-      // 1 parent, showKitChildren=false: padding(8) + header(~6.7) + 1*parentRow(~6.0) + padding(4) ≈ 24.7mm
-      expect(estimateSectionHeight(section, d)).toBeCloseTo(24.7, 0);
+      // 1 parent, showKitChildren=false: header(~6.7) + 1*parentRow(~6.0) + safetyMargin(1) ≈ 13.7mm
+      expect(estimateSectionHeight(section, d)).toBeCloseTo(13.7, 0);
     });
 
     it("scales linearly with item count", () => {
@@ -682,6 +682,124 @@ describe("computePageLayout", () => {
           expect(tableEntry.tableStartIndex).toBeGreaterThan(0);
         }
       }
+    });
+
+    it("produces reasonable page count for packing-list with per-unit checkboxes", () => {
+      // Simulate a packing-list with groups and per-unit checkboxes
+      // This is the scenario that was producing 64 pages instead of ~7
+      const headerSection = makeSection(
+        "header",
+        { logoMode: "icon", showOrgName: true, showOrgAddress: true, showOrgPhone: true, showOrgEmail: true, showOrgWebsite: true, documentTitle: "PULL SLIP" },
+        { order: 0 },
+      );
+      const clientSection = makeSection(
+        "client-details",
+        { showClientName: true, showClientContact: true, showClientEmail: true, showClientAddress: false, showClientTaxId: false },
+        { order: 1 },
+      );
+      const projectSection = makeSection(
+        "project-details",
+        { showProjectName: true, showVenue: true, showRentalDates: true, showEventDates: false, showPaymentTerms: false, showSiteContact: false, showDocumentDate: true },
+        { order: 2 },
+      );
+
+      // Create items similar to sample-document-data: 40 items across 10 groups, various quantities
+      const groups = [
+        { name: "Audio", items: [4, 6, 2, 1, 2, 2, 4, 2] },
+        { name: "PA System", items: [8, 4, 4, 2, 2] },
+        { name: "Lighting", items: [12, 8, 6, 4, 16, 1, 2, 4] },
+        { name: "Video", items: [1, 2, 2, 2, 2] },
+        { name: "Rigging", items: [8, 12] },
+        { name: "Power", items: [2, 8] },
+        { name: "Staging", items: [12, 48, 12] },
+        { name: "Drape", items: [16, 10, 2] },
+        { name: "Comms", items: [1, 6, 6] },
+        { name: "Cases", items: [4] },
+      ];
+
+      let itemId = 0;
+      const lineItems: DocumentLineItem[] = [];
+      for (const group of groups) {
+        for (const qty of group.items) {
+          lineItems.push(makeLineItem({
+            id: String(itemId++),
+            quantity: qty,
+            groupName: group.name,
+          }));
+        }
+      }
+
+      const tableSection = makeSection("table", {
+        showGroupHeaders: true,
+        showKitChildren: true,
+        showCheckboxes: true,
+        showConditionColumns: false,
+        showPricing: false,
+        showBadges: false,
+        showNotes: false,
+        showPerUnitCheckboxes: true,
+        showAssetTags: true,
+        showCategories: true,
+        showRowNumbers: false,
+      }, { order: 3 });
+
+      const customTextSection = makeSection(
+        "custom-text",
+        { fontSize: 8, fontWeight: "normal", alignment: "left" },
+        { order: 4, content: "Total items: 248" },
+      );
+
+      const data = makeData({ line_items: lineItems });
+      const pages = computePageLayout(
+        [headerSection, clientSection, projectSection, tableSection, customTextSection],
+        data,
+      );
+
+      // With 40 items + 248 per-unit rows + 10 group headers:
+      // Total content ≈ 1175mm. Should be about 6-8 pages, definitely not 64.
+      expect(pages.length).toBeGreaterThanOrEqual(5);
+      expect(pages.length).toBeLessThanOrEqual(10);
+
+      // Verify startIndex increases monotonically across pages
+      const startIndices = pages
+        .map(p => p.entries.find(e => e.section.type === "table")?.tableStartIndex)
+        .filter((idx): idx is number => idx !== undefined);
+      for (let i = 1; i < startIndices.length; i++) {
+        expect(startIndices[i]).toBeGreaterThan(startIndices[i - 1]);
+      }
+    });
+
+    it("produces correct page count for simple table without per-unit checkboxes", () => {
+      // 100 simple items, no groups, no per-unit checkboxes
+      // Each item = ~6mm. Total ≈ 600mm content.
+      // First page: ~185mm content. Continuation: ~213mm content.
+      // Pages: 1 + ceil((600-185)/213) = 1 + ceil(415/213) = 1 + 2 = 3
+      const headerSection = makeSection(
+        "header",
+        { logoMode: "none", showOrgName: true, showOrgAddress: true, showOrgPhone: true, showOrgEmail: true, showOrgWebsite: true, documentTitle: "Q" },
+        { order: 0 },
+      );
+      const items = Array.from({ length: 100 }, (_, i) => makeLineItem({ id: String(i) }));
+      const tableSection = makeSection("table", {
+        showGroupHeaders: false,
+        showKitChildren: false,
+        showCheckboxes: false,
+        showConditionColumns: false,
+        showPricing: true,
+        showBadges: true,
+        showNotes: true,
+        showPerUnitCheckboxes: false,
+        showAssetTags: false,
+        showCategories: false,
+        showRowNumbers: false,
+      }, { order: 1 });
+
+      const data = makeData({ line_items: items });
+      const pages = computePageLayout([headerSection, tableSection], data);
+
+      // 100 items * ~6mm = ~600mm. Should be 3-4 pages.
+      expect(pages.length).toBeGreaterThanOrEqual(3);
+      expect(pages.length).toBeLessThanOrEqual(5);
     });
   });
 });

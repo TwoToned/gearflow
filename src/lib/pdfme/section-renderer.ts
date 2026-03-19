@@ -62,8 +62,10 @@ const GRANDCHILD_ROW_PT = 7 + 4 * 2;     // grandchildFontSize(7) + rowPadding(4
 const PER_UNIT_ROW_PT = 10;              // puHeight = 10pt
 const GROUP_HEADER_PT = 9 + 4 * 2;       // fontSize(9) + rowPadding(4)*2 = 17pt
 const TABLE_HEADER_PT = 7 + 4 * 2 + 4;   // headerFontSize(7) + rowPadding(4)*2 + 4 = 19pt
-const TABLE_PADDING_TOP_MM = 8;           // Space before table header
-const TABLE_PADDING_BOTTOM_MM = 4;        // Space after table content
+// The plugin has no explicit padding — it draws from layout.y+layout.height down
+// to layout.y. We add a small safety margin to avoid clipping at the boundary.
+const TABLE_PADDING_TOP_MM = 0;
+const TABLE_PADDING_BOTTOM_MM = 1;        // ~1mm safety margin at bottom
 
 function ptToMm(pt: number): number { return pt / PT_PER_MM; }
 
@@ -446,25 +448,53 @@ export function computePageLayout(
             groups.get(key)!.push(item);
           }
 
-          // Build a mapping: itemHeights index → parentItemIndex (for startIndex)
+          // Build mappings: itemHeights index → parentItemIndex (for startIndex)
+          // and itemHeights index → groupKey (for detecting group header re-draws)
           // Group headers don't count as parent items for startIndex purposes
           const heightToParentIdx: number[] = [];
+          const entryGroupKey: string[] = [];
           let parentIdx = 0;
           for (const groupKey of groupOrder) {
             if (groupKey !== "__ungrouped__" && ts.showGroupHeaders) {
               heightToParentIdx.push(-1); // group header, not a parent item
+              entryGroupKey.push(groupKey);
             }
             const groupItems = groups.get(groupKey)!;
             for (let gi = 0; gi < groupItems.length; gi++) {
               heightToParentIdx.push(parentIdx);
+              entryGroupKey.push(groupKey);
               parentIdx++;
             }
           }
 
+          // Track which group header indices exist for quick lookup
+          const groupHeaderIdx = new Map<string, number>();
+          for (let i = 0; i < heightToParentIdx.length; i++) {
+            if (heightToParentIdx[i] === -1) {
+              groupHeaderIdx.set(entryGroupKey[i], i);
+            }
+          }
+
+          const groupHeaderMm = ptToMm(GROUP_HEADER_PT);
+
           let remainingIdx = firstPageItems;
           while (remainingIdx < itemHeights.length) {
             startNewPage();
-            const pageContent = continuationContentHeight - TABLE_PADDING_TOP_MM - tableHeaderMm - TABLE_PADDING_BOTTOM_MM;
+            let pageContent = continuationContentHeight - TABLE_PADDING_TOP_MM - tableHeaderMm - TABLE_PADDING_BOTTOM_MM;
+
+            // Account for group header re-draw: if the first entry on this
+            // continuation page belongs to a group whose header was on a
+            // previous page, the plugin will re-draw that header, consuming
+            // extra height not in our itemHeights budget for this page.
+            if (ts.showGroupHeaders && remainingIdx < entryGroupKey.length) {
+              const firstGroupOnPage = entryGroupKey[remainingIdx];
+              const headerPos = groupHeaderIdx.get(firstGroupOnPage);
+              if (headerPos !== undefined && headerPos < remainingIdx) {
+                // Group header was on a previous page — plugin re-draws it
+                pageContent -= groupHeaderMm;
+              }
+            }
+
             let pageCumulative = 0;
             let pageItems = 0;
             for (let i = remainingIdx; i < itemHeights.length; i++) {
@@ -521,6 +551,7 @@ export function computePageLayout(
   if (currentPage.entries.length > 0) {
     pages.push(currentPage);
   }
+
 
   return pages;
 }

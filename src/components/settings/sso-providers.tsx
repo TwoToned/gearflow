@@ -125,6 +125,7 @@ function ProviderRow({ provider, meta, canUpdate }: { provider: Provider; meta?:
       <div className="flex items-center justify-between rounded-md border p-3">
         <div className="flex items-center gap-3 min-w-0">
           <div className="flex h-9 w-9 items-center justify-center rounded-md bg-muted shrink-0">
+            {/* eslint-disable-next-line react-hooks/static-components */}
             <IconComp className="h-4 w-4" />
           </div>
           <div className="min-w-0">
@@ -530,6 +531,7 @@ function IconPickerDropdown({ value, onChange }: { value: string; onChange: (id:
         )}
       >
         <div className="flex h-6 w-6 items-center justify-center rounded bg-muted shrink-0">
+          {/* eslint-disable-next-line react-hooks/static-components */}
           <SelectedIcon className="h-4 w-4" />
         </div>
         <span className="flex-1 text-left">{selected?.label || "Select icon..."}</span>

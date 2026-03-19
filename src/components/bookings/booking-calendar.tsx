@@ -165,6 +165,8 @@ export function BookingCalendar({
   const totalStock = data?.totalStock ?? 0;
   const effectiveStock = data?.effectiveStock ?? 0;
 
+  const gridStartIso = gridStart.toISOString();
+  const gridEndIso = gridEnd.toISOString();
   const weeks = useMemo(() => {
     const result: Date[][] = [];
     let day = gridStart;
@@ -177,7 +179,8 @@ export function BookingCalendar({
       result.push(week);
     }
     return result;
-  }, [gridStart.toISOString(), gridEnd.toISOString()]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gridStartIso, gridEndIso]);
 
   const selectedBookings = selectedDay
     ? getBookingsForDay(bookings, selectedDay)

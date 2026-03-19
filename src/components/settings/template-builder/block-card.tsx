@@ -6,6 +6,7 @@
  * Uses @dnd-kit for sortable drag-and-drop.
  */
 import { useSortable } from "@dnd-kit/sortable";
+import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import {
   GripVertical,
@@ -31,6 +32,7 @@ import {
   type TemplateBlock,
 } from "@/lib/pdfme/section-types";
 import { cn } from "@/lib/utils";
+import { ColumnDropZone } from "./block-tree";
 
 // ─── Icons per section type ──────────────────────────────────────────────────
 
@@ -57,8 +59,10 @@ interface BlockCardProps {
   selectedBlockId: string | null;
   onSelect: () => void;
   onSelectBlock: (id: string) => void;
+  onAddToColumn?: (rowId: string, columnIndex: number) => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  isDraggingContent?: boolean;
 }
 
 export function BlockCard({
@@ -67,8 +71,10 @@ export function BlockCard({
   selectedBlockId,
   onSelect,
   onSelectBlock,
+  onAddToColumn,
   onDuplicate,
   onDelete,
+  isDraggingContent,
 }: BlockCardProps) {
   const {
     attributes,
@@ -93,10 +99,12 @@ export function BlockCard({
         isSelected={isSelected}
         selectedBlockId={selectedBlockId}
         isDragging={isDragging}
+        isDraggingContent={isDraggingContent}
         dragAttributes={attributes}
         dragListeners={listeners}
         onSelect={onSelect}
         onSelectBlock={onSelectBlock}
+        onAddToColumn={onAddToColumn}
         onDuplicate={onDuplicate}
         onDelete={onDelete}
       />
@@ -129,10 +137,12 @@ interface InnerCardProps {
   isSelected: boolean;
   selectedBlockId?: string | null;
   isDragging: boolean;
+  isDraggingContent?: boolean;
   dragAttributes: React.HTMLAttributes<HTMLElement>;
   dragListeners: Record<string, unknown> | undefined;
   onSelect: () => void;
   onSelectBlock?: (id: string) => void;
+  onAddToColumn?: (rowId: string, columnIndex: number) => void;
   onDuplicate: () => void;
   onDelete: () => void;
 }
@@ -149,6 +159,8 @@ const RowBlockCard = forwardRef<HTMLDivElement, InnerCardProps>(
       dragListeners,
       onSelect,
       onSelectBlock,
+      onAddToColumn,
+      isDraggingContent,
       onDuplicate,
       onDelete,
     },
@@ -215,38 +227,25 @@ const RowBlockCard = forwardRef<HTMLDivElement, InnerCardProps>(
               <div className="text-[10px] text-fg-4 uppercase tracking-wider mb-0.5">
                 Column {colIdx + 1} ({Math.round(widths[colIdx])}%)
               </div>
-              {(col.children || []).map((content) => {
-                const ContentIcon = SECTION_ICONS[content.type] || FileText;
-                const hasVis =
-                  (content.visibility?.docTypes?.length ?? 0) > 0 ||
-                  content.visibility?.condition;
-                const isContentSelected = selectedBlockId === content.id;
-                return (
-                  <div
+              <ColumnDropZone
+                rowId={block.id}
+                columnIndex={colIdx}
+                isDraggingContent={isDraggingContent}
+              >
+                {(col.children || []).map((content) => (
+                  <DraggableContentItem
                     key={content.id}
-                    className={cn(
-                      "flex items-center gap-2 rounded-md px-2 py-1.5 cursor-pointer transition-colors",
-                      "hover:bg-primary/5 border border-transparent hover:border-border/30",
-                      isContentSelected && "bg-primary/10 border-primary/30",
-                    )}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectBlock?.(content.id);
-                    }}
-                  >
-                    <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-primary/8 text-primary">
-                      <ContentIcon className="h-3 w-3" />
-                    </div>
-                    <span className="text-xs text-fg-2 truncate">
-                      {SECTION_TYPE_LABELS[content.type as SectionType] || content.type}
-                    </span>
-                    {hasVis && <EyeOff className="h-2.5 w-2.5 text-fg-4 shrink-0" />}
+                    content={content}
+                    isSelected={selectedBlockId === content.id}
+                    onSelect={() => onSelectBlock?.(content.id)}
+                  />
+                ))}
+                {(col.children || []).length === 0 && (
+                  <div className="text-[10px] text-fg-4 italic py-1">
+                    {isDraggingContent ? "Drop here" : "Empty column"}
                   </div>
-                );
-              })}
-              {(col.children || []).length === 0 && (
-                <div className="text-[10px] text-fg-4 italic py-1">Empty column</div>
-              )}
+                )}
+              </ColumnDropZone>
             </div>
           ))}
         </div>
@@ -254,6 +253,59 @@ const RowBlockCard = forwardRef<HTMLDivElement, InnerCardProps>(
     );
   },
 );
+
+// ─── Draggable Content Item (inside row columns) ────────────────────────────
+
+function DraggableContentItem({
+  content,
+  isSelected,
+  onSelect,
+}: {
+  content: TemplateBlock;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: content.id,
+  });
+
+  const ContentIcon = SECTION_ICONS[content.type] || FileText;
+  const hasVis =
+    (content.visibility?.docTypes?.length ?? 0) > 0 ||
+    content.visibility?.condition;
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "flex items-center gap-2 rounded-md px-2 py-1.5 cursor-pointer transition-colors",
+        "hover:bg-primary/5 border border-transparent hover:border-border/30",
+        isSelected && "bg-primary/10 border-primary/30",
+        isDragging && "opacity-40",
+      )}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect();
+      }}
+    >
+      <button
+        {...(attributes as React.HTMLAttributes<HTMLButtonElement>)}
+        {...(listeners as React.HTMLAttributes<HTMLButtonElement>)}
+        className="shrink-0 cursor-grab touch-none text-fg-4 hover:text-fg-3 active:cursor-grabbing"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <GripVertical className="h-3 w-3" />
+      </button>
+      <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-primary/8 text-primary">
+        <ContentIcon className="h-3 w-3" />
+      </div>
+      <span className="text-xs text-fg-2 truncate">
+        {SECTION_TYPE_LABELS[content.type as SectionType] || content.type}
+      </span>
+      {hasVis && <EyeOff className="h-2.5 w-2.5 text-fg-4 shrink-0" />}
+    </div>
+  );
+}
 
 // ─── Content Block Card ──────────────────────────────────────────────────────
 

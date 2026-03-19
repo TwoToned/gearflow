@@ -281,6 +281,39 @@ export function BlockEditor({
     [blocks, updateBlocks],
   );
 
+  const moveContentToColumn = useCallback(
+    (contentId: string, targetRowId: string, targetColumnIndex: number) => {
+      const newBlocks = structuredClone(blocks);
+
+      // Find and remove the content block from its current location
+      let removedBlock: TemplateBlock | null = null;
+      for (const row of newBlocks) {
+        if (row.type !== "row" || !row.children) continue;
+        for (const col of row.children) {
+          if (!col.children) continue;
+          const idx = col.children.findIndex((c) => c.id === contentId);
+          if (idx !== -1) {
+            removedBlock = col.children.splice(idx, 1)[0];
+            break;
+          }
+        }
+        if (removedBlock) break;
+      }
+
+      if (!removedBlock) return;
+
+      // Insert into the target column
+      const targetRow = newBlocks.find((b) => b.id === targetRowId);
+      if (!targetRow?.children?.[targetColumnIndex]) return;
+      const targetCol = targetRow.children[targetColumnIndex];
+      if (!targetCol.children) targetCol.children = [];
+      targetCol.children.push(removedBlock);
+
+      updateBlocks(newBlocks);
+    },
+    [blocks, updateBlocks],
+  );
+
   // ─── Keyboard shortcuts ─────────────────────────────────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -469,6 +502,7 @@ export function BlockEditor({
             onDuplicateBlock={duplicateBlock}
             onDeleteBlock={deleteBlock}
             onInsertAt={(index) => setInsertDialogIndex(index)}
+            onMoveContentToColumn={moveContentToColumn}
           />
 
           <div className="shrink-0 border-t border-border/30 p-2">

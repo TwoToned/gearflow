@@ -139,7 +139,7 @@ function useActivityColumns(): ColumnDef<AnyLog>[] {
       responsiveHide: "md",
       filterOptions: Object.entries(entityTypeLabels).map(([value, label]) => ({ value, label })),
       cell: (row) => (
-        <span className="text-sm text-muted-foreground">
+        <span className="text-sm text-fg-3">
           {entityTypeLabels[row.entityType] || row.entityType}
         </span>
       ),
@@ -261,7 +261,7 @@ function ActivityLogContent() {
 
 export default function ActivityLogPage() {
   return (
-    <Suspense fallback={<div className="p-6 text-muted-foreground">Loading...</div>}>
+    <Suspense fallback={<div className="p-6 text-fg-3">Loading...</div>}>
       <ActivityLogContent />
     </Suspense>
   );

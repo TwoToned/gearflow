@@ -238,7 +238,7 @@ export default function TimesheetsPage() {
             {row.assignment.project?.name}
           </Link>
         ) : (
-          <span className="text-sm text-muted-foreground italic">
+          <span className="text-sm text-fg-3 italic">
             {row.description || "General"}
           </span>
         ),
@@ -249,7 +249,7 @@ export default function TimesheetsPage() {
       sortable: false,
       responsiveHide: "md",
       cell: (row: any) => (
-        <span className="text-sm text-muted-foreground">
+        <span className="text-sm text-fg-3">
           {row.assignment?.crewRole?.name || "\u2014"}
         </span>
       ),
@@ -317,7 +317,7 @@ export default function TimesheetsPage() {
       responsiveHide: "lg",
       defaultVisible: false,
       cell: (row: any) => (
-        <span className="text-sm text-muted-foreground">
+        <span className="text-sm text-fg-3">
           {row.approvedBy?.name || "\u2014"}
         </span>
       ),
@@ -329,7 +329,7 @@ export default function TimesheetsPage() {
       responsiveHide: "lg",
       defaultVisible: false,
       cell: (row: any) => (
-        <span className="text-sm text-muted-foreground truncate max-w-[200px] block">
+        <span className="text-sm text-fg-3 truncate max-w-[200px] block">
           {row.notes || "\u2014"}
         </span>
       ),
@@ -598,11 +598,11 @@ function EditTimeEntryDialog({
                 <Input
                   readOnly
                   value={`${entry.assignment.project?.projectNumber} — ${entry.assignment.project?.name}`}
-                  className="bg-muted"
+                  className="bg-bg-inset"
                 />
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-fg-3">
                 No assignment linked. Switch to General to add a description.
               </p>
             )
@@ -847,7 +847,7 @@ function LogTimeDialog({
                       <p className="text-sm font-medium">
                         {c.firstName} {c.lastName}
                       </p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-fg-3">
                         {c.crewRole?.name || c.department || "No role"}
                       </p>
                     </div>
@@ -855,7 +855,7 @@ function LogTimeDialog({
                 );
               })}
               {(!filteredCrew || filteredCrew.length === 0) && (
-                <p className="text-sm text-muted-foreground py-4 text-center">
+                <p className="text-sm text-fg-3 py-4 text-center">
                   No crew members found.
                 </p>
               )}
@@ -979,7 +979,7 @@ function LogTimeDialog({
                   </Select>
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground rounded-md border p-3">
+                <p className="text-xs text-fg-3 rounded-md border p-3">
                   Assignment selection is not available for multiple crew
                   members. Switch to General mode or select one member.
                 </p>
@@ -1112,7 +1112,7 @@ function ExportDialog({
               onChange={(e) => setDateTo(e.target.value)}
             />
           </div>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-fg-3">
             Leave empty to export all time entries.
           </p>
         </div>

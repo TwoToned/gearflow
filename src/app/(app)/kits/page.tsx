@@ -80,7 +80,7 @@ function useKitColumns(
       filterable: true,
       filterType: "enum",
       filterOptions: categories.map((c) => ({ value: c.id, label: c.name })),
-      cell: (row) => <span className="text-muted-foreground">{row.category?.name || "—"}</span>,
+      cell: (row) => <span className="text-fg-3">{row.category?.name || "—"}</span>,
     },
     {
       id: "status",
@@ -130,7 +130,7 @@ function useKitColumns(
       filterable: true,
       filterType: "enum",
       filterOptions: locations.map((loc) => ({ value: loc.id, label: loc.name })),
-      cell: (row) => <span className="text-muted-foreground">{row.location?.name || "—"}</span>,
+      cell: (row) => <span className="text-fg-3">{row.location?.name || "—"}</span>,
     },
     {
       id: "items",
@@ -138,7 +138,7 @@ function useKitColumns(
       sortable: false,
       align: "right",
       cell: (row) => (
-        <span className="text-muted-foreground">
+        <span className="text-fg-3">
           {(row._count?.serializedItems || 0) + (row._count?.bulkItems || 0)}
         </span>
       ),
@@ -238,7 +238,7 @@ export default function KitsPage() {
         />
 
         {selectedIds.size > 0 && (
-          <div className="flex items-center gap-3 rounded-md border bg-muted/50 px-4 py-2">
+          <div className="flex items-center gap-3 rounded-md border bg-bg-inset/50 px-4 py-2">
             <span className="text-sm font-medium">{selectedIds.size} selected</span>
             <CanDo resource="warehouse" action="check_in">
               <Button

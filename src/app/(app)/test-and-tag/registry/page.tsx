@@ -35,7 +35,7 @@ export default function TestTagRegistryPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="t-title text-fg">Test & Tag Registry</h1>
-          <p className="text-muted-foreground text-sm">
+          <p className="text-fg-3 text-sm">
             View and manage all test and tag assets.
           </p>
         </div>

@@ -160,7 +160,7 @@ export default function CategoriesPage() {
       {/* Search */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-fg-3" />
           <Input
             placeholder="Search categories..."
             value={search}
@@ -189,13 +189,13 @@ export default function CategoriesPage() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground">Loading...</TableCell>
+                <TableCell colSpan={7} className="text-center text-fg-3">Loading...</TableCell>
               </TableRow>
             ) : filteredRows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground py-12">
+                <TableCell colSpan={7} className="text-center text-fg-3 py-12">
                   <div className="flex flex-col items-center gap-2">
-                    <FolderOpen className="h-10 w-10 text-muted-foreground/50" />
+                    <FolderOpen className="h-10 w-10 text-fg-3/50" />
                     <p>{search ? "No matching categories." : "No categories yet."}</p>
                     {!search && canCreate && (
                       <Button size="sm" className="mt-2" onClick={() => openCreate()}>
@@ -220,7 +220,7 @@ export default function CategoriesPage() {
                       </Link>
                     </div>
                   </TableCell>
-                  <TableCell className="hidden sm:table-cell text-muted-foreground max-w-[200px] truncate">
+                  <TableCell className="hidden sm:table-cell text-fg-3 max-w-[200px] truncate">
                     {cat.description || "\u2014"}
                   </TableCell>
                   <TableCell className="text-right">
@@ -230,7 +230,7 @@ export default function CategoriesPage() {
                         {cat._count.models}
                       </Badge>
                     ) : (
-                      <span className="text-muted-foreground">0</span>
+                      <span className="text-fg-3">0</span>
                     )}
                   </TableCell>
                   <TableCell className="text-right hidden sm:table-cell">
@@ -240,7 +240,7 @@ export default function CategoriesPage() {
                         {cat._count.kits}
                       </Badge>
                     ) : (
-                      <span className="text-muted-foreground">0</span>
+                      <span className="text-fg-3">0</span>
                     )}
                   </TableCell>
                   <TableCell className="text-right hidden md:table-cell">
@@ -318,7 +318,7 @@ export default function CategoriesPage() {
               <Input id="cat-sort" type="number" {...form.register("sortOrder")} className="w-24" />
             </div>
             {parentId && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-fg-3">
                 {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                 Subcategory of: {(categories as any[]).find((c) => c.id === parentId)?.name}
               </p>

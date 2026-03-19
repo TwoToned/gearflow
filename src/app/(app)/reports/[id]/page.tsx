@@ -21,7 +21,7 @@ export default function SavedReportPage({ params }: { params: Promise<{ id: stri
   });
 
   if (isLoading) return <DetailPageSkeleton />;
-  if (!report) return <div className="py-20 text-center text-muted-foreground">Report not found.</div>;
+  if (!report) return <div className="py-20 text-center text-fg-3">Report not found.</div>;
 
   const r = report as unknown as {
     id: string;
@@ -45,13 +45,13 @@ export default function SavedReportPage({ params }: { params: Promise<{ id: stri
               <h1 className="t-title text-fg">{r.name}</h1>
             </div>
             {r.description && (
-              <p className="text-muted-foreground">{r.description}</p>
+              <p className="text-fg-3">{r.description}</p>
             )}
             <div className="flex items-center gap-2 mt-1">
               <Badge variant="outline">{DATA_SOURCE_LABELS[r.dataSource]}</Badge>
               {r.isShared && <Badge variant="secondary">Shared</Badge>}
               {r.createdBy && (
-                <span className="text-xs text-muted-foreground">by {r.createdBy.name}</span>
+                <span className="text-xs text-fg-3">by {r.createdBy.name}</span>
               )}
             </div>
           </div>

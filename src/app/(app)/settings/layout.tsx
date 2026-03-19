@@ -44,7 +44,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
         <h2 className="text-xl font-semibold">Access Denied</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
+        <p className="mt-2 text-sm text-fg-3">
           You don&apos;t have permission to access settings.
         </p>
       </div>

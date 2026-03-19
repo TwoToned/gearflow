@@ -174,7 +174,7 @@ export default function WooCommerceSettingsPage() {
     : "";
 
   if (isLoading) {
-    return <div className="text-muted-foreground">Loading...</div>;
+    return <div className="text-fg-3">Loading...</div>;
   }
 
   return (
@@ -275,7 +275,7 @@ export default function WooCommerceSettingsPage() {
                   <RefreshCw className={`h-4 w-4 ${regenMutation.isPending ? "animate-spin" : ""}`} />
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-fg-3">
                 Paste this secret into WooCommerce webhook settings. Regenerating will invalidate the old secret.
               </p>
             </div>
@@ -437,7 +437,7 @@ export default function WooCommerceSettingsPage() {
                 {...form.register("locationMetaKey")}
                 placeholder="e.g. venue_name or delivery_location"
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-fg-3">
                 The WooCommerce order meta key containing the venue or delivery location name/address.
               </p>
             </div>
@@ -508,7 +508,7 @@ export default function WooCommerceSettingsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <Label>Auto-advance to Quoting</Label>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-fg-3">
                   Set new projects to Quoting instead of Enquiry.
                 </p>
               </div>
@@ -541,10 +541,10 @@ export default function WooCommerceSettingsPage() {
             <div className="px-5 pb-5 sm:px-6 sm:pb-6 space-y-4 text-sm">
               <div className="space-y-2">
                 <h4 className="font-medium">1. Create a Webhook</h4>
-                <p className="text-muted-foreground">
+                <p className="text-fg-3">
                   In WordPress admin: WooCommerce &rarr; Settings &rarr; Advanced &rarr; Webhooks &rarr; Add Webhook
                 </p>
-                <ul className="list-disc pl-6 space-y-1 text-muted-foreground">
+                <ul className="list-disc pl-6 space-y-1 text-fg-3">
                   <li><strong>Name:</strong> GearFlow Project Creation</li>
                   <li><strong>Status:</strong> Active</li>
                   <li><strong>Topic:</strong> Order created</li>
@@ -556,11 +556,11 @@ export default function WooCommerceSettingsPage() {
 
               <div className="space-y-2">
                 <h4 className="font-medium">2. Save Custom Checkout Fields to Order Meta</h4>
-                <p className="text-muted-foreground">
+                <p className="text-fg-3">
                   If your checkout has custom date fields (e.g. from a booking plugin), ensure they are saved
-                  as order meta. Add this PHP snippet to your theme&apos;s <code className="text-xs bg-muted px-1 py-0.5 rounded">functions.php</code>:
+                  as order meta. Add this PHP snippet to your theme&apos;s <code className="text-xs bg-bg-inset px-1 py-0.5 rounded">functions.php</code>:
                 </p>
-                <pre className="bg-muted p-3 rounded text-xs overflow-x-auto">{`add_action('woocommerce_checkout_update_order_meta', function($order_id) {
+                <pre className="bg-bg-inset p-3 rounded text-xs overflow-x-auto">{`add_action('woocommerce_checkout_update_order_meta', function($order_id) {
   $fields = ['rental_start_date', 'rental_end_date', 'event_date', 'delivery_address'];
   foreach ($fields as $field) {
     if (!empty($_POST[$field])) {
@@ -568,14 +568,14 @@ export default function WooCommerceSettingsPage() {
     }
   }
 });`}</pre>
-                <p className="text-muted-foreground">
+                <p className="text-fg-3">
                   Adjust the field names to match your checkout form. Then set the same keys in the Date Field Mapping above.
                 </p>
               </div>
 
               <div className="space-y-2">
                 <h4 className="font-medium">3. Set Product SKUs</h4>
-                <p className="text-muted-foreground">
+                <p className="text-fg-3">
                   For SKU matching: set each WooCommerce product&apos;s SKU to match the corresponding GearFlow model&apos;s SKU or Model Number.
                   Go to Products &rarr; Edit &rarr; Inventory &rarr; SKU.
                 </p>
@@ -596,7 +596,7 @@ export default function WooCommerceSettingsPage() {
         <FormSection title="Recent Orders" description="Webhook deliveries and processing results.">
           <div className="sm:col-span-2">
           {!orderLogs?.items?.length ? (
-            <p className="text-sm text-muted-foreground">No orders received yet.</p>
+            <p className="text-sm text-fg-3">No orders received yet.</p>
           ) : (
             <div className="space-y-2">
               {orderLogs.items.map((log) => (
@@ -613,7 +613,7 @@ export default function WooCommerceSettingsPage() {
                       <StatusBadge status={log.status} />
                     </div>
                     {log.project && (
-                      <p className="text-muted-foreground">
+                      <p className="text-fg-3">
                         &rarr; {log.project.projectNumber} — {log.project.name}
                       </p>
                     )}
@@ -625,7 +625,7 @@ export default function WooCommerceSettingsPage() {
                     )}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-xs text-fg-3">
                       {formatDistanceToNow(new Date(log.createdAt), { addSuffix: true })}
                     </span>
                     {log.status === "FAILED" && (
@@ -666,7 +666,7 @@ function StatusIcon({ status }: { status: string }) {
     case "FAILED":
       return <XCircle className="h-4 w-4 text-destructive" />;
     case "DUPLICATE":
-      return <SkipForward className="h-4 w-4 text-muted-foreground" />;
+      return <SkipForward className="h-4 w-4 text-fg-3" />;
     default:
       return <AlertTriangle className="h-4 w-4 text-yellow-500" />;
   }
@@ -689,7 +689,7 @@ function MatchSummary({ results }: { results: MatchResult[] }) {
     <p className="text-xs text-yellow-600">
       {matched}/{total} products matched
       {results.filter((r) => !r.matched).map((r) => (
-        <span key={r.wooProductName} className="block text-muted-foreground">
+        <span key={r.wooProductName} className="block text-fg-3">
           No match: {r.wooProductName}{r.wooSku ? ` (${r.wooSku})` : ""}
         </span>
       ))}
@@ -706,7 +706,7 @@ function MetaDetectPanel({
 }) {
   if (!metaKeys) {
     return (
-      <div className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
+      <div className="rounded-md border border-dashed p-4 text-center text-sm text-fg-3">
         <p>No webhook payload stored yet.</p>
         <p>Send a test order from WooCommerce to detect available meta fields.</p>
       </div>
@@ -716,7 +716,7 @@ function MetaDetectPanel({
   return (
     <div className="rounded-md border p-4 space-y-3">
       <p className="text-sm font-medium">Detected Meta Fields</p>
-      <p className="text-xs text-muted-foreground">
+      <p className="text-xs text-fg-3">
         Click a key to map it to the next empty date field.
       </p>
       {metaKeys.orderMeta.length > 0 ? (
@@ -729,14 +729,14 @@ function MetaDetectPanel({
               onClick={() => onSelectKey(m.key)}
             >
               <code className="font-mono">{m.key}</code>
-              <span className="text-muted-foreground truncate ml-4 max-w-[200px]">
+              <span className="text-fg-3 truncate ml-4 max-w-[200px]">
                 {m.value}
               </span>
             </button>
           ))}
         </div>
       ) : (
-        <p className="text-xs text-muted-foreground">No order-level meta fields found.</p>
+        <p className="text-xs text-fg-3">No order-level meta fields found.</p>
       )}
     </div>
   );

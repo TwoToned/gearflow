@@ -24,7 +24,7 @@ function BuilderContent() {
       <div className="space-y-6">
         <div>
           <h1 className="t-title text-fg">Custom Report Builder</h1>
-          <p className="text-muted-foreground">
+          <p className="text-fg-3">
             Build a custom report by selecting a data source, columns, filters, and grouping.
           </p>
         </div>
@@ -36,7 +36,7 @@ function BuilderContent() {
 
 export default function BuilderPage() {
   return (
-    <Suspense fallback={<div className="text-muted-foreground">Loading...</div>}>
+    <Suspense fallback={<div className="text-fg-3">Loading...</div>}>
       <BuilderContent />
     </Suspense>
   );

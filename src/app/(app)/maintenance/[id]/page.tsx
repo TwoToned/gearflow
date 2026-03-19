@@ -41,7 +41,7 @@ export default function MaintenanceDetailPage({
   });
 
   if (isLoading) return <DetailPageSkeleton />;
-  if (!record) return <div className="py-20 text-center text-muted-foreground">Record not found.</div>;
+  if (!record) return <div className="py-20 text-center text-fg-3">Record not found.</div>;
 
   const r = record as Record<string, unknown>;
   const assetLinks = (r.assets as Array<{ assetId: string }>) || [];
@@ -71,12 +71,12 @@ export default function MaintenanceDetailPage({
 
   return (
     <RequirePermission resource="maintenance" action="read">
-    <CanDo resource="maintenance" action="update" fallback={<div className="p-8 text-center text-muted-foreground">You don&apos;t have permission to perform this action.</div>}>
+    <CanDo resource="maintenance" action="update" fallback={<div className="p-8 text-center text-fg-3">You don&apos;t have permission to perform this action.</div>}>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="t-title text-fg">Edit Maintenance Record</h1>
-            <p className="text-muted-foreground">{r.title as string}</p>
+            <p className="text-fg-3">{r.title as string}</p>
           </div>
           <CanDo resource="maintenance" action="delete">
             <Button

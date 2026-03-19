@@ -17,7 +17,7 @@ export default function EditReportPage({ params }: { params: Promise<{ id: strin
   });
 
   if (isLoading) return <DetailPageSkeleton />;
-  if (!report) return <div className="py-20 text-center text-muted-foreground">Report not found.</div>;
+  if (!report) return <div className="py-20 text-center text-fg-3">Report not found.</div>;
 
   const r = report as unknown as { id: string; name: string; description?: string; config: ReportConfig };
 
@@ -26,7 +26,7 @@ export default function EditReportPage({ params }: { params: Promise<{ id: strin
       <div className="space-y-6">
         <div>
           <h1 className="t-title text-fg">Edit Report</h1>
-          <p className="text-muted-foreground">Editing &quot;{r.name}&quot;</p>
+          <p className="text-fg-3">Editing &quot;{r.name}&quot;</p>
         </div>
         <ReportBuilder
           initialConfig={r.config}

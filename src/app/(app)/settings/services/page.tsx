@@ -168,7 +168,7 @@ export default function ServiceTemplatesPage() {
                   <TableRow key={t.id as string}>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <Icon className="h-4 w-4 text-muted-foreground" />
+                        <Icon className="h-4 w-4 text-fg-3" />
                         {SERVICE_TYPE_LABELS[t.type as ServiceType]}
                       </div>
                     </TableCell>
@@ -188,7 +188,7 @@ export default function ServiceTemplatesPage() {
                           Yes
                         </Badge>
                       ) : (
-                        <span className="text-muted-foreground">No</span>
+                        <span className="text-fg-3">No</span>
                       )}
                     </TableCell>
                     <TableCell>
@@ -197,7 +197,7 @@ export default function ServiceTemplatesPage() {
                           Auto
                         </Badge>
                       ) : (
-                        <span className="text-muted-foreground">Manual</span>
+                        <span className="text-fg-3">Manual</span>
                       )}
                     </TableCell>
                     <TableCell>

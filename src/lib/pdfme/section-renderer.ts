@@ -13,6 +13,7 @@
 import type { Template, Schema } from "@pdfme/common";
 import type {
   DocumentData,
+  DocumentLineItem,
   DocumentType,
   TablePluginConfig,
   FinancialSummaryConfig,
@@ -50,6 +51,97 @@ import type { BlockStyling } from "./section-types";
 import type { RectConfig } from "./plugins/gearflow-rect";
 import { filterVisibleSections } from "./condition-evaluator";
 import { resolveTokensInText } from "./token-resolver";
+
+// ─── Height Constants (match gearflow-table.ts plugin values) ────────────────
+
+// All values in pt. 1mm ≈ 2.835pt
+const PT_PER_MM = 2.835;
+const PARENT_ROW_PT = 9 + 4 * 2;         // fontSize(9) + rowPadding(4)*2 = 17pt
+const CHILD_ROW_PT = 8 + 4 * 2;          // childFontSize(8) + rowPadding(4)*2 = 16pt
+const GRANDCHILD_ROW_PT = 7 + 4 * 2;     // grandchildFontSize(7) + rowPadding(4)*2 = 15pt
+const PER_UNIT_ROW_PT = 10;              // puHeight = 10pt
+const GROUP_HEADER_PT = 9 + 4 * 2;       // fontSize(9) + rowPadding(4)*2 = 17pt
+const TABLE_HEADER_PT = 7 + 4 * 2 + 4;   // headerFontSize(7) + rowPadding(4)*2 + 4 = 19pt
+const TABLE_PADDING_TOP_MM = 8;           // Space before table header
+const TABLE_PADDING_BOTTOM_MM = 4;        // Space after table content
+
+function ptToMm(pt: number): number { return pt / PT_PER_MM; }
+
+/**
+ * Calculate the rendered height (in mm) for a single parent line item,
+ * including all its sub-rows (per-unit checkboxes, kit children, grandchildren).
+ */
+function calculateItemHeight(
+  item: DocumentLineItem,
+  settings: TableSectionSettings,
+): number {
+  let heightPt = PARENT_ROW_PT;
+  const isKit = !!item.kitId;
+
+  // Per-unit checkbox rows for bulk items (qty > 1, non-kit)
+  if (settings.showPerUnitCheckboxes && !isKit && item.quantity > 1) {
+    heightPt += item.quantity * PER_UNIT_ROW_PT;
+  }
+
+  // Kit children
+  if (isKit && settings.showKitChildren) {
+    const children = item.childLineItems || [];
+    for (const child of children) {
+      heightPt += CHILD_ROW_PT;
+      const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
+
+      // Per-unit checkboxes for child items
+      if (settings.showPerUnitCheckboxes && !isNestedKit && child.quantity > 1) {
+        heightPt += child.quantity * PER_UNIT_ROW_PT;
+      }
+
+      // Grandchildren (nested kit members)
+      if (isNestedKit) {
+        heightPt += (child.childLineItems || []).length * GRANDCHILD_ROW_PT;
+      }
+    }
+  }
+
+  return ptToMm(heightPt);
+}
+
+/**
+ * Calculate per-parent-item heights for accurate page break calculation.
+ * Returns an array of { heightMm, isGroupHeader } entries in render order.
+ */
+function calculateTableItemHeights(
+  data: DocumentData,
+  settings: TableSectionSettings,
+): number[] {
+  const parentItems = data.line_items.filter((i) => !i.isKitChild);
+  const heights: number[] = [];
+
+  // Group items by groupName (matching the plugin's rendering order)
+  const groups = new Map<string, DocumentLineItem[]>();
+  const groupOrder: string[] = [];
+  for (const item of parentItems) {
+    const key = item.groupName || "__ungrouped__";
+    if (!groups.has(key)) {
+      groups.set(key, []);
+      groupOrder.push(key);
+    }
+    groups.get(key)!.push(item);
+  }
+
+  for (const groupKey of groupOrder) {
+    // Group header height (if applicable)
+    if (groupKey !== "__ungrouped__" && settings.showGroupHeaders) {
+      heights.push(ptToMm(GROUP_HEADER_PT));
+    }
+
+    const groupItems = groups.get(groupKey)!;
+    for (const item of groupItems) {
+      heights.push(calculateItemHeight(item, settings));
+    }
+  }
+
+  return heights;
+}
 
 // ─── Height Estimation ───────────────────────────────────────────────────────
 
@@ -97,44 +189,9 @@ export function estimateSectionHeight(
 
     case "table": {
       const ts = section.settings as TableSectionSettings;
-      const parentItems = data.line_items.filter((i) => !i.isKitChild);
-
-      // Count distinct group names for group header rows
-      const groupNames = new Set(parentItems.map((i) => i.groupName).filter(Boolean));
-      let totalRows = ts.showGroupHeaders ? groupNames.size : 0;
-
-      for (const item of parentItems) {
-        totalRows++; // The parent item row
-
-        const isKit = !!item.kitId;
-
-        // Per-unit checkbox rows for bulk items (qty > 1, non-kit)
-        if (ts.showPerUnitCheckboxes && !isKit && item.quantity > 1) {
-          // Per-unit rows are ~10pt ≈ 2x normal row height
-          totalRows += item.quantity * 2;
-        }
-
-        // Kit children
-        if (isKit && ts.showKitChildren) {
-          const children = item.childLineItems || [];
-          for (const child of children) {
-            totalRows++; // Child row
-            const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
-
-            // Per-unit checkboxes for child items
-            if (ts.showPerUnitCheckboxes && !isNestedKit && child.quantity > 1) {
-              totalRows += child.quantity * 2;
-            }
-
-            // Grandchildren (nested kit members)
-            if (isNestedKit) {
-              totalRows += (child.childLineItems || []).length;
-            }
-          }
-        }
-      }
-
-      return 8 + totalRows * TABLE_ROW_HEIGHT_MM + 4;
+      const itemHeights = calculateTableItemHeights(data, ts);
+      const contentHeight = itemHeights.reduce((sum, h) => sum + h, 0);
+      return TABLE_PADDING_TOP_MM + ptToMm(TABLE_HEADER_PT) + contentHeight + TABLE_PADDING_BOTTOM_MM;
     }
 
     case "totals":
@@ -328,55 +385,111 @@ export function computePageLayout(
         // Single table in this row — split across pages
         const section = row.sections[0];
         const availableHeight = maxY - currentY;
-
-        // First page
         const sectionX = getSectionX(section);
         const sectionW = getSectionWidth(section);
-        currentPage.entries.push({
-          section,
-          x: sectionX,
-          y: currentY,
-          width: sectionW,
-          height: availableHeight,
-          tableStartIndex: 0,
-        });
 
-        // Continuation pages — calculate average height per parent item
         const isCrewTable = section.type === "crew-table";
-        const baseItemRowHeight = isCrewTable ? CREW_ROW_HEIGHT_MM : TABLE_ROW_HEIGHT_MM;
-        const headerRowHeight = baseItemRowHeight + 4;
-
-        // Calculate average mm per parent item (accounts for children, per-unit rows, etc.)
-        const parentItemCount = isCrewTable
-          ? (data.crew || []).length
-          : data.line_items.filter((i) => !i.isKitChild).length;
-        const avgItemHeight = parentItemCount > 0
-          ? (rowHeight - 8 - 4) / parentItemCount  // remove header/footer padding
-          : baseItemRowHeight;
-
-        const rowsOnFirstPage = Math.max(1, Math.floor((availableHeight - headerRowHeight) / avgItemHeight));
-        const remainingHeight = rowHeight - availableHeight;
+        const tableHeaderMm = ptToMm(TABLE_HEADER_PT);
         const continuationContentHeight = maxY - MARGIN - (headerSection ? estimateSectionHeight(headerSection, data) + SECTION_GAP : 0);
-        const extraPages = Math.ceil(remainingHeight / continuationContentHeight);
-        const rowsPerContinuation = Math.max(1, Math.floor((continuationContentHeight - headerRowHeight) / avgItemHeight));
 
-        let currentStartIndex = rowsOnFirstPage;
-        for (let i = 0; i < extraPages; i++) {
-          startNewPage();
-          const pageTableHeight = Math.min(
-            remainingHeight - i * continuationContentHeight,
-            continuationContentHeight,
-          );
+        if (isCrewTable) {
+          // Crew table: uniform row heights, simple calculation
+          const crewCount = (data.crew || []).length;
+          const rowsOnFirstPage = Math.max(1, Math.floor((availableHeight - TABLE_PADDING_TOP_MM - tableHeaderMm) / CREW_ROW_HEIGHT_MM));
+
           currentPage.entries.push({
-            section,
-            x: sectionX,
-            y: currentY,
-            width: sectionW,
-            height: pageTableHeight,
-            tableStartIndex: currentStartIndex,
+            section, x: sectionX, y: currentY, width: sectionW,
+            height: availableHeight, tableStartIndex: 0,
           });
-          currentY += pageTableHeight;
-          currentStartIndex += rowsPerContinuation;
+
+          let currentStartIndex = rowsOnFirstPage;
+          while (currentStartIndex < crewCount) {
+            startNewPage();
+            const rowsThisPage = Math.max(1, Math.floor((continuationContentHeight - TABLE_PADDING_TOP_MM - tableHeaderMm) / CREW_ROW_HEIGHT_MM));
+            currentPage.entries.push({
+              section, x: sectionX, y: currentY, width: sectionW,
+              height: continuationContentHeight, tableStartIndex: currentStartIndex,
+            });
+            currentY += continuationContentHeight;
+            currentStartIndex += rowsThisPage;
+          }
+        } else {
+          // Equipment table: variable-height items — use per-item cumulative heights
+          const ts = section.settings as TableSectionSettings;
+          const itemHeights = calculateTableItemHeights(data, ts);
+
+          // Calculate which items fit on the first page
+          const firstPageContent = availableHeight - TABLE_PADDING_TOP_MM - tableHeaderMm - TABLE_PADDING_BOTTOM_MM;
+          let cumulative = 0;
+          let firstPageItems = 0;
+          for (let i = 0; i < itemHeights.length; i++) {
+            if (cumulative + itemHeights[i] > firstPageContent && firstPageItems > 0) break;
+            cumulative += itemHeights[i];
+            firstPageItems++;
+          }
+
+          currentPage.entries.push({
+            section, x: sectionX, y: currentY, width: sectionW,
+            height: availableHeight, tableStartIndex: 0,
+          });
+
+          // Continuation pages: walk through remaining items using cumulative heights
+          // Note: startIndex in the plugin counts parent items (globalIdx), not
+          // the itemHeights entries (which include group headers). We need to map
+          // from our itemHeights index to the plugin's parent-item index.
+          const parentItems = data.line_items.filter((i) => !i.isKitChild);
+          const groups = new Map<string, DocumentLineItem[]>();
+          const groupOrder: string[] = [];
+          for (const item of parentItems) {
+            const key = item.groupName || "__ungrouped__";
+            if (!groups.has(key)) { groups.set(key, []); groupOrder.push(key); }
+            groups.get(key)!.push(item);
+          }
+
+          // Build a mapping: itemHeights index → parentItemIndex (for startIndex)
+          // Group headers don't count as parent items for startIndex purposes
+          const heightToParentIdx: number[] = [];
+          let parentIdx = 0;
+          for (const groupKey of groupOrder) {
+            if (groupKey !== "__ungrouped__" && ts.showGroupHeaders) {
+              heightToParentIdx.push(-1); // group header, not a parent item
+            }
+            const groupItems = groups.get(groupKey)!;
+            for (let gi = 0; gi < groupItems.length; gi++) {
+              heightToParentIdx.push(parentIdx);
+              parentIdx++;
+            }
+          }
+
+          let remainingIdx = firstPageItems;
+          while (remainingIdx < itemHeights.length) {
+            startNewPage();
+            const pageContent = continuationContentHeight - TABLE_PADDING_TOP_MM - tableHeaderMm - TABLE_PADDING_BOTTOM_MM;
+            let pageCumulative = 0;
+            let pageItems = 0;
+            for (let i = remainingIdx; i < itemHeights.length; i++) {
+              if (pageCumulative + itemHeights[i] > pageContent && pageItems > 0) break;
+              pageCumulative += itemHeights[i];
+              pageItems++;
+            }
+
+            // Find the startIndex (parent item index) for this page
+            // Skip group headers at the start of this page segment
+            let startParentIdx = 0;
+            for (let i = 0; i < remainingIdx && i < heightToParentIdx.length; i++) {
+              if (heightToParentIdx[i] >= 0) {
+                startParentIdx = heightToParentIdx[i] + 1;
+              }
+            }
+
+            currentPage.entries.push({
+              section, x: sectionX, y: currentY, width: sectionW,
+              height: continuationContentHeight,
+              tableStartIndex: startParentIdx,
+            });
+            currentY += continuationContentHeight;
+            remainingIdx += Math.max(1, pageItems);
+          }
         }
         continue;
       }

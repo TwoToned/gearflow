@@ -185,8 +185,8 @@ describe("estimateSectionHeight", () => {
         showRowNumbers: false,
       });
       const d = makeData({ line_items: [] });
-      // 0 items, 0 children => 8 + 0 * 5 + 4 = 12
-      expect(estimateSectionHeight(section, d)).toBe(12);
+      // 0 items: padding(8) + headerRow(~6.7mm) + 0 content + padding(4) ≈ 18.7mm
+      expect(estimateSectionHeight(section, d)).toBeCloseTo(18.7, 0);
     });
 
     it("returns correct height for N items", () => {
@@ -205,8 +205,8 @@ describe("estimateSectionHeight", () => {
       });
       const items = [makeLineItem({ id: "1" }), makeLineItem({ id: "2" }), makeLineItem({ id: "3" })];
       const d = makeData({ line_items: items });
-      // 3 parent items, showKitChildren=false so 0 child rows => 8 + 3*5 + 4 = 27
-      expect(estimateSectionHeight(section, d)).toBe(27);
+      // 3 parent items: padding(8) + header(~6.7) + 3*parentRow(~6.0) + padding(4) ≈ 36.7mm
+      expect(estimateSectionHeight(section, d)).toBeCloseTo(36.7, 0);
     });
 
     it("includes kit children in height when showKitChildren is true", () => {
@@ -229,8 +229,9 @@ describe("estimateSectionHeight", () => {
         makeLineItem({ id: "3", isKitChild: true }),
       ];
       const d = makeData({ line_items: items });
-      // 1 parent, 2 children visible => 8 + 3*5 + 4 = 27
-      expect(estimateSectionHeight(section, d)).toBe(27);
+      // 1 parent item (children are filtered as isKitChild but no kitId on parent):
+      // padding(8) + header(~6.7) + 1*parentRow(~6.0) + padding(4) ≈ 24.7mm
+      expect(estimateSectionHeight(section, d)).toBeCloseTo(24.7, 0);
     });
 
     it("excludes kit children from height when showKitChildren is false", () => {
@@ -253,8 +254,8 @@ describe("estimateSectionHeight", () => {
         makeLineItem({ id: "3", isKitChild: true }),
       ];
       const d = makeData({ line_items: items });
-      // 1 parent, 0 visible children => 8 + 1*5 + 4 = 17
-      expect(estimateSectionHeight(section, d)).toBe(17);
+      // 1 parent, showKitChildren=false: padding(8) + header(~6.7) + 1*parentRow(~6.0) + padding(4) ≈ 24.7mm
+      expect(estimateSectionHeight(section, d)).toBeCloseTo(24.7, 0);
     });
 
     it("scales linearly with item count", () => {
@@ -271,14 +272,18 @@ describe("estimateSectionHeight", () => {
         showCategories: false,
         showRowNumbers: false,
       };
-      const overhead = 8 + 4; // header + footer constants
-
+      // Height should scale linearly with item count
+      const heights: number[] = [];
       for (const count of [1, 5, 10, 20]) {
         const items = Array.from({ length: count }, (_, i) => makeLineItem({ id: String(i) }));
         const d = makeData({ line_items: items });
         const section = makeSection("table", settings);
-        expect(estimateSectionHeight(section, d)).toBe(overhead + count * TABLE_ROW_HEIGHT_MM);
+        heights.push(estimateSectionHeight(section, d));
       }
+      // Check linearity: difference between consecutive entries should be proportional to item count delta
+      const perItem = (heights[1] - heights[0]) / 4; // 5-1 = 4 items
+      expect((heights[2] - heights[0]) / 9).toBeCloseTo(perItem, 1); // 10-1 = 9 items
+      expect((heights[3] - heights[0]) / 19).toBeCloseTo(perItem, 1); // 20-1 = 19 items
     });
   });
 

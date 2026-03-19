@@ -17,6 +17,7 @@ import { getCategory } from "@/server/categories";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import {
   Table,
   TableBody,
@@ -29,13 +30,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MediaThumbnail } from "@/components/media/media-thumbnail";
 import { resolveModelPhotoUrl } from "@/lib/media-utils";
 import { useActiveOrganization } from "@/lib/auth-client";
-
-const kitStatusColors: Record<string, string> = {
-  AVAILABLE: "bg-green-500/10 text-green-500 border-green-500/20",
-  CHECKED_OUT: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  IN_MAINTENANCE: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  RETIRED: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-};
 
 import { kitStatusLabels, formatLabel } from "@/lib/status-labels";
 
@@ -252,9 +246,7 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
                           </TableCell>
                           <TableCell className="hidden md:table-cell">
                             {kit.status && (
-                              <Badge className={kitStatusColors[kit.status] || ""}>
-                                {kitStatusLabels[kit.status] || formatLabel(kit.status)}
-                              </Badge>
+                              <StatusIndicator category="kit" value={kit.status} label={kitStatusLabels[kit.status] || formatLabel(kit.status)} variant="pill" />
                             )}
                           </TableCell>
                           <TableCell className="text-right">

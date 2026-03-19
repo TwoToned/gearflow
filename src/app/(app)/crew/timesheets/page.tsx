@@ -23,8 +23,8 @@ import {
   Plus,
   ArrowRight,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -68,13 +68,6 @@ import {
 import { timeEntryStatusLabels, formatLabel } from "@/lib/status-labels";
 import { toast } from "sonner";
 
-const timeEntryStatusColors: Record<string, string> = {
-  DRAFT: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  SUBMITTED: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  APPROVED: "bg-green-500/10 text-green-500 border-green-500/20",
-  DISPUTED: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  EXPORTED: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-};
 
 function formatDate(date: string | Date | null | undefined): string {
   if (!date) return "\u2014";
@@ -302,12 +295,12 @@ export default function TimesheetsPage() {
         { value: "EXPORTED", label: "Exported" },
       ],
       cell: (row: any) => (
-        <Badge
-          variant="outline"
-          className={timeEntryStatusColors[row.status] || ""}
-        >
-          {timeEntryStatusLabels[row.status] || formatLabel(row.status)}
-        </Badge>
+        <StatusIndicator
+          category="timeEntry"
+          value={row.status}
+          label={timeEntryStatusLabels[row.status] || formatLabel(row.status)}
+          variant="pill"
+        />
       ),
     },
     {

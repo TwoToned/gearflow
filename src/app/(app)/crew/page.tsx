@@ -21,8 +21,8 @@ import {
   Loader2,
 } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -70,12 +70,6 @@ import {
 import { format } from "date-fns";
 import { toast } from "sonner";
 
-const assignmentStatusColors: Record<string, string> = {
-  PENDING: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  OFFERED: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  ACCEPTED: "bg-teal-500/10 text-teal-500 border-teal-500/20",
-  CONFIRMED: "bg-green-500/10 text-green-500 border-green-500/20",
-};
 
 function formatDate(date: string | Date | null | undefined): string {
   if (!date) return "—";
@@ -363,12 +357,12 @@ function CrewDashboard() {
                       {a.endDate && `–${formatDate(a.endDate)}`}
                     </p>
                   </div>
-                  <Badge
-                    variant="outline"
-                    className={assignmentStatusColors[a.status] || ""}
-                  >
-                    {assignmentStatusLabels[a.status] || formatLabel(a.status)}
-                  </Badge>
+                  <StatusIndicator
+                    category="assignment"
+                    value={a.status}
+                    label={assignmentStatusLabels[a.status] || formatLabel(a.status)}
+                    variant="pill"
+                  />
                 </Link>
               ))}
             </div>
@@ -460,12 +454,12 @@ function CrewDashboard() {
                     </p>
                   </div>
                   <div className="flex items-center gap-2 ml-2">
-                    <Badge
-                      variant="outline"
-                      className={assignmentStatusColors[a.status] || ""}
-                    >
-                      {assignmentStatusLabels[a.status] || formatLabel(a.status)}
-                    </Badge>
+                    <StatusIndicator
+                      category="assignment"
+                      value={a.status}
+                      label={assignmentStatusLabels[a.status] || formatLabel(a.status)}
+                      variant="pill"
+                    />
                     {a.status === "PENDING" && a.crewMember?.email && (
                       <Button
                         variant="outline"

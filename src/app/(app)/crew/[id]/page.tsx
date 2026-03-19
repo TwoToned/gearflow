@@ -137,13 +137,6 @@ const availabilityTypeColors: Record<string, string> = {
   PREFERRED: "bg-green-500/10 text-green-500 border-green-500/20",
 };
 
-const timeEntryStatusColors: Record<string, string> = {
-  DRAFT: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  SUBMITTED: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  APPROVED: "bg-green-500/10 text-green-500 border-green-500/20",
-  DISPUTED: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  EXPORTED: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-};
 
 const projectStatusLabels: Record<string, string> = {
   ENQUIRY: "Enquiry",
@@ -1266,15 +1259,13 @@ export default function CrewMemberDetailPage({
                               : "—"}
                           </TableCell>
                           <TableCell>
-                            <Badge
-                              variant="outline"
-                              className={
-                                timeEntryStatusColors[entry.status] || ""
-                              }
-                            >
-                              {timeEntryStatusLabels[entry.status] ||
+                            <StatusIndicator
+                              category="timeEntry"
+                              value={entry.status}
+                              label={timeEntryStatusLabels[entry.status] ||
                                 formatLabel(entry.status)}
-                            </Badge>
+                              variant="pill"
+                            />
                           </TableCell>
                           <TableCell>
                             {entry.status !== "EXPORTED" && (

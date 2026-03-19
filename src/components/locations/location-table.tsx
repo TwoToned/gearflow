@@ -10,14 +10,8 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
-
-const typeColors: Record<string, string> = {
-  WAREHOUSE: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  VENUE: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  VEHICLE: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  OFFSITE: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-};
 
 const typeLabels: Record<string, string> = {
   WAREHOUSE: "Warehouse",
@@ -101,9 +95,7 @@ const columns: ColumnDef<LocationRow>[] = [
       { value: "OFFSITE", label: "Offsite", color: "bg-gray-500" },
     ],
     cell: (row) => (
-      <Badge variant="outline" className={typeColors[row.type] || ""}>
-        {typeLabels[row.type] || row.type}
-      </Badge>
+      <StatusIndicator category="locationType" value={row.type} label={typeLabels[row.type] || row.type} variant="pill" />
     ),
   },
   {

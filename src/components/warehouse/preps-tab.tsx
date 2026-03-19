@@ -32,6 +32,7 @@ import { getOrganization, type OrgSettings } from "@/server/settings";
 import { checkOutKit, checkInKit } from "@/server/warehouse";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Input } from "@/components/ui/input";
 import { ScanInput } from "@/components/ui/scan-input";
 import { Label } from "@/components/ui/label";
@@ -82,13 +83,6 @@ interface PrepKit {
   isActive: boolean;
   lineItems: PrepKitLineItem[];
 }
-
-const kitStatusColors: Record<string, string> = {
-  AVAILABLE: "bg-green-500/10 text-green-500 border-green-500/20",
-  CHECKED_OUT: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  IN_MAINTENANCE: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  RETIRED: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-};
 
 const kitStatusLabels: Record<string, string> = {
   AVAILABLE: "Ready",
@@ -229,9 +223,7 @@ export function PrepsTab({ projectId }: { projectId: string }) {
                       <span>{childCount} item{childCount !== 1 ? "s" : ""}</span>
                     </div>
                   </div>
-                  <Badge variant="outline" className={kitStatusColors[kit.status] || ""}>
-                    {kitStatusLabels[kit.status] || kit.status}
-                  </Badge>
+                  <StatusIndicator category="kit" value={kit.status} label={kitStatusLabels[kit.status] || kit.status} variant="pill" />
                   <ChevronRight className="h-4 w-4 text-fg-3 shrink-0" />
                 </div>
               </div>
@@ -505,9 +497,7 @@ function PrepKitDetailDialog({
               <Badge variant="outline" className={`bg-purple-500/10 text-purple-500 border-purple-500/20`}>
                 Prep
               </Badge>
-              <Badge variant="outline" className={kitStatusColors[kit.status] || ""}>
-                {kitStatusLabels[kit.status] || kit.status}
-              </Badge>
+              <StatusIndicator category="kit" value={kit.status} label={kitStatusLabels[kit.status] || kit.status} variant="pill" />
             </DialogTitle>
           </DialogHeader>
 

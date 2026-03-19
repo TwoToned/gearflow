@@ -22,6 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { getNotifications, type AppNotification } from "@/server/notifications";
+import { getStatusColor } from "@/lib/status-colors";
 import { formatDistanceToNow } from "date-fns";
 import { useActiveOrganization } from "@/lib/auth-client";
 
@@ -48,11 +49,6 @@ const typeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   pending_invitation: Mail,
 };
 
-const severityColors: Record<string, string> = {
-  error: "text-destructive",
-  warning: "text-amber-500",
-  info: "text-blue-500",
-};
 
 export function Notifications() {
   const router = useRouter();
@@ -130,7 +126,7 @@ export function Notifications() {
                   }}
                   className="flex items-start gap-3 py-2.5"
                 >
-                  <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${severityColors[n.severity] || ""}`} />
+                  <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${getStatusColor("notification", n.severity).text}`} />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{n.title}</p>
                     <p className="text-xs text-fg-3 truncate">{n.description}</p>

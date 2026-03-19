@@ -97,15 +97,6 @@ const statusLabels: Record<string, string> = {
   CANCELLED: "Cancelled",
 };
 
-const lineItemStatusColors: Record<string, string> = {
-  QUOTED: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  CONFIRMED: "bg-green-500/10 text-green-500 border-green-500/20",
-  PREPPED: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  PACKED: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  CHECKED_OUT: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  RETURNED: "bg-teal-500/10 text-teal-500 border-teal-500/20",
-  CANCELLED: "bg-red-500/10 text-red-500 border-red-500/20",
-};
 
 interface LineItem {
   id: string;
@@ -225,7 +216,7 @@ function KitChildRows({
                   ? <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">Verified</Badge>
                   : nestedKitPartial
                     ? <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20">Partial</Badge>
-                    : <Badge variant="outline" className={lineItemStatusColors[child.status] || ""}>{lineItemStatusLabels[child.status] || formatLabel(child.status)}</Badge>
+                    : <StatusIndicator category="lineItem" value={child.status} label={lineItemStatusLabels[child.status] || formatLabel(child.status)} variant="pill" />
                 }
               </TableCell>
             </TableRow>
@@ -251,7 +242,7 @@ function KitChildRows({
                   <TableCell>
                     {nestedVerified
                       ? <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">Verified</Badge>
-                      : <Badge variant="outline" className={lineItemStatusColors[nested.status] || ""}>{lineItemStatusLabels[nested.status] || formatLabel(nested.status)}</Badge>
+                      : <StatusIndicator category="lineItem" value={nested.status} label={lineItemStatusLabels[nested.status] || formatLabel(nested.status)} variant="pill" />
                     }
                   </TableCell>
                 </TableRow>
@@ -1372,9 +1363,7 @@ function WarehouseProjectPage({
                             {renderGroupHeader(
                               entry, childKeys, selectedOut, setSelectedOut,
                               <TableCell>
-                                <Badge variant="outline" className={lineItemStatusColors[entry.items[0].status] || ""}>
-                                  {entry.items[0].status}
-                                </Badge>
+                                <StatusIndicator category="lineItem" value={entry.items[0].status} label={lineItemStatusLabels[entry.items[0].status] || formatLabel(entry.items[0].status)} variant="pill" />
                               </TableCell>
                             )}
                             {isExpanded && entry.items.map((item) => (
@@ -1394,9 +1383,7 @@ function WarehouseProjectPage({
                                 </TableCell>
                                 <TableCell className="text-center">1</TableCell>
                                 <TableCell>
-                                  <Badge variant="outline" className={lineItemStatusColors[item.status] || ""}>
-                                    {lineItemStatusLabels[item.status] || formatLabel(item.status)}
-                                  </Badge>
+                                  <StatusIndicator category="lineItem" value={item.status} label={lineItemStatusLabels[item.status] || formatLabel(item.status)} variant="pill" />
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -1419,9 +1406,7 @@ function WarehouseProjectPage({
                                     {checkedCount} selected
                                   </Badge>
                                 ) : (
-                                  <Badge variant="outline" className={lineItemStatusColors[entry.item.status] || ""}>
-                                    {lineItemStatusLabels[entry.item.status] || formatLabel(entry.item.status)}
-                                  </Badge>
+                                  <StatusIndicator category="lineItem" value={entry.item.status} label={lineItemStatusLabels[entry.item.status] || formatLabel(entry.item.status)} variant="pill" />
                                 )}
                               </TableCell>
                             )}
@@ -1501,9 +1486,7 @@ function WarehouseProjectPage({
                                     Partial
                                   </Badge>
                                 ) : (
-                                  <Badge variant="outline" className={lineItemStatusColors[entry.item.status] || ""}>
-                                    {lineItemStatusLabels[entry.item.status] || formatLabel(entry.item.status)}
-                                  </Badge>
+                                  <StatusIndicator category="lineItem" value={entry.item.status} label={lineItemStatusLabels[entry.item.status] || formatLabel(entry.item.status)} variant="pill" />
                                 )}
                               </TableCell>
                             </TableRow>
@@ -1550,9 +1533,7 @@ function WarehouseProjectPage({
                           </TableCell>
                           <TableCell className="text-center">{item.quantity}</TableCell>
                           <TableCell>
-                            <Badge variant="outline" className={lineItemStatusColors[item.status] || ""}>
-                              {lineItemStatusLabels[item.status] || formatLabel(item.status)}
-                            </Badge>
+                            <StatusIndicator category="lineItem" value={item.status} label={lineItemStatusLabels[item.status] || formatLabel(item.status)} variant="pill" />
                           </TableCell>
                         </TableRow>
                       );
@@ -1659,9 +1640,7 @@ function WarehouseProjectPage({
                             {renderGroupHeader(
                               entry, childKeys, selectedIn, setSelectedIn,
                               <TableCell>
-                                <Badge variant="outline" className={lineItemStatusColors["CHECKED_OUT"]}>
-                                  Deployed
-                                </Badge>
+                                <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
                               </TableCell>
                             )}
                             {isExpanded && entry.items.map((item) => (
@@ -1681,9 +1660,7 @@ function WarehouseProjectPage({
                                 </TableCell>
                                 <TableCell className="text-center">1</TableCell>
                                 <TableCell>
-                                  <Badge variant="outline" className={lineItemStatusColors["CHECKED_OUT"]}>
-                                    Deployed
-                                  </Badge>
+                                  <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -1706,9 +1683,7 @@ function WarehouseProjectPage({
                                     {checkedCount} selected
                                   </Badge>
                                 ) : (
-                                  <Badge variant="outline" className={lineItemStatusColors["CHECKED_OUT"]}>
-                                    Deployed
-                                  </Badge>
+                                  <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
                                 )}
                               </TableCell>
                             )}
@@ -1788,9 +1763,7 @@ function WarehouseProjectPage({
                                     Partial
                                   </Badge>
                                 ) : (
-                                  <Badge variant="outline" className={lineItemStatusColors["CHECKED_OUT"]}>
-                                    Deployed
-                                  </Badge>
+                                  <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
                                 )}
                               </TableCell>
                             </TableRow>
@@ -1850,9 +1823,7 @@ function WarehouseProjectPage({
                             )}
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline" className={lineItemStatusColors["CHECKED_OUT"]}>
-                              Deployed
-                            </Badge>
+                            <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
                           </TableCell>
                         </TableRow>
                       );

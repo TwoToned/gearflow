@@ -12,9 +12,12 @@ import {
 } from "@/lib/validations/document-template";
 import {
   saveTemplateSectionsSchema,
+  saveTemplateBlocksSchema,
   templateImportSchema,
 } from "@/lib/validations/template-section";
-import type { SaveTemplateSectionsValues, TemplateImportData } from "@/lib/validations/template-section";
+import type { SaveTemplateSectionsValues, SaveTemplateBlocksValues, TemplateImportData } from "@/lib/validations/template-section";
+import { flattenBlocks } from "@/lib/pdfme/block-utils";
+import type { TemplateBlock } from "@/lib/pdfme/section-types";
 import { getTemplateBuilder } from "@/lib/pdfme/templates";
 import { getDefaultSections } from "@/lib/pdfme/section-types";
 import type { DocumentType } from "@/lib/pdfme/types";
@@ -561,6 +564,7 @@ export async function duplicateDocumentTemplate(id: string) {
 
 /**
  * Save sections for a document template (section-based builder).
+ * Supports optimistic locking via optional version field.
  */
 export async function saveTemplateSections(data: SaveTemplateSectionsValues) {
   const { organizationId, userId, userName } = await requirePermission(
@@ -569,6 +573,19 @@ export async function saveTemplateSections(data: SaveTemplateSectionsValues) {
   );
 
   const validated = saveTemplateSectionsSchema.parse(data);
+
+  // Optimistic locking: if client sends a version, verify it matches
+  if (validated.version != null) {
+    const current = await prisma.documentTemplate.findFirst({
+      where: { id: validated.id, organizationId },
+      select: { version: true },
+    });
+    if (current && current.version !== validated.version) {
+      throw new Error(
+        "Template was modified by another user. Please refresh and try again."
+      );
+    }
+  }
 
   const template = await prisma.documentTemplate.update({
     where: { id: validated.id, organizationId },
@@ -588,6 +605,58 @@ export async function saveTemplateSections(data: SaveTemplateSectionsValues) {
     entityId: template.id,
     entityName: template.name,
     summary: `Updated sections for template "${template.name}"`,
+  });
+
+  return serialize({ success: true, version: template.version });
+}
+
+/**
+ * Save blocks for a document template (block editor).
+ * Converts blocks to flat sections with layoutHint for storage.
+ * Supports optimistic locking via optional version field.
+ */
+export async function saveTemplateBlocks(data: SaveTemplateBlocksValues) {
+  const { organizationId, userId, userName } = await requirePermission(
+    "document",
+    "manage_templates"
+  );
+
+  const validated = saveTemplateBlocksSchema.parse(data);
+
+  // Optimistic locking
+  if (validated.version != null) {
+    const current = await prisma.documentTemplate.findFirst({
+      where: { id: validated.id, organizationId },
+      select: { version: true },
+    });
+    if (current && current.version !== validated.version) {
+      throw new Error(
+        "Template was modified by another user. Please refresh and try again."
+      );
+    }
+  }
+
+  // Flatten blocks to sections for storage
+  const sections = flattenBlocks(validated.blocks as TemplateBlock[]);
+
+  const template = await prisma.documentTemplate.update({
+    where: { id: validated.id, organizationId },
+    data: {
+      sections: JSON.stringify(sections),
+      brandTemplateId: validated.brandTemplateId ?? null,
+      version: { increment: 1 },
+    },
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "update",
+    entityType: "document_template",
+    entityId: template.id,
+    entityName: template.name,
+    summary: `Updated block layout for template "${template.name}"`,
   });
 
   return serialize({ success: true, version: template.version });

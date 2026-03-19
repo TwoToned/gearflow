@@ -96,11 +96,15 @@ export function estimateSectionHeight(
     }
 
     case "table": {
-      const itemCount = data.line_items.filter((i) => !i.isKitChild).length;
+      const items = data.line_items.filter((i) => !i.isKitChild);
+      const itemCount = items.length;
       const childCount = data.line_items.filter((i) => i.isKitChild).length;
       const ts = section.settings as TableSectionSettings;
       const visibleChildren = ts.showKitChildren ? childCount : 0;
-      return 8 + (itemCount + visibleChildren) * TABLE_ROW_HEIGHT_MM + 4;
+      // Count distinct group names for group header height
+      const groupNames = new Set(items.map((i) => i.groupName).filter(Boolean));
+      const groupHeaderCount = ts.showGroupHeaders ? groupNames.size : 0;
+      return 8 + (itemCount + visibleChildren + groupHeaderCount) * TABLE_ROW_HEIGHT_MM + 4;
     }
 
     case "totals":

@@ -13,6 +13,7 @@ import { getCrewPlannerData } from "@/server/crew-availability";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { PageMeta } from "@/components/layout/page-meta";
+import { FadeIn } from "@/components/ui/motion";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
@@ -106,6 +107,7 @@ export default function CrewPlannerPage() {
   return (
     <RequirePermission resource="crew" action="read">
       <PageMeta title="Crew Planner" />
+      <FadeIn>
       <div className="space-y-4">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -209,6 +211,7 @@ export default function CrewPlannerPage() {
           </span>
         </div>
       </div>
+      </FadeIn>
     </RequirePermission>
   );
 }

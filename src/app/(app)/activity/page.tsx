@@ -2,7 +2,7 @@
 
 import { useState, Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Download, ChevronDown, ChevronRight } from "lucide-react";
+import { Download } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 
@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/layout/page-header";
+import { FadeIn } from "@/components/ui/motion";
 
 const entityTypeLabels: Record<string, string> = {
   asset: "Asset",
@@ -50,36 +51,6 @@ const actionLabels: Record<string, string> = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyLog = Record<string, any>;
 
-function formatDetails(details: unknown): { field: string; from: string; to: string }[] | null {
-  if (!details || typeof details !== "object") return null;
-  const d = details as Record<string, unknown>;
-
-  if (Array.isArray(d.changes)) {
-    return d.changes.map((c: Record<string, unknown>) => ({
-      field: String(c.field ?? ""),
-      from: String(c.from ?? ""),
-      to: String(c.to ?? ""),
-    }));
-  }
-
-  if (d.before && d.after && typeof d.before === "object" && typeof d.after === "object") {
-    const before = d.before as Record<string, unknown>;
-    const after = d.after as Record<string, unknown>;
-    const allKeys = new Set([...Object.keys(before), ...Object.keys(after)]);
-    const changes: { field: string; from: string; to: string }[] = [];
-    for (const key of allKeys) {
-      if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) {
-        changes.push({ field: key, from: String(before[key] ?? ""), to: String(after[key] ?? "") });
-      }
-    }
-    return changes.length > 0 ? changes : null;
-  }
-
-  const entries = Object.entries(d);
-  if (entries.length === 0) return null;
-  return entries.map(([key, value]) => ({ field: key, from: "", to: String(value ?? "") }));
-}
-
 function useActivityColumns(): ColumnDef<AnyLog>[] {
   return [
     {
@@ -99,7 +70,7 @@ function useActivityColumns(): ColumnDef<AnyLog>[] {
       responsiveHide: "sm",
       sortable: false,
       cell: (row) => (
-        <span className="text-sm">{row.user?.name || row.userName || "—"}</span>
+        <span className="text-sm">{row.user?.name || row.userName || "\u2014"}</span>
       ),
     },
     {
@@ -197,11 +168,16 @@ function ActivityLogContent() {
     }
   }
 
+  // Build contextual description
+  const description = total > 0
+    ? `${total.toLocaleString()} recorded ${total === 1 ? "event" : "events"} across your workspace`
+    : "Audit trail of every action taken by your team.";
+
   return (
-    <div className="space-y-6">
+    <FadeIn className="space-y-6">
       <PageHeader
         title="Activity Log"
-        description="Audit trail of every action taken by your team."
+        description={description}
       />
 
       <DataTable
@@ -238,7 +214,7 @@ function ActivityLogContent() {
           </Button>
         }
       />
-    </div>
+    </FadeIn>
   );
 }
 

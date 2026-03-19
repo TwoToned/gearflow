@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { TestTagTable } from "@/components/test-tag/test-tag-table";
 import { backfillTestTagAssets } from "@/server/test-tag-assets";
 import { RequirePermission } from "@/components/auth/require-permission";
+import { FadeIn } from "@/components/ui/motion";
 
 export default function TestTagRegistryPage() {
   const queryClient = useQueryClient();
@@ -31,6 +32,7 @@ export default function TestTagRegistryPage() {
 
   return (
     <RequirePermission resource="testTag" action="read">
+    <FadeIn>
     <div className="space-y-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -61,6 +63,7 @@ export default function TestTagRegistryPage() {
       </div>
       <TestTagTable />
     </div>
+    </FadeIn>
     </RequirePermission>
   );
 }

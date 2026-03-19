@@ -8,7 +8,6 @@ import { usePlatformBranding } from "@/lib/use-platform-name";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -40,6 +39,9 @@ import {
   revokeSession,
   revokeAllOtherSessions,
 } from "@/server/user-profile";
+import { PageHeader } from "@/components/layout/page-header";
+import { SectionHeader } from "@/components/layout/page-layouts";
+import { FadeIn } from "@/components/ui/motion";
 
 export default function AccountPage() {
   const queryClient = useQueryClient();
@@ -289,19 +291,16 @@ export default function AccountPage() {
   const passkeys = (passkeysQuery.data || []) as any[];
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      <div>
-        <h1 className="t-title text-fg">Account Settings</h1>
-        <p className="text-fg-3">
-          Manage your profile, security, and sessions.
-        </p>
-      </div>
+    <FadeIn className="space-y-8 max-w-2xl">
+      <PageHeader
+        title="Your Account"
+        description={profile?.name ? `Signed in as ${profile.name}` : "Manage your profile, security, and sessions."}
+      />
 
       {/* Profile */}
-      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-        <h3 className="t-heading text-fg mb-1">Profile</h3>
-        <p className="text-[13px] text-fg-3 mb-4">Your personal information.</p>
-        <div className="space-y-4">
+      <section>
+        <SectionHeader label="Profile" />
+        <div className="mt-4 space-y-4">
           <div className="flex items-center gap-4">
             <div className="relative group">
               <UserAvatar
@@ -363,7 +362,6 @@ export default function AccountPage() {
               </div>
             </div>
           </div>
-          <Separator />
           <div className="space-y-2">
             <Label htmlFor="displayName">Display Name</Label>
             <Input
@@ -381,15 +379,12 @@ export default function AccountPage() {
             </Button>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Security */}
-      <div id="security" className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-        <h3 className="t-heading text-fg flex items-center gap-2 mb-4">
-          <Shield className="h-5 w-5" />
-          Security
-        </h3>
-        <div className="space-y-6">
+      {/* Security — Password */}
+      <section id="security">
+        <SectionHeader label="Security" />
+        <div className="mt-4 space-y-6">
           {/* Password Change */}
           <div className="space-y-4">
             <h3 className="text-sm font-semibold">Change Password</h3>
@@ -439,208 +434,198 @@ export default function AccountPage() {
               Change Password
             </Button>
           </div>
+        </div>
+      </section>
 
-          <Separator />
-
-          {/* 2FA */}
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold">Two-Factor Authentication</h3>
-            {profile?.twoFactorEnabled ? (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
-                    Enabled
-                  </Badge>
-                  <span className="text-sm text-fg-3">
-                    Your account is protected with 2FA.
-                  </span>
-                </div>
-                <Button
-                  variant="outline"
-                  onClick={() => disable2FAMutation.mutate()}
-                  disabled={disable2FAMutation.isPending || !currentPassword}
-                >
-                  Disable 2FA
-                </Button>
-                <p className="text-xs text-fg-3">
-                  Enter your current password above, then click Disable 2FA.
-                </p>
+      {/* Two-Factor Authentication */}
+      <section>
+        <SectionHeader label="Two-Factor Authentication" />
+        <div className="mt-4 space-y-4">
+          {profile?.twoFactorEnabled ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
+                  Enabled
+                </Badge>
+                <span className="text-sm text-fg-3">
+                  Your account is protected with 2FA.
+                </span>
               </div>
-            ) : (
-              <div className="space-y-3">
-                <p className="text-sm text-fg-3">
-                  Add an extra layer of security to your account using a TOTP authenticator app.
-                </p>
-                <Button
-                  variant="outline"
-                  onClick={() => enable2FAMutation.mutate()}
-                  disabled={enable2FAMutation.isPending || !currentPassword}
-                >
-                  {enable2FAMutation.isPending ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Shield className="mr-2 h-4 w-4" />
-                  )}
-                  Enable 2FA
-                </Button>
-                <p className="text-xs text-fg-3">
-                  Enter your current password above, then click Enable 2FA.
-                </p>
-              </div>
-            )}
-          </div>
-
-          <Separator />
-
-          {/* Passkeys */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold flex items-center gap-2">
-                <Fingerprint className="h-4 w-4" />
-                Passkeys
-              </h3>
               <Button
                 variant="outline"
-                size="sm"
-                onClick={() => addPasskeyMutation.mutate()}
-                disabled={addPasskeyMutation.isPending}
+                onClick={() => disable2FAMutation.mutate()}
+                disabled={disable2FAMutation.isPending || !currentPassword}
               >
-                {addPasskeyMutation.isPending ? (
-                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                ) : (
-                  <Plus className="mr-1 h-3 w-3" />
-                )}
-                Add Passkey
+                Disable 2FA
               </Button>
+              <p className="text-xs text-fg-3">
+                Enter your current password in the Security section above, then click Disable 2FA.
+              </p>
             </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm text-fg-3">
+                Add an extra layer of security to your account using a TOTP authenticator app.
+              </p>
+              <Button
+                variant="outline"
+                onClick={() => enable2FAMutation.mutate()}
+                disabled={enable2FAMutation.isPending || !currentPassword}
+              >
+                {enable2FAMutation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Shield className="mr-2 h-4 w-4" />
+                )}
+                Enable 2FA
+              </Button>
+              <p className="text-xs text-fg-3">
+                Enter your current password in the Security section above, then click Enable 2FA.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Passkeys */}
+      <section>
+        <SectionHeader label="Passkeys" />
+        <div className="mt-4 space-y-4">
+          <div className="flex items-center justify-between">
             <p className="text-sm text-fg-3">
               Use Touch ID, Face ID, or a security key for passwordless sign-in.
             </p>
-            {passkeys.length === 0 ? (
-              <p className="text-sm text-fg-3 italic">
-                No passkeys registered.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {passkeys.map((pk: { id: string; name?: string; createdAt?: string }) => (
-                  <div
-                    key={pk.id}
-                    className="flex items-center justify-between rounded-md border p-3"
-                  >
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <Fingerprint className="h-4 w-4 text-fg-3" />
-                        <span className="text-sm font-medium">
-                          {pk.name || "Unnamed Passkey"}
-                        </span>
-                      </div>
-                      {pk.createdAt && (
-                        <p className="text-xs text-fg-3 mt-0.5">
-                          Added {new Date(pk.createdAt).toLocaleDateString()}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => {
-                          setRenamePasskey({ id: pk.id, name: pk.name || "" });
-                          setPasskeyNewName(pk.name || "");
-                        }}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => {
-                          if (confirm("Delete this passkey?")) {
-                            deletePasskeyMutation.mutate(pk.id);
-                          }
-                        }}
-                      >
-                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => addPasskeyMutation.mutate()}
+              disabled={addPasskeyMutation.isPending}
+            >
+              {addPasskeyMutation.isPending ? (
+                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+              ) : (
+                <Plus className="mr-1 h-3 w-3" />
+              )}
+              Add Passkey
+            </Button>
           </div>
-
-          {/* Connected Accounts — only show if any social providers are enabled */}
-          {socialProviders.length > 0 && (
-            <>
-              <Separator />
-              <div className="space-y-4">
-                <h3 className="text-sm font-semibold flex items-center gap-2">
-                  <Link2 className="h-4 w-4" />
-                  Connected Accounts
-                </h3>
-                <p className="text-sm text-fg-3">
-                  Link social accounts for easier sign-in.
-                </p>
-                <div className="space-y-2">
-                  {socialProviders.includes("google") && (
-                    <div className="flex items-center justify-between rounded-md border p-3">
-                      <div className="flex items-center gap-3">
-                        <svg className="h-5 w-5" viewBox="0 0 24 24">
-                          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
-                          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-                        </svg>
-                        <span className="text-sm">Google</span>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleLinkSocial("google")}
-                      >
-                        <Link2 className="mr-1 h-3 w-3" />
-                        Connect
-                      </Button>
+          {passkeys.length === 0 ? (
+            <p className="text-sm text-fg-3 italic">
+              No passkeys registered.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {passkeys.map((pk: { id: string; name?: string; createdAt?: string }) => (
+                <div
+                  key={pk.id}
+                  className="flex items-center justify-between rounded-md border p-3"
+                >
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Fingerprint className="h-4 w-4 text-fg-3" />
+                      <span className="text-sm font-medium">
+                        {pk.name || "Unnamed Passkey"}
+                      </span>
                     </div>
-                  )}
-                  {socialProviders.includes("microsoft") && (
-                    <div className="flex items-center justify-between rounded-md border p-3">
-                      <div className="flex items-center gap-3">
-                        <svg className="h-5 w-5" viewBox="0 0 21 21">
-                          <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
-                          <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
-                          <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
-                          <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
-                        </svg>
-                        <span className="text-sm">Microsoft</span>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleLinkSocial("microsoft")}
-                      >
-                        <Link2 className="mr-1 h-3 w-3" />
-                        Connect
-                      </Button>
-                    </div>
-                  )}
+                    {pk.createdAt && (
+                      <p className="text-xs text-fg-3 mt-0.5">
+                        Added {new Date(pk.createdAt).toLocaleDateString()}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => {
+                        setRenamePasskey({ id: pk.id, name: pk.name || "" });
+                        setPasskeyNewName(pk.name || "");
+                      }}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => {
+                        if (confirm("Delete this passkey?")) {
+                          deletePasskeyMutation.mutate(pk.id);
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            </>
+              ))}
+            </div>
           )}
         </div>
-      </div>
+      </section>
+
+      {/* Connected Accounts — only show if any social providers are enabled */}
+      {socialProviders.length > 0 && (
+        <section>
+          <SectionHeader label="Connected Accounts" />
+          <div className="mt-4 space-y-4">
+            <p className="text-sm text-fg-3">
+              Link social accounts for easier sign-in.
+            </p>
+            <div className="space-y-2">
+              {socialProviders.includes("google") && (
+                <div className="flex items-center justify-between rounded-md border p-3">
+                  <div className="flex items-center gap-3">
+                    <svg className="h-5 w-5" viewBox="0 0 24 24">
+                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
+                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                    </svg>
+                    <span className="text-sm">Google</span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleLinkSocial("google")}
+                  >
+                    <Link2 className="mr-1 h-3 w-3" />
+                    Connect
+                  </Button>
+                </div>
+              )}
+              {socialProviders.includes("microsoft") && (
+                <div className="flex items-center justify-between rounded-md border p-3">
+                  <div className="flex items-center gap-3">
+                    <svg className="h-5 w-5" viewBox="0 0 21 21">
+                      <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+                      <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+                      <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+                      <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+                    </svg>
+                    <span className="text-sm">Microsoft</span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleLinkSocial("microsoft")}
+                  >
+                    <Link2 className="mr-1 h-3 w-3" />
+                    Connect
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Active Sessions */}
-      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-        <h3 className="t-heading text-fg flex items-center gap-2 mb-1">
-          <Monitor className="h-5 w-5" />
-          Active Sessions
-        </h3>
-        <p className="text-[13px] text-fg-3 mb-4">
-          Devices where you&apos;re currently logged in.
-        </p>
-        <div className="space-y-4">
+      <section>
+        <SectionHeader label="Active Sessions" />
+        <div className="mt-4 space-y-4">
+          <p className="text-[13px] text-fg-3">
+            Devices where you&apos;re currently logged in.
+          </p>
           {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
           {sessionsQuery.data?.map(
             (s: any) => (
@@ -650,6 +635,7 @@ export default function AccountPage() {
               >
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
+                    <Monitor className="h-4 w-4 text-fg-3" />
                     <span className="text-sm font-medium">
                       {s.userAgent
                         ? s.userAgent.substring(0, 60) +
@@ -688,7 +674,7 @@ export default function AccountPage() {
             Sign out all other sessions
           </Button>
         </div>
-      </div>
+      </section>
 
       {/* 2FA Setup Dialog */}
       <Dialog open={show2FASetup} onOpenChange={setShow2FASetup}>
@@ -780,6 +766,6 @@ export default function AccountPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </FadeIn>
   );
 }

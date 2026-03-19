@@ -12,6 +12,7 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import { CanDo } from "@/components/auth/permission-gate";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { FadeIn } from "@/components/ui/motion";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -84,6 +85,7 @@ export default function TemplatesPage() {
 
   return (
     <RequirePermission resource="project" action="read">
+      <FadeIn>
       <div className="space-y-4">
         <div className="flex items-start justify-between">
           <div>
@@ -202,6 +204,7 @@ export default function TemplatesPage() {
             </Table>
         </div>
       </div>
+      </FadeIn>
 
       {/* Create Project from Template */}
       <Dialog open={!!createFrom} onOpenChange={(open) => !open && setCreateFrom(null)}>

@@ -34,6 +34,7 @@ import {
 import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { PageHeader } from "@/components/layout/page-header";
+import { FadeIn } from "@/components/ui/motion";
 
 export default function CategoriesPage() {
   const queryClient = useQueryClient();
@@ -145,6 +146,7 @@ export default function CategoriesPage() {
     : rows;
 
   return (
+    <FadeIn>
     <div className="space-y-4">
       <PageHeader
         title="Categories"
@@ -335,5 +337,6 @@ export default function CategoriesPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </FadeIn>
   );
 }

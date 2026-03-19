@@ -67,6 +67,7 @@ import {
 } from "@/lib/validations/crew";
 import { timeEntryStatusLabels, formatLabel } from "@/lib/status-labels";
 import { toast } from "sonner";
+import { FadeIn } from "@/components/ui/motion";
 
 
 function formatDate(date: string | Date | null | undefined): string {
@@ -416,6 +417,7 @@ export default function TimesheetsPage() {
 
   return (
     <RequirePermission resource="crew" action="read">
+      <FadeIn>
       <div className="space-y-4">
         <PageHeader
           title="Timesheets"
@@ -451,6 +453,7 @@ export default function TimesheetsPage() {
           toolbarActions={toolbarActions}
         />
       </div>
+      </FadeIn>
 
       {/* Edit Dialog */}
       <EditTimeEntryDialog

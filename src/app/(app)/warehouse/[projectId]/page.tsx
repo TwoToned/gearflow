@@ -78,6 +78,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { RequirePermission } from "@/components/auth/require-permission";
+import { FadeIn } from "@/components/ui/motion";
 import { OnlinePickList } from "@/components/warehouse/online-pick-list";
 import { PrepsTab } from "@/components/warehouse/preps-tab";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -1193,6 +1194,7 @@ function WarehouseProjectPage({
 
   return (
     <RequirePermission resource="warehouse" action="read">
+    <FadeIn>
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -2036,6 +2038,7 @@ function WarehouseProjectPage({
         </DialogContent>
       </Dialog>
     </div>
+    </FadeIn>
     </RequirePermission>
   );
 }

@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, Suspense } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { ChevronRight, Loader2 } from "lucide-react";
 
 import { testTagAssetSchema, type TestTagAssetFormValues } from "@/lib/validations/test-tag";
 import { CanDo } from "@/components/auth/permission-gate";
@@ -19,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { ScanInput } from "@/components/ui/scan-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { FadeIn } from "@/components/ui/motion";
 
 import {
   Select,
@@ -182,7 +184,13 @@ function NewTestTagAssetInner() {
 
   return (
     <CanDo resource="testTag" action="create" fallback={<div className="p-8 text-center text-fg-3">You don&apos;t have permission to perform this action.</div>}>
+    <FadeIn>
     <div className="space-y-6 max-w-2xl">
+      <div className="flex items-center gap-2 text-sm text-fg-3 mb-4">
+        <Link href="/test-and-tag" className="hover:text-fg transition-colors">Test & Tag</Link>
+        <ChevronRight className="h-3 w-3" />
+        <span className="text-fg">New Item</span>
+      </div>
       <div>
         <h1 className="t-title text-fg">New Test & Tag Item</h1>
         <p className="text-fg-3">
@@ -425,6 +433,7 @@ function NewTestTagAssetInner() {
         </div>
       </form>
     </div>
+    </FadeIn>
     </CanDo>
   );
 }

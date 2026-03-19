@@ -11,6 +11,7 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/layout/page-header";
+import { FadeIn } from "@/components/ui/motion";
 import {
   Table,
   TableBody,
@@ -71,6 +72,7 @@ export default function TestAndTagPage() {
 
   return (
     <RequirePermission resource="testTag" action="read">
+    <FadeIn>
     <div className="space-y-8">
       <PageHeader
         title="Test & Tag"
@@ -289,6 +291,7 @@ export default function TestAndTagPage() {
         </div>
       )}
     </div>
+    </FadeIn>
     </RequirePermission>
   );
 }

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Trash2, Loader2, X, ScanBarcode, Camera, RotateCcw } from "lucide-react";
+import { Pencil, Plus, Trash2, Loader2, X, ScanBarcode, Camera, RotateCcw, ChevronRight, Package, Boxes } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { toast } from "sonner";
 
@@ -42,6 +42,9 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import { BookingCalendar } from "@/components/bookings/booking-calendar";
 import { BarcodeScanner } from "@/components/ui/barcode-scanner";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { FadeIn } from "@/components/ui/motion";
+import { SectionHeader } from "@/components/layout/page-layouts";
+import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import {
   Dialog,
   DialogContent,
@@ -62,7 +65,7 @@ import { kitStatusLabels, lineItemStatusLabels, conditionLabels, formatLabel } f
 
 
 function formatDate(date: Date | string | null | undefined) {
-  if (!date) return "—";
+  if (!date) return "\u2014";
   return new Date(date).toLocaleDateString("en-AU", {
     day: "numeric",
     month: "short",
@@ -220,259 +223,214 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const kitPhotos = ((kit.media || []) as MediaItem[]).filter((m) => m.type === "PHOTO");
   const kitPhotoUrl = resolveKitPhotoUrl(kit, false);
 
+  // Find current assignment (active line item on a project)
+  const currentAssignment = kit.lineItems.find(
+    (li) => !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(li.status),
+  );
+
   return (
     <RequirePermission resource="kit" action="read">
-    <PageMeta title={kit ? `${kit.assetTag}${kit.name ? ` — ${kit.name}` : ""}` : undefined} />
+    <PageMeta title={kit ? `${kit.assetTag}${kit.name ? ` \u2014 ${kit.name}` : ""}` : undefined} />
+    <FadeIn>
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex gap-4">
-          <MediaThumbnail
-            url={kitPhotoUrl}
-            alt={kit.assetTag}
-            size={64}
-            className="flex-shrink-0"
-          />
-          <div>
-          <div className="flex items-center gap-2">
-            <h1 className="t-title text-fg font-mono">{kit.assetTag}</h1>
-            <CanDo resource="kit" action="update" fallback={
-              <StatusIndicator category="kit" value={kit.status} label={kitStatusLabels[kit.status] || formatLabel(kit.status)} />
-            }>
-              <select
-                value={kit.status}
-                onChange={(e) => statusMutation.mutate(e.target.value)}
-                disabled={statusMutation.isPending}
-                className="h-7 rounded-md border border-input bg-transparent px-2 text-xs font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                <option value="AVAILABLE">Available</option>
-                <option value="CHECKED_OUT">Deployed</option>
-                <option value="IN_MAINTENANCE">In Maintenance</option>
-                <option value="RETIRED">Retired</option>
-                <option value="INCOMPLETE">Incomplete</option>
-              </select>
-            </CanDo>
-            <StatusIndicator category="condition" value={kit.condition} label={conditionLabels[kit.condition] || formatLabel(kit.condition)} />
-            {kit.caseType && (
-              <Badge variant="secondary">{kit.caseType}</Badge>
-            )}
+      {/* ── Header (full width) ────────────────────────────────── */}
+      <div>
+        {/* Breadcrumb */}
+        <nav className="mb-2 flex items-center gap-1 text-sm text-fg-3">
+          <Link href="/kits" className="hover:text-fg transition-colors">
+            Kits
+          </Link>
+          <ChevronRight className="h-3.5 w-3.5" />
+          <span className="font-mono text-fg-2">{kit.name || kit.assetTag}</span>
+        </nav>
+
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex gap-4">
+            <MediaThumbnail
+              url={kitPhotoUrl}
+              alt={kit.assetTag}
+              size={64}
+              className="flex-shrink-0"
+            />
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="t-title text-fg">{kit.name || kit.assetTag}</h1>
+                <StatusIndicator category="kit" value={kit.status} label={kitStatusLabels[kit.status] || formatLabel(kit.status)} />
+                <Badge variant="secondary" className="font-mono">{kit.assetTag}</Badge>
+              </div>
+              <p className="mt-1 text-sm text-fg-3">
+                {kit.category && kit.category.name}
+                {kit.category && kit.description && <> &middot; </>}
+                {kit.description}
+              </p>
+            </div>
           </div>
-          <p className="text-fg-3">
-            {kit.name}
-            {kit.category && <> &middot; {kit.category.name}</>}
-          </p>
-          </div>
-        </div>
-        <CanDo resource="kit" action="update">
-          <div className="flex flex-wrap gap-2">
-            {kit.status === "CHECKED_OUT" && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-amber-600"
-                onClick={() => { if (confirm("Force return this kit and all its contents? All project assignments will be marked as returned.")) forceReturnMutation.mutate(); }}
-                disabled={forceReturnMutation.isPending}
-              >
-                <RotateCcw className="mr-2 h-4 w-4" />
-                Force Return
+
+          {/* Action buttons */}
+          <CanDo resource="kit" action="update">
+            <div className="flex flex-wrap gap-2">
+              {kit.status === "CHECKED_OUT" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-amber-600"
+                  onClick={() => { if (confirm("Force return this kit and all its contents? All project assignments will be marked as returned.")) forceReturnMutation.mutate(); }}
+                  disabled={forceReturnMutation.isPending}
+                >
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Force Return
+                </Button>
+              )}
+              <Button variant="outline" render={<Link href={`/kits/${id}/edit`} />}>
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit
               </Button>
-            )}
-            <Button variant="outline" render={<Link href={`/kits/${id}/edit`} />}>
-              <Pencil className="mr-2 h-4 w-4" />
-              Edit
-            </Button>
-          </div>
-        </CanDo>
-      </div>
-
-      {/* Kit Info Card */}
-      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-        <p className="text-[13px] font-medium text-fg-3 mb-3">Kit Information</p>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="space-y-1 text-sm">
-              <div className="flex justify-between">
-                <span>Case Type</span>
-                <span className="font-medium">{kit.caseType || "—"}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Dimensions</span>
-                <span className="font-medium">{kit.caseDimensions || "—"}</span>
-              </div>
             </div>
-            <div className="space-y-1 text-sm">
-              <div className="flex justify-between">
-                <span>Weight</span>
-                <span className="font-medium">{kit.weight ? `${Number(kit.weight)} kg` : "—"}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Location</span>
-                <span className="font-medium">{kit.location?.name || "—"}</span>
-              </div>
-            </div>
-            <div className="space-y-1 text-sm">
-              <div className="flex justify-between">
-                <span>Category</span>
-                <span className="font-medium">{kit.category?.name || "—"}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Purchase Date</span>
-                <span className="font-medium">{formatDate(kit.purchaseDate)}</span>
-              </div>
-            </div>
-            <div className="space-y-1 text-sm">
-              <div className="flex justify-between">
-                <span>Purchase Price</span>
-                <span className="font-medium t-data">
-                  {kit.purchasePrice ? `$${Number(kit.purchasePrice).toFixed(2)}` : "—"}
-                </span>
-              </div>
-            </div>
-          </div>
-      </div>
-
-      <BookingCalendar entityType="kit" entityId={id} initialDate={initialDate} />
-
-      {/* Contents Card */}
-      <div id="kit-contents" className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-        <h3 className="t-heading text-fg mb-4">Contents</h3>
-        <div className="space-y-6">
-          {/* Serialized Items */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium">Serialized Items</h3>
-              <CanDo resource="kit" action="update">
-                <Button size="sm" variant="outline" onClick={() => setShowAddItem(true)}>
-                  <Plus className="mr-1 h-3 w-3" />
-                  Add Item
-                </Button>
-              </CanDo>
-            </div>
-            {kit.serializedItems.length === 0 ? (
-              <EmptyState preset="assets" heading="No serialized items" description="Add individual tracked assets to this kit." />
-            ) : (
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Asset Tag</TableHead>
-                      <TableHead>Model</TableHead>
-                      <TableHead>Position</TableHead>
-                      <TableHead>Condition</TableHead>
-                      <TableHead className="w-10" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {kit.serializedItems.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell>
-                          <Link
-                            href={`/assets/registry/${item.assetId}`}
-                            className="font-mono text-sm hover:underline"
-                          >
-                            {item.asset.assetTag}
-                          </Link>
-                        </TableCell>
-                        <TableCell>{item.asset.model.name}</TableCell>
-                        <TableCell className="text-fg-3">
-                          {item.position || "—"}
-                        </TableCell>
-                        <TableCell>
-                          <StatusIndicator category="condition" value={item.asset.condition} label={conditionLabels[item.asset.condition] || formatLabel(item.asset.condition)} />
-                        </TableCell>
-                        <TableCell>
-                          <CanDo resource="kit" action="update">
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              className="text-destructive"
-                              onClick={() => {
-                                if (confirm("Remove this item from the kit?")) {
-                                  removeItemMutation.mutate(item.assetId);
-                                }
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </CanDo>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </div>
-
-          {/* Bulk Items */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium">Bulk Items</h3>
-              <CanDo resource="kit" action="update">
-                <Button size="sm" variant="outline" onClick={() => setShowAddBulkItem(true)}>
-                  <Plus className="mr-1 h-3 w-3" />
-                  Add Bulk Item
-                </Button>
-              </CanDo>
-            </div>
-            {kit.bulkItems.length === 0 ? (
-              <EmptyState preset="assets" heading="No bulk items" description="Add consumable or quantity-tracked items to this kit." />
-            ) : (
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Model</TableHead>
-                      <TableHead className="text-right">Quantity</TableHead>
-                      <TableHead>Position</TableHead>
-                      <TableHead className="w-10" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {kit.bulkItems.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell>{item.bulkAsset.model.name}</TableCell>
-                        <TableCell className="text-right font-medium t-data">
-                          {item.quantity}
-                        </TableCell>
-                        <TableCell className="text-fg-3">
-                          {item.position || "—"}
-                        </TableCell>
-                        <TableCell>
-                          <CanDo resource="kit" action="update">
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              className="text-destructive"
-                              onClick={() => {
-                                if (confirm("Remove this bulk item from the kit?")) {
-                                  removeBulkMutation.mutate(item.id);
-                                }
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </CanDo>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </div>
+          </CanDo>
         </div>
       </div>
 
-      {/* History Card */}
-      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-        <p className="text-[13px] font-medium text-fg-3 mb-3">History</p>
-          {kit.lineItems.length === 0 && kit.scanLogs.length === 0 ? (
-            <EmptyState preset="history" />
-          ) : (
+      {/* ── 2-Column Layout ────────────────────────────────────── */}
+      <div className="flex flex-col gap-6 lg:flex-row">
+        {/* ── Main Content (left) ──────────────────────────────── */}
+        <div className="min-w-0 flex-1 space-y-6">
+          {/* Booking Calendar */}
+          <BookingCalendar entityType="kit" entityId={id} initialDate={initialDate} />
+
+          {/* Contents */}
+          <div id="kit-contents" className="space-y-6">
+            {/* Serialized Items */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="t-heading text-fg">Serialized Items</h3>
+                <CanDo resource="kit" action="update">
+                  <Button size="sm" variant="outline" onClick={() => setShowAddItem(true)}>
+                    <Plus className="mr-1 h-3 w-3" />
+                    Add Item
+                  </Button>
+                </CanDo>
+              </div>
+              {kit.serializedItems.length === 0 ? (
+                <EmptyState preset="assets" heading="No serialized items" description="Add individual tracked assets to this kit." />
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Asset Tag</TableHead>
+                        <TableHead>Model</TableHead>
+                        <TableHead>Position</TableHead>
+                        <TableHead>Condition</TableHead>
+                        <TableHead className="w-10" />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {kit.serializedItems.map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell>
+                            <Link
+                              href={`/assets/registry/${item.assetId}`}
+                              className="font-mono text-sm hover:underline"
+                            >
+                              {item.asset.assetTag}
+                            </Link>
+                          </TableCell>
+                          <TableCell>{item.asset.model.name}</TableCell>
+                          <TableCell className="text-fg-3">
+                            {item.position || "\u2014"}
+                          </TableCell>
+                          <TableCell>
+                            <StatusIndicator category="condition" value={item.asset.condition} label={conditionLabels[item.asset.condition] || formatLabel(item.asset.condition)} />
+                          </TableCell>
+                          <TableCell>
+                            <CanDo resource="kit" action="update">
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                className="text-destructive"
+                                onClick={() => {
+                                  if (confirm("Remove this item from the kit?")) {
+                                    removeItemMutation.mutate(item.assetId);
+                                  }
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </CanDo>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
+
+            {/* Bulk Items */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="t-heading text-fg">Bulk Items</h3>
+                <CanDo resource="kit" action="update">
+                  <Button size="sm" variant="outline" onClick={() => setShowAddBulkItem(true)}>
+                    <Plus className="mr-1 h-3 w-3" />
+                    Add Bulk Item
+                  </Button>
+                </CanDo>
+              </div>
+              {kit.bulkItems.length === 0 ? (
+                <EmptyState preset="assets" heading="No bulk items" description="Add consumable or quantity-tracked items to this kit." />
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Model</TableHead>
+                        <TableHead className="text-right">Quantity</TableHead>
+                        <TableHead>Position</TableHead>
+                        <TableHead className="w-10" />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {kit.bulkItems.map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell>{item.bulkAsset.model.name}</TableCell>
+                          <TableCell className="text-right font-medium t-data">
+                            {item.quantity}
+                          </TableCell>
+                          <TableCell className="text-fg-3">
+                            {item.position || "\u2014"}
+                          </TableCell>
+                          <TableCell>
+                            <CanDo resource="kit" action="update">
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                className="text-destructive"
+                                onClick={() => {
+                                  if (confirm("Remove this bulk item from the kit?")) {
+                                    removeBulkMutation.mutate(item.id);
+                                  }
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </CanDo>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* History */}
+          {(kit.lineItems.length > 0 || kit.scanLogs.length > 0) && (
             <div className="space-y-4">
               {kit.lineItems.length > 0 && (
                 <div>
-                  <h4 className="text-sm font-medium mb-2">Project Assignments</h4>
+                  <h3 className="t-heading text-fg mb-3">Project Assignments</h3>
                   <div className="rounded-md border">
                     <Table>
                       <TableHeader>
@@ -507,7 +465,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
 
               {kit.scanLogs.length > 0 && (
                 <div>
-                  <h4 className="text-sm font-medium mb-2">Recent Scans</h4>
+                  <h3 className="t-heading text-fg mb-3">Recent Scans</h3>
                   <div className="rounded-md border">
                     <Table>
                       <TableHeader>
@@ -521,14 +479,14 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                         {kit.scanLogs.map((log) => (
                           <TableRow key={log.id}>
                             <TableCell className="text-sm">{formatDate(log.scannedAt)}</TableCell>
-                            <TableCell className="text-sm">{log.scannedBy?.name || "—"}</TableCell>
+                            <TableCell className="text-sm">{log.scannedBy?.name || "\u2014"}</TableCell>
                             <TableCell className="text-sm">
                               {log.project ? (
                                 <Link href={`/projects/${log.projectId}`} className="hover:underline">
                                   {log.project.name}
                                 </Link>
                               ) : (
-                                "—"
+                                "\u2014"
                               )}
                             </TableCell>
                           </TableRow>
@@ -540,153 +498,288 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
               )}
             </div>
           )}
-      </div>
 
-      {/* Photos */}
-      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-        <h3 className="t-heading text-fg mb-4">Photos ({kitPhotos.length})</h3>
-          <MediaUploader
-            entityType="kit"
-            entityId={id}
-            accept="image/*"
-            existingMedia={kitPhotos}
+          {/* Photos */}
+          <div>
+            <h3 className="t-heading text-fg mb-3">Photos ({kitPhotos.length})</h3>
+            <MediaUploader
+              entityType="kit"
+              entityId={id}
+              accept="image/*"
+              existingMedia={kitPhotos}
+              queryKey={["kit", orgId, id]}
+              onUploadComplete={async (fileUpload) => {
+                await addKitMedia({
+                  kitId: id,
+                  fileId: fileUpload.id,
+                  type: "PHOTO",
+                });
+              }}
+              onRemove={async (mediaId) => {
+                await removeKitMedia(mediaId);
+              }}
+              onSetPrimary={async (mediaId) => {
+                await setKitPrimaryPhoto(id, mediaId);
+              }}
+            />
+          </div>
+
+          {/* Notes */}
+          <NotesEditor
+            initialNotes={kit.notes || ""}
             queryKey={["kit", orgId, id]}
-            onUploadComplete={async (fileUpload) => {
-              await addKitMedia({
-                kitId: id,
-                fileId: fileUpload.id,
-                type: "PHOTO",
-              });
-            }}
-            onRemove={async (mediaId) => {
-              await removeKitMedia(mediaId);
-            }}
-            onSetPrimary={async (mediaId) => {
-              await setKitPrimaryPhoto(id, mediaId);
-            }}
+            onSave={(notes) => updateKitNotes(id, notes)}
+            placeholder="Add notes about this kit..."
           />
-      </div>
+        </div>
 
-      {/* Notes */}
-      <NotesEditor
-        initialNotes={kit.notes || ""}
-        queryKey={["kit", orgId, id]}
-        onSave={(notes) => updateKitNotes(id, notes)}
-        placeholder="Add notes about this kit..."
-      />
-
-      {/* Add Serialized Items Dialog */}
-      <Dialog
-        open={showAddItem}
-        onOpenChange={(open) => {
-          setShowAddItem(open);
-          if (!open) setStagedItems([]);
-        }}
-      >
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Add Items to Kit</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-fg-3">
-            Scan a barcode or search for an asset to add it to the list. Repeat for multiple items.
-          </p>
-          <ScanInput
-            availableAssets={availableAssets}
-            stagedIds={new Set(stagedItems.map((i) => i.assetId))}
-            onAdd={(asset) => {
-              setStagedItems((prev) => [
-                ...prev,
-                { assetId: asset.id, assetTag: asset.assetTag, modelName: asset.model.name },
-              ]);
-            }}
-          />
-          {stagedItems.length > 0 && (
-            <div className="space-y-1 max-h-48 overflow-y-auto">
-              {stagedItems.map((item, i) => (
-                <div key={item.assetId} className="flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm">
-                  <div className="min-w-0 flex-1">
-                    <span className="font-mono font-medium">{item.assetTag}</span>
-                    <span className="text-fg-3 ml-2 break-words">{item.modelName}</span>
+        {/* ── Sidebar (right) ──────────────────────────────────── */}
+        <div className="w-full space-y-4 lg:w-[340px] lg:shrink-0">
+          <div className="lg:sticky lg:top-4 space-y-4">
+            {/* Status */}
+            <div className="border-b border-border pb-4 space-y-2">
+              <SectionHeader label="Status" />
+              <CanDo
+                resource="kit"
+                action="update"
+                fallback={
+                  <div className="flex items-center gap-2">
+                    <StatusIndicator category="kit" value={kit.status} label={kitStatusLabels[kit.status] || formatLabel(kit.status)} />
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setStagedItems((prev) => prev.filter((_, j) => j !== i))}
-                    className="shrink-0 text-fg-3 hover:text-destructive"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              ))}
+                }
+              >
+                <select
+                  value={kit.status}
+                  onChange={(e) => statusMutation.mutate(e.target.value)}
+                  disabled={statusMutation.isPending}
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <option value="AVAILABLE">Available</option>
+                  <option value="CHECKED_OUT">Deployed</option>
+                  <option value="IN_MAINTENANCE">In Maintenance</option>
+                  <option value="RETIRED">Retired</option>
+                  <option value="INCOMPLETE">Incomplete</option>
+                </select>
+              </CanDo>
+              <StatusIndicator category="condition" value={kit.condition} label={conditionLabels[kit.condition] || formatLabel(kit.condition)} />
             </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowAddItem(false); setStagedItems([]); }}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => addItemsMutation.mutate()}
-              disabled={stagedItems.length === 0 || addItemsMutation.isPending}
-            >
-              {addItemsMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Add {stagedItems.length} Item{stagedItems.length !== 1 ? "s" : ""}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
-      {/* Add Bulk Item Dialog */}
-      <Dialog open={showAddBulkItem} onOpenChange={setShowAddBulkItem}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Add Bulk Item</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-2">
-              <Label>Bulk Asset</Label>
-              <ComboboxPicker
-                value={addBulkAssetId}
-                onChange={setAddBulkAssetId}
-                options={availableBulkAssets.map((a) => ({
-                  value: a.id,
-                  label: a.assetTag,
-                  description: `${a.model.name} (${a.availableQuantity} available)`,
-                }))}
-                placeholder="Select a bulk asset..."
-                searchPlaceholder="Search available bulk assets..."
-              />
+            {/* Kit Info */}
+            <div className="border-b border-border pb-4 space-y-2">
+              <SectionHeader label="Details" />
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-fg-3">Asset Tag</span>
+                  <span className="font-mono font-medium">{kit.assetTag}</span>
+                </div>
+                {kit.category && (
+                  <div className="flex justify-between">
+                    <span className="text-fg-3">Category</span>
+                    <span className="font-medium">{kit.category.name}</span>
+                  </div>
+                )}
+                {kit.caseType && (
+                  <div className="flex justify-between">
+                    <span className="text-fg-3">Case Type</span>
+                    <span className="font-medium">{kit.caseType}</span>
+                  </div>
+                )}
+                {kit.caseDimensions && (
+                  <div className="flex justify-between">
+                    <span className="text-fg-3">Dimensions</span>
+                    <span className="font-medium">{kit.caseDimensions}</span>
+                  </div>
+                )}
+                {kit.weight && (
+                  <div className="flex justify-between">
+                    <span className="text-fg-3">Weight</span>
+                    <span className="font-medium t-data">{Number(kit.weight)} kg</span>
+                  </div>
+                )}
+                {kit.location && (
+                  <div className="flex justify-between">
+                    <span className="text-fg-3">Location</span>
+                    <span className="font-medium">{kit.location.name}</span>
+                  </div>
+                )}
+                {kit.purchaseDate && (
+                  <div className="flex justify-between">
+                    <span className="text-fg-3">Purchased</span>
+                    <span className="font-medium">{formatDate(kit.purchaseDate)}</span>
+                  </div>
+                )}
+                {kit.purchasePrice && (
+                  <div className="flex justify-between">
+                    <span className="text-fg-3">Purchase Price</span>
+                    <span className="font-medium t-data">${Number(kit.purchasePrice).toFixed(2)}</span>
+                  </div>
+                )}
+                {kit.description && (
+                  <p className="text-fg-3 pt-1">{kit.description}</p>
+                )}
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="add-bulk-quantity">Quantity</Label>
-              <Input
-                id="add-bulk-quantity"
-                type="number"
-                min={1}
-                value={addBulkQuantity}
-                onChange={(e) => setAddBulkQuantity(Number(e.target.value))}
-              />
+
+            {/* Contents Summary */}
+            <div className="border-b border-border pb-4 space-y-2">
+              <SectionHeader label="Contents" />
+              <div className="space-y-1.5 text-sm">
+                <div className="flex items-center gap-2">
+                  <Package className="h-3.5 w-3.5 text-fg-3" />
+                  <span className="t-data">{kit.serializedItems.length}</span>
+                  <span className="text-fg-3">serialized item{kit.serializedItems.length !== 1 ? "s" : ""}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Boxes className="h-3.5 w-3.5 text-fg-3" />
+                  <span className="t-data">{kit.bulkItems.length}</span>
+                  <span className="text-fg-3">bulk item{kit.bulkItems.length !== 1 ? "s" : ""}</span>
+                </div>
+              </div>
             </div>
+
+            {/* Current Assignment */}
+            <div className="border-b border-border pb-4 space-y-2">
+              <SectionHeader label="Assignment" />
+              {currentAssignment ? (
+                <div className="text-sm space-y-1">
+                  <Link
+                    href={`/projects/${currentAssignment.projectId}`}
+                    className="font-medium text-fg hover:underline"
+                  >
+                    {currentAssignment.project.name}
+                  </Link>
+                  <p className="text-xs text-fg-3">{currentAssignment.project.projectNumber}</p>
+                  <Badge variant="outline">
+                    {lineItemStatusLabels[currentAssignment.status] || formatLabel(currentAssignment.status)}
+                  </Badge>
+                </div>
+              ) : (
+                <p className="text-sm text-fg-3">Not currently assigned</p>
+              )}
+            </div>
+
+            {/* Activity Timeline */}
             <div className="space-y-2">
-              <Label htmlFor="add-bulk-position">Position (optional)</Label>
-              <Input
-                id="add-bulk-position"
-                value={addBulkPosition}
-                onChange={(e) => setAddBulkPosition(e.target.value)}
-                placeholder="e.g. Bottom compartment"
-              />
+              <SectionHeader label="Activity" />
+              <ActivityTimeline entityType="kit" entityId={id} />
             </div>
           </div>
-          <DialogFooter>
-            <Button
-              onClick={() => addBulkMutation.mutate()}
-              disabled={!addBulkAssetId || addBulkQuantity < 1 || addBulkMutation.isPending}
-            >
-              {addBulkMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Add Bulk Item
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </div>
+      </div>
     </div>
+    </FadeIn>
+
+    {/* Add Serialized Items Dialog */}
+    <Dialog
+      open={showAddItem}
+      onOpenChange={(open) => {
+        setShowAddItem(open);
+        if (!open) setStagedItems([]);
+      }}
+    >
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Add Items to Kit</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-fg-3">
+          Scan a barcode or search for an asset to add it to the list. Repeat for multiple items.
+        </p>
+        <ScanInput
+          availableAssets={availableAssets}
+          stagedIds={new Set(stagedItems.map((i) => i.assetId))}
+          onAdd={(asset) => {
+            setStagedItems((prev) => [
+              ...prev,
+              { assetId: asset.id, assetTag: asset.assetTag, modelName: asset.model.name },
+            ]);
+          }}
+        />
+        {stagedItems.length > 0 && (
+          <div className="space-y-1 max-h-48 overflow-y-auto">
+            {stagedItems.map((item, i) => (
+              <div key={item.assetId} className="flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm">
+                <div className="min-w-0 flex-1">
+                  <span className="font-mono font-medium">{item.assetTag}</span>
+                  <span className="text-fg-3 ml-2 break-words">{item.modelName}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setStagedItems((prev) => prev.filter((_, j) => j !== i))}
+                  className="shrink-0 text-fg-3 hover:text-destructive"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => { setShowAddItem(false); setStagedItems([]); }}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => addItemsMutation.mutate()}
+            disabled={stagedItems.length === 0 || addItemsMutation.isPending}
+          >
+            {addItemsMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Add {stagedItems.length} Item{stagedItems.length !== 1 ? "s" : ""}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Add Bulk Item Dialog */}
+    <Dialog open={showAddBulkItem} onOpenChange={setShowAddBulkItem}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add Bulk Item</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <div className="space-y-2">
+            <Label>Bulk Asset</Label>
+            <ComboboxPicker
+              value={addBulkAssetId}
+              onChange={setAddBulkAssetId}
+              options={availableBulkAssets.map((a) => ({
+                value: a.id,
+                label: a.assetTag,
+                description: `${a.model.name} (${a.availableQuantity} available)`,
+              }))}
+              placeholder="Select a bulk asset..."
+              searchPlaceholder="Search available bulk assets..."
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="add-bulk-quantity">Quantity</Label>
+            <Input
+              id="add-bulk-quantity"
+              type="number"
+              min={1}
+              value={addBulkQuantity}
+              onChange={(e) => setAddBulkQuantity(Number(e.target.value))}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="add-bulk-position">Position (optional)</Label>
+            <Input
+              id="add-bulk-position"
+              value={addBulkPosition}
+              onChange={(e) => setAddBulkPosition(e.target.value)}
+              placeholder="e.g. Bottom compartment"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            onClick={() => addBulkMutation.mutate()}
+            disabled={!addBulkAssetId || addBulkQuantity < 1 || addBulkMutation.isPending}
+          >
+            {addBulkMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Add Bulk Item
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     </RequirePermission>
   );
 }

@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { FadeIn } from "@/components/ui/motion";
 import {
   Table,
   TableBody,
@@ -554,7 +555,7 @@ export function DataTable<TData>({
   });
 
   return (
-    <div className="space-y-3">
+    <FadeIn className="space-y-3">
       {/* Toolbar */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
         {toolbarPrefix}
@@ -601,7 +602,7 @@ export function DataTable<TData>({
       )}
 
       {/* Table */}
-      <div className="rounded-lg surface-ring overflow-hidden">
+      <div className="overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
@@ -756,6 +757,6 @@ export function DataTable<TData>({
           )}
         </div>
       )}
-    </div>
+    </FadeIn>
   );
 }

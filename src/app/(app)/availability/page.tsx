@@ -278,7 +278,7 @@ function AvailabilityPage() {
                             className={`
                               text-sm tabular-nums leading-none
                               ${isToday ? "bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center font-bold" : ""}
-                              ${!isToday && inMonth ? "text-foreground" : ""}
+                              ${!isToday && inMonth ? "text-fg" : ""}
                             `}
                           >
                             {format(day, "d")}

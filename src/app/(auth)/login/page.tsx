@@ -206,7 +206,7 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={() => setStep("email")}
-              className="flex items-center gap-1 text-sm text-fg-3 hover:text-foreground transition-colors"
+              className="flex items-center gap-1 text-sm text-fg-3 hover:text-fg transition-colors"
             >
               <ArrowLeft className="h-3 w-3" />
               Back

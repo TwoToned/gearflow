@@ -29,8 +29,8 @@ function StatusBadge({ status }: { status: string }) {
     DUE_SOON: { label: "Due Soon", className: "bg-amber-500/15 text-amber-600 border-amber-500/30" },
     OVERDUE: { label: "Overdue", className: "bg-red-500/15 text-red-600 border-red-500/30" },
     FAILED: { label: "Failed", className: "bg-red-500/15 text-red-600 border-red-500/30 border-dashed" },
-    NOT_YET_TESTED: { label: "Not Tested", className: "bg-muted text-fg-3" },
-    RETIRED: { label: "Retired", className: "bg-muted text-fg-3 opacity-60" },
+    NOT_YET_TESTED: { label: "Not Tested", className: "bg-bg-inset text-fg-3" },
+    RETIRED: { label: "Retired", className: "bg-bg-inset text-fg-3 opacity-60" },
   };
   const { label, className } = map[status] || { label: status, className: "" };
   return <Badge variant="outline" className={className}>{label}</Badge>;

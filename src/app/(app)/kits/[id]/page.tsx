@@ -799,7 +799,7 @@ function ScanInput({
           <button
             type="button"
             onClick={() => setCameraOpen((v) => !v)}
-            className={`absolute right-2 top-2 rounded p-0.5 transition-colors ${cameraOpen ? "text-primary bg-primary/10" : "text-fg-3 hover:text-foreground"}`}
+            className={`absolute right-2 top-2 rounded p-0.5 transition-colors ${cameraOpen ? "text-primary bg-primary/10" : "text-fg-3 hover:text-fg"}`}
           >
             <Camera className="h-4 w-4" />
           </button>

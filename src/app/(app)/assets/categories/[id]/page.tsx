@@ -71,7 +71,7 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
         </Button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 text-sm text-fg-3 mb-1">
-            <Link href="/assets/categories" className="hover:text-foreground transition-colors">
+            <Link href="/assets/categories" className="hover:text-fg transition-colors">
               Categories
             </Link>
             {category.parent && (
@@ -79,14 +79,14 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
                 <ChevronRight className="h-3 w-3" />
                 <Link
                   href={`/assets/categories/${category.parent.id}`}
-                  className="hover:text-foreground transition-colors"
+                  className="hover:text-fg transition-colors"
                 >
                   {category.parent.name}
                 </Link>
               </>
             )}
             <ChevronRight className="h-3 w-3" />
-            <span className="text-foreground">{category.name}</span>
+            <span className="text-fg">{category.name}</span>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-2xl">{category.icon || "📁"}</span>

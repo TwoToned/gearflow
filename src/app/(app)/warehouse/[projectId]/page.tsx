@@ -1897,8 +1897,8 @@ function WarehouseProjectPage({
               </DialogTitle>
             </DialogHeader>
             <p className="text-sm text-fg-3">
-              <span className="font-medium text-foreground">{kitConfirm.kitName}</span> has{" "}
-              <span className="font-medium text-foreground">{kitConfirm.verifiedCount}/{kitConfirm.totalCount}</span>{" "}
+              <span className="font-medium text-fg">{kitConfirm.kitName}</span> has{" "}
+              <span className="font-medium text-fg">{kitConfirm.verifiedCount}/{kitConfirm.totalCount}</span>{" "}
               items verified. You can {kitConfirm.action === "deploy" ? "deploy" : "return"} only the verified items, or {kitConfirm.action === "deploy" ? "deploy" : "return"} everything.
             </p>
             <DialogFooter className="flex-col sm:flex-row gap-2">
@@ -1983,7 +1983,7 @@ function WarehouseProjectPage({
             <DialogTitle>Add to Project?</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-fg-3">
-            <span className="font-medium text-foreground">{addPromptData?.assetName}</span>{" "}
+            <span className="font-medium text-fg">{addPromptData?.assetName}</span>{" "}
             is not on this project. Would you like to add it and check it out?
           </p>
           <DialogFooter>

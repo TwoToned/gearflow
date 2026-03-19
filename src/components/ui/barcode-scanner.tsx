@@ -204,7 +204,7 @@ export function BarcodeScanner({ open, onScan, onClose, title = "Scan barcode or
   return (
     <div className="rounded-lg border bg-background overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/50">
+      <div className="flex items-center justify-between px-3 py-2 border-b bg-bg-inset/50">
         <span className="text-sm font-medium truncate">{title}</span>
         <div className="flex items-center gap-1">
           {cameras.length > 1 && (

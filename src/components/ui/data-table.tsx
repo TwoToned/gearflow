@@ -430,7 +430,7 @@ function FilterChips<TData>({
             <span className="font-medium">{col.header}:</span> {labels}
             <button
               type="button"
-              className="ml-0.5 rounded-sm hover:bg-muted-foreground/20 p-0.5"
+              className="ml-0.5 rounded-sm hover:bg-fg-3/20 p-0.5"
               onClick={() => onFilterChange(key, undefined)}
             >
               <X className="h-3 w-3" />

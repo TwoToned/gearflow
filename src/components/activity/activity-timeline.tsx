@@ -62,7 +62,7 @@ export function ActivityTimeline({ entityType, entityId }: ActivityTimelineProps
         return (
           <div key={log.id as string} className="flex gap-3 text-sm">
             <div className="flex flex-col items-center">
-              <div className="mt-1 size-2 rounded-full bg-muted-foreground/40" />
+              <div className="mt-1 size-2 rounded-full bg-fg-3/40" />
               <div className="flex-1 w-px bg-border" />
             </div>
             <div className="flex-1 pb-3">

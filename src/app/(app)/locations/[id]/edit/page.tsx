@@ -17,8 +17,8 @@ export default function EditLocationPage({ params }: { params: Promise<{ id: str
     queryFn: () => getLocation(id),
   });
 
-  if (isLoading) return <div className="text-muted-foreground">Loading...</div>;
-  if (!location) return <div className="text-muted-foreground">Location not found.</div>;
+  if (isLoading) return <div className="text-fg-3">Loading...</div>;
+  if (!location) return <div className="text-fg-3">Location not found.</div>;
 
   const initialData: LocationFormValues & { id: string } = {
     id: location.id,
@@ -37,7 +37,7 @@ export default function EditLocationPage({ params }: { params: Promise<{ id: str
     <div className="mx-auto max-w-3xl space-y-4">
       <div>
         <h1 className="t-title text-fg">Edit Location</h1>
-        <p className="text-muted-foreground">{location.name}</p>
+        <p className="text-[13px] text-fg-3">{location.name}</p>
       </div>
       <LocationForm initialData={initialData} />
     </div>

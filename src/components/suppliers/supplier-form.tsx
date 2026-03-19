@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FormSection } from "@/components/layout/page-layouts";
 
 interface SupplierFormProps {
   initialData?: SupplierFormValues & { id: string };
@@ -67,133 +67,117 @@ export function SupplierForm({ initialData }: SupplierFormProps) {
   });
 
   return (
-    <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))} className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Supplier Details</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="name">Name *</Label>
-            <Input id="name" {...form.register("name")} placeholder="e.g. Sennheiser Australia" />
-            {form.formState.errors.name && (
-              <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
-            )}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="accountNumber">Account Number</Label>
-            <Input id="accountNumber" {...form.register("accountNumber")} placeholder="Your account # with this supplier" />
-          </div>
-        </CardContent>
-      </Card>
+    <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))}>
+      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <div className="space-y-6">
+          <FormSection title="Supplier Details">
+            <div className="space-y-2">
+              <Label htmlFor="name">Name *</Label>
+              <Input id="name" {...form.register("name")} placeholder="e.g. Sennheiser Australia" />
+              {form.formState.errors.name && (
+                <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="accountNumber">Account Number</Label>
+              <Input id="accountNumber" {...form.register("accountNumber")} placeholder="Your account # with this supplier" />
+            </div>
+          </FormSection>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Contact Information</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="contactName">Contact Name</Label>
-            <Input id="contactName" {...form.register("contactName")} placeholder="Primary contact person" />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input id="email" type="email" {...form.register("email")} placeholder="email@example.com" />
-            {form.formState.errors.email && (
-              <p className="text-xs text-destructive">{form.formState.errors.email.message}</p>
-            )}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="phone">Phone</Label>
-            <Input id="phone" {...form.register("phone")} placeholder="+61 400 000 000" />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="website">Website</Label>
-            <Input id="website" {...form.register("website")} placeholder="https://example.com" />
-          </div>
-          <div className="space-y-2 sm:col-span-2">
-            <Label>Address</Label>
-            <Controller
-              name="address"
-              control={form.control}
-              render={({ field }) => (
-                <AddressInput
-                  value={field.value ?? ""}
-                  onChange={field.onChange}
-                  onPlaceSelect={(place) => {
-                    if (place) {
-                      form.setValue("latitude", place.latitude);
-                      form.setValue("longitude", place.longitude);
-                    } else {
-                      form.setValue("latitude", null);
-                      form.setValue("longitude", null);
+          <FormSection title="Contact Information">
+            <div className="space-y-2">
+              <Label htmlFor="contactName">Contact Name</Label>
+              <Input id="contactName" {...form.register("contactName")} placeholder="Primary contact person" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input id="email" type="email" {...form.register("email")} placeholder="email@example.com" />
+              {form.formState.errors.email && (
+                <p className="text-xs text-destructive">{form.formState.errors.email.message}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="phone">Phone</Label>
+              <Input id="phone" {...form.register("phone")} placeholder="+61 400 000 000" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="website">Website</Label>
+              <Input id="website" {...form.register("website")} placeholder="https://example.com" />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label>Address</Label>
+              <Controller
+                name="address"
+                control={form.control}
+                render={({ field }) => (
+                  <AddressInput
+                    value={field.value ?? ""}
+                    onChange={field.onChange}
+                    onPlaceSelect={(place) => {
+                      if (place) {
+                        form.setValue("latitude", place.latitude);
+                        form.setValue("longitude", place.longitude);
+                      } else {
+                        form.setValue("latitude", null);
+                        form.setValue("longitude", null);
+                      }
+                    }}
+                    initialCoordinates={
+                      form.watch("latitude") != null && form.watch("longitude") != null
+                        ? { latitude: form.watch("latitude") as number, longitude: form.watch("longitude") as number }
+                        : null
                     }
-                  }}
-                  initialCoordinates={
-                    form.watch("latitude") != null && form.watch("longitude") != null
-                      ? { latitude: form.watch("latitude") as number, longitude: form.watch("longitude") as number }
-                      : null
-                  }
-                  placeholder="Supplier address"
-                  countryCode={orgCountry}
-                />
-              )}
-            />
-          </div>
-        </CardContent>
-      </Card>
+                    placeholder="Supplier address"
+                    countryCode={orgCountry}
+                  />
+                )}
+              />
+            </div>
+          </FormSection>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Terms & Lead Time</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="paymentTerms">Payment Terms</Label>
-            <Input id="paymentTerms" {...form.register("paymentTerms")} placeholder="e.g. Net 30, COD, Prepay" />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="defaultLeadTime">Default Lead Time</Label>
-            <Input id="defaultLeadTime" {...form.register("defaultLeadTime")} placeholder="e.g. 3-5 business days" />
-          </div>
-        </CardContent>
-      </Card>
+          <FormSection title="Terms & Lead Time">
+            <div className="space-y-2">
+              <Label htmlFor="paymentTerms">Payment Terms</Label>
+              <Input id="paymentTerms" {...form.register("paymentTerms")} placeholder="e.g. Net 30, COD, Prepay" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="defaultLeadTime">Default Lead Time</Label>
+              <Input id="defaultLeadTime" {...form.register("defaultLeadTime")} placeholder="e.g. 3-5 business days" />
+            </div>
+          </FormSection>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Additional</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="notes">Notes</Label>
-            <Textarea id="notes" {...form.register("notes")} placeholder="Any additional notes" rows={3} />
-          </div>
-          <div className="space-y-2">
-            <Label>Tags</Label>
-            <Controller
-              name="tags"
-              control={form.control}
-              render={({ field }) => (
-                <TagInput
-                  value={field.value ?? []}
-                  onChange={field.onChange}
-                  suggestions={orgTags}
-                  placeholder="Add tags..."
-                />
-              )}
-            />
-          </div>
-        </CardContent>
-      </Card>
+          <FormSection title="Additional">
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="notes">Notes</Label>
+              <Textarea id="notes" {...form.register("notes")} placeholder="Any additional notes" rows={3} />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label>Tags</Label>
+              <Controller
+                name="tags"
+                control={form.control}
+                render={({ field }) => (
+                  <TagInput
+                    value={field.value ?? []}
+                    onChange={field.onChange}
+                    suggestions={orgTags}
+                    placeholder="Add tags..."
+                  />
+                )}
+              />
+            </div>
+          </FormSection>
+        </div>
 
-      <div className="flex gap-3">
-        <Button type="submit" disabled={mutation.isPending}>
-          {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {isEditing ? "Update Supplier" : "Create Supplier"}
-        </Button>
-        <Button type="button" variant="outline" onClick={() => router.back()}>
-          Cancel
-        </Button>
+        <div className="mt-6 flex gap-3 border-t border-border pt-4">
+          <Button type="submit" disabled={mutation.isPending}>
+            {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {isEditing ? "Update Supplier" : "Create Supplier"}
+          </Button>
+          <Button type="button" variant="outline" onClick={() => router.back()}>
+            Cancel
+          </Button>
+        </div>
       </div>
     </form>
   );

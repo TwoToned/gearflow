@@ -16,14 +16,14 @@ export default function EditCrewMemberPage({ params }: { params: Promise<{ id: s
     queryFn: () => getCrewMemberById(id),
   });
 
-  if (isLoading) return <div className="text-muted-foreground">Loading...</div>;
-  if (!member) return <div className="text-muted-foreground">Crew member not found.</div>;
+  if (isLoading) return <div className="text-fg-3">Loading...</div>;
+  if (!member) return <div className="text-fg-3">Crew member not found.</div>;
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div>
         <h1 className="t-title text-fg">Edit Crew Member</h1>
-        <p className="text-muted-foreground">
+        <p className="text-[13px] text-fg-3">
           Update crew member details.
         </p>
       </div>

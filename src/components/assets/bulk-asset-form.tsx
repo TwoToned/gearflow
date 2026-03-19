@@ -21,7 +21,7 @@ import { Input } from "@/components/ui/input";
 import { ScanInput } from "@/components/ui/scan-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FormSection } from "@/components/layout/page-layouts";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { QuickCreateLocation } from "./quick-create-location";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -91,12 +91,11 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
   const models = modelsData?.models || [];
 
   return (
-    <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))} className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Bulk Asset Details</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
+    <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))}>
+      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <div className="space-y-6">
+      <FormSection title="Bulk Asset Details">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2 sm:col-span-2">
             <Label>Equipment Model *</Label>
             <ComboboxPicker
@@ -163,18 +162,15 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
               <option value="RETIRED">Retired</option>
             </select>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </FormSection>
 
-      <Card>
-        <CardContent className="pt-6">
+      <FormSection title="Notes">
           <Label htmlFor="notes">Notes</Label>
           <Textarea id="notes" {...form.register("notes")} placeholder="Any additional notes" rows={3} className="mt-2" />
-        </CardContent>
-      </Card>
+      </FormSection>
 
-      <Card>
-        <CardContent className="pt-6">
+      <FormSection title="Tags">
           <div className="space-y-2">
             <Label>Tags</Label>
             <Controller
@@ -190,17 +186,18 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
               )}
             />
           </div>
-        </CardContent>
-      </Card>
+      </FormSection>
 
-      <div className="flex gap-3">
-        <Button type="submit" disabled={mutation.isPending}>
-          {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {isEditing ? "Update Bulk Asset" : "Create Bulk Asset"}
-        </Button>
-        <Button type="button" variant="outline" onClick={() => router.back()}>
-          Cancel
-        </Button>
+        </div>
+        <div className="mt-6 flex gap-3 border-t border-border pt-4">
+          <Button type="submit" disabled={mutation.isPending}>
+            {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {isEditing ? "Update Bulk Asset" : "Create Bulk Asset"}
+          </Button>
+          <Button type="button" variant="outline" onClick={() => router.back()}>
+            Cancel
+          </Button>
+        </div>
       </div>
 
       <QuickCreateLocation

@@ -22,7 +22,7 @@ import { Input } from "@/components/ui/input";
 import { ScanInput } from "@/components/ui/scan-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FormSection } from "@/components/layout/page-layouts";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { QuickCreateLocation } from "./quick-create-location";
 import { QuickCreateSupplier } from "./quick-create-supplier";
@@ -142,12 +142,11 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
   const totalCount = 1 + extraAssets.length;
 
   return (
-    <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))} className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Asset Details</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
+    <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))}>
+      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <div className="space-y-6">
+      <FormSection title="Asset Details">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2 sm:col-span-2">
             <Label>Equipment Model *</Label>
             <ComboboxPicker
@@ -205,7 +204,7 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
                 </div>
               ))}
               {extraAssets.length > 0 && (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-fg-3">
                   Creating {totalCount} assets with the same details
                 </p>
               )}
@@ -261,14 +260,11 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
               <option value="DAMAGED">Damaged</option>
             </select>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </FormSection>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Purchase Information</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
+      <FormSection title="Purchase Information">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="purchaseDate">Purchase Date</Label>
             <Input id="purchaseDate" type="date" {...form.register("purchaseDate")} />
@@ -304,18 +300,15 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
             <Label htmlFor="warrantyExpiry">Warranty Expiry</Label>
             <Input id="warrantyExpiry" type="date" {...form.register("warrantyExpiry")} />
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </FormSection>
 
-      <Card>
-        <CardContent className="pt-6">
+      <FormSection title="Notes">
           <Label htmlFor="notes">Notes</Label>
           <Textarea id="notes" {...form.register("notes")} placeholder="Any additional notes" rows={3} className="mt-2" />
-        </CardContent>
-      </Card>
+      </FormSection>
 
-      <Card>
-        <CardContent className="pt-6">
+      <FormSection title="Tags">
           <div className="space-y-2">
             <Label>Tags</Label>
             <Controller
@@ -331,17 +324,18 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
               )}
             />
           </div>
-        </CardContent>
-      </Card>
+      </FormSection>
 
-      <div className="flex gap-3">
-        <Button type="submit" disabled={mutation.isPending}>
-          {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {isEditing ? "Update Asset" : totalCount > 1 ? `Create ${totalCount} Assets` : "Create Asset"}
-        </Button>
-        <Button type="button" variant="outline" onClick={() => router.back()}>
-          Cancel
-        </Button>
+        </div>
+        <div className="mt-6 flex gap-3 border-t border-border pt-4">
+          <Button type="submit" disabled={mutation.isPending}>
+            {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {isEditing ? "Update Asset" : totalCount > 1 ? `Create ${totalCount} Assets` : "Create Asset"}
+          </Button>
+          <Button type="button" variant="outline" onClick={() => router.back()}>
+            Cancel
+          </Button>
+        </div>
       </div>
 
       <QuickCreateLocation

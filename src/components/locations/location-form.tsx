@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Card, CardContent } from "@/components/ui/card";
+import { FormSection } from "@/components/layout/page-layouts";
 import {
   Select,
   SelectContent,
@@ -80,9 +80,10 @@ export function LocationForm({ initialData }: LocationFormProps) {
   });
 
   return (
-    <Card>
-      <CardContent className="pt-6">
-        <form onSubmit={form.handleSubmit((data) => mutation.mutate(data))} className="space-y-4">
+    <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+      <form onSubmit={form.handleSubmit((data) => mutation.mutate(data))}>
+        <FormSection title="Details">
+          <div className="space-y-4">
           <div className="space-y-2">
             <Label>Name *</Label>
             <Input {...form.register("name")} placeholder="Main Warehouse" />
@@ -169,7 +170,7 @@ export function LocationForm({ initialData }: LocationFormProps) {
               }}
             />
             {form.watch("parentId") && !form.watch("address") && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-fg-3">
                 Using parent location&apos;s address. Type to set a custom address.
               </p>
             )}
@@ -203,17 +204,18 @@ export function LocationForm({ initialData }: LocationFormProps) {
             />
             <Label className="text-sm">Default location for new assets</Label>
           </div>
-
-          <div className="flex gap-2 justify-end">
-            <Button type="button" variant="outline" onClick={() => router.back()}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending ? "Saving..." : isEditing ? "Update Location" : "Create Location"}
-            </Button>
           </div>
-        </form>
-      </CardContent>
-    </Card>
+        </FormSection>
+
+        <div className="mt-6 flex gap-3 border-t border-border pt-4">
+          <Button type="button" variant="outline" onClick={() => router.back()}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={mutation.isPending}>
+            {mutation.isPending ? "Saving..." : isEditing ? "Update Location" : "Create Location"}
+          </Button>
+        </div>
+      </form>
+    </div>
   );
 }

@@ -16,7 +16,7 @@ function NewAssetContent() {
         <h1 className="t-title text-fg">
           {type === "bulk" ? "New Bulk Asset" : "New Asset"}
         </h1>
-        <p className="text-muted-foreground">
+        <p className="text-[13px] text-fg-3">
           {type === "bulk"
             ? "Create a bulk stock entry tracked by quantity."
             : "Create a serialized asset tracked individually."}
@@ -33,7 +33,7 @@ function NewAssetContent() {
 
 export default function NewAssetPage() {
   return (
-    <Suspense fallback={<div className="text-muted-foreground">Loading...</div>}>
+    <Suspense fallback={<div className="text-[13px] text-fg-3">Loading...</div>}>
       <NewAssetContent />
     </Suspense>
   );

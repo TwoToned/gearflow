@@ -55,7 +55,7 @@ export default function NewSupplierOrderPage({ params }: { params: Promise<{ id:
     <div className="mx-auto max-w-3xl space-y-4">
       <div>
         <h1 className="t-title text-fg">New Order</h1>
-        <p className="text-muted-foreground">
+        <p className="text-[13px] text-fg-3">
           Create a purchase order for {supplier?.name || "..."}
         </p>
       </div>

@@ -16,14 +16,14 @@ export default function EditSupplierPage({ params }: { params: Promise<{ id: str
     queryFn: () => getSupplierById(id),
   });
 
-  if (isLoading) return <div className="text-muted-foreground">Loading...</div>;
-  if (!supplier) return <div className="text-muted-foreground">Supplier not found.</div>;
+  if (isLoading) return <div className="text-fg-3">Loading...</div>;
+  if (!supplier) return <div className="text-fg-3">Supplier not found.</div>;
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div>
         <h1 className="t-title text-fg">Edit Supplier</h1>
-        <p className="text-muted-foreground">
+        <p className="text-fg-3">
           Update supplier details.
         </p>
       </div>

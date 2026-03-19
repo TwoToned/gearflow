@@ -17,14 +17,14 @@ export default function EditKitPage({ params }: { params: Promise<{ id: string }
     queryFn: () => getKit(id),
   });
 
-  if (isLoading) return <div className="text-muted-foreground">Loading...</div>;
-  if (!kit) return <div className="text-muted-foreground">Kit not found.</div>;
+  if (isLoading) return <div className="text-[13px] text-fg-3">Loading...</div>;
+  if (!kit) return <div className="text-[13px] text-fg-3">Kit not found.</div>;
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div>
         <h1 className="t-title text-fg">Edit Kit</h1>
-        <p className="text-muted-foreground">
+        <p className="text-[13px] text-fg-3">
           Update details for {kit.assetTag} &mdash; {kit.name}.
         </p>
       </div>

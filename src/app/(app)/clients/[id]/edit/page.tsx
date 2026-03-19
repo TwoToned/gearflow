@@ -17,8 +17,8 @@ export default function EditClientPage({ params }: { params: Promise<{ id: strin
     queryFn: () => getClient(id),
   });
 
-  if (isLoading) return <div className="text-muted-foreground">Loading...</div>;
-  if (!client) return <div className="text-muted-foreground">Client not found.</div>;
+  if (isLoading) return <div className="text-fg-3">Loading...</div>;
+  if (!client) return <div className="text-fg-3">Client not found.</div>;
 
   const initialData: ClientFormValues & { id: string } = {
     id: client.id,
@@ -45,7 +45,7 @@ export default function EditClientPage({ params }: { params: Promise<{ id: strin
     <div className="mx-auto max-w-3xl space-y-4">
       <div>
         <h1 className="t-title text-fg">Edit Client</h1>
-        <p className="text-muted-foreground">{client.name}</p>
+        <p className="text-[13px] text-fg-3">{client.name}</p>
       </div>
       <ClientForm initialData={initialData} />
     </div>

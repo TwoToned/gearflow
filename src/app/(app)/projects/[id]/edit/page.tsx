@@ -31,9 +31,9 @@ export default function EditProjectPage({
   });
 
   if (isLoading)
-    return <div className="text-muted-foreground">Loading...</div>;
+    return <div className="text-fg-3">Loading...</div>;
   if (!project)
-    return <div className="text-muted-foreground">Project not found.</div>;
+    return <div className="text-fg-3">Project not found.</div>;
 
   const initialData: ProjectFormValues & { id: string } = {
     id: project.id,
@@ -81,11 +81,11 @@ export default function EditProjectPage({
 
   return (
     <RequirePermission resource="project" action="update">
-    <CanDo resource="project" action="update" fallback={<div className="p-8 text-center text-muted-foreground">You don&apos;t have permission to perform this action.</div>}>
+    <CanDo resource="project" action="update" fallback={<div className="p-8 text-center text-fg-3">You don&apos;t have permission to perform this action.</div>}>
       <div className="mx-auto max-w-3xl space-y-4">
         <div>
           <h1 className="t-title text-fg">Edit Project</h1>
-          <p className="text-muted-foreground">
+          <p className="text-[13px] text-fg-3">
             {project.projectNumber} &middot; {project.name}
           </p>
         </div>

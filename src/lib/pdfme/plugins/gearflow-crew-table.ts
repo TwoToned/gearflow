@@ -44,7 +44,9 @@ async function pdfRender(arg: PDFRenderProps<CrewTableSchema>) {
   const dimColor = hexToRgb("#999999", pdfLib);
 
   // Sort by call time, then role
-  const sorted = [...config.crew].sort((a, b) => {
+  const crew = config.crew || [];
+  if (crew.length === 0) return;
+  const sorted = [...crew].sort((a, b) => {
     const timeA = a.callTime || "99:99";
     const timeB = b.callTime || "99:99";
     if (timeA !== timeB) return timeA.localeCompare(timeB);

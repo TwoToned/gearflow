@@ -126,7 +126,7 @@ function estimateSectionHeight(
     }
 
     case "crew-table": {
-      const crewCount = data.crew.length;
+      const crewCount = (data.crew || []).length;
       return 8 + crewCount * CREW_ROW_HEIGHT_MM + 4;
     }
 
@@ -551,7 +551,7 @@ function buildSectionInput(
 
     case "crew-table": {
       return JSON.stringify({
-        crew: data.crew,
+        crew: data.crew || [],
         documentColor: docColor,
       });
     }

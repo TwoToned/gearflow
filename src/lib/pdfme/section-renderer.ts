@@ -488,7 +488,7 @@ function buildSectionInput(
       const s = section.settings as SignatureSectionSettings;
       const config: SignatureLineConfig = {
         columns: s.labels.map((label) => ({ label })),
-        orgName: data.org_name,
+        orgName: data.org_name || "",
       };
       return JSON.stringify(config);
     }

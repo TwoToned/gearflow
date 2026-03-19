@@ -15,6 +15,12 @@ async function pdfRender(arg: PDFRenderProps<PageHeaderSchema>) {
   const value = arg.value || "{}";
   const config = JSON.parse(value) as PageHeaderConfig;
 
+  // Defensive defaults — prevent drawText(undefined) crashes
+  const orgName = config.orgName || "";
+  const docTitle = config.docTitle || "";
+  const docMeta = config.docMeta || "";
+  const orgDetails = config.orgDetails || "";
+
   const pageHeight = page.getHeight();
   const { x, y, width, height } = getLayoutProps(schema, pageHeight);
   const fonts = await getHelveticaFonts(pdfDoc, pdfLib, _cache);
@@ -65,8 +71,8 @@ async function pdfRender(arg: PDFRenderProps<PageHeaderSchema>) {
     // Now render the same layout as icon/none mode below the logo
     // Left side: org name + details
     let textY = currentY;
-    if (showOrgName) {
-      page.drawText(config.orgName, {
+    if (showOrgName && orgName) {
+      page.drawText(orgName, {
         x,
         y: textY - 16,
         size: 18,
@@ -76,8 +82,8 @@ async function pdfRender(arg: PDFRenderProps<PageHeaderSchema>) {
       textY -= 28;
     }
 
-    if (config.orgDetails) {
-      const detailLines = config.orgDetails.split("\n");
+    if (orgDetails) {
+      const detailLines = orgDetails.split("\n");
       for (const line of detailLines) {
         page.drawText(line, {
           x,
@@ -92,32 +98,36 @@ async function pdfRender(arg: PDFRenderProps<PageHeaderSchema>) {
 
     // Right side: doc title + meta (aligned to the same row as org name)
     // Auto-scale title to fit within right half of header
-    const maxTitleWidth = width * 0.55;
-    let titleSize = 22;
-    while (titleSize > 10 && fonts.bold.widthOfTextAtSize(config.docTitle, titleSize) > maxTitleWidth) {
-      titleSize -= 1;
-    }
-    const titleWidth = fonts.bold.widthOfTextAtSize(config.docTitle, titleSize);
-    page.drawText(config.docTitle, {
-      x: x + width - titleWidth,
-      y: currentY - titleSize,
-      size: titleSize,
-      font: fonts.bold,
-      color: docColor,
-    });
-
-    const metaLines = config.docMeta.split("\n");
-    let metaY = currentY - titleSize - 14;
-    for (const line of metaLines) {
-      const lineWidth = fonts.regular.widthOfTextAtSize(line, 9);
-      page.drawText(line, {
-        x: x + width - lineWidth,
-        y: metaY,
-        size: 9,
-        font: fonts.regular,
-        color: metaColor,
+    if (docTitle) {
+      const maxTitleWidth = width * 0.55;
+      let titleSize = 22;
+      while (titleSize > 10 && fonts.bold.widthOfTextAtSize(docTitle, titleSize) > maxTitleWidth) {
+        titleSize -= 1;
+      }
+      const titleWidth = fonts.bold.widthOfTextAtSize(docTitle, titleSize);
+      page.drawText(docTitle, {
+        x: x + width - titleWidth,
+        y: currentY - titleSize,
+        size: titleSize,
+        font: fonts.bold,
+        color: docColor,
       });
-      metaY -= 13;
+
+      if (docMeta) {
+        const metaLines = docMeta.split("\n");
+        let metaY = currentY - titleSize - 14;
+        for (const line of metaLines) {
+          const lineWidth = fonts.regular.widthOfTextAtSize(line, 9);
+          page.drawText(line, {
+            x: x + width - lineWidth,
+            y: metaY,
+            size: 9,
+            font: fonts.regular,
+            color: metaColor,
+          });
+          metaY -= 13;
+        }
+      }
     }
 
     return;
@@ -158,8 +168,8 @@ async function pdfRender(arg: PDFRenderProps<PageHeaderSchema>) {
 
   // Company name
   let textY = currentY;
-  if (showOrgName) {
-    page.drawText(config.orgName, {
+  if (showOrgName && orgName) {
+    page.drawText(orgName, {
       x: leftX,
       y: textY - 16,
       size: 18,
@@ -170,8 +180,8 @@ async function pdfRender(arg: PDFRenderProps<PageHeaderSchema>) {
   }
 
   // Org details
-  if (config.orgDetails) {
-    const detailLines = config.orgDetails.split("\n");
+  if (orgDetails) {
+    const detailLines = orgDetails.split("\n");
     for (const line of detailLines) {
       page.drawText(line, {
         x: leftX,
@@ -185,33 +195,37 @@ async function pdfRender(arg: PDFRenderProps<PageHeaderSchema>) {
   }
 
   // Right side: doc title + meta
-  // Auto-scale title to fit within right half of header
-  const maxTitleWidth = width * 0.55;
-  let titleSize = 22;
-  while (titleSize > 10 && fonts.bold.widthOfTextAtSize(config.docTitle, titleSize) > maxTitleWidth) {
-    titleSize -= 1;
-  }
-  const titleWidth = fonts.bold.widthOfTextAtSize(config.docTitle, titleSize);
-  page.drawText(config.docTitle, {
-    x: x + width - titleWidth,
-    y: currentY - titleSize,
-    size: titleSize,
-    font: fonts.bold,
-    color: docColor,
-  });
-
-  const metaLines = config.docMeta.split("\n");
-  let metaY = currentY - titleSize - 14;
-  for (const line of metaLines) {
-    const lineWidth = fonts.regular.widthOfTextAtSize(line, 9);
-    page.drawText(line, {
-      x: x + width - lineWidth,
-      y: metaY,
-      size: 9,
-      font: fonts.regular,
-      color: metaColor,
+  if (docTitle) {
+    // Auto-scale title to fit within right half of header
+    const maxTitleWidth = width * 0.55;
+    let titleSize = 22;
+    while (titleSize > 10 && fonts.bold.widthOfTextAtSize(docTitle, titleSize) > maxTitleWidth) {
+      titleSize -= 1;
+    }
+    const titleWidth = fonts.bold.widthOfTextAtSize(docTitle, titleSize);
+    page.drawText(docTitle, {
+      x: x + width - titleWidth,
+      y: currentY - titleSize,
+      size: titleSize,
+      font: fonts.bold,
+      color: docColor,
     });
-    metaY -= 13;
+
+    if (docMeta) {
+      const metaLines = docMeta.split("\n");
+      let metaY = currentY - titleSize - 14;
+      for (const line of metaLines) {
+        const lineWidth = fonts.regular.widthOfTextAtSize(line, 9);
+        page.drawText(line, {
+          x: x + width - lineWidth,
+          y: metaY,
+          size: 9,
+          font: fonts.regular,
+          color: metaColor,
+        });
+        metaY -= 13;
+      }
+    }
   }
 }
 

@@ -178,7 +178,7 @@ export function ClientTable() {
       onToggleColumnVisibility={toggleColumnVisibility}
       onResetPreferences={resetPreferences}
       isLoading={isLoading}
-      emptyTitle="No clients found"
+      emptyPreset="clients"
       toolbarActions={toolbarActions}
     />
   );

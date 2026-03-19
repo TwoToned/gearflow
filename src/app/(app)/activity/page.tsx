@@ -244,7 +244,7 @@ function ActivityLogContent() {
         onToggleColumnVisibility={toggleColumnVisibility}
         onResetPreferences={resetPreferences}
         isLoading={isLoading}
-        emptyTitle="No activity logs found"
+        emptyPreset="activity"
         toolbarActions={
           <Button
             variant="outline"

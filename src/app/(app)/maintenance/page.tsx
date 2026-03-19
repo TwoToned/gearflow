@@ -341,7 +341,7 @@ export default function MaintenancePage() {
           onToggleColumnVisibility={toggleColumnVisibility}
           onResetPreferences={resetPreferences}
           isLoading={isLoading}
-          emptyTitle="No maintenance records found"
+          emptyPreset="maintenance"
           toolbarActions={
             <CanDo resource="maintenance" action="create">
               <Button size="sm" className="h-8" render={<Link href="/maintenance/new" />}>

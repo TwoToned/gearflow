@@ -216,8 +216,7 @@ export function ModelTable() {
         onToggleColumnVisibility={toggleColumnVisibility}
         onResetPreferences={resetPreferences}
         isLoading={isLoading}
-        emptyTitle="No models found"
-        emptyDescription="Create one to get started."
+        emptyPreset="models"
         toolbarActions={toolbarActions}
       />
 

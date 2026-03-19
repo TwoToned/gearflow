@@ -238,6 +238,7 @@ function TestTagTableContent() {
       onToggleColumnVisibility={toggleColumnVisibility}
       onResetPreferences={resetPreferences}
       isLoading={isLoading}
+      emptyPreset="maintenance"
       emptyTitle="No test tag assets found"
       onRowClick={(item) => router.push(`/test-and-tag/${item.id}`)}
     />

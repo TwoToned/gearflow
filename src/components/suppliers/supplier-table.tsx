@@ -172,7 +172,7 @@ export function SupplierTable() {
       onToggleColumnVisibility={toggleColumnVisibility}
       onResetPreferences={resetPreferences}
       isLoading={isLoading}
-      emptyTitle="No suppliers found"
+      emptyPreset="suppliers"
       toolbarActions={toolbarActions}
     />
   );

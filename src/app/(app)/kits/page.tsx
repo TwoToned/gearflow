@@ -284,7 +284,7 @@ export default function KitsPage() {
           onToggleColumnVisibility={toggleColumnVisibility}
           onResetPreferences={resetPreferences}
           isLoading={isLoading}
-          emptyTitle="No kits found"
+          emptyPreset="kits"
           enableRowSelection
           selectedRows={selectedIds}
           onSelectionChange={setSelectedIds}

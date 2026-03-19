@@ -458,7 +458,7 @@ export function AssetTable() {
           onToggleColumnVisibility={toggleColumnVisibility}
           onResetPreferences={resetPreferences}
           isLoading={isLoading}
-          emptyTitle="No assets found"
+          emptyPreset="assets"
           enableRowSelection
           selectedRows={selectedIds}
           onSelectionChange={setSelectedIds}
@@ -486,7 +486,7 @@ export function AssetTable() {
           onToggleColumnVisibility={toggleColumnVisibility}
           onResetPreferences={resetPreferences}
           isLoading={isLoading}
-          emptyTitle="No bulk assets found"
+          emptyPreset="assets"
           toolbarPrefix={viewToggle}
           toolbarActions={actionButtons}
         />

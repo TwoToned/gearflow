@@ -27,6 +27,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { FilterValue, FilterType } from "@/lib/table-utils";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
 
 // ─── Column Definition ──────────────────────────────────────────────
 
@@ -90,6 +92,7 @@ export interface DataTableProps<TData> {
   isLoading?: boolean;
   emptyTitle?: string;
   emptyDescription?: string;
+  emptyPreset?: string;
   toolbarActions?: React.ReactNode;
   toolbarPrefix?: React.ReactNode;
 }
@@ -480,6 +483,7 @@ export function DataTable<TData>({
   isLoading = false,
   emptyTitle = "No results found",
   emptyDescription,
+  emptyPreset,
   toolbarActions,
   toolbarPrefix,
 }: DataTableProps<TData>) {
@@ -650,20 +654,23 @@ export function DataTable<TData>({
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={colSpan} className="text-center text-muted-foreground h-24">
-                  Loading...
-                </TableCell>
-              </TableRow>
+              Array.from({ length: 5 }).map((_, r) => (
+                <TableRow key={r}>
+                  {Array.from({ length: colSpan }).map((_, c) => (
+                    <TableCell key={c}>
+                      <Skeleton className="h-3.5 rounded" style={{ width: `${50 + ((r * 7 + c * 13) % 60)}px` }} />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
             ) : data.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={colSpan} className="text-center h-24">
-                  <div className="text-muted-foreground">
-                    <p>{emptyTitle}</p>
-                    {emptyDescription && (
-                      <p className="text-sm mt-1">{emptyDescription}</p>
-                    )}
-                  </div>
+                <TableCell colSpan={colSpan} className="h-auto border-0">
+                  <EmptyState
+                    preset={emptyPreset as "assets" | "models" | "projects" | "clients" | "kits" | "search" | undefined}
+                    heading={emptyTitle}
+                    description={emptyDescription}
+                  />
                 </TableCell>
               </TableRow>
             ) : (

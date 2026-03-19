@@ -270,7 +270,7 @@ export function ProjectTable() {
       onToggleColumnVisibility={toggleColumnVisibility}
       onResetPreferences={resetPreferences}
       isLoading={isLoading}
-      emptyTitle="No projects found"
+      emptyPreset="projects"
       toolbarActions={toolbarActions}
     />
   );

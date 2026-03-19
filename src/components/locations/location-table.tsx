@@ -198,7 +198,7 @@ export function LocationTable() {
       onToggleColumnVisibility={toggleColumnVisibility}
       onResetPreferences={resetPreferences}
       isLoading={isLoading}
-      emptyTitle="No locations found"
+      emptyPreset="locations"
       toolbarActions={actionButtons}
     />
   );

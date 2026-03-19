@@ -230,7 +230,7 @@ export function CrewTable() {
       onToggleColumnVisibility={toggleColumnVisibility}
       onResetPreferences={resetPreferences}
       isLoading={isLoading}
-      emptyTitle="No crew members found"
+      emptyPreset="crew"
       toolbarActions={toolbarActions}
     />
   );

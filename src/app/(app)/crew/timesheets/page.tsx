@@ -454,7 +454,8 @@ export default function TimesheetsPage() {
           onToggleColumnVisibility={toggleColumnVisibility}
           onResetPreferences={resetPreferences}
           isLoading={isLoading}
-          emptyTitle="No time entries found"
+          emptyPreset="crew"
+          emptyTitle="No time entries"
           emptyDescription="Time entries will appear here once crew members log time."
           toolbarActions={toolbarActions}
         />

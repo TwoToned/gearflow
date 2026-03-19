@@ -13,11 +13,13 @@ import gearflowCrewTable from "./gearflow-crew-table";
 import { gearflowDataTable } from "./gearflow-data-table";
 import { gearflowSummaryBox } from "./gearflow-summary-box";
 import { gearflowTextBlock } from "./gearflow-text-block";
+import gearflowRect from "./gearflow-rect";
 
 export const gearflowPlugins = {
   // Built-in pdfme plugins
   text,
   // Custom plugins — project documents
+  gearflowRect,
   gearflowTable,
   gearflowFinancialSummary,
   gearflowPageHeader,
@@ -32,6 +34,7 @@ export const gearflowPlugins = {
 };
 
 export {
+  gearflowRect,
   gearflowTable,
   gearflowFinancialSummary,
   gearflowPageHeader,

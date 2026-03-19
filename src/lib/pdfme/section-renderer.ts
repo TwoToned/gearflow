@@ -46,6 +46,8 @@ import {
   FOOTER_HEIGHT,
   SECTION_GAP,
 } from "./template-constants";
+import type { BlockStyling } from "./section-types";
+import type { RectConfig } from "./plugins/gearflow-rect";
 import { filterVisibleSections } from "./condition-evaluator";
 import { resolveTokensInText } from "./token-resolver";
 
@@ -717,6 +719,11 @@ function buildSectionInput(
   }
 }
 
+/** Check if a BlockStyling object has any visual properties set */
+function hasStyling(styling: BlockStyling): boolean {
+  return !!(styling.backgroundColor || styling.borderColor);
+}
+
 /** Get status filter for table items based on document type */
 function getFilterByStatus(docType: DocumentType): string[] | null {
   switch (docType) {
@@ -781,6 +788,28 @@ export function renderSections(
     const pageInputs: Record<string, string> = {};
 
     for (const entry of page.entries) {
+      // Insert background rect before content when styling is present
+      const styling = entry.section.layoutHint?.styling;
+      if (styling && hasStyling(styling)) {
+        const rectName = `rect_${entry.section.id}_p${pageIdx}`;
+        const padding = styling.padding || 0;
+        pageSchemas.push({
+          name: rectName,
+          type: "gearflowRect",
+          content: "",
+          position: { x: entry.x - padding, y: entry.y - padding },
+          width: entry.width + padding * 2,
+          height: entry.height + padding * 2,
+        });
+        const rectConfig: RectConfig = {
+          backgroundColor: styling.backgroundColor,
+          borderColor: styling.borderColor,
+          borderWidth: styling.borderWidth,
+          padding: styling.padding,
+        };
+        pageInputs[rectName] = JSON.stringify(rectConfig);
+      }
+
       const schema = buildSectionSchema(entry, pageIdx);
       const input = buildSectionInput(entry.section, data, docType, docColor, entry.tableStartIndex);
       pageSchemas.push(schema);

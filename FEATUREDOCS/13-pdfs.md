@@ -12,6 +12,14 @@ All PDF generation uses **pdfme** (`@pdfme/generator` + `@pdfme/common` + custom
 3. Multi-page pagination: section heights estimated → tables split across pages → headers repeated on continuation pages
 4. pdfme `generate()` renders → PDF `Uint8Array`
 
+**Pagination engine features:**
+- Column-aware height estimation using shared constants + `layoutHint` width scaling
+- Row-level page breaks (atomic rows, never split mid-row) via `layoutHint.rowId` grouping
+- Table/crew-table overflow detection with `startIndex` continuation on next page
+- All sections check overflow (signature, totals, custom text, notes, payment details)
+- Block styling (backgrounds, borders via `gearflowRect` plugin) re-drawn on continuation pages
+- Header continuation on overflow pages
+
 **2. Legacy Pipeline (fallback)**
 1. Template has `basePdf` + `schemas` fields → direct pdfme template
 2. `getTemplateBuilder(docType)` → hardcoded template builder
@@ -35,7 +43,9 @@ All PDF generation uses **pdfme** (`@pdfme/generator` + `@pdfme/common` + custom
 | `src/lib/pdfme/types.ts` | `DocumentType`, `TestTagReportType`, `DocumentData`, plugin config types |
 | `src/lib/pdfme/plugins/index.ts` | Plugin registry — all custom + built-in plugins |
 | `src/lib/pdfme/fonts.ts` | Font configuration for pdfme |
-| `src/lib/validations/template-section.ts` | Zod schemas for sections, brand templates, export/import |
+| `src/lib/pdfme/block-utils.ts` | Block ↔ section converters (`flattenBlocks`, `sectionsToBlocks`) |
+| `src/lib/pdfme/template-constants.ts` | Shared height/dimension constants (row heights, padding, font sizes, page dimensions) |
+| `src/lib/validations/template-section.ts` | Zod schemas for sections (discriminated union), blocks, brand templates, export/import |
 
 ### Custom Plugins (`src/lib/pdfme/plugins/`)
 
@@ -56,6 +66,8 @@ All PDF generation uses **pdfme** (`@pdfme/generator` + `@pdfme/common` + custom
 | `gearflowDataTable` | Generic configurable table with columns, sections, badges, expanded notes |
 | `gearflowSummaryBox` | Horizontal metrics row (e.g., "Total: 42", "Compliance: 95%") |
 | `gearflowTextBlock` | Multi-line text — paragraphs, key-value grids, section titles |
+
+| `gearflowRect` | Background rectangles + borders behind content sections (block styling) |
 
 ### Plugin Architecture
 - Plugins receive `value` as JSON string, parse it, draw directly via pdf-lib
@@ -96,19 +108,54 @@ All PDF generation uses **pdfme** (`@pdfme/generator` + `@pdfme/common` + custom
 - **Inheritance**: Document templates link to a brand template via `brandTemplateId`
 - **Server actions**: `src/server/brand-templates.ts` — CRUD, set/unset default
 
-### Template Builder UI
+### Block Editor (current)
+
+The block editor provides a Notion-like editing experience with a 2-level block tree: rows → columns → content blocks. The persisted format stays as flat `TemplateSection[]` with `layoutHint` metadata; the block tree is an editor-only concept.
+
+#### Data Model
+- **`TemplateBlock`**: `{ id, type: 'row'|'column'|content, children?, settings?, visibility?, content?, columnWidths?, styling? }`
+- **`LayoutHint`**: `{ rowId, columnIndex, columnWidth, columnCount }` — added to `TemplateSection` for column positioning
+- **`BlockStyling`**: `{ backgroundColor?, borderColor?, borderWidth?, padding?, margin? }` — per-section PDF styling
+- **Lazy migration**: Old flat sections auto-wrapped into blocks on load via `sectionsToBlocks()`
+- **Constraints**: max 4 columns per row, max 2 levels deep, column widths sum to 100%
+
+#### Key Files
+| File | Purpose |
+|------|---------|
+| `src/lib/pdfme/block-utils.ts` | `flattenBlocks()`, `sectionsToBlocks()` — block ↔ section conversion |
+| `src/lib/pdfme/template-constants.ts` | Shared height/dimension constants for plugins + estimator |
+| `src/lib/pdfme/plugins/gearflow-rect.ts` | Background rectangles + borders for block styling in PDF |
+| `src/lib/validations/template-section.ts` | Discriminated union Zod validation for all section types |
+
+#### Block Editor UI
 | Component | File | Purpose |
 |-----------|------|---------|
-| `SectionBuilder` | `src/components/settings/template-builder/section-builder.tsx` | Main editor — dnd-kit reordering, undo/redo, preview, save |
-| `SectionCard` | `section-card.tsx` | Draggable card with type icon, actions |
-| `SectionSettingsPanel` | `section-settings-panel.tsx` | Per-type settings forms + visibility editor |
+| `BlockEditor` | `src/components/settings/template-builder/block-editor.tsx` | Three-pane editor: block tree + preview + settings |
+| `BlockTree` | `block-tree.tsx` | DnD section list with insert buttons between rows |
+| `BlockCard` | `block-card.tsx` | Row/content block cards with drag handles |
+| `ColumnWidthPicker` | `column-width-picker.tsx` | 9 presets + custom width inputs |
+| `HtmlPreview` | `html-preview.tsx` | Instant HTML preview of block tree |
+| `SectionSettingsPanel` | `section-settings-panel.tsx` | Per-type settings + block styling (colors, borders, padding) |
 | `SectionLibrary` | `section-library.tsx` | Dialog to add new sections from catalog |
+
+#### Editor Features
+- **Layout**: 3-pane — block tree (260px) + preview (flex-1) + settings (320px)
+- **Preview modes**: Instant HTML preview (default) or rendered PDF
+- **Keyboard shortcuts**: Cmd+Z/Shift+Z undo/redo, Cmd+S save, Cmd+D duplicate, Delete, Arrow keys, Escape
+- **Undo/redo**: 50-state history
+- **Optimistic locking**: Version check on save (reject on mismatch)
+- **Save**: `saveTemplateBlocks()` — converts blocks → flat sections, saves with version increment
+
+### Legacy Section Builder
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| `SectionBuilder` | `src/components/settings/template-builder/section-builder.tsx` | Flat-list editor — dnd-kit reordering, undo/redo, preview, save |
+| `SectionCard` | `section-card.tsx` | Draggable card with type icon, actions |
 
 ### Editor Page
 - **URL**: `/template-designer/[id]`
-- **Detection**: Page checks for `sections` field → renders `SectionBuilder` (new) or `TemplateEditor` (legacy)
-- **Layout**: 3-panel — section list (left, 280px) + settings panel (middle, 300px) + PDF preview (right, flex)
-- **Features**: drag-to-reorder, undo/redo (Cmd+Z / Cmd+Shift+Z), live preview with 600ms debounce
+- **Detection**: Page checks for `sections` field → renders `BlockEditor` (new) or `TemplateEditor` (legacy)
 - **Preview API**: POST `/api/documents/template-preview` with `{ docType, sections }` body
 
 ### Template Management
@@ -117,7 +164,7 @@ All PDF generation uses **pdfme** (`@pdfme/generator` + `@pdfme/common` + custom
 - **Custom templates**: Edit, duplicate, delete, set/unset default, publish
 - **Export/Import**: JSON format with version, type, name, sections, exportedAt
 - **Thumbnails**: Stored as base64 in `thumbnailData` column
-- **Server actions**: `src/server/document-templates.ts` — `saveTemplateSections()`, `exportTemplate()`, `importTemplate()`, `duplicateSystemDefaultWithSections()`, `saveTemplateThumbnail()`
+- **Server actions**: `src/server/document-templates.ts` — `saveTemplateSections()`, `saveTemplateBlocks()` (with optimistic locking), `exportTemplate()`, `importTemplate()`, `duplicateSystemDefaultWithSections()`, `saveTemplateThumbnail()`
 
 ### Database Models
 

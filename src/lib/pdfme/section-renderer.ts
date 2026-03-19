@@ -1079,6 +1079,15 @@ export function renderSections(
     allInputs.push(pageInputs);
   }
 
+  // pdfme's generate() iterates: for each input × for each schema page → insertPage.
+  // With N inputs and N schema pages, this produces N×N pages instead of N.
+  // Fix: merge all per-page inputs into a single dict. Schema names are unique
+  // per page (e.g. table_abc_p0, table_abc_p1), so there are no key collisions.
+  const mergedInputs: Record<string, string> = {};
+  for (const pageInputs of allInputs) {
+    Object.assign(mergedInputs, pageInputs);
+  }
+
   return {
     template: {
       basePdf: {
@@ -1088,6 +1097,6 @@ export function renderSections(
       },
       schemas: allSchemas,
     },
-    inputs: allInputs,
+    inputs: [mergedInputs],
   };
 }

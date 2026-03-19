@@ -76,7 +76,7 @@ export const gearflowSummaryBox: Plugin<SummaryBoxSchema> = {
 
         // Label (small, uppercase) — truncate if too wide
         let label = item.label.toUpperCase();
-        let labelSize = 6;
+        const labelSize = 6;
         let labelWidth = regular.widthOfTextAtSize(label, labelSize);
         const maxLabelWidth = itemWidth - 8; // 4pt padding each side
 

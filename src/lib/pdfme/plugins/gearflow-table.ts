@@ -301,7 +301,7 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
           }
 
           case "description": {
-            let descX = cellX;
+            const descX = cellX;
 
             // Kit prefix for packing list
             const displayName = (config.documentType === "packing-list" && isKit)

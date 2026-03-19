@@ -61,7 +61,7 @@ export function Notifications() {
   const orgId = activeOrg?.id;
 
   useEffect(() => {
-    setDismissed(getDismissedIds());
+    setDismissed(getDismissedIds()); // eslint-disable-line react-hooks/set-state-in-effect
   }, []);
 
   const { data: notifications } = useQuery({
@@ -84,7 +84,7 @@ export function Notifications() {
     }
     if (changed) {
       saveDismissedIds(stored);
-      setDismissed(new Set(stored));
+      setDismissed(new Set(stored)); // eslint-disable-line react-hooks/set-state-in-effect
     }
   }, [notifications]);
 

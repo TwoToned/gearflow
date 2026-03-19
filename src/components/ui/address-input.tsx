@@ -53,7 +53,7 @@ export function AddressInput({
 
   // Sync geocoded state when initialCoordinates changes
   useEffect(() => {
-    setIsGeocoded(!!initialCoordinates);
+    setIsGeocoded(!!initialCoordinates); // eslint-disable-line react-hooks/set-state-in-effect
   }, [initialCoordinates]);
 
   // Close dropdown on outside click

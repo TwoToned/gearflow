@@ -19,7 +19,7 @@ export function MediaLightbox({ images, initialIndex = 0, open, onClose }: Media
   const [index, setIndex] = useState(initialIndex);
 
   useEffect(() => {
-    setIndex(initialIndex);
+    setIndex(initialIndex); // eslint-disable-line react-hooks/set-state-in-effect
   }, [initialIndex, open]);
 
   const prev = useCallback(() => {

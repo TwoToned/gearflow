@@ -27,6 +27,9 @@ npm run dev          # Dev server (Turbopack, Next.js 16 default)
 npm run build        # Production build + type check
 npm start            # Start production server
 npm run lint         # ESLint
+npm test             # Run all unit tests
+npm run test:watch   # Run tests in watch mode
+npm run test:coverage # Run tests with coverage report
 npx prisma generate  # Regenerate Prisma client (after schema changes)
 npx prisma migrate dev --name <name>  # Create + apply migration
 ```

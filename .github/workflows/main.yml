@@ -26,7 +26,12 @@ jobs:
         run: |
           cd ${{ vars.APP_DIR }}
           npx prisma generate
- 
+
+      - name: Run tests
+        run: |
+          cd ${{ vars.APP_DIR }}
+          npm test
+
       - name: Run Prisma migrations
         run: |
           cd ${{ vars.APP_DIR }}

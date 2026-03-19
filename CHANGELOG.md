@@ -5,6 +5,17 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-03-19
+
+### Fixed
+- Resolved all 145 ESLint errors to pass CI lint checks
+- Excluded third-party gstack skill files from project ESLint scope
+- Fixed misplaced `eslint-disable` comments that weren't suppressing errors
+- Fixed `prefer-const` violations across PDF and server modules
+- Fixed `react/no-children-prop` error by renaming `children` prop on KitChildRows
+- Fixed `useMemo` dependency array using method calls instead of simple expressions
+- Removed stale `eslint-disable` directive on interface with no violation
+
 ## [0.2.0] - 2026-03-19
 
 ### Added

@@ -41,7 +41,7 @@ import { ScanInput } from "@/components/ui/scan-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Card, CardContent } from "@/components/ui/card";
+
 import {
   Tabs,
   TabsList,
@@ -203,23 +203,23 @@ function KitChildRows({
         return (
           <Fragment key={child.id}>
             <TableRow
-              className={`${isVerified ? "bg-green-500/5" : "bg-muted/30"} ${isNestedKit ? "cursor-pointer" : ""}`}
+              className={`${isVerified ? "bg-green-500/5" : "bg-bg-inset/30"} ${isNestedKit ? "cursor-pointer" : ""}`}
               onClick={isNestedKit ? () => toggleExpanded(`nested-${child.id}`) : undefined}
             >
               <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                 <button type="button" onClick={() => onToggleVerify(child.id)} className="mx-auto block">
                   {isVerified
                     ? <CircleCheck className="h-4 w-4 text-green-500" />
-                    : <Circle className="h-4 w-4 text-muted-foreground/30 hover:text-muted-foreground transition-colors" />
+                    : <Circle className="h-4 w-4 text-fg-3/30 hover:text-fg-3 transition-colors" />
                   }
                 </button>
               </TableCell>
-              <TableCell className="pl-12 text-sm text-muted-foreground">
+              <TableCell className="pl-12 text-sm text-fg-3">
                 <div className="flex items-center gap-1.5">
                   {isNestedKit && (
-                    <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${nestedExpanded ? "rotate-90" : ""}`} />
+                    <ChevronRight className={`h-3.5 w-3.5 text-fg-3 transition-transform ${nestedExpanded ? "rotate-90" : ""}`} />
                   )}
-                  {isNestedKit && <Container className="h-3.5 w-3.5 text-muted-foreground" />}
+                  {isNestedKit && <Container className="h-3.5 w-3.5 text-fg-3" />}
                   <span>{child.model?.name || child.description || "Item"}</span>
                   {isNestedKit && (
                     <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Kit</Badge>
@@ -229,7 +229,7 @@ function KitChildRows({
                   )}
                 </div>
               </TableCell>
-              <TableCell className="font-mono text-sm text-muted-foreground">
+              <TableCell className="font-mono text-sm text-fg-3">
                 {child.asset?.assetTag || child.bulkAsset?.assetTag || (isNestedKit ? (child.kit?.assetTag || "—") : "—")}
               </TableCell>
               <TableCell className="text-center">{isNestedKit ? filteredGrandchildren.length : child.quantity}</TableCell>
@@ -245,19 +245,19 @@ function KitChildRows({
             {isNestedKit && nestedExpanded && filteredGrandchildren.map((nested) => {
               const nestedVerified = verifiedKitItems.has(nested.id);
               return (
-                <TableRow key={nested.id} className={nestedVerified ? "bg-green-500/5" : "bg-muted/20"}>
+                <TableRow key={nested.id} className={nestedVerified ? "bg-green-500/5" : "bg-bg-inset/20"}>
                   <TableCell className="text-center">
                     <button type="button" onClick={() => onToggleVerify(nested.id)} className="mx-auto block">
                       {nestedVerified
                         ? <CircleCheck className="h-4 w-4 text-green-500" />
-                        : <Circle className="h-4 w-4 text-muted-foreground/30 hover:text-muted-foreground transition-colors" />
+                        : <Circle className="h-4 w-4 text-fg-3/30 hover:text-fg-3 transition-colors" />
                       }
                     </button>
                   </TableCell>
-                  <TableCell className="pl-20 text-sm text-muted-foreground">
+                  <TableCell className="pl-20 text-sm text-fg-3">
                     {nested.model?.name || nested.description || "Item"}
                   </TableCell>
-                  <TableCell className="font-mono text-sm text-muted-foreground">
+                  <TableCell className="font-mono text-sm text-fg-3">
                     {nested.asset?.assetTag || nested.bulkAsset?.assetTag || "—"}
                   </TableCell>
                   <TableCell className="text-center">{nested.quantity}</TableCell>
@@ -1197,11 +1197,11 @@ function WarehouseProjectPage({
         </TableCell>
         <TableCell>
           <div className="flex items-center gap-1.5">
-            <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+            <ChevronRight className={`h-4 w-4 text-fg-3 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
             <span className="font-medium">{name}</span>
                       </div>
         </TableCell>
-        <TableCell className="font-mono text-sm text-muted-foreground">
+        <TableCell className="font-mono text-sm text-fg-3">
           {entry.kind === "bulk-group" ? (entry.item.bulkAsset?.assetTag || "—") : ""}
         </TableCell>
         <TableCell className="text-center">{count}</TableCell>
@@ -1210,8 +1210,8 @@ function WarehouseProjectPage({
     );
   }
 
-  if (isLoading) return <div className="text-muted-foreground">Loading...</div>;
-  if (!project) return <div className="text-muted-foreground">Project not found.</div>;
+  if (isLoading) return <div className="text-fg-3">Loading...</div>;
+  if (!project) return <div className="text-fg-3">Project not found.</div>;
 
   return (
     <RequirePermission resource="warehouse" action="read">
@@ -1223,13 +1223,13 @@ function WarehouseProjectPage({
             <Button variant="ghost" size="icon-sm" render={<Link href="/warehouse" />}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <span className="font-mono text-sm text-muted-foreground">{project.projectNumber}</span>
+            <span className="font-mono text-sm text-fg-3">{project.projectNumber}</span>
             <Badge variant="outline" className={statusColors[project.status] || ""}>
               {statusLabels[project.status] || project.status}
             </Badge>
           </div>
           <h1 className="t-title text-fg">{project.name}</h1>
-          {project.client && <p className="text-muted-foreground">{project.client.name}</p>}
+          {project.client && <p className="text-fg-3">{project.client.name}</p>}
         </div>
         <div className="flex gap-2">
           {/* Mobile: Pick List button shown prominently */}
@@ -1322,10 +1322,9 @@ function WarehouseProjectPage({
         {/* ================================================================ */}
         <TabsContent value="check-out">
           <div className="space-y-4 pt-4">
-            <Card>
-              <CardContent className="py-4">
+            <div className="rounded-lg bg-bg-surface surface-ring py-4 px-4">
                 <div className="flex items-center gap-3">
-                  <ScanBarcode className="h-5 w-5 text-muted-foreground shrink-0 hidden sm:block" />
+                  <ScanBarcode className="h-5 w-5 text-fg-3 shrink-0 hidden sm:block" />
                   <div className="flex-1">
                     <Label htmlFor="scan-checkout" className="sr-only">Scan asset tag</Label>
                     <ScanInput
@@ -1352,16 +1351,13 @@ function WarehouseProjectPage({
                     {selectedOutCount > 0 ? ` (${selectedOutCount})` : ""}
                   </Button>
                 </div>
-              </CardContent>
-            </Card>
+            </div>
 
             {checkOutItemsList.length === 0 ? (
-              <Card>
-                <CardContent className="py-8 text-center text-muted-foreground">
+              <div className="rounded-lg bg-bg-surface surface-ring py-8 text-center text-fg-3">
                   <Package className="mx-auto mb-2 h-8 w-8 opacity-50" />
                   <p>All items deployed.</p>
-                </CardContent>
-              </Card>
+              </div>
             ) : (
               <div className="rounded-md border">
                 <Table>
@@ -1397,18 +1393,18 @@ function WarehouseProjectPage({
                               </TableCell>
                             )}
                             {isExpanded && entry.items.map((item) => (
-                              <TableRow key={item.id} className="bg-muted/30">
+                              <TableRow key={item.id} className="bg-bg-inset/30">
                                 <TableCell>
                                   <Checkbox
                                     checked={selectedOut.has(item.id)}
                                     onCheckedChange={() => toggleSelection(selectedOut, setSelectedOut, item.id)}
                                   />
                                 </TableCell>
-                                <TableCell className="pl-12 text-sm text-muted-foreground">
+                                <TableCell className="pl-12 text-sm text-fg-3">
                                   {item.asset?.assetTag ? `${item.model?.name || "Asset"}` : "Unassigned"}
       
                                 </TableCell>
-                                <TableCell className="font-mono text-sm text-muted-foreground">
+                                <TableCell className="font-mono text-sm text-fg-3">
                                   {item.asset?.assetTag || "—"}
                                 </TableCell>
                                 <TableCell className="text-center">1</TableCell>
@@ -1445,17 +1441,17 @@ function WarehouseProjectPage({
                               </TableCell>
                             )}
                             {isExpanded && childKeys.map((key, idx) => (
-                              <TableRow key={key} className="bg-muted/30">
+                              <TableRow key={key} className="bg-bg-inset/30">
                                 <TableCell>
                                   <Checkbox
                                     checked={selectedOut.has(key)}
                                     onCheckedChange={() => toggleSelection(selectedOut, setSelectedOut, key)}
                                   />
                                 </TableCell>
-                                <TableCell className="pl-12 text-sm text-muted-foreground">
+                                <TableCell className="pl-12 text-sm text-fg-3">
                                   Unit {idx + 1}
                                 </TableCell>
-                                <TableCell className="font-mono text-sm text-muted-foreground">
+                                <TableCell className="font-mono text-sm text-fg-3">
                                   {entry.item.bulkAsset?.assetTag || "—"}
                                 </TableCell>
                                 <TableCell className="text-center">1</TableCell>
@@ -1489,8 +1485,8 @@ function WarehouseProjectPage({
                               </TableCell>
                               <TableCell>
                                 <div className="flex items-center gap-1.5">
-                                  <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-90" : ""}`} />
-                                  <Container className="h-4 w-4 text-muted-foreground" />
+                                  <ChevronRight className={`h-4 w-4 text-fg-3 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+                                  <Container className="h-4 w-4 text-fg-3" />
                                   <span className="font-medium">{entry.item.description || entry.item.kit?.name || "Kit"}</span>
                                   <Badge variant="secondary" className={`ml-1 text-[10px] px-1.5 py-0 ${entry.item.kit?.isPrep ? "bg-purple-500/10 text-purple-500 border-purple-500/20" : ""}`}>
                                     {entry.item.kit?.isPrep ? "Prep" : "Kit"}
@@ -1510,7 +1506,7 @@ function WarehouseProjectPage({
                                   )}
                                 </div>
                               </TableCell>
-                              <TableCell className="font-mono text-sm text-muted-foreground">
+                              <TableCell className="font-mono text-sm text-fg-3">
                                 {entry.item.kit?.isPrep && entry.item.kit.assetTag.startsWith("PREP-") ? "—" : (entry.item.kit?.assetTag || "—")}
                               </TableCell>
                               <TableCell className="text-center">{entry.children.length}</TableCell>
@@ -1564,7 +1560,7 @@ function WarehouseProjectPage({
                             )}
 
                           </TableCell>
-                          <TableCell className="font-mono text-sm text-muted-foreground">
+                          <TableCell className="font-mono text-sm text-fg-3">
                             {item.asset?.assetTag || item.bulkAsset?.assetTag || "—"}
                           </TableCell>
                           <TableCell className="text-center">{item.quantity}</TableCell>
@@ -1588,10 +1584,9 @@ function WarehouseProjectPage({
         {/* ================================================================ */}
         <TabsContent value="check-in">
           <div className="space-y-4 pt-4">
-            <Card>
-              <CardContent className="py-4 space-y-3">
+            <div className="rounded-lg bg-bg-surface surface-ring py-4 px-4 space-y-3">
                 <div className="flex items-center gap-3">
-                  <ScanBarcode className="h-5 w-5 text-muted-foreground shrink-0 hidden sm:block" />
+                  <ScanBarcode className="h-5 w-5 text-fg-3 shrink-0 hidden sm:block" />
                   <div className="flex-1">
                     <Label htmlFor="scan-checkin" className="sr-only">Scan asset tag</Label>
                     <ScanInput
@@ -1643,16 +1638,13 @@ function WarehouseProjectPage({
                     </div>
                   )}
                 </div>
-              </CardContent>
-            </Card>
+            </div>
 
             {checkedOutItems.length === 0 ? (
-              <Card>
-                <CardContent className="py-8 text-center text-muted-foreground">
+              <div className="rounded-lg bg-bg-surface surface-ring py-8 text-center text-fg-3">
                   <Package className="mx-auto mb-2 h-8 w-8 opacity-50" />
                   <p>No items currently deployed.</p>
-                </CardContent>
-              </Card>
+              </div>
             ) : (
               <div className="rounded-md border">
                 <Table>
@@ -1688,18 +1680,18 @@ function WarehouseProjectPage({
                               </TableCell>
                             )}
                             {isExpanded && entry.items.map((item) => (
-                              <TableRow key={item.id} className="bg-muted/30">
+                              <TableRow key={item.id} className="bg-bg-inset/30">
                                 <TableCell>
                                   <Checkbox
                                     checked={selectedIn.has(item.id)}
                                     onCheckedChange={() => toggleSelection(selectedIn, setSelectedIn, item.id)}
                                   />
                                 </TableCell>
-                                <TableCell className="pl-12 text-sm text-muted-foreground">
+                                <TableCell className="pl-12 text-sm text-fg-3">
                                   {item.asset?.assetTag ? `${item.model?.name || "Asset"}` : "Unassigned"}
       
                                 </TableCell>
-                                <TableCell className="font-mono text-sm text-muted-foreground">
+                                <TableCell className="font-mono text-sm text-fg-3">
                                   {item.asset?.assetTag || "—"}
                                 </TableCell>
                                 <TableCell className="text-center">1</TableCell>
@@ -1736,17 +1728,17 @@ function WarehouseProjectPage({
                               </TableCell>
                             )}
                             {isExpanded && childKeys.map((key, idx) => (
-                              <TableRow key={key} className="bg-muted/30">
+                              <TableRow key={key} className="bg-bg-inset/30">
                                 <TableCell>
                                   <Checkbox
                                     checked={selectedIn.has(key)}
                                     onCheckedChange={() => toggleSelection(selectedIn, setSelectedIn, key)}
                                   />
                                 </TableCell>
-                                <TableCell className="pl-12 text-sm text-muted-foreground">
+                                <TableCell className="pl-12 text-sm text-fg-3">
                                   Unit {idx + 1}
                                 </TableCell>
-                                <TableCell className="font-mono text-sm text-muted-foreground">
+                                <TableCell className="font-mono text-sm text-fg-3">
                                   {entry.item.bulkAsset?.assetTag || "—"}
                                 </TableCell>
                                 <TableCell className="text-center">1</TableCell>
@@ -1780,8 +1772,8 @@ function WarehouseProjectPage({
                               </TableCell>
                               <TableCell>
                                 <div className="flex items-center gap-1.5">
-                                  <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-90" : ""}`} />
-                                  <Container className="h-4 w-4 text-muted-foreground" />
+                                  <ChevronRight className={`h-4 w-4 text-fg-3 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+                                  <Container className="h-4 w-4 text-fg-3" />
                                   <span className="font-medium">{entry.item.description || entry.item.kit?.name || "Kit"}</span>
                                   <Badge variant="secondary" className={`ml-1 text-[10px] px-1.5 py-0 ${entry.item.kit?.isPrep ? "bg-purple-500/10 text-purple-500 border-purple-500/20" : ""}`}>
                                     {entry.item.kit?.isPrep ? "Prep" : "Kit"}
@@ -1801,7 +1793,7 @@ function WarehouseProjectPage({
                                   )}
                                 </div>
                               </TableCell>
-                              <TableCell className="font-mono text-sm text-muted-foreground">
+                              <TableCell className="font-mono text-sm text-fg-3">
                                 {entry.item.kit?.isPrep && entry.item.kit.assetTag.startsWith("PREP-") ? "—" : (entry.item.kit?.assetTag || "—")}
                               </TableCell>
                               <TableCell className="text-center">{entry.children.length}</TableCell>
@@ -1857,7 +1849,7 @@ function WarehouseProjectPage({
                             )}
 
                           </TableCell>
-                          <TableCell className="font-mono text-sm text-muted-foreground">
+                          <TableCell className="font-mono text-sm text-fg-3">
                             {assetTag || "—"}
                           </TableCell>
                           <TableCell className="text-center">
@@ -1866,7 +1858,7 @@ function WarehouseProjectPage({
                                 <span className={item.returnedQuantity > 0 ? "font-semibold text-teal-600" : ""}>
                                   {item.returnedQuantity}
                                 </span>
-                                <span className="text-muted-foreground">/{item.checkedOutQuantity}</span>
+                                <span className="text-fg-3">/{item.checkedOutQuantity}</span>
                               </span>
                             ) : (
                               <span>1</span>
@@ -1904,7 +1896,7 @@ function WarehouseProjectPage({
                 {kitConfirm.action === "deploy" ? "Deploy without full verification?" : "Return without full verification?"}
               </DialogTitle>
             </DialogHeader>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-fg-3">
               <span className="font-medium text-foreground">{kitConfirm.kitName}</span> has{" "}
               <span className="font-medium text-foreground">{kitConfirm.verifiedCount}/{kitConfirm.totalCount}</span>{" "}
               items verified. You can {kitConfirm.action === "deploy" ? "deploy" : "return"} only the verified items, or {kitConfirm.action === "deploy" ? "deploy" : "return"} everything.
@@ -1990,7 +1982,7 @@ function WarehouseProjectPage({
           <DialogHeader>
             <DialogTitle>Add to Project?</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-fg-3">
             <span className="font-medium text-foreground">{addPromptData?.assetName}</span>{" "}
             is not on this project. Would you like to add it and check it out?
           </p>
@@ -2030,7 +2022,7 @@ function WarehouseProjectPage({
             <DialogTitle>Assign Assets</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-fg-3">
               Select which specific asset to deploy for each item.
             </p>
             {assetPickerItems.map((pickerItem, idx) => (

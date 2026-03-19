@@ -126,7 +126,7 @@ export const spacerSectionSettingsSchema = z.object({
 });
 
 /** Discriminated settings schema based on section type */
-export const sectionSettingsSchema = z.record(z.unknown());
+export const sectionSettingsSchema = z.record(z.string(), z.unknown());
 
 // ─── Template Section ────────────────────────────────────────────────────────
 

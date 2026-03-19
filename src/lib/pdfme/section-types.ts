@@ -395,11 +395,13 @@ export function getDefaultSections(docType: DocumentType): TemplateSection[] {
       ];
       break;
 
-    default:
+    default: {
+      const _exhaustive: never = docType;
       sections = [
-        s("header", { ...getDefaultHeaderSettings(), documentTitle: docType.toUpperCase() }),
+        s("header", { ...getDefaultHeaderSettings(), documentTitle: String(_exhaustive).toUpperCase() }),
         s("table", getDefaultTableSettings()),
       ];
+    }
   }
 
   // Set order indices

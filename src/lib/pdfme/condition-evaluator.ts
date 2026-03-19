@@ -63,7 +63,7 @@ export function evaluateCondition(
     return false;
   }
 
-  const fieldValue = (data as Record<string, unknown>)[condition.field];
+  const fieldValue = (data as unknown as Record<string, unknown>)[condition.field];
 
   switch (condition.operator) {
     case "exists":

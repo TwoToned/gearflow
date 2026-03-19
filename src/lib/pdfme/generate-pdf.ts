@@ -78,7 +78,11 @@ async function loadTemplate(
       };
     }
 
-    // Legacy pipeline
+    // Legacy pipeline — requires basePdf and schemas
+    if (!record.basePdf || !record.schemas) {
+      return { sections: null, template: null, settings: null, brandAccentColor: null, brandFooterText: null, brandFooterSecondLine: null };
+    }
+
     return {
       sections: null,
       template: {

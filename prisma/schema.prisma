@@ -1936,8 +1936,8 @@ model DocumentTemplate {
   type           String   // "quote" | "invoice" | "packing-list" | "return-sheet" | "delivery-docket" | "call-sheet"
 
   // Legacy fields (preserved for backward compatibility)
-  basePdf        String   @db.Text  // JSON — page size, orientation, margins
-  schemas        String   @db.Text  // JSON — pdfme schema array
+  basePdf        String?  @db.Text  // JSON — page size, orientation, margins (legacy only)
+  schemas        String?  @db.Text  // JSON — pdfme schema array (legacy only)
   settings       String?  @db.Text  // JSON — TemplateSettings (legacy settings-based config)
 
   // New section-based fields

@@ -15,13 +15,6 @@ import {
   RefreshCw,
 } from "lucide-react";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -277,18 +270,18 @@ export default function DisplaySettingsPage() {
   const tokenList = (tokens as unknown as DisplayToken[]) ?? [];
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <MonitorPlay className="h-5 w-5" />
+    <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+      <div className="mb-4">
+        <h3 className="t-heading text-fg flex items-center gap-2">
+          <MonitorPlay className="h-4 w-4" />
           Warehouse Displays
-        </CardTitle>
-        <CardDescription>
+        </h3>
+        <p className="mt-0.5 text-[12px] text-fg-3">
           Create shareable URLs for wall-mounted TVs and monitors in your
           warehouse. Each display auto-refreshes and requires no login.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
+        </p>
+      </div>
+      <div className="space-y-6">
         {isLoading ? (
           <div className="flex justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -573,7 +566,7 @@ export default function DisplaySettingsPage() {
             </Dialog>
           </>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

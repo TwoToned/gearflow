@@ -13,16 +13,10 @@ import {
   Users,
 } from "lucide-react";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FormSection } from "@/components/layout/page-layouts";
 import { useCanDo } from "@/lib/use-permissions";
 import {
   getOrgIcalSettings,
@@ -119,33 +113,25 @@ export default function CalendarSettingsPage() {
   const enabled = icalSettings?.icalEnabled && icalSettings?.icalToken;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <CalendarSync className="h-5 w-5" />
-          Calendar Feeds
-        </CardTitle>
-        <CardDescription>
-          Subscribe to iCal feeds from Google Calendar, Apple Calendar, Outlook,
-          or any calendar app. All feeds share a single token — regenerating
-          invalidates all URLs.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        {isLoading ? (
-          <div className="flex justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : enabled ? (
-          <>
+    <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+      <FormSection
+        title="Calendar Feeds"
+        description="Subscribe to iCal feeds from Google Calendar, Apple Calendar, Outlook, or any calendar app. All feeds share a single token — regenerating invalidates all URLs."
+      >
+        <div className="sm:col-span-2">
+          {isLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-fg-3" />
+            </div>
+          ) : enabled ? (
             <div className="space-y-4">
               {FEEDS.map((feed) => (
                 <div key={feed.key} className="space-y-1.5">
                   <Label className="flex items-center gap-1.5 text-sm font-medium">
-                    <feed.icon className="h-3.5 w-3.5 text-muted-foreground" />
+                    <feed.icon className="h-3.5 w-3.5 text-fg-3" />
                     {feed.label}
                   </Label>
-                  <p className="text-xs text-muted-foreground mb-1">
+                  <p className="text-xs text-fg-3 mb-1">
                     {feed.description}
                   </p>
                   <FeedUrl
@@ -154,54 +140,54 @@ export default function CalendarSettingsPage() {
                   />
                 </div>
               ))}
-            </div>
 
-            {canEdit && (
-              <div className="flex gap-2 pt-2 border-t">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    if (
-                      confirm(
-                        "Regenerate token? All existing feed URLs will stop working."
+              {canEdit && (
+                <div className="flex gap-2 pt-2 border-t border-border">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (
+                        confirm(
+                          "Regenerate token? All existing feed URLs will stop working."
+                        )
                       )
-                    )
-                      regenerateMutation.mutate();
-                  }}
-                  disabled={regenerateMutation.isPending}
-                >
-                  <RefreshCw className="mr-2 h-3.5 w-3.5" />
-                  Regenerate URLs
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-destructive"
-                  onClick={() => disableMutation.mutate()}
-                  disabled={disableMutation.isPending}
-                >
-                  Disable Feeds
-                </Button>
-              </div>
-            )}
-          </>
-        ) : (
-          canEdit && (
-            <Button
-              variant="outline"
-              onClick={() => enableMutation.mutate()}
-              disabled={enableMutation.isPending}
-            >
-              {enableMutation.isPending && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        regenerateMutation.mutate();
+                    }}
+                    disabled={regenerateMutation.isPending}
+                  >
+                    <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                    Regenerate URLs
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-destructive"
+                    onClick={() => disableMutation.mutate()}
+                    disabled={disableMutation.isPending}
+                  >
+                    Disable Feeds
+                  </Button>
+                </div>
               )}
-              <CalendarSync className="mr-2 h-4 w-4" />
-              Enable Calendar Feeds
-            </Button>
-          )
-        )}
-      </CardContent>
-    </Card>
+            </div>
+          ) : (
+            canEdit && (
+              <Button
+                variant="outline"
+                onClick={() => enableMutation.mutate()}
+                disabled={enableMutation.isPending}
+              >
+                {enableMutation.isPending && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
+                <CalendarSync className="mr-2 h-4 w-4" />
+                Enable Calendar Feeds
+              </Button>
+            )
+          )}
+        </div>
+      </FormSection>
+    </div>
   );
 }

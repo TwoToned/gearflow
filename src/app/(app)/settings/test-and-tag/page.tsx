@@ -4,11 +4,10 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FormSection } from "@/components/layout/page-layouts";
 import {
   getOrganization,
   updateOrganization,
@@ -55,15 +54,9 @@ export default function TestTagSettingsPage() {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Test & Tag</CardTitle>
-        <CardDescription>
-          Configure test tag ID format and testing defaults.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-3">
+    <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+      <div className="space-y-6">
+        <FormSection title="Test & Tag" description="Configure test tag ID format and testing defaults.">
           <div className="space-y-2">
             <Label htmlFor="ttPrefix">Test Tag Prefix</Label>
             <Input
@@ -96,12 +89,14 @@ export default function TestTagSettingsPage() {
               disabled={!canEdit}
             />
           </div>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Next test tag: <span className="font-mono font-medium">{(settings.testTag?.prefix || "TT")}{String((settings.testTag?.counter ?? 0) + 1).padStart(settings.testTag?.digits ?? 4, "0")}</span>
-        </p>
-        <Separator />
-        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <p className="text-xs text-fg-3">
+              Next test tag: <span className="font-mono font-medium">{(settings.testTag?.prefix || "TT")}{String((settings.testTag?.counter ?? 0) + 1).padStart(settings.testTag?.digits ?? 4, "0")}</span>
+            </p>
+          </div>
+        </FormSection>
+
+        <FormSection title="Testing Defaults" description="Default intervals and deployment policy.">
           <div className="space-y-2">
             <Label htmlFor="ttDefaultInterval">Default Interval (months)</Label>
             <Input
@@ -113,7 +108,7 @@ export default function TestTagSettingsPage() {
               onChange={(e) => updateTestTagSetting("defaultIntervalMonths", parseInt(e.target.value) || 3)}
               disabled={!canEdit}
             />
-            <p className="text-xs text-muted-foreground">Hire/rental equipment: 3 months (AS/NZS 3760)</p>
+            <p className="text-xs text-fg-3">Hire/rental equipment: 3 months (AS/NZS 3760)</p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="ttDueSoonDays">Due Soon Threshold (days)</Label>
@@ -127,8 +122,6 @@ export default function TestTagSettingsPage() {
               disabled={!canEdit}
             />
           </div>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="ttDefaultTester">Default Tester Name</Label>
             <Input
@@ -151,22 +144,23 @@ export default function TestTagSettingsPage() {
               <option value="WARN">Warn on overdue items</option>
               <option value="BLOCK">Block deployment of overdue items</option>
             </select>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-fg-3">
               What happens when deploying an asset with an overdue test tag
             </p>
           </div>
+        </FormSection>
+      </div>
+
+      {canEdit && (
+        <div className="mt-6 flex justify-end border-t border-border pt-4">
+          <Button
+            onClick={() => updateMutation.mutate()}
+            disabled={updateMutation.isPending}
+          >
+            {updateMutation.isPending ? "Saving..." : "Save Changes"}
+          </Button>
         </div>
-        {canEdit && (
-          <div className="flex justify-end">
-            <Button
-              onClick={() => updateMutation.mutate()}
-              disabled={updateMutation.isPending}
-            >
-              {updateMutation.isPending ? "Saving..." : "Save Changes"}
-            </Button>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      )}
+    </div>
   );
 }

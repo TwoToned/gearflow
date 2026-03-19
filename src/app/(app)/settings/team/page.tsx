@@ -1,10 +1,10 @@
 "use client";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { InviteMember } from "@/components/settings/invite-member";
 import { MemberList } from "@/components/settings/member-list";
 import { RoleManager } from "@/components/settings/role-manager";
+import { FormSection } from "@/components/layout/page-layouts";
 import { useCanDo } from "@/lib/use-permissions";
 
 export default function TeamSettingsPage() {
@@ -14,36 +14,34 @@ export default function TeamSettingsPage() {
   return (
     <div className="space-y-6">
       {canManageRoles && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Roles & Permissions</CardTitle>
-            <CardDescription>
-              Define custom roles with granular permissions for your team.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <RoleManager />
-          </CardContent>
-        </Card>
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <FormSection
+            title="Roles & Permissions"
+            description="Define custom roles with granular permissions for your team."
+          >
+            <div className="sm:col-span-2">
+              <RoleManager />
+            </div>
+          </FormSection>
+        </div>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Team Members</CardTitle>
-          <CardDescription>
-            Invite and manage members of your organization.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {canInvite && (
-            <>
-              <InviteMember />
-              <Separator />
-            </>
-          )}
-          <MemberList />
-        </CardContent>
-      </Card>
+      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <FormSection
+          title="Team Members"
+          description="Invite and manage members of your organization."
+        >
+          <div className="sm:col-span-2 space-y-4">
+            {canInvite && (
+              <>
+                <InviteMember />
+                <Separator />
+              </>
+            )}
+            <MemberList />
+          </div>
+        </FormSection>
+      </div>
     </div>
   );
 }

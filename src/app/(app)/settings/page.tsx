@@ -4,10 +4,10 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FormSection } from "@/components/layout/page-layouts";
 import {
   getOrganization,
   updateOrganization,
@@ -51,24 +51,18 @@ export default function GeneralSettingsPage() {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>General</CardTitle>
-        <CardDescription>
-          Business details and contact information.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="orgName">Business Name</Label>
-          <Input
-            id="orgName"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            disabled={!canEdit}
-          />
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
+    <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+      <div className="space-y-6">
+        <FormSection title="General" description="Business details and contact information.">
+          <div className="sm:col-span-2 space-y-2">
+            <Label htmlFor="orgName">Business Name</Label>
+            <Input
+              id="orgName"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={!canEdit}
+            />
+          </div>
           <div className="space-y-2">
             <Label htmlFor="orgEmail">Email</Label>
             <Input
@@ -90,18 +84,16 @@ export default function GeneralSettingsPage() {
               disabled={!canEdit}
             />
           </div>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="orgWebsite">Website</Label>
-          <Input
-            id="orgWebsite"
-            value={settings.website || ""}
-            onChange={(e) => updateSetting("website", e.target.value)}
-            placeholder="https://..."
-            disabled={!canEdit}
-          />
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2 space-y-2">
+            <Label htmlFor="orgWebsite">Website</Label>
+            <Input
+              id="orgWebsite"
+              value={settings.website || ""}
+              onChange={(e) => updateSetting("website", e.target.value)}
+              placeholder="https://..."
+              disabled={!canEdit}
+            />
+          </div>
           <div className="space-y-2">
             <Label htmlFor="orgAddress">Address</Label>
             <Input
@@ -142,12 +134,13 @@ export default function GeneralSettingsPage() {
               <option value="AE">United Arab Emirates</option>
               <option value="ZA">South Africa</option>
             </select>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-fg-3">
               Used to prefer local results in address autocomplete.
             </p>
           </div>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
+        </FormSection>
+
+        <FormSection title="Timezone" description="Used for date display across the platform.">
           <div className="space-y-2">
             <Label htmlFor="timezone">Timezone</Label>
             <select
@@ -178,22 +171,20 @@ export default function GeneralSettingsPage() {
               <option value="America/Los_Angeles">America/Los_Angeles (PST)</option>
               <option value="UTC">UTC</option>
             </select>
-            <p className="text-xs text-muted-foreground">
-              Used for date display across the platform.
-            </p>
           </div>
+        </FormSection>
+      </div>
+
+      {canEdit && (
+        <div className="mt-6 flex justify-end border-t border-border pt-4">
+          <Button
+            onClick={() => updateMutation.mutate()}
+            disabled={updateMutation.isPending}
+          >
+            {updateMutation.isPending ? "Saving..." : "Save Changes"}
+          </Button>
         </div>
-        {canEdit && (
-          <div className="flex justify-end">
-            <Button
-              onClick={() => updateMutation.mutate()}
-              disabled={updateMutation.isPending}
-            >
-              {updateMutation.isPending ? "Saving..." : "Save Changes"}
-            </Button>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      )}
+    </div>
   );
 }

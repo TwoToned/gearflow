@@ -40,7 +40,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { FormSection } from "@/components/layout/page-layouts";
 import {
   Select,
   SelectContent,
@@ -180,39 +180,34 @@ export default function WooCommerceSettingsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold">WooCommerce Integration</h2>
-        <p className="text-sm text-muted-foreground">
+        <h2 className="t-heading text-fg">WooCommerce Integration</h2>
+        <p className="text-[12px] text-fg-3">
           Automatically create projects from WooCommerce orders.
         </p>
       </div>
 
       <form onSubmit={form.handleSubmit((d) => saveMutation.mutate(d))} className="space-y-6">
         {/* Enable/Disable */}
-        <Card>
-          <CardContent className="flex items-center justify-between pt-6">
-            <div>
-              <Label>Enable Integration</Label>
-              <p className="text-xs text-muted-foreground">
-                When enabled, incoming WooCommerce webhooks will create projects automatically.
-              </p>
-            </div>
-            <Controller
-              name="isEnabled"
-              control={form.control}
-              render={({ field }) => (
-                <Switch checked={field.value} onCheckedChange={field.onChange} />
-              )}
-            />
-          </CardContent>
-        </Card>
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6 flex items-center justify-between">
+          <div>
+            <Label>Enable Integration</Label>
+            <p className="text-xs text-fg-3">
+              When enabled, incoming WooCommerce webhooks will create projects automatically.
+            </p>
+          </div>
+          <Controller
+            name="isEnabled"
+            control={form.control}
+            render={({ field }) => (
+              <Switch checked={field.value} onCheckedChange={field.onChange} />
+            )}
+          />
+        </div>
 
         {/* Connection */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Connection</CardTitle>
-            <CardDescription>Configure the webhook connection between WooCommerce and GearFlow.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <FormSection title="Connection" description="Configure the webhook connection between WooCommerce and GearFlow.">
+            <div className="sm:col-span-2 space-y-4">
             <div className="space-y-2">
               <Label htmlFor="storeUrl">Store URL</Label>
               <Input
@@ -284,16 +279,14 @@ export default function WooCommerceSettingsPage() {
                 Paste this secret into WooCommerce webhook settings. Regenerating will invalidate the old secret.
               </p>
             </div>
-          </CardContent>
-        </Card>
+            </div>
+          </FormSection>
+        </div>
 
         {/* Product Matching */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Product Matching</CardTitle>
-            <CardDescription>How to match WooCommerce products to GearFlow models.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <FormSection title="Product Matching" description="How to match WooCommerce products to GearFlow models.">
+            <div className="sm:col-span-2 space-y-4">
             <div className="space-y-2">
               <Label>Match Strategy</Label>
               <Controller
@@ -328,26 +321,24 @@ export default function WooCommerceSettingsPage() {
                 />
               </div>
             )}
-          </CardContent>
-        </Card>
+            </div>
+          </FormSection>
+        </div>
 
         {/* Date Field Mapping */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Date Field Mapping</CardTitle>
-            <CardDescription>
-              Map WooCommerce order meta fields to project dates.
-              {" "}
-              <button
-                type="button"
-                className="text-primary underline"
-                onClick={() => setShowMetaDetect(!showMetaDetect)}
-              >
-                {showMetaDetect ? "Hide" : "Test & Detect"}
-              </button>
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <FormSection
+            title="Date Field Mapping"
+            description="Map WooCommerce order meta fields to project dates."
+          >
+            <div className="sm:col-span-2 space-y-4">
+            <button
+              type="button"
+              className="text-xs text-primary underline"
+              onClick={() => setShowMetaDetect(!showMetaDetect)}
+            >
+              {showMetaDetect ? "Hide" : "Test & Detect"}
+            </button>
             {showMetaDetect && (
               <MetaDetectPanel
                 metaKeys={metaKeys}
@@ -431,19 +422,14 @@ export default function WooCommerceSettingsPage() {
                 placeholder="e.g. order_notes"
               />
             </div>
-          </CardContent>
-        </Card>
+            </div>
+          </FormSection>
+        </div>
 
         {/* Location Mapping */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Location Mapping</CardTitle>
-            <CardDescription>
-              Map a WooCommerce order meta field to a project location. If the value matches an existing
-              location it will be used; otherwise a new venue location is created automatically.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <FormSection title="Location Mapping" description="Map a WooCommerce order meta field to a project location. If the value matches an existing location it will be used; otherwise a new venue location is created automatically.">
+            <div className="sm:col-span-2 space-y-4">
             <div className="space-y-2">
               <Label htmlFor="locationMetaKey">Location Meta Key</Label>
               <Input
@@ -483,19 +469,18 @@ export default function WooCommerceSettingsPage() {
                   </Select>
                 )}
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-fg-3">
                 Used when no location meta key is set, or the meta field is empty.
               </p>
             </div>
-          </CardContent>
-        </Card>
+            </div>
+          </FormSection>
+        </div>
 
         {/* Project Defaults */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Project Defaults</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <FormSection title="Project Defaults">
+            <div className="sm:col-span-2 space-y-4">
             <div className="space-y-2">
               <Label>Default Project Type</Label>
               <Controller
@@ -535,26 +520,25 @@ export default function WooCommerceSettingsPage() {
                 )}
               />
             </div>
-          </CardContent>
-        </Card>
+            </div>
+          </FormSection>
+        </div>
 
         {/* WordPress Setup Guide */}
-        <Card>
-          <CardHeader>
-            <button
-              type="button"
-              className="flex w-full items-center justify-between"
-              onClick={() => setShowSetupGuide(!showSetupGuide)}
-            >
-              <div className="text-left">
-                <CardTitle className="text-base">WordPress Setup Guide</CardTitle>
-                <CardDescription>How to configure WooCommerce to send orders to GearFlow.</CardDescription>
-              </div>
-              {showSetupGuide ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            </button>
-          </CardHeader>
+        <div className="rounded-lg bg-bg-surface surface-ring overflow-hidden">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between p-5 sm:p-6"
+            onClick={() => setShowSetupGuide(!showSetupGuide)}
+          >
+            <div className="text-left">
+              <h3 className="t-heading text-fg">WordPress Setup Guide</h3>
+              <p className="mt-0.5 text-[12px] text-fg-3">How to configure WooCommerce to send orders to GearFlow.</p>
+            </div>
+            {showSetupGuide ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </button>
           {showSetupGuide && (
-            <CardContent className="space-y-4 text-sm">
+            <div className="px-5 pb-5 sm:px-6 sm:pb-6 space-y-4 text-sm">
               <div className="space-y-2">
                 <h4 className="font-medium">1. Create a Webhook</h4>
                 <p className="text-muted-foreground">
@@ -596,9 +580,9 @@ export default function WooCommerceSettingsPage() {
                   Go to Products &rarr; Edit &rarr; Inventory &rarr; SKU.
                 </p>
               </div>
-            </CardContent>
+            </div>
           )}
-        </Card>
+        </div>
 
         {/* Save */}
         <Button type="submit" disabled={saveMutation.isPending}>
@@ -608,12 +592,9 @@ export default function WooCommerceSettingsPage() {
       </form>
 
       {/* Order Logs */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Recent Orders</CardTitle>
-          <CardDescription>Webhook deliveries and processing results.</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <FormSection title="Recent Orders" description="Webhook deliveries and processing results.">
+          <div className="sm:col-span-2">
           {!orderLogs?.items?.length ? (
             <p className="text-sm text-muted-foreground">No orders received yet.</p>
           ) : (
@@ -662,8 +643,9 @@ export default function WooCommerceSettingsPage() {
               ))}
             </div>
           )}
-        </CardContent>
-      </Card>
+          </div>
+        </FormSection>
+      </div>
     </div>
   );
 }

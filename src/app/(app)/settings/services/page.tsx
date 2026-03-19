@@ -33,7 +33,6 @@ import { useCanDo } from "@/lib/use-permissions";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -119,8 +118,8 @@ export default function ServiceTemplatesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold">Service Templates</h2>
-          <p className="text-sm text-muted-foreground">
+          <h2 className="t-heading text-fg">Service Templates</h2>
+          <p className="text-[12px] text-fg-3">
             Define default services that can be quickly added to projects.
           </p>
         </div>
@@ -138,17 +137,17 @@ export default function ServiceTemplatesPage() {
         )}
       </div>
 
-      <Card>
+      <div className="rounded-lg bg-bg-surface surface-ring overflow-hidden">
         {isLoading ? (
-          <CardContent className="flex items-center justify-center py-12 text-muted-foreground">
+          <div className="flex items-center justify-center py-12 text-fg-3">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             Loading...
-          </CardContent>
+          </div>
         ) : templates.length === 0 ? (
-          <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+          <div className="flex flex-col items-center justify-center py-12 text-fg-3">
             <Truck className="mb-2 h-8 w-8 opacity-50" />
             <p>No service templates yet</p>
-          </CardContent>
+          </div>
         ) : (
           <Table>
             <TableHeader>
@@ -246,7 +245,7 @@ export default function ServiceTemplatesPage() {
             </TableBody>
           </Table>
         )}
-      </Card>
+      </div>
 
       <TemplateDialog
         open={dialogOpen}

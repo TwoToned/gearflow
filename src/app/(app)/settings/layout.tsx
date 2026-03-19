@@ -62,7 +62,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     <div className="space-y-6">
       <div>
         <h1 className="t-title text-fg">Settings</h1>
-        <p className="text-muted-foreground">
+        <p className="text-[13px] text-fg-3">
           Manage your organization and team.
         </p>
       </div>
@@ -81,8 +81,8 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
                 className={cn(
                   "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap",
                   isActive
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground"
+                    ? "bg-bg-elevated text-fg"
+                    : "text-fg-2 hover:bg-bg-elevated/50 hover:text-fg"
                 )}
               >
                 <item.icon className="h-4 w-4" />

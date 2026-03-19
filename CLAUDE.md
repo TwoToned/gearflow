@@ -34,7 +34,22 @@ npx prisma generate  # Regenerate Prisma client (after schema changes)
 npx prisma migrate dev --name <name>  # Create + apply migration
 ```
 
-No test framework is configured.
+### Worktree Setup
+
+Git worktrees don't share `node_modules/` or `.env` with the main repo. Run this to bootstrap a new worktree:
+
+```bash
+# Copy .env from main repo (adjust path if needed)
+cp /Users/jayden/code/ttp-assetmanagement/.env .
+
+# Install dependencies
+npm install --legacy-peer-deps
+
+# Generate Prisma client
+npx prisma generate
+```
+
+After this, `npm run dev`, `npm test`, and `npm run build` will all work.
 
 ### DB Setup (first time)
 ```bash

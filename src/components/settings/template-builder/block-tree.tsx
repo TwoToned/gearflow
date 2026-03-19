@@ -2,10 +2,9 @@
 
 /**
  * Block tree — the main section list for the block editor.
- * Renders blocks as a sortable tree with @dnd-kit, insert buttons between rows,
- * and a section library at the bottom.
- *
- * Structure: row → column → content. Supports drag-to-reorder at the row level.
+ * Renders blocks as a sortable tree with @dnd-kit.
+ * Supports: row reordering, content block drag between rows/columns,
+ * and insert buttons between rows.
  */
 import { useState, useCallback } from "react";
 import {
@@ -16,6 +15,7 @@ import {
   useSensor,
   useSensors,
   DragOverlay,
+  useDroppable,
   type DragStartEvent,
   type DragEndEvent,
   type Modifier,
@@ -28,6 +28,7 @@ import {
 } from "@dnd-kit/sortable";
 import { Plus } from "lucide-react";
 import type { TemplateBlock, SectionType } from "@/lib/pdfme/section-types";
+import { SECTION_TYPE_LABELS } from "@/lib/pdfme/section-types";
 import { BlockCard, BlockCardOverlay } from "./block-card";
 import { cn } from "@/lib/utils";
 
@@ -46,6 +47,11 @@ interface BlockTreeProps {
   onDuplicateBlock: (id: string) => void;
   onDeleteBlock: (id: string) => void;
   onInsertAt: (index: number) => void;
+  onMoveContentToColumn: (
+    contentId: string,
+    targetRowId: string,
+    targetColumnIndex: number,
+  ) => void;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -58,8 +64,10 @@ export function BlockTree({
   onDuplicateBlock,
   onDeleteBlock,
   onInsertAt,
+  onMoveContentToColumn,
 }: BlockTreeProps) {
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [activeDragType, setActiveDragType] = useState<"row" | "content" | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -68,40 +76,68 @@ export function BlockTree({
     }),
   );
 
-  const handleDragStart = useCallback((event: DragStartEvent) => {
-    setActiveDragId(String(event.active.id));
-  }, []);
+  const handleDragStart = useCallback(
+    (event: DragStartEvent) => {
+      const id = String(event.active.id);
+      setActiveDragId(id);
+
+      // Determine if this is a row drag or a content block drag
+      const isRow = blocks.some((b) => b.id === id);
+      setActiveDragType(isRow ? "row" : "content");
+    },
+    [blocks],
+  );
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       setActiveDragId(null);
+      setActiveDragType(null);
       const { active, over } = event;
       if (!over || active.id === over.id) return;
 
-      const oldIndex = blocks.findIndex((b) => b.id === active.id);
-      const newIndex = blocks.findIndex((b) => b.id === over.id);
-      if (oldIndex === -1 || newIndex === -1) return;
+      const activeId = String(active.id);
+      const overId = String(over.id);
 
-      onReorderBlocks(arrayMove(blocks, oldIndex, newIndex));
+      // Check if this is a row reorder
+      const oldIndex = blocks.findIndex((b) => b.id === activeId);
+      if (oldIndex !== -1) {
+        const newIndex = blocks.findIndex((b) => b.id === overId);
+        if (newIndex !== -1) {
+          onReorderBlocks(arrayMove(blocks, oldIndex, newIndex));
+          return;
+        }
+      }
+
+      // Check if this is a content block being dropped on a column drop zone
+      // Column drop zone IDs are formatted as "col-drop:{rowId}:{columnIndex}"
+      if (overId.startsWith("col-drop:")) {
+        const parts = overId.split(":");
+        const targetRowId = parts[1];
+        const targetColIdx = parseInt(parts[2], 10);
+        onMoveContentToColumn(activeId, targetRowId, targetColIdx);
+      }
     },
-    [blocks, onReorderBlocks],
+    [blocks, onReorderBlocks, onMoveContentToColumn],
   );
 
   const activeDragBlock = activeDragId
-    ? blocks.find((b) => b.id === activeDragId)
+    ? findBlockAnywhere(blocks, activeDragId)
     : null;
+
+  // Collect all sortable IDs (rows + content blocks inside rows)
+  const allSortableIds = blocks.map((b) => b.id);
 
   return (
     <div className="flex-1 overflow-y-auto p-2" role="tree">
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
-        modifiers={[restrictToVerticalAxis]}
+        modifiers={activeDragType === "row" ? [restrictToVerticalAxis] : undefined}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
         <SortableContext
-          items={blocks.map((b) => b.id)}
+          items={allSortableIds}
           strategy={verticalListSortingStrategy}
         >
           {blocks.map((block, index) => (
@@ -122,8 +158,10 @@ export function BlockTree({
                 selectedBlockId={selectedBlockId}
                 onSelect={() => onSelectBlock(block.id)}
                 onSelectBlock={onSelectBlock}
+                onAddToColumn={undefined}
                 onDuplicate={() => onDuplicateBlock(block.id)}
                 onDelete={() => onDeleteBlock(block.id)}
+                isDraggingContent={activeDragType === "content"}
               />
             </div>
           ))}
@@ -150,6 +188,36 @@ export function BlockTree({
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Column Drop Zone ────────────────────────────────────────────────────────
+
+export function ColumnDropZone({
+  rowId,
+  columnIndex,
+  children,
+  isDraggingContent,
+}: {
+  rowId: string;
+  columnIndex: number;
+  children: React.ReactNode;
+  isDraggingContent?: boolean;
+}) {
+  const dropId = `col-drop:${rowId}:${columnIndex}`;
+  const { isOver, setNodeRef } = useDroppable({ id: dropId });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "transition-colors rounded-md",
+        isDraggingContent && "border border-dashed border-border/50 p-1",
+        isOver && isDraggingContent && "border-primary/50 bg-primary/5",
+      )}
+    >
+      {children}
     </div>
   );
 }
@@ -194,4 +262,18 @@ function getBlockLabel(block: TemplateBlock): string {
     return `${cols}-column row`;
   }
   return block.type;
+}
+
+function findBlockAnywhere(
+  blocks: TemplateBlock[],
+  id: string,
+): TemplateBlock | null {
+  for (const block of blocks) {
+    if (block.id === id) return block;
+    if (block.children) {
+      const found = findBlockAnywhere(block.children, id);
+      if (found) return found;
+    }
+  }
+  return null;
 }

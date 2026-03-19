@@ -574,26 +574,27 @@ export async function saveTemplateSections(data: SaveTemplateSectionsValues) {
 
   const validated = saveTemplateSectionsSchema.parse(data);
 
-  // Optimistic locking: if client sends a version, verify it matches
-  if (validated.version != null) {
-    const current = await prisma.documentTemplate.findFirst({
-      where: { id: validated.id, organizationId },
-      select: { version: true },
-    });
-    if (current && current.version !== validated.version) {
-      throw new Error(
-        "Template was modified by another user. Please refresh and try again."
-      );
+  // Optimistic locking in a transaction to prevent TOCTOU race
+  const template = await prisma.$transaction(async (tx) => {
+    if (validated.version != null) {
+      const current = await tx.documentTemplate.findFirst({
+        where: { id: validated.id, organizationId },
+        select: { version: true },
+      });
+      if (current && current.version !== validated.version) {
+        throw new Error(
+          "Template was modified by another user. Please refresh and try again."
+        );
+      }
     }
-  }
-
-  const template = await prisma.documentTemplate.update({
-    where: { id: validated.id, organizationId },
-    data: {
-      sections: JSON.stringify(validated.sections),
-      brandTemplateId: validated.brandTemplateId ?? null,
-      version: { increment: 1 },
-    },
+    return tx.documentTemplate.update({
+      where: { id: validated.id, organizationId },
+      data: {
+        sections: JSON.stringify(validated.sections),
+        brandTemplateId: validated.brandTemplateId ?? null,
+        version: { increment: 1 },
+      },
+    });
   });
 
   await logActivity({
@@ -623,29 +624,31 @@ export async function saveTemplateBlocks(data: SaveTemplateBlocksValues) {
 
   const validated = saveTemplateBlocksSchema.parse(data);
 
-  // Optimistic locking
-  if (validated.version != null) {
-    const current = await prisma.documentTemplate.findFirst({
-      where: { id: validated.id, organizationId },
-      select: { version: true },
-    });
-    if (current && current.version !== validated.version) {
-      throw new Error(
-        "Template was modified by another user. Please refresh and try again."
-      );
-    }
-  }
-
   // Flatten blocks to sections for storage
   const sections = flattenBlocks(validated.blocks as TemplateBlock[]);
 
-  const template = await prisma.documentTemplate.update({
-    where: { id: validated.id, organizationId },
-    data: {
-      sections: JSON.stringify(sections),
-      brandTemplateId: validated.brandTemplateId ?? null,
-      version: { increment: 1 },
-    },
+  // Optimistic locking in a transaction to prevent TOCTOU race
+  const template = await prisma.$transaction(async (tx) => {
+    if (validated.version != null) {
+      const current = await tx.documentTemplate.findFirst({
+        where: { id: validated.id, organizationId },
+        select: { version: true },
+      });
+      if (current && current.version !== validated.version) {
+        throw new Error(
+          "Template was modified by another user. Please refresh and try again."
+        );
+      }
+    }
+    return tx.documentTemplate.update({
+      where: { id: validated.id, organizationId },
+      data: {
+        sections: JSON.stringify(sections),
+        settings: validated.documentSettings ? JSON.stringify(validated.documentSettings) : undefined,
+        brandTemplateId: validated.brandTemplateId ?? null,
+        version: { increment: 1 },
+      },
+    });
   });
 
   await logActivity({
@@ -782,6 +785,10 @@ export async function saveTemplateThumbnail(id: string, thumbnailData: string) {
     "document",
     "manage_templates"
   );
+
+  if (thumbnailData.length > 2_000_000) {
+    throw new Error("Thumbnail data exceeds maximum size");
+  }
 
   await prisma.documentTemplate.update({
     where: { id, organizationId },

@@ -42,6 +42,7 @@ import { DuplicateProjectDialog } from "@/components/projects/duplicate-project-
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Tabs,
@@ -74,21 +75,7 @@ import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import type { ProjectMediaType } from "@/generated/prisma/client";
 
-const statusColors: Record<string, string> = {
-  ENQUIRY: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  QUOTING: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  QUOTED: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  CONFIRMED: "bg-green-500/10 text-green-500 border-green-500/20",
-  PREPPING: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  CHECKED_OUT: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  ON_SITE: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  RETURNED: "bg-teal-500/10 text-teal-500 border-teal-500/20",
-  COMPLETED: "bg-green-500/10 text-green-500 border-green-500/20",
-  INVOICED: "bg-green-500/10 text-green-500 border-green-500/20",
-  CANCELLED: "bg-red-500/10 text-red-500 border-red-500/20",
-};
-
-const statusLabels: Record<string, string> = {
+const projectStatusLabels: Record<string, string> = {
   ENQUIRY: "Enquiry",
   QUOTING: "Quoting",
   QUOTED: "Quoted",
@@ -127,6 +114,13 @@ const allStatuses = [
   "INVOICED",
   "CANCELLED",
 ];
+
+function formatLabel(value: string): string {
+  return value
+    .replace(/_/g, " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 function formatDate(date: string | null | undefined): string {
   if (!date) return "—";
@@ -221,12 +215,7 @@ export default function ProjectDetailPage({
             <span className="font-mono text-sm text-muted-foreground">
               {project.projectNumber}
             </span>
-            <Badge
-              variant="outline"
-              className={statusColors[project.status] || ""}
-            >
-              {statusLabels[project.status] || project.status}
-            </Badge>
+            <StatusIndicator category="project" value={project.status} label={projectStatusLabels[project.status] || formatLabel(project.status)} />
             {project.isTemplate && (
               <Badge variant="outline" className="bg-indigo-500/10 text-indigo-500 border-indigo-500/20">
                 <BookTemplate className="mr-1 h-3 w-3" />
@@ -402,9 +391,7 @@ export default function ProjectDetailPage({
                     Status:
                   </span>
                   <CanDo resource="project" action="update" fallback={
-                    <Badge variant="outline" className={statusColors[currentStatus] || ""}>
-                      {statusLabels[currentStatus] || currentStatus}
-                    </Badge>
+                    <StatusIndicator category="project" value={currentStatus} label={projectStatusLabels[currentStatus] || formatLabel(currentStatus)} />
                   }>
                     <select
                       value={currentStatus}
@@ -414,7 +401,7 @@ export default function ProjectDetailPage({
                     >
                       {allStatuses.map((s) => (
                         <option key={s} value={s}>
-                          {statusLabels[s] || s}
+                          {projectStatusLabels[s] || s}
                         </option>
                       ))}
                     </select>

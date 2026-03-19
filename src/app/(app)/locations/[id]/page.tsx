@@ -18,7 +18,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { getLocation, deleteLocation, updateLocationNotes } from "@/server/locations";
-import { assetStatusLabels, bulkAssetStatusLabels, kitStatusLabels, projectStatusLabels, formatLabel } from "@/lib/status-labels";
+import { assetStatusLabels, bulkAssetStatusLabels, kitStatusLabels, projectStatusLabels, locationTypeLabels, formatLabel } from "@/lib/status-labels";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
@@ -39,19 +40,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-const typeLabels: Record<string, string> = {
-  WAREHOUSE: "Warehouse",
-  VENUE: "Venue",
-  VEHICLE: "Vehicle",
-  OFFSITE: "Offsite",
-};
-
-const typeColors: Record<string, string> = {
-  WAREHOUSE: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  VENUE: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  VEHICLE: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  OFFSITE: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-};
 
 const projectStatusColors: Record<string, string> = {
   ENQUIRY: "bg-gray-500/10 text-gray-500 border-gray-500/20",
@@ -107,9 +95,7 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
         <div>
           <div className="flex items-center gap-2">
             <h1 className="t-title text-fg">{location.name}</h1>
-            <Badge variant="outline" className={typeColors[location.type] || ""}>
-              {typeLabels[location.type] || location.type}
-            </Badge>
+            <StatusIndicator category="locationType" value={location.type} label={locationTypeLabels[location.type] || location.type} />
             {location.isDefault && (
               <Star className="h-4 w-4 fill-amber-500 text-amber-500" />
             )}

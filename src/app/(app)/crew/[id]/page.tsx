@@ -122,29 +122,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
-
-const statusColors: Record<string, string> = {
-  ACTIVE: "bg-green-500/10 text-green-500 border-green-500/20",
-  INACTIVE: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  ON_LEAVE: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  ARCHIVED: "bg-red-500/10 text-red-500 border-red-500/20",
-};
+import { StatusIndicator } from "@/components/ui/status-indicator";
 
 const certStatusColors: Record<string, string> = {
   CURRENT: "bg-green-500/10 text-green-500 border-green-500/20",
   EXPIRING_SOON: "bg-amber-500/10 text-amber-500 border-amber-500/20",
   EXPIRED: "bg-red-500/10 text-red-500 border-red-500/20",
   NOT_VERIFIED: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-};
-
-const assignmentStatusColors: Record<string, string> = {
-  PENDING: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  OFFERED: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  ACCEPTED: "bg-teal-500/10 text-teal-500 border-teal-500/20",
-  DECLINED: "bg-red-500/10 text-red-500 border-red-500/20",
-  CONFIRMED: "bg-green-500/10 text-green-500 border-green-500/20",
-  CANCELLED: "bg-red-500/10 text-red-500 border-red-500/20",
-  COMPLETED: "bg-green-500/10 text-green-500 border-green-500/20",
 };
 
 const projectStatusColors: Record<string, string> = {
@@ -526,13 +510,11 @@ export default function CrewMemberDetailPage({
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="t-title text-fg">{fullName}</h1>
-                <Badge
-                  variant="outline"
-                  className={statusColors[member.status] || ""}
-                >
-                  {crewMemberStatusLabels[member.status] ||
-                    formatLabel(member.status)}
-                </Badge>
+                <StatusIndicator
+                  category="crewMember"
+                  value={member.status}
+                  label={crewMemberStatusLabels[member.status] || formatLabel(member.status)}
+                />
                 <Badge variant="outline">
                   {crewMemberTypeLabels[member.type] || formatLabel(member.type)}
                 </Badge>
@@ -884,15 +866,12 @@ export default function CrewMemberDetailPage({
                                   : ""}
                               </TableCell>
                               <TableCell>
-                                <Badge
-                                  variant="outline"
-                                  className={
-                                    assignmentStatusColors[a.status] || ""
-                                  }
-                                >
-                                  {assignmentStatusLabels[a.status] ||
-                                    formatLabel(a.status)}
-                                </Badge>
+                                <StatusIndicator
+                                  category="assignment"
+                                  value={a.status}
+                                  variant="pill"
+                                  label={assignmentStatusLabels[a.status] || formatLabel(a.status)}
+                                />
                               </TableCell>
                               <TableCell className="hidden md:table-cell">
                                 <Badge

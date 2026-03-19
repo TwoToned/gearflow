@@ -19,6 +19,7 @@ import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import {
   Dialog,
@@ -29,27 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { MediaThumbnail } from "@/components/media/media-thumbnail";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
-import { assetStatusLabels, bulkAssetStatusLabels, conditionLabels, formatLabel } from "@/lib/status-labels";
-
-const statusColors: Record<string, string> = {
-  AVAILABLE: "bg-green-500/10 text-green-500 border-green-500/20",
-  CHECKED_OUT: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  IN_MAINTENANCE: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  RESERVED: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  RETIRED: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  LOST: "bg-red-500/10 text-red-500 border-red-500/20",
-  ACTIVE: "bg-green-500/10 text-green-500 border-green-500/20",
-  LOW_STOCK: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  OUT_OF_STOCK: "bg-red-500/10 text-red-500 border-red-500/20",
-};
-
-const conditionColors: Record<string, string> = {
-  NEW: "bg-green-500/10 text-green-500 border-green-500/20",
-  GOOD: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  FAIR: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  POOR: "bg-orange-500/10 text-orange-500 border-orange-500/20",
-  DAMAGED: "bg-red-500/10 text-red-500 border-red-500/20",
-};
+import { assetStatusLabels, bulkAssetStatusLabels, conditionLabels } from "@/lib/status-labels";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyAsset = Record<string, any>;
@@ -127,9 +108,7 @@ function useAssetColumns(
         { value: "LOST", label: "Lost", color: "bg-red-500" },
       ],
       cell: (row) => (
-        <Badge variant="outline" className={statusColors[row.status] || ""}>
-          {assetStatusLabels[row.status] || formatLabel(row.status)}
-        </Badge>
+        <StatusIndicator category="asset" value={row.status} label={assetStatusLabels[row.status]} variant="pill" />
       ),
     },
     {
@@ -148,9 +127,7 @@ function useAssetColumns(
         { value: "DAMAGED", label: "Damaged", color: "bg-red-500" },
       ],
       cell: (row) => (
-        <Badge variant="outline" className={conditionColors[row.condition] || ""}>
-          {conditionLabels[row.condition] || formatLabel(row.condition)}
-        </Badge>
+        <StatusIndicator category="condition" value={row.condition} label={conditionLabels[row.condition]} variant="pill" />
       ),
     },
     {
@@ -261,9 +238,7 @@ function useBulkAssetColumns(
         { value: "RETIRED", label: "Retired", color: "bg-gray-500" },
       ],
       cell: (row) => (
-        <Badge variant="outline" className={statusColors[row.status] || ""}>
-          {bulkAssetStatusLabels[row.status] || formatLabel(row.status)}
-        </Badge>
+        <StatusIndicator category="bulkAsset" value={row.status} label={bulkAssetStatusLabels[row.status]} variant="pill" />
       ),
     },
     {

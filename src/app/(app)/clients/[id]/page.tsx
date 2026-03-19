@@ -10,7 +10,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { getClient, archiveClient, updateClientNotes } from "@/server/clients";
-import { projectStatusLabels, formatLabel } from "@/lib/status-labels";
+import { projectStatusLabels, clientTypeLabels, formatLabel } from "@/lib/status-labels";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
@@ -19,6 +19,7 @@ import { addClientMedia, removeClientMedia } from "@/server/client-media";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MediaUploader, type MediaItem } from "@/components/media/media-uploader";
@@ -31,19 +32,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-const typeLabels: Record<string, string> = {
-  COMPANY: "Company",
-  INDIVIDUAL: "Individual",
-  VENUE: "Venue",
-  PRODUCTION_COMPANY: "Production Co.",
-};
-
-const typeColors: Record<string, string> = {
-  COMPANY: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  INDIVIDUAL: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  VENUE: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  PRODUCTION_COMPANY: "bg-green-500/10 text-green-500 border-green-500/20",
-};
 
 const projectStatusColors: Record<string, string> = {
   ENQUIRY: "bg-gray-500/10 text-gray-500 border-gray-500/20",
@@ -97,9 +85,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
         <div>
           <div className="flex items-center gap-2">
             <h1 className="t-title text-fg">{client.name}</h1>
-            <Badge variant="outline" className={typeColors[client.type] || ""}>
-              {typeLabels[client.type] || client.type}
-            </Badge>
+            <StatusIndicator category="clientType" value={client.type} label={clientTypeLabels[client.type] || client.type} />
             {!client.isActive && <Badge variant="destructive">Archived</Badge>}
           </div>
           <p className="text-muted-foreground">

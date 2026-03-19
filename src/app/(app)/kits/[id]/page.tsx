@@ -27,6 +27,7 @@ import {
 } from "@/server/kit-media";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -59,21 +60,6 @@ import {
 
 import { kitStatusLabels, lineItemStatusLabels, conditionLabels, formatLabel } from "@/lib/status-labels";
 
-const statusColors: Record<string, string> = {
-  AVAILABLE: "bg-green-500/10 text-green-500 border-green-500/20",
-  CHECKED_OUT: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  IN_MAINTENANCE: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  RETIRED: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  INCOMPLETE: "bg-red-500/10 text-red-500 border-red-500/20",
-};
-
-const conditionColors: Record<string, string> = {
-  NEW: "bg-green-500/10 text-green-500 border-green-500/20",
-  GOOD: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  FAIR: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  POOR: "bg-orange-500/10 text-orange-500 border-orange-500/20",
-  DAMAGED: "bg-red-500/10 text-red-500 border-red-500/20",
-};
 
 function formatDate(date: Date | string | null | undefined) {
   if (!date) return "—";
@@ -251,9 +237,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
           <div className="flex items-center gap-2">
             <h1 className="t-title text-fg font-mono">{kit.assetTag}</h1>
             <CanDo resource="kit" action="update" fallback={
-              <Badge variant="outline" className={statusColors[kit.status] || ""}>
-                {kitStatusLabels[kit.status] || formatLabel(kit.status)}
-              </Badge>
+              <StatusIndicator category="kit" value={kit.status} label={kitStatusLabels[kit.status] || formatLabel(kit.status)} />
             }>
               <select
                 value={kit.status}
@@ -268,9 +252,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 <option value="INCOMPLETE">Incomplete</option>
               </select>
             </CanDo>
-            <Badge variant="outline" className={conditionColors[kit.condition] || ""}>
-              {conditionLabels[kit.condition] || formatLabel(kit.condition)}
-            </Badge>
+            <StatusIndicator category="condition" value={kit.condition} label={conditionLabels[kit.condition] || formatLabel(kit.condition)} />
             {kit.caseType && (
               <Badge variant="secondary">{kit.caseType}</Badge>
             )}
@@ -403,9 +385,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                           {item.position || "—"}
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={conditionColors[item.asset.condition] || ""}>
-                            {item.asset.condition}
-                          </Badge>
+                          <StatusIndicator category="condition" value={item.asset.condition} label={conditionLabels[item.asset.condition] || formatLabel(item.asset.condition)} />
                         </TableCell>
                         <TableCell>
                           <CanDo resource="kit" action="update">

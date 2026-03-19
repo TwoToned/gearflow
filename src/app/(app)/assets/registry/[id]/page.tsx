@@ -39,28 +39,9 @@ import { resolveAssetPhotoUrl, isAssetPhotoCustom } from "@/lib/media-utils";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { BookingCalendar } from "@/components/bookings/booking-calendar";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 
 import { assetStatusLabels, lineItemStatusLabels, maintenanceTypeLabels, maintenanceStatusLabels, mediaTypeLabels, conditionLabels, formatLabel } from "@/lib/status-labels";
-
-const statusColors: Record<string, string> = {
-  AVAILABLE: "bg-green-500/10 text-green-500 border-green-500/20",
-  CHECKED_OUT: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  IN_MAINTENANCE: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  RESERVED: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  RETIRED: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  LOST: "bg-red-500/10 text-red-500 border-red-500/20",
-  ACTIVE: "bg-green-500/10 text-green-500 border-green-500/20",
-  LOW_STOCK: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  OUT_OF_STOCK: "bg-red-500/10 text-red-500 border-red-500/20",
-};
-
-const conditionColors: Record<string, string> = {
-  NEW: "bg-green-500/10 text-green-500 border-green-500/20",
-  GOOD: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  FAIR: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  POOR: "bg-orange-500/10 text-orange-500 border-orange-500/20",
-  DAMAGED: "bg-red-500/10 text-red-500 border-red-500/20",
-};
 
 function formatDate(date: Date | string | null | undefined) {
   if (!date) return "—";
@@ -182,12 +163,8 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
           <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="t-title text-fg font-mono">{asset.assetTag}</h1>
-            <Badge variant="outline" className={statusColors[asset.status] || ""}>
-              {assetStatusLabels[asset.status] || formatLabel(asset.status)}
-            </Badge>
-            <Badge variant="outline" className={conditionColors[asset.condition] || ""}>
-              {conditionLabels[asset.condition] || asset.condition}
-            </Badge>
+            <StatusIndicator category="asset" value={asset.status} label={assetStatusLabels[asset.status] || formatLabel(asset.status)} />
+            <StatusIndicator category="condition" value={asset.condition} label={conditionLabels[asset.condition] || asset.condition} />
           </div>
           <p className="text-muted-foreground truncate">
             {asset.customName && <>{asset.customName} &middot; </>}

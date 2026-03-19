@@ -18,6 +18,7 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -29,13 +30,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-const orderStatusColors: Record<string, string> = {
-  DRAFT: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  ORDERED: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  PARTIAL: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  RECEIVED: "bg-green-500/10 text-green-500 border-green-500/20",
-  CANCELLED: "bg-red-500/10 text-red-500 border-red-500/20",
-};
 
 const orderTypeLabels: Record<string, string> = {
   PURCHASE: "Purchase",
@@ -294,9 +288,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                               <Badge variant="outline">{orderTypeLabels[order.type] || order.type}</Badge>
                             </TableCell>
                             <TableCell>
-                              <Badge variant="outline" className={orderStatusColors[order.status] || ""}>
-                                {supplierOrderStatusLabels[order.status] || formatLabel(order.status)}
-                              </Badge>
+                              <StatusIndicator category="supplierOrder" value={order.status} label={supplierOrderStatusLabels[order.status] || formatLabel(order.status)} />
                             </TableCell>
                             <TableCell className="hidden md:table-cell">
                               {order.project ? (

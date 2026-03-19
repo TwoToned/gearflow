@@ -69,6 +69,7 @@ import {
 } from "@/lib/status-labels";
 import { format } from "date-fns";
 import { toast } from "sonner";
+import { FadeIn } from "@/components/ui/motion";
 
 
 function formatDate(date: string | Date | null | undefined): string {
@@ -80,9 +81,11 @@ export default function CrewPage() {
   const canManage = useCanDo("crew", "update");
 
   return (
-    <RequirePermission resource="crew" action="read">
-      {canManage ? <CrewDashboard /> : <CrewListView />}
-    </RequirePermission>
+    <FadeIn>
+      <RequirePermission resource="crew" action="read">
+        {canManage ? <CrewDashboard /> : <CrewListView />}
+      </RequirePermission>
+    </FadeIn>
   );
 }
 

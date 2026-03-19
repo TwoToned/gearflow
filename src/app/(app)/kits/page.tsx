@@ -20,6 +20,7 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/layout/page-header";
+import { FadeIn } from "@/components/ui/motion";
 
 import { kitStatusLabels, conditionLabels, formatLabel } from "@/lib/status-labels";
 
@@ -211,8 +212,9 @@ export default function KitsPage() {
   const total = data?.total || 0;
 
   return (
-    <RequirePermission resource="kit" action="read">
-      <div className="space-y-4">
+    <FadeIn>
+      <RequirePermission resource="kit" action="read">
+        <div className="space-y-4">
         <PageHeader
           title="Kits"
           description="Bundled sets of gear that always travel together."
@@ -277,5 +279,6 @@ export default function KitsPage() {
         />
       </div>
     </RequirePermission>
+    </FadeIn>
   );
 }

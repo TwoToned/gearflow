@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCanDo } from "@/lib/use-permissions";
+import { useActiveOrganization } from "@/lib/auth-client";
 
 const settingsNav = [
   { title: "General", href: "/settings", icon: Building2, permission: "orgSettings" as const },
@@ -39,6 +40,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   const canReadSettings = useCanDo("orgSettings", "read");
   const canReadMembers = useCanDo("orgMembers", "read");
   const canManageTemplates = useCanDo("document", "manage_templates");
+  const { data: activeOrg } = useActiveOrganization();
 
   if (!canReadSettings && !canReadMembers) {
     return (
@@ -58,13 +60,20 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     return true;
   });
 
+  const orgInitial = activeOrg?.name?.charAt(0)?.toUpperCase() ?? "O";
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="t-title text-fg">Settings</h1>
-        <p className="text-[13px] text-fg-3">
-          Manage your organization and team.
-        </p>
+      <div className="flex items-center gap-3">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-sm font-bold text-primary">
+          {orgInitial}
+        </div>
+        <div>
+          <h1 className="t-title text-fg">Settings</h1>
+          <p className="text-[13px] text-fg-3">
+            {activeOrg?.name ?? "Organization"}
+          </p>
+        </div>
       </div>
 
       <div className="flex flex-col md:flex-row gap-6">

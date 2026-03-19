@@ -27,6 +27,7 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/layout/page-header";
+import { FadeIn } from "@/components/ui/motion";
 
 const statusConfig: Record<
   string,
@@ -298,8 +299,9 @@ export default function MaintenancePage() {
   }).length;
 
   return (
-    <RequirePermission resource="maintenance" action="read">
-      <div className="space-y-6">
+    <FadeIn>
+      <RequirePermission resource="maintenance" action="read">
+        <div className="space-y-6">
         <PageHeader
           title="Maintenance"
           description="Repairs, inspections, and scheduled servicing."
@@ -347,5 +349,6 @@ export default function MaintenancePage() {
         />
       </div>
     </RequirePermission>
+    </FadeIn>
   );
 }

@@ -25,6 +25,8 @@ import {
 import { getCalendarData, type CalendarProject } from "@/server/availability";
 import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import { SectionHeader } from "@/components/layout/page-layouts";
+import { FadeIn } from "@/components/ui/motion";
 
 import { RequirePermission } from "@/components/auth/require-permission";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -70,12 +72,16 @@ function getProjectsForDay(
   });
 }
 
-/** Intensity of the day based on how many projects overlap */
+/** Intensity of the day based on how many projects overlap — gradient heat stripe */
 function dayIntensity(count: number): string {
   if (count === 0) return "";
-  if (count === 1) return "bg-blue-500/10 dark:bg-blue-500/15";
-  if (count === 2) return "bg-amber-500/10 dark:bg-amber-500/15";
-  return "bg-red-500/10 dark:bg-red-500/15";
+  if (count === 1)
+    return "bg-gradient-to-b from-blue-500/5 to-blue-500/15 dark:from-blue-500/10 dark:to-blue-500/20";
+  if (count === 2)
+    return "bg-gradient-to-b from-amber-500/5 to-amber-500/15 dark:from-amber-500/10 dark:to-amber-500/20";
+  if (count <= 4)
+    return "bg-gradient-to-b from-red-500/8 to-red-500/20 dark:from-red-500/12 dark:to-red-500/25";
+  return "bg-gradient-to-b from-red-500/15 to-red-500/30 dark:from-red-500/20 dark:to-red-500/35";
 }
 
 export default function AvailabilityPageWrapper() {
@@ -157,67 +163,67 @@ function AvailabilityPage() {
   return (
     <RequirePermission resource="asset" action="read">
     <div className="space-y-4">
-      {/* Header */}
-      <div>
-        <h1 className="t-title text-fg">
-          Availability Calendar
-        </h1>
-        <p className="text-fg-3">
-          See when projects are active and equipment is out.
-        </p>
-      </div>
-
-      {/* Month Navigation */}
-      <div className="flex items-center gap-3">
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => setCurrentMonth(addMonths(currentMonth, -1))}
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
-        <h2 className="text-lg font-semibold min-w-[180px] text-center">
-          {format(currentMonth, "MMMM yyyy")}
-        </h2>
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
-        >
-          <ChevronRight className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            setCurrentMonth(startOfMonth(today));
-            setSelectedDay(today);
-          }}
-        >
-          Today
-        </Button>
-      </div>
+      {/* Header — contextual month with overline */}
+      <FadeIn>
+        <div>
+          <p className="t-overline text-primary mb-1">Availability</p>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setCurrentMonth(addMonths(currentMonth, -1))}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <h1 className="t-title text-fg min-w-[220px]">
+              {format(currentMonth, "MMMM yyyy")}
+            </h1>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setCurrentMonth(startOfMonth(today));
+                setSelectedDay(today);
+              }}
+            >
+              Today
+            </Button>
+          </div>
+          <p className="text-fg-3 mt-1">
+            See when projects are active and equipment is out.
+          </p>
+        </div>
+      </FadeIn>
 
       {/* Legend */}
-      <div className="flex items-center gap-4 text-xs text-fg-3">
-        <div className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded-sm bg-blue-500/15 border border-blue-500/30" />
-          1 project
+      <FadeIn delay={0.05}>
+        <div className="flex items-center gap-4 text-xs text-fg-3">
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded-sm bg-gradient-to-b from-blue-500/5 to-blue-500/15 border border-blue-500/30" />
+            1 project
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded-sm bg-gradient-to-b from-amber-500/5 to-amber-500/15 border border-amber-500/30" />
+            2 projects
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded-sm bg-gradient-to-b from-red-500/8 to-red-500/20 border border-red-500/30" />
+            3+ projects
+          </div>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded-sm bg-amber-500/15 border border-amber-500/30" />
-          2 projects
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded-sm bg-red-500/15 border border-red-500/30" />
-          3+ projects
-        </div>
-      </div>
+      </FadeIn>
 
-      <div className="flex gap-4 flex-col lg:flex-row">
-        {/* Calendar Grid */}
-        <div className="rounded-lg bg-bg-surface surface-ring flex-1">
-          <div className="p-2 sm:p-4">
+      <FadeIn delay={0.1}>
+        <div className="flex gap-4 flex-col lg:flex-row">
+          {/* Calendar Grid — borderless, no surface wrapper */}
+          <div className="flex-1">
             {isLoading ? (
               <div className="py-20 text-center text-fg-3">
                 Loading...
@@ -313,79 +319,74 @@ function AvailabilityPage() {
               </div>
             )}
           </div>
-        </div>
 
-        {/* Day Detail Panel */}
-        <div className="rounded-lg bg-bg-surface surface-ring lg:w-[340px] shrink-0">
-          <div className="p-4">
-            {selectedDay ? (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <CalendarDays className="h-4 w-4 text-fg-3" />
-                    <h3 className="font-semibold">
-                      {format(selectedDay, "EEEE, d MMMM yyyy")}
-                    </h3>
+          {/* Day Detail Panel — keeps surface treatment */}
+          <div className="rounded-lg bg-bg-surface surface-ring lg:w-[340px] shrink-0">
+            <div className="p-4">
+              {selectedDay ? (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <SectionHeader label={format(selectedDay, "EEEE, d MMMM")} />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0 ml-2"
+                      onClick={() => setSelectedDay(null)}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() => setSelectedDay(null)}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
 
-                {selectedProjects.length === 0 ? (
-                  <p className="text-sm text-fg-3 py-4 text-center">
-                    No projects on this day.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    <p className="text-xs text-fg-3">
-                      {selectedProjects.length} project
-                      {selectedProjects.length !== 1 ? "s" : ""} active
+                  {selectedProjects.length === 0 ? (
+                    <p className="text-sm text-fg-3 py-4 text-center">
+                      No projects on this day.
                     </p>
-                    {selectedProjects.map((p) => (
-                      <button
-                        key={p.id}
-                        onClick={() => router.push(`/projects/${p.id}`)}
-                        className="w-full text-left rounded-lg border p-3 hover:bg-accent/50 transition-colors cursor-pointer space-y-1.5"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium text-sm">
-                            {p.projectNumber}
-                          </span>
-                          <StatusIndicator category="project" value={p.status} label={statusLabels[p.status] || p.status} variant="pill" />
-                        </div>
-                        <p className="text-sm truncate">{p.name}</p>
-                        {p.clientName && (
-                          <p className="text-xs text-fg-3">
-                            {p.clientName}
-                          </p>
-                        )}
-                        <div className="flex items-center justify-between text-xs text-fg-3">
-                          <span>
-                            {format(new Date(p.rentalStartDate), "d MMM")} —{" "}
-                            {format(new Date(p.rentalEndDate), "d MMM")}
-                          </span>
-                          <span>{p.lineItemCount} items</span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="py-8 text-center text-sm text-fg-3">
-                <CalendarDays className="mx-auto mb-2 h-8 w-8 opacity-50" />
-                Click a day to see project details.
-              </div>
-            )}
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-xs text-fg-3">
+                        {selectedProjects.length} project
+                        {selectedProjects.length !== 1 ? "s" : ""} active
+                      </p>
+                      {selectedProjects.map((p) => (
+                        <button
+                          key={p.id}
+                          onClick={() => router.push(`/projects/${p.id}`)}
+                          className="w-full text-left rounded-lg border p-3 hover:bg-accent/50 transition-colors cursor-pointer space-y-1.5"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium text-sm">
+                              {p.projectNumber}
+                            </span>
+                            <StatusIndicator category="project" value={p.status} label={statusLabels[p.status] || p.status} variant="pill" />
+                          </div>
+                          <p className="text-sm truncate">{p.name}</p>
+                          {p.clientName && (
+                            <p className="text-xs text-fg-3">
+                              {p.clientName}
+                            </p>
+                          )}
+                          <div className="flex items-center justify-between text-xs text-fg-3">
+                            <span>
+                              {format(new Date(p.rentalStartDate), "d MMM")} —{" "}
+                              {format(new Date(p.rentalEndDate), "d MMM")}
+                            </span>
+                            <span>{p.lineItemCount} items</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="py-8 text-center text-sm text-fg-3">
+                  <CalendarDays className="mx-auto mb-2 h-8 w-8 opacity-50" />
+                  Click a day to see project details.
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      </FadeIn>
     </div>
     </RequirePermission>
   );

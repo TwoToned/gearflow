@@ -18,8 +18,19 @@ import { Button } from "@/components/ui/button";
 import { CanDo } from "@/components/auth/permission-gate";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import { DateRangeBar } from "@/components/ui/sparkline";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { projectStatusLabels } from "@/lib/status-labels";
+
+/** 60-day window for the date range bar: today -7d to today +53d */
+function getDateRangeWindow() {
+  const now = new Date();
+  const rangeStart = new Date(now);
+  rangeStart.setDate(rangeStart.getDate() - 7);
+  const rangeEnd = new Date(now);
+  rangeEnd.setDate(rangeEnd.getDate() + 53);
+  return { rangeStart, rangeEnd };
+}
 
 
 const typeLabels: Record<string, string> = {
@@ -74,7 +85,7 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     cell: (row) => (
       <Link
         href={`/projects/${row.id}`}
-        className="font-mono text-sm font-medium hover:underline"
+        className="font-mono text-xs text-fg-3 hover:underline"
       >
         {row.projectNumber}
       </Link>
@@ -87,15 +98,20 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     sortKey: "name",
     alwaysVisible: true,
     cell: (row) => (
-      <div className="flex items-center gap-1.5">
-        <Link
-          href={`/projects/${row.id}`}
-          className="font-medium hover:underline"
-        >
-          {row.name}
-        </Link>
-        {row._issueFlags && (
-          <ProjectIssueBadge issues={row._issueFlags} />
+      <div className="flex flex-col">
+        <div className="flex items-center gap-1.5">
+          <Link
+            href={`/projects/${row.id}`}
+            className="font-medium hover:underline"
+          >
+            {row.name}
+          </Link>
+          {row._issueFlags && (
+            <ProjectIssueBadge issues={row._issueFlags} />
+          )}
+        </div>
+        {row.client?.name && (
+          <span className="text-xs text-fg-3">{row.client.name}</span>
         )}
       </div>
     ),
@@ -162,14 +178,26 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     id: "rentalStartDate",
     header: "Dates",
     sortKey: "rentalStartDate",
-    cell: (row) => (
-      <span className="text-fg-3 text-sm">
-        {formatDateRange(
-          row.rentalStartDate as string | null,
-          row.rentalEndDate as string | null
-        )}
-      </span>
-    ),
+    cell: (row) => {
+      const start = row.rentalStartDate as string | null;
+      const end = row.rentalEndDate as string | null;
+      const { rangeStart, rangeEnd } = getDateRangeWindow();
+      return (
+        <div className="flex flex-col gap-1 min-w-[120px]">
+          <span className="text-fg-3 text-sm">
+            {formatDateRange(start, end)}
+          </span>
+          {start && end && (
+            <DateRangeBar
+              start={new Date(start)}
+              end={new Date(end)}
+              rangeStart={rangeStart}
+              rangeEnd={rangeEnd}
+            />
+          )}
+        </div>
+      );
+    },
   },
   {
     id: "total",

@@ -1,23 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Search,
   Warehouse as WarehouseIcon,
   CalendarDays,
   ChevronDown,
   PackageCheck,
   PackageOpen,
   CheckCircle,
+  AlertTriangle,
+  ScanBarcode,
 } from "lucide-react";
 import { toast } from "sonner";
+import { format } from "date-fns";
 
 import { getProjects, updateProjectStatus } from "@/server/projects";
 import { Input } from "@/components/ui/input";
 import { StatusIndicator } from "@/components/ui/status-indicator";
-import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -36,6 +37,13 @@ import {
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { SectionHeader } from "@/components/layout/page-layouts";
+import {
+  FadeIn,
+  StaggerList,
+  StaggerItem,
+  AnimatedNumber,
+} from "@/components/ui/motion";
 
 const WAREHOUSE_STATUSES = [
   "CONFIRMED",
@@ -85,6 +93,35 @@ type PendingAction = {
   warningMessage: string;
 };
 
+type UrgencyGroup = "overdue" | "today" | "upcoming";
+
+function getProjectUrgency(project: Project): UrgencyGroup {
+  const startDate = project.rentalStartDate
+    ? new Date(project.rentalStartDate)
+    : null;
+  if (!startDate) return "upcoming";
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 2);
+  const projectDay = new Date(
+    startDate.getFullYear(),
+    startDate.getMonth(),
+    startDate.getDate()
+  );
+
+  if (projectDay < today) return "overdue";
+  if (projectDay < tomorrow) return "today";
+  return "upcoming";
+}
+
+const urgencyBorder: Record<UrgencyGroup, string> = {
+  overdue: "border-l-[3px] border-l-error",
+  today: "border-l-[3px] border-l-warning",
+  upcoming: "border-l-[3px] border-l-primary",
+};
+
 export default function WarehousePage() {
   const [search, setSearch] = useState("");
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
@@ -120,6 +157,25 @@ export default function WarehousePage() {
     WAREHOUSE_STATUSES.includes(p.status)
   ) as Project[];
 
+  // Group projects by urgency
+  const grouped = useMemo(() => {
+    const groups: Record<UrgencyGroup, Project[]> = {
+      overdue: [],
+      today: [],
+      upcoming: [],
+    };
+    for (const p of projects) {
+      groups[getProjectUrgency(p)].push(p);
+    }
+    return groups;
+  }, [projects]);
+
+  // Count "ready to prep" — CONFIRMED status projects
+  const readyToPrep = projects.filter((p) => p.status === "CONFIRMED").length;
+  const deployedCount = projects.filter(
+    (p) => p.status === "CHECKED_OUT" || p.status === "ON_SITE"
+  ).length;
+
   function handleStatusAction(
     project: Project,
     targetStatus: "CHECKED_OUT" | "RETURNED" | "COMPLETED"
@@ -129,7 +185,6 @@ export default function WarehousePage() {
     );
 
     if (lineItems.length === 0) {
-      // No line items loaded — always show confirmation as a safety net
       setPendingAction({
         project,
         targetStatus,
@@ -166,7 +221,6 @@ export default function WarehousePage() {
       }
     }
 
-    // All items in expected state — still confirm
     setPendingAction({
       project,
       targetStatus,
@@ -174,121 +228,152 @@ export default function WarehousePage() {
     });
   }
 
+  const todayFormatted = format(new Date(), "EEEE, d MMMM");
+
   return (
     <RequirePermission resource="warehouse" action="read">
     <div className="space-y-6">
-      <PageHeader
-        title="Warehouse"
-        description="Deploy and return equipment for active projects."
-      />
-
-      {/* Search */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-fg-3" />
-        <Input
-          placeholder="Search by project name or number..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-        />
-      </div>
-
-      {/* Project cards */}
-      {isLoading ? (
-        <div className="text-fg-3">Loading...</div>
-      ) : projects.length === 0 ? (
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-          <div className="py-8 text-center text-fg-3">
-            <WarehouseIcon className="mx-auto mb-2 h-8 w-8 opacity-50" />
-            <p>No projects ready for warehouse operations.</p>
-            <p className="text-xs mt-1">
-              Projects will appear here when they reach Confirmed status.
-            </p>
+      {/* Dynamic contextual header */}
+      <FadeIn>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-3">
+            <h1 className="t-title text-fg">Warehouse</h1>
+            {grouped.overdue.length > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-sm bg-error-subtle px-2 py-0.5 text-[11px] font-semibold text-error">
+                <AlertTriangle className="h-3 w-3" />
+                {grouped.overdue.length} overdue
+              </span>
+            )}
           </div>
-        </div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {projects.map((project) => (
-            <div key={project.id} className="rounded-lg bg-bg-surface p-4 surface-ring hover:bg-bg-elevated transition-shadow">
-              <div className="pb-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-xs text-fg-3">
-                    {project.projectNumber}
-                  </span>
-                  <StatusIndicator category="project" value={project.status} label={statusLabels[project.status] || project.status} variant="pill" />
-                </div>
-                <h3 className="text-base font-semibold">
-                  <Link
-                    href={`/warehouse/${project.id}`}
-                    className="hover:underline"
-                  >
-                    {project.name}
-                  </Link>
-                </h3>
-                {project.client && (
-                  <p className="text-sm text-fg-3">
-                    {project.client.name}
-                  </p>
+          <p className="text-[13px] text-fg-3">
+            {todayFormatted}
+            {!isLoading && (
+              <>
+                {" — "}
+                {readyToPrep > 0 ? (
+                  <>
+                    <span className="font-medium text-fg-2">
+                      <AnimatedNumber value={readyToPrep} />
+                    </span>
+                    {" "}
+                    {readyToPrep === 1 ? "project" : "projects"} ready to prep
+                  </>
+                ) : (
+                  "no projects waiting"
                 )}
-              </div>
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 text-sm text-fg-3">
-                  <CalendarDays className="h-3.5 w-3.5" />
-                  <span>
-                    {formatDateRange(
-                      project.rentalStartDate as string | null,
-                      project.rentalEndDate as string | null
-                    )}
-                  </span>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1"
-                    render={<Link href={`/warehouse/${project.id}`} />}
-                  >
-                    <WarehouseIcon className="mr-2 h-4 w-4" />
-                    Open
-                  </Button>
-                  <CanDo resource="warehouse" action="check_out">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
-                        Actions
-                        <ChevronDown className="ml-1 h-3 w-3" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        {project.status !== "CHECKED_OUT" && project.status !== "ON_SITE" && project.status !== "RETURNED" && project.status !== "COMPLETED" && (
-                          <DropdownMenuItem
-                            onClick={() => handleStatusAction(project, "CHECKED_OUT")}
-                          >
-                            <PackageOpen className="mr-2 h-4 w-4" />
-                            Mark Deployed
-                          </DropdownMenuItem>
-                        )}
-                        {(project.status === "CHECKED_OUT" || project.status === "ON_SITE") && (
-                          <DropdownMenuItem
-                            onClick={() => handleStatusAction(project, "RETURNED")}
-                          >
-                            <PackageCheck className="mr-2 h-4 w-4" />
-                            Mark Returned
-                          </DropdownMenuItem>
-                        )}
-                        {(project.status === "RETURNED" || project.status === "CHECKED_OUT" || project.status === "ON_SITE") && (
-                          <DropdownMenuItem
-                            onClick={() => handleStatusAction(project, "COMPLETED")}
-                          >
-                            <CheckCircle className="mr-2 h-4 w-4" />
-                            Mark Completed
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </CanDo>
-                </div>
-              </div>
+                {deployedCount > 0 && (
+                  <>
+                    {", "}
+                    <span className="font-medium text-fg-2">
+                      <AnimatedNumber value={deployedCount} />
+                    </span>
+                    {" "}currently deployed
+                  </>
+                )}
+              </>
+            )}
+          </p>
+        </div>
+      </FadeIn>
+
+      {/* Prominent scanner input */}
+      <FadeIn delay={0.05}>
+        <div className="relative max-w-lg">
+          <ScanBarcode className="absolute left-3 top-1/2 h-4.5 w-4.5 -translate-y-1/2 text-fg-3" />
+          <Input
+            placeholder="Scan barcode or search by project name / number..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-10 pl-10 text-[13.5px]"
+            autoFocus
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-4 hover:text-fg-2 transition-colors"
+            >
+              <span className="text-xs">Clear</span>
+            </button>
+          )}
+        </div>
+      </FadeIn>
+
+      {/* Project lists grouped by urgency */}
+      {isLoading ? (
+        <div className="text-fg-3 text-sm py-8">Loading projects...</div>
+      ) : projects.length === 0 ? (
+        <FadeIn>
+          <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+            <div className="py-8 text-center text-fg-3">
+              <WarehouseIcon className="mx-auto mb-2 h-8 w-8 opacity-50" />
+              <p>No projects ready for warehouse operations.</p>
+              <p className="text-xs mt-1">
+                Projects will appear here when they reach Confirmed status.
+              </p>
             </div>
-          ))}
+          </div>
+        </FadeIn>
+      ) : (
+        <div className="space-y-8">
+          {/* Overdue */}
+          {grouped.overdue.length > 0 && (
+            <section>
+              <FadeIn>
+                <SectionHeader label={`Overdue — ${grouped.overdue.length}`} />
+              </FadeIn>
+              <StaggerList className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {grouped.overdue.map((project) => (
+                  <StaggerItem key={project.id}>
+                    <ProjectCard
+                      project={project}
+                      urgency="overdue"
+                      onStatusAction={handleStatusAction}
+                    />
+                  </StaggerItem>
+                ))}
+              </StaggerList>
+            </section>
+          )}
+
+          {/* Today / Tomorrow */}
+          {grouped.today.length > 0 && (
+            <section>
+              <FadeIn delay={0.05}>
+                <SectionHeader label={`Today / Tomorrow — ${grouped.today.length}`} />
+              </FadeIn>
+              <StaggerList className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3" delay={0.05}>
+                {grouped.today.map((project) => (
+                  <StaggerItem key={project.id}>
+                    <ProjectCard
+                      project={project}
+                      urgency="today"
+                      onStatusAction={handleStatusAction}
+                    />
+                  </StaggerItem>
+                ))}
+              </StaggerList>
+            </section>
+          )}
+
+          {/* Upcoming */}
+          {grouped.upcoming.length > 0 && (
+            <section>
+              <FadeIn delay={0.1}>
+                <SectionHeader label={`Upcoming — ${grouped.upcoming.length}`} />
+              </FadeIn>
+              <StaggerList className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3" delay={0.1}>
+                {grouped.upcoming.map((project) => (
+                  <StaggerItem key={project.id}>
+                    <ProjectCard
+                      project={project}
+                      urgency="upcoming"
+                      onStatusAction={handleStatusAction}
+                    />
+                  </StaggerItem>
+                ))}
+              </StaggerList>
+            </section>
+          )}
         </div>
       )}
 
@@ -329,5 +414,109 @@ export default function WarehousePage() {
       </Dialog>
     </div>
     </RequirePermission>
+  );
+}
+
+// ─── Project Card ──────────────────────────────────────────────
+
+function ProjectCard({
+  project,
+  urgency,
+  onStatusAction,
+}: {
+  project: Project;
+  urgency: UrgencyGroup;
+  onStatusAction: (
+    project: Project,
+    targetStatus: "CHECKED_OUT" | "RETURNED" | "COMPLETED"
+  ) => void;
+}) {
+  return (
+    <div
+      className={`rounded-lg bg-bg-surface p-4 surface-ring hover:bg-bg-elevated transition-colors ${urgencyBorder[urgency]}`}
+    >
+      <div className="pb-2">
+        <div className="flex items-center justify-between">
+          <span className="font-mono text-xs text-fg-3">
+            {project.projectNumber}
+          </span>
+          <StatusIndicator
+            category="project"
+            value={project.status}
+            label={statusLabels[project.status] || project.status}
+            variant="pill"
+          />
+        </div>
+        <h3 className="text-base font-semibold">
+          <Link
+            href={`/warehouse/${project.id}`}
+            className="hover:underline"
+          >
+            {project.name}
+          </Link>
+        </h3>
+        {project.client && (
+          <p className="text-sm text-fg-3">
+            {project.client.name}
+          </p>
+        )}
+      </div>
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 text-sm text-fg-3">
+          <CalendarDays className="h-3.5 w-3.5" />
+          <span>
+            {formatDateRange(
+              project.rentalStartDate as string | null,
+              project.rentalEndDate as string | null
+            )}
+          </span>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1"
+            render={<Link href={`/warehouse/${project.id}`} />}
+          >
+            <WarehouseIcon className="mr-2 h-4 w-4" />
+            Open
+          </Button>
+          <CanDo resource="warehouse" action="check_out">
+            <DropdownMenu>
+              <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
+                Actions
+                <ChevronDown className="ml-1 h-3 w-3" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {project.status !== "CHECKED_OUT" && project.status !== "ON_SITE" && project.status !== "RETURNED" && project.status !== "COMPLETED" && (
+                  <DropdownMenuItem
+                    onClick={() => onStatusAction(project, "CHECKED_OUT")}
+                  >
+                    <PackageOpen className="mr-2 h-4 w-4" />
+                    Mark Deployed
+                  </DropdownMenuItem>
+                )}
+                {(project.status === "CHECKED_OUT" || project.status === "ON_SITE") && (
+                  <DropdownMenuItem
+                    onClick={() => onStatusAction(project, "RETURNED")}
+                  >
+                    <PackageCheck className="mr-2 h-4 w-4" />
+                    Mark Returned
+                  </DropdownMenuItem>
+                )}
+                {(project.status === "RETURNED" || project.status === "CHECKED_OUT" || project.status === "ON_SITE") && (
+                  <DropdownMenuItem
+                    onClick={() => onStatusAction(project, "COMPLETED")}
+                  >
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                    Mark Completed
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </CanDo>
+        </div>
+      </div>
+    </div>
   );
 }

@@ -30,6 +30,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MediaThumbnail } from "@/components/media/media-thumbnail";
 import { resolveModelPhotoUrl } from "@/lib/media-utils";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { SectionHeader } from "@/components/layout/page-layouts";
+import { FadeIn, StaggerList, StaggerItem } from "@/components/ui/motion";
 
 import { kitStatusLabels, formatLabel } from "@/lib/status-labels";
 
@@ -57,74 +59,76 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
     : "/assets/categories";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Header */}
-      <div className="flex items-start gap-4">
-        <Button variant="ghost" size="icon" onClick={() => router.push(parentHref)}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 text-sm text-fg-3 mb-1">
-            <Link href="/assets/categories" className="hover:text-fg transition-colors">
-              Categories
-            </Link>
-            {category.parent && (
-              <>
-                <ChevronRight className="h-3 w-3" />
-                <Link
-                  href={`/assets/categories/${category.parent.id}`}
-                  className="hover:text-fg transition-colors"
-                >
-                  {category.parent.name}
-                </Link>
-              </>
+      <FadeIn>
+        <div className="flex items-start gap-4">
+          <Button variant="ghost" size="icon" onClick={() => router.push(parentHref)}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 text-sm text-fg-3 mb-1">
+              <Link href="/assets/categories" className="hover:text-fg transition-colors">
+                Categories
+              </Link>
+              {category.parent && (
+                <>
+                  <ChevronRight className="h-3 w-3" />
+                  <Link
+                    href={`/assets/categories/${category.parent.id}`}
+                    className="hover:text-fg transition-colors"
+                  >
+                    {category.parent.name}
+                  </Link>
+                </>
+              )}
+              <ChevronRight className="h-3 w-3" />
+              <span className="text-fg">{category.name}</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">{category.icon || "\uD83D\uDCC1"}</span>
+              <h1 className="t-title text-fg">{category.name}</h1>
+            </div>
+            {category.description && (
+              <p className="text-fg-3 mt-1">{category.description}</p>
             )}
-            <ChevronRight className="h-3 w-3" />
-            <span className="text-fg">{category.name}</span>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">{category.icon || "📁"}</span>
-            <h1 className="t-title text-fg">{category.name}</h1>
+          <div className="flex items-center gap-2">
+            {category._count.models > 0 && (
+              <Badge variant="secondary" className="gap-1">
+                <Boxes className="h-3 w-3" />
+                {category._count.models} model{category._count.models !== 1 ? "s" : ""}
+              </Badge>
+            )}
+            {category._count.kits > 0 && (
+              <Badge variant="secondary" className="gap-1">
+                <Container className="h-3 w-3" />
+                {category._count.kits} kit{category._count.kits !== 1 ? "s" : ""}
+              </Badge>
+            )}
+            {category._count.children > 0 && (
+              <Badge variant="outline" className="gap-1">
+                <FolderOpen className="h-3 w-3" />
+                {category._count.children} subcategori{category._count.children !== 1 ? "es" : "y"}
+              </Badge>
+            )}
           </div>
-          {category.description && (
-            <p className="text-fg-3 mt-1">{category.description}</p>
-          )}
         </div>
-        <div className="flex items-center gap-2">
-          {category._count.models > 0 && (
-            <Badge variant="secondary" className="gap-1">
-              <Boxes className="h-3 w-3" />
-              {category._count.models} model{category._count.models !== 1 ? "s" : ""}
-            </Badge>
-          )}
-          {category._count.kits > 0 && (
-            <Badge variant="secondary" className="gap-1">
-              <Container className="h-3 w-3" />
-              {category._count.kits} kit{category._count.kits !== 1 ? "s" : ""}
-            </Badge>
-          )}
-          {category._count.children > 0 && (
-            <Badge variant="outline" className="gap-1">
-              <FolderOpen className="h-3 w-3" />
-              {category._count.children} subcategori{category._count.children !== 1 ? "es" : "y"}
-            </Badge>
-          )}
-        </div>
-      </div>
+      </FadeIn>
 
       {/* Subcategories */}
       {category.children && category.children.length > 0 && (
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-          <h3 className="t-heading text-fg mb-4">Subcategories</h3>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-              {category.children.map((child: any) => (
+        <FadeIn delay={0.05}>
+          <SectionHeader label="Subcategories" />
+          <StaggerList className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 mt-4" delay={0.08}>
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+            {category.children.map((child: any) => (
+              <StaggerItem key={child.id}>
                 <Link
-                  key={child.id}
                   href={`/assets/categories/${child.id}`}
                   className="flex items-center gap-3 rounded-lg border p-3 hover:bg-accent/50 transition-colors group"
                 >
-                  <span className="text-lg">{child.icon || "📂"}</span>
+                  <span className="text-lg">{child.icon || "\uD83D\uDCC2"}</span>
                   <div className="flex-1 min-w-0">
                     <span className="text-sm font-medium group-hover:text-primary transition-colors">
                       {child.name}
@@ -140,25 +144,28 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
                   </div>
                   <ChevronRight className="h-4 w-4 text-fg-3" />
                 </Link>
-              ))}
-            </div>
-        </div>
+              </StaggerItem>
+            ))}
+          </StaggerList>
+        </FadeIn>
       )}
 
       {/* Models & Kits tabs */}
-      <Tabs defaultValue="models">
-        <TabsList>
-          <TabsTrigger value="models">
-            Models ({category._count.models})
-          </TabsTrigger>
-          <TabsTrigger value="kits">
-            Kits ({category._count.kits})
-          </TabsTrigger>
-        </TabsList>
+      <FadeIn delay={0.1}>
+        <Tabs defaultValue="models">
+          <TabsList>
+            <TabsTrigger value="models">
+              Models ({category._count.models})
+            </TabsTrigger>
+            <TabsTrigger value="kits">
+              Kits ({category._count.kits})
+            </TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="models">
-          {category.models && category.models.length > 0 ? (
-            <div className="rounded-lg bg-bg-surface surface-ring overflow-hidden">
+          <TabsContent value="models">
+            {category.models && category.models.length > 0 ? (
+              <>
+                <SectionHeader label="Models" className="mb-3" />
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -204,20 +211,21 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
                     })}
                   </TableBody>
                 </Table>
-            </div>
-          ) : (
-            <EmptyState
-              preset="models"
-              heading="No models in this category"
-              description="Models group identical assets — create one to start adding units."
-              action={{ label: "Add Model", onClick: () => window.location.href = "/assets/models/new" }}
-            />
-          )}
-        </TabsContent>
+              </>
+            ) : (
+              <EmptyState
+                preset="models"
+                heading="No models in this category"
+                description="Models group identical assets — create one to start adding units."
+                action={{ label: "Add Model", onClick: () => window.location.href = "/assets/models/new" }}
+              />
+            )}
+          </TabsContent>
 
-        <TabsContent value="kits">
-          {category.kits && category.kits.length > 0 ? (
-            <div className="rounded-lg bg-bg-surface surface-ring overflow-hidden">
+          <TabsContent value="kits">
+            {category.kits && category.kits.length > 0 ? (
+              <>
+                <SectionHeader label="Kits" className="mb-3" />
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -257,17 +265,18 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
                     })}
                   </TableBody>
                 </Table>
-            </div>
-          ) : (
-            <EmptyState
-              preset="kits"
-              heading="No kits in this category"
-              description="Kits bundle assets that always go together — build one to speed up checkout."
-              action={{ label: "Add Kit", onClick: () => window.location.href = "/kits/new" }}
-            />
-          )}
-        </TabsContent>
-      </Tabs>
+              </>
+            ) : (
+              <EmptyState
+                preset="kits"
+                heading="No kits in this category"
+                description="Kits bundle assets that always go together — build one to speed up checkout."
+                action={{ label: "Add Kit", onClick: () => window.location.href = "/kits/new" }}
+              />
+            )}
+          </TabsContent>
+        </Tabs>
+      </FadeIn>
     </div>
   );
 }

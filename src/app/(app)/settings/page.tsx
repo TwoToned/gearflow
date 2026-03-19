@@ -7,7 +7,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { FormSection } from "@/components/layout/page-layouts";
+import { SectionHeader } from "@/components/layout/page-layouts";
+import { FadeIn } from "@/components/ui/motion";
 import {
   getOrganization,
   updateOrganization,
@@ -50,133 +51,150 @@ export default function GeneralSettingsPage() {
     setSettings((prev) => ({ ...prev, [key]: value }));
   };
 
+  const selectClassName =
+    "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
+
   return (
-    <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-      <div className="space-y-6">
-        <FormSection title="General" description="Business details and contact information.">
-          <div className="sm:col-span-2 space-y-2">
-            <Label htmlFor="orgName">Business Name</Label>
-            <Input
-              id="orgName"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={!canEdit}
-            />
+    <FadeIn className="space-y-8">
+      {/* General section */}
+      <section>
+        <SectionHeader label="General" />
+        <div className="mt-4 rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2 space-y-2">
+              <Label htmlFor="orgName">Business Name</Label>
+              <Input
+                id="orgName"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                disabled={!canEdit}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="orgEmail">Email</Label>
+              <Input
+                id="orgEmail"
+                type="email"
+                value={settings.email || ""}
+                onChange={(e) => updateSetting("email", e.target.value)}
+                placeholder="info@company.com"
+                disabled={!canEdit}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="orgPhone">Phone</Label>
+              <Input
+                id="orgPhone"
+                value={settings.phone || ""}
+                onChange={(e) => updateSetting("phone", e.target.value)}
+                placeholder="+61 ..."
+                disabled={!canEdit}
+              />
+            </div>
+            <div className="sm:col-span-2 space-y-2">
+              <Label htmlFor="orgWebsite">Website</Label>
+              <Input
+                id="orgWebsite"
+                value={settings.website || ""}
+                onChange={(e) => updateSetting("website", e.target.value)}
+                placeholder="https://..."
+                disabled={!canEdit}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="orgAddress">Address</Label>
+              <Input
+                id="orgAddress"
+                value={settings.address || ""}
+                onChange={(e) => updateSetting("address", e.target.value)}
+                placeholder="123 Main St, City"
+                disabled={!canEdit}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="country">Country</Label>
+              <select
+                id="country"
+                value={settings.country || ""}
+                onChange={(e) => updateSetting("country", e.target.value)}
+                disabled={!canEdit}
+                className={selectClassName}
+              >
+                <option value="">Not set</option>
+                <option value="AU">Australia</option>
+                <option value="NZ">New Zealand</option>
+                <option value="US">United States</option>
+                <option value="GB">United Kingdom</option>
+                <option value="CA">Canada</option>
+                <option value="IE">Ireland</option>
+                <option value="SG">Singapore</option>
+                <option value="HK">Hong Kong</option>
+                <option value="JP">Japan</option>
+                <option value="DE">Germany</option>
+                <option value="FR">France</option>
+                <option value="NL">Netherlands</option>
+                <option value="SE">Sweden</option>
+                <option value="NO">Norway</option>
+                <option value="DK">Denmark</option>
+                <option value="FI">Finland</option>
+                <option value="IN">India</option>
+                <option value="AE">United Arab Emirates</option>
+                <option value="ZA">South Africa</option>
+              </select>
+              <p className="text-xs text-fg-3">
+                Used to prefer local results in address autocomplete.
+              </p>
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="orgEmail">Email</Label>
-            <Input
-              id="orgEmail"
-              type="email"
-              value={settings.email || ""}
-              onChange={(e) => updateSetting("email", e.target.value)}
-              placeholder="info@company.com"
-              disabled={!canEdit}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="orgPhone">Phone</Label>
-            <Input
-              id="orgPhone"
-              value={settings.phone || ""}
-              onChange={(e) => updateSetting("phone", e.target.value)}
-              placeholder="+61 ..."
-              disabled={!canEdit}
-            />
-          </div>
-          <div className="sm:col-span-2 space-y-2">
-            <Label htmlFor="orgWebsite">Website</Label>
-            <Input
-              id="orgWebsite"
-              value={settings.website || ""}
-              onChange={(e) => updateSetting("website", e.target.value)}
-              placeholder="https://..."
-              disabled={!canEdit}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="orgAddress">Address</Label>
-            <Input
-              id="orgAddress"
-              value={settings.address || ""}
-              onChange={(e) => updateSetting("address", e.target.value)}
-              placeholder="123 Main St, City"
-              disabled={!canEdit}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="country">Country</Label>
-            <select
-              id="country"
-              value={settings.country || ""}
-              onChange={(e) => updateSetting("country", e.target.value)}
-              disabled={!canEdit}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <option value="">Not set</option>
-              <option value="AU">Australia</option>
-              <option value="NZ">New Zealand</option>
-              <option value="US">United States</option>
-              <option value="GB">United Kingdom</option>
-              <option value="CA">Canada</option>
-              <option value="IE">Ireland</option>
-              <option value="SG">Singapore</option>
-              <option value="HK">Hong Kong</option>
-              <option value="JP">Japan</option>
-              <option value="DE">Germany</option>
-              <option value="FR">France</option>
-              <option value="NL">Netherlands</option>
-              <option value="SE">Sweden</option>
-              <option value="NO">Norway</option>
-              <option value="DK">Denmark</option>
-              <option value="FI">Finland</option>
-              <option value="IN">India</option>
-              <option value="AE">United Arab Emirates</option>
-              <option value="ZA">South Africa</option>
-            </select>
-            <p className="text-xs text-fg-3">
-              Used to prefer local results in address autocomplete.
-            </p>
-          </div>
-        </FormSection>
+        </div>
+      </section>
 
-        <FormSection title="Timezone" description="Used for date display across the platform.">
-          <div className="space-y-2">
-            <Label htmlFor="timezone">Timezone</Label>
-            <select
-              id="timezone"
-              value={settings.timezone || ""}
-              onChange={(e) => updateSetting("timezone", e.target.value)}
-              disabled={!canEdit}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <option value="">Auto (browser)</option>
-              <option value="Pacific/Auckland">Pacific/Auckland (NZST)</option>
-              <option value="Australia/Sydney">Australia/Sydney (AEST)</option>
-              <option value="Australia/Brisbane">Australia/Brisbane (AEST, no DST)</option>
-              <option value="Australia/Adelaide">Australia/Adelaide (ACST)</option>
-              <option value="Australia/Darwin">Australia/Darwin (ACST, no DST)</option>
-              <option value="Australia/Perth">Australia/Perth (AWST)</option>
-              <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
-              <option value="Asia/Shanghai">Asia/Shanghai (CST)</option>
-              <option value="Asia/Singapore">Asia/Singapore (SGT)</option>
-              <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
-              <option value="Asia/Dubai">Asia/Dubai (GST)</option>
-              <option value="Europe/London">Europe/London (GMT/BST)</option>
-              <option value="Europe/Paris">Europe/Paris (CET)</option>
-              <option value="Europe/Berlin">Europe/Berlin (CET)</option>
-              <option value="America/New_York">America/New_York (EST)</option>
-              <option value="America/Chicago">America/Chicago (CST)</option>
-              <option value="America/Denver">America/Denver (MST)</option>
-              <option value="America/Los_Angeles">America/Los_Angeles (PST)</option>
-              <option value="UTC">UTC</option>
-            </select>
+      {/* Timezone section */}
+      <section>
+        <SectionHeader label="Timezone" />
+        <div className="mt-4 rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="timezone">Timezone</Label>
+              <select
+                id="timezone"
+                value={settings.timezone || ""}
+                onChange={(e) => updateSetting("timezone", e.target.value)}
+                disabled={!canEdit}
+                className={selectClassName}
+              >
+                <option value="">Auto (browser)</option>
+                <option value="Pacific/Auckland">Pacific/Auckland (NZST)</option>
+                <option value="Australia/Sydney">Australia/Sydney (AEST)</option>
+                <option value="Australia/Brisbane">Australia/Brisbane (AEST, no DST)</option>
+                <option value="Australia/Adelaide">Australia/Adelaide (ACST)</option>
+                <option value="Australia/Darwin">Australia/Darwin (ACST, no DST)</option>
+                <option value="Australia/Perth">Australia/Perth (AWST)</option>
+                <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
+                <option value="Asia/Shanghai">Asia/Shanghai (CST)</option>
+                <option value="Asia/Singapore">Asia/Singapore (SGT)</option>
+                <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
+                <option value="Asia/Dubai">Asia/Dubai (GST)</option>
+                <option value="Europe/London">Europe/London (GMT/BST)</option>
+                <option value="Europe/Paris">Europe/Paris (CET)</option>
+                <option value="Europe/Berlin">Europe/Berlin (CET)</option>
+                <option value="America/New_York">America/New_York (EST)</option>
+                <option value="America/Chicago">America/Chicago (CST)</option>
+                <option value="America/Denver">America/Denver (MST)</option>
+                <option value="America/Los_Angeles">America/Los_Angeles (PST)</option>
+                <option value="UTC">UTC</option>
+              </select>
+              <p className="text-xs text-fg-3">
+                Used for date display across the platform.
+              </p>
+            </div>
           </div>
-        </FormSection>
-      </div>
+        </div>
+      </section>
 
+      {/* Save button */}
       {canEdit && (
-        <div className="mt-6 flex justify-end border-t border-border pt-4">
+        <div className="flex justify-end">
           <Button
             onClick={() => updateMutation.mutate()}
             disabled={updateMutation.isPending}
@@ -185,6 +203,6 @@ export default function GeneralSettingsPage() {
           </Button>
         </div>
       )}
-    </div>
+    </FadeIn>
   );
 }

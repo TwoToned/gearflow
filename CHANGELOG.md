@@ -5,6 +5,38 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-03-19
+
+### Added
+- Full UX/UI structural redesign eliminating "AI slop" patterns across the entire app
+- New design system (`DESIGN.md`) with deep teal primary palette, DM Sans typography, and motion guidelines
+- Framer Motion utility components: `FadeIn`, `StaggerList`, `StaggerItem`, `AnimatedNumber`, `SurfaceLift`, `TabFade`
+- Pure SVG data visualization: `Sparkline`, `UtilizationBar`, `DateRangeBar` (no charting library)
+- 10 domain-specific spot illustrations for empty states (road case, stage plot, headset, etc.)
+- Centralized `StatusIndicator` component with `status-colors.ts` replacing 20+ scattered inline color maps
+- Keyboard shortcuts system (`Cmd+K` search, `Cmd+N` create, navigation shortcuts)
+- Reusable `PageHeader`, `ListPageLayout`, `SectionHeader` layout components
+- Shimmer skeleton loading states replacing static placeholders
+- 61 new tests covering status colors, sparkline math, empty state resolution, dashboard utilities
+
+### Changed
+- **Dashboard**: Replaced 7 identical stat cards with inline metrics strip, dynamic time-of-day greeting, alert badges (overdue/maintenance), and DateRangeBar-enriched project list
+- **All detail pages** (10 pages): Converted from full-width tab layout to asymmetric 2-column layout with sticky sidebar containing key info, eliminating need to tab through to find status/dates/financials
+- **Sidebar navigation**: Reorganized into 5 logical sections (Core, Assets, Operations, People, Admin) with Quick Create dropdown
+- **Warehouse**: Projects grouped by urgency (overdue → today → upcoming) with color-coded left borders
+- **Login page**: Split-panel layout with brand panel and dot grid background
+- **Tables**: Removed uniform surface wrappers, added contextual data (DateRangeBar in projects, utilization in assets, cert count in crew)
+- **Forms**: Replaced Card wrappers with `SectionHeader` chip labels and increased spacing
+- **Empty states**: Added spot illustrations and preset system for 20 domain contexts
+- **Settings/Account**: Section-based layout with `SectionHeader` labels replacing monolithic cards
+- **Availability calendar**: Borderless grid with contextual month header
+
+### Removed
+- Legacy Card component wrappers on forms, settings, and detail pages
+- Old color tokens (`bg-muted`, `text-foreground`, `text-muted-foreground`) — replaced with semantic tokens
+- Stat card grid pattern on dashboard
+- Uniform surface-ring wrapping on all tables
+
 ## [0.2.1] - 2026-03-19
 
 ### Fixed

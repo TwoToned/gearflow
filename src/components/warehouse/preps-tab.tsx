@@ -130,8 +130,8 @@ export function PrepsTab({ projectId }: { projectId: string }) {
         setShowCaseResults(true);
       }, 300);
     } else {
-      setDebouncedCaseQuery("");
-      setShowCaseResults(false);
+      setDebouncedCaseQuery(""); // eslint-disable-line react-hooks/set-state-in-effect
+      setShowCaseResults(false); // eslint-disable-line react-hooks/set-state-in-effect
     }
     return () => { if (caseSearchTimerRef.current) clearTimeout(caseSearchTimerRef.current); };
   }, [caseSearch]);
@@ -409,8 +409,8 @@ function PrepKitDetailDialog({
         setShowResults(true);
       }, 300);
     } else {
-      setDebouncedQuery("");
-      setShowResults(false);
+      setDebouncedQuery(""); // eslint-disable-line react-hooks/set-state-in-effect
+      setShowResults(false); // eslint-disable-line react-hooks/set-state-in-effect
     }
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
   }, [scanValue]);

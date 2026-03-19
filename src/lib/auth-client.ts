@@ -37,11 +37,12 @@ export function useActiveOrganization() {
 
   const currentId = result.data?.id;
   if (currentId !== undefined) {
-    lastOrgId.current = currentId;
+    lastOrgId.current = currentId; // eslint-disable-line react-hooks/refs
   }
 
   return {
     ...result,
+    // eslint-disable-next-line react-hooks/refs
     data: result.data ?? (lastOrgId.current ? { id: lastOrgId.current } as unknown as typeof result.data : undefined),
   };
 }

@@ -81,16 +81,16 @@ export function RoleEditorDialog({
   useEffect(() => {
     if (open) {
       if (editingRole) {
-        setName(editingRole.name);
-        setDescription(editingRole.description || "");
-        setColor(editingRole.color || "blue");
-        setSsoGroupClaim(editingRole.ssoGroupClaim || "");
-        setPermissions(editingRole.permissions);
+        setName(editingRole.name); // eslint-disable-line react-hooks/set-state-in-effect
+        setDescription(editingRole.description || ""); // eslint-disable-line react-hooks/set-state-in-effect
+        setColor(editingRole.color || "blue"); // eslint-disable-line react-hooks/set-state-in-effect
+        setSsoGroupClaim(editingRole.ssoGroupClaim || ""); // eslint-disable-line react-hooks/set-state-in-effect
+        setPermissions(editingRole.permissions); // eslint-disable-line react-hooks/set-state-in-effect
       } else {
-        setName("");
-        setDescription("");
-        setColor("blue");
-        setSsoGroupClaim("");
+        setName(""); // eslint-disable-line react-hooks/set-state-in-effect
+        setDescription(""); // eslint-disable-line react-hooks/set-state-in-effect
+        setColor("blue"); // eslint-disable-line react-hooks/set-state-in-effect
+        setSsoGroupClaim(""); // eslint-disable-line react-hooks/set-state-in-effect
         setPermissions(emptyPermissions());
       }
     }

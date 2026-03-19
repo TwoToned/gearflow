@@ -198,7 +198,7 @@ export function buildTtOverdueInputs(
   // Collect expanded notes for failed items with failureNotes
   const expandedNotes: { rowIndex: number; text: string; bgColor?: string; textColor?: string }[] = [];
   // Calculate the row offset for failed items section
-  let rowOffset = data.overdueItems.length;
+  const rowOffset = data.overdueItems.length;
   data.failedItems.forEach((item, i) => {
     if (item.failureNotes) {
       expandedNotes.push({

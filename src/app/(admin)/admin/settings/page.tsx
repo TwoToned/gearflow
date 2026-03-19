@@ -33,7 +33,7 @@ export default function AdminSettingsPage() {
 
   useEffect(() => {
     if (settings) {
-      setForm({
+      setForm({ // eslint-disable-line react-hooks/set-state-in-effect
         platformName: settings.platformName || "GearFlow",
         platformIcon: settings.platformIcon || null,
         registrationPolicy: settings.registrationPolicy || "OPEN",

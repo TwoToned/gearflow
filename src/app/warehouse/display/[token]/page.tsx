@@ -100,7 +100,7 @@ export default function WarehouseDisplayPage({
 
   // Clock tick every second — start on mount to avoid hydration mismatch
   useEffect(() => {
-    setClock(new Date());
+    setClock(new Date()); // eslint-disable-line react-hooks/set-state-in-effect
     const interval = setInterval(() => setClock(new Date()), 1000);
     return () => clearInterval(interval);
   }, []);

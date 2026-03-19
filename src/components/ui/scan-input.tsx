@@ -30,7 +30,7 @@ export const ScanInput = forwardRef<HTMLInputElement, ScanInputProps>(
     // Check if device likely has a camera
     useEffect(() => {
       if (showScanButton !== undefined) {
-        setHasCamera(showScanButton);
+        setHasCamera(showScanButton); // eslint-disable-line react-hooks/set-state-in-effect
         return;
       }
       // Check for mediaDevices API

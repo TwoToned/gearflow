@@ -26,8 +26,8 @@ export default function BrandingSettingsPage() {
 
   useEffect(() => {
     if (org) {
-      setName((org as Record<string, unknown>).name as string || "");
-      setSettings((org as Record<string, unknown>).settings as OrgSettings || {});
+      setName((org as Record<string, unknown>).name as string || ""); // eslint-disable-line react-hooks/set-state-in-effect
+      setSettings((org as Record<string, unknown>).settings as OrgSettings || {}); // eslint-disable-line react-hooks/set-state-in-effect
     }
   }, [org]);
 

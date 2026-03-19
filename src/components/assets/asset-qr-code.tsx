@@ -1,7 +1,7 @@
 "use client";
 
 import QRCode from "react-qr-code";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
 import { useRef } from "react";
@@ -39,20 +39,20 @@ export function AssetQRCode({ assetTag, label }: AssetQRCodeProps) {
   }
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-base">QR Code</CardTitle>
+    <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="t-heading text-fg">QR Code</h3>
         <Button variant="outline" size="sm" onClick={handleDownload}>
           <Download className="mr-2 h-3 w-3" />
           Download
         </Button>
-      </CardHeader>
-      <CardContent className="flex flex-col items-center gap-2">
+      </div>
+      <div className="flex flex-col items-center gap-2">
         <div ref={svgRef} className="rounded-md bg-white p-3">
           <QRCode value={assetTag} size={160} />
         </div>
         <p className="font-mono text-sm font-medium">{label || assetTag}</p>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

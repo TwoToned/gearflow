@@ -47,7 +47,6 @@ import {
 import { getKits } from "@/server/kits";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -362,12 +361,12 @@ function SortableItemRow({
       <TableRow
         ref={setNodeRef}
         style={style}
-        className={`${isGroupParent ? "bg-muted/30" : ""} ${isDragging || parentGroupDragging ? "opacity-30" : ""} ${isDragOverlay ? "bg-background" : ""}`}
+        className={`${isGroupParent ? "bg-bg-inset/30" : ""} ${isDragging || parentGroupDragging ? "opacity-30" : ""} ${isDragOverlay ? "bg-background" : ""}`}
       >
         <TableCell className={`w-8 px-1 ${isGrouped ? "pl-6" : ""}`}>
           <button
             type="button"
-            className="flex h-full cursor-grab items-center px-1 text-muted-foreground hover:text-foreground active:cursor-grabbing"
+            className="flex h-full cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
             {...attributes}
             {...listeners}
           >
@@ -383,11 +382,11 @@ function SortableItemRow({
                 className="flex items-center gap-1.5 text-left"
               >
                 <ChevronRight
-                  className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+                  className={`h-4 w-4 shrink-0 text-fg-3 transition-transform ${
                     isExpanded ? "rotate-90" : ""
                   }`}
                 />
-                <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <Icon className="h-4 w-4 shrink-0 text-fg-3" />
                 <div>
                   <span className="font-medium">{itemName}</span>
                   <Badge
@@ -404,14 +403,14 @@ function SortableItemRow({
                   {item.isOverbooked && (
                     <OverbookedBadge info={item.overbookedInfo} />
                   )}
-                  <span className="ml-2 text-xs text-muted-foreground">
+                  <span className="ml-2 text-xs text-fg-3">
                     {childItems.length} item{childItems.length !== 1 ? "s" : ""}
                   </span>
                 </div>
               </button>
             ) : (
               <>
-                <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <Icon className="h-4 w-4 shrink-0 text-fg-3" />
                 <div>
                   <span className="font-medium">{itemName}</span>
                   {item.isOptional && (
@@ -434,12 +433,12 @@ function SortableItemRow({
                     <OverbookedBadge info={item.overbookedInfo} />
                   )}
                   {item.isSubhire && item.supplier && (
-                    <p className="text-xs text-muted-foreground mt-0.5">
+                    <p className="text-xs text-fg-3 mt-0.5">
                       via {item.supplier.name}
                     </p>
                   )}
                   {item.notes && (
-                    <p className="text-xs text-muted-foreground mt-0.5">
+                    <p className="text-xs text-fg-3 mt-0.5">
                       {item.notes}
                     </p>
                   )}
@@ -452,7 +451,7 @@ function SortableItemRow({
         <TableCell className="text-right hidden md:table-cell">
           {formatCurrency(item.unitPrice as number | null)}
           {item.unitPrice != null && (
-            <span className="text-xs text-muted-foreground ml-0.5">
+            <span className="text-xs text-fg-3 ml-0.5">
               {pricingLabels[item.pricingType]}
             </span>
           )}
@@ -523,28 +522,28 @@ function SortableItemRow({
           const nestedChildren = child.childLineItems || [];
           return (
             <React.Fragment key={child.id}>
-              <TableRow className="bg-muted/10">
+              <TableRow className="bg-bg-inset/10">
                 <TableCell className="w-8" />
                 <TableCell>
                   <div className="flex items-center gap-2 pl-8">
                     {isNestedKit ? (
-                      <Container className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <Container className="h-3.5 w-3.5 shrink-0 text-fg-3" />
                     ) : (
-                      <Package className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <Package className="h-3.5 w-3.5 shrink-0 text-fg-3" />
                     )}
                     <div>
                       <span className={`text-sm ${isNestedKit ? "font-medium" : ""}`}>
                         {child.model?.name || child.description || "Unnamed"}
                       </span>
                       {child.asset?.assetTag && (
-                        <span className="ml-1.5 text-xs text-muted-foreground">
+                        <span className="ml-1.5 text-xs text-fg-3">
                           ({child.asset.assetTag})
                         </span>
                       )}
                       {isNestedKit && (
                         <>
                           <Badge variant="outline" className="ml-1.5 text-xs bg-indigo-500/10 text-indigo-600 border-indigo-500/20">Kit</Badge>
-                          <span className="ml-1.5 text-xs text-muted-foreground">
+                          <span className="ml-1.5 text-xs text-fg-3">
                             {nestedChildren.length} item{nestedChildren.length !== 1 ? "s" : ""}
                           </span>
                         </>
@@ -571,17 +570,17 @@ function SortableItemRow({
                 <TableCell />
               </TableRow>
               {isNestedKit && nestedChildren.map((nested) => (
-                <TableRow key={nested.id} className="bg-muted/5">
+                <TableRow key={nested.id} className="bg-bg-inset/5">
                   <TableCell className="w-8" />
                   <TableCell>
                     <div className="flex items-center gap-2 pl-14">
-                      <Package className="h-3 w-3 shrink-0 text-muted-foreground" />
+                      <Package className="h-3 w-3 shrink-0 text-fg-3" />
                       <div>
-                        <span className="text-sm text-muted-foreground">
+                        <span className="text-sm text-fg-3">
                           {nested.model?.name || nested.description || "Unnamed"}
                         </span>
                         {nested.asset?.assetTag && (
-                          <span className="ml-1.5 text-xs text-muted-foreground">
+                          <span className="ml-1.5 text-xs text-fg-3">
                             ({nested.asset.assetTag})
                           </span>
                         )}
@@ -591,16 +590,16 @@ function SortableItemRow({
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="text-center text-sm text-muted-foreground">
+                  <TableCell className="text-center text-sm text-fg-3">
                     {nested.quantity}
                   </TableCell>
-                  <TableCell className="text-right text-sm hidden md:table-cell text-muted-foreground">
+                  <TableCell className="text-right text-sm hidden md:table-cell text-fg-3">
                     {formatCurrency(nested.unitPrice as number | null)}
                   </TableCell>
-                  <TableCell className="text-center text-sm hidden lg:table-cell text-muted-foreground">
+                  <TableCell className="text-center text-sm hidden lg:table-cell text-fg-3">
                     {nested.duration}
                   </TableCell>
-                  <TableCell className="text-right text-sm hidden sm:table-cell text-muted-foreground">
+                  <TableCell className="text-right text-sm hidden sm:table-cell text-fg-3">
                     {formatCurrency(nested.lineTotal as number | null)}
                   </TableCell>
                   <TableCell className="hidden sm:table-cell" />
@@ -649,19 +648,19 @@ function SortableGroupHeader({
       <TableRow
         ref={setNodeRef}
         style={style}
-        className={`border-b-0 ${isDragging ? "opacity-30" : ""} ${isDragOverlay ? "bg-muted" : ""}`}
+        className={`border-b-0 ${isDragging ? "opacity-30" : ""} ${isDragOverlay ? "bg-bg-inset" : ""}`}
       >
         <TableCell colSpan={8} className="py-2 px-1">
           <div className="flex items-center gap-1.5">
             <button
               type="button"
-              className="flex cursor-grab items-center px-1 text-muted-foreground hover:text-foreground active:cursor-grabbing"
+              className="flex cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
               {...attributes}
               {...listeners}
             >
               <GripVertical className="h-4 w-4" />
             </button>
-            <h3 className="text-sm font-semibold text-muted-foreground">
+            <h3 className="text-sm font-semibold text-fg-3">
               {groupName}
             </h3>
           </div>
@@ -684,7 +683,7 @@ function SortableGroupHeader({
               <TableCell className="w-8 px-1" />
               <TableCell>
                 <div className="flex items-center gap-2 pl-4">
-                  <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <Icon className="h-3.5 w-3.5 shrink-0 text-fg-3" />
                   <span className="text-sm">{name}</span>
                 </div>
               </TableCell>
@@ -1101,15 +1100,15 @@ export function LineItemsPanel({
       </div>
 
       {topLevelItems.length === 0 ? (
-        <Card>
-          <CardContent className="py-8 text-center text-muted-foreground">
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <div className="py-8 text-center text-fg-3">
             <Package className="mx-auto mb-2 h-8 w-8 opacity-50" />
             <p>No line items yet.</p>
             <p className="text-xs mt-1">
               Add equipment, services, and labour to this project.
             </p>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       ) : (
         <>
           <div className="rounded-md border overflow-x-auto">
@@ -1201,18 +1200,18 @@ export function LineItemsPanel({
 
           {/* Totals */}
           {project && (
-            <Card>
-              <CardContent className="py-4">
+            <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+              <div className="py-4">
                 <div className="space-y-1 text-sm max-w-xs ml-auto">
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Subtotal</span>
+                    <span className="text-fg-3">Subtotal</span>
                     <span className="font-medium">
                       {formatCurrency(project.subtotal as number | null)}
                     </span>
                   </div>
                   {project.discountPercent != null &&
                     Number(project.discountPercent) > 0 && (
-                      <div className="flex justify-between text-muted-foreground">
+                      <div className="flex justify-between text-fg-3">
                         <span>
                           Discount ({Number(project.discountPercent)}%)
                         </span>
@@ -1224,7 +1223,7 @@ export function LineItemsPanel({
                         </span>
                       </div>
                     )}
-                  <div className="flex justify-between text-muted-foreground">
+                  <div className="flex justify-between text-fg-3">
                     <span>GST (10%)</span>
                     <span>
                       {formatCurrency(project.taxAmount as number | null)}
@@ -1249,8 +1248,8 @@ export function LineItemsPanel({
                     </>
                   )}
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           )}
         </>
       )}
@@ -1368,7 +1367,7 @@ export function LineItemsPanel({
                   Itemized
                 </label>
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-fg-3">
                 {kitPricingMode === "KIT_PRICE"
                   ? "One price for the whole kit."
                   : "Each item in the kit priced individually."}

@@ -55,7 +55,6 @@ import { CanDo } from "@/components/auth/permission-gate";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -213,14 +212,14 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
     : null;
 
   if (isLoading) {
-    return <div className="text-muted-foreground py-8 text-center">Loading crew...</div>;
+    return <div className="text-fg-3 py-8 text-center">Loading crew...</div>;
   }
 
   return (
     <div className="space-y-4">
       {/* Summary bar */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+        <div className="flex items-center gap-4 text-sm text-fg-3">
           <span className="flex items-center gap-1">
             <Users className="h-4 w-4" />
             {assignments?.length || 0} crew
@@ -283,8 +282,8 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
 
       {/* Assignments table */}
       {(!assignments || assignments.length === 0) ? (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
+        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <div className="py-12 text-center text-fg-3">
             <Users className="mx-auto h-8 w-8 mb-2 opacity-50" />
             <p>No crew assigned to this project yet.</p>
             <CanDo resource="crew" action="create">
@@ -298,10 +297,10 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
                 Add Crew Member
               </Button>
             </CanDo>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       ) : (
-        <Card>
+        <div className="rounded-lg bg-bg-surface surface-ring overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
@@ -373,7 +372,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
                 ))}
             </TableBody>
           </Table>
-        </Card>
+        </div>
       )}
 
       {/* Add dialog */}
@@ -425,9 +424,9 @@ function PhaseGroup({
   if (assignments.length === 0) return null;
   return (
     <>
-      <TableRow className="bg-muted/30 hover:bg-muted/30">
+      <TableRow className="bg-bg-inset/30 hover:bg-bg-inset/30">
         <TableCell colSpan={8} className="py-1.5">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <span className="text-xs font-semibold uppercase tracking-wide text-fg-3">
             {phaseLabels[phase] || phase}
           </span>
         </TableCell>
@@ -503,7 +502,7 @@ function AssignmentRow({
             {role.name}
           </Badge>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-fg-3">—</span>
         )}
       </TableCell>
       <TableCell className="text-sm">
@@ -513,14 +512,14 @@ function AssignmentRow({
       </TableCell>
       <TableCell className="text-sm">
         <div className="flex items-center gap-1">
-          <Calendar className="h-3 w-3 text-muted-foreground" />
+          <Calendar className="h-3 w-3 text-fg-3" />
           {formatDate(a.startDate as string | null)}
           {a.endDate && a.endDate !== a.startDate
             ? ` – ${formatDate(a.endDate as string | null)}`
             : ""}
         </div>
         {a.startTime && (
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1 text-xs text-fg-3">
             <Clock className="h-3 w-3" />
             {a.startTime as string}
             {a.endTime ? ` – ${a.endTime as string}` : ""}
@@ -531,12 +530,12 @@ function AssignmentRow({
         {a.rateOverride != null && Number(a.rateOverride) > 0 ? (
           <>
             {formatCurrency(a.rateOverride as number)}{" "}
-            <span className="text-muted-foreground text-xs">
+            <span className="text-fg-3 text-xs">
               {crewRateTypeLabels[(a.rateType as string) || "DAILY"] || ""}
             </span>
           </>
         ) : (
-          <span className="text-muted-foreground">Default</span>
+          <span className="text-fg-3">Default</span>
         )}
       </TableCell>
       <TableCell className="text-sm font-medium">
@@ -1243,7 +1242,7 @@ function BulkMessageDialog({
           <DialogTitle>Message Project Crew</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-fg-3">
             Send an email to all active crew members on this project.
           </p>
           <div className="space-y-1.5">

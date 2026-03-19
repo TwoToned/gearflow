@@ -48,7 +48,8 @@ import { ComboboxPicker, MultiComboboxPicker } from "@/components/ui/combobox-pi
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+
+
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -230,7 +231,7 @@ export function ServicesPanel({
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12 text-muted-foreground">
+      <div className="flex items-center justify-center py-12 text-fg-3">
         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
         Loading services...
       </div>
@@ -288,19 +289,19 @@ export function ServicesPanel({
 
       {/* Services list grouped by date */}
       {grouped.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+        <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+          <div className="flex flex-col items-center justify-center py-12 text-fg-3">
             <Truck className="mb-2 h-8 w-8 opacity-50" />
             <p>No services yet</p>
             <p className="text-xs mt-1">
               Add deliveries, bump in/out, labour, and other services
             </p>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       ) : (
         grouped.map(({ dateLabel, items }) => (
           <div key={dateLabel}>
-            <h3 className="text-sm font-medium text-muted-foreground mb-2 px-1">
+            <h3 className="text-sm font-medium text-fg-3 mb-2 px-1">
               {dateLabel}
             </h3>
             <div className="space-y-2">
@@ -326,28 +327,26 @@ export function ServicesPanel({
 
       {/* Financial Summary */}
       {summary && summary.serviceCount > 0 && (
-        <Card>
-          <CardContent className="py-4">
-            <h4 className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-1">
+        <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+            <h4 className="text-sm font-medium text-fg-3 mb-2 flex items-center gap-1">
               <DollarSign className="h-3.5 w-3.5" />
               Services Financial Summary
             </h4>
             <div className="grid gap-4 sm:grid-cols-3 text-sm">
               <div>
-                <span className="text-muted-foreground">On Documents</span>
+                <span className="text-fg-3">On Documents</span>
                 <p className="font-medium">{formatCurrency(summary.onDocumentsTotal)}</p>
               </div>
               <div>
-                <span className="text-muted-foreground">Internal</span>
+                <span className="text-fg-3">Internal</span>
                 <p className="font-medium">{formatCurrency(summary.internalTotal)}</p>
               </div>
               <div>
-                <span className="text-muted-foreground">Total</span>
+                <span className="text-fg-3">Total</span>
                 <p className="font-semibold">{formatCurrency(summary.totalCost)}</p>
               </div>
             </div>
-          </CardContent>
-        </Card>
+        </div>
       )}
 
       {/* Create/Edit Dialog */}
@@ -420,13 +419,13 @@ function ServiceCard({
     new Date(service.date).toISOString().slice(0, 10) !== new Date(service.endDate).toISOString().slice(0, 10);
 
   return (
-    <Card className={isCancelled ? "opacity-50" : ""}>
-      <CardContent className="py-3 px-4">
+    <div className={`rounded-lg bg-bg-surface p-4 surface-ring ${isCancelled ? "opacity-50" : ""}`}>
+      <div>
         <div className="flex items-start justify-between gap-2">
           {/* Left side */}
           <div className="flex-1 min-w-0 space-y-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
+              <Icon className="h-4 w-4 text-fg-3 shrink-0" />
               <span className={`font-medium ${isCancelled ? "line-through" : ""}`}>
                 {service.title}
               </span>
@@ -440,7 +439,7 @@ function ServiceCard({
 
             {/* Date range for multi-day */}
             {isMultiDay && (
-              <div className="flex items-center gap-1 text-sm text-muted-foreground">
+              <div className="flex items-center gap-1 text-sm text-fg-3">
                 <Clock className="h-3 w-3" />
                 <span>{formatDate(service.date)} – {formatDate(service.endDate)}</span>
               </div>
@@ -448,7 +447,7 @@ function ServiceCard({
 
             {/* Time (single-day only) */}
             {!isMultiDay && (service.startTime || service.endTime) && (
-              <div className="flex items-center gap-1 text-sm text-muted-foreground">
+              <div className="flex items-center gap-1 text-sm text-fg-3">
                 <Clock className="h-3 w-3" />
                 <span>
                   {service.startTime}
@@ -459,7 +458,7 @@ function ServiceCard({
 
             {/* Scheduled delivery/pickup time */}
             {service.scheduledTime && (service.type === "DELIVERY" || service.type === "PICKUP") && (
-              <div className="flex items-center gap-1 text-sm text-muted-foreground">
+              <div className="flex items-center gap-1 text-sm text-fg-3">
                 <Truck className="h-3 w-3" />
                 <span>
                   {service.type === "DELIVERY" ? "Delivery" : "Pickup"} at {service.scheduledTime}
@@ -469,7 +468,7 @@ function ServiceCard({
 
             {/* Address */}
             {service.address && (
-              <div className="flex items-center gap-1 text-sm text-muted-foreground">
+              <div className="flex items-center gap-1 text-sm text-fg-3">
                 <MapPin className="h-3 w-3 shrink-0" />
                 <span className="truncate">{service.address}</span>
                 {service.latitude != null && service.longitude != null && (
@@ -487,14 +486,14 @@ function ServiceCard({
 
             {/* Vehicle */}
             {service.vehicleDescription && (
-              <div className="text-sm text-muted-foreground">
+              <div className="text-sm text-fg-3">
                 Vehicle: {service.vehicleDescription}
               </div>
             )}
 
             {/* Crew */}
             {(service.crewRole || service.crewAssignments?.length > 0 || (service.crewCountRequired != null && service.crewCountRequired > 0)) && (
-              <div className="flex items-center gap-1.5 text-sm text-muted-foreground flex-wrap">
+              <div className="flex items-center gap-1.5 text-sm text-fg-3 flex-wrap">
                 <Users className="h-3 w-3 shrink-0" />
                 {service.crewRole && (
                   <Badge variant="outline" className="text-xs py-0" style={service.crewRole.color ? { borderColor: service.crewRole.color, color: service.crewRole.color } : undefined}>
@@ -521,14 +520,14 @@ function ServiceCard({
             {/* Financial */}
             {service.lineTotal != null && (
               <div className="flex items-center gap-1 text-sm">
-                <DollarSign className="h-3 w-3 text-muted-foreground" />
+                <DollarSign className="h-3 w-3 text-fg-3" />
                 <span className="font-medium">{formatCurrency(service.lineTotal)}</span>
                 {service.pricingType && (
-                  <span className="text-muted-foreground">
+                  <span className="text-fg-3">
                     {PRICING_TYPE_LABELS[service.pricingType] || ""}
                   </span>
                 )}
-                <span className="text-muted-foreground">
+                <span className="text-fg-3">
                   {service.showOnDocuments ? "— On quote" : "— Internal"}
                 </span>
               </div>
@@ -575,8 +574,8 @@ function ServiceCard({
             </CanDo>
           </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -642,7 +641,7 @@ function CrewMemberSelect({
 function CrewCountBadge({ needed, assigned }: { needed: number; assigned: number }) {
   if (needed <= 0 && assigned <= 0) return null;
   const color = needed <= 0
-    ? "text-muted-foreground"
+    ? "text-fg-3"
     : assigned > needed
       ? "text-red-500"
       : assigned === needed
@@ -820,7 +819,7 @@ function ServiceDialog({
       icon: m.image ? (
         <img src={m.image} alt="" className="h-5 w-5 rounded-full object-cover" />
       ) : (
-        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[10px] font-medium">
+        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-bg-inset text-[10px] font-medium">
           {m.firstName[0]}{m.lastName[0]}
         </span>
       ),
@@ -980,7 +979,7 @@ function ServiceDialog({
             <div className="space-y-1.5">
               <Label>{watchType === "DELIVERY" ? "Delivery Time" : "Pickup Time"}</Label>
               <Input type="time" {...form.register("scheduledTime")} />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-fg-3">
                 The actual {watchType === "DELIVERY" ? "delivery" : "pickup"} time (separate from crew work window)
               </p>
             </div>
@@ -1116,10 +1115,10 @@ function ServiceDialog({
                   Confirm All
                 </Button>
                 {crewStatusMutation.isPending && (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-fg-3" />
                 )}
                 {!isEditing && (
-                  <span className="text-xs text-muted-foreground">Save first to send offers</span>
+                  <span className="text-xs text-fg-3">Save first to send offers</span>
                 )}
               </div>
             )}

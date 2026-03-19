@@ -69,6 +69,54 @@ const TABLE_PADDING_BOTTOM_MM = 1;        // ~1mm safety margin at bottom
 
 function ptToMm(pt: number): number { return pt / PT_PER_MM; }
 
+// ─── Shared Helpers (must mirror gearflow-table.ts plugin logic exactly) ─────
+
+/**
+ * Returns the ungrouped key matching the plugin's per-docType convention.
+ * Must stay in sync with gearflow-table.ts lines 197-199.
+ */
+export function getUngroupedKey(docType: DocumentType): string {
+  switch (docType) {
+    case "packing-list": return "Ungrouped";
+    case "delivery-docket": return "General";
+    default: return "_ungrouped";
+  }
+}
+
+/** Check if item is a bulk asset (mirrors gearflow-table.ts isBulk) */
+function isBulk(item: DocumentLineItem): boolean {
+  return !!item.bulkAssetId || (!item.assetId && item.quantity > 1);
+}
+
+/**
+ * Filter parent items using the same chain as the plugin:
+ * 1. !isKitChild
+ * 2. filterOptional (if set in settings — currently always false for section-based)
+ * 3. filterByStatus based on docType
+ * Must stay in sync with gearflow-table.ts lines 182-194.
+ */
+export function getFilteredParentItems(
+  data: DocumentData,
+  docType: DocumentType,
+): DocumentLineItem[] {
+  let items = data.line_items.filter((i) => !i.isKitChild);
+
+  // filterOptional is currently always false for section-based templates,
+  // but include it for correctness if it changes in the future
+  // (section-based templates don't set filterOptional=true)
+
+  const filterByStatus = getFilterByStatus(docType);
+  if (filterByStatus) {
+    const statuses = filterByStatus;
+    items = items.filter((i) => {
+      if (isBulk(i)) return i.checkedOutQuantity > 0;
+      return statuses.includes(i.status);
+    });
+  }
+
+  return items;
+}
+
 /**
  * Calculate the rendered height (in mm) for a single parent line item,
  * including all its sub-rows (per-unit checkboxes, kit children, grandchildren).
@@ -114,15 +162,17 @@ function calculateItemHeight(
 function calculateTableItemHeights(
   data: DocumentData,
   settings: TableSectionSettings,
+  docType: DocumentType,
 ): number[] {
-  const parentItems = data.line_items.filter((i) => !i.isKitChild);
+  const parentItems = getFilteredParentItems(data, docType);
+  const ungrouped = getUngroupedKey(docType);
   const heights: number[] = [];
 
   // Group items by groupName (matching the plugin's rendering order)
   const groups = new Map<string, DocumentLineItem[]>();
   const groupOrder: string[] = [];
   for (const item of parentItems) {
-    const key = item.groupName || "__ungrouped__";
+    const key = item.groupName || ungrouped;
     if (!groups.has(key)) {
       groups.set(key, []);
       groupOrder.push(key);
@@ -132,7 +182,7 @@ function calculateTableItemHeights(
 
   for (const groupKey of groupOrder) {
     // Group header height (if applicable)
-    if (groupKey !== "__ungrouped__" && settings.showGroupHeaders) {
+    if (groupKey !== ungrouped && settings.showGroupHeaders) {
       heights.push(ptToMm(GROUP_HEADER_PT));
     }
 
@@ -153,6 +203,7 @@ function calculateTableItemHeights(
 export function estimateSectionHeight(
   section: TemplateSection,
   data: DocumentData,
+  docType: DocumentType = "quote",
 ): number {
   switch (section.type) {
     case "header": {
@@ -191,7 +242,7 @@ export function estimateSectionHeight(
 
     case "table": {
       const ts = section.settings as TableSectionSettings;
-      const itemHeights = calculateTableItemHeights(data, ts);
+      const itemHeights = calculateTableItemHeights(data, ts, docType);
       const contentHeight = itemHeights.reduce((sum, h) => sum + h, 0);
       return TABLE_PADDING_TOP_MM + ptToMm(TABLE_HEADER_PT) + contentHeight + TABLE_PADDING_BOTTOM_MM;
     }
@@ -249,7 +300,7 @@ interface RowGroup {
  * Group flat sections into rows using layoutHint.rowId.
  * Sections without a layoutHint each become their own single-column row.
  */
-function groupIntoRows(sections: TemplateSection[], data: DocumentData): RowGroup[] {
+function groupIntoRows(sections: TemplateSection[], data: DocumentData, docType: DocumentType = "quote"): RowGroup[] {
   const rows: RowGroup[] = [];
   const rowMap = new Map<string, TemplateSection[]>();
   const rowOrder: string[] = [];
@@ -282,7 +333,7 @@ function groupIntoRows(sections: TemplateSection[], data: DocumentData): RowGrou
     const columnHeights = new Map<number, number>();
     for (const section of rowSections) {
       const colIdx = section.layoutHint?.columnIndex ?? 0;
-      const sectionHeight = estimateSectionHeight(section, data);
+      const sectionHeight = estimateSectionHeight(section, data, docType);
       const current = columnHeights.get(colIdx) || 0;
       columnHeights.set(colIdx, current + sectionHeight);
     }
@@ -344,8 +395,9 @@ interface PageLayout {
 export function computePageLayout(
   sections: TemplateSection[],
   data: DocumentData,
+  docType: DocumentType = "quote",
 ): PageLayout[] {
-  const rows = groupIntoRows(sections, data);
+  const rows = groupIntoRows(sections, data, docType);
   const pages: PageLayout[] = [];
   let currentPage: PageLayout = { entries: [], isContinuation: false };
   let currentY = MARGIN;
@@ -359,7 +411,7 @@ export function computePageLayout(
     currentY = MARGIN;
 
     if (headerSection) {
-      const hHeight = estimateSectionHeight(headerSection, data);
+      const hHeight = estimateSectionHeight(headerSection, data, docType);
       currentPage.entries.push({
         section: headerSection,
         x: MARGIN,
@@ -392,7 +444,7 @@ export function computePageLayout(
 
         const isCrewTable = section.type === "crew-table";
         const tableHeaderMm = ptToMm(TABLE_HEADER_PT);
-        const continuationContentHeight = maxY - MARGIN - (headerSection ? estimateSectionHeight(headerSection, data) + SECTION_GAP : 0);
+        const continuationContentHeight = maxY - MARGIN - (headerSection ? estimateSectionHeight(headerSection, data, docType) + SECTION_GAP : 0);
 
         if (isCrewTable) {
           // Crew table: uniform row heights, simple calculation
@@ -418,7 +470,7 @@ export function computePageLayout(
         } else {
           // Equipment table: variable-height items — use per-item cumulative heights
           const ts = section.settings as TableSectionSettings;
-          const itemHeights = calculateTableItemHeights(data, ts);
+          const itemHeights = calculateTableItemHeights(data, ts, docType);
 
           // Calculate which items fit on the first page
           const firstPageContent = availableHeight - TABLE_PADDING_TOP_MM - tableHeaderMm - TABLE_PADDING_BOTTOM_MM;
@@ -439,11 +491,12 @@ export function computePageLayout(
           // Note: startIndex in the plugin counts parent items (globalIdx), not
           // the itemHeights entries (which include group headers). We need to map
           // from our itemHeights index to the plugin's parent-item index.
-          const parentItems = data.line_items.filter((i) => !i.isKitChild);
+          const parentItems = getFilteredParentItems(data, docType);
+          const ungrouped = getUngroupedKey(docType);
           const groups = new Map<string, DocumentLineItem[]>();
           const groupOrder: string[] = [];
           for (const item of parentItems) {
-            const key = item.groupName || "__ungrouped__";
+            const key = item.groupName || ungrouped;
             if (!groups.has(key)) { groups.set(key, []); groupOrder.push(key); }
             groups.get(key)!.push(item);
           }
@@ -455,7 +508,7 @@ export function computePageLayout(
           const entryGroupKey: string[] = [];
           let parentIdx = 0;
           for (const groupKey of groupOrder) {
-            if (groupKey !== "__ungrouped__" && ts.showGroupHeaders) {
+            if (groupKey !== ungrouped && ts.showGroupHeaders) {
               heightToParentIdx.push(-1); // group header, not a parent item
               entryGroupKey.push(groupKey);
             }
@@ -622,13 +675,14 @@ function getSectionWidth(section: TemplateSection): number {
 export function estimatePageBreaks(
   sections: TemplateSection[],
   data: DocumentData,
+  docType: DocumentType = "quote",
 ): number[] {
   const breaks: number[] = [];
   let cumulativeY = 0;
   const contentHeight = PAGE_HEIGHT - MARGIN * 2 - FOOTER_HEIGHT;
 
   // Group into rows for accurate row-level page breaks
-  const rows = groupIntoRows(sections, data);
+  const rows = groupIntoRows(sections, data, docType);
 
   for (const row of rows) {
     if (row.isPageBreak) {
@@ -964,7 +1018,7 @@ export function renderSections(
   }
 
   // 2. Compute page layout (now column-aware via layoutHint)
-  const pages = computePageLayout(visibleSections, data);
+  const pages = computePageLayout(visibleSections, data, docType);
 
   // 3. Build pdfme schemas and inputs per page
   const allSchemas: (Schema & Record<string, unknown>)[][] = [];

@@ -3,6 +3,8 @@ import {
   estimateSectionHeight,
   computePageLayout,
   estimatePageBreaks,
+  getUngroupedKey,
+  getFilteredParentItems,
 } from "./section-renderer";
 import type { DocumentData, DocumentLineItem, CrewEntry } from "./types";
 import type { TemplateSection } from "./section-types";
@@ -899,5 +901,188 @@ describe("estimatePageBreaks", () => {
       // First spacer: 20mm + 2mm gap = 22mm cumulativeY when page-break hit
       expect(breaks[0]).toBe(20 + SECTION_GAP);
     });
+  });
+});
+
+// ─── getUngroupedKey ──────────────────────────────────────────────────────────
+
+describe("getUngroupedKey", () => {
+  it("returns 'Ungrouped' for packing-list", () => {
+    expect(getUngroupedKey("packing-list")).toBe("Ungrouped");
+  });
+
+  it("returns 'General' for delivery-docket", () => {
+    expect(getUngroupedKey("delivery-docket")).toBe("General");
+  });
+
+  it("returns '_ungrouped' for quote", () => {
+    expect(getUngroupedKey("quote")).toBe("_ungrouped");
+  });
+
+  it("returns '_ungrouped' for invoice", () => {
+    expect(getUngroupedKey("invoice")).toBe("_ungrouped");
+  });
+
+  it("returns '_ungrouped' for return-sheet", () => {
+    expect(getUngroupedKey("return-sheet")).toBe("_ungrouped");
+  });
+
+  it("returns '_ungrouped' for call-sheet", () => {
+    expect(getUngroupedKey("call-sheet")).toBe("_ungrouped");
+  });
+});
+
+// ─── getFilteredParentItems ───────────────────────────────────────────────────
+
+describe("getFilteredParentItems", () => {
+  it("filters out kit children", () => {
+    const data = makeData({
+      line_items: [
+        makeLineItem({ id: "1", isKitChild: false }),
+        makeLineItem({ id: "2", isKitChild: true }),
+        makeLineItem({ id: "3", isKitChild: false }),
+      ],
+    });
+    const result = getFilteredParentItems(data, "quote");
+    expect(result).toHaveLength(2);
+    expect(result.map(i => i.id)).toEqual(["1", "3"]);
+  });
+
+  it("does NOT filter by status for quote docType", () => {
+    const data = makeData({
+      line_items: [
+        makeLineItem({ id: "1", status: "CONFIRMED" }),
+        makeLineItem({ id: "2", status: "CHECKED_OUT" }),
+        makeLineItem({ id: "3", status: "RETURNED" }),
+      ],
+    });
+    const result = getFilteredParentItems(data, "quote");
+    expect(result).toHaveLength(3);
+  });
+
+  it("filters by CHECKED_OUT status for delivery-docket", () => {
+    const data = makeData({
+      line_items: [
+        makeLineItem({ id: "1", status: "CONFIRMED" }),
+        makeLineItem({ id: "2", status: "CHECKED_OUT" }),
+        makeLineItem({ id: "3", status: "RETURNED" }),
+      ],
+    });
+    const result = getFilteredParentItems(data, "delivery-docket");
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("2");
+  });
+
+  it("filters by CHECKED_OUT and RETURNED for return-sheet", () => {
+    const data = makeData({
+      line_items: [
+        makeLineItem({ id: "1", status: "CONFIRMED" }),
+        makeLineItem({ id: "2", status: "CHECKED_OUT" }),
+        makeLineItem({ id: "3", status: "RETURNED" }),
+      ],
+    });
+    const result = getFilteredParentItems(data, "return-sheet");
+    expect(result).toHaveLength(2);
+    expect(result.map(i => i.id)).toEqual(["2", "3"]);
+  });
+
+  it("uses checkedOutQuantity > 0 for bulk items in delivery-docket", () => {
+    const data = makeData({
+      line_items: [
+        makeLineItem({ id: "1", status: "CONFIRMED", quantity: 5, checkedOutQuantity: 3, bulkAssetId: "bulk-1" }),
+        makeLineItem({ id: "2", status: "CONFIRMED", quantity: 5, checkedOutQuantity: 0, bulkAssetId: "bulk-2" }),
+        makeLineItem({ id: "3", status: "CHECKED_OUT" }),
+      ],
+    });
+    const result = getFilteredParentItems(data, "delivery-docket");
+    // bulk-1 has checkedOutQuantity > 0, bulk-2 does not, item-3 has CHECKED_OUT status
+    expect(result).toHaveLength(2);
+    expect(result.map(i => i.id)).toEqual(["1", "3"]);
+  });
+
+  it("delivery-docket with all CONFIRMED items returns empty", () => {
+    const data = makeData({
+      line_items: [
+        makeLineItem({ id: "1", status: "CONFIRMED" }),
+        makeLineItem({ id: "2", status: "CONFIRMED" }),
+      ],
+    });
+    const result = getFilteredParentItems(data, "delivery-docket");
+    expect(result).toHaveLength(0);
+  });
+});
+
+// ─── docType integration ──────────────────────────────────────────────────────
+
+describe("docType integration", () => {
+  it("delivery-docket produces fewer pages than quote for same data with mixed statuses", () => {
+    const headerSection = makeSection(
+      "header",
+      { logoMode: "none", showOrgName: true, showOrgAddress: true, showOrgPhone: true, showOrgEmail: true, showOrgWebsite: true, documentTitle: "Q" },
+      { order: 0 },
+    );
+
+    // 50 items, only 10 are CHECKED_OUT
+    const items: DocumentLineItem[] = [];
+    for (let i = 0; i < 50; i++) {
+      items.push(makeLineItem({
+        id: String(i),
+        status: i < 10 ? "CHECKED_OUT" : "CONFIRMED",
+      }));
+    }
+
+    const tableSection = makeSection("table", {
+      showGroupHeaders: false,
+      showKitChildren: false,
+      showCheckboxes: false,
+      showConditionColumns: false,
+      showPricing: true,
+      showBadges: true,
+      showNotes: true,
+      showPerUnitCheckboxes: false,
+      showAssetTags: false,
+      showCategories: false,
+      showRowNumbers: false,
+    }, { order: 1 });
+
+    const data = makeData({ line_items: items });
+
+    const quotePages = computePageLayout([headerSection, tableSection], data, "quote");
+    const docketPages = computePageLayout([headerSection, tableSection], data, "delivery-docket");
+
+    // Quote shows all 50 items, delivery-docket shows only 10
+    expect(quotePages.length).toBeGreaterThan(docketPages.length);
+    // Delivery-docket with only 10 items should fit on 1 page
+    expect(docketPages.length).toBe(1);
+  });
+
+  it("estimateSectionHeight for table is smaller with delivery-docket filtering", () => {
+    const items: DocumentLineItem[] = [];
+    for (let i = 0; i < 20; i++) {
+      items.push(makeLineItem({
+        id: String(i),
+        status: i < 5 ? "CHECKED_OUT" : "CONFIRMED",
+      }));
+    }
+    const data = makeData({ line_items: items });
+    const tableSection = makeSection("table", {
+      showGroupHeaders: false,
+      showKitChildren: false,
+      showCheckboxes: false,
+      showConditionColumns: false,
+      showPricing: true,
+      showBadges: true,
+      showNotes: true,
+      showPerUnitCheckboxes: false,
+      showAssetTags: false,
+      showCategories: false,
+      showRowNumbers: false,
+    });
+
+    const quoteHeight = estimateSectionHeight(tableSection, data, "quote");
+    const docketHeight = estimateSectionHeight(tableSection, data, "delivery-docket");
+
+    // Quote: 20 items, docket: 5 items
+    expect(quoteHeight).toBeGreaterThan(docketHeight);
   });
 });

@@ -1,12 +1,22 @@
 "use client";
 
 import { use } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { getProject } from "@/server/projects";
 import { ProjectForm } from "@/components/projects/project-form";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
+import { FadeIn } from "@/components/ui/motion";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 import type { ProjectFormValues } from "@/lib/validations/project";
 
 function toDateOrUndefined(
@@ -82,15 +92,32 @@ export default function EditProjectPage({
   return (
     <RequirePermission resource="project" action="update">
     <CanDo resource="project" action="update" fallback={<div className="p-8 text-center text-fg-3">You don&apos;t have permission to perform this action.</div>}>
-      <div className="mx-auto max-w-3xl space-y-4">
-        <div>
-          <h1 className="t-title text-fg">Edit Project</h1>
-          <p className="text-[13px] text-fg-3">
-            {project.projectNumber} &middot; {project.name}
-          </p>
+      <FadeIn>
+        <div className="mx-auto max-w-3xl space-y-4">
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink render={<Link href="/projects" />}>Projects</BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbLink render={<Link href={`/projects/${project.id}`} />}>{project.name}</BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbPage>Edit</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+          <div>
+            <h1 className="t-title text-fg">Edit Project</h1>
+            <p className="text-[13px] text-fg-3">
+              {project.projectNumber} &middot; {project.name}
+            </p>
+          </div>
+          <ProjectForm initialData={initialData} />
         </div>
-        <ProjectForm initialData={initialData} />
-      </div>
+      </FadeIn>
     </CanDo>
     </RequirePermission>
   );

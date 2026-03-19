@@ -1,10 +1,20 @@
 "use client";
 
 import { use } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { getClient } from "@/server/clients";
 import { ClientForm } from "@/components/clients/client-form";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { FadeIn } from "@/components/ui/motion";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 import type { ClientFormValues } from "@/lib/validations/client";
 
 export default function EditClientPage({ params }: { params: Promise<{ id: string }> }) {
@@ -42,12 +52,29 @@ export default function EditClientPage({ params }: { params: Promise<{ id: strin
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      <div>
-        <h1 className="t-title text-fg">Edit Client</h1>
-        <p className="text-[13px] text-fg-3">{client.name}</p>
+    <FadeIn>
+      <div className="mx-auto max-w-3xl space-y-4">
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink render={<Link href="/clients" />}>Clients</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbLink render={<Link href={`/clients/${client.id}`} />}>{client.name}</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Edit</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+        <div>
+          <h1 className="t-title text-fg">Edit Client</h1>
+          <p className="text-[13px] text-fg-3">{client.name}</p>
+        </div>
+        <ClientForm initialData={initialData} />
       </div>
-      <ClientForm initialData={initialData} />
-    </div>
+    </FadeIn>
   );
 }

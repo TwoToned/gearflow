@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { FormSection } from "@/components/layout/page-layouts";
+import { FormSection, SectionHeader } from "@/components/layout/page-layouts";
 
 interface ClientFormProps {
   initialData?: ClientFormValues & { id: string };
@@ -72,8 +72,9 @@ export function ClientForm({ initialData }: ClientFormProps) {
   return (
     <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))}>
       <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-        <div className="space-y-6">
-          <FormSection title="Client Details">
+        <div className="space-y-8">
+          <SectionHeader label="Client Details" />
+          <FormSection>
             <div className="space-y-2">
               <Label htmlFor="name">Name *</Label>
               <Input id="name" {...form.register("name")} placeholder="e.g. Acme Productions" />
@@ -96,7 +97,8 @@ export function ClientForm({ initialData }: ClientFormProps) {
             </div>
           </FormSection>
 
-          <FormSection title="Contact Information">
+          <SectionHeader label="Contact Information" />
+          <FormSection>
             <div className="space-y-2">
               <Label htmlFor="contactName">Contact Name</Label>
               <Input id="contactName" {...form.register("contactName")} placeholder="Primary contact person" />
@@ -114,7 +116,8 @@ export function ClientForm({ initialData }: ClientFormProps) {
             </div>
           </FormSection>
 
-          <FormSection title="Billing">
+          <SectionHeader label="Billing" />
+          <FormSection>
             <div className="space-y-2 sm:col-span-2">
               <Label>Billing Address</Label>
               <Controller
@@ -195,7 +198,8 @@ export function ClientForm({ initialData }: ClientFormProps) {
             </div>
           </FormSection>
 
-          <FormSection title="Additional">
+          <SectionHeader label="Additional" />
+          <FormSection>
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="notes">Notes</Label>
               <Textarea id="notes" {...form.register("notes")} placeholder="Any additional notes" rows={3} />

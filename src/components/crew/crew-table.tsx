@@ -29,16 +29,24 @@ const columns: ColumnDef<AnyCrewMember>[] = [
     cell: (row) => {
       const avatarSrc = row.user?.image || row.image;
       const displayName = row.user?.name || `${row.firstName} ${row.lastName}`;
+      const subtitle = [row.crewRole?.name, row.department].filter(Boolean).join(" \u00b7 ");
       return (
-        <Link href={`/crew/${row.id}`} className="flex items-center gap-2 font-medium hover:underline" onClick={(e) => e.stopPropagation()}>
-          <Avatar className="size-7">
+        <div className="flex items-center gap-3">
+          <Avatar className="size-8">
             {avatarSrc ? <AvatarImage src={avatarSrc} alt={displayName} /> : null}
-            <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+            <AvatarFallback className="text-[10px] font-medium bg-primary/10 text-primary">
               {row.firstName?.[0]}{row.lastName?.[0]}
             </AvatarFallback>
           </Avatar>
-          {displayName}
-        </Link>
+          <div className="min-w-0">
+            <Link href={`/crew/${row.id}`} className="font-medium text-sm hover:underline block truncate" onClick={(e) => e.stopPropagation()}>
+              {displayName}
+            </Link>
+            {subtitle && (
+              <p className="text-xs text-fg-3 truncate">{subtitle}</p>
+            )}
+          </div>
+        </div>
       );
     },
   },
@@ -132,6 +140,22 @@ const columns: ColumnDef<AnyCrewMember>[] = [
         )}
       </div>
     ),
+  },
+  {
+    id: "certifications",
+    header: "Certs",
+    sortable: false,
+    defaultVisible: true,
+    responsiveHide: "lg",
+    cell: (row) => {
+      const count = row._count?.certifications ?? 0;
+      if (count === 0) return <span className="text-fg-4">&mdash;</span>;
+      return (
+        <Badge variant="secondary" className="text-xs tabular-nums">
+          {count}
+        </Badge>
+      );
+    },
   },
   {
     id: "status",

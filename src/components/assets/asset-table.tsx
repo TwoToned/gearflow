@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Pencil, Loader2, Download, Upload, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
+import { cn } from "@/lib/utils";
 import { getAssets, bulkUpdateAssets } from "@/server/assets";
 import { bulkForceReturnAssets } from "@/server/warehouse";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -55,11 +56,11 @@ function useAssetColumns(
             size={32}
           />
           <div>
-            <Link href={`/assets/registry/${row.id}`} className="font-mono font-medium text-sm hover:underline" onClick={(e) => e.stopPropagation()}>
+            <Link href={`/assets/registry/${row.id}`} className="font-mono text-xs text-fg-3 font-medium hover:underline hover:text-fg-1" onClick={(e) => e.stopPropagation()}>
               {row.assetTag}
             </Link>
             {row.customName && (
-              <p className="text-xs text-fg-3">{row.customName}</p>
+              <p className="text-xs text-fg-3 truncate max-w-[180px]">{row.customName}</p>
             )}
           </div>
         </div>
@@ -110,6 +111,28 @@ function useAssetColumns(
       cell: (row) => (
         <StatusIndicator category="asset" value={row.status} label={assetStatusLabels[row.status]} variant="pill" />
       ),
+    },
+    {
+      id: "utilization",
+      header: "Utilization",
+      sortable: false,
+      defaultVisible: true,
+      responsiveHide: "md",
+      cell: (row) => {
+        if (row.status === "CHECKED_OUT") {
+          return <span className="text-xs font-medium text-purple-400">Deployed</span>;
+        }
+        if (row.status === "RESERVED") {
+          return <span className="text-xs font-medium text-blue-400">Reserved</span>;
+        }
+        if (row.status === "IN_MAINTENANCE") {
+          return <span className="text-xs font-medium text-amber-400">Maintenance</span>;
+        }
+        if (row.status === "RETIRED" || row.status === "LOST") {
+          return <span className="text-xs text-fg-4">&mdash;</span>;
+        }
+        return <span className="text-xs text-fg-3">Available</span>;
+      },
     },
     {
       id: "condition",
@@ -188,7 +211,7 @@ function useBulkAssetColumns(
       alwaysVisible: true,
       sortKey: "assetTag",
       cell: (row) => (
-        <Link href={`/assets/registry/${row.id}?type=bulk`} className="font-mono font-medium text-sm hover:underline" onClick={(e) => e.stopPropagation()}>
+        <Link href={`/assets/registry/${row.id}?type=bulk`} className="font-mono text-xs text-fg-3 font-medium hover:underline hover:text-fg-1" onClick={(e) => e.stopPropagation()}>
           {row.assetTag}
         </Link>
       ),
@@ -214,7 +237,28 @@ function useBulkAssetColumns(
       accessorKey: "availableQuantity",
       sortKey: "availableQuantity",
       align: "right",
-      cell: (row) => <span className="font-medium">{row.availableQuantity}</span>,
+      cell: (row) => {
+        const avail = row.availableQuantity ?? 0;
+        const total = row.totalQuantity ?? 0;
+        const deployed = total - avail;
+        const pct = total > 0 ? Math.round((deployed / total) * 100) : 0;
+        return (
+          <div className="flex items-center justify-end gap-2">
+            <span className="font-medium tabular-nums">{avail}</span>
+            {total > 0 && (
+              <div className="w-12 h-1.5 rounded-full bg-border overflow-hidden" title={`${pct}% deployed`}>
+                <div
+                  className={cn(
+                    "h-full rounded-full transition-all",
+                    pct === 0 ? "bg-success/60" : pct >= 80 ? "bg-error/60" : "bg-primary/60",
+                  )}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            )}
+          </div>
+        );
+      },
     },
     {
       id: "totalQuantity",
@@ -222,7 +266,7 @@ function useBulkAssetColumns(
       accessorKey: "totalQuantity",
       sortKey: "totalQuantity",
       align: "right",
-      cell: (row) => <span className="text-fg-3">{row.totalQuantity}</span>,
+      cell: (row) => <span className="text-fg-3 tabular-nums">{row.totalQuantity}</span>,
     },
     {
       id: "status",

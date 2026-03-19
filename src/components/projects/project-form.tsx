@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { FormSection } from "@/components/layout/page-layouts";
+import { FormSection, SectionHeader } from "@/components/layout/page-layouts";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { QuickCreateClient } from "@/components/clients/quick-create-client";
 import { QuickCreateLocation } from "@/components/assets/quick-create-location";
@@ -142,9 +142,10 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
         onSubmit={form.handleSubmit((d) => mutation.mutate(d))}
       >
         <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-          <div className="space-y-6">
+          <div className="space-y-8">
             {/* Project Details */}
-            <FormSection title="Project Details">
+            <SectionHeader label="Project Details" />
+            <FormSection>
               {!isTemplate && (
                 <div className="space-y-2">
                   <Label htmlFor="projectNumber">Project Code *</Label>
@@ -239,7 +240,8 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
             </FormSection>
 
             {/* Rental Period */}
-            <FormSection title="Rental Period">
+            <SectionHeader label="Rental Period" />
+            <FormSection>
               <div className="space-y-2">
                 <Label htmlFor="rentalStartDate">Rental Start</Label>
                 <Input
@@ -259,7 +261,8 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
             </FormSection>
 
             {/* Dates & Times */}
-            <FormSection title="Dates &amp; Times">
+            <SectionHeader label="Dates & Times" />
+            <FormSection>
               <div className="space-y-2">
                 <Label htmlFor="loadInDate">Load In</Label>
                 <div className="flex gap-2">
@@ -331,7 +334,8 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
             </FormSection>
 
             {/* Location & Site Contact */}
-            <FormSection title="Location &amp; Site Contact">
+            <SectionHeader label="Location & Site Contact" />
+            <FormSection>
               <div className="space-y-2 sm:col-span-2">
                 <Label>Location</Label>
                 <Controller
@@ -385,7 +389,8 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
             </FormSection>
 
             {/* Notes */}
-            <FormSection title="Notes">
+            <SectionHeader label="Notes" />
+            <FormSection>
               <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="crewNotes">Crew Notes</Label>
                 <Textarea
@@ -416,7 +421,8 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
             </FormSection>
 
             {/* Financial */}
-            <FormSection title="Financial" className="[&>div:last-child]:lg:grid-cols-4">
+            <SectionHeader label="Financial" />
+            <FormSection className="[&>div:last-child]:lg:grid-cols-4">
               <div className="space-y-2">
                 <Label htmlFor="discountPercent">Discount (%)</Label>
                 <Input

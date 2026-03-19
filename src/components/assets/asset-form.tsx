@@ -22,7 +22,7 @@ import { Input } from "@/components/ui/input";
 import { ScanInput } from "@/components/ui/scan-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { FormSection } from "@/components/layout/page-layouts";
+import { FormSection, SectionHeader } from "@/components/layout/page-layouts";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { QuickCreateLocation } from "./quick-create-location";
 import { QuickCreateSupplier } from "./quick-create-supplier";
@@ -144,8 +144,9 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
   return (
     <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))}>
       <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
-        <div className="space-y-6">
-      <FormSection title="Asset Details">
+        <div className="space-y-8">
+      <SectionHeader label="Asset Details" />
+      <FormSection>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2 sm:col-span-2">
             <Label>Equipment Model *</Label>
@@ -263,7 +264,8 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
         </div>
       </FormSection>
 
-      <FormSection title="Purchase Information">
+      <SectionHeader label="Purchase Information" />
+      <FormSection>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="purchaseDate">Purchase Date</Label>
@@ -303,12 +305,14 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
         </div>
       </FormSection>
 
-      <FormSection title="Notes">
+      <SectionHeader label="Notes" />
+      <FormSection>
           <Label htmlFor="notes">Notes</Label>
           <Textarea id="notes" {...form.register("notes")} placeholder="Any additional notes" rows={3} className="mt-2" />
       </FormSection>
 
-      <FormSection title="Tags">
+      <SectionHeader label="Tags" />
+      <FormSection>
           <div className="space-y-2">
             <Label>Tags</Label>
             <Controller

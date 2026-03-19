@@ -151,6 +151,7 @@ model Organization {
   projectServices    ProjectService[]
   serviceTemplates   ServiceTemplate[]
   documentTemplates          DocumentTemplate[]
+  brandTemplates             BrandTemplate[]
   ssoProviders               SsoProvider[]
   pendingSSOApprovals        PendingSSOApproval[]
   warehouseDashboardTokens   WarehouseDashboardToken[]
@@ -1903,6 +1904,27 @@ model ServiceTemplate {
   @@map("service_template")
 }
 
+// ─── Brand Templates ─────────────────────────────────────────────────────────
+
+model BrandTemplate {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name           String
+  headerSettings String   @db.Text  // JSON — logo mode, org details visibility
+  footerSettings String   @db.Text  // JSON — footer text, visibility
+  accentColor    String?  // hex color override (null = use org's documentColor)
+  isDefault      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  documentTemplates DocumentTemplate[]
+
+  @@index([organizationId])
+  @@map("brand_template")
+}
+
 // ─── Document Templates ──────────────────────────────────────────────────────
 
 model DocumentTemplate {
@@ -1912,9 +1934,18 @@ model DocumentTemplate {
 
   name           String
   type           String   // "quote" | "invoice" | "packing-list" | "return-sheet" | "delivery-docket" | "call-sheet"
+
+  // Legacy fields (preserved for backward compatibility)
   basePdf        String   @db.Text  // JSON — page size, orientation, margins
   schemas        String   @db.Text  // JSON — pdfme schema array
-  settings       String?  @db.Text  // JSON — TemplateSettings (user-facing config)
+  settings       String?  @db.Text  // JSON — TemplateSettings (legacy settings-based config)
+
+  // New section-based fields
+  sections       String?  @db.Text  // JSON — TemplateSection[] (ordered section list)
+  brandTemplateId String?
+  brandTemplate  BrandTemplate? @relation(fields: [brandTemplateId], references: [id], onDelete: SetNull)
+  thumbnailData  String?  @db.Text  // base64 thumbnail image
+
   isDefault      Boolean  @default(false)
   isDraft        Boolean  @default(true)
   version        Int      @default(1)

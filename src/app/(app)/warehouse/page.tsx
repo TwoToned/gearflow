@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { getProjects, updateProjectStatus } from "@/server/projects";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -185,13 +186,10 @@ export default function WarehousePage() {
   return (
     <RequirePermission resource="warehouse" action="read">
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="t-title text-fg">Warehouse</h1>
-        <p className="text-[13px] text-fg-3">
-          Deploy and return equipment for active projects.
-        </p>
-      </div>
+      <PageHeader
+        title="Warehouse"
+        description="Deploy and return equipment for active projects."
+      />
 
       {/* Search */}
       <div className="relative max-w-md">

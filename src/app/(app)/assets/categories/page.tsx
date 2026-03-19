@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/table";
 import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { PageHeader } from "@/components/layout/page-header";
 
 export default function CategoriesPage() {
   const queryClient = useQueryClient();
@@ -145,20 +146,16 @@ export default function CategoriesPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="t-title text-fg">Categories</h1>
-          <p className="text-[13px] text-fg-3">
-            Group gear by type — audio, lighting, video, staging.
-          </p>
-        </div>
-        {canCreate && (
+      <PageHeader
+        title="Categories"
+        description="Group gear by type — audio, lighting, video, staging."
+        actions={canCreate ? (
           <Button onClick={() => openCreate()}>
             <Plus className="mr-2 h-4 w-4" />
             Add Category
           </Button>
-        )}
-      </div>
+        ) : undefined}
+      />
 
       {/* Search */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">

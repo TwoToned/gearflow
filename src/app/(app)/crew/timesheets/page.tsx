@@ -43,6 +43,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   Select,
   SelectContent,
@@ -423,13 +424,10 @@ export default function TimesheetsPage() {
   return (
     <RequirePermission resource="crew" action="read">
       <div className="space-y-4">
-        {/* Header */}
-        <div>
-          <h1 className="t-title text-fg">Timesheets</h1>
-          <p className="text-[13px] text-fg-3">
-            All time entries across crew members.
-          </p>
-        </div>
+        <PageHeader
+          title="Timesheets"
+          description="All time entries across crew members."
+        />
 
         <DataTable
           data={entries}

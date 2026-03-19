@@ -10,6 +10,7 @@ import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   Table,
   TableBody,
@@ -71,28 +72,28 @@ export default function TestAndTagPage() {
   return (
     <RequirePermission resource="testTag" action="read">
     <div className="space-y-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="t-title text-fg">Test & Tag</h1>
-          <p className="text-[13px] text-fg-3">Electrical testing, compliance, and certification tracking.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <CanDo resource="testTag" action="create">
-            <Button size="sm" render={<Link href="/test-and-tag/quick-test" />}>
-              <Zap className="mr-2 h-4 w-4" />
-              Quick Test
+      <PageHeader
+        title="Test & Tag"
+        description="Electrical testing, compliance, and certification tracking."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <CanDo resource="testTag" action="create">
+              <Button size="sm" render={<Link href="/test-and-tag/quick-test" />}>
+                <Zap className="mr-2 h-4 w-4" />
+                Quick Test
+              </Button>
+              <Button size="sm" variant="outline" render={<Link href="/test-and-tag/new" />}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Item
+              </Button>
+            </CanDo>
+            <Button size="sm" variant="outline" render={<Link href="/test-and-tag/registry" />}>
+              <List className="mr-2 h-4 w-4" />
+              Registry
             </Button>
-            <Button size="sm" variant="outline" render={<Link href="/test-and-tag/new" />}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Item
-            </Button>
-          </CanDo>
-          <Button size="sm" variant="outline" render={<Link href="/test-and-tag/registry" />}>
-            <List className="mr-2 h-4 w-4" />
-            Registry
-          </Button>
-        </div>
-      </div>
+          </div>
+        }
+      />
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-6">
         <Card>

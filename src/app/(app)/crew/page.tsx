@@ -42,6 +42,8 @@ import {
 } from "@/components/ui/select";
 import { CrewTable } from "@/components/crew/crew-table";
 import { RequirePermission } from "@/components/auth/require-permission";
+import { ListPageLayout } from "@/components/layout/page-layouts";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   getCrewDashboardStats,
   getPendingTimeEntries,
@@ -94,15 +96,12 @@ export default function CrewPage() {
 
 function CrewListView() {
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="t-title text-fg">Crew</h1>
-        <p className="text-[13px] text-fg-3">
-          Freelancers, employees, and contractors on your roster.
-        </p>
-      </div>
+    <ListPageLayout
+      title="Crew"
+      description="Freelancers, employees, and contractors on your roster."
+    >
       <CrewTable />
-    </div>
+    </ListPageLayout>
   );
 }
 
@@ -185,29 +184,26 @@ function CrewDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="t-title text-fg">Crew</h1>
-          <p className="text-[13px] text-fg-3">
-            Overview of crew, assignments, and timesheets.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => setExportOpen(true)}>
-            <Download className="mr-2 h-3.5 w-3.5" />
-            Export Timesheets
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setLogTimeOpen(true)}>
-            <Clock className="mr-2 h-3.5 w-3.5" />
-            Log Time
-          </Button>
-          <Button size="sm" render={<Link href="/crew/new" />}>
-            <Plus className="mr-2 h-3.5 w-3.5" />
-            Add Crew
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Crew"
+        description="Overview of crew, assignments, and timesheets."
+        actions={
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setExportOpen(true)}>
+              <Download className="mr-2 h-3.5 w-3.5" />
+              Export Timesheets
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setLogTimeOpen(true)}>
+              <Clock className="mr-2 h-3.5 w-3.5" />
+              Log Time
+            </Button>
+            <Button size="sm" render={<Link href="/crew/new" />}>
+              <Plus className="mr-2 h-3.5 w-3.5" />
+              Add Crew
+            </Button>
+          </div>
+        }
+      />
 
       {/* Stat Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">

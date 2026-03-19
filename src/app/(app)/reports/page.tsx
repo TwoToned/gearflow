@@ -35,6 +35,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/layout/page-header";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { RequirePermission } from "@/components/auth/require-permission";
@@ -133,15 +134,15 @@ export default function ReportsPage() {
   return (
     <RequirePermission resource="reports" action="view">
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="t-title text-fg">Reports</h1>
-            <p className="text-[13px] text-fg-3">Utilisation, revenue, and operational insights.</p>
-          </div>
-          <Button render={<Link href="/reports/builder" />}>
-            <Plus className="mr-1.5 h-4 w-4" /> Custom Report
-          </Button>
-        </div>
+        <PageHeader
+          title="Reports"
+          description="Utilisation, revenue, and operational insights."
+          actions={
+            <Button render={<Link href="/reports/builder" />}>
+              <Plus className="mr-1.5 h-4 w-4" /> Custom Report
+            </Button>
+          }
+        />
 
         {/* Quick Stats */}
         {!summaryLoading && d && (

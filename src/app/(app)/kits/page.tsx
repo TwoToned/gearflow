@@ -18,6 +18,7 @@ import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
+import { PageHeader } from "@/components/layout/page-header";
 
 const statusColors: Record<string, string> = {
   AVAILABLE: "bg-green-500/10 text-green-500 border-green-500/20",
@@ -231,14 +232,10 @@ export default function KitsPage() {
   return (
     <RequirePermission resource="kit" action="read">
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="t-title text-fg">Kits</h1>
-            <p className="text-[13px] text-fg-3">
-              Bundled sets of gear that always travel together.
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          title="Kits"
+          description="Bundled sets of gear that always travel together."
+        />
 
         {selectedIds.size > 0 && (
           <div className="flex items-center gap-3 rounded-md border bg-muted/50 px-4 py-2">

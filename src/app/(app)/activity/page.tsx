@@ -12,6 +12,7 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
+import { PageHeader } from "@/components/layout/page-header";
 
 const actionColors: Record<string, string> = {
   CREATE: "bg-emerald-500/15 text-emerald-500",
@@ -215,14 +216,10 @@ function ActivityLogContent() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="t-title text-fg">Activity Log</h1>
-          <p className="text-[13px] text-fg-3">
-            Audit trail of every action taken by your team.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title="Activity Log"
+        description="Audit trail of every action taken by your team."
+      />
 
       <DataTable
         data={items}

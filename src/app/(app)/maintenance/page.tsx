@@ -27,6 +27,7 @@ import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
+import { PageHeader } from "@/components/layout/page-header";
 
 const statusConfig: Record<
   string,
@@ -300,14 +301,10 @@ export default function MaintenancePage() {
   return (
     <RequirePermission resource="maintenance" action="read">
       <div className="space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="t-title text-fg">Maintenance</h1>
-            <p className="text-[13px] text-fg-3">
-              Repairs, inspections, and scheduled servicing.
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          title="Maintenance"
+          description="Repairs, inspections, and scheduled servicing."
+        />
 
         {overdueMaintenance > 0 && (
           <Card className="border-destructive/50">

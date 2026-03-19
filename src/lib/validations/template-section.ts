@@ -323,10 +323,21 @@ export const saveTemplateSectionsSchema = z.object({
 
 // ─── Save Blocks (for block editor) ──────────────────────────────────────────
 
+const documentTemplateSettingsSchema = z.object({
+  footer: z.object({
+    show: z.boolean(),
+    text: z.string(),
+    secondaryText: z.string(),
+    showPageNumbers: z.boolean(),
+    pageNumberFormat: z.enum(["Page {page} of {pages}", "{page} / {pages}", "{page}"]),
+  }),
+}).optional().nullable();
+
 export const saveTemplateBlocksSchema = z.object({
   id: z.string().min(1),
   blocks: templateBlocksSchema,
   brandTemplateId: z.string().optional().nullable(),
+  documentSettings: documentTemplateSettingsSchema,
   /** Client-side version for optimistic locking */
   version: z.number().int().min(0).optional(),
 });

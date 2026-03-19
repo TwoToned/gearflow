@@ -213,4 +213,6 @@ export interface SignatureLineConfig {
 export interface FooterConfig {
   text: string;
   secondLine?: string;
+  /** Page number text, e.g. "Page 1 of 4" — rendered right-aligned */
+  pageNumber?: string;
 }

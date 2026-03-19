@@ -492,6 +492,38 @@ export interface LayoutHint {
   styling?: BlockStyling;
 }
 
+// ─── Document-Level Settings ─────────────────────────────────────────────────
+
+/** Settings for the page footer (repeated on every page) */
+export interface FooterSettings {
+  show: boolean;
+  text: string;
+  secondaryText: string;
+  showPageNumbers: boolean;
+  pageNumberFormat: "Page {page} of {pages}" | "{page} / {pages}" | "{page}";
+}
+
+/** Document-level settings stored alongside the template */
+export interface DocumentTemplateSettings {
+  footer: FooterSettings;
+}
+
+export function getDefaultFooterSettings(): FooterSettings {
+  return {
+    show: true,
+    text: "{org_name} | {org_email} | {org_phone}",
+    secondaryText: "",
+    showPageNumbers: true,
+    pageNumberFormat: "Page {page} of {pages}",
+  };
+}
+
+export function getDefaultDocumentSettings(): DocumentTemplateSettings {
+  return {
+    footer: getDefaultFooterSettings(),
+  };
+}
+
 /**
  * Block tree node for the editor. 2 levels deep:
  * - Row blocks contain column children

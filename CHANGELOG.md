@@ -5,6 +5,36 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-03-20
+
+### Added
+- Section-based PDF template builder with block editor UI (3-pane layout: block tree, PDF preview, settings panel)
+- Drag-and-drop block tree with row/column layout system and cross-column content moves
+- Section settings panel with per-section-type controls (table columns, styling, conditional visibility, custom fields)
+- Column width picker with preset layouts and custom percentage inputs
+- Brand template system for reusable header/footer/accent color configurations
+- Section presets — save and load custom section groups across templates
+- Section renderer with multi-page pagination engine supporting table splitting, group headers, and continuation pages
+- Condition evaluator for dynamic section visibility based on document data
+- Token resolver whitelist for safe template variable substitution
+- `gearflow-rect` plugin for section background/border styling
+- Document-level settings types and save pipeline for footer configuration (page numbers, text, format)
+- 124 new tests covering block utilities, section renderer, token resolver, condition evaluator, and validation schemas
+
+### Fixed
+- PDF table pagination: fixed N×N page multiplication caused by separate pdfme inputs per page
+- PDF table pagination: fixed item duplication when items span page breaks (startIndex/endIndex/isContinuation)
+- PDF table pagination: aligned section-renderer filtering/grouping with plugin to fix 64-page PDF bug
+- PDF table pagination: fixed phantom table padding and group header re-draw height estimation
+- Crew table overflow clipping to page bounds
+- Null guards in page header plugin and crew table to prevent 500 errors on preview
+- TOCTOU race condition in template save optimistic locking (moved to transaction)
+- Added size validation guard on template thumbnail uploads
+
+### Changed
+- Template preview now uses native browser PDF viewer instead of custom renderer
+- Document template schema extended with section-based fields, brand template reference, and thumbnail storage
+
 ## [0.2.2] - 2026-03-19
 
 ### Added

@@ -60,6 +60,28 @@ Deferred work items tracked from engineering reviews and planning sessions.
 **Depends on:** Nothing.
 **Estimate:** human ~1 hour / CC ~5 min
 
+## PDF Template System
+
+### T&T Report Template Builder
+**What:** Port the section-based template builder pattern to the 10 T&T report types. Create new section types (summaryBox, dataTable, textBlock) and make report layouts editable in the same builder UI.
+**Why:** Currently T&T report layouts are hardcoded. Users can't customize columns, add sections, or reorder content. The section-based architecture from the project document builder is directly reusable.
+**Pros:** Unlocks custom report layouts without code changes, consistent UX across all document/report editing, section types are additive.
+**Cons:** 10 report types means 10 default templates to define. Report data shapes differ from project documents — need separate data assembly.
+**Context:** The section-based template builder (from the PDF template rewrite) established the architecture: draggable section list → settings per section → multi-page pagination → pdfme generation. T&T reports would add section types: `report-header`, `summary-box`, `data-table`, `text-block`, `signature-line`. Existing report template builders in `src/lib/pdfme/templates/tt-*.ts` define the default section ordering per report type.
+**Depends on:** PDF template builder rewrite (section-based architecture must ship first).
+**Estimate:** human ~3 weeks / CC ~2-3 hours
+**Priority:** P2
+
+### Remove Legacy PDF Pipeline
+**What:** Remove the old basePdf/schemas-based PDF generation pipeline, the pdfme Designer component (`DocumentDesigner`), and related dead code (~1000 LOC) once all orgs have migrated to section-based templates.
+**Why:** The section-based template builder replaces the old fixed-position pipeline. Keeping both adds maintenance burden and confusion about which code path is active.
+**Pros:** Cleaner codebase, removes ~1000 LOC of dead code, eliminates legacy/new pipeline branching logic in `generate-pdf.ts`.
+**Cons:** Must verify all orgs have migrated first (check for templates without `sections` column populated). Risk of breaking templates that weren't auto-migrated.
+**Context:** The migration script converts `DocumentTemplate.settings` → `sections[]` for existing templates. Templates without settings use system defaults and don't need migration. After migration, the `basePdf` and `schemas` columns on DocumentTemplate become dead data. The `DocumentDesigner` component and `/template-designer/[id]` page are fully replaced by the new template builder.
+**Depends on:** PDF template builder rewrite must ship + migration verified for all orgs.
+**Estimate:** human ~2 days / CC ~30 min
+**Priority:** P3
+
 ## Testing Expansion
 
 ### Component Tests with React Testing Library

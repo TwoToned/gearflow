@@ -69,6 +69,65 @@ const TABLE_PADDING_BOTTOM_MM = 1;        // ~1mm safety margin at bottom
 
 function ptToMm(pt: number): number { return pt / PT_PER_MM; }
 
+/**
+ * Check if a parent item has splittable sub-items (per-unit checkboxes).
+ * Returns the total sub-item count, or 0 if not splittable.
+ */
+function getSubItemCount(item: DocumentLineItem, settings: TableSectionSettings): number {
+  const isKit = !!item.kitId;
+  if (settings.showPerUnitCheckboxes && !isKit && item.quantity > 1) {
+    return item.quantity;
+  }
+  return 0;
+}
+
+/**
+ * Calculate how many sub-items fit in the available space when a parent item
+ * partially fits on a page. Returns { fits, subItemsRendered }.
+ */
+function calculatePartialFit(
+  item: DocumentLineItem,
+  settings: TableSectionSettings,
+  availableHeightMm: number,
+  existingSubOffset: number = 0,
+): { fits: boolean; subItemsRendered: number } {
+  const parentRowMm = ptToMm(PARENT_ROW_PT);
+  if (availableHeightMm < parentRowMm) {
+    return { fits: false, subItemsRendered: 0 };
+  }
+  const totalSubItems = getSubItemCount(item, settings);
+  if (totalSubItems <= existingSubOffset) {
+    return { fits: false, subItemsRendered: 0 };
+  }
+  const perUnitMm = ptToMm(PER_UNIT_ROW_PT);
+  const subItemsSpace = availableHeightMm - parentRowMm;
+  const subItemsFit = Math.floor(subItemsSpace / perUnitMm);
+  if (subItemsFit <= 0) {
+    return { fits: false, subItemsRendered: 0 };
+  }
+  const remaining = totalSubItems - existingSubOffset;
+  return { fits: true, subItemsRendered: Math.min(subItemsFit, remaining) };
+}
+
+/**
+ * Calculate the height of an item on a continuation page where subItemOffset
+ * sub-items have already been rendered. The parent row is re-drawn for context.
+ */
+function calculateRemainingItemHeight(
+  item: DocumentLineItem,
+  settings: TableSectionSettings,
+  subItemOffset: number,
+): number {
+  // Parent row is NOT re-drawn on continuation pages (plugin skips it)
+  let heightPt = 0;
+  const isKit = !!item.kitId;
+  if (settings.showPerUnitCheckboxes && !isKit && item.quantity > 1) {
+    const remaining = Math.max(0, item.quantity - subItemOffset);
+    heightPt += remaining * PER_UNIT_ROW_PT;
+  }
+  return ptToMm(heightPt);
+}
+
 // ─── Shared Helpers (must mirror gearflow-table.ts plugin logic exactly) ─────
 
 /**
@@ -380,6 +439,10 @@ interface PageEntry {
   height: number;
   /** For table sections on continuation pages: skip items before this index */
   tableStartIndex?: number;
+  /** For table sections: stop rendering after this parent item index (1-based, inclusive) */
+  tableEndIndex?: number;
+  /** For table sections: number of sub-items to skip on the first rendered parent item */
+  tableSubIndex?: number;
 }
 
 interface PageLayout {
@@ -472,25 +535,7 @@ export function computePageLayout(
           const ts = section.settings as TableSectionSettings;
           const itemHeights = calculateTableItemHeights(data, ts, docType);
 
-          // Calculate which items fit on the first page
-          const firstPageContent = availableHeight - TABLE_PADDING_TOP_MM - tableHeaderMm - TABLE_PADDING_BOTTOM_MM;
-          let cumulative = 0;
-          let firstPageItems = 0;
-          for (let i = 0; i < itemHeights.length; i++) {
-            if (cumulative + itemHeights[i] > firstPageContent && firstPageItems > 0) break;
-            cumulative += itemHeights[i];
-            firstPageItems++;
-          }
-
-          currentPage.entries.push({
-            section, x: sectionX, y: currentY, width: sectionW,
-            height: availableHeight, tableStartIndex: 0,
-          });
-
-          // Continuation pages: walk through remaining items using cumulative heights
-          // Note: startIndex in the plugin counts parent items (globalIdx), not
-          // the itemHeights entries (which include group headers). We need to map
-          // from our itemHeights index to the plugin's parent-item index.
+          // Build mappings first — needed for partial fit calculations
           const parentItems = getFilteredParentItems(data, docType);
           const ungrouped = getUngroupedKey(docType);
           const groups = new Map<string, DocumentLineItem[]>();
@@ -530,34 +575,113 @@ export function computePageLayout(
 
           const groupHeaderMm = ptToMm(GROUP_HEADER_PT);
 
-          let remainingIdx = firstPageItems;
+          // Helper: resolve parent item for a height entry
+          const getItemAt = (idx: number): DocumentLineItem | null => {
+            if (idx >= heightToParentIdx.length) return null;
+            const pi = heightToParentIdx[idx];
+            return pi >= 0 ? parentItems[pi] : null;
+          };
+
+          // Helper: calculate items that fit in a given content budget.
+          // Returns { count, subIndex } where subIndex > 0 means the last
+          // item was partially fit (subIndex sub-items rendered).
+          const fitItems = (
+            startIdx: number,
+            budget: number,
+            pendingSub: number,
+          ): { count: number; subIndex: number } => {
+            let cumulative = 0;
+            let count = 0;
+            let subIndex = 0;
+
+            for (let i = startIdx; i < itemHeights.length; i++) {
+              let h = itemHeights[i];
+
+              // First item may have reduced height from prior partial render
+              if (i === startIdx && pendingSub > 0) {
+                const item = getItemAt(i);
+                if (item) {
+                  h = calculateRemainingItemHeight(item, ts, pendingSub);
+                }
+              }
+
+              if (cumulative + h <= budget) {
+                cumulative += h;
+                count++;
+                continue;
+              }
+
+              // Item doesn't fully fit
+              if (count === 0) {
+                // Must include at least one item even if oversized
+                cumulative += h;
+                count++;
+                break;
+              }
+
+              // Try partial fit for items with splittable sub-items
+              const item = getItemAt(i);
+              if (item) {
+                const remaining = budget - cumulative;
+                const existingSub = (i === startIdx) ? pendingSub : 0;
+                const partial = calculatePartialFit(item, ts, remaining, existingSub);
+                if (partial.fits) {
+                  count++;
+                  subIndex = existingSub + partial.subItemsRendered;
+                }
+              }
+              break;
+            }
+
+            return { count, subIndex };
+          };
+
+          // Calculate which items fit on the first page
+          const firstPageContent = availableHeight - TABLE_PADDING_TOP_MM - tableHeaderMm - TABLE_PADDING_BOTTOM_MM;
+          const firstFit = fitItems(0, firstPageContent, 0);
+          const firstPageItems = firstFit.count;
+          let pendingSubIndex = firstFit.subIndex;
+
+          // Calculate endIndex for the first page
+          let firstPageEndIndex: number | undefined;
+          const firstHasMore = pendingSubIndex > 0 || firstPageItems < itemHeights.length;
+          if (firstHasMore) {
+            firstPageEndIndex = 0;
+            for (let i = 0; i < firstPageItems && i < heightToParentIdx.length; i++) {
+              if (heightToParentIdx[i] >= 0) {
+                firstPageEndIndex = heightToParentIdx[i] + 1;
+              }
+            }
+          }
+
+          currentPage.entries.push({
+            section, x: sectionX, y: currentY, width: sectionW,
+            height: availableHeight, tableStartIndex: 0,
+            tableEndIndex: firstPageEndIndex,
+          });
+
+          // Continuation pages
+          let remainingIdx = pendingSubIndex > 0
+            ? firstPageItems - 1  // Stay on partial item
+            : firstPageItems;
+
           while (remainingIdx < itemHeights.length) {
             startNewPage();
             let pageContent = continuationContentHeight - TABLE_PADDING_TOP_MM - tableHeaderMm - TABLE_PADDING_BOTTOM_MM;
 
-            // Account for group header re-draw: if the first entry on this
-            // continuation page belongs to a group whose header was on a
-            // previous page, the plugin will re-draw that header, consuming
-            // extra height not in our itemHeights budget for this page.
+            // Account for group header re-draw
             if (ts.showGroupHeaders && remainingIdx < entryGroupKey.length) {
               const firstGroupOnPage = entryGroupKey[remainingIdx];
               const headerPos = groupHeaderIdx.get(firstGroupOnPage);
               if (headerPos !== undefined && headerPos < remainingIdx) {
-                // Group header was on a previous page — plugin re-draws it
                 pageContent -= groupHeaderMm;
               }
             }
 
-            let pageCumulative = 0;
-            let pageItems = 0;
-            for (let i = remainingIdx; i < itemHeights.length; i++) {
-              if (pageCumulative + itemHeights[i] > pageContent && pageItems > 0) break;
-              pageCumulative += itemHeights[i];
-              pageItems++;
-            }
+            const fit = fitItems(remainingIdx, pageContent, pendingSubIndex);
+            const pageItems = fit.count;
 
             // Find the startIndex (parent item index) for this page
-            // Skip group headers at the start of this page segment
             let startParentIdx = 0;
             for (let i = 0; i < remainingIdx && i < heightToParentIdx.length; i++) {
               if (heightToParentIdx[i] >= 0) {
@@ -565,13 +689,66 @@ export function computePageLayout(
               }
             }
 
+            // If continuing a partial item, startIndex points to that item
+            // (the plugin's globalIdx skips items ≤ startIndex)
+            if (pendingSubIndex > 0 && heightToParentIdx[remainingIdx] >= 0) {
+              startParentIdx = heightToParentIdx[remainingIdx];
+            }
+
+            // Calculate endIndex — include all items on this page (including partial)
+            const itemsEndIdx = remainingIdx + Math.max(1, pageItems);
+            const isLastPage = !fit.subIndex && itemsEndIdx >= itemHeights.length;
+            let pageEndIndex: number | undefined;
+            if (!isLastPage) {
+              pageEndIndex = 0;
+              for (let i = 0; i < itemsEndIdx && i < heightToParentIdx.length; i++) {
+                if (heightToParentIdx[i] >= 0) {
+                  pageEndIndex = heightToParentIdx[i] + 1;
+                }
+              }
+            }
+
+            // On the last page, use actual content height so subsequent
+            // sections (totals, custom text) can share this page
+            let tableHeight = continuationContentHeight;
+            if (isLastPage) {
+              let actualContentMm = TABLE_PADDING_TOP_MM + tableHeaderMm + TABLE_PADDING_BOTTOM_MM;
+              // Account for group header re-draw on this page
+              if (ts.showGroupHeaders && remainingIdx < entryGroupKey.length) {
+                const grp = entryGroupKey[remainingIdx];
+                const hPos = groupHeaderIdx.get(grp);
+                if (hPos !== undefined && hPos < remainingIdx) {
+                  actualContentMm += groupHeaderMm;
+                }
+              }
+              for (let i = remainingIdx; i < remainingIdx + pageItems && i < itemHeights.length; i++) {
+                let h = itemHeights[i];
+                if (i === remainingIdx && pendingSubIndex > 0) {
+                  const item = getItemAt(i);
+                  if (item) h = calculateRemainingItemHeight(item, ts, pendingSubIndex);
+                }
+                actualContentMm += h;
+              }
+              tableHeight = actualContentMm;
+            }
+
             currentPage.entries.push({
               section, x: sectionX, y: currentY, width: sectionW,
-              height: continuationContentHeight,
+              height: tableHeight,
               tableStartIndex: startParentIdx,
+              tableEndIndex: pageEndIndex,
+              tableSubIndex: pendingSubIndex > 0 ? pendingSubIndex : undefined,
             });
-            currentY += continuationContentHeight;
-            remainingIdx += Math.max(1, pageItems);
+            currentY += tableHeight + SECTION_GAP;
+
+            // Advance — if partial fit, stay on the same item
+            if (fit.subIndex > 0) {
+              remainingIdx = remainingIdx + pageItems - 1;
+              pendingSubIndex = fit.subIndex;
+            } else {
+              remainingIdx += Math.max(1, pageItems);
+              pendingSubIndex = 0;
+            }
           }
         }
         continue;
@@ -794,6 +971,8 @@ function buildSectionInput(
   docType: DocumentType,
   docColor: string,
   tableStartIndex?: number,
+  tableEndIndex?: number,
+  tableSubIndex?: number,
 ): string {
   switch (section.type) {
     case "header": {
@@ -883,6 +1062,8 @@ function buildSectionInput(
         items: typeof data.line_items;
         config: TablePluginConfig;
         startIndex?: number;
+        endIndex?: number;
+        startSubIndex?: number;
       } = {
         items: data.line_items,
         config: {
@@ -905,6 +1086,12 @@ function buildSectionInput(
       };
       if (tableStartIndex) {
         tableValue.startIndex = tableStartIndex;
+      }
+      if (tableEndIndex !== undefined) {
+        tableValue.endIndex = tableEndIndex;
+      }
+      if (tableSubIndex) {
+        tableValue.startSubIndex = tableSubIndex;
       }
       return JSON.stringify(tableValue);
     }
@@ -1058,7 +1245,7 @@ export function renderSections(
       }
 
       const schema = buildSectionSchema(entry, pageIdx);
-      const input = buildSectionInput(entry.section, data, docType, docColor, entry.tableStartIndex);
+      const input = buildSectionInput(entry.section, data, docType, docColor, entry.tableStartIndex, entry.tableEndIndex, entry.tableSubIndex);
       pageSchemas.push(schema);
       pageInputs[schema.name] = input;
     }

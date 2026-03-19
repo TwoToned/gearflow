@@ -21,8 +21,14 @@ interface TableSchema extends Schema {
 interface TableValue {
   items: DocumentLineItem[];
   config: TablePluginConfig;
-  /** Index of the first item to render (for multi-page tables) */
+  /** Index of the first parent item to render (for multi-page tables) */
   startIndex?: number;
+  /** Number of sub-items (per-unit checkboxes / kit children) to skip
+   *  within the first rendered parent item (for mid-item page breaks) */
+  startSubIndex?: number;
+  /** 1-based index of the last parent item to render (inclusive).
+   *  Items with globalIdx > endIndex are not rendered on this page. */
+  endIndex?: number;
 }
 
 /** Column definition for the table */
@@ -139,8 +145,10 @@ function getAssetTag(item: DocumentLineItem, isKit: boolean): string {
 async function pdfRender(arg: PDFRenderProps<TableSchema>) {
   const { schema, page, pdfLib, pdfDoc, _cache } = arg;
   const value = arg.value || '{"items":[],"config":{}}';
-  const { items, config, startIndex: startIdx } = JSON.parse(value) as TableValue;
+  const { items, config, startIndex: startIdx, startSubIndex: startSubIdx, endIndex: endIdx } = JSON.parse(value) as TableValue;
   const startIndex = startIdx || 0;
+  const startSubIndex = startSubIdx || 0;
+  const endIndex = endIdx; // undefined = render all remaining
 
   const pageHeight = page.getHeight();
   const layout = getLayoutProps(schema, pageHeight);
@@ -215,6 +223,7 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
   let rowNum = 0;
   let globalIdx = 0;
   let overflow = false; // Set when we run out of space
+  let isFirstRenderedItem = true; // Track first item for startSubIndex
 
   for (const [groupName, groupItems] of groups) {
     if (overflow) break;
@@ -257,43 +266,49 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
       globalIdx++;
       // Skip items before startIndex (for multi-page continuation)
       if (globalIdx <= startIndex) continue;
+      // Stop rendering past endIndex (prevent overflow into next page's items)
+      if (endIndex !== undefined && globalIdx > endIndex) { overflow = true; break; }
       const isKit = !!item.kitId && !item.isKitChild;
       const isItemized = isKit && item.pricingMode === "ITEMIZED";
       const itemName = getItemName(item, isKit);
 
-      // Calculate row content height
-      let rowContentHeight = fontSize + rowPadding * 2;
-      if (item.notes && config.showNotes) {
-        rowContentHeight += noteFontSize + 2;
-      }
+      // Skip parent row when continuing a partial item from previous page
+      const isContinuation = isFirstRenderedItem && startSubIndex > 0;
 
-      // Bounds check: stop if this row won't fit
-      if (currentY - rowContentHeight < bottomBoundary) { overflow = true; break; }
+      if (!isContinuation) {
+        // Calculate row content height
+        let rowContentHeight = fontSize + rowPadding * 2;
+        if (item.notes && config.showNotes) {
+          rowContentHeight += noteFontSize + 2;
+        }
 
-      // Alternating row background
-      if (globalIdx % 2 === 0) {
-        page.drawRectangle({
-          x: tableX,
-          y: currentY - rowContentHeight,
-          width: layout.width,
-          height: rowContentHeight,
-          color: altRowBg,
+        // Bounds check: stop if this row won't fit
+        if (currentY - rowContentHeight < bottomBoundary) { overflow = true; break; }
+
+        // Alternating row background
+        if (globalIdx % 2 === 0) {
+          page.drawRectangle({
+            x: tableX,
+            y: currentY - rowContentHeight,
+            width: layout.width,
+            height: rowContentHeight,
+            color: altRowBg,
+          });
+        }
+
+        // Bottom border
+        page.drawLine({
+          start: { x: tableX, y: currentY - rowContentHeight },
+          end: { x: tableX + layout.width, y: currentY - rowContentHeight },
+          thickness: 0.5,
+          color: rowBorder,
         });
-      }
 
-      // Bottom border
-      page.drawLine({
-        start: { x: tableX, y: currentY - rowContentHeight },
-        end: { x: tableX + layout.width, y: currentY - rowContentHeight },
-        thickness: 0.5,
-        color: rowBorder,
-      });
+        // Draw cells
+        let cellX = tableX + cellPadding;
+        const textY = currentY - rowPadding - fontSize;
 
-      // Draw cells
-      let cellX = tableX + cellPadding;
-      const textY = currentY - rowPadding - fontSize;
-
-      for (const col of columns) {
+        for (const col of columns) {
         const colEndX = cellX + col.width;
 
         switch (col.key) {
@@ -494,15 +509,18 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
         }
 
         cellX = colEndX;
-      }
+        }
 
-      currentY -= rowContentHeight;
+        currentY -= rowContentHeight;
+      } // end if (!isContinuation)
 
       // === Per-unit checkboxes (packing list, qty > 1, non-kit) ===
       if (config.showPerUnitCheckboxes && !isKit && item.quantity > 1) {
         const shortName = item.model?.name || item.description || "Item";
         const checkedOut = item.checkedOutQuantity || 0;
-        for (let i = 0; i < item.quantity; i++) {
+        // Skip already-rendered sub-items on continuation pages
+        const subStart = (isFirstRenderedItem && startSubIndex > 0) ? startSubIndex : 0;
+        for (let i = subStart; i < item.quantity; i++) {
           const puHeight = 10;
           if (currentY - puHeight < bottomBoundary) { overflow = true; break; }
           const puY = currentY - puHeight + 3;
@@ -848,6 +866,8 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
           }
         }
       }
+
+      isFirstRenderedItem = false;
     }
   }
 }

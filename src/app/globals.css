@@ -335,6 +335,24 @@
   }
 }
 
+/* ═══════════════════════════════════════════════════════
+   Design System — Skeleton shimmer animation
+   ═══════════════════════════════════════════════════════ */
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--bg-elevated) 0%,
+    var(--bg-popover) 40%,
+    var(--bg-elevated) 80%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 /* Touch device optimizations */
 @media (hover: none) and (pointer: coarse) {
   /* Larger checkboxes on touch devices */

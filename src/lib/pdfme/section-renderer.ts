@@ -307,24 +307,28 @@ function buildSectionSchema(
     case "header":
       return { ...base, type: "gearflowPageHeader" };
 
-    case "client-details":
+    case "client-details": {
+      const cs = section.settings as ClientDetailsSectionSettings;
       return {
         ...base,
         type: "text",
         width: CONTENT_W / 2 - 4,
-        fontSize: 9,
-        fontColor: "#1a1a1a",
+        fontSize: cs.styling?.fontSize || 9,
+        fontColor: cs.styling?.textColor || "#1a1a1a",
       };
+    }
 
-    case "project-details":
+    case "project-details": {
+      const ps = section.settings as ProjectDetailsSectionSettings;
       return {
         ...base,
         type: "text",
         position: { x: MARGIN + CONTENT_W / 2 + 4, y },
         width: CONTENT_W / 2 - 4,
-        fontSize: 9,
-        fontColor: "#1a1a1a",
+        fontSize: ps.styling?.fontSize || 9,
+        fontColor: ps.styling?.textColor || "#1a1a1a",
       };
+    }
 
     case "table":
       return { ...base, type: "gearflowTable" };
@@ -385,11 +389,15 @@ function buildSectionInput(
       if (s.showOrgEmail && data.org_email) orgDetailParts.push(data.org_email);
       if (s.showOrgWebsite && data.org_website) orgDetailParts.push(data.org_website);
 
+      // Resolve tokens in document title (e.g. "{project_name} Quote")
+      const rawTitle = s.documentTitle || docType.toUpperCase();
+      const resolvedTitle = resolveTokensInText(rawTitle, data);
+
       const config: PageHeaderConfig = {
-        orgName: data.org_name,
+        orgName: data.org_name || "",
         orgDetails: orgDetailParts.join("\n"),
-        docTitle: s.documentTitle || docType.toUpperCase(),
-        docMeta: `${data.project_number}\n${data.document_date}`,
+        docTitle: resolvedTitle,
+        docMeta: `${data.project_number || ""}\n${data.document_date || ""}`,
         logoData: data.org_logo,
         iconData: data.org_icon,
         documentLogoMode: s.logoMode,
@@ -401,37 +409,61 @@ function buildSectionInput(
 
     case "client-details": {
       const s = section.settings as ClientDetailsSectionSettings;
+      const labels = s.customLabels || {};
       const lines: string[] = [];
       if (s.showClientName && data.client_name) lines.push(data.client_name);
-      if (s.showClientContact && data.client_contact) lines.push(`Attn: ${data.client_contact}`);
+      if (s.showClientContact && data.client_contact) lines.push(`${labels.contact || "Attn"}: ${data.client_contact}`);
       if (s.showClientEmail && data.client_email) lines.push(data.client_email);
       if (s.showClientAddress && data.client_billing_address) lines.push(data.client_billing_address);
-      if (s.showClientTaxId && data.client_tax_id) lines.push(`ABN: ${data.client_tax_id}`);
+      if (s.showClientTaxId && data.client_tax_id) lines.push(`${labels.taxId || "ABN"}: ${data.client_tax_id}`);
+      // Append custom fields with token resolution
+      if (s.customFields) {
+        for (const cf of s.customFields) {
+          const resolvedValue = resolveTokensInText(cf.value, data);
+          if (resolvedValue) lines.push(`${cf.label}: ${resolvedValue}`);
+        }
+      }
+      // Append section content if present
+      if (section.content) {
+        lines.push(resolveTokensInText(section.content, data));
+      }
       return lines.length > 0 ? lines.join("\n") : "-";
     }
 
     case "project-details": {
       const s = section.settings as ProjectDetailsSectionSettings;
+      const labels = s.customLabels || {};
       const lines: string[] = [];
       if (s.showProjectName) lines.push(data.project_name);
-      if (s.showVenue && data.venue_name) lines.push(`Venue: ${data.venue_name}`);
+      if (s.showVenue && data.venue_name) lines.push(`${labels.venue || "Venue"}: ${data.venue_name}`);
       if (s.showRentalDates && data.rental_start && data.rental_start !== "-") {
         const end = data.rental_end && data.rental_end !== "-" ? ` - ${data.rental_end}` : "";
-        lines.push(`Rental: ${data.rental_start}${end}`);
+        lines.push(`${labels.rentalDates || "Rental"}: ${data.rental_start}${end}`);
       }
       if (s.showEventDates && data.event_start && data.event_start !== "-") {
         const end = data.event_end && data.event_end !== "-" ? ` - ${data.event_end}` : "";
-        lines.push(`Event: ${data.event_start}${end}`);
+        lines.push(`${labels.eventDates || "Event"}: ${data.event_start}${end}`);
       }
       if (s.showPaymentTerms && data.client_payment_terms) {
-        lines.push(`Payment Terms: ${data.client_payment_terms}`);
+        lines.push(`${labels.paymentTerms || "Payment Terms"}: ${data.client_payment_terms}`);
       }
       if (s.showSiteContact && data.site_contact_name) {
-        let contactLine = `Site Contact: ${data.site_contact_name}`;
+        let contactLine = `${labels.siteContact || "Site Contact"}: ${data.site_contact_name}`;
         if (data.site_contact_phone) contactLine += ` | Ph: ${data.site_contact_phone}`;
         lines.push(contactLine);
       }
-      if (s.showDocumentDate) lines.push(`Date: ${data.document_date}`);
+      if (s.showDocumentDate) lines.push(`${labels.documentDate || "Date"}: ${data.document_date}`);
+      // Append custom fields with token resolution
+      if (s.customFields) {
+        for (const cf of s.customFields) {
+          const resolvedValue = resolveTokensInText(cf.value, data);
+          if (resolvedValue) lines.push(`${cf.label}: ${resolvedValue}`);
+        }
+      }
+      // Append section content if present
+      if (section.content) {
+        lines.push(resolveTokensInText(section.content, data));
+      }
       return lines.length > 0 ? lines.join("\n") : "-";
     }
 

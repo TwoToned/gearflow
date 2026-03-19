@@ -1,5 +1,7 @@
 "use client";
 
+import { Plus, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -22,9 +24,9 @@ import {
   type SpacerSectionSettings,
   type SectionSettings,
   type SectionVisibility,
+  type SectionStyling,
+  type CustomField,
 } from "@/lib/pdfme/section-types";
-import type { DocumentType } from "@/lib/pdfme/types";
-import { DOCUMENT_TYPES, DOCUMENT_TYPE_LABELS } from "@/lib/validations/document-template";
 import { getAllowedConditionFields } from "@/lib/pdfme/condition-evaluator";
 
 interface SectionSettingsPanelProps {
@@ -54,6 +56,9 @@ export function SectionSettingsPanel({ section, onUpdate }: SectionSettingsPanel
     });
   };
 
+  // Sections that support extra content (custom text appended)
+  const supportsContent = section.type !== "custom-text" && section.type !== "page-break" && section.type !== "spacer";
+
   return (
     <div className="flex flex-col gap-0 h-full overflow-y-auto">
       {/* Section header */}
@@ -76,6 +81,28 @@ export function SectionSettingsPanel({ section, onUpdate }: SectionSettingsPanel
           onUpdateContent={(content) => onUpdate(section.id, { content })}
         />
       </div>
+
+      {/* Extra content — available on any section (except custom-text which uses it as primary) */}
+      {supportsContent && (
+        <>
+          <Separator className="opacity-50" />
+          <div className="px-4 py-3 space-y-2">
+            <h4 className="text-xs font-semibold text-fg-3 uppercase tracking-wider">
+              Extra Text
+            </h4>
+            <Textarea
+              value={section.content || ""}
+              onChange={(e) => onUpdate(section.id, { content: e.target.value || undefined })}
+              placeholder="Add custom text below this section... Use {tokens} for dynamic values"
+              className="min-h-[60px] text-xs"
+              maxLength={2000}
+            />
+            <p className="text-[10px] text-fg-3">
+              Appended after the section content. Supports {"{client_name}"}, {"{total}"}, etc.
+            </p>
+          </div>
+        </>
+      )}
 
       {/* Visibility conditions */}
       <Separator className="opacity-50" />
@@ -147,7 +174,7 @@ function SettingsForType({
   }
 }
 
-// ─── Toggle Row helper ──────────────────────────────────────────────────────
+// ─── Shared helpers ──────────────────────────────────────────────────────────
 
 function ToggleRow({
   label,
@@ -162,6 +189,170 @@ function ToggleRow({
     <div className="flex items-center justify-between">
       <Label className="text-xs text-fg-2 font-normal">{label}</Label>
       <Switch checked={checked} onCheckedChange={onChange} />
+    </div>
+  );
+}
+
+/** Editable label row — toggle + optional custom label */
+function LabelledToggleRow({
+  label,
+  customLabel,
+  labelKey,
+  checked,
+  onChange,
+  onLabelChange,
+}: {
+  label: string;
+  customLabel?: string;
+  labelKey: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  onLabelChange: (key: string, value: string) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        <Label className="text-xs text-fg-2 font-normal">{label}</Label>
+        <Switch checked={checked} onCheckedChange={onChange} />
+      </div>
+      {checked && (
+        <Input
+          value={customLabel || ""}
+          onChange={(e) => onLabelChange(labelKey, e.target.value)}
+          placeholder={`Label: ${label}`}
+          className="h-7 text-xs text-fg-3"
+          maxLength={50}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Per-section styling editor */
+function StylingEditor({
+  styling,
+  onUpdate,
+}: {
+  styling?: SectionStyling;
+  onUpdate: (styling: SectionStyling) => void;
+}) {
+  const current = styling || {};
+  return (
+    <div className="space-y-2 rounded-lg border border-border/30 p-2.5">
+      <h5 className="text-[10px] font-semibold text-fg-3 uppercase tracking-wider">Styling</h5>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <Label className="text-[10px] text-fg-3">Font Size</Label>
+          <Select
+            value={current.fontSize ? String(current.fontSize) : ""}
+            onValueChange={(v) => onUpdate({ ...current, fontSize: v ? Number(v) : undefined })}
+          >
+            <SelectTrigger className="h-7 text-xs">
+              <SelectValue>{current.fontSize ? `${current.fontSize}pt` : "Default"}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">Default</SelectItem>
+              {[7, 8, 9, 10, 11, 12, 14].map((s) => (
+                <SelectItem key={s} value={String(s)}>{s}pt</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[10px] text-fg-3">Text Colour</Label>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="color"
+              value={current.textColor || "#1a1a1a"}
+              onChange={(e) => onUpdate({ ...current, textColor: e.target.value })}
+              className="w-7 h-7 rounded border border-border/50 cursor-pointer p-0"
+            />
+            {current.textColor && (
+              <button
+                className="text-[9px] text-fg-3 hover:text-fg"
+                onClick={() => onUpdate({ ...current, textColor: undefined })}
+              >
+                Reset
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Custom key-value fields editor */
+function CustomFieldsEditor({
+  fields,
+  onUpdate,
+}: {
+  fields?: CustomField[];
+  onUpdate: (fields: CustomField[]) => void;
+}) {
+  const items = fields || [];
+
+  const addField = () => {
+    onUpdate([...items, { label: "", value: "" }]);
+  };
+
+  const updateField = (index: number, updates: Partial<CustomField>) => {
+    const next = items.map((f, i) => (i === index ? { ...f, ...updates } : f));
+    onUpdate(next);
+  };
+
+  const removeField = (index: number) => {
+    onUpdate(items.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <h5 className="text-[10px] font-semibold text-fg-3 uppercase tracking-wider">
+          Custom Fields
+        </h5>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 px-2 text-[10px] gap-1"
+          onClick={addField}
+          disabled={items.length >= 10}
+        >
+          <Plus className="h-3 w-3" />
+          Add
+        </Button>
+      </div>
+      {items.map((field, i) => (
+        <div key={i} className="flex gap-1.5 items-start">
+          <div className="flex-1 space-y-1">
+            <Input
+              value={field.label}
+              onChange={(e) => updateField(i, { label: e.target.value })}
+              placeholder="Label"
+              className="h-7 text-xs"
+              maxLength={50}
+            />
+            <Input
+              value={field.value}
+              onChange={(e) => updateField(i, { value: e.target.value })}
+              placeholder="Value or {token}"
+              className="h-7 text-xs text-fg-3"
+              maxLength={200}
+            />
+          </div>
+          <button
+            className="mt-1 text-fg-3 hover:text-destructive shrink-0"
+            onClick={() => removeField(i)}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ))}
+      {items.length === 0 && (
+        <p className="text-[10px] text-fg-3">
+          Add custom fields like &quot;BSB: 000-000&quot; or &quot;PO Number: {"{project_number}"}&quot;
+        </p>
+      )}
     </div>
   );
 }
@@ -185,6 +376,9 @@ function HeaderSettings({
           placeholder="e.g. QUOTE, TAX INVOICE"
           className="h-8 text-sm"
         />
+        <p className="text-[10px] text-fg-3">
+          Supports tokens like {"{project_name}"} for dynamic titles.
+        </p>
       </div>
       <div className="space-y-1.5">
         <Label className="text-xs text-fg-3">Logo Display</Label>
@@ -222,13 +416,49 @@ function ClientDetailsSettings({
   settings: ClientDetailsSectionSettings;
   onUpdate: (u: Partial<ClientDetailsSectionSettings>) => void;
 }) {
+  const labels = settings.customLabels || {};
+  const updateLabel = (key: string, value: string) => {
+    const next = { ...labels, [key]: value || undefined };
+    // Clean empty values
+    for (const k of Object.keys(next)) {
+      if (!next[k]) delete next[k];
+    }
+    onUpdate({ customLabels: Object.keys(next).length > 0 ? next : undefined });
+  };
+
   return (
     <>
       <ToggleRow label="Client Name" checked={settings.showClientName} onChange={(v) => onUpdate({ showClientName: v })} />
-      <ToggleRow label="Contact Person" checked={settings.showClientContact} onChange={(v) => onUpdate({ showClientContact: v })} />
+      <LabelledToggleRow
+        label="Contact Person"
+        customLabel={labels.contact}
+        labelKey="contact"
+        checked={settings.showClientContact}
+        onChange={(v) => onUpdate({ showClientContact: v })}
+        onLabelChange={updateLabel}
+      />
       <ToggleRow label="Email" checked={settings.showClientEmail} onChange={(v) => onUpdate({ showClientEmail: v })} />
       <ToggleRow label="Address" checked={settings.showClientAddress} onChange={(v) => onUpdate({ showClientAddress: v })} />
-      <ToggleRow label="ABN / Tax ID" checked={settings.showClientTaxId} onChange={(v) => onUpdate({ showClientTaxId: v })} />
+      <LabelledToggleRow
+        label="ABN / Tax ID"
+        customLabel={labels.taxId}
+        labelKey="taxId"
+        checked={settings.showClientTaxId}
+        onChange={(v) => onUpdate({ showClientTaxId: v })}
+        onLabelChange={updateLabel}
+      />
+
+      <Separator className="opacity-30" />
+      <CustomFieldsEditor
+        fields={settings.customFields}
+        onUpdate={(customFields) => onUpdate({ customFields: customFields.length > 0 ? customFields : undefined })}
+      />
+
+      <Separator className="opacity-30" />
+      <StylingEditor
+        styling={settings.styling}
+        onUpdate={(styling) => onUpdate({ styling })}
+      />
     </>
   );
 }
@@ -242,16 +472,79 @@ function ProjectDetailsSettings({
   settings: ProjectDetailsSectionSettings;
   onUpdate: (u: Partial<ProjectDetailsSectionSettings>) => void;
 }) {
+  const labels = settings.customLabels || {};
+  const updateLabel = (key: string, value: string) => {
+    const next = { ...labels, [key]: value || undefined };
+    for (const k of Object.keys(next)) {
+      if (!next[k]) delete next[k];
+    }
+    onUpdate({ customLabels: Object.keys(next).length > 0 ? next : undefined });
+  };
+
   return (
     <>
       <ToggleRow label="Project Name" checked={settings.showProjectName} onChange={(v) => onUpdate({ showProjectName: v })} />
       <ToggleRow label="Project Number" checked={settings.showProjectNumber} onChange={(v) => onUpdate({ showProjectNumber: v })} />
-      <ToggleRow label="Venue" checked={settings.showVenue} onChange={(v) => onUpdate({ showVenue: v })} />
-      <ToggleRow label="Rental Dates" checked={settings.showRentalDates} onChange={(v) => onUpdate({ showRentalDates: v })} />
-      <ToggleRow label="Event Dates" checked={settings.showEventDates} onChange={(v) => onUpdate({ showEventDates: v })} />
-      <ToggleRow label="Payment Terms" checked={settings.showPaymentTerms} onChange={(v) => onUpdate({ showPaymentTerms: v })} />
-      <ToggleRow label="Site Contact" checked={settings.showSiteContact} onChange={(v) => onUpdate({ showSiteContact: v })} />
-      <ToggleRow label="Document Date" checked={settings.showDocumentDate} onChange={(v) => onUpdate({ showDocumentDate: v })} />
+      <LabelledToggleRow
+        label="Venue"
+        customLabel={labels.venue}
+        labelKey="venue"
+        checked={settings.showVenue}
+        onChange={(v) => onUpdate({ showVenue: v })}
+        onLabelChange={updateLabel}
+      />
+      <LabelledToggleRow
+        label="Rental Dates"
+        customLabel={labels.rentalDates}
+        labelKey="rentalDates"
+        checked={settings.showRentalDates}
+        onChange={(v) => onUpdate({ showRentalDates: v })}
+        onLabelChange={updateLabel}
+      />
+      <LabelledToggleRow
+        label="Event Dates"
+        customLabel={labels.eventDates}
+        labelKey="eventDates"
+        checked={settings.showEventDates}
+        onChange={(v) => onUpdate({ showEventDates: v })}
+        onLabelChange={updateLabel}
+      />
+      <LabelledToggleRow
+        label="Payment Terms"
+        customLabel={labels.paymentTerms}
+        labelKey="paymentTerms"
+        checked={settings.showPaymentTerms}
+        onChange={(v) => onUpdate({ showPaymentTerms: v })}
+        onLabelChange={updateLabel}
+      />
+      <LabelledToggleRow
+        label="Site Contact"
+        customLabel={labels.siteContact}
+        labelKey="siteContact"
+        checked={settings.showSiteContact}
+        onChange={(v) => onUpdate({ showSiteContact: v })}
+        onLabelChange={updateLabel}
+      />
+      <LabelledToggleRow
+        label="Document Date"
+        customLabel={labels.documentDate}
+        labelKey="documentDate"
+        checked={settings.showDocumentDate}
+        onChange={(v) => onUpdate({ showDocumentDate: v })}
+        onLabelChange={updateLabel}
+      />
+
+      <Separator className="opacity-30" />
+      <CustomFieldsEditor
+        fields={settings.customFields}
+        onUpdate={(customFields) => onUpdate({ customFields: customFields.length > 0 ? customFields : undefined })}
+      />
+
+      <Separator className="opacity-30" />
+      <StylingEditor
+        styling={settings.styling}
+        onUpdate={(styling) => onUpdate({ styling })}
+      />
     </>
   );
 }
@@ -528,49 +821,12 @@ function VisibilitySettings({
 
   return (
     <>
-      {/* Doc type filter */}
-      <div className="space-y-1.5">
-        <Label className="text-xs text-fg-3">Show for document types</Label>
-        <div className="flex flex-wrap gap-1.5">
-          {DOCUMENT_TYPES.map((dt) => {
-            const active = !visibility.docTypes || visibility.docTypes.length === 0 || visibility.docTypes.includes(dt);
-            return (
-              <button
-                key={dt}
-                className={`text-[10px] px-2 py-1 rounded-full border transition-colors ${
-                  active
-                    ? "border-primary/40 bg-primary/10 text-primary font-medium"
-                    : "border-border/50 text-fg-3 hover:border-border"
-                }`}
-                onClick={() => {
-                  if (!visibility.docTypes || visibility.docTypes.length === 0) {
-                    // Currently showing all — click to show only this one
-                    onUpdate({ docTypes: [dt] });
-                  } else if (active) {
-                    // Remove this type
-                    const next = visibility.docTypes.filter((t) => t !== dt);
-                    onUpdate({ docTypes: next.length === 0 ? undefined : next });
-                  } else {
-                    // Add this type
-                    onUpdate({ docTypes: [...visibility.docTypes, dt] });
-                  }
-                }}
-              >
-                {DOCUMENT_TYPE_LABELS[dt]}
-              </button>
-            );
-          })}
-        </div>
-        <p className="text-[10px] text-fg-3">
-          {!visibility.docTypes || visibility.docTypes.length === 0
-            ? "Showing for all document types"
-            : `Only showing for: ${visibility.docTypes.map((dt) => DOCUMENT_TYPE_LABELS[dt]).join(", ")}`}
-        </p>
-      </div>
-
       {/* Data condition */}
       <div className="space-y-1.5">
         <Label className="text-xs text-fg-3">Data condition (optional)</Label>
+        <p className="text-[10px] text-fg-3">
+          Show or hide this section based on document data.
+        </p>
         {condition ? (
           <div className="space-y-2 rounded-lg border border-border/50 p-2.5">
             <Select

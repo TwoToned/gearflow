@@ -72,6 +72,18 @@ export interface SectionVisibility {
 
 // ─── Section Settings (per-type) ─────────────────────────────────────────────
 
+/** Common styling options available on most section types */
+export interface SectionStyling {
+  fontSize?: number; // 6-18, overrides default
+  textColor?: string; // hex color, overrides default
+}
+
+/** A custom key-value field using tokens for dynamic values */
+export interface CustomField {
+  label: string; // e.g. "Bank", "ABN", "Payment Reference"
+  value: string; // can use {tokens} e.g. "{org_name}" or plain text "BSB: 000-000"
+}
+
 export interface HeaderSectionSettings {
   logoMode: "logo" | "icon" | "none";
   showOrgName: boolean;
@@ -79,7 +91,7 @@ export interface HeaderSectionSettings {
   showOrgPhone: boolean;
   showOrgEmail: boolean;
   showOrgWebsite: boolean;
-  documentTitle: string;
+  documentTitle: string; // supports {tokens}
 }
 
 export interface ClientDetailsSectionSettings {
@@ -88,6 +100,12 @@ export interface ClientDetailsSectionSettings {
   showClientEmail: boolean;
   showClientAddress: boolean;
   showClientTaxId: boolean;
+  /** Custom labels — override default field labels (e.g. "Customer" instead of "Client") */
+  customLabels?: Record<string, string>;
+  /** Additional key-value fields rendered after the built-in fields */
+  customFields?: CustomField[];
+  /** Per-section styling */
+  styling?: SectionStyling;
 }
 
 export interface ProjectDetailsSectionSettings {
@@ -99,6 +117,12 @@ export interface ProjectDetailsSectionSettings {
   showPaymentTerms: boolean;
   showSiteContact: boolean;
   showDocumentDate: boolean;
+  /** Custom labels — override default field labels */
+  customLabels?: Record<string, string>;
+  /** Additional key-value fields rendered after the built-in fields */
+  customFields?: CustomField[];
+  /** Per-section styling */
+  styling?: SectionStyling;
 }
 
 export interface TableSectionSettings {
@@ -171,7 +195,8 @@ export interface TemplateSection {
   type: SectionType;
   settings: SectionSettings;
   visibility: SectionVisibility;
-  /** For custom-text sections: text content with {token} placeholders */
+  /** Text content with {token} placeholders. Primary content for custom-text sections;
+   *  appended as extra text for other section types. */
   content?: string;
   /** Sort position (0-based) */
   order: number;

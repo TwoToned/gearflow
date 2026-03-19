@@ -2,7 +2,12 @@
  * PDF generation orchestrator.
  * Assembles template + data + plugins → calls pdfme generate() → returns PDF buffer.
  *
- * Checks for org-specific custom default templates before falling back to system defaults.
+ * Two pipelines:
+ * 1. SECTION-BASED (new): DocumentTemplate.sections → section renderer → multi-page pdfme
+ * 2. LEGACY: DocumentTemplate.basePdf/schemas → direct pdfme generation
+ *
+ * Template selection: templateId → org default → system default.
+ * Section-based templates are preferred when available.
  */
 import { generate } from "@pdfme/generator";
 import type { Template } from "@pdfme/common";
@@ -12,70 +17,91 @@ import { getPdfmeFonts } from "./fonts";
 import { buildDocumentData } from "./build-document-data";
 import { getTemplateBuilder, getTtReportBuilder } from "./templates";
 import { buildReportTemplate, buildReportInputs, calculatePageCount, countSummaryItems } from "./templates/report";
+import { renderSections } from "./section-renderer";
+import { getDefaultSections } from "./section-types";
+import type { TemplateSection } from "./section-types";
 import type { DocumentType, DocumentData, TestTagReportType } from "./types";
 import type { ReportResult } from "@/lib/report-types";
 import type { TemplateSettings } from "./template-settings";
 
+// ─── Template Loading ────────────────────────────────────────────────────────
+
+interface LoadedTemplate {
+  /** Section-based template (new pipeline) */
+  sections: TemplateSection[] | null;
+  /** Legacy pdfme template */
+  template: Template | null;
+  /** Legacy settings */
+  settings: TemplateSettings | null;
+  /** Brand template overrides */
+  brandAccentColor: string | null;
+  brandFooterText: string | null;
+  brandFooterSecondLine: string | null;
+}
+
 /**
- * Try to load a specific template or the org's custom default for a document type.
- * Template selection priority: templateId → project override → org default → system default.
- * Returns null if no custom template found (falls back to system default).
+ * Load a template with brand template resolution.
+ * Checks for section-based templates first, falls back to legacy.
  */
-async function getCustomTemplate(
+async function loadTemplate(
   organizationId: string,
   docType: DocumentType,
   templateId?: string,
-): Promise<{ template: Template; settings: TemplateSettings | null } | null> {
+): Promise<LoadedTemplate> {
   try {
-    // If a specific templateId is provided, load that
-    if (templateId) {
-      const specific = await prisma.documentTemplate.findFirst({
-        where: {
-          id: templateId,
-          organizationId,
-          isDraft: false,
-        },
-      });
-      if (specific) {
-        return {
-          template: {
-            basePdf: JSON.parse(specific.basePdf),
-            schemas: JSON.parse(specific.schemas),
-          },
-          settings: specific.settings ? JSON.parse(specific.settings) : null,
-        };
-      }
-    }
+    // Build query for the specific template or org default
+    const where = templateId
+      ? { id: templateId, organizationId, isDraft: false }
+      : { organizationId, type: docType, isDefault: true, isDraft: false };
 
-    // Otherwise, look for org's default template for this doc type
-    const custom = await prisma.documentTemplate.findFirst({
-      where: {
-        organizationId,
-        type: docType,
-        isDefault: true,
-        isDraft: false,
-      },
+    const record = await prisma.documentTemplate.findFirst({
+      where,
+      include: { brandTemplate: true },
     });
 
-    if (!custom) return null;
+    if (!record) {
+      return { sections: null, template: null, settings: null, brandAccentColor: null, brandFooterText: null, brandFooterSecondLine: null };
+    }
 
+    // Check for section-based template (new pipeline)
+    if (record.sections) {
+      const sections = JSON.parse(record.sections) as TemplateSection[];
+      const brand = record.brandTemplate;
+      const brandFooter = brand ? JSON.parse(brand.footerSettings) : null;
+      return {
+        sections,
+        template: null,
+        settings: null,
+        brandAccentColor: brand?.accentColor || null,
+        brandFooterText: brandFooter?.showFooter ? brandFooter.primaryText : null,
+        brandFooterSecondLine: brandFooter?.showFooter ? brandFooter.secondaryText : null,
+      };
+    }
+
+    // Legacy pipeline
     return {
+      sections: null,
       template: {
-        basePdf: JSON.parse(custom.basePdf),
-        schemas: JSON.parse(custom.schemas),
+        basePdf: JSON.parse(record.basePdf),
+        schemas: JSON.parse(record.schemas),
       },
-      settings: custom.settings ? JSON.parse(custom.settings) : null,
+      settings: record.settings ? JSON.parse(record.settings) : null,
+      brandAccentColor: null,
+      brandFooterText: null,
+      brandFooterSecondLine: null,
     };
   } catch {
-    // Table may not exist yet (migration not run) — fall back to system default
-    return null;
+    return { sections: null, template: null, settings: null, brandAccentColor: null, brandFooterText: null, brandFooterSecondLine: null };
   }
 }
+
+// ─── Main Generation ─────────────────────────────────────────────────────────
 
 /**
  * Generate a PDF document for a project.
  *
  * Template selection: templateId → org default → system default.
+ * Uses section-based pipeline when available, falls back to legacy.
  *
  * @param projectId - The project to generate a document for
  * @param organizationId - The organization the project belongs to
@@ -94,24 +120,77 @@ export async function generatePdf(
   // 1. Build data contract
   const data = await buildDocumentData(projectId, organizationId, docType, callSheetDate);
 
-  // 2. Check for custom template, fall back to system default
-  const customResult = await getCustomTemplate(organizationId, docType, templateId);
+  // 2. Load template (section-based or legacy)
+  const loaded = await loadTemplate(organizationId, docType, templateId);
 
+  // 3. Section-based pipeline (new)
+  if (loaded.sections) {
+    const docColor = loaded.brandAccentColor || data.org_document_color;
+    const { template, inputs } = renderSections(
+      loaded.sections,
+      data,
+      docType,
+      docColor,
+      loaded.brandFooterText || undefined,
+      loaded.brandFooterSecondLine || undefined,
+    );
+
+    const pdf = await generate({
+      template,
+      inputs,
+      plugins: gearflowPlugins,
+      options: { font: getPdfmeFonts() },
+    });
+    return pdf;
+  }
+
+  // 4. Legacy pipeline (fallback)
   const { buildTemplate, buildInputs } = getTemplateBuilder(docType);
-  const templateSettings = customResult?.settings || undefined;
+  const templateSettings = loaded.settings || undefined;
   const inputs = buildInputs(data, callSheetDate, templateSettings);
 
   let template: Template;
-  if (customResult) {
-    template = customResult.template;
+  if (loaded.template) {
+    template = loaded.template;
   } else {
     template = buildTemplate(templateSettings);
   }
 
-  // 3. Generate PDF via pdfme
   const pdf = await generate({
     template,
     inputs: [inputs],
+    plugins: gearflowPlugins,
+    options: { font: getPdfmeFonts() },
+  });
+
+  return pdf;
+}
+
+/**
+ * Generate a PDF from sections + data (for section-based template preview).
+ * Used by the template builder live preview.
+ */
+export async function generatePdfFromSections(
+  data: DocumentData,
+  docType: DocumentType,
+  sections: TemplateSection[],
+  docColor?: string,
+  footerText?: string,
+  footerSecondLine?: string,
+): Promise<Uint8Array> {
+  const color = docColor || data.org_document_color;
+  const { template, inputs } = renderSections(
+    sections,
+    data,
+    docType,
+    color,
+    footerText,
+    footerSecondLine,
+  );
+
+  const pdf = await generate({
+    template,
+    inputs,
     plugins: gearflowPlugins,
     options: { font: getPdfmeFonts() },
   });

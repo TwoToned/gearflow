@@ -35,7 +35,7 @@ export function EditorPreviewPanel({
       </div>
 
       {/* PDF viewer */}
-      <div className="relative flex-1 overflow-auto p-6">
+      <div className="relative flex-1 overflow-hidden">
         {isLoading && !pdfData && (
           <div className="flex h-full items-center justify-center">
             <div className="flex flex-col items-center gap-3">
@@ -48,7 +48,7 @@ export function EditorPreviewPanel({
         )}
 
         {pdfData && (
-          <div className="mx-auto max-w-[700px]">
+          <>
             {/* Loading overlay during regeneration */}
             {isLoading && (
               <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/40 backdrop-blur-[1px]">
@@ -59,11 +59,9 @@ export function EditorPreviewPanel({
               </div>
             )}
 
-            {/* PDF rendered via pdf.js as canvas */}
-            <div className="rounded-lg border border-border/50 bg-white shadow-xl overflow-hidden p-0">
-              <PdfViewer pdfData={pdfData} />
-            </div>
-          </div>
+            {/* Native PDF viewer via iframe — scrollable with zoom controls */}
+            <PdfViewer pdfData={pdfData} className="h-full w-full" />
+          </>
         )}
       </div>
     </div>

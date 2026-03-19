@@ -44,16 +44,59 @@ export async function buildSampleDocumentData(
   const taxRate = (meta.taxRate as number) || 10;
   const taxLabel = (meta.taxLabel as string) || "GST";
 
-  // Sample line items — realistic rental/AV equipment
+  // Sample line items — realistic rental/AV equipment (enough to trigger pagination)
+  // Each item has a groupName so group headers are rendered, increasing total height
   const sampleItems: DocumentLineItem[] = [
-    makeItem("Shure SM58", "Dynamic Microphone", 4, 25, "Audio"),
-    makeItem("Yamaha QL5", "Digital Mixing Console", 1, 450, "Audio"),
+    // Audio
+    makeItem("Shure SM58", "Dynamic Microphone", 4, 25, "Audio", "Audio"),
+    makeItem("Shure SM57", "Instrument Microphone", 6, 20, "Audio", "Audio"),
+    makeItem("Sennheiser e835", "Vocal Microphone", 2, 22, "Audio", "Audio"),
+    makeItem("Yamaha QL5", "Digital Mixing Console", 1, 450, "Audio", "Audio"),
+    makeItem("Yamaha Rio3224-D2", "Stage Box (32 In / 24 Out)", 2, 120, "Audio", "Audio"),
+    makeItem("Shure ULXD4Q", "Quad Wireless Receiver", 2, 180, "Audio", "Audio"),
+    makeItem("Shure ULXD2/SM58", "Wireless Handheld Transmitter", 4, 65, "Audio", "Audio"),
+    makeItem("Sennheiser EW 100", "Wireless Lapel Microphone Kit", 2, 75, "Audio", "Audio"),
+    // PA System
     makeItem("JBL VTX A12", "Line Array Speaker", 8, 120, "Audio", "PA System"),
-    makeItem("Sennheiser EW 100", "Wireless Lapel Microphone Kit", 2, 75, "Audio", "PA System", true),
-    makeItem("ETC Source Four", "750W Ellipsoidal", 12, 35, "Lighting"),
-    makeItem("Martin MAC Aura XB", "LED Wash Moving Head", 6, 95, "Lighting"),
-    makeItem("Blackmagic ATEM Mini", "Live Production Switcher", 1, 150, "Video"),
-    makeItem("60\" Tripod Screen", "Portable Projection Screen", 2, 45, "Video"),
+    makeItem("JBL VTX S28", "Dual 18\" Subwoofer", 4, 95, "Audio", "PA System"),
+    makeItem("Crown I-Tech 12000HD", "Power Amplifier", 4, 85, "Audio", "PA System"),
+    makeItem("Lake LM44", "Speaker Processor", 2, 65, "Audio", "PA System"),
+    makeItem("JBL VTX AF15", "Flown Array Frame", 2, 40, "Audio", "PA System"),
+    // Lighting
+    makeItem("ETC Source Four", "750W Ellipsoidal", 12, 35, "Lighting", "Lighting"),
+    makeItem("ETC Source Four Jr", "575W Ellipsoidal", 8, 28, "Lighting", "Lighting"),
+    makeItem("Martin MAC Aura XB", "LED Wash Moving Head", 6, 95, "Lighting", "Lighting"),
+    makeItem("Chauvet Rogue R2 Wash", "LED Wash Moving Head", 4, 55, "Lighting", "Lighting"),
+    makeItem("ETC ColorSource PAR", "LED PAR Can", 16, 18, "Lighting", "Lighting"),
+    makeItem("Chamsys MagicQ MQ80", "Lighting Console", 1, 250, "Lighting", "Lighting"),
+    makeItem("MDG theONE", "Haze Machine", 2, 120, "Lighting", "Lighting"),
+    makeItem("Prolights EclPanel TWC", "LED Soft Panel", 4, 45, "Lighting", "Lighting"),
+    // Video
+    makeItem("Blackmagic ATEM Mini", "Live Production Switcher", 1, 150, "Video", "Video"),
+    makeItem("60\" Tripod Screen", "Portable Projection Screen", 2, 45, "Video", "Video"),
+    makeItem("Panasonic PT-RZ690", "6000lm Laser Projector", 2, 280, "Video", "Video"),
+    makeItem("Blackmagic HyperDeck", "SSD Recorder", 2, 75, "Video", "Video"),
+    makeItem("Sony A7S III", "Mirrorless Camera", 2, 120, "Video", "Video"),
+    // Rigging
+    makeItem("CM Lodestar 1T", "1 Ton Chain Hoist", 8, 45, "Rigging", "Rigging"),
+    makeItem("Tomcat 12x12 Box Truss", "Box Truss 3m Section", 12, 25, "Rigging", "Rigging"),
+    // Power
+    makeItem("Ceeform 63A Distro", "Power Distribution Board", 2, 65, "Power", "Power"),
+    makeItem("Socapex 6-way Breakout", "Socapex Breakout to 15A", 8, 12, "Power", "Power"),
+    // Staging
+    makeItem("Staging Deck 8x4", "8ft x 4ft Stage Platform", 12, 35, "Staging", "Staging"),
+    makeItem("Stage Leg 24\"", "Adjustable Stage Leg", 48, 4, "Staging", "Staging"),
+    makeItem("Stage Skirt 8ft", "Black Stage Skirt", 12, 8, "Staging", "Staging"),
+    // Drape
+    makeItem("Pipe & Drape 10ft", "Black Drape Section", 16, 15, "Drape", "Drape"),
+    makeItem("Pipe & Drape Upright", "Adjustable Upright 8-14ft", 10, 10, "Drape", "Drape"),
+    makeItem("Star Cloth 6x3m", "White LED Star Cloth", 2, 120, "Drape", "Drape"),
+    // Comms
+    makeItem("ClearCom MS-702", "2-Channel Main Station", 1, 85, "Comms", "Comms"),
+    makeItem("ClearCom RS-701", "Single-Channel Beltpack", 6, 25, "Comms", "Comms"),
+    makeItem("ClearCom CC-300", "Single-Ear Headset", 6, 15, "Comms", "Comms"),
+    // Cases
+    makeItem("Road Case 12RU", "12U Rack Case with Wheels", 4, 18, "Cases", "Cases"),
   ];
 
   const subtotal = sampleItems.reduce((s, i) => s + (i.lineTotal || 0), 0);

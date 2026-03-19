@@ -5,7 +5,10 @@ import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { getTemplateForEditor } from "@/server/document-templates";
 import { TemplateEditor } from "@/components/settings/template-editor/template-editor";
+import { BlockEditor } from "@/components/settings/template-builder/block-editor";
+import { getDefaultSections } from "@/lib/pdfme/section-types";
 import type { DocumentType } from "@/lib/pdfme/types";
+import type { TemplateSection } from "@/lib/pdfme/section-types";
 
 export default function DesignerPage({
   params,
@@ -44,6 +47,25 @@ export default function DesignerPage({
     );
   }
 
+  // Section-based templates use the new SectionBuilder
+  const sections: TemplateSection[] | null = template.sections || null;
+  if (sections || template.isSystemDefault) {
+    const docType = template.type as DocumentType;
+    return (
+      <BlockEditor
+        templateId={template.id}
+        templateName={template.name}
+        templateType={docType}
+        isDraft={template.isDraft}
+        isDefault={template.isDefault}
+        version={template.version}
+        initialSections={sections || getDefaultSections(docType)}
+        brandTemplateId={template.brandTemplateId}
+      />
+    );
+  }
+
+  // Legacy templates use the old settings-based editor
   return (
     <TemplateEditor
       templateId={template.id}

@@ -14,6 +14,8 @@ interface CrewTableSchema extends Schema {
 interface CrewTableConfig {
   crew: CrewEntry[];
   documentColor: string;
+  /** Index of the first crew member to render (for multi-page tables) */
+  startIndex?: number;
 }
 
 const PHASE_LABELS: Record<string, string> = {
@@ -44,7 +46,9 @@ async function pdfRender(arg: PDFRenderProps<CrewTableSchema>) {
   const dimColor = hexToRgb("#999999", pdfLib);
 
   // Sort by call time, then role
-  const sorted = [...config.crew].sort((a, b) => {
+  const crew = config.crew || [];
+  if (crew.length === 0) return;
+  const sorted = [...crew].sort((a, b) => {
     const timeA = a.callTime || "99:99";
     const timeB = b.callTime || "99:99";
     if (timeA !== timeB) return timeA.localeCompare(timeB);
@@ -124,13 +128,23 @@ async function pdfRender(arg: PDFRenderProps<CrewTableSchema>) {
     color: borderColor,
   });
 
+  // Bottom boundary — stop drawing before we clip off the page
+  const bottomBoundary = y;
+  const startIndex = config.startIndex || 0;
+
   // Rows
   for (let idx = 0; idx < sorted.length; idx++) {
+    // Skip items before startIndex (for multi-page continuation)
+    if (idx < startIndex) continue;
+
     const crew = sorted[idx];
     const rowY = currentY - rowHeight;
 
+    // Overflow check: stop if this row won't fit
+    if (rowY < bottomBoundary) break;
+
     // Alt row background
-    if (idx % 2 === 1) {
+    if ((idx - startIndex) % 2 === 1) {
       page.drawRectangle({
         x,
         y: rowY,

@@ -10,7 +10,16 @@ import {
   DOCUMENT_TYPES,
   DOCUMENT_TYPE_LABELS,
 } from "@/lib/validations/document-template";
+import {
+  saveTemplateSectionsSchema,
+  saveTemplateBlocksSchema,
+  templateImportSchema,
+} from "@/lib/validations/template-section";
+import type { SaveTemplateSectionsValues, SaveTemplateBlocksValues, TemplateImportData } from "@/lib/validations/template-section";
+import { flattenBlocks } from "@/lib/pdfme/block-utils";
+import type { TemplateBlock } from "@/lib/pdfme/section-types";
 import { getTemplateBuilder } from "@/lib/pdfme/templates";
+import { getDefaultSections } from "@/lib/pdfme/section-types";
 import type { DocumentType } from "@/lib/pdfme/types";
 import type { TemplateSettings } from "@/lib/pdfme/template-settings";
 import { getDefaultSettings } from "@/lib/pdfme/template-settings";
@@ -24,6 +33,7 @@ export async function getDocumentTemplates() {
   const templates = await prisma.documentTemplate.findMany({
     where: { organizationId },
     orderBy: [{ type: "asc" }, { isDefault: "desc" }, { updatedAt: "desc" }],
+    include: { brandTemplate: { select: { id: true, name: true } } },
   });
 
   // Build virtual system default entries for each doc type
@@ -67,9 +77,12 @@ export async function getDocumentTemplates() {
     type: t.type,
     isDefault: t.isDefault,
     isSystemDefault: false,
+    isSectionBased: !!t.sections,
     isDraft: t.isDraft,
     version: t.version,
     thumbnailUrl: t.thumbnailUrl,
+    thumbnailData: t.thumbnailData,
+    brandTemplate: t.brandTemplate,
     publishedAt: t.publishedAt,
     createdAt: t.createdAt,
     updatedAt: t.updatedAt,
@@ -113,6 +126,7 @@ export async function getDocumentTemplate(id: string) {
     const type = id.replace("system-", "") as DocumentType;
     const builder = getTemplateBuilder(type);
     const template = builder.buildTemplate();
+    const defaultSections = getDefaultSections(type);
     return serialize({
       id,
       organizationId,
@@ -120,11 +134,13 @@ export async function getDocumentTemplate(id: string) {
       type,
       basePdf: JSON.stringify(template.basePdf),
       schemas: JSON.stringify(template.schemas),
+      sections: JSON.stringify(defaultSections),
       isDefault: true,
       isSystemDefault: true,
       isDraft: false,
       version: 1,
       thumbnailUrl: null,
+      brandTemplateId: null,
       publishedAt: null,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -133,6 +149,7 @@ export async function getDocumentTemplate(id: string) {
 
   const template = await prisma.documentTemplate.findFirst({
     where: { id, organizationId },
+    include: { brandTemplate: true },
   });
 
   if (!template) {
@@ -445,8 +462,28 @@ export async function saveTemplateSettings(
 export async function getTemplateForEditor(id: string) {
   const { organizationId } = await getOrgContext();
 
+  // Handle system default virtual IDs — return default sections for the builder
+  if (id.startsWith("system-")) {
+    const type = id.replace("system-", "") as DocumentType;
+    const defaultSections = getDefaultSections(type);
+    return serialize({
+      id,
+      name: `${DOCUMENT_TYPE_LABELS[type]} — System Default`,
+      type,
+      isDraft: false,
+      isDefault: true,
+      isSystemDefault: true,
+      version: 1,
+      publishedAt: null,
+      brandTemplateId: null,
+      sections: defaultSections,
+      settings: getDefaultSettings(type),
+    });
+  }
+
   const template = await prisma.documentTemplate.findFirst({
     where: { id, organizationId },
+    include: { brandTemplate: true },
   });
   if (!template) throw new Error("Template not found");
 
@@ -454,14 +491,28 @@ export async function getTemplateForEditor(id: string) {
     ? JSON.parse(template.settings)
     : getDefaultSettings(template.type as DocumentType);
 
+  const sections = template.sections
+    ? JSON.parse(template.sections)
+    : null;
+
   return serialize({
     id: template.id,
     name: template.name,
     type: template.type,
     isDraft: template.isDraft,
     isDefault: template.isDefault,
+    isSystemDefault: false,
     version: template.version,
     publishedAt: template.publishedAt,
+    brandTemplateId: template.brandTemplateId,
+    brandTemplate: template.brandTemplate
+      ? {
+          id: template.brandTemplate.id,
+          name: template.brandTemplate.name,
+          accentColor: template.brandTemplate.accentColor,
+        }
+      : null,
+    sections,
     settings,
   });
 }
@@ -488,6 +539,9 @@ export async function duplicateDocumentTemplate(id: string) {
       type: source.type,
       basePdf: source.basePdf,
       schemas: source.schemas,
+      sections: source.sections,
+      settings: source.settings,
+      brandTemplateId: source.brandTemplateId,
       isDraft: true,
     },
   });
@@ -504,4 +558,242 @@ export async function duplicateDocumentTemplate(id: string) {
   });
 
   return serialize({ id: template.id });
+}
+
+// ─── Section-Based Template Actions ──────────────────────────────────────────
+
+/**
+ * Save sections for a document template (section-based builder).
+ * Supports optimistic locking via optional version field.
+ */
+export async function saveTemplateSections(data: SaveTemplateSectionsValues) {
+  const { organizationId, userId, userName } = await requirePermission(
+    "document",
+    "manage_templates"
+  );
+
+  const validated = saveTemplateSectionsSchema.parse(data);
+
+  // Optimistic locking in a transaction to prevent TOCTOU race
+  const template = await prisma.$transaction(async (tx) => {
+    if (validated.version != null) {
+      const current = await tx.documentTemplate.findFirst({
+        where: { id: validated.id, organizationId },
+        select: { version: true },
+      });
+      if (current && current.version !== validated.version) {
+        throw new Error(
+          "Template was modified by another user. Please refresh and try again."
+        );
+      }
+    }
+    return tx.documentTemplate.update({
+      where: { id: validated.id, organizationId },
+      data: {
+        sections: JSON.stringify(validated.sections),
+        brandTemplateId: validated.brandTemplateId ?? null,
+        version: { increment: 1 },
+      },
+    });
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "update",
+    entityType: "document_template",
+    entityId: template.id,
+    entityName: template.name,
+    summary: `Updated sections for template "${template.name}"`,
+  });
+
+  return serialize({ success: true, version: template.version });
+}
+
+/**
+ * Save blocks for a document template (block editor).
+ * Converts blocks to flat sections with layoutHint for storage.
+ * Supports optimistic locking via optional version field.
+ */
+export async function saveTemplateBlocks(data: SaveTemplateBlocksValues) {
+  const { organizationId, userId, userName } = await requirePermission(
+    "document",
+    "manage_templates"
+  );
+
+  const validated = saveTemplateBlocksSchema.parse(data);
+
+  // Flatten blocks to sections for storage
+  const sections = flattenBlocks(validated.blocks as TemplateBlock[]);
+
+  // Optimistic locking in a transaction to prevent TOCTOU race
+  const template = await prisma.$transaction(async (tx) => {
+    if (validated.version != null) {
+      const current = await tx.documentTemplate.findFirst({
+        where: { id: validated.id, organizationId },
+        select: { version: true },
+      });
+      if (current && current.version !== validated.version) {
+        throw new Error(
+          "Template was modified by another user. Please refresh and try again."
+        );
+      }
+    }
+    return tx.documentTemplate.update({
+      where: { id: validated.id, organizationId },
+      data: {
+        sections: JSON.stringify(sections),
+        settings: validated.documentSettings ? JSON.stringify(validated.documentSettings) : undefined,
+        brandTemplateId: validated.brandTemplateId ?? null,
+        version: { increment: 1 },
+      },
+    });
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "update",
+    entityType: "document_template",
+    entityId: template.id,
+    entityName: template.name,
+    summary: `Updated block layout for template "${template.name}"`,
+  });
+
+  return serialize({ success: true, version: template.version });
+}
+
+/**
+ * Duplicate a system default into a section-based template.
+ * Uses getDefaultSections() to populate the initial section list.
+ */
+export async function duplicateSystemDefaultWithSections(type: string) {
+  const { organizationId, userId, userName } = await requirePermission(
+    "document",
+    "manage_templates"
+  );
+
+  const docType = type as DocumentType;
+  const sections = getDefaultSections(docType);
+
+  const template = await prisma.documentTemplate.create({
+    data: {
+      organizationId,
+      name: `${DOCUMENT_TYPE_LABELS[type]} — Custom`,
+      type: docType,
+      sections: JSON.stringify(sections),
+      isDraft: true,
+    },
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "duplicate",
+    entityType: "document_template",
+    entityId: template.id,
+    entityName: template.name,
+    summary: `Created custom ${DOCUMENT_TYPE_LABELS[type]} template from system default`,
+  });
+
+  return serialize({ id: template.id });
+}
+
+/**
+ * Export a template as a portable JSON object.
+ * Strips org-specific data (IDs, brand template references).
+ */
+export async function exportTemplate(id: string) {
+  const { organizationId } = await getOrgContext();
+
+  let sections: unknown[];
+  let type: string;
+  let name: string;
+
+  if (id.startsWith("system-")) {
+    type = id.replace("system-", "");
+    name = `${DOCUMENT_TYPE_LABELS[type]} — System Default`;
+    sections = getDefaultSections(type as DocumentType);
+  } else {
+    const template = await prisma.documentTemplate.findFirst({
+      where: { id, organizationId },
+    });
+    if (!template) throw new Error("Template not found");
+    if (!template.sections) throw new Error("Template has no sections to export");
+
+    sections = JSON.parse(template.sections);
+    type = template.type;
+    name = template.name;
+  }
+
+  const exportData = {
+    version: 1 as const,
+    type,
+    name,
+    sections,
+    exportedAt: new Date().toISOString(),
+  };
+
+  return serialize(exportData);
+}
+
+/**
+ * Import a template from a portable JSON export.
+ * Creates a new draft template with the imported sections.
+ */
+export async function importTemplate(data: TemplateImportData) {
+  const { organizationId, userId, userName } = await requirePermission(
+    "document",
+    "manage_templates"
+  );
+
+  const validated = templateImportSchema.parse(data);
+
+  const template = await prisma.documentTemplate.create({
+    data: {
+      organizationId,
+      name: `${validated.name} (Imported)`,
+      type: validated.type,
+      sections: JSON.stringify(validated.sections),
+      isDraft: true,
+    },
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "import",
+    entityType: "document_template",
+    entityId: template.id,
+    entityName: template.name,
+    summary: `Imported template "${validated.name}"`,
+  });
+
+  return serialize({ id: template.id });
+}
+
+/**
+ * Save a template's thumbnail data (base64-encoded PNG).
+ * Called by the preview renderer after generating a thumbnail.
+ */
+export async function saveTemplateThumbnail(id: string, thumbnailData: string) {
+  const { organizationId } = await requirePermission(
+    "document",
+    "manage_templates"
+  );
+
+  if (thumbnailData.length > 2_000_000) {
+    throw new Error("Thumbnail data exceeds maximum size");
+  }
+
+  await prisma.documentTemplate.update({
+    where: { id, organizationId },
+    data: { thumbnailData },
+  });
+
+  return serialize({ success: true });
 }

@@ -36,7 +36,7 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  duplicateSystemDefault,
+  duplicateSystemDefaultWithSections,
   duplicateDocumentTemplate,
   deleteDocumentTemplate,
   setDefaultTemplate,
@@ -94,7 +94,7 @@ export function DocumentTemplateManager({
   const [deleteTarget, setDeleteTarget] = useState<TemplateEntry | null>(null);
 
   const customiseMutation = useMutation({
-    mutationFn: (type: string) => duplicateSystemDefault(type),
+    mutationFn: (type: string) => duplicateSystemDefaultWithSections(type),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["document-templates"] });
       router.push(`/template-designer/${result.id}`);

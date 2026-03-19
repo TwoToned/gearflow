@@ -1073,7 +1073,7 @@ export async function addItemToPrepKitByTag(
     });
 
     // Prefer exact bulkAssetId match, then any matching model
-    let lineItem = candidates.find((c) => c.bulkAssetId === bulkAsset!.id)
+    const lineItem = candidates.find((c) => c.bulkAssetId === bulkAsset!.id)
       ?? candidates.find((c) => !c.bulkAssetId && !c.assetId)
       ?? candidates[0]
       ?? null;

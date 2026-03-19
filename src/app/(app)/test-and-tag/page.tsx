@@ -181,6 +181,7 @@ export default function TestAndTagPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                 {(stats.overdueItems as any[]).map((item) => (
                   <TableRow key={item.id} className="cursor-pointer hover:bg-muted/50">
                     <TableCell>
@@ -237,6 +238,7 @@ export default function TestAndTagPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                 {(stats.dueSoonItems as any[]).map((item) => (
                   <TableRow key={item.id} className="cursor-pointer hover:bg-muted/50">
                     <TableCell>
@@ -291,6 +293,7 @@ export default function TestAndTagPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                 {(stats.recentTests as any[]).map((record) => (
                   <TableRow key={record.id} className="cursor-pointer hover:bg-muted/50">
                     <TableCell>

@@ -653,8 +653,8 @@ export default function AccountPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
           {sessionsQuery.data?.map(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (s: any) => (
               <div
                 key={s.id}

@@ -162,14 +162,14 @@ function modelDisplayName(item: LineItem) {
 // Render kit children (with nested kit support for prep-kits)
 // ---------------------------------------------------------------------------
 function KitChildRows({
-  children,
+  kitChildren,
   verifiedKitItems,
   expandedGroups,
   toggleExpanded,
   onToggleVerify,
   mode,
 }: {
-  children: LineItem[];
+  kitChildren: LineItem[];
   verifiedKitItems: Set<string>;
   expandedGroups: Set<string>;
   toggleExpanded: (key: string) => void;
@@ -178,7 +178,7 @@ function KitChildRows({
 }) {
   return (
     <>
-      {children.map((child) => {
+      {kitChildren.map((child) => {
         const isVerified = verifiedKitItems.has(child.id);
         const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
         const nestedExpanded = expandedGroups.has(`nested-${child.id}`);
@@ -1528,7 +1528,7 @@ function WarehouseProjectPage({
                             </TableRow>
                             {isExpanded && (
                               <KitChildRows
-                                children={entry.children}
+                                kitChildren={entry.children}
                                 verifiedKitItems={verifiedKitItems}
                                 expandedGroups={expandedGroups}
                                 toggleExpanded={toggleExpanded}
@@ -1819,7 +1819,7 @@ function WarehouseProjectPage({
                             </TableRow>
                             {isExpanded && (
                               <KitChildRows
-                                children={entry.children}
+                                kitChildren={entry.children}
                                 verifiedKitItems={verifiedKitItems}
                                 expandedGroups={expandedGroups}
                                 toggleExpanded={toggleExpanded}

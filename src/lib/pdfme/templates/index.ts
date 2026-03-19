@@ -50,7 +50,6 @@ export function getTemplateBuilder(docType: DocumentType): TemplateBuilder {
 
 // ─── T&T Report Builders ───────────────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 interface TtReportBuilder {
   buildTemplate: () => Template;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

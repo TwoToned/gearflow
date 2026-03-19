@@ -77,7 +77,7 @@ async function buildProjectsFeed(
         ? null
         : p.eventEndTime;
 
-    let dtstart = buildDateTime(startDate, startTime);
+    const dtstart = buildDateTime(startDate, startTime);
     let dtend = buildDateTime(endDate || startDate, endTime);
 
     // Ensure dtend >= dtstart (can happen when end date/time is missing)

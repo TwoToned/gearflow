@@ -597,7 +597,7 @@ export function DataTable<TData>({
       )}
 
       {/* Table */}
-      <div className="rounded-md border">
+      <div className="rounded-lg surface-ring overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
@@ -674,8 +674,9 @@ export function DataTable<TData>({
                   <TableRow
                     key={rowId}
                     className={cn(
-                      onRowClick && "cursor-pointer hover:bg-muted/50",
-                      isSelected && "bg-muted/50",
+                      "group/row relative",
+                      onRowClick && "cursor-pointer",
+                      isSelected && "bg-teal-subtle",
                     )}
                     onClick={onRowClick ? () => onRowClick(row) : undefined}
                   >

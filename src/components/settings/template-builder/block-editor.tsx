@@ -45,7 +45,7 @@ import {
 import { EditorTopBar } from "../template-editor/editor-top-bar";
 import { EditorPreviewPanel } from "../template-editor/editor-preview-panel";
 import { BlockTree } from "./block-tree";
-import { HtmlPreview } from "./html-preview";
+import { ColumnWidthPicker } from "./column-width-picker";
 import { SectionSettingsPanel } from "./section-settings-panel";
 import { SectionLibrary } from "./section-library";
 
@@ -93,7 +93,6 @@ export function BlockEditor({
   const [isPreviewLoading, setIsPreviewLoading] = useState(true);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [currentVersion, setCurrentVersion] = useState(version);
-  const [previewMode, setPreviewMode] = useState<"html" | "pdf">("html");
   const [insertDialogIndex, setInsertDialogIndex] = useState<number | null>(null);
 
   // Undo/redo history
@@ -108,6 +107,14 @@ export function BlockEditor({
   const selectedBlock = useMemo(() => {
     return findBlockById(blocks, selectedId);
   }, [blocks, selectedId]);
+
+  // Select a block by ID — rows are selectable too (for column layout editing)
+  const handleSelectBlock = useCallback(
+    (id: string) => {
+      setSelectedId(id);
+    },
+    [],
+  );
 
   // Convert selected block to a flat section for the settings panel
   const selectedSection = useMemo((): TemplateSection | null => {
@@ -240,6 +247,35 @@ export function BlockEditor({
   const updateBlockStyling = useCallback(
     (blockId: string, styling: import("@/lib/pdfme/section-types").BlockStyling | undefined) => {
       const newBlocks = updateBlockStylingInTree(blocks, blockId, styling);
+      updateBlocks(newBlocks);
+    },
+    [blocks, updateBlocks],
+  );
+
+  const updateRowColumns = useCallback(
+    (rowId: string, columnWidths: number[]) => {
+      const newBlocks = blocks.map((b) => {
+        if (b.id !== rowId || b.type !== "row") return b;
+        const currentCols = b.children || [];
+        const newChildren = [...currentCols];
+        // Add columns if needed
+        while (newChildren.length < columnWidths.length) {
+          newChildren.push({
+            id: generateBlockId("col"),
+            type: "column",
+            children: [],
+          });
+        }
+        // Remove columns if needed (move orphan content to last kept column)
+        while (newChildren.length > columnWidths.length) {
+          const removed = newChildren.pop()!;
+          if (removed.children?.length) {
+            const lastCol = newChildren[newChildren.length - 1];
+            lastCol.children = [...(lastCol.children || []), ...(removed.children || [])];
+          }
+        }
+        return { ...b, children: newChildren, columnWidths };
+      });
       updateBlocks(newBlocks);
     },
     [blocks, updateBlocks],
@@ -428,7 +464,7 @@ export function BlockEditor({
           <BlockTree
             blocks={blocks}
             selectedBlockId={selectedId}
-            onSelectBlock={setSelectedId}
+            onSelectBlock={handleSelectBlock}
             onReorderBlocks={reorderBlocks}
             onDuplicateBlock={duplicateBlock}
             onDeleteBlock={deleteBlock}
@@ -444,60 +480,38 @@ export function BlockEditor({
           </div>
         </div>
 
-        {/* Middle panel — Preview */}
+        {/* Middle panel — PDF Preview */}
         <div className="flex flex-1 flex-col overflow-hidden">
-          {/* Preview mode toggle */}
-          <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/30 px-4">
-            <button
-              className={`text-xs px-2 py-1 rounded transition-colors ${
-                previewMode === "html"
-                  ? "bg-primary/10 text-primary font-medium"
-                  : "text-fg-3 hover:text-fg"
-              }`}
-              onClick={() => setPreviewMode("html")}
-            >
-              Layout Preview
-            </button>
-            <button
-              className={`text-xs px-2 py-1 rounded transition-colors ${
-                previewMode === "pdf"
-                  ? "bg-primary/10 text-primary font-medium"
-                  : "text-fg-3 hover:text-fg"
-              }`}
-              onClick={() => {
-                setPreviewMode("pdf");
-                handleRefreshPreview();
-              }}
-            >
-              PDF Preview
-            </button>
-          </div>
-
-          {previewMode === "html" ? (
-            <div className="flex-1 overflow-auto bg-inset">
-              <HtmlPreview
-                blocks={blocks}
-                selectedBlockId={selectedId}
-                onSelectBlock={setSelectedId}
-              />
-            </div>
-          ) : (
-            <EditorPreviewPanel
-              pdfData={previewPdf}
-              isLoading={isPreviewLoading}
-              onRefresh={handleRefreshPreview}
-            />
-          )}
+          <EditorPreviewPanel
+            pdfData={previewPdf}
+            isLoading={isPreviewLoading}
+            onRefresh={handleRefreshPreview}
+          />
         </div>
 
         {/* Right panel — Settings (320px) */}
-        <div className="w-[320px] shrink-0 border-l border-border/30 bg-bg-surface/30">
-          <SectionSettingsPanel
-            section={selectedSection}
-            onUpdate={updateSection}
-            blockStyling={selectedBlock?.styling}
-            onUpdateBlockStyling={updateBlockStyling}
-          />
+        <div className="w-[320px] shrink-0 border-l border-border/30 bg-bg-surface/30 overflow-y-auto">
+          {selectedBlock?.type === "row" ? (
+            <div className="p-4 space-y-4">
+              <div>
+                <h3 className="text-sm font-semibold text-fg mb-1">Row Layout</h3>
+                <p className="text-xs text-fg-3 mb-3">
+                  Choose how many columns this row has and their widths
+                </p>
+                <ColumnWidthPicker
+                  currentWidths={selectedBlock.columnWidths || [100]}
+                  onChange={(widths) => updateRowColumns(selectedBlock.id, widths)}
+                />
+              </div>
+            </div>
+          ) : (
+            <SectionSettingsPanel
+              section={selectedSection}
+              onUpdate={updateSection}
+              blockStyling={selectedBlock?.styling}
+              onUpdateBlockStyling={updateBlockStyling}
+            />
+          )}
         </div>
       </div>
     </div>

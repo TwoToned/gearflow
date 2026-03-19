@@ -119,7 +119,9 @@ export function BlockTree({
               <BlockCard
                 block={block}
                 isSelected={selectedBlockId === block.id}
+                selectedBlockId={selectedBlockId}
                 onSelect={() => onSelectBlock(block.id)}
+                onSelectBlock={onSelectBlock}
                 onDuplicate={() => onDuplicateBlock(block.id)}
                 onDelete={() => onDeleteBlock(block.id)}
               />

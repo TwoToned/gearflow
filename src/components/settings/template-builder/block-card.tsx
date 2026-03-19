@@ -54,7 +54,9 @@ const SECTION_ICONS: Record<string, React.ElementType> = {
 interface BlockCardProps {
   block: TemplateBlock;
   isSelected: boolean;
+  selectedBlockId: string | null;
   onSelect: () => void;
+  onSelectBlock: (id: string) => void;
   onDuplicate: () => void;
   onDelete: () => void;
 }
@@ -62,7 +64,9 @@ interface BlockCardProps {
 export function BlockCard({
   block,
   isSelected,
+  selectedBlockId,
   onSelect,
+  onSelectBlock,
   onDuplicate,
   onDelete,
 }: BlockCardProps) {
@@ -87,10 +91,12 @@ export function BlockCard({
         style={style}
         block={block}
         isSelected={isSelected}
+        selectedBlockId={selectedBlockId}
         isDragging={isDragging}
         dragAttributes={attributes}
         dragListeners={listeners}
         onSelect={onSelect}
+        onSelectBlock={onSelectBlock}
         onDuplicate={onDuplicate}
         onDelete={onDelete}
       />
@@ -121,10 +127,12 @@ interface InnerCardProps {
   style: React.CSSProperties;
   block: TemplateBlock;
   isSelected: boolean;
+  selectedBlockId?: string | null;
   isDragging: boolean;
   dragAttributes: React.HTMLAttributes<HTMLElement>;
   dragListeners: Record<string, unknown> | undefined;
   onSelect: () => void;
+  onSelectBlock?: (id: string) => void;
   onDuplicate: () => void;
   onDelete: () => void;
 }
@@ -135,10 +143,12 @@ const RowBlockCard = forwardRef<HTMLDivElement, InnerCardProps>(
       style,
       block,
       isSelected,
+      selectedBlockId,
       isDragging,
       dragAttributes,
       dragListeners,
       onSelect,
+      onSelectBlock,
       onDuplicate,
       onDelete,
     },
@@ -210,17 +220,18 @@ const RowBlockCard = forwardRef<HTMLDivElement, InnerCardProps>(
                 const hasVis =
                   (content.visibility?.docTypes?.length ?? 0) > 0 ||
                   content.visibility?.condition;
+                const isContentSelected = selectedBlockId === content.id;
                 return (
                   <div
                     key={content.id}
                     className={cn(
                       "flex items-center gap-2 rounded-md px-2 py-1.5 cursor-pointer transition-colors",
                       "hover:bg-primary/5 border border-transparent hover:border-border/30",
-                      isSelected && "bg-primary/3",
+                      isContentSelected && "bg-primary/10 border-primary/30",
                     )}
                     onClick={(e) => {
                       e.stopPropagation();
-                      onSelect();
+                      onSelectBlock?.(content.id);
                     }}
                   >
                     <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-primary/8 text-primary">

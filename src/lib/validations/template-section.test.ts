@@ -7,8 +7,15 @@ import {
   createBrandTemplateSchema,
   updateBrandTemplateSchema,
   saveTemplateSectionsSchema,
+  saveTemplateBlocksSchema,
   templateExportSchema,
   templateImportSchema,
+  templateBlockSchema,
+  templateBlocksSchema,
+  blockStylingSchema,
+  layoutHintSchema,
+  validateSectionSettings,
+  SETTINGS_SCHEMA_MAP,
 } from "./template-section";
 
 // ---------------------------------------------------------------------------
@@ -292,5 +299,448 @@ describe("templateExportSchema", () => {
 
   it("templateImportSchema is the same as export", () => {
     expect(templateImportSchema.safeParse(validExport).success).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateSectionSettings (discriminated union)
+// ---------------------------------------------------------------------------
+describe("validateSectionSettings", () => {
+  it("validates header settings correctly", () => {
+    const result = validateSectionSettings("header", {
+      logoMode: "icon",
+      showOrgName: true,
+      showOrgAddress: true,
+      showOrgPhone: true,
+      showOrgEmail: true,
+      showOrgWebsite: true,
+      documentTitle: "QUOTE",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects header with invalid logoMode", () => {
+    const result = validateSectionSettings("header", {
+      logoMode: "giant",
+      showOrgName: true,
+      showOrgAddress: true,
+      showOrgPhone: true,
+      showOrgEmail: true,
+      showOrgWebsite: true,
+      documentTitle: "QUOTE",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("validates table settings correctly", () => {
+    const result = validateSectionSettings("table", {
+      showGroupHeaders: true,
+      showKitChildren: true,
+      showCheckboxes: false,
+      showConditionColumns: false,
+      showPricing: true,
+      showBadges: true,
+      showNotes: true,
+      showPerUnitCheckboxes: false,
+      showAssetTags: false,
+      showCategories: false,
+      showRowNumbers: false,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates signature settings", () => {
+    const result = validateSectionSettings("signature", {
+      columns: 2,
+      labels: ["Sent By", "Received By"],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects signature with too many columns", () => {
+    const result = validateSectionSettings("signature", {
+      columns: 10,
+      labels: ["A"],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("validates custom-text settings", () => {
+    const result = validateSectionSettings("custom-text", {
+      fontSize: 9,
+      fontWeight: "bold",
+      alignment: "center",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates spacer settings", () => {
+    const result = validateSectionSettings("spacer", { height: 20 });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects spacer with height out of range", () => {
+    const result = validateSectionSettings("spacer", { height: 200 });
+    expect(result.success).toBe(false);
+  });
+
+  it("validates page-break (empty settings)", () => {
+    const result = validateSectionSettings("page-break", {});
+    expect(result.success).toBe(true);
+  });
+
+  it("validates client-details with customLabels and customFields", () => {
+    const result = validateSectionSettings("client-details", {
+      showClientName: true,
+      showClientContact: true,
+      showClientEmail: true,
+      showClientAddress: true,
+      showClientTaxId: false,
+      customLabels: { contact: "Buyer" },
+      customFields: [{ label: "ABN", value: "12 345 678 901" }],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates crew-table settings", () => {
+    const result = validateSectionSettings("crew-table", {
+      showPhone: true,
+      showEmail: false,
+      showNotes: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("falls back to permissive for unknown type", () => {
+    const result = validateSectionSettings("unknown-type", { foo: "bar" });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates every section type has a schema entry", () => {
+    const types = [
+      "header", "client-details", "project-details", "table", "totals",
+      "notes", "signature", "custom-text", "crew-table", "spacer", "page-break",
+    ];
+    for (const type of types) {
+      expect(SETTINGS_SCHEMA_MAP).toHaveProperty(type);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// blockStylingSchema
+// ---------------------------------------------------------------------------
+describe("blockStylingSchema", () => {
+  it("accepts empty styling", () => {
+    expect(blockStylingSchema.safeParse({}).success).toBe(true);
+  });
+
+  it("accepts full styling", () => {
+    const result = blockStylingSchema.safeParse({
+      backgroundColor: "#f5f5f5",
+      borderColor: "#dddddd",
+      borderWidth: 1,
+      padding: 4,
+      margin: 2,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects invalid hex color", () => {
+    expect(
+      blockStylingSchema.safeParse({ backgroundColor: "red" }).success
+    ).toBe(false);
+  });
+
+  it("rejects negative border width", () => {
+    expect(
+      blockStylingSchema.safeParse({ borderWidth: -1 }).success
+    ).toBe(false);
+  });
+
+  it("rejects excessive padding", () => {
+    expect(
+      blockStylingSchema.safeParse({ padding: 100 }).success
+    ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// layoutHintSchema
+// ---------------------------------------------------------------------------
+describe("layoutHintSchema", () => {
+  it("accepts valid layout hint", () => {
+    const result = layoutHintSchema.safeParse({
+      rowId: "row_1",
+      columnIndex: 0,
+      columnWidth: 50,
+      columnCount: 2,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts layout hint with styling", () => {
+    const result = layoutHintSchema.safeParse({
+      rowId: "row_1",
+      columnIndex: 1,
+      columnWidth: 50,
+      columnCount: 2,
+      styling: { backgroundColor: "#f0f0f0" },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects columnIndex > 3", () => {
+    expect(
+      layoutHintSchema.safeParse({
+        rowId: "row_1",
+        columnIndex: 4,
+        columnWidth: 25,
+        columnCount: 5,
+      }).success
+    ).toBe(false);
+  });
+
+  it("rejects columnCount > 4", () => {
+    expect(
+      layoutHintSchema.safeParse({
+        rowId: "row_1",
+        columnIndex: 0,
+        columnWidth: 20,
+        columnCount: 5,
+      }).success
+    ).toBe(false);
+  });
+
+  it("rejects columnWidth > 100", () => {
+    expect(
+      layoutHintSchema.safeParse({
+        rowId: "row_1",
+        columnIndex: 0,
+        columnWidth: 101,
+        columnCount: 1,
+      }).success
+    ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// templateBlockSchema
+// ---------------------------------------------------------------------------
+describe("templateBlockSchema", () => {
+  it("accepts a content block (leaf)", () => {
+    const result = templateBlockSchema.safeParse({
+      id: "blk_1",
+      type: "header",
+      settings: { logoMode: "icon" },
+      visibility: {},
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a row with column children", () => {
+    const result = templateBlockSchema.safeParse({
+      id: "row_1",
+      type: "row",
+      columnWidths: [50, 50],
+      children: [
+        {
+          id: "col_1",
+          type: "column",
+          children: [
+            { id: "blk_1", type: "client-details", settings: {} },
+          ],
+        },
+        {
+          id: "col_2",
+          type: "column",
+          children: [
+            { id: "blk_2", type: "project-details", settings: {} },
+          ],
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a single-column row", () => {
+    const result = templateBlockSchema.safeParse({
+      id: "row_1",
+      type: "row",
+      columnWidths: [100],
+      children: [
+        {
+          id: "col_1",
+          type: "column",
+          children: [
+            { id: "blk_1", type: "table", settings: {} },
+          ],
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts block with styling", () => {
+    const result = templateBlockSchema.safeParse({
+      id: "blk_1",
+      type: "custom-text",
+      content: "Hello world",
+      styling: {
+        backgroundColor: "#f5f5f5",
+        padding: 4,
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects block with invalid type", () => {
+    expect(
+      templateBlockSchema.safeParse({
+        id: "blk_1",
+        type: "unknown-type",
+      }).success
+    ).toBe(false);
+  });
+
+  it("rejects block without id", () => {
+    expect(
+      templateBlockSchema.safeParse({ type: "header" }).success
+    ).toBe(false);
+  });
+
+  it("rejects columnWidths with more than 4 entries", () => {
+    expect(
+      templateBlockSchema.safeParse({
+        id: "row_1",
+        type: "row",
+        columnWidths: [20, 20, 20, 20, 20],
+      }).success
+    ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// templateBlocksSchema
+// ---------------------------------------------------------------------------
+describe("templateBlocksSchema", () => {
+  it("accepts empty array", () => {
+    expect(templateBlocksSchema.safeParse([]).success).toBe(true);
+  });
+
+  it("accepts array of blocks", () => {
+    const result = templateBlocksSchema.safeParse([
+      { id: "row_1", type: "row", columnWidths: [100], children: [] },
+      { id: "row_2", type: "row", columnWidths: [50, 50], children: [] },
+    ]);
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects more than 50 blocks", () => {
+    const blocks = Array.from({ length: 51 }, (_, i) => ({
+      id: `blk_${i}`,
+      type: "header" as const,
+    }));
+    expect(templateBlocksSchema.safeParse(blocks).success).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// saveTemplateBlocksSchema
+// ---------------------------------------------------------------------------
+describe("saveTemplateBlocksSchema", () => {
+  it("accepts valid blocks save payload", () => {
+    const result = saveTemplateBlocksSchema.safeParse({
+      id: "template-1",
+      blocks: [
+        {
+          id: "row_1",
+          type: "row",
+          columnWidths: [100],
+          children: [
+            {
+              id: "col_1",
+              type: "column",
+              children: [{ id: "blk_1", type: "header", settings: {} }],
+            },
+          ],
+        },
+      ],
+      version: 3,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts without version (backward compat)", () => {
+    const result = saveTemplateBlocksSchema.safeParse({
+      id: "template-1",
+      blocks: [],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects missing id", () => {
+    expect(
+      saveTemplateBlocksSchema.safeParse({ blocks: [] }).success
+    ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// saveTemplateSectionsSchema (with version)
+// ---------------------------------------------------------------------------
+describe("saveTemplateSectionsSchema with version", () => {
+  it("accepts with version number", () => {
+    const result = saveTemplateSectionsSchema.safeParse({
+      id: "template-1",
+      sections: [
+        { id: "s1", type: "header", settings: {}, visibility: {}, order: 0 },
+      ],
+      version: 5,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts without version (backward compat)", () => {
+    const result = saveTemplateSectionsSchema.safeParse({
+      id: "template-1",
+      sections: [
+        { id: "s1", type: "header", settings: {}, visibility: {}, order: 0 },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// templateSectionSchema with layoutHint
+// ---------------------------------------------------------------------------
+describe("templateSectionSchema with layoutHint", () => {
+  it("accepts section with layoutHint", () => {
+    const result = templateSectionSchema.safeParse({
+      id: "sec_1",
+      type: "header",
+      settings: {},
+      visibility: {},
+      order: 0,
+      layoutHint: {
+        rowId: "row_1",
+        columnIndex: 0,
+        columnWidth: 100,
+        columnCount: 1,
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts section without layoutHint (backward compat)", () => {
+    const result = templateSectionSchema.safeParse({
+      id: "sec_1",
+      type: "header",
+      settings: {},
+      visibility: {},
+      order: 0,
+    });
+    expect(result.success).toBe(true);
   });
 });

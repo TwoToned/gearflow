@@ -200,6 +200,8 @@ export interface TemplateSection {
   content?: string;
   /** Sort position (0-based) */
   order: number;
+  /** Layout metadata for column positioning (set when derived from blocks) */
+  layoutHint?: LayoutHint;
 }
 
 // ─── Default Sections per Document Type ──────────────────────────────────────
@@ -461,3 +463,54 @@ export const PAGE_CONTENT_HEIGHT_MM = 269;
 
 /** Header/footer repeated on continuation pages (mm) */
 export const CONTINUATION_OVERHEAD_MM = 20;
+
+// ─── Block Editor Data Model ─────────────────────────────────────────────────
+
+/** Per-section styling for PDF rendering (backgrounds, borders, padding) */
+export interface BlockStyling {
+  backgroundColor?: string; // hex color
+  borderColor?: string; // hex color
+  borderWidth?: number; // pt
+  padding?: number; // mm
+  margin?: number; // mm
+}
+
+/**
+ * Layout hint attached to flat TemplateSection[] when derived from blocks.
+ * Tells the renderer how to position this section within a column layout.
+ */
+export interface LayoutHint {
+  /** Which row this section belongs to */
+  rowId: string;
+  /** 0-based column index within the row */
+  columnIndex: number;
+  /** Width of this column as a percentage (0-100) */
+  columnWidth: number;
+  /** Total number of columns in this row */
+  columnCount: number;
+  /** Optional styling for this section's block */
+  styling?: BlockStyling;
+}
+
+/**
+ * Block tree node for the editor. 2 levels deep:
+ * - Row blocks contain column children
+ * - Column blocks contain content (section) children
+ * - Content blocks are leaf nodes with a SectionType
+ */
+export interface TemplateBlock {
+  id: string;
+  type: "row" | "column" | SectionType;
+  /** Child blocks (rows have columns, columns have content) */
+  children?: TemplateBlock[];
+  /** Section settings (content blocks only) */
+  settings?: SectionSettings;
+  /** Visibility rules (content blocks only) */
+  visibility?: SectionVisibility;
+  /** Text content with {token} placeholders */
+  content?: string;
+  /** Column width percentages for row blocks, e.g. [50, 50] or [30, 70] */
+  columnWidths?: number[];
+  /** Per-section styling (background, border, padding) */
+  styling?: BlockStyling;
+}

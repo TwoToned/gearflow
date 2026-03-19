@@ -37,7 +37,7 @@ export function AddressDisplay({
 
   if (address) {
     return (
-      <p className="text-sm text-muted-foreground whitespace-pre-wrap">{address}</p>
+      <p className="text-sm text-fg-3 whitespace-pre-wrap">{address}</p>
     );
   }
 

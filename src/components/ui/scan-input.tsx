@@ -74,7 +74,7 @@ export const ScanInput = forwardRef<HTMLInputElement, ScanInputProps>(
             className={`absolute right-1 h-8 w-8 flex items-center justify-center rounded-md transition-colors ${
               scannerOpen
                 ? "text-primary bg-primary/10"
-                : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                : "text-fg-3 hover:text-fg hover:bg-accent"
             }`}
             title="Scan with camera"
           >

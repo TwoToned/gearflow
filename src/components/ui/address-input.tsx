@@ -187,7 +187,7 @@ export function AddressInput({
           placeholder={placeholder}
           disabled={disabled}
           className={cn(
-            "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+            "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-fg-3 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
             isGeocoded && "pr-8",
             className
           )}
@@ -222,14 +222,14 @@ export function AddressInput({
               >
                 <div className="font-medium">{prediction.mainText}</div>
                 {prediction.secondaryText && (
-                  <div className="text-xs text-muted-foreground truncate">
+                  <div className="text-xs text-fg-3 truncate">
                     {prediction.secondaryText}
                   </div>
                 )}
               </li>
             ))}
           </ul>
-          <div className="border-t px-3 py-1.5 text-[10px] text-muted-foreground">
+          <div className="border-t px-3 py-1.5 text-[10px] text-fg-3">
             Powered by Google
           </div>
         </div>

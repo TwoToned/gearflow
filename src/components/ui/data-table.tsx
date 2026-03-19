@@ -236,14 +236,14 @@ function FilterPopover({
             <div className="flex items-center justify-between mb-1 px-1">
               <button
                 type="button"
-                className="text-[10px] text-muted-foreground hover:text-foreground"
+                className="text-[10px] text-fg-3 hover:text-fg"
                 onClick={selectAll}
               >
                 Select all
               </button>
               <button
                 type="button"
-                className="text-[10px] text-muted-foreground hover:text-foreground"
+                className="text-[10px] text-fg-3 hover:text-fg"
                 onClick={clearAll}
               >
                 Clear
@@ -273,7 +273,7 @@ function FilterPopover({
                 );
               })}
               {filteredOptions.length === 0 && (
-                <p className="text-xs text-muted-foreground px-2 py-1">No options found</p>
+                <p className="text-xs text-fg-3 px-2 py-1">No options found</p>
               )}
             </div>
           </div>,
@@ -350,7 +350,7 @@ function ColumnVisibilityPopover<TData>({
             className="fixed z-50 w-52 rounded-lg border bg-popover p-2 shadow-lg"
             style={{ top: pos.top, right: pos.right }}
           >
-            <p className="text-xs font-medium text-muted-foreground mb-1.5 px-1">Toggle columns</p>
+            <p className="text-xs font-medium text-fg-3 mb-1.5 px-1">Toggle columns</p>
             <div className="max-h-64 overflow-y-auto space-y-0.5">
               {columns.map((col) => (
                 <button
@@ -378,7 +378,7 @@ function ColumnVisibilityPopover<TData>({
                 <div className="my-1.5 h-px bg-border" />
                 <button
                   type="button"
-                  className="w-full text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-accent text-left"
+                  className="w-full text-xs text-fg-3 hover:text-fg px-2 py-1 rounded hover:bg-accent text-left"
                   onClick={() => {
                     onReset();
                     setOpen(false);
@@ -440,7 +440,7 @@ function FilterChips<TData>({
       })}
       <button
         type="button"
-        className="text-xs text-muted-foreground hover:text-foreground"
+        className="text-xs text-fg-3 hover:text-fg"
         onClick={onClearAll}
       >
         Clear all
@@ -560,7 +560,7 @@ export function DataTable<TData>({
         {toolbarPrefix}
         {enableSearch && onSearchChange && (
           <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-fg-3" />
             <Input
               placeholder={searchPlaceholder}
               value={searchValue ?? ""}
@@ -631,7 +631,7 @@ export function DataTable<TData>({
                       <button
                         type="button"
                         onClick={() => handleSort(sortKey)}
-                        className="inline-flex items-center gap-1 hover:text-foreground transition-colors -ml-1 px-1 py-0.5 rounded"
+                        className="inline-flex items-center gap-1 hover:text-fg transition-colors -ml-1 px-1 py-0.5 rounded"
                       >
                         {col.header}
                         {isActive ? (
@@ -726,7 +726,7 @@ export function DataTable<TData>({
           <div className="flex items-center gap-4">
             {onPageSizeChange && (
               <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Show</span>
+                <span className="text-sm text-fg-3">Show</span>
                 <select
                   value={pageSize}
                   onChange={(e) => onPageSizeChange(Number(e.target.value))}
@@ -737,10 +737,10 @@ export function DataTable<TData>({
                   <option value={50}>50</option>
                   <option value={100}>100</option>
                 </select>
-                <span className="text-sm text-muted-foreground">per page</span>
+                <span className="text-sm text-fg-3">per page</span>
               </div>
             )}
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-fg-3">
               Page {page} of {totalPages} ({totalRows ?? data.length} total)
             </p>
           </div>

@@ -99,7 +99,7 @@ export default function AddressMapInner({
           href={directionsUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          className="inline-flex items-center gap-1.5 text-sm text-fg-3 hover:text-fg transition-colors"
         >
           <ExternalLink className="h-3.5 w-3.5" />
           Get Directions

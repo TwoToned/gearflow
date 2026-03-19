@@ -21,6 +21,8 @@ interface TableSchema extends Schema {
 interface TableValue {
   items: DocumentLineItem[];
   config: TablePluginConfig;
+  /** Index of the first item to render (for multi-page tables) */
+  startIndex?: number;
 }
 
 /** Column definition for the table */
@@ -137,7 +139,8 @@ function getAssetTag(item: DocumentLineItem, isKit: boolean): string {
 async function pdfRender(arg: PDFRenderProps<TableSchema>) {
   const { schema, page, pdfLib, pdfDoc, _cache } = arg;
   const value = arg.value || '{"items":[],"config":{}}';
-  const { items, config } = JSON.parse(value) as TableValue;
+  const { items, config, startIndex: startIdx } = JSON.parse(value) as TableValue;
+  const startIndex = startIdx || 0;
 
   const pageHeight = page.getHeight();
   const layout = getLayoutProps(schema, pageHeight);
@@ -173,6 +176,7 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
 
   let currentY = layout.y + layout.height;
   const tableX = layout.x;
+  const bottomBoundary = layout.y; // Stop drawing when currentY reaches this
 
   // === Filter items ===
   let filteredItems = items.filter(i => !i.isKitChild);
@@ -210,11 +214,15 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
   // === Draw rows ===
   let rowNum = 0;
   let globalIdx = 0;
+  let overflow = false; // Set when we run out of space
 
   for (const [groupName, groupItems] of groups) {
+    if (overflow) break;
+
     // Group header
     if (groupName !== ungroupedKey && config.showGroupHeaders) {
       const ghHeight = fontSize + rowPadding * 2;
+      if (currentY - ghHeight < bottomBoundary) { overflow = true; break; }
       page.drawRectangle({
         x: tableX,
         y: currentY - ghHeight,
@@ -241,6 +249,8 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
     for (const item of groupItems) {
       rowNum++;
       globalIdx++;
+      // Skip items before startIndex (for multi-page continuation)
+      if (globalIdx <= startIndex) continue;
       const isKit = !!item.kitId && !item.isKitChild;
       const isItemized = isKit && item.pricingMode === "ITEMIZED";
       const itemName = getItemName(item, isKit);
@@ -250,6 +260,9 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
       if (item.notes && config.showNotes) {
         rowContentHeight += noteFontSize + 2;
       }
+
+      // Bounds check: stop if this row won't fit
+      if (currentY - rowContentHeight < bottomBoundary) { overflow = true; break; }
 
       // Alternating row background
       if (globalIdx % 2 === 0) {
@@ -485,6 +498,7 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
         const checkedOut = item.checkedOutQuantity || 0;
         for (let i = 0; i < item.quantity; i++) {
           const puHeight = 10;
+          if (currentY - puHeight < bottomBoundary) { overflow = true; break; }
           const puY = currentY - puHeight + 3;
           const indentX = tableX + 26;
           drawCheckbox(page, pdfLib, indentX, puY, 7, i < checkedOut);
@@ -509,12 +523,14 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
         }
 
         for (const child of children) {
+          if (overflow) break;
           const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
           const childName = child.model?.name || child.description || "-";
           const nestedChildren = child.childLineItems || [];
 
           // Child row
           const childRowHeight = childFontSize + rowPadding * 2;
+          if (currentY - childRowHeight < bottomBoundary) { overflow = true; break; }
           page.drawLine({
             start: { x: tableX, y: currentY - childRowHeight },
             end: { x: tableX + layout.width, y: currentY - childRowHeight },
@@ -691,7 +707,9 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
             }
 
             for (const nested of grandchildren) {
+              if (overflow) break;
               const nestedRowHeight = grandchildFontSize + rowPadding * 2;
+              if (currentY - nestedRowHeight < bottomBoundary) { overflow = true; break; }
               page.drawLine({
                 start: { x: tableX, y: currentY - nestedRowHeight },
                 end: { x: tableX + layout.width, y: currentY - nestedRowHeight },

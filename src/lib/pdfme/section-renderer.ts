@@ -145,13 +145,19 @@ function estimateSectionHeight(
 
 // ─── Page Layout ─────────────────────────────────────────────────────────────
 
+interface PageEntry {
+  section: TemplateSection;
+  y: number;
+  height: number;
+  /** For table sections on continuation pages: skip items before this index */
+  tableStartIndex?: number;
+}
+
 interface PageLayout {
   /** Sections on this page with their Y positions */
-  entries: { section: TemplateSection; y: number; height: number }[];
+  entries: PageEntry[];
   /** Whether this is a continuation page (shows continuation header) */
   isContinuation: boolean;
-  /** Whether the table is split across this page */
-  tableSlice?: { startIndex: number; endIndex: number };
 }
 
 /**
@@ -203,21 +209,24 @@ export function computePageLayout(
     }
 
     // Special handling for tables: if the table is taller than available space,
-    // we split it across pages. The table plugin handles this internally via
-    // its own item slicing — we just need to ensure we allocate enough pages.
+    // we split it across pages. The table plugin clips to its allocated height
+    // and uses startIndex to skip already-rendered items on continuation pages.
     if (section.type === "table" && sectionHeight > (maxY - currentY)) {
-      // Table needs splitting — allocate remaining space on this page,
-      // then create continuation pages as needed.
-      // The table plugin will receive all items and draw what fits.
-      // We set the height to fill the remaining page space.
       const availableHeight = maxY - currentY;
-      currentPage.entries.push({ section, y: currentY, height: availableHeight });
-      currentY = maxY; // Page is full
+      // First page: start from item 0
+      currentPage.entries.push({ section, y: currentY, height: availableHeight, tableStartIndex: 0 });
+      currentY = maxY;
 
-      // Calculate how many more pages the table needs
+      // Estimate rows per page to calculate startIndex for continuation pages
+      const headerRowHeight = TABLE_ROW_HEIGHT_MM + 4; // table header row
+      const rowsOnFirstPage = Math.max(1, Math.floor((availableHeight - headerRowHeight) / TABLE_ROW_HEIGHT_MM));
+
       const remainingHeight = sectionHeight - availableHeight;
       const continuationContentHeight = maxY - MARGIN - (headerSection ? estimateSectionHeight(headerSection, data) + 2 : 0);
       const extraPages = Math.ceil(remainingHeight / continuationContentHeight);
+      const rowsPerContinuationPage = Math.max(1, Math.floor((continuationContentHeight - headerRowHeight) / TABLE_ROW_HEIGHT_MM));
+
+      let currentStartIndex = rowsOnFirstPage;
 
       for (let i = 0; i < extraPages; i++) {
         pages.push(currentPage);
@@ -234,8 +243,9 @@ export function computePageLayout(
           remainingHeight - i * continuationContentHeight,
           continuationContentHeight,
         );
-        currentPage.entries.push({ section, y: currentY, height: pageTableHeight });
+        currentPage.entries.push({ section, y: currentY, height: pageTableHeight, tableStartIndex: currentStartIndex });
         currentY += pageTableHeight;
+        currentStartIndex += rowsPerContinuationPage;
       }
       continue;
     }
@@ -373,12 +383,14 @@ function buildSectionSchema(
 
 /**
  * Build the pdfme input value for a section.
+ * @param tableStartIndex - For table sections on continuation pages, skip items before this index
  */
 function buildSectionInput(
   section: TemplateSection,
   data: DocumentData,
   docType: DocumentType,
   docColor: string,
+  tableStartIndex?: number,
 ): string {
   switch (section.type) {
     case "header": {
@@ -469,7 +481,11 @@ function buildSectionInput(
 
     case "table": {
       const s = section.settings as TableSectionSettings;
-      const config: { items: typeof data.line_items; config: TablePluginConfig } = {
+      const tableValue: {
+        items: typeof data.line_items;
+        config: TablePluginConfig;
+        startIndex?: number;
+      } = {
         items: data.line_items,
         config: {
           documentType: docType,
@@ -489,7 +505,10 @@ function buildSectionInput(
           filterByStatus: getFilterByStatus(docType),
         },
       };
-      return JSON.stringify(config);
+      if (tableStartIndex) {
+        tableValue.startIndex = tableStartIndex;
+      }
+      return JSON.stringify(tableValue);
     }
 
     case "totals": {
@@ -618,7 +637,7 @@ export function renderSections(
     // Build schemas + inputs for each section on this page
     for (const entry of page.entries) {
       const schema = buildSectionSchema(entry.section, entry.y, entry.height, pageIdx);
-      const input = buildSectionInput(entry.section, data, docType, docColor);
+      const input = buildSectionInput(entry.section, data, docType, docColor, entry.tableStartIndex);
       pageSchemas.push(schema);
       pageInputs[schema.name] = input;
     }

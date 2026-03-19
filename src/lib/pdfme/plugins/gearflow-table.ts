@@ -691,6 +691,7 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
             const childCheckedOut = child.checkedOutQuantity || 0;
             for (let i = 0; i < child.quantity; i++) {
               const puHeight = 10;
+              if (currentY - puHeight < bottomBoundary) { overflow = true; break; }
               const puY = currentY - puHeight + 3;
               const indentX = tableX + 38;
               drawCheckbox(page, pdfLib, indentX, puY, 7, i < childCheckedOut);

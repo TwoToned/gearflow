@@ -96,15 +96,45 @@ export function estimateSectionHeight(
     }
 
     case "table": {
-      const items = data.line_items.filter((i) => !i.isKitChild);
-      const itemCount = items.length;
-      const childCount = data.line_items.filter((i) => i.isKitChild).length;
       const ts = section.settings as TableSectionSettings;
-      const visibleChildren = ts.showKitChildren ? childCount : 0;
-      // Count distinct group names for group header height
-      const groupNames = new Set(items.map((i) => i.groupName).filter(Boolean));
-      const groupHeaderCount = ts.showGroupHeaders ? groupNames.size : 0;
-      return 8 + (itemCount + visibleChildren + groupHeaderCount) * TABLE_ROW_HEIGHT_MM + 4;
+      const parentItems = data.line_items.filter((i) => !i.isKitChild);
+
+      // Count distinct group names for group header rows
+      const groupNames = new Set(parentItems.map((i) => i.groupName).filter(Boolean));
+      let totalRows = ts.showGroupHeaders ? groupNames.size : 0;
+
+      for (const item of parentItems) {
+        totalRows++; // The parent item row
+
+        const isKit = !!item.kitId;
+
+        // Per-unit checkbox rows for bulk items (qty > 1, non-kit)
+        if (ts.showPerUnitCheckboxes && !isKit && item.quantity > 1) {
+          // Per-unit rows are ~10pt ≈ 2x normal row height
+          totalRows += item.quantity * 2;
+        }
+
+        // Kit children
+        if (isKit && ts.showKitChildren) {
+          const children = item.childLineItems || [];
+          for (const child of children) {
+            totalRows++; // Child row
+            const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
+
+            // Per-unit checkboxes for child items
+            if (ts.showPerUnitCheckboxes && !isNestedKit && child.quantity > 1) {
+              totalRows += child.quantity * 2;
+            }
+
+            // Grandchildren (nested kit members)
+            if (isNestedKit) {
+              totalRows += (child.childLineItems || []).length;
+            }
+          }
+        }
+      }
+
+      return 8 + totalRows * TABLE_ROW_HEIGHT_MM + 4;
     }
 
     case "totals":
@@ -311,15 +341,24 @@ export function computePageLayout(
           tableStartIndex: 0,
         });
 
-        // Continuation pages — use correct row height for the table type
+        // Continuation pages — calculate average height per parent item
         const isCrewTable = section.type === "crew-table";
-        const itemRowHeight = isCrewTable ? CREW_ROW_HEIGHT_MM : TABLE_ROW_HEIGHT_MM;
-        const headerRowHeight = itemRowHeight + 4;
-        const rowsOnFirstPage = Math.max(1, Math.floor((availableHeight - headerRowHeight) / itemRowHeight));
+        const baseItemRowHeight = isCrewTable ? CREW_ROW_HEIGHT_MM : TABLE_ROW_HEIGHT_MM;
+        const headerRowHeight = baseItemRowHeight + 4;
+
+        // Calculate average mm per parent item (accounts for children, per-unit rows, etc.)
+        const parentItemCount = isCrewTable
+          ? (data.crew || []).length
+          : data.line_items.filter((i) => !i.isKitChild).length;
+        const avgItemHeight = parentItemCount > 0
+          ? (rowHeight - 8 - 4) / parentItemCount  // remove header/footer padding
+          : baseItemRowHeight;
+
+        const rowsOnFirstPage = Math.max(1, Math.floor((availableHeight - headerRowHeight) / avgItemHeight));
         const remainingHeight = rowHeight - availableHeight;
         const continuationContentHeight = maxY - MARGIN - (headerSection ? estimateSectionHeight(headerSection, data) + SECTION_GAP : 0);
         const extraPages = Math.ceil(remainingHeight / continuationContentHeight);
-        const rowsPerContinuation = Math.max(1, Math.floor((continuationContentHeight - headerRowHeight) / itemRowHeight));
+        const rowsPerContinuation = Math.max(1, Math.floor((continuationContentHeight - headerRowHeight) / avgItemHeight));
 
         let currentStartIndex = rowsOnFirstPage;
         for (let i = 0; i < extraPages; i++) {

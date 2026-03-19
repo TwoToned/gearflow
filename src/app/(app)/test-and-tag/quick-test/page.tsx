@@ -509,7 +509,7 @@ function QuickTestInner() {
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <ShieldCheck className="h-6 w-6 text-primary shrink-0" />
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight truncate">QUICK TEST</h1>
+          <h1 className="text-xl sm:t-title text-fg truncate">QUICK TEST</h1>
         </div>
         <Button variant="outline" size="sm" render={<Link href="/test-and-tag" />}>
           <ArrowLeft className="h-4 w-4 sm:mr-2" />

@@ -52,7 +52,7 @@ export default function EditModelPage({ params }: { params: Promise<{ id: string
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Edit Model</h1>
+        <h1 className="t-title text-fg">Edit Model</h1>
         <p className="text-muted-foreground">{model.name}</p>
       </div>
       <ModelForm initialData={initialData} />

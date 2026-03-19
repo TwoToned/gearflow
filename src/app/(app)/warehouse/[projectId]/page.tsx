@@ -1228,7 +1228,7 @@ function WarehouseProjectPage({
               {statusLabels[project.status] || project.status}
             </Badge>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight">{project.name}</h1>
+          <h1 className="t-title text-fg">{project.name}</h1>
           {project.client && <p className="text-muted-foreground">{project.client.name}</p>}
         </div>
         <div className="flex gap-2">

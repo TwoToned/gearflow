@@ -22,7 +22,7 @@ export default function EditSupplierPage({ params }: { params: Promise<{ id: str
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Edit Supplier</h1>
+        <h1 className="t-title text-fg">Edit Supplier</h1>
         <p className="text-muted-foreground">
           Update supplier details.
         </p>

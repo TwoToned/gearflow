@@ -23,7 +23,7 @@ export default function EditKitPage({ params }: { params: Promise<{ id: string }
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Edit Kit</h1>
+        <h1 className="t-title text-fg">Edit Kit</h1>
         <p className="text-muted-foreground">
           Update details for {kit.assetTag} &mdash; {kit.name}.
         </p>

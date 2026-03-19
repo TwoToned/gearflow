@@ -23,7 +23,7 @@ function BuilderContent() {
     <RequirePermission resource="reports" action="view">
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Custom Report Builder</h1>
+          <h1 className="t-title text-fg">Custom Report Builder</h1>
           <p className="text-muted-foreground">
             Build a custom report by selecting a data source, columns, filters, and grouping.
           </p>

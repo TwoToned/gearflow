@@ -63,7 +63,7 @@ export default function AdminSettingsPage() {
     <AdminShell>
       <div className="space-y-6 max-w-2xl">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">
+          <h1 className="t-title text-fg">
             Platform Settings
           </h1>
           <p className="text-muted-foreground">

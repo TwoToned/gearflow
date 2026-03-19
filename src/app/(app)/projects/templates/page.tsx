@@ -87,7 +87,7 @@ export default function TemplatesPage() {
       <div className="space-y-4">
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Templates</h1>
+            <h1 className="t-title text-fg">Templates</h1>
             <p className="text-muted-foreground">
               Reusable project templates with pre-configured line items.
             </p>

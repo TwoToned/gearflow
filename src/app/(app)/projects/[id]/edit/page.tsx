@@ -84,7 +84,7 @@ export default function EditProjectPage({
     <CanDo resource="project" action="update" fallback={<div className="p-8 text-center text-muted-foreground">You don&apos;t have permission to perform this action.</div>}>
       <div className="mx-auto max-w-3xl space-y-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Edit Project</h1>
+          <h1 className="t-title text-fg">Edit Project</h1>
           <p className="text-muted-foreground">
             {project.projectNumber} &middot; {project.name}
           </p>

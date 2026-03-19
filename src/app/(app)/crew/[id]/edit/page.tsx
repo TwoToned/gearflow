@@ -22,7 +22,7 @@ export default function EditCrewMemberPage({ params }: { params: Promise<{ id: s
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Edit Crew Member</h1>
+        <h1 className="t-title text-fg">Edit Crew Member</h1>
         <p className="text-muted-foreground">
           Update crew member details.
         </p>

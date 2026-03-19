@@ -171,7 +171,7 @@ function AvailabilityPage() {
     <div className="space-y-4">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">
+        <h1 className="t-title text-fg">
           Availability Calendar
         </h1>
         <p className="text-muted-foreground">

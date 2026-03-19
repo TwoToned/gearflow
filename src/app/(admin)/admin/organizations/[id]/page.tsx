@@ -228,7 +228,7 @@ export default function AdminOrgDetailPage({
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <div className="min-w-0">
-              <h1 className="text-xl sm:text-2xl font-bold tracking-tight truncate">
+              <h1 className="text-xl sm:t-title text-fg truncate">
                 {isLoading ? "Loading..." : org?.name}
               </h1>
               {org && (

@@ -184,7 +184,7 @@ function NewTestTagAssetInner() {
     <CanDo resource="testTag" action="create" fallback={<div className="p-8 text-center text-muted-foreground">You don&apos;t have permission to perform this action.</div>}>
     <div className="space-y-6 max-w-2xl">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">New Test & Tag Item</h1>
+        <h1 className="t-title text-fg">New Test & Tag Item</h1>
         <p className="text-muted-foreground">
           Register a new item in the Test & Tag registry.
         </p>

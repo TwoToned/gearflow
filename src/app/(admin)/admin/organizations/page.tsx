@@ -98,7 +98,7 @@ export default function AdminOrganizationsPage() {
     <AdminShell>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Organization</h1>
+          <h1 className="t-title text-fg">Organization</h1>
           <p className="text-muted-foreground">
             Manage the platform organization.
           </p>

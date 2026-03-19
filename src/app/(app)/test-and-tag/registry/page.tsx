@@ -34,7 +34,7 @@ export default function TestTagRegistryPage() {
     <div className="space-y-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Test & Tag Registry</h1>
+          <h1 className="t-title text-fg">Test & Tag Registry</h1>
           <p className="text-muted-foreground text-sm">
             View and manage all test and tag assets.
           </p>

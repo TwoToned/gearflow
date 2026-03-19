@@ -118,7 +118,7 @@ export default function CrewSettingsPage() {
       <PageMeta title="Crew Settings" />
       <div className="space-y-8">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Crew Settings</h1>
+          <h1 className="t-title text-fg">Crew Settings</h1>
           <p className="text-muted-foreground">
             Manage crew roles, skills, and other crew configuration.
           </p>

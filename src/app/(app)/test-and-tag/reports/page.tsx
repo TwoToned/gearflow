@@ -199,7 +199,7 @@ export default function TestTagReportsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Test & Tag Reports</h1>
+          <h1 className="t-title text-fg">Test & Tag Reports</h1>
           <p className="text-muted-foreground">Generate compliance reports and exports</p>
         </div>
         <Button variant="outline" render={<Link href="/test-and-tag" />}>

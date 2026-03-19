@@ -4,7 +4,7 @@ export default function NewMaintenancePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">New Maintenance Record</h1>
+        <h1 className="t-title text-fg">New Maintenance Record</h1>
         <p className="text-muted-foreground">
           Log a repair, inspection, or other maintenance work.
         </p>

@@ -62,7 +62,7 @@ function EditAssetContent({ params }: { params: Promise<{ id: string }> }) {
     return (
       <div className="mx-auto max-w-3xl space-y-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Edit Bulk Asset</h1>
+          <h1 className="t-title text-fg">Edit Bulk Asset</h1>
           <p className="text-muted-foreground font-mono">{ba.assetTag}</p>
         </div>
         <BulkAssetForm initialData={initialData} />
@@ -103,7 +103,7 @@ function EditAssetContent({ params }: { params: Promise<{ id: string }> }) {
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Edit Asset</h1>
+        <h1 className="t-title text-fg">Edit Asset</h1>
         <p className="text-muted-foreground font-mono">{asset.assetTag}</p>
       </div>
       <AssetForm initialData={initialData} />

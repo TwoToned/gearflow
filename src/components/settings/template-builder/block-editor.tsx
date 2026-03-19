@@ -237,6 +237,14 @@ export function BlockEditor({
     [blocks, updateBlocks],
   );
 
+  const updateBlockStyling = useCallback(
+    (blockId: string, styling: import("@/lib/pdfme/section-types").BlockStyling | undefined) => {
+      const newBlocks = updateBlockStylingInTree(blocks, blockId, styling);
+      updateBlocks(newBlocks);
+    },
+    [blocks, updateBlocks],
+  );
+
   // ─── Keyboard shortcuts ─────────────────────────────────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -487,6 +495,8 @@ export function BlockEditor({
           <SectionSettingsPanel
             section={selectedSection}
             onUpdate={updateSection}
+            blockStyling={selectedBlock?.styling}
+            onUpdateBlockStyling={updateBlockStyling}
           />
         </div>
       </div>
@@ -553,6 +563,26 @@ function updateBlockInTree(
       return {
         ...block,
         children: updateBlockInTree(block.children, id, updates),
+      };
+    }
+    return block;
+  });
+}
+
+/** Update a block's styling anywhere in the tree */
+function updateBlockStylingInTree(
+  blocks: TemplateBlock[],
+  id: string,
+  styling: import("@/lib/pdfme/section-types").BlockStyling | undefined,
+): TemplateBlock[] {
+  return blocks.map((block) => {
+    if (block.id === id) {
+      return { ...block, styling };
+    }
+    if (block.children) {
+      return {
+        ...block,
+        children: updateBlockStylingInTree(block.children, id, styling),
       };
     }
     return block;

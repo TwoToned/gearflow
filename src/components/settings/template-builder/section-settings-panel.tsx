@@ -26,15 +26,20 @@ import {
   type SectionVisibility,
   type SectionStyling,
   type CustomField,
+  type BlockStyling,
 } from "@/lib/pdfme/section-types";
 import { getAllowedConditionFields } from "@/lib/pdfme/condition-evaluator";
 
 interface SectionSettingsPanelProps {
   section: TemplateSection | null;
   onUpdate: (sectionId: string, updates: Partial<TemplateSection>) => void;
+  /** Block styling for the selected section (from TemplateBlock.styling) */
+  blockStyling?: BlockStyling;
+  /** Called when block styling changes */
+  onUpdateBlockStyling?: (sectionId: string, styling: BlockStyling | undefined) => void;
 }
 
-export function SectionSettingsPanel({ section, onUpdate }: SectionSettingsPanelProps) {
+export function SectionSettingsPanel({ section, onUpdate, blockStyling, onUpdateBlockStyling }: SectionSettingsPanelProps) {
   if (!section) {
     return (
       <div className="flex h-full items-center justify-center p-6">
@@ -100,6 +105,22 @@ export function SectionSettingsPanel({ section, onUpdate }: SectionSettingsPanel
             <p className="text-[10px] text-fg-3">
               Appended after the section content. Supports {"{client_name}"}, {"{total}"}, etc.
             </p>
+          </div>
+        </>
+      )}
+
+      {/* Block styling (background, border, padding) */}
+      {onUpdateBlockStyling && section.type !== "page-break" && section.type !== "spacer" && (
+        <>
+          <Separator className="opacity-50" />
+          <div className="px-4 py-3 space-y-3">
+            <h4 className="text-xs font-semibold text-fg-3 uppercase tracking-wider">
+              Section Styling
+            </h4>
+            <BlockStylingEditor
+              styling={blockStyling}
+              onUpdate={(s) => onUpdateBlockStyling(section.id, s)}
+            />
           </div>
         </>
       )}
@@ -802,6 +823,129 @@ function SpacerSettings({
         onChange={(e) => onUpdate({ height: Math.max(2, Math.min(100, Number(e.target.value))) })}
         className="h-8 text-sm w-24"
       />
+    </div>
+  );
+}
+
+// ─── Block Styling Editor ───────────────────────────────────────────────────
+
+function BlockStylingEditor({
+  styling,
+  onUpdate,
+}: {
+  styling?: BlockStyling;
+  onUpdate: (styling: BlockStyling | undefined) => void;
+}) {
+  const current = styling || {};
+  const hasStyling = !!(current.backgroundColor || current.borderColor || current.padding || current.margin);
+
+  const update = (updates: Partial<BlockStyling>) => {
+    const next = { ...current, ...updates };
+    // Clean empty values
+    if (!next.backgroundColor && !next.borderColor && !next.borderWidth && !next.padding && !next.margin) {
+      onUpdate(undefined);
+    } else {
+      onUpdate(next);
+    }
+  };
+
+  return (
+    <div className="space-y-2.5">
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <Label className="text-[10px] text-fg-3">Background</Label>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="color"
+              value={current.backgroundColor || "#ffffff"}
+              onChange={(e) => update({ backgroundColor: e.target.value })}
+              className="w-7 h-7 rounded border border-border/50 cursor-pointer p-0"
+            />
+            {current.backgroundColor && (
+              <button
+                className="text-[9px] text-fg-3 hover:text-fg"
+                onClick={() => update({ backgroundColor: undefined })}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[10px] text-fg-3">Border</Label>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="color"
+              value={current.borderColor || "#cccccc"}
+              onChange={(e) => update({ borderColor: e.target.value, borderWidth: current.borderWidth || 0.5 })}
+              className="w-7 h-7 rounded border border-border/50 cursor-pointer p-0"
+            />
+            {current.borderColor && (
+              <button
+                className="text-[9px] text-fg-3 hover:text-fg"
+                onClick={() => update({ borderColor: undefined, borderWidth: undefined })}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {current.borderColor && (
+        <div className="space-y-1">
+          <Label className="text-[10px] text-fg-3">Border Width</Label>
+          <Select
+            value={String(current.borderWidth || 0.5)}
+            onValueChange={(v) => update({ borderWidth: Number(v) })}
+          >
+            <SelectTrigger className="h-7 text-xs">
+              <SelectValue>{current.borderWidth || 0.5}pt</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {[0.25, 0.5, 0.75, 1, 1.5, 2].map((w) => (
+                <SelectItem key={w} value={String(w)}>{w}pt</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <Label className="text-[10px] text-fg-3">Padding (mm)</Label>
+          <Input
+            type="number"
+            min={0}
+            max={20}
+            step={0.5}
+            value={current.padding || 0}
+            onChange={(e) => update({ padding: Number(e.target.value) || undefined })}
+            className="h-7 text-xs"
+          />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[10px] text-fg-3">Margin (mm)</Label>
+          <Input
+            type="number"
+            min={0}
+            max={20}
+            step={0.5}
+            value={current.margin || 0}
+            onChange={(e) => update({ margin: Number(e.target.value) || undefined })}
+            className="h-7 text-xs"
+          />
+        </div>
+      </div>
+
+      {hasStyling && (
+        <button
+          className="text-[10px] text-destructive hover:underline"
+          onClick={() => onUpdate(undefined)}
+        >
+          Clear all styling
+        </button>
+      )}
     </div>
   );
 }

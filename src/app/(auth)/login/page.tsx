@@ -10,14 +10,6 @@ import { DynamicIcon } from "@/components/ui/dynamic-icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { toast } from "sonner";
 import { Loader2, Fingerprint, ArrowLeft } from "lucide-react";
 
@@ -167,8 +159,8 @@ export default function LoginPage() {
   const hasSocial = socialProviders.length > 0;
 
   return (
-    <Card>
-      <CardHeader className="text-center">
+    <div className="rounded-lg bg-bg-surface p-6 surface-ring sm:p-8">
+      <div className="mb-6 text-center">
         <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold">
           {platformIcon ? (
             <DynamicIcon name={platformIcon} className="h-5 w-5" />
@@ -176,16 +168,16 @@ export default function LoginPage() {
             platformName.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2)
           )}
         </div>
-        <CardTitle className="text-xl">
+        <h2 className="text-xl font-semibold tracking-tight">
           {orgName ? `Sign in to ${orgName}` : "Welcome back"}
-        </CardTitle>
-        <CardDescription>
+        </h2>
+        <p className="text-sm text-fg-3">
           {orgName
             ? `Enter your credentials to access ${orgName}`
             : `Sign in to your ${platformName} account`}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+        </p>
+      </div>
+      <div className="space-y-4">
         {/* Email step — first step of the flow */}
         {step === "email" && (
           <form onSubmit={handleEmailContinue} className="space-y-4">
@@ -214,7 +206,7 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={() => setStep("email")}
-              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+              className="flex items-center gap-1 text-sm text-fg-3 hover:text-foreground transition-colors"
             >
               <ArrowLeft className="h-3 w-3" />
               Back
@@ -256,7 +248,7 @@ export default function LoginPage() {
             <span className="w-full border-t" />
           </div>
           <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-card px-2 text-muted-foreground">or</span>
+            <span className="bg-bg-surface px-2 text-fg-3">or</span>
           </div>
         </div>
         <div className={hasSocial ? "grid gap-2" : "hidden"}>
@@ -305,17 +297,17 @@ export default function LoginPage() {
           )}
           Sign in with Passkey
         </Button>
-      </CardContent>
+      </div>
       {regOpen ? (
-        <CardFooter className="justify-center">
-          <p className="text-sm text-muted-foreground">
+        <div className="mt-6 flex justify-center">
+          <p className="text-sm text-fg-3">
             Don&apos;t have an account?{" "}
             <Link href="/register" className="text-primary hover:underline">
               Sign up
             </Link>
           </p>
-        </CardFooter>
+        </div>
       ) : null}
-    </Card>
+    </div>
   );
 }

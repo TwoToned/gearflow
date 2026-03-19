@@ -10,14 +10,6 @@ import { DynamicIcon } from "@/components/ui/dynamic-icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { toast } from "sonner";
 import { Loader2, ShieldX } from "lucide-react";
 
@@ -86,65 +78,63 @@ function RegisterContent() {
 
   if (policy === null) {
     return (
-      <Card>
-        <CardContent className="p-8 text-center">
-          <Loader2 className="mx-auto h-8 w-8 animate-spin text-muted-foreground" />
-        </CardContent>
-      </Card>
+      <div className="rounded-lg bg-bg-surface p-8 surface-ring text-center">
+        <Loader2 className="mx-auto h-8 w-8 animate-spin text-fg-3" />
+      </div>
     );
   }
 
   if (policy === "DISABLED" && !inviteId) {
     return (
-      <Card>
-        <CardHeader className="text-center">
+      <div className="rounded-lg bg-bg-surface p-6 surface-ring sm:p-8">
+        <div className="mb-6 text-center">
           <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-destructive text-destructive-foreground">
             <ShieldX className="h-5 w-5" />
           </div>
-          <CardTitle className="text-xl">Registration Disabled</CardTitle>
-          <CardDescription>
+          <h2 className="text-xl font-semibold tracking-tight">Registration Disabled</h2>
+          <p className="text-sm text-fg-3">
             New account registration is currently disabled. Contact an administrator for access.
-          </CardDescription>
-        </CardHeader>
-        <CardFooter className="justify-center">
-          <p className="text-sm text-muted-foreground">
+          </p>
+        </div>
+        <div className="flex justify-center">
+          <p className="text-sm text-fg-3">
             Already have an account?{" "}
             <Link href="/login" className="text-primary hover:underline">
               Sign in
             </Link>
           </p>
-        </CardFooter>
-      </Card>
+        </div>
+      </div>
     );
   }
 
   if (policy === "INVITE_ONLY" && !inviteId) {
     return (
-      <Card>
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+      <div className="rounded-lg bg-bg-surface p-6 surface-ring sm:p-8">
+        <div className="mb-6 text-center">
+          <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-bg-inset text-fg-3">
             <ShieldX className="h-5 w-5" />
           </div>
-          <CardTitle className="text-xl">Invite Only</CardTitle>
-          <CardDescription>
+          <h2 className="text-xl font-semibold tracking-tight">Invite Only</h2>
+          <p className="text-sm text-fg-3">
             Registration is invite-only. Contact an administrator to get an invitation.
-          </CardDescription>
-        </CardHeader>
-        <CardFooter className="justify-center">
-          <p className="text-sm text-muted-foreground">
+          </p>
+        </div>
+        <div className="flex justify-center">
+          <p className="text-sm text-fg-3">
             Already have an account?{" "}
             <Link href="/login" className="text-primary hover:underline">
               Sign in
             </Link>
           </p>
-        </CardFooter>
-      </Card>
+        </div>
+      </div>
     );
   }
 
   return (
-    <Card>
-      <CardHeader className="text-center">
+    <div className="rounded-lg bg-bg-surface p-6 surface-ring sm:p-8">
+      <div className="mb-6 text-center">
         <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold">
           {platformIcon ? (
             <DynamicIcon name={platformIcon} className="h-5 w-5" />
@@ -152,12 +142,12 @@ function RegisterContent() {
             platformName.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2)
           )}
         </div>
-        <CardTitle className="text-xl">Create your account</CardTitle>
-        <CardDescription>
+        <h2 className="text-xl font-semibold tracking-tight">Create your account</h2>
+        <p className="text-sm text-fg-3">
           Get started with {platformName} for your AV business
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+        </p>
+      </div>
+      <div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="name">Full name</Label>
@@ -180,10 +170,10 @@ function RegisterContent() {
               onChange={(e) => setEmail(e.target.value)}
               required
               disabled={inviteEmailLocked}
-              className={inviteEmailLocked ? "bg-muted" : ""}
+              className={inviteEmailLocked ? "bg-bg-inset" : ""}
             />
             {inviteEmailLocked && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-fg-3">
                 Email is set from your invitation and cannot be changed.
               </p>
             )}
@@ -205,27 +195,25 @@ function RegisterContent() {
             Create account
           </Button>
         </form>
-      </CardContent>
-      <CardFooter className="justify-center">
-        <p className="text-sm text-muted-foreground">
+      </div>
+      <div className="mt-6 flex justify-center">
+        <p className="text-sm text-fg-3">
           Already have an account?{" "}
           <Link href="/login" className="text-primary hover:underline">
             Sign in
           </Link>
         </p>
-      </CardFooter>
-    </Card>
+      </div>
+    </div>
   );
 }
 
 export default function RegisterPage() {
   return (
     <Suspense fallback={
-      <Card>
-        <CardContent className="p-8 text-center">
-          <Loader2 className="mx-auto h-8 w-8 animate-spin text-muted-foreground" />
-        </CardContent>
-      </Card>
+      <div className="rounded-lg bg-bg-surface p-8 surface-ring text-center">
+        <Loader2 className="mx-auto h-8 w-8 animate-spin text-fg-3" />
+      </div>
     }>
       <RegisterContent />
     </Suspense>

@@ -6,13 +6,6 @@ import Link from "next/link";
 import { authClient, organization } from "@/lib/auth-client";
 import { getTheOrgId } from "@/server/public-org";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { toast } from "sonner";
 import { Loader2, CheckCircle, XCircle } from "lucide-react";
 
@@ -61,60 +54,54 @@ export default function InviteAcceptPage({
 
   if (isAuthenticated === null) {
     return (
-      <Card>
-        <CardContent className="p-8 text-center">
-          <Loader2 className="mx-auto h-8 w-8 animate-spin text-muted-foreground" />
-        </CardContent>
-      </Card>
+      <div className="rounded-lg bg-bg-surface p-8 surface-ring text-center">
+        <Loader2 className="mx-auto h-8 w-8 animate-spin text-fg-3" />
+      </div>
     );
   }
 
   if (accepted) {
     return (
-      <Card>
-        <CardContent className="p-8 text-center space-y-4">
-          <CheckCircle className="mx-auto h-12 w-12 text-green-500" />
-          <div>
-            <h2 className="text-lg font-semibold">Invitation Accepted</h2>
-            <p className="text-sm text-muted-foreground">
-              Redirecting to the dashboard...
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="rounded-lg bg-bg-surface p-8 surface-ring text-center space-y-4">
+        <CheckCircle className="mx-auto h-12 w-12 text-green-500" />
+        <div>
+          <h2 className="text-lg font-semibold">Invitation Accepted</h2>
+          <p className="text-sm text-fg-3">
+            Redirecting to the dashboard...
+          </p>
+        </div>
+      </div>
     );
   }
 
   if (error) {
     return (
-      <Card>
-        <CardContent className="p-8 text-center space-y-4">
-          <XCircle className="mx-auto h-12 w-12 text-destructive" />
-          <div>
-            <h2 className="text-lg font-semibold">Cannot Accept Invitation</h2>
-            <p className="text-sm text-muted-foreground">{error}</p>
-          </div>
-          <Button variant="outline" onClick={() => router.push("/login")}>
-            Go to Login
-          </Button>
-        </CardContent>
-      </Card>
+      <div className="rounded-lg bg-bg-surface p-8 surface-ring text-center space-y-4">
+        <XCircle className="mx-auto h-12 w-12 text-destructive" />
+        <div>
+          <h2 className="text-lg font-semibold">Cannot Accept Invitation</h2>
+          <p className="text-sm text-fg-3">{error}</p>
+        </div>
+        <Button variant="outline" onClick={() => router.push("/login")}>
+          Go to Login
+        </Button>
+      </div>
     );
   }
 
   if (!isAuthenticated) {
     return (
-      <Card>
-        <CardHeader className="text-center">
+      <div className="rounded-lg bg-bg-surface p-6 surface-ring sm:p-8">
+        <div className="mb-6 text-center">
           <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold">
             GF
           </div>
-          <CardTitle className="text-xl">Organization Invitation</CardTitle>
-          <CardDescription>
+          <h2 className="text-xl font-semibold tracking-tight">Organization Invitation</h2>
+          <p className="text-sm text-fg-3">
             You need to sign in or create an account to accept this invitation.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
+          </p>
+        </div>
+        <div className="space-y-3">
           <Button
             className="w-full"
             onClick={() => router.push(`/login?callbackUrl=/invite/${id}`)}
@@ -128,23 +115,23 @@ export default function InviteAcceptPage({
           >
             Create an account
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     );
   }
 
   return (
-    <Card>
-      <CardHeader className="text-center">
+    <div className="rounded-lg bg-bg-surface p-6 surface-ring sm:p-8">
+      <div className="mb-6 text-center">
         <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold">
           GF
         </div>
-        <CardTitle className="text-xl">Organization Invitation</CardTitle>
-        <CardDescription>
+        <h2 className="text-xl font-semibold tracking-tight">Organization Invitation</h2>
+        <p className="text-sm text-fg-3">
           You&apos;ve been invited to join an organization.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+        </p>
+      </div>
+      <div className="space-y-4">
         <Button
           className="w-full"
           onClick={handleAccept}
@@ -160,7 +147,7 @@ export default function InviteAcceptPage({
         >
           Go to Dashboard
         </Button>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

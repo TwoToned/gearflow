@@ -6,13 +6,6 @@ import { authClient } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { toast } from "sonner";
 import { Loader2, Shield, KeyRound } from "lucide-react";
 
@@ -53,19 +46,19 @@ export default function TwoFactorPage() {
   };
 
   return (
-    <Card>
-      <CardHeader className="text-center">
+    <div className="rounded-lg bg-bg-surface p-6 surface-ring sm:p-8">
+      <div className="mb-6 text-center">
         <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
           <Shield className="h-5 w-5" />
         </div>
-        <CardTitle className="text-xl">Two-Factor Authentication</CardTitle>
-        <CardDescription>
+        <h2 className="text-xl font-semibold tracking-tight">Two-Factor Authentication</h2>
+        <p className="text-sm text-fg-3">
           {useBackupCode
             ? "Enter one of your backup codes"
             : "Enter the 6-digit code from your authenticator app"}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+        </p>
+      </div>
+      <div>
         <form onSubmit={handleVerify} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="code">
@@ -108,7 +101,7 @@ export default function TwoFactorPage() {
               : "Use a backup code instead"}
           </Button>
         </form>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

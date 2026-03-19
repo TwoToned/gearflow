@@ -7,13 +7,6 @@ import { getTheOrgId } from "@/server/public-org";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
@@ -69,17 +62,17 @@ export default function OnboardingPage() {
   };
 
   return (
-    <Card>
-      <CardHeader className="text-center">
+    <div className="rounded-lg bg-bg-surface p-6 surface-ring sm:p-8">
+      <div className="mb-6 text-center">
         <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold">
           GF
         </div>
-        <CardTitle className="text-xl">Set up your instance</CardTitle>
-        <CardDescription>
+        <h2 className="text-xl font-semibold tracking-tight">Set up your instance</h2>
+        <p className="text-sm text-fg-3">
           Create your organization to start managing gear and projects.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+        </p>
+      </div>
+      <div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="org-name">Organization name</Label>
@@ -102,7 +95,7 @@ export default function OnboardingPage() {
               onChange={(e) => setSlug(e.target.value)}
               required
             />
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-fg-3">
               Used internally. Only lowercase letters, numbers, and hyphens.
             </p>
           </div>
@@ -111,7 +104,7 @@ export default function OnboardingPage() {
             Create organization
           </Button>
         </form>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

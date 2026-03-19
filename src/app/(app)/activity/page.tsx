@@ -10,24 +10,9 @@ import { getActivityLogs, exportActivityLogCSV } from "@/server/activity-log";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/layout/page-header";
-
-const actionColors: Record<string, string> = {
-  CREATE: "bg-emerald-500/15 text-emerald-500",
-  UPDATE: "bg-blue-500/15 text-blue-500",
-  DELETE: "bg-red-500/15 text-red-500",
-  STATUS_CHANGE: "bg-purple-500/15 text-purple-500",
-  CHECK_OUT: "bg-amber-500/15 text-amber-500",
-  CHECK_IN: "bg-amber-500/15 text-amber-500",
-  SCAN: "bg-gray-500/15 text-gray-500",
-  ASSIGN: "bg-teal-500/15 text-teal-500",
-  UNASSIGN: "bg-teal-500/15 text-teal-500",
-  EXPORT: "bg-blue-500/15 text-blue-500",
-  IMPORT: "bg-blue-500/15 text-blue-500",
-  INVITE: "bg-purple-500/15 text-purple-500",
-};
 
 const entityTypeLabels: Record<string, string> = {
   asset: "Asset",
@@ -125,9 +110,7 @@ function useActivityColumns(): ColumnDef<AnyLog>[] {
       filterType: "enum",
       filterOptions: Object.entries(actionLabels).map(([value, label]) => ({ value, label })),
       cell: (row) => (
-        <Badge variant="outline" className={actionColors[row.action] || "bg-gray-500/15 text-gray-500"}>
-          {actionLabels[row.action] || row.action}
-        </Badge>
+        <StatusIndicator category="activity" value={row.action} label={actionLabels[row.action] || row.action} variant="pill" />
       ),
     },
     {

@@ -47,6 +47,7 @@ import {
 import { getKits } from "@/server/kits";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import {
   Dialog,
   DialogContent,
@@ -95,15 +96,6 @@ const pricingLabels: Record<string, string> = {
   PER_WEEK: "/week",
   FLAT: "flat",
   PER_HOUR: "/hr",
-};
-
-const statusColors: Record<string, string> = {
-  QUOTED: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  CONFIRMED: "bg-green-500/10 text-green-500 border-green-500/20",
-  PREPPED: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  CHECKED_OUT: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  RETURNED: "bg-teal-500/10 text-teal-500 border-teal-500/20",
-  CANCELLED: "bg-red-500/10 text-red-500 border-red-500/20",
 };
 
 import { lineItemStatusLabels, formatLabel } from "@/lib/status-labels";
@@ -461,12 +453,7 @@ function SortableItemRow({
           {formatCurrency(item.lineTotal as number | null)}
         </TableCell>
         <TableCell className="hidden sm:table-cell">
-          <Badge
-            variant="outline"
-            className={statusColors[item.status] || ""}
-          >
-            {lineItemStatusLabels[item.status] || formatLabel(item.status)}
-          </Badge>
+          <StatusIndicator category="lineItem" value={item.status} label={lineItemStatusLabels[item.status] || formatLabel(item.status)} variant="pill" />
         </TableCell>
         <TableCell>
           <div className="flex items-center gap-1">
@@ -696,9 +683,7 @@ function SortableGroupHeader({
                 {formatCurrency(item.lineTotal as number | null)}
               </TableCell>
               <TableCell className="hidden sm:table-cell">
-                <Badge variant="outline" className={`text-xs ${statusColors[item.status] || ""}`}>
-                  {lineItemStatusLabels[item.status] || formatLabel(item.status)}
-                </Badge>
+                <StatusIndicator category="lineItem" value={item.status} label={lineItemStatusLabels[item.status] || formatLabel(item.status)} variant="pill" />
               </TableCell>
               <TableCell />
             </TableRow>

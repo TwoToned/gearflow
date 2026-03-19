@@ -36,6 +36,7 @@ import {
 import { lineItemStatusLabels, formatLabel } from "@/lib/status-labels";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Input } from "@/components/ui/input";
 import { ScanInput } from "@/components/ui/scan-input";
 import { Label } from "@/components/ui/label";
@@ -81,20 +82,6 @@ import { OnlinePickList } from "@/components/warehouse/online-pick-list";
 import { PrepsTab } from "@/components/warehouse/preps-tab";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useActiveOrganization } from "@/lib/auth-client";
-
-const statusColors: Record<string, string> = {
-  ENQUIRY: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  QUOTING: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  QUOTED: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  CONFIRMED: "bg-green-500/10 text-green-500 border-green-500/20",
-  PREPPING: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  CHECKED_OUT: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  ON_SITE: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  RETURNED: "bg-teal-500/10 text-teal-500 border-teal-500/20",
-  COMPLETED: "bg-green-500/10 text-green-500 border-green-500/20",
-  INVOICED: "bg-green-500/10 text-green-500 border-green-500/20",
-  CANCELLED: "bg-red-500/10 text-red-500 border-red-500/20",
-};
 
 const statusLabels: Record<string, string> = {
   ENQUIRY: "Enquiry",
@@ -1224,9 +1211,7 @@ function WarehouseProjectPage({
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <span className="font-mono text-sm text-fg-3">{project.projectNumber}</span>
-            <Badge variant="outline" className={statusColors[project.status] || ""}>
-              {statusLabels[project.status] || project.status}
-            </Badge>
+            <StatusIndicator category="project" value={project.status} label={statusLabels[project.status] || project.status} variant="pill" />
           </div>
           <h1 className="t-title text-fg">{project.name}</h1>
           {project.client && <p className="text-fg-3">{project.client.name}</p>}

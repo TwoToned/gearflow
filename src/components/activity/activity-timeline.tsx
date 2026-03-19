@@ -3,21 +3,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { getEntityActivityLog } from "@/server/activity-log";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { EmptyState } from "@/components/ui/empty-state";
-import { cn } from "@/lib/utils";
-
-const actionColors: Record<string, string> = {
-  CREATE: "bg-emerald-500/15 text-emerald-500",
-  UPDATE: "bg-blue-500/15 text-blue-500",
-  DELETE: "bg-red-500/15 text-red-500",
-  STATUS_CHANGE: "bg-purple-500/15 text-purple-500",
-  CHECK_OUT: "bg-amber-500/15 text-amber-500",
-  CHECK_IN: "bg-amber-500/15 text-amber-500",
-  ASSIGN: "bg-teal-500/15 text-teal-500",
-  UNASSIGN: "bg-teal-500/15 text-teal-500",
-  INVITE: "bg-indigo-500/15 text-indigo-500",
-};
 
 function formatDate(date: string | Date) {
   return new Date(date).toLocaleString("en-AU", {
@@ -67,9 +54,7 @@ export function ActivityTimeline({ entityType, entityId }: ActivityTimelineProps
             </div>
             <div className="flex-1 pb-3">
               <div className="flex items-center gap-2 flex-wrap">
-                <Badge variant="secondary" className={cn("text-xs", actionColors[action])}>
-                  {action.replace(/_/g, " ")}
-                </Badge>
+                <StatusIndicator category="activity" value={action} label={action.replace(/_/g, " ")} variant="pill" />
                 <span className="text-fg-3 text-xs">
                   {formatDate(log.createdAt as string)}
                 </span>

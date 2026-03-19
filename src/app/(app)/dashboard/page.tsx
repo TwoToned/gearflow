@@ -14,21 +14,13 @@ import {
   Zap,
   HardHat,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import {
   getDashboardStats,
   getUpcomingProjects,
   getRecentActivity,
 } from "@/server/dashboard";
 import { formatDistanceToNow, format } from "date-fns";
-
-const statusColors: Record<string, string> = {
-  CONFIRMED: "bg-green-500/10 text-green-500 border-green-500/20",
-  PREPPING: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  QUOTED: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  CHECKED_OUT: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  ON_SITE: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-};
 
 export default function DashboardPage() {
   const { data: activeOrg } = useActiveOrganization();
@@ -142,12 +134,7 @@ export default function DashboardPage() {
                         <span className="font-mono text-xs text-fg-3">
                           {project.projectNumber as string}
                         </span>
-                        <Badge
-                          variant="outline"
-                          className={statusColors[project.status as string] || ""}
-                        >
-                          {project.status as string}
-                        </Badge>
+                        <StatusIndicator category="project" value={project.status as string} label={project.status as string} variant="pill" />
                       </div>
                       <p className="font-medium text-sm truncate">
                         {project.name as string}

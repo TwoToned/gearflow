@@ -40,18 +40,6 @@ const orderTypeLabels: Record<string, string> = {
   OTHER: "Other",
 };
 
-const projectStatusColors: Record<string, string> = {
-  ENQUIRY: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  QUOTED: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  CONFIRMED: "bg-green-500/10 text-green-500 border-green-500/20",
-  PREPPING: "bg-cyan-500/10 text-cyan-500 border-cyan-500/20",
-  CHECKED_OUT: "bg-orange-500/10 text-orange-500 border-orange-500/20",
-  ON_SITE: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  RETURNED: "bg-teal-500/10 text-teal-500 border-teal-500/20",
-  COMPLETED: "bg-green-500/10 text-green-500 border-green-500/20",
-  CANCELLED: "bg-red-500/10 text-red-500 border-red-500/20",
-  INVOICED: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-};
 
 export default function SupplierDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -378,9 +366,9 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                             {item.subhireOrderNumber || "\u2014"}
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline" className={projectStatusColors[item.project?.status] || ""}>
-                              {item.project?.status ? (projectStatusLabels[item.project.status] || formatLabel(item.project.status)) : ""}
-                            </Badge>
+                            {item.project?.status ? (
+                              <StatusIndicator category="project" value={item.project.status} label={projectStatusLabels[item.project.status] || formatLabel(item.project.status)} variant="pill" />
+                            ) : null}
                           </TableCell>
                         </TableRow>
                       ))}

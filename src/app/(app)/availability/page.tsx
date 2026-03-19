@@ -24,7 +24,7 @@ import {
 
 import { getCalendarData, type CalendarProject } from "@/server/availability";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 
 import { RequirePermission } from "@/components/auth/require-permission";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -55,18 +55,6 @@ const statusLabels: Record<string, string> = {
   INVOICED: "Invoiced",
 };
 
-const badgeColors: Record<string, string> = {
-  ENQUIRY: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  QUOTING: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  QUOTED: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  CONFIRMED: "bg-green-500/10 text-green-500 border-green-500/20",
-  PREPPING: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  CHECKED_OUT: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  ON_SITE: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  RETURNED: "bg-teal-500/10 text-teal-500 border-teal-500/20",
-  COMPLETED: "bg-green-500/10 text-green-500 border-green-500/20",
-  INVOICED: "bg-green-500/10 text-green-500 border-green-500/20",
-};
 
 function getProjectsForDay(
   projects: CalendarProject[],
@@ -369,12 +357,7 @@ function AvailabilityPage() {
                           <span className="font-medium text-sm">
                             {p.projectNumber}
                           </span>
-                          <Badge
-                            variant="outline"
-                            className={`text-[10px] ${badgeColors[p.status] || ""}`}
-                          >
-                            {statusLabels[p.status] || p.status}
-                          </Badge>
+                          <StatusIndicator category="project" value={p.status} label={statusLabels[p.status] || p.status} variant="pill" />
                         </div>
                         <p className="text-sm truncate">{p.name}</p>
                         {p.clientName && (

@@ -39,18 +39,7 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import { BookingCalendar } from "@/components/bookings/booking-calendar";
 
 import { assetStatusLabels, bulkAssetStatusLabels, formatLabel } from "@/lib/status-labels";
-
-const statusColors: Record<string, string> = {
-  AVAILABLE: "bg-green-500/10 text-green-500 border-green-500/20",
-  CHECKED_OUT: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  IN_MAINTENANCE: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  RESERVED: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  RETIRED: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  LOST: "bg-red-500/10 text-red-500 border-red-500/20",
-  ACTIVE: "bg-green-500/10 text-green-500 border-green-500/20",
-  LOW_STOCK: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  OUT_OF_STOCK: "bg-red-500/10 text-red-500 border-red-500/20",
-};
+import { StatusIndicator } from "@/components/ui/status-indicator";
 
 export default function ModelDetailPage({ params }: { params: Promise<{ id: string }> }) {
   return (
@@ -294,9 +283,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                         <TableCell>{asset.customName || "—"}</TableCell>
                         <TableCell className="font-mono text-sm text-fg-3">{asset.serialNumber || "—"}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={statusColors[asset.status] || ""}>
-                            {assetStatusLabels[asset.status] || formatLabel(asset.status)}
-                          </Badge>
+                          <StatusIndicator category="asset" value={asset.status} label={assetStatusLabels[asset.status] || formatLabel(asset.status)} variant="pill" />
                         </TableCell>
                         <TableCell className="text-fg-3">{asset.location?.name || "—"}</TableCell>
                         <TableCell className="text-right">
@@ -355,9 +342,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                         <TableCell className="text-right font-medium t-data">{ba.availableQuantity}</TableCell>
                         <TableCell className="text-right text-fg-3 t-data">{ba.totalQuantity}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={statusColors[ba.status] || ""}>
-                            {bulkAssetStatusLabels[ba.status] || formatLabel(ba.status)}
-                          </Badge>
+                          <StatusIndicator category="asset" value={ba.status} label={bulkAssetStatusLabels[ba.status] || formatLabel(ba.status)} variant="pill" />
                         </TableCell>
                         <TableCell className="text-fg-3">{ba.location?.name || "—"}</TableCell>
                         <TableCell className="text-right">

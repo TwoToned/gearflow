@@ -55,6 +55,7 @@ import { CanDo } from "@/components/auth/permission-gate";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -89,15 +90,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-const statusColors: Record<string, string> = {
-  PENDING: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  OFFERED: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  ACCEPTED: "bg-teal-500/10 text-teal-500 border-teal-500/20",
-  DECLINED: "bg-red-500/10 text-red-500 border-red-500/20",
-  CONFIRMED: "bg-green-500/10 text-green-500 border-green-500/20",
-  CANCELLED: "bg-red-500/10 text-red-500 border-red-500/20",
-  COMPLETED: "bg-green-500/10 text-green-500 border-green-500/20",
-};
 
 const allStatuses = [
   "PENDING",
@@ -546,23 +538,15 @@ function AssignmentRow({
           resource="crew"
           action="update"
           fallback={
-            <Badge
-              variant="outline"
-              className={statusColors[a.status as string] || ""}
-            >
-              {assignmentStatusLabels[a.status as string] || (a.status as string)}
-            </Badge>
+            <StatusIndicator category="assignment" value={a.status as string} label={assignmentStatusLabels[a.status as string] || (a.status as string)} variant="pill" />
           }
         >
           <DropdownMenu>
             <DropdownMenuTrigger render={<Button variant="ghost" size="sm" className="h-auto px-2 py-0.5" />}>
-              <Badge
-                variant="outline"
-                className={`pointer-events-none ${statusColors[a.status as string] || ""}`}
-              >
-                {assignmentStatusLabels[a.status as string] || (a.status as string)}
+              <span className="pointer-events-none inline-flex items-center">
+                <StatusIndicator category="assignment" value={a.status as string} label={assignmentStatusLabels[a.status as string] || (a.status as string)} variant="pill" />
                 <ChevronDown className="ml-1 h-3 w-3" />
-              </Badge>
+              </span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {allStatuses.map((s) => (

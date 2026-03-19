@@ -12,18 +12,12 @@ import { crewMemberStatusLabels, crewMemberTypeLabels, formatLabel } from "@/lib
 import { Button } from "@/components/ui/button";
 import { CanDo } from "@/components/auth/permission-gate";
 import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyCrewMember = Record<string, any>;
-
-const statusColors: Record<string, string> = {
-  ACTIVE: "bg-green-500/10 text-green-500 border-green-500/20",
-  INACTIVE: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  ON_LEAVE: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  ARCHIVED: "bg-red-500/10 text-red-500 border-red-500/20",
-};
 
 const columns: ColumnDef<AnyCrewMember>[] = [
   {
@@ -153,9 +147,7 @@ const columns: ColumnDef<AnyCrewMember>[] = [
       { value: "ARCHIVED", label: "Archived" },
     ],
     cell: (row) => (
-      <Badge variant="outline" className={statusColors[row.status] || ""}>
-        {crewMemberStatusLabels[row.status] || formatLabel(row.status)}
-      </Badge>
+      <StatusIndicator category="crewMember" value={row.status} label={crewMemberStatusLabels[row.status] || formatLabel(row.status)} variant="pill" />
     ),
   },
   {

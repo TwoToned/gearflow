@@ -16,7 +16,7 @@ import { toast } from "sonner";
 
 import { getProjects, updateProjectStatus } from "@/server/projects";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { StatusIndicator } from "@/components/ui/status-indicator";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,14 +44,6 @@ const WAREHOUSE_STATUSES = [
   "ON_SITE",
   "RETURNED",
 ];
-
-const statusColors: Record<string, string> = {
-  CONFIRMED: "bg-green-500/10 text-green-500 border-green-500/20",
-  PREPPING: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  CHECKED_OUT: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  ON_SITE: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  RETURNED: "bg-teal-500/10 text-teal-500 border-teal-500/20",
-};
 
 const statusLabels: Record<string, string> = {
   CONFIRMED: "Confirmed",
@@ -223,12 +215,7 @@ export default function WarehousePage() {
                   <span className="font-mono text-xs text-fg-3">
                     {project.projectNumber}
                   </span>
-                  <Badge
-                    variant="outline"
-                    className={statusColors[project.status] || ""}
-                  >
-                    {statusLabels[project.status] || project.status}
-                  </Badge>
+                  <StatusIndicator category="project" value={project.status} label={statusLabels[project.status] || project.status} variant="pill" />
                 </div>
                 <h3 className="text-base font-semibold">
                   <Link

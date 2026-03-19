@@ -425,8 +425,8 @@ export default function TimesheetsPage() {
       <div className="space-y-4">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Timesheets</h1>
-          <p className="text-muted-foreground">
+          <h1 className="t-title text-fg">Timesheets</h1>
+          <p className="text-[13px] text-fg-3">
             All time entries across crew members.
           </p>
         </div>

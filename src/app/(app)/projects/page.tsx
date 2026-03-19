@@ -8,9 +8,9 @@ export default function ProjectsPage() {
     <RequirePermission resource="project" action="read">
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Projects</h1>
-        <p className="text-muted-foreground">
-          Manage your gigs, shows, and events.
+        <h1 className="t-title text-fg">Projects</h1>
+        <p className="text-[13px] text-fg-3">
+          Gigs, shows, and events — from enquiry to invoice.
         </p>
       </div>
       <ProjectTable />

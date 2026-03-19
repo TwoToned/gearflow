@@ -96,9 +96,9 @@ function CrewListView() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Crew</h1>
-        <p className="text-muted-foreground">
-          Manage your crew members, freelancers, and contractors.
+        <h1 className="t-title text-fg">Crew</h1>
+        <p className="text-[13px] text-fg-3">
+          Freelancers, employees, and contractors on your roster.
         </p>
       </div>
       <CrewTable />
@@ -188,8 +188,8 @@ function CrewDashboard() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Crew</h1>
-          <p className="text-muted-foreground">
+          <h1 className="t-title text-fg">Crew</h1>
+          <p className="text-[13px] text-fg-3">
             Overview of crew, assignments, and timesheets.
           </p>
         </div>

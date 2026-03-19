@@ -217,9 +217,9 @@ function ActivityLogContent() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Activity Log</h1>
-          <p className="text-muted-foreground">
-            Track all changes and actions across your organization.
+          <h1 className="t-title text-fg">Activity Log</h1>
+          <p className="text-[13px] text-fg-3">
+            Audit trail of every action taken by your team.
           </p>
         </div>
       </div>

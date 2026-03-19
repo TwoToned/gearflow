@@ -8,9 +8,9 @@ export default function RegistryPage() {
     <RequirePermission resource="asset" action="read">
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Asset Registry</h1>
-        <p className="text-muted-foreground">
-          View and manage all serialized and bulk assets.
+        <h1 className="t-title text-fg">Asset Registry</h1>
+        <p className="text-[13px] text-fg-3">
+          Every piece of gear your organisation owns, tracked individually.
         </p>
       </div>
       <AssetTable />

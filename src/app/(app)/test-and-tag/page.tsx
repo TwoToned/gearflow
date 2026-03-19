@@ -73,8 +73,8 @@ export default function TestAndTagPage() {
     <div className="space-y-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Test & Tag</h1>
-          <p className="text-muted-foreground text-sm">Manage electrical testing and compliance</p>
+          <h1 className="t-title text-fg">Test & Tag</h1>
+          <p className="text-[13px] text-fg-3">Electrical testing, compliance, and certification tracking.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <CanDo resource="testTag" action="create">

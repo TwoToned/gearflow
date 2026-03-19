@@ -135,8 +135,8 @@ export default function ReportsPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Reports</h1>
-            <p className="text-muted-foreground">Business reports and analytics</p>
+            <h1 className="t-title text-fg">Reports</h1>
+            <p className="text-[13px] text-fg-3">Utilisation, revenue, and operational insights.</p>
           </div>
           <Button render={<Link href="/reports/builder" />}>
             <Plus className="mr-1.5 h-4 w-4" /> Custom Report

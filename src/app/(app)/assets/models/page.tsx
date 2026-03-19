@@ -8,9 +8,9 @@ export default function ModelsPage() {
     <RequirePermission resource="model" action="read">
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Equipment Models</h1>
-        <p className="text-muted-foreground">
-          Manage your equipment model library — templates for creating assets.
+        <h1 className="t-title text-fg">Equipment Models</h1>
+        <p className="text-[13px] text-fg-3">
+          Templates for your equipment — each model defines a type of gear.
         </p>
       </div>
       <ModelTable />

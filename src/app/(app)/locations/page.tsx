@@ -8,9 +8,9 @@ export default function LocationsPage() {
     <RequirePermission resource="location" action="read">
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Locations</h1>
-        <p className="text-muted-foreground">
-          Manage warehouses, venues, and storage locations.
+        <h1 className="t-title text-fg">Locations</h1>
+        <p className="text-[13px] text-fg-3">
+          Warehouses, venues, vehicles, and offsite storage.
         </p>
       </div>
       <LocationTable />

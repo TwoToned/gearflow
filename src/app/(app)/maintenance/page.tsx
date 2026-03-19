@@ -302,9 +302,9 @@ export default function MaintenancePage() {
       <div className="space-y-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Maintenance</h1>
-            <p className="text-muted-foreground">
-              Track repairs, inspections, and preventative maintenance.
+            <h1 className="t-title text-fg">Maintenance</h1>
+            <p className="text-[13px] text-fg-3">
+              Repairs, inspections, and scheduled servicing.
             </p>
           </div>
         </div>

@@ -147,9 +147,9 @@ export default function CategoriesPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Categories</h1>
-          <p className="text-muted-foreground">
-            Organize your equipment into categories and subcategories.
+          <h1 className="t-title text-fg">Categories</h1>
+          <p className="text-[13px] text-fg-3">
+            Group gear by type — audio, lighting, video, staging.
           </p>
         </div>
         {canCreate && (

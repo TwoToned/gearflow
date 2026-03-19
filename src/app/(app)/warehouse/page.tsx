@@ -187,8 +187,8 @@ export default function WarehousePage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Warehouse</h1>
-        <p className="text-muted-foreground">
+        <h1 className="t-title text-fg">Warehouse</h1>
+        <p className="text-[13px] text-fg-3">
           Deploy and return equipment for active projects.
         </p>
       </div>

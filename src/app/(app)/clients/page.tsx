@@ -8,9 +8,9 @@ export default function ClientsPage() {
     <RequirePermission resource="client" action="read">
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Clients</h1>
-        <p className="text-muted-foreground">
-          Manage your client directory.
+        <h1 className="t-title text-fg">Clients</h1>
+        <p className="text-[13px] text-fg-3">
+          Production companies, venues, and contacts.
         </p>
       </div>
       <ClientTable />

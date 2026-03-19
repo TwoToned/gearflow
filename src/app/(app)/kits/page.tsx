@@ -233,9 +233,9 @@ export default function KitsPage() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Kits</h1>
-            <p className="text-muted-foreground">
-              Manage pre-configured kits and cases.
+            <h1 className="t-title text-fg">Kits</h1>
+            <p className="text-[13px] text-fg-3">
+              Bundled sets of gear that always travel together.
             </p>
           </div>
         </div>

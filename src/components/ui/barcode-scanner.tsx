@@ -94,7 +94,25 @@ export function BarcodeScanner({ open, onScan, onClose, title = "Scan barcode or
         scannerRef.current.appendChild(div);
       }
 
-      const scanner = new Html5Qrcode(elementId);
+      const { Html5QrcodeSupportedFormats } = await import("html5-qrcode");
+      const scanner = new Html5Qrcode(elementId, {
+        verbose: false,
+        useBarCodeDetectorIfSupported: true,
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.QR_CODE,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.CODE_93,
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.UPC_E,
+          Html5QrcodeSupportedFormats.ITF,
+          Html5QrcodeSupportedFormats.CODABAR,
+          Html5QrcodeSupportedFormats.DATA_MATRIX,
+          Html5QrcodeSupportedFormats.PDF_417,
+        ],
+      });
       html5QrRef.current = scanner;
 
       // Get available cameras
@@ -117,7 +135,23 @@ export function BarcodeScanner({ open, onScan, onClose, title = "Scan barcode or
       activeRef.current = true;
       await scanner.start(
         selectedCamera,
-        { fps: 10 },
+        {
+          fps: 15,
+          qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+            // Use most of the viewport — tall enough for QR codes, wide enough for barcodes
+            const width = Math.floor(Math.min(viewfinderWidth * 0.85, 400));
+            const height = Math.floor(Math.min(viewfinderHeight * 0.7, width));
+            return { width, height };
+          },
+          videoConstraints: {
+            facingMode: "environment",
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+            advanced: [
+              { focusMode: "continuous" } as MediaTrackConstraintSet,
+            ],
+          },
+        },
         (decodedText) => {
           // Guard against callbacks firing after scanner is stopped
           if (!activeRef.current) return;
@@ -145,7 +179,7 @@ export function BarcodeScanner({ open, onScan, onClose, title = "Scan barcode or
         }
       );
 
-      // Check torch support
+      // Apply continuous autofocus + check torch support on the live video track
       try {
         const track = scanner.getRunningTrackCameraCapabilities?.();
         if (track && "torchFeature" in track) {
@@ -154,6 +188,23 @@ export function BarcodeScanner({ open, onScan, onClose, title = "Scan barcode or
         }
       } catch {
         setTorchSupported(false);
+      }
+      // Belt-and-suspenders: also apply focus directly on the video track
+      try {
+        const video = document.querySelector("#barcode-scanner-viewport video") as HTMLVideoElement | null;
+        const videoTrack = video?.srcObject instanceof MediaStream
+          ? video.srcObject.getVideoTracks()[0]
+          : null;
+        if (videoTrack) {
+          const caps = videoTrack.getCapabilities?.() as MediaTrackCapabilities & { focusMode?: string[] };
+          if (caps?.focusMode?.includes("continuous")) {
+            void videoTrack.applyConstraints({
+              advanced: [{ focusMode: "continuous" } as MediaTrackConstraintSet],
+            });
+          }
+        }
+      } catch {
+        // Focus constraint not supported — no-op
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Camera access denied";

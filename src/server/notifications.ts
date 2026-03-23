@@ -6,7 +6,7 @@ import { serialize } from "@/lib/serialize";
 
 export interface AppNotification {
   id: string;
-  type: "overdue_maintenance" | "overdue_return" | "upcoming_project" | "low_stock" | "pending_invitation" | "expiring_cert" | "pending_offers" | "pending_timesheets";
+  type: "overdue_maintenance" | "overdue_return" | "upcoming_project" | "low_stock" | "pending_invitation" | "expiring_cert" | "pending_offers" | "pending_timesheets" | "flagged_asset";
   title: string;
   description: string;
   href: string;
@@ -219,6 +219,34 @@ export async function getNotifications(): Promise<AppNotification[]> {
       href: "/crew/timesheets",
       severity: "info",
       timestamp: now.toISOString(),
+    });
+  }
+
+  // 9. Flagged assets from warehouse checks
+  const flaggedItems = await prisma.projectLineItem.findMany({
+    where: {
+      organizationId,
+      prepStatus: { in: ["FLAGGED_FAULTY", "FLAGGED_TT_OVERDUE"] },
+    },
+    include: {
+      model: { select: { name: true } },
+      asset: { select: { assetTag: true } },
+      project: { select: { id: true, name: true, projectNumber: true } },
+    },
+    take: 10,
+  });
+
+  for (const li of flaggedItems) {
+    const tag = li.asset?.assetTag || li.model?.name || "Unknown";
+    const reason = li.prepStatus === "FLAGGED_TT_OVERDUE" ? "T&T overdue" : "faulty";
+    notifications.push({
+      id: `flagged-${li.id}`,
+      type: "flagged_asset",
+      title: `Flagged: ${tag}`,
+      description: `${li.model?.name || "Item"} flagged as ${reason} on ${li.project.projectNumber} — ${li.project.name}`,
+      href: `/warehouse/${li.project.id}`,
+      severity: "warning",
+      timestamp: li.updatedAt.toISOString(),
     });
   }
 

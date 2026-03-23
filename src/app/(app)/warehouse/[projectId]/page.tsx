@@ -1086,6 +1086,27 @@ function WarehouseProjectPage({
         ...bulkItems,
       ];
       if (items.length === 0) return;
+
+      // If exactly one serialized item with check items, open check form
+      if (alreadyAssigned.length === 1 && bulkItems.length === 0) {
+        const li = alreadyAssigned[0];
+        const hasChecks = li.model?._count?.modelCheckItems && li.model._count.modelCheckItems > 0;
+        if (hasChecks && li.modelId) {
+          pullItem(projectId, li.id).catch(() => {});
+          setCheckFormData({
+            context: "PREP",
+            modelId: li.modelId,
+            assetTag: li.asset?.assetTag || li.bulkAsset?.assetTag || "",
+            assetName: modelDisplayName(li),
+            lineItemId: li.id,
+            assetId: li.assetId || "",
+            bulkAssetId: li.bulkAssetId || undefined,
+          });
+          setCheckFormOpen(true);
+          return;
+        }
+      }
+
       checkOutMutation.mutate(items, {
         onSuccess: () => toast.success(`Checked out ${selectedOutCount} items`),
       });
@@ -1153,6 +1174,27 @@ function WarehouseProjectPage({
     ];
 
     setAssetPickerOpen(false);
+
+    // If exactly one item with check items, open check form
+    if (items.length === 1 && items[0].assetId) {
+      const li = lineItems.find((l) => l.id === items[0].lineItemId);
+      const hasChecks = li?.model?._count?.modelCheckItems && li.model._count.modelCheckItems > 0;
+      if (hasChecks && li?.modelId) {
+        pullItem(projectId, li.id).catch(() => {});
+        setCheckFormData({
+          context: "PREP",
+          modelId: li.modelId,
+          assetTag: li.asset?.assetTag || "",
+          assetName: modelDisplayName(li),
+          lineItemId: li.id,
+          assetId: items[0].assetId || "",
+          bulkAssetId: li.bulkAssetId || undefined,
+        });
+        setCheckFormOpen(true);
+        return;
+      }
+    }
+
     checkOutMutation.mutate(items, {
       onSuccess: () => toast.success(`Checked out ${selectedOutCount} items`),
     });
@@ -1206,6 +1248,26 @@ function WarehouseProjectPage({
       notes: returnNotes || undefined,
     }));
     if (items.length > 0) {
+      // If exactly one item with check items, open check form
+      if (items.length === 1) {
+        const li = lineItems.find((l) => l.id === items[0].lineItemId);
+        const hasChecks = li?.model?._count?.modelCheckItems && li.model._count.modelCheckItems > 0;
+        if (hasChecks && li?.modelId) {
+          unpackItem(projectId, li.id).catch(() => {});
+          setCheckFormData({
+            context: "RETURN",
+            modelId: li.modelId,
+            assetTag: li.asset?.assetTag || li.bulkAsset?.assetTag || "",
+            assetName: modelDisplayName(li),
+            lineItemId: li.id,
+            assetId: li.assetId || "",
+            bulkAssetId: li.bulkAssetId || undefined,
+          });
+          setCheckFormOpen(true);
+          setReturnNotes("");
+          return;
+        }
+      }
       checkInMutation.mutate(
         { items },
         { onSuccess: () => { toast.success(`Returned items`); setReturnNotes(""); } }

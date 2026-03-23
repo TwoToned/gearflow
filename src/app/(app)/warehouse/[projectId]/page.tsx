@@ -81,6 +81,15 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
 import { OnlinePickList } from "@/components/warehouse/online-pick-list";
 import { PrepsTab } from "@/components/warehouse/preps-tab";
+import { ItemCheckForm } from "@/components/warehouse/item-check-form";
+import {
+  pullItem,
+  completeCheckAndPack,
+  completeCheckAndFlag,
+  unpackItem,
+  completeCheckAndStore,
+} from "@/server/check-records";
+import type { CheckRecordFormValues } from "@/lib/validations/check-item";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useActiveOrganization } from "@/lib/auth-client";
 
@@ -113,7 +122,7 @@ interface LineItem {
   kitId: string | null;
   isKitChild: boolean;
   parentLineItemId: string | null;
-  model: { name: string; modelNumber?: string | null } | null;
+  model: { name: string; modelNumber?: string | null; _count?: { modelCheckItems: number } } | null;
   asset: { assetTag: string } | null;
   bulkAsset: { assetTag: string } | null;
   kit: { id: string; assetTag: string; name: string; isPrep: boolean } | null;
@@ -502,6 +511,19 @@ function WarehouseProjectPage({
     verifiedIds: string[];
   } | null>(null);
 
+  // Check form state — opens when a scanned item's model has check items
+  const [checkFormOpen, setCheckFormOpen] = useState(false);
+  const [checkFormData, setCheckFormData] = useState<{
+    context: "PREP" | "RETURN";
+    modelId: string;
+    assetTag: string;
+    assetName: string;
+    lineItemId: string;
+    assetId: string;
+    bulkAssetId?: string;
+  } | null>(null);
+  const [checkFormSubmitting, setCheckFormSubmitting] = useState(false);
+
   const { data: project, isLoading } = useQuery({
     queryKey: ["warehouse-project", orgId, projectId],
     queryFn: () => getProjectForWarehouse(projectId),
@@ -636,16 +658,38 @@ function WarehouseProjectPage({
       }
 
       if (result.found && result.lineItemId) {
-        checkOutMutation.mutate([{
-          lineItemId: result.lineItemId,
-          ...(result.assetId ? { assetId: result.assetId } : {}),
-        }], {
-          onSuccess: () => {
-            toast.success(`Deployed: ${result.assetName || "Asset"}`);
-            setScanValue("");
-            scanInputRef.current?.focus();
-          },
-        });
+        // Check if model has check items — if so, open check form instead of direct checkout
+        const matchedLi = lineItems.find((l) => l.id === result.lineItemId);
+        const hasChecks = matchedLi?.model?._count?.modelCheckItems && matchedLi.model._count.modelCheckItems > 0;
+
+        if (hasChecks && matchedLi?.modelId) {
+          // Pull item first, then open check form
+          pullItem(projectId, result.lineItemId).catch(() => {});
+          setCheckFormData({
+            context: "PREP",
+            modelId: matchedLi.modelId,
+            assetTag: matchedLi.asset?.assetTag || matchedLi.bulkAsset?.assetTag || "",
+            assetName: result.assetName || modelDisplayName(matchedLi),
+            lineItemId: result.lineItemId,
+            assetId: result.assetId || matchedLi.assetId || "",
+            bulkAssetId: matchedLi.bulkAssetId || undefined,
+          });
+          setCheckFormOpen(true);
+          setScanValue("");
+          scanInputRef.current?.focus();
+        } else {
+          // No check items — direct checkout (existing behavior)
+          checkOutMutation.mutate([{
+            lineItemId: result.lineItemId,
+            ...(result.assetId ? { assetId: result.assetId } : {}),
+          }], {
+            onSuccess: () => {
+              toast.success(`Deployed: ${result.assetName || "Asset"}`);
+              setScanValue("");
+              scanInputRef.current?.focus();
+            },
+          });
+        }
       } else if (result.found && !result.lineItemId) {
         if (result.reason === "not_on_project" && "modelId" in result && result.modelId) {
           // Prompt user to add asset to the project
@@ -766,23 +810,45 @@ function WarehouseProjectPage({
       }
 
       if (result.found && result.lineItemId) {
-        checkInMutation.mutate(
-          {
-            items: [{
-              lineItemId: result.lineItemId,
-              returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING",
-              notes: returnNotes || undefined,
-            }],
-          },
-          {
-            onSuccess: () => {
-              toast.success(`Returned: ${result.assetName || "Asset"}`);
-              setReturnScanValue("");
-              setReturnNotes("");
-              returnScanInputRef.current?.focus();
+        // Check if model has check items — if so, open check form
+        const matchedLi = lineItems.find((l) => l.id === result.lineItemId);
+        const hasChecks = matchedLi?.model?._count?.modelCheckItems && matchedLi.model._count.modelCheckItems > 0;
+
+        if (hasChecks && matchedLi?.modelId) {
+          // Unpack item first, then open check form
+          unpackItem(projectId, result.lineItemId).catch(() => {});
+          setCheckFormData({
+            context: "RETURN",
+            modelId: matchedLi.modelId,
+            assetTag: matchedLi.asset?.assetTag || matchedLi.bulkAsset?.assetTag || "",
+            assetName: result.assetName || modelDisplayName(matchedLi),
+            lineItemId: result.lineItemId,
+            assetId: result.assetId || matchedLi.assetId || "",
+            bulkAssetId: matchedLi.bulkAssetId || undefined,
+          });
+          setCheckFormOpen(true);
+          setReturnScanValue("");
+          returnScanInputRef.current?.focus();
+        } else {
+          // No check items — direct checkin (existing behavior)
+          checkInMutation.mutate(
+            {
+              items: [{
+                lineItemId: result.lineItemId,
+                returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING",
+                notes: returnNotes || undefined,
+              }],
             },
-          }
-        );
+            {
+              onSuccess: () => {
+                toast.success(`Returned: ${result.assetName || "Asset"}`);
+                setReturnScanValue("");
+                setReturnNotes("");
+                returnScanInputRef.current?.focus();
+              },
+            }
+          );
+        }
       } else if (result.found && !result.lineItemId) {
         const messages: Record<string, string> = {
           not_checked_out: "Asset is not deployed on this project",
@@ -2037,6 +2103,78 @@ function WarehouseProjectPage({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Check Form Sheet */}
+      {checkFormData && (
+        <ItemCheckForm
+          open={checkFormOpen}
+          onOpenChange={(open) => {
+            if (!open) {
+              setCheckFormOpen(false);
+              setCheckFormData(null);
+            }
+          }}
+          modelId={checkFormData.modelId}
+          assetTag={checkFormData.assetTag}
+          assetName={checkFormData.assetName}
+          context={checkFormData.context}
+          isSubmitting={checkFormSubmitting}
+          onCancel={() => {
+            setCheckFormOpen(false);
+            setCheckFormData(null);
+          }}
+          onSubmit={async (checks: CheckRecordFormValues[]) => {
+            if (!checkFormData) return;
+            setCheckFormSubmitting(true);
+            try {
+              const hasFails = checks.some((c) => c.result === "FAIL");
+
+              if (checkFormData.context === "PREP") {
+                if (hasFails) {
+                  await completeCheckAndFlag({
+                    projectId,
+                    lineItemId: checkFormData.lineItemId,
+                    assetId: checkFormData.assetId,
+                    bulkAssetId: checkFormData.bulkAssetId,
+                    checks,
+                    flagType: "FLAGGED_FAULTY",
+                  });
+                  toast.success("Item flagged as faulty");
+                } else {
+                  await completeCheckAndPack({
+                    projectId,
+                    lineItemId: checkFormData.lineItemId,
+                    assetId: checkFormData.assetId,
+                    bulkAssetId: checkFormData.bulkAssetId,
+                    checks,
+                  });
+                  toast.success("Item checked and packed");
+                }
+              } else {
+                // RETURN
+                await completeCheckAndStore({
+                  projectId,
+                  lineItemId: checkFormData.lineItemId,
+                  assetId: checkFormData.assetId,
+                  bulkAssetId: checkFormData.bulkAssetId,
+                  checks,
+                  condition: (hasFails ? "DAMAGED" : returnCondition) as "GOOD" | "DAMAGED" | "MISSING",
+                  notes: returnNotes || undefined,
+                });
+                toast.success(`Item checked and ${hasFails ? "flagged damaged" : "stored"}`);
+                setReturnNotes("");
+              }
+
+              setCheckFormOpen(false);
+              setCheckFormData(null);
+              invalidate();
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : "Check submission failed");
+            } finally {
+              setCheckFormSubmitting(false);
+            }
+          }}
+        />
+      )}
     </div>
     </FadeIn>
     </RequirePermission>

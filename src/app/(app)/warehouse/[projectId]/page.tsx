@@ -82,6 +82,7 @@ import { FadeIn } from "@/components/ui/motion";
 import { OnlinePickList } from "@/components/warehouse/online-pick-list";
 import { PrepsTab } from "@/components/warehouse/preps-tab";
 import { ItemCheckForm } from "@/components/warehouse/item-check-form";
+import { CloseOutTab } from "@/components/warehouse/close-out-tab";
 import {
   pullItem,
   completeCheckAndPack,
@@ -454,7 +455,7 @@ function WarehouseProjectPage({
   const { projectId } = use(params);
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const initialTab = tabParam === "check-in" ? "check-in" : tabParam === "preps" ? "preps" : "check-out";
+  const initialTab = tabParam === "check-in" ? "check-in" : tabParam === "preps" ? "preps" : tabParam === "close-out" ? "close-out" : "check-out";
   const queryClient = useQueryClient();
   const scanInputRef = useRef<HTMLInputElement>(null);
   const returnScanInputRef = useRef<HTMLInputElement>(null);
@@ -1359,6 +1360,10 @@ function WarehouseProjectPage({
             <Package className="mr-1.5 h-4 w-4" />
             Preps
           </TabsTrigger>
+          <TabsTrigger value="close-out">
+            <PackageCheck className="mr-1.5 h-4 w-4" />
+            Close-Out
+          </TabsTrigger>
         </TabsList>
 
         {/* ================================================================ */}
@@ -1908,6 +1913,13 @@ function WarehouseProjectPage({
         {/* ================================================================ */}
         <TabsContent value="preps">
           <PrepsTab projectId={projectId} />
+        </TabsContent>
+
+        {/* ================================================================ */}
+        {/* CLOSE-OUT TAB                                                    */}
+        {/* ================================================================ */}
+        <TabsContent value="close-out">
+          <CloseOutTab projectId={projectId} />
         </TabsContent>
       </Tabs>
 

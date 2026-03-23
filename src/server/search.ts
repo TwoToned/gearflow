@@ -15,7 +15,8 @@ export type SearchResultType =
   | "location"
   | "category"
   | "maintenance"
-  | "crew";
+  | "crew"
+  | "check-item";
 
 export type SearchResult = {
   id: string;
@@ -46,6 +47,7 @@ type CategoryRow = { id: string; name: string; description: string | null; model
 type SupplierRow = { id: string; name: string; contactName: string | null; accountNumber: string | null; match_quality: number };
 type MaintenanceRow = { id: string; title: string; status: string; match_quality: number };
 type CrewRow = { id: string; firstName: string; lastName: string; email: string | null; department: string | null; roleName: string | null; match_quality: number };
+type CheckItemRow = { id: string; label: string; type: string; category: string | null; match_quality: number };
 
 // Child row types
 type ChildAssetRow = { id: string; assetTag: string; serialNumber: string | null; customName: string | null; modelId: string; status: string };
@@ -72,7 +74,7 @@ export async function globalSearch(query: string) {
 
   if (nq.length < 1) return { results: [] };
 
-  const [models, kits, assets, bulkAssets, projects, clients, suppliers, locations, categories, maintenance, crew] =
+  const [models, kits, assets, bulkAssets, projects, clients, suppliers, locations, categories, maintenance, crew, checkItems] =
     await Promise.all([
       prisma.$queryRaw<ModelRow[]>`
         SELECT m.id, m.name, m.manufacturer, m."modelNumber",
@@ -278,6 +280,23 @@ export async function globalSearch(query: string) {
             OR EXISTS(SELECT 1 FROM unnest(cm.tags) t WHERE t ILIKE ${ilikePattern})
           )
         ORDER BY match_quality DESC, cm."lastName" ASC LIMIT 10
+      `,
+      prisma.$queryRaw<CheckItemRow[]>`
+        SELECT ci.id, ci.label, ci.type, ci.category,
+               GREATEST(
+                 similarity(lower(ci.label), ${ql}),
+                 similarity(lower(COALESCE(ci.category, '')), ${ql})
+               ) AS match_quality
+        FROM "public"."check_item" ci
+        WHERE ci."organizationId" = ${organizationId}
+          AND (
+            ci.label ILIKE ${ilikePattern}
+            OR COALESCE(ci.category, '') ILIKE ${ilikePattern}
+            OR COALESCE(ci.description, '') ILIKE ${ilikePattern}
+            OR lower(regexp_replace(ci.label, '[^a-zA-Z0-9]', '', 'g')) LIKE ${nqPattern}
+            OR similarity(ci.label, ${q}) > ${trigramThreshold}
+          )
+        ORDER BY match_quality DESC, ci.label ASC LIMIT 10
       `,
     ]);
 
@@ -599,6 +618,17 @@ export async function globalSearch(query: string) {
       title: `${c.firstName} ${c.lastName}`,
       subtitle: [c.roleName, c.department].filter(Boolean).join(" · ") || c.email || null,
       href: `/crew/${c.id}`, relevance: Number(c.match_quality) || 0,
+    });
+  }
+
+  // Check items
+  for (const ci of checkItems) {
+    const typeLabel = ci.type === "PASS_FAIL" ? "Pass/Fail" : ci.type === "NOTES" ? "Notes" : ci.type === "MEASUREMENT" ? "Measurement" : "Dropdown";
+    results.push({
+      id: ci.id, type: "check-item",
+      title: ci.label,
+      subtitle: [typeLabel, ci.category].filter(Boolean).join(" · "),
+      href: `/settings/check-items`, relevance: Number(ci.match_quality) || 0,
     });
   }
 

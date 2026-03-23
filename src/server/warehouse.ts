@@ -68,11 +68,11 @@ export async function lookupAssetForScan(
   const [asset, bulkAsset, kit] = await Promise.all([
     prisma.asset.findUnique({
       where: { organizationId_assetTag: { organizationId, assetTag } },
-      include: { model: { include: { category: true } } },
+      include: { model: { include: { category: true, _count: { select: { modelCheckItems: true } } } } },
     }),
     prisma.bulkAsset.findUnique({
       where: { organizationId_assetTag: { organizationId, assetTag } },
-      include: { model: { include: { category: true } } },
+      include: { model: { include: { category: true, _count: { select: { modelCheckItems: true } } } } },
     }),
     prisma.kit.findUnique({
       where: { organizationId_assetTag: { organizationId, assetTag } },
@@ -971,7 +971,7 @@ export async function getProjectPullSheet(projectId: string) {
         },
         orderBy: { sortOrder: "asc" },
         include: {
-          model: { include: { category: true } },
+          model: { include: { category: true, _count: { select: { modelCheckItems: true } } } },
           asset: { include: { location: true } },
           bulkAsset: true,
           kit: true,
@@ -979,7 +979,7 @@ export async function getProjectPullSheet(projectId: string) {
             where: { status: { not: "CANCELLED" } },
             orderBy: { sortOrder: "asc" },
             include: {
-              model: { include: { category: true } },
+              model: { include: { category: true, _count: { select: { modelCheckItems: true } } } },
               asset: { include: { location: true } },
               bulkAsset: true,
               kit: true,
@@ -987,7 +987,7 @@ export async function getProjectPullSheet(projectId: string) {
                 where: { status: { not: "CANCELLED" } },
                 orderBy: { sortOrder: "asc" },
                 include: {
-                  model: { include: { category: true } },
+                  model: { include: { category: true, _count: { select: { modelCheckItems: true } } } },
                   asset: { include: { location: true } },
                   bulkAsset: true,
                 },

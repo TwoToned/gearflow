@@ -671,6 +671,41 @@ export async function saveAdHocCheck(data: SubmitChecksFormValues) {
   return serialize(records);
 }
 
+// ─── Asset Lookup for Ad-Hoc Checks ─────────────────────────────────────────
+
+export async function lookupAssetForAdHocCheck(assetTag: string) {
+  const { organizationId } = await getOrgContext();
+
+  const asset = await prisma.asset.findUnique({
+    where: { organizationId_assetTag: { organizationId, assetTag } },
+    include: {
+      model: {
+        select: {
+          id: true,
+          name: true,
+          _count: { select: { modelCheckItems: true } },
+        },
+      },
+    },
+  });
+
+  if (!asset) {
+    return serialize({ found: false as const, asset: null });
+  }
+
+  return serialize({
+    found: true as const,
+    asset: {
+      id: asset.id,
+      assetTag: asset.assetTag,
+      serialNumber: asset.serialNumber,
+      modelId: asset.model.id,
+      modelName: asset.model.name,
+      checkItemCount: asset.model._count.modelCheckItems,
+    },
+  });
+}
+
 // ─── Check History & Analytics ──────────────────────────────────────────────
 
 export async function getCheckHistory(assetId: string, context?: string) {

@@ -72,10 +72,12 @@ export interface ItemCheckFormProps {
   modelId: string;
   assetTag: string;
   assetName: string;
-  context: "PREP" | "RETURN";
+  context: "PREP" | "RETURN" | "AD_HOC";
   onSubmit: (checks: CheckRecordFormValues[]) => void;
   onCancel: () => void;
   isSubmitting?: boolean;
+  /** Render inline instead of in a Sheet (for ad-hoc check page) */
+  embedded?: boolean;
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -90,6 +92,7 @@ export function ItemCheckForm({
   onSubmit,
   onCancel,
   isSubmitting = false,
+  embedded = false,
 }: ItemCheckFormProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
@@ -210,6 +213,85 @@ export function ItemCheckForm({
 
   const failCount = Object.values(checkStates).filter((s) => s.result === "FAIL").length;
 
+  const contextLabel = context === "PREP" ? "Prep Check" : context === "RETURN" ? "Return Check" : "Ad-Hoc Check";
+  const submitLabel = context === "PREP"
+    ? failCount > 0 ? "Flag Item" : "Pack Item"
+    : context === "RETURN"
+      ? "Complete Return"
+      : "Save Check";
+
+  const formContent = (
+    <>
+      {isLoading ? (
+        <div className="flex items-center justify-center py-16 text-fg-3">
+          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+          Loading check items...
+        </div>
+      ) : (
+        <div className={embedded ? "p-4 space-y-1" : "mt-4 space-y-1"}>
+          {/* Pass All button */}
+          {items.some((mci) => mci.checkItem.type === "PASS_FAIL") && (
+            <div className="flex justify-end pb-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handlePassAll}
+                className="text-green-600 border-green-600/20 hover:bg-green-600/10"
+              >
+                <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+                Pass All
+              </Button>
+            </div>
+          )}
+
+          {/* Check items */}
+          {items.map((mci, index) => (
+            <CheckItemRow
+              key={mci.checkItem.id}
+              item={mci}
+              state={checkStates[mci.checkItem.id]}
+              index={index}
+              onUpdate={(updates) => updateCheck(mci.checkItem.id, updates)}
+              getMeasurementAutoResult={getMeasurementAutoResult}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Footer */}
+      <div className={`${embedded ? "px-4 pb-4" : "mt-6"} border-t border-border pt-4 space-y-3`}>
+        {failCount > 0 && (
+          <div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <XCircle className="h-4 w-4 shrink-0" />
+            {failCount} item{failCount !== 1 ? "s" : ""} failed
+          </div>
+        )}
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={onCancel}
+            disabled={isSubmitting}
+          >
+            Cancel
+          </Button>
+          <Button
+            className="flex-1"
+            onClick={handleSubmit}
+            disabled={!allComplete || isSubmitting}
+          >
+            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {submitLabel}
+          </Button>
+        </div>
+      </div>
+    </>
+  );
+
+  if (embedded) {
+    return formContent;
+  }
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
@@ -221,81 +303,14 @@ export function ItemCheckForm({
           </SheetTitle>
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="text-xs">
-              {context === "PREP" ? "Prep Check" : "Return Check"}
+              {contextLabel}
             </Badge>
             <span className="text-xs text-fg-3">
               {items.length} item{items.length !== 1 ? "s" : ""}
             </span>
           </div>
         </SheetHeader>
-
-        {isLoading ? (
-          <div className="flex items-center justify-center py-16 text-fg-3">
-            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-            Loading check items...
-          </div>
-        ) : (
-          <div className="mt-4 space-y-1">
-            {/* Pass All button */}
-            {items.some((mci) => mci.checkItem.type === "PASS_FAIL") && (
-              <div className="flex justify-end pb-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handlePassAll}
-                  className="text-green-600 border-green-600/20 hover:bg-green-600/10"
-                >
-                  <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
-                  Pass All
-                </Button>
-              </div>
-            )}
-
-            {/* Check items */}
-            {items.map((mci, index) => (
-              <CheckItemRow
-                key={mci.checkItem.id}
-                item={mci}
-                state={checkStates[mci.checkItem.id]}
-                index={index}
-                onUpdate={(updates) => updateCheck(mci.checkItem.id, updates)}
-                getMeasurementAutoResult={getMeasurementAutoResult}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Footer */}
-        <div className="mt-6 border-t border-border pt-4 space-y-3">
-          {failCount > 0 && (
-            <div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              <XCircle className="h-4 w-4 shrink-0" />
-              {failCount} item{failCount !== 1 ? "s" : ""} failed
-            </div>
-          )}
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              className="flex-1"
-              onClick={onCancel}
-              disabled={isSubmitting}
-            >
-              Cancel
-            </Button>
-            <Button
-              className="flex-1"
-              onClick={handleSubmit}
-              disabled={!allComplete || isSubmitting}
-            >
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {context === "PREP"
-                ? failCount > 0
-                  ? "Flag Item"
-                  : "Pack Item"
-                : "Complete Return"}
-            </Button>
-          </div>
-        </div>
+        {formContent}
       </SheetContent>
     </Sheet>
   );

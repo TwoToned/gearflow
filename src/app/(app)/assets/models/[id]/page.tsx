@@ -41,6 +41,7 @@ import { FadeIn } from "@/components/ui/motion";
 import { SectionHeader } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { ModelChecksTab } from "@/components/assets/model-checks-tab";
+import { ModelFailureAnalytics } from "@/components/assets/model-failure-analytics";
 
 import { assetStatusLabels, bulkAssetStatusLabels, formatLabel } from "@/lib/status-labels";
 import { StatusIndicator } from "@/components/ui/status-indicator";
@@ -485,7 +486,10 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
               </TabsContent>
 
               <TabsContent value="checks" className="mt-4">
-                <ModelChecksTab modelId={id} />
+                <div className="space-y-6">
+                  <ModelChecksTab modelId={id} />
+                  <ModelFailureAnalytics modelId={id} />
+                </div>
               </TabsContent>
             </Tabs>
           </div>

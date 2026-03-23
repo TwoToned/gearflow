@@ -210,11 +210,11 @@ export default function CheckItemsPage() {
                         <TableCell>
                           <div>
                             <span className="font-medium">{item.label as string}</span>
-                            {item.description && (
+                            {item.description ? (
                               <p className="mt-0.5 text-xs text-fg-3 line-clamp-1">
                                 {item.description as string}
                               </p>
-                            )}
+                            ) : null}
                           </div>
                         </TableCell>
                         <TableCell>

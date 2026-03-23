@@ -46,7 +46,7 @@ export async function getCloseOutSummary(projectId: string) {
       checkedOutQuantity: true,
       model: { select: { name: true } },
       asset: { select: { assetTag: true } },
-      bulkAsset: { select: { name: true } },
+      bulkAsset: { select: { assetTag: true } },
     },
   });
 
@@ -66,8 +66,8 @@ export async function getCloseOutSummary(projectId: string) {
 
   for (const item of lineItems) {
     const isReturned = item.status === "RETURNED";
-    const modelName = item.model?.name || item.bulkAsset?.name || "Unknown";
-    const assetTag = item.asset?.assetTag || null;
+    const modelName = item.model?.name || "Unknown";
+    const assetTag = item.asset?.assetTag || item.bulkAsset?.assetTag || null;
 
     if (!isReturned) {
       pendingCount++;

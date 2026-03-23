@@ -200,11 +200,11 @@ export function ModelChecksTab({ modelId }: { modelId: string }) {
                     <TableCell>
                       <div>
                         <span className="font-medium">{ci.label as string}</span>
-                        {ci.description && (
+                        {ci.description ? (
                           <p className="mt-0.5 text-xs text-fg-3 line-clamp-1">
                             {ci.description as string}
                           </p>
-                        )}
+                        ) : null}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -336,9 +336,9 @@ function CheckItemPicker({
                   <Icon className="h-4 w-4 shrink-0 text-fg-3" />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium truncate">{item.label as string}</p>
-                    {item.category && (
+                    {item.category ? (
                       <p className="text-xs text-fg-3">{item.category as string}</p>
-                    )}
+                    ) : null}
                   </div>
                   <Badge variant="outline" className={`shrink-0 text-[10px] ${TYPE_COLORS[type]}`}>
                     {TYPE_LABELS[type]}

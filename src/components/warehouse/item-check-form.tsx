@@ -554,6 +554,7 @@ function DropdownInput({
     <Select
       value={value}
       onValueChange={(v) => {
+        if (!v) return;
         const opt = options.find((o) => o.label === v);
         onChange(v, opt?.isFail ?? false);
       }}

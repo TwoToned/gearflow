@@ -47,19 +47,19 @@ async function saveCheckRecords(
     records.push(
       await tx.checkRecord.create({
         data: {
-          organizationId,
+          organization: { connect: { id: organizationId } },
           context,
-          lineItemId: lineItemId || null,
-          assetId: assetId || null,
-          bulkAssetId: bulkAssetId || null,
-          checkItemId: check.checkItemId,
+          checkItem: { connect: { id: check.checkItemId } },
           checkItemLabelSnapshot: ci.label,
           checkItemTypeSnapshot: ci.type,
           result: check.result,
           value: check.value || null,
           notes: check.notes || null,
           photos: check.photos || [],
-          performedById: userId,
+          performedBy: { connect: { id: userId } },
+          ...(lineItemId ? { lineItem: { connect: { id: lineItemId } } } : {}),
+          ...(assetId ? { asset: { connect: { id: assetId } } } : {}),
+          ...(bulkAssetId ? { bulkAsset: { connect: { id: bulkAssetId } } } : {}),
         },
       })
     );

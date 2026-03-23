@@ -53,6 +53,9 @@ model User {
   reviewedSSOApprovals    PendingSSOApproval[] @relation("SSOReviewer")
   warehouseDashboardTokens WarehouseDashboardToken[]
   savedReports             SavedReport[]
+  checkItems               CheckItem[]
+  checkRecords             CheckRecord[]  @relation("CheckRecordPerformedBy")
+  warehouseCloses          WarehouseClose[] @relation("WarehouseClosedBy")
 
   @@map("user")
 }
@@ -159,6 +162,10 @@ model Organization {
   wooCommerceIntegration     WooCommerceIntegration?
   wooCommerceOrderLogs       WooCommerceOrderLog[]
   savedReports               SavedReport[]
+  checkItems                 CheckItem[]
+  modelCheckItems            ModelCheckItem[]
+  checkRecords               CheckRecord[]
+  warehouseCloses            WarehouseClose[]
   @@map("organization")
 }
 
@@ -391,6 +398,43 @@ enum ScanAction {
   TRANSFER
 }
 
+// ─── Check Item System Enums ─────────────────────────────────────────────────
+
+enum CheckItemType {
+  PASS_FAIL
+  NOTES
+  MEASUREMENT
+  DROPDOWN
+}
+
+enum CheckContext {
+  PREP
+  RETURN
+  AD_HOC
+}
+
+enum CheckResult {
+  PASS
+  FAIL
+  NOTES_ONLY
+}
+
+enum PrepStatus {
+  PENDING
+  PULLED
+  FLAGGED_FAULTY
+  FLAGGED_TT_OVERDUE
+  PACKED
+}
+
+enum ReturnStatus {
+  PENDING
+  UNPACKED
+  STORED
+  DAMAGED
+  LOST
+}
+
 enum KitStatus {
   AVAILABLE
   CHECKED_OUT
@@ -551,10 +595,11 @@ model Model {
   createdAt               DateTime     @default(now())
   updatedAt               DateTime     @updatedAt
 
-  assets     Asset[]
-  bulkAssets BulkAsset[]
-  lineItems  ProjectLineItem[]
-  media      ModelMedia[]
+  assets          Asset[]
+  bulkAssets      BulkAsset[]
+  lineItems       ProjectLineItem[]
+  media           ModelMedia[]
+  modelCheckItems ModelCheckItem[]
 
   supplierOrderItems  SupplierOrderItem[]
 
@@ -786,6 +831,7 @@ model Asset {
   media               AssetMedia[]
   testTagAsset        TestTagAsset?
   supplierOrderItems  SupplierOrderItem[]
+  checkRecords        CheckRecord[]
 
   @@unique([organizationId, assetTag])
   @@index([organizationId])
@@ -825,6 +871,7 @@ model BulkAsset {
   lineItems     ProjectLineItem[]
   scanLogs      AssetScanLog[]
   testTagAssets TestTagAsset[]
+  checkRecords  CheckRecord[]
 
   @@unique([organizationId, assetTag])
   @@index([organizationId])
@@ -1000,6 +1047,7 @@ model Project {
   crewAssignments  CrewAssignment[]
   services         ProjectService[]
   wooCommerceOrderLogs WooCommerceOrderLog[]
+  warehouseCloses      WarehouseClose[]
 
   @@unique([organizationId, projectNumber])
   @@index([organizationId])
@@ -1055,6 +1103,8 @@ model ProjectLineItem {
   returnedBy      User?          @relation("ReturnedBy", fields: [returnedById], references: [id])
   returnCondition ReturnCondition?
   returnNotes     String?
+  prepStatus      PrepStatus?
+  returnStatus    ReturnStatus?
   isSubhire         Boolean        @default(false)
   showSubhireOnDocs Boolean        @default(false)
   supplierId        String?
@@ -1063,6 +1113,7 @@ model ProjectLineItem {
   supplierOrderId   String?
   supplierOrder     SupplierOrder? @relation(fields: [supplierOrderId], references: [id], onDelete: SetNull)
   service           ProjectService?
+  checkRecords      CheckRecord[]
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
@@ -2103,6 +2154,98 @@ model SavedReport {
   @@index([organizationId])
   @@index([organizationId, createdById])
   @@map("saved_report")
+}
+
+// ─── Check Item System ───────────────────────────────────────────────────────
+
+model CheckItem {
+  id               String        @id @default(cuid())
+  organizationId   String
+  organization     Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  label            String
+  description      String?
+  type             CheckItemType @default(PASS_FAIL)
+  category         String?
+  measurementUnit  String?       // for MEASUREMENT type (e.g. "mm", "kg", "V")
+  measurementMin   Float?        // pass threshold minimum
+  measurementMax   Float?        // pass threshold maximum
+  dropdownOptions  Json?         // for DROPDOWN type: { label: string, isFail: boolean }[]
+  createdById      String?
+  createdBy        User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  modelCheckItems  ModelCheckItem[]
+  checkRecords     CheckRecord[]
+
+  @@index([organizationId])
+  @@index([organizationId, category])
+  @@map("check_item")
+}
+
+model ModelCheckItem {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  modelId        String
+  model          Model        @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  checkItemId    String
+  checkItem      CheckItem    @relation(fields: [checkItemId], references: [id], onDelete: Cascade)
+  sortOrder      Int          @default(0)
+  createdAt      DateTime     @default(now())
+
+  @@unique([modelId, checkItemId])
+  @@index([organizationId])
+  @@index([organizationId, modelId])
+  @@map("model_check_item")
+}
+
+model CheckRecord {
+  id                      String        @id @default(cuid())
+  organizationId          String
+  organization            Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  context                 CheckContext
+  lineItemId              String?       // null for AD_HOC
+  lineItem                ProjectLineItem? @relation(fields: [lineItemId], references: [id], onDelete: SetNull)
+  assetId                 String        // always set
+  asset                   Asset         @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  bulkAssetId             String?       // for bulk asset checks
+  bulkAsset               BulkAsset?    @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
+  checkItemId             String
+  checkItem               CheckItem     @relation(fields: [checkItemId], references: [id], onDelete: Cascade)
+  checkItemLabelSnapshot  String
+  checkItemTypeSnapshot   CheckItemType
+  result                  CheckResult
+  value                   String?       // measurement reading or dropdown selection
+  notes                   String?
+  photos                  String[]      @default([]) // S3 keys
+  performedById           String
+  performedBy             User          @relation("CheckRecordPerformedBy", fields: [performedById], references: [id], onDelete: Cascade)
+  performedAt             DateTime      @default(now())
+
+  @@index([organizationId])
+  @@index([organizationId, assetId])
+  @@index([organizationId, checkItemId])
+  @@index([lineItemId])
+  @@map("check_record")
+}
+
+model WarehouseClose {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId      String
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  closedById     String
+  closedBy       User         @relation("WarehouseClosedBy", fields: [closedById], references: [id], onDelete: Cascade)
+  closedAt       DateTime     @default(now())
+  storedCount    Int          @default(0)
+  damagedCount   Int          @default(0)
+  lostCount      Int          @default(0)
+
+  @@index([organizationId])
+  @@index([organizationId, projectId])
+  @@map("warehouse_close")
 }
 
 // ─── Prep System (Pre-Packing / Staging) ─────────────────────────────────────

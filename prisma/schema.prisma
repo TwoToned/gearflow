@@ -2207,8 +2207,8 @@ model CheckRecord {
   context                 CheckContext
   lineItemId              String?       // null for AD_HOC
   lineItem                ProjectLineItem? @relation(fields: [lineItemId], references: [id], onDelete: SetNull)
-  assetId                 String        // always set
-  asset                   Asset         @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  assetId                 String?       // null when no serialized asset assigned
+  asset                   Asset?        @relation(fields: [assetId], references: [id], onDelete: Cascade)
   bulkAssetId             String?       // for bulk asset checks
   bulkAsset               BulkAsset?    @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
   checkItemId             String

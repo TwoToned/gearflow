@@ -50,7 +50,7 @@ async function saveCheckRecords(
           organizationId,
           context,
           lineItemId: lineItemId || null,
-          assetId,
+          assetId: assetId || null,
           bulkAssetId: bulkAssetId || null,
           checkItemId: check.checkItemId,
           checkItemLabelSnapshot: ci.label,

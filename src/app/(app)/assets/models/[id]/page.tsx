@@ -40,6 +40,7 @@ import { BookingCalendar } from "@/components/bookings/booking-calendar";
 import { FadeIn } from "@/components/ui/motion";
 import { SectionHeader } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
+import { ModelChecksTab } from "@/components/assets/model-checks-tab";
 
 import { assetStatusLabels, bulkAssetStatusLabels, formatLabel } from "@/lib/status-labels";
 import { StatusIndicator } from "@/components/ui/status-indicator";
@@ -221,6 +222,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   </TabsTrigger>
                   <TabsTrigger value="photos">Photos ({photos.length})</TabsTrigger>
                   <TabsTrigger value="documents">Documents ({documents.length})</TabsTrigger>
+                  <TabsTrigger value="checks">Checks</TabsTrigger>
                 </TabsList>
               </div>
 
@@ -480,6 +482,10 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       }}
                     />
                 </div>
+              </TabsContent>
+
+              <TabsContent value="checks" className="mt-4">
+                <ModelChecksTab modelId={id} />
               </TabsContent>
             </Tabs>
           </div>

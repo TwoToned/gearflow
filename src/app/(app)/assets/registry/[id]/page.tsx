@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { useActiveOrganization } from "@/lib/auth-client";
 
 import { getAsset, archiveAsset, deleteAsset, updateAssetNotes } from "@/server/assets";
+import { AssetChecksTab } from "@/components/assets/asset-checks-tab";
 import { forceReturnAsset } from "@/server/warehouse";
 import { getBulkAsset, archiveBulkAsset, deleteBulkAsset, updateBulkAssetNotes } from "@/server/bulk-assets";
 import {
@@ -255,6 +256,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   <TabsTrigger value="maintenance">Maintenance ({asset.maintenanceLinks.length})</TabsTrigger>
                   <TabsTrigger value="notes">Notes</TabsTrigger>
                   <TabsTrigger value="photos">Photos</TabsTrigger>
+                  <TabsTrigger value="checks">Checks</TabsTrigger>
                   <TabsTrigger value="documents">Documents</TabsTrigger>
                   <TabsTrigger value="qr">QR</TabsTrigger>
                 </TabsList>
@@ -399,6 +401,10 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     }}
                   />
                 </div>
+              </TabsContent>
+
+              <TabsContent value="checks" className="mt-4">
+                <AssetChecksTab assetId={id} />
               </TabsContent>
 
               <TabsContent value="documents" className="mt-4">

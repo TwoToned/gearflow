@@ -23,17 +23,21 @@ export async function getProjectForWarehouse(projectId: string) {
         where: { type: "EQUIPMENT" },
         orderBy: { sortOrder: "asc" },
         include: {
-          model: true,
+          model: { include: { _count: { select: { modelCheckItems: true } } } },
           asset: true,
           bulkAsset: true,
           kit: true,
           childLineItems: {
             orderBy: { sortOrder: "asc" },
             include: {
-              model: true, asset: true, bulkAsset: true, kit: true,
+              model: { include: { _count: { select: { modelCheckItems: true } } } },
+              asset: true, bulkAsset: true, kit: true,
               childLineItems: {
                 orderBy: { sortOrder: "asc" },
-                include: { model: true, asset: true, bulkAsset: true, kit: true },
+                include: {
+                  model: { include: { _count: { select: { modelCheckItems: true } } } },
+                  asset: true, bulkAsset: true, kit: true,
+                },
               },
             },
           },

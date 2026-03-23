@@ -1175,9 +1175,10 @@ function WarehouseProjectPage({
 
     setAssetPickerOpen(false);
 
-    // If exactly one item with check items, open check form
-    if (items.length === 1 && items[0].assetId) {
-      const li = lineItems.find((l) => l.id === items[0].lineItemId);
+    // If exactly one serialized item with check items, open check form
+    const firstItem = items[0];
+    if (items.length === 1 && "assetId" in firstItem && firstItem.assetId) {
+      const li = lineItems.find((l) => l.id === firstItem.lineItemId);
       const hasChecks = li?.model?._count?.modelCheckItems && li.model._count.modelCheckItems > 0;
       if (hasChecks && li?.modelId) {
         pullItem(projectId, li.id).catch(() => {});
@@ -1187,7 +1188,7 @@ function WarehouseProjectPage({
           assetTag: li.asset?.assetTag || "",
           assetName: modelDisplayName(li),
           lineItemId: li.id,
-          assetId: items[0].assetId || "",
+          assetId: firstItem.assetId || "",
           bulkAssetId: li.bulkAssetId || undefined,
         });
         setCheckFormOpen(true);

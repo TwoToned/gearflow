@@ -28,6 +28,7 @@ export const RESOURCES = [
   "supplier",
   "crew",
   "reports",
+  "checkItem",
 ] as const;
 
 export type Resource = (typeof RESOURCES)[number];
@@ -109,6 +110,7 @@ export const PERMISSION_REGISTRY: Record<
       { key: "check_out", label: "Deploy" },
       { key: "check_in", label: "Return" },
       { key: "scan", label: "Scan" },
+      { key: "close", label: "Close Out" },
     ],
   },
   testTag: {
@@ -191,6 +193,15 @@ export const PERMISSION_REGISTRY: Record<
       { key: "delete", label: "Delete Saved Reports" },
     ],
   },
+  checkItem: {
+    label: "Check Items",
+    actions: [
+      { key: "read", label: "View" },
+      { key: "create", label: "Create" },
+      { key: "update", label: "Edit" },
+      { key: "delete", label: "Delete" },
+    ],
+  },
 };
 
 // ─── Built-in role defaults ─────────────────────────────────────────────────
@@ -207,7 +218,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     kit: ALL_CRUD,
     project: ALL_PROJECT,
     client: ALL_CRUD,
-    warehouse: ["read", "check_out", "check_in", "scan"],
+    warehouse: ["read", "check_out", "check_in", "scan", "close"],
     testTag: ["create", "read", "update", "delete", "quick_test", "generate_reports"],
     maintenance: ALL_CRUD,
     location: ALL_CRUD,
@@ -217,6 +228,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     supplier: ALL_CRUD,
     crew: ALL_CRUD,
     reports: ["view", "export", "create", "delete"],
+    checkItem: ALL_CRUD,
   },
   admin: {
     asset: ALL_ASSET,
@@ -225,7 +237,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     kit: ALL_CRUD,
     project: ALL_PROJECT,
     client: ALL_CRUD,
-    warehouse: ["read", "check_out", "check_in", "scan"],
+    warehouse: ["read", "check_out", "check_in", "scan", "close"],
     testTag: ["create", "read", "update", "delete", "quick_test", "generate_reports"],
     maintenance: ALL_CRUD,
     location: ALL_CRUD,
@@ -235,6 +247,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     supplier: ALL_CRUD,
     crew: ALL_CRUD,
     reports: ["view", "export", "create", "delete"],
+    checkItem: ALL_CRUD,
   },
   manager: {
     asset: ["create", "read", "update", "import", "export"],
@@ -243,7 +256,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     kit: ["create", "read", "update"],
     project: ["create", "read", "update", "manage_line_items", "generate_documents"],
     client: ["create", "read", "update"],
-    warehouse: ["read", "check_out", "check_in", "scan"],
+    warehouse: ["read", "check_out", "check_in", "scan", "close"],
     testTag: ["create", "read", "update", "quick_test", "generate_reports"],
     maintenance: ["create", "read", "update"],
     location: ["create", "read", "update"],
@@ -253,6 +266,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     supplier: ["create", "read", "update"],
     crew: ["create", "read", "update"],
     reports: ["view", "export", "create", "delete"],
+    checkItem: ALL_CRUD,
   },
   member: {
     asset: ["create", "read", "update"],
@@ -271,6 +285,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     supplier: ["read"],
     crew: ["read"],
     reports: ["view"],
+    checkItem: ["read"],
   },
   staff: {
     asset: ["create", "read", "update"],
@@ -289,6 +304,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     supplier: ["read"],
     crew: ["read"],
     reports: ["view"],
+    checkItem: ["read"],
   },
   warehouse: {
     asset: ["read"],
@@ -297,7 +313,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     kit: ["read"],
     project: ["read"],
     client: ["read"],
-    warehouse: ["read", "check_out", "check_in", "scan"],
+    warehouse: ["read", "check_out", "check_in", "scan", "close"],
     testTag: ["read"],
     maintenance: ["read"],
     location: ["read"],
@@ -307,6 +323,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     supplier: ["read"],
     crew: ["read"],
     reports: ["view"],
+    checkItem: ["read"],
   },
   viewer: {
     asset: ["read"],
@@ -325,6 +342,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     supplier: ["read"],
     crew: ["read"],
     reports: ["view"],
+    checkItem: ["read"],
   },
 };
 

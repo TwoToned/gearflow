@@ -87,7 +87,7 @@ export type SubmitChecksFormValues = z.input<typeof submitChecksSchema>;
 export const completeCheckAndPackSchema = z.object({
   projectId: z.string().min(1),
   lineItemId: z.string().min(1),
-  assetId: z.string().min(1),
+  assetId: z.string().optional(),
   bulkAssetId: z.string().optional(),
   checks: z.array(checkRecordSchema).min(1),
 });
@@ -101,7 +101,7 @@ export type CompleteCheckAndPackValues = z.input<
 export const completeCheckAndFlagSchema = z.object({
   projectId: z.string().min(1),
   lineItemId: z.string().min(1),
-  assetId: z.string().min(1),
+  assetId: z.string().optional(),
   bulkAssetId: z.string().optional(),
   checks: z.array(checkRecordSchema).min(1),
   flagType: z.enum(["FLAGGED_FAULTY", "FLAGGED_TT_OVERDUE"]),
@@ -116,7 +116,7 @@ export type CompleteCheckAndFlagValues = z.input<
 export const completeCheckAndStoreSchema = z.object({
   projectId: z.string().min(1),
   lineItemId: z.string().min(1),
-  assetId: z.string().min(1),
+  assetId: z.string().optional(),
   bulkAssetId: z.string().optional(),
   checks: z.array(checkRecordSchema).min(1),
   condition: z.enum(["GOOD", "DAMAGED", "MISSING"]),

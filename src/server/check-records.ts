@@ -234,19 +234,7 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
   const parsed = completeCheckAndPackSchema.parse(data);
 
   const result = await prisma.$transaction(async (tx) => {
-    // 1. Save check records
-    await saveCheckRecords(
-      tx,
-      organizationId,
-      userId,
-      parsed.assetId,
-      parsed.lineItemId,
-      parsed.bulkAssetId,
-      "PREP",
-      parsed.checks
-    );
-
-    // 2. Verify line item
+    // 1. Verify line item (needed to resolve assetId)
     const lineItem = await tx.projectLineItem.findFirst({
       where: {
         id: parsed.lineItemId,
@@ -258,6 +246,21 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
     if (!lineItem) {
       throw new Error("Line item not found in project");
     }
+
+    // Resolve assetId: prefer parsed value, fall back to line item's asset
+    const resolvedAssetId = parsed.assetId || lineItem.assetId || "";
+
+    // 2. Save check records
+    await saveCheckRecords(
+      tx,
+      organizationId,
+      userId,
+      resolvedAssetId,
+      parsed.lineItemId,
+      parsed.bulkAssetId || lineItem.bulkAssetId,
+      "PREP",
+      parsed.checks
+    );
 
     // 3. Fetch project location
     const project = await tx.project.findUnique({
@@ -357,10 +360,12 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
       },
     });
 
-    return tx.projectLineItem.findUnique({
+    const updatedItem = await tx.projectLineItem.findUnique({
       where: { id: parsed.lineItemId },
       include: { model: true, asset: true, bulkAsset: true },
     });
+
+    return { updatedItem, resolvedAssetId };
   });
 
   // Post-commit: predictive maintenance check
@@ -370,7 +375,7 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
       organizationId,
       userId,
       userName,
-      parsed.assetId,
+      result.resolvedAssetId,
       failedChecks.map((c) => c.checkItemId)
     ).catch(console.error); // Don't fail the main operation
   }
@@ -381,14 +386,14 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
     userName,
     action: "CHECK_OUT",
     entityType: "asset",
-    entityId: parsed.assetId || parsed.lineItemId,
+    entityId: result.resolvedAssetId || parsed.lineItemId,
     entityName: `Line item ${parsed.lineItemId}`,
     summary: `Completed check and packed item`,
     projectId: parsed.projectId,
-    assetId: parsed.assetId,
+    assetId: result.resolvedAssetId || undefined,
   });
 
-  return serialize(result);
+  return serialize(result.updatedItem);
 }
 
 // ─── Composite: Check + Flag (prep flow — faulty/TT overdue) ───────────────
@@ -401,19 +406,26 @@ export async function completeCheckAndFlag(data: CompleteCheckAndFlagValues) {
   const parsed = completeCheckAndFlagSchema.parse(data);
 
   const result = await prisma.$transaction(async (tx) => {
-    // 1. Save check records
+    // 1. Resolve assetId from line item if not provided
+    const lineItem = await tx.projectLineItem.findFirst({
+      where: { id: parsed.lineItemId, projectId: parsed.projectId, organizationId },
+    });
+    if (!lineItem) throw new Error("Line item not found in project");
+    const resolvedAssetId = parsed.assetId || lineItem.assetId || "";
+
+    // 2. Save check records
     await saveCheckRecords(
       tx,
       organizationId,
       userId,
-      parsed.assetId,
+      resolvedAssetId,
       parsed.lineItemId,
-      parsed.bulkAssetId,
+      parsed.bulkAssetId || lineItem.bulkAssetId,
       "PREP",
       parsed.checks
     );
 
-    // 2. Update line item to flagged status
+    // 3. Update line item to flagged status
     const updatedItem = await tx.projectLineItem.update({
       where: { id: parsed.lineItemId },
       data: {
@@ -422,7 +434,7 @@ export async function completeCheckAndFlag(data: CompleteCheckAndFlagValues) {
       include: { model: true, asset: true, bulkAsset: true },
     });
 
-    return updatedItem;
+    return { updatedItem, resolvedAssetId };
   });
 
   // Post-commit: predictive maintenance
@@ -432,7 +444,7 @@ export async function completeCheckAndFlag(data: CompleteCheckAndFlagValues) {
       organizationId,
       userId,
       userName,
-      parsed.assetId,
+      result.resolvedAssetId,
       failedChecks.map((c) => c.checkItemId)
     ).catch(console.error);
   }
@@ -443,14 +455,14 @@ export async function completeCheckAndFlag(data: CompleteCheckAndFlagValues) {
     userName,
     action: "UPDATE",
     entityType: "asset",
-    entityId: parsed.assetId || parsed.lineItemId,
+    entityId: result.resolvedAssetId || parsed.lineItemId,
     entityName: `Line item ${parsed.lineItemId}`,
     summary: `Flagged item as ${parsed.flagType === "FLAGGED_FAULTY" ? "faulty" : "T&T overdue"}`,
     projectId: parsed.projectId,
-    assetId: parsed.assetId,
+    assetId: result.resolvedAssetId || undefined,
   });
 
-  return serialize(result);
+  return serialize(result.updatedItem);
 }
 
 // ─── Composite: Check + Store (return flow) ─────────────────────────────────
@@ -465,19 +477,7 @@ export async function completeCheckAndStore(
   const parsed = completeCheckAndStoreSchema.parse(data);
 
   const result = await prisma.$transaction(async (tx) => {
-    // 1. Save check records
-    await saveCheckRecords(
-      tx,
-      organizationId,
-      userId,
-      parsed.assetId,
-      parsed.lineItemId,
-      parsed.bulkAssetId,
-      "RETURN",
-      parsed.checks
-    );
-
-    // 2. Verify line item
+    // 1. Verify line item (needed to resolve assetId)
     const lineItem = await tx.projectLineItem.findFirst({
       where: {
         id: parsed.lineItemId,
@@ -489,6 +489,21 @@ export async function completeCheckAndStore(
     if (!lineItem) {
       throw new Error("Line item not found in project");
     }
+
+    // Resolve assetId: prefer parsed value, fall back to line item's asset
+    const resolvedAssetId = parsed.assetId || lineItem.assetId || "";
+
+    // 2. Save check records
+    await saveCheckRecords(
+      tx,
+      organizationId,
+      userId,
+      resolvedAssetId,
+      parsed.lineItemId,
+      parsed.bulkAssetId || lineItem.bulkAssetId,
+      "RETURN",
+      parsed.checks
+    );
 
     // 3. Map condition to return status
     let returnStatus: "STORED" | "DAMAGED" | "LOST";
@@ -584,10 +599,12 @@ export async function completeCheckAndStore(
       },
     });
 
-    return tx.projectLineItem.findUnique({
+    const updatedItem = await tx.projectLineItem.findUnique({
       where: { id: parsed.lineItemId },
       include: { model: true, asset: true, bulkAsset: true },
     });
+
+    return { updatedItem, resolvedAssetId };
   });
 
   // Post-commit: predictive maintenance
@@ -597,7 +614,7 @@ export async function completeCheckAndStore(
       organizationId,
       userId,
       userName,
-      parsed.assetId,
+      result.resolvedAssetId,
       failedChecks.map((c) => c.checkItemId)
     ).catch(console.error);
   }
@@ -608,14 +625,14 @@ export async function completeCheckAndStore(
     userName,
     action: "CHECK_IN",
     entityType: "asset",
-    entityId: parsed.assetId || parsed.lineItemId,
+    entityId: result.resolvedAssetId || parsed.lineItemId,
     entityName: `Line item ${parsed.lineItemId}`,
     summary: `Completed check and stored item (condition: ${parsed.condition})`,
     projectId: parsed.projectId,
-    assetId: parsed.assetId,
+    assetId: result.resolvedAssetId || undefined,
   });
 
-  return serialize(result);
+  return serialize(result.updatedItem);
 }
 
 // ─── Ad-Hoc Check ───────────────────────────────────────────────────────────

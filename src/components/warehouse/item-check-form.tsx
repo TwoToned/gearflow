@@ -78,6 +78,12 @@ export interface ItemCheckFormProps {
   isSubmitting?: boolean;
   /** Render inline instead of in a Sheet (for ad-hoc check page) */
   embedded?: boolean;
+  /** Queue position (1-based) when processing multiple items */
+  queuePosition?: number;
+  /** Total items in queue */
+  queueTotal?: number;
+  /** Callback to pass all remaining items in the queue */
+  onPassAllRemaining?: () => void;
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -93,6 +99,9 @@ export function ItemCheckForm({
   onCancel,
   isSubmitting = false,
   embedded = false,
+  queuePosition,
+  queueTotal,
+  onPassAllRemaining,
 }: ItemCheckFormProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
@@ -297,7 +306,12 @@ export function ItemCheckForm({
       <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
-            <span className="font-mono text-sm text-primary">{assetTag}</span>
+            {queueTotal && queueTotal > 1 ? (
+              <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-xs font-semibold text-primary tabular-nums">
+                {queuePosition}/{queueTotal}
+              </span>
+            ) : null}
+            <span className="font-mono text-sm text-primary">{assetTag || "—"}</span>
             <span className="text-fg-3">—</span>
             <span className="truncate">{assetName}</span>
           </SheetTitle>
@@ -306,8 +320,20 @@ export function ItemCheckForm({
               {contextLabel}
             </Badge>
             <span className="text-xs text-fg-3">
-              {items.length} item{items.length !== 1 ? "s" : ""}
+              {items.length} check{items.length !== 1 ? "s" : ""}
             </span>
+            {onPassAllRemaining && queueTotal && queuePosition && queueTotal > 1 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onPassAllRemaining}
+                disabled={isSubmitting}
+                className="ml-auto text-green-600 border-green-600/20 hover:bg-green-600/10 text-xs h-7"
+              >
+                <CheckCircle2 className="mr-1 h-3 w-3" />
+                Pass All {queueTotal - queuePosition + 1} Items
+              </Button>
+            )}
           </div>
         </SheetHeader>
         {formContent}

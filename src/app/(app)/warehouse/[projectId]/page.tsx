@@ -90,6 +90,7 @@ import {
   unpackItem,
   completeCheckAndStore,
 } from "@/server/check-records";
+import { getModelCheckItems } from "@/server/check-items";
 import type { CheckRecordFormValues } from "@/lib/validations/check-item";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -524,6 +525,87 @@ function WarehouseProjectPage({
     bulkAssetId?: string;
   } | null>(null);
   const [checkFormSubmitting, setCheckFormSubmitting] = useState(false);
+
+  // Queue for multi-item check flows
+  type CheckQueueItem = {
+    context: "PREP" | "RETURN";
+    modelId: string;
+    assetTag: string;
+    assetName: string;
+    lineItemId: string;
+    assetId: string;
+    bulkAssetId?: string;
+  };
+  const [checkQueue, setCheckQueue] = useState<CheckQueueItem[]>([]);
+  const [checkQueueIndex, setCheckQueueIndex] = useState(0);
+  // Items that don't need checks — processed after queue completes
+  const [checkQueueDirectItems, setCheckQueueDirectItems] = useState<
+    Array<{ lineItemId: string; assetId?: string; quantity?: number; returnCondition?: string; notes?: string }>
+  >([]);
+
+  // Start processing a check queue — opens the form for the first item
+  function startCheckQueue(queue: CheckQueueItem[], directItems: Array<{ lineItemId: string; assetId?: string; quantity?: number; returnCondition?: string; notes?: string }> = []) {
+    if (queue.length === 0) return false;
+    setCheckQueue(queue);
+    setCheckQueueIndex(0);
+    setCheckQueueDirectItems(directItems);
+    const first = queue[0];
+    setCheckFormData(first);
+    setCheckFormOpen(true);
+    // Call pullItem/unpackItem for the first item
+    if (first.context === "PREP") {
+      pullItem(projectId, first.lineItemId).catch(() => {});
+    } else {
+      unpackItem(projectId, first.lineItemId).catch(() => {});
+    }
+    return true;
+  }
+
+  // Advance to the next item in the queue (called after a successful submit)
+  function advanceCheckQueue() {
+    const nextIndex = checkQueueIndex + 1;
+    if (nextIndex < checkQueue.length) {
+      setCheckQueueIndex(nextIndex);
+      const next = checkQueue[nextIndex];
+      setCheckFormData(next);
+      // Pull/unpack the next item
+      if (next.context === "PREP") {
+        pullItem(projectId, next.lineItemId).catch(() => {});
+      } else {
+        unpackItem(projectId, next.lineItemId).catch(() => {});
+      }
+      // Keep form open — it will reset via the modelId/assetTag change
+    } else {
+      // Queue complete — process any direct (no-check) items
+      finishCheckQueue();
+    }
+  }
+
+  // Process remaining direct items after queue completes
+  function finishCheckQueue() {
+    setCheckFormOpen(false);
+    setCheckFormData(null);
+    setCheckQueue([]);
+    setCheckQueueIndex(0);
+
+    if (checkQueueDirectItems.length > 0) {
+      const context = checkQueue[0]?.context;
+      if (context === "PREP") {
+        checkOutMutation.mutate(
+          checkQueueDirectItems.map((i) => ({ lineItemId: i.lineItemId, assetId: i.assetId, quantity: i.quantity })),
+          { onSuccess: () => toast.success(`Checked out remaining items`) }
+        );
+      } else {
+        checkInMutation.mutate(
+          { items: checkQueueDirectItems.map((i) => ({ lineItemId: i.lineItemId, returnCondition: (i.returnCondition || "GOOD") as "GOOD" | "DAMAGED" | "MISSING", quantity: i.quantity, notes: i.notes })) },
+          { onSuccess: () => { toast.success(`Returned remaining items`); setReturnNotes(""); } }
+        );
+      }
+    }
+
+    setCheckQueueDirectItems([]);
+    invalidate();
+  }
 
   const { data: project, isLoading } = useQuery({
     queryKey: ["warehouse-project", orgId, projectId],
@@ -1087,24 +1169,29 @@ function WarehouseProjectPage({
       ];
       if (items.length === 0) return;
 
-      // If exactly one serialized item with check items, open check form
-      if (alreadyAssigned.length === 1 && bulkItems.length === 0) {
-        const li = alreadyAssigned[0];
-        const hasChecks = li.model?._count?.modelCheckItems && li.model._count.modelCheckItems > 0;
-        if (hasChecks && li.modelId) {
-          pullItem(projectId, li.id).catch(() => {});
-          setCheckFormData({
-            context: "PREP",
-            modelId: li.modelId,
-            assetTag: li.asset?.assetTag || li.bulkAsset?.assetTag || "",
-            assetName: modelDisplayName(li),
-            lineItemId: li.id,
-            assetId: li.assetId || "",
-            bulkAssetId: li.bulkAssetId || undefined,
-          });
-          setCheckFormOpen(true);
-          return;
-        }
+      // Build check queue for items with check items assigned
+      const withChecks = alreadyAssigned.filter(
+        (li) => li.model?._count?.modelCheckItems && li.model._count.modelCheckItems > 0 && li.modelId
+      );
+      const withoutChecks = [
+        ...alreadyAssigned.filter(
+          (li) => !li.model?._count?.modelCheckItems || li.model._count.modelCheckItems === 0 || !li.modelId
+        ).map((li) => ({ lineItemId: li.id, assetId: li.assetId || undefined })),
+        ...bulkItems,
+      ];
+
+      if (withChecks.length > 0) {
+        const queue: CheckQueueItem[] = withChecks.map((li) => ({
+          context: "PREP" as const,
+          modelId: li.modelId!,
+          assetTag: li.asset?.assetTag || li.bulkAsset?.assetTag || "",
+          assetName: modelDisplayName(li),
+          lineItemId: li.id,
+          assetId: li.assetId || "",
+          bulkAssetId: li.bulkAssetId || undefined,
+        }));
+        startCheckQueue(queue, withoutChecks);
+        return;
       }
 
       checkOutMutation.mutate(items, {
@@ -1175,25 +1262,36 @@ function WarehouseProjectPage({
 
     setAssetPickerOpen(false);
 
-    // If exactly one serialized item with check items, open check form
-    const firstItem = items[0];
-    if (items.length === 1 && "assetId" in firstItem && firstItem.assetId) {
-      const li = lineItems.find((l) => l.id === firstItem.lineItemId);
-      const hasChecks = li?.model?._count?.modelCheckItems && li.model._count.modelCheckItems > 0;
-      if (hasChecks && li?.modelId) {
-        pullItem(projectId, li.id).catch(() => {});
-        setCheckFormData({
-          context: "PREP",
-          modelId: li.modelId,
-          assetTag: li.asset?.assetTag || "",
-          assetName: modelDisplayName(li),
-          lineItemId: li.id,
-          assetId: firstItem.assetId || "",
-          bulkAssetId: li.bulkAssetId || undefined,
-        });
-        setCheckFormOpen(true);
-        return;
-      }
+    // Build check queue for items from the picker that have check items
+    const allPickedItems = [
+      ...assetPickerItems.map((i) => {
+        const li = lineItems.find((l) => l.id === i.lineItemId);
+        return { ...i, li, assetId: i.selectedAssetId };
+      }),
+    ];
+    const withChecks = allPickedItems.filter(
+      (i) => i.li?.model?._count?.modelCheckItems && i.li.model._count.modelCheckItems > 0 && i.li?.modelId
+    );
+    const withoutChecks = [
+      ...allPickedItems.filter(
+        (i) => !i.li?.model?._count?.modelCheckItems || i.li.model._count.modelCheckItems === 0 || !i.li?.modelId
+      ).map((i) => ({ lineItemId: i.lineItemId, assetId: i.assetId })),
+      ...alreadyAssigned.map((li) => ({ lineItemId: li.id, assetId: li.assetId || undefined })),
+      ...assetPickerBulkItems,
+    ];
+
+    if (withChecks.length > 0) {
+      const queue: CheckQueueItem[] = withChecks.map((i) => ({
+        context: "PREP" as const,
+        modelId: i.li!.modelId!,
+        assetTag: i.li?.asset?.assetTag || "",
+        assetName: modelDisplayName(i.li!),
+        lineItemId: i.lineItemId,
+        assetId: i.assetId || "",
+        bulkAssetId: i.li?.bulkAssetId || undefined,
+      }));
+      startCheckQueue(queue, withoutChecks);
+      return;
     }
 
     checkOutMutation.mutate(items, {
@@ -1249,26 +1347,36 @@ function WarehouseProjectPage({
       notes: returnNotes || undefined,
     }));
     if (items.length > 0) {
-      // If exactly one item with check items, open check form
-      if (items.length === 1) {
-        const li = lineItems.find((l) => l.id === items[0].lineItemId);
-        const hasChecks = li?.model?._count?.modelCheckItems && li.model._count.modelCheckItems > 0;
-        if (hasChecks && li?.modelId) {
-          unpackItem(projectId, li.id).catch(() => {});
-          setCheckFormData({
-            context: "RETURN",
-            modelId: li.modelId,
-            assetTag: li.asset?.assetTag || li.bulkAsset?.assetTag || "",
-            assetName: modelDisplayName(li),
-            lineItemId: li.id,
-            assetId: li.assetId || "",
-            bulkAssetId: li.bulkAssetId || undefined,
-          });
-          setCheckFormOpen(true);
-          setReturnNotes("");
-          return;
-        }
+      // Build check queue for items with check items
+      const returnLineItems = items.map((item) => {
+        const li = lineItems.find((l) => l.id === item.lineItemId);
+        return { item, li };
+      });
+      const withChecks = returnLineItems.filter(
+        ({ li }) => li?.model?._count?.modelCheckItems && li.model._count.modelCheckItems > 0 && li?.modelId
+      );
+      const withoutChecks = returnLineItems
+        .filter(({ li }) => !li?.model?._count?.modelCheckItems || li.model._count.modelCheckItems === 0 || !li?.modelId)
+        .map(({ item }) => item);
+
+      if (withChecks.length > 0) {
+        const queue: CheckQueueItem[] = withChecks.map(({ item, li }) => ({
+          context: "RETURN" as const,
+          modelId: li!.modelId!,
+          assetTag: li?.asset?.assetTag || li?.bulkAsset?.assetTag || "",
+          assetName: modelDisplayName(li!),
+          lineItemId: item.lineItemId,
+          assetId: li?.assetId || "",
+          bulkAssetId: li?.bulkAssetId || undefined,
+        }));
+        startCheckQueue(
+          queue,
+          withoutChecks.map((i) => ({ lineItemId: i.lineItemId, returnCondition: i.returnCondition, quantity: i.quantity, notes: i.notes }))
+        );
+        setReturnNotes("");
+        return;
       }
+
       checkInMutation.mutate(
         { items },
         { onSuccess: () => { toast.success(`Returned items`); setReturnNotes(""); } }
@@ -2186,6 +2294,8 @@ function WarehouseProjectPage({
             if (!open) {
               setCheckFormOpen(false);
               setCheckFormData(null);
+              setCheckQueue([]);
+              setCheckQueueIndex(0);
             }
           }}
           modelId={checkFormData.modelId}
@@ -2193,10 +2303,58 @@ function WarehouseProjectPage({
           assetName={checkFormData.assetName}
           context={checkFormData.context}
           isSubmitting={checkFormSubmitting}
+          queuePosition={checkQueue.length > 1 ? checkQueueIndex + 1 : undefined}
+          queueTotal={checkQueue.length > 1 ? checkQueue.length : undefined}
           onCancel={() => {
             setCheckFormOpen(false);
             setCheckFormData(null);
+            setCheckQueue([]);
+            setCheckQueueIndex(0);
           }}
+          onPassAllRemaining={checkQueue.length > 1 ? async () => {
+            // Auto-pass all remaining items in the queue (including current)
+            setCheckFormSubmitting(true);
+            try {
+              const remaining = checkQueue.slice(checkQueueIndex);
+              for (const item of remaining) {
+                // Fetch check items for this model to build pass-all checks
+                const modelChecks = await getModelCheckItems(item.modelId);
+                const checks: CheckRecordFormValues[] = (modelChecks as Array<{ checkItem: { id: string; type: string } }>).map((mci) => ({
+                  checkItemId: mci.checkItem.id,
+                  result: mci.checkItem.type === "NOTES" ? "NOTES_ONLY" as const : "PASS" as const,
+                  photos: [],
+                }));
+
+                if (item.context === "PREP") {
+                  await pullItem(projectId, item.lineItemId).catch(() => {});
+                  await completeCheckAndPack({
+                    projectId,
+                    lineItemId: item.lineItemId,
+                    assetId: item.assetId,
+                    bulkAssetId: item.bulkAssetId,
+                    checks,
+                  });
+                } else {
+                  await unpackItem(projectId, item.lineItemId).catch(() => {});
+                  await completeCheckAndStore({
+                    projectId,
+                    lineItemId: item.lineItemId,
+                    assetId: item.assetId,
+                    bulkAssetId: item.bulkAssetId,
+                    checks,
+                    condition: (returnCondition || "GOOD") as "GOOD" | "DAMAGED" | "MISSING",
+                    notes: returnNotes || undefined,
+                  });
+                }
+              }
+              toast.success(`Passed all checks for ${remaining.length} item${remaining.length !== 1 ? "s" : ""}`);
+              finishCheckQueue();
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : "Pass all failed");
+            } finally {
+              setCheckFormSubmitting(false);
+            }
+          } : undefined}
           onSubmit={async (checks: CheckRecordFormValues[]) => {
             if (!checkFormData) return;
             setCheckFormSubmitting(true);
@@ -2236,12 +2394,19 @@ function WarehouseProjectPage({
                   notes: returnNotes || undefined,
                 });
                 toast.success(`Item checked and ${hasFails ? "flagged damaged" : "stored"}`);
-                setReturnNotes("");
               }
 
-              setCheckFormOpen(false);
-              setCheckFormData(null);
-              invalidate();
+              // Advance queue or close
+              if (checkQueue.length > 1) {
+                advanceCheckQueue();
+                invalidate();
+              } else {
+                setCheckFormOpen(false);
+                setCheckFormData(null);
+                setCheckQueue([]);
+                setCheckQueueIndex(0);
+                invalidate();
+              }
             } catch (e) {
               toast.error(e instanceof Error ? e.message : "Check submission failed");
             } finally {

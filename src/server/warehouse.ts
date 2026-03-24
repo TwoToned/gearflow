@@ -1150,43 +1150,37 @@ export async function syncContainerStatus(projectId: string, containerName: stri
 export async function getAvailableAssetsForModel(modelId: string) {
   const { organizationId } = await getOrgContext();
 
-  // First, find all asset IDs of this model that are currently assigned to
-  // an active line item on an active project (i.e. "in use")
+  // Step 1: Get all asset IDs for this model
+  const modelAssets = await prisma.asset.findMany({
+    where: { organizationId, modelId, status: "AVAILABLE" },
+    select: { id: true, assetTag: true, serialNumber: true, customName: true },
+    orderBy: { assetTag: "asc" },
+  });
+
+  if (modelAssets.length === 0) return serialize([]);
+
+  // Step 2: Find which of these assets are currently assigned to active line items
+  const assetIds = modelAssets.map((a) => a.id);
   const inUseLineItems = await prisma.projectLineItem.findMany({
     where: {
       organizationId,
-      assetId: { not: null },
+      assetId: { in: assetIds },
       status: { notIn: ["RETURNED", "CANCELLED"] },
       project: {
         status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
       },
-      asset: { modelId },
     },
     select: { assetId: true },
   });
+
   const inUseAssetIds = new Set(
     inUseLineItems.map((li) => li.assetId).filter(Boolean) as string[]
   );
 
-  const assets = await prisma.asset.findMany({
-    where: {
-      organizationId,
-      modelId,
-      status: "AVAILABLE",
-      ...(inUseAssetIds.size > 0
-        ? { id: { notIn: [...inUseAssetIds] } }
-        : {}),
-    },
-    orderBy: { assetTag: "asc" },
-    select: {
-      id: true,
-      assetTag: true,
-      serialNumber: true,
-      customName: true,
-    },
-  });
+  // Step 3: Filter out in-use assets
+  const available = modelAssets.filter((a) => !inUseAssetIds.has(a.id));
 
-  return serialize(assets);
+  return serialize(available);
 }
 
 // ---------------------------------------------------------------------------

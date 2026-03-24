@@ -45,6 +45,7 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { FadeIn } from "@/components/ui/motion";
 import { SectionHeader } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
+import { KitChecksTab } from "@/components/kits/kit-checks-tab";
 import {
   Dialog,
   DialogContent,
@@ -296,6 +297,12 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
         <div className="min-w-0 flex-1 space-y-6">
           {/* Booking Calendar */}
           <BookingCalendar entityType="kit" entityId={id} initialDate={initialDate} />
+
+          {/* Checks */}
+          <div>
+            <h3 className="t-heading text-fg mb-3">Checks</h3>
+            <KitChecksTab kitId={id} checkMode={(kit as Record<string, unknown>).checkMode as string || "KIT_LEVEL"} />
+          </div>
 
           {/* Contents */}
           <div id="kit-contents" className="space-y-6">

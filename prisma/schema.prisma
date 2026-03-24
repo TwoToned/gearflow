@@ -164,6 +164,7 @@ model Organization {
   savedReports               SavedReport[]
   checkItems                 CheckItem[]
   modelCheckItems            ModelCheckItem[]
+  kitCheckItems              KitCheckItem[]
   checkRecords               CheckRecord[]
   warehouseCloses            WarehouseClose[]
   @@map("organization")
@@ -448,6 +449,11 @@ enum KitPricingMode {
   ITEMIZED
 }
 
+enum KitCheckMode {
+  KIT_LEVEL   // Check the kit once; all contents inherit the result
+  PER_ITEM    // Each child asset goes through its own model's checks
+}
+
 enum MediaType {
   PHOTO
   MANUAL
@@ -722,6 +728,7 @@ model Kit {
   purchasePrice       Decimal?       @db.Decimal(10, 2)
   customFieldValues   Json?
   tags                String[]       @default([])
+  checkMode           KitCheckMode   @default(KIT_LEVEL)
   isPrep              Boolean        @default(false)
   isActive            Boolean        @default(true)
   createdAt           DateTime       @default(now())
@@ -734,6 +741,8 @@ model Kit {
   scanLogs         AssetScanLog[]
   maintenanceRecords MaintenanceRecord[]
   media            KitMedia[]
+  kitCheckItems    KitCheckItem[]
+  checkRecords     CheckRecord[]
 
   @@unique([organizationId, assetTag])
   @@index([organizationId])
@@ -2176,6 +2185,7 @@ model CheckItem {
   updatedAt        DateTime      @updatedAt
 
   modelCheckItems  ModelCheckItem[]
+  kitCheckItems    KitCheckItem[]
   checkRecords     CheckRecord[]
 
   @@index([organizationId])
@@ -2200,6 +2210,23 @@ model ModelCheckItem {
   @@map("model_check_item")
 }
 
+model KitCheckItem {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  kitId          String
+  kit            Kit          @relation(fields: [kitId], references: [id], onDelete: Cascade)
+  checkItemId    String
+  checkItem      CheckItem    @relation(fields: [checkItemId], references: [id], onDelete: Cascade)
+  sortOrder      Int          @default(0)
+  createdAt      DateTime     @default(now())
+
+  @@unique([kitId, checkItemId])
+  @@index([organizationId])
+  @@index([organizationId, kitId])
+  @@map("kit_check_item")
+}
+
 model CheckRecord {
   id                      String        @id @default(cuid())
   organizationId          String
@@ -2211,6 +2238,8 @@ model CheckRecord {
   asset                   Asset?        @relation(fields: [assetId], references: [id], onDelete: Cascade)
   bulkAssetId             String?       // for bulk asset checks
   bulkAsset               BulkAsset?    @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
+  kitId                   String?       // for kit-level checks
+  kit                     Kit?          @relation(fields: [kitId], references: [id], onDelete: SetNull)
   checkItemId             String
   checkItem               CheckItem     @relation(fields: [checkItemId], references: [id], onDelete: Cascade)
   checkItemLabelSnapshot  String

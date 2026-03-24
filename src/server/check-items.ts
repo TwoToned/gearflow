@@ -248,3 +248,109 @@ export async function reorderModelCheckItems(
 
   return { success: true };
 }
+
+// ─── Kit Check Items ──────────────────────────────────────────────────────────
+
+export async function getKitCheckItems(kitId: string) {
+  const { organizationId } = await getOrgContext();
+
+  return serialize(
+    await prisma.kitCheckItem.findMany({
+      where: { kitId, organizationId },
+      include: { checkItem: true },
+      orderBy: { sortOrder: "asc" },
+    })
+  );
+}
+
+export async function addCheckItemToKit(
+  kitId: string,
+  checkItemId: string
+) {
+  const { organizationId, userId, userName } = await requirePermission(
+    "checkItem",
+    "update"
+  );
+
+  const maxSort = await prisma.kitCheckItem.aggregate({
+    where: { kitId, organizationId },
+    _max: { sortOrder: true },
+  });
+
+  const result = await prisma.kitCheckItem.create({
+    data: {
+      organizationId,
+      kitId,
+      checkItemId,
+      sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
+    },
+    include: { checkItem: true, kit: { select: { name: true } } },
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "kit",
+    entityId: kitId,
+    entityName: result.kit.name,
+    summary: `Added check item "${result.checkItem.label}" to kit "${result.kit.name}"`,
+  });
+
+  return serialize(result);
+}
+
+export async function removeCheckItemFromKit(
+  kitId: string,
+  checkItemId: string
+) {
+  const { organizationId, userId, userName } = await requirePermission(
+    "checkItem",
+    "update"
+  );
+
+  const record = await prisma.kitCheckItem.findFirst({
+    where: { kitId, checkItemId, organizationId },
+    include: { checkItem: true, kit: { select: { name: true } } },
+  });
+
+  if (!record) {
+    throw new Error("Check item not assigned to this kit");
+  }
+
+  await prisma.kitCheckItem.delete({
+    where: { id: record.id },
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "kit",
+    entityId: kitId,
+    entityName: record.kit.name,
+    summary: `Removed check item "${record.checkItem.label}" from kit "${record.kit.name}"`,
+  });
+
+  return { success: true };
+}
+
+export async function reorderKitCheckItems(
+  kitId: string,
+  orderedCheckItemIds: string[]
+) {
+  const { organizationId } = await requirePermission("checkItem", "update");
+
+  await prisma.$transaction(
+    orderedCheckItemIds.map((checkItemId, index) =>
+      prisma.kitCheckItem.updateMany({
+        where: { kitId, checkItemId, organizationId },
+        data: { sortOrder: index },
+      })
+    )
+  );
+
+  return { success: true };
+}

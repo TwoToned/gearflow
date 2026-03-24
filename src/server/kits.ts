@@ -183,6 +183,7 @@ export async function createKit(data: KitFormValues) {
         qrCode: parsed.assetTag,
         isActive: parsed.isActive,
         tags: parsed.tags,
+        checkMode: parsed.checkMode,
       },
     });
     await reserveAssetTags(1);
@@ -236,6 +237,7 @@ export async function updateKit(id: string, data: KitFormValues) {
       images: parsed.images,
       isActive: parsed.isActive,
       tags: parsed.tags,
+      checkMode: parsed.checkMode,
     },
   });
 

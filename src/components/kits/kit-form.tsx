@@ -62,6 +62,7 @@ export function KitForm({ initialData }: KitFormProps) {
       categoryId: "",
       status: "AVAILABLE",
       condition: "NEW",
+      checkMode: "KIT_LEVEL",
       locationId: "",
       weight: undefined,
       caseType: "",
@@ -173,6 +174,22 @@ export function KitForm({ initialData }: KitFormProps) {
                 <option value="POOR">Poor</option>
                 <option value="DAMAGED">Damaged</option>
               </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="checkMode">Check Mode</Label>
+              <select
+                id="checkMode"
+                {...form.register("checkMode")}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <option value="KIT_LEVEL">Kit Level — check the kit once, contents inherit</option>
+                <option value="PER_ITEM">Per Item — each asset gets its own model checks</option>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                {form.watch("checkMode") === "PER_ITEM"
+                  ? "Each asset in the kit will go through its own model's check items during warehouse operations."
+                  : "The kit is checked once during warehouse operations. All contents inherit the result."}
+              </p>
             </div>
           </FormSection>
 

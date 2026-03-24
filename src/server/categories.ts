@@ -148,6 +148,7 @@ export async function searchContainerAssets(query: string = "") {
       id: true,
       assetTag: true,
       customName: true,
+      modelId: true,
       model: { select: { name: true } },
     },
     orderBy: { assetTag: "asc" },
@@ -157,7 +158,12 @@ export async function searchContainerAssets(query: string = "") {
   return serialize(
     assets.map((a) => ({
       value: a.customName || a.assetTag,
-      label: a.customName || `${a.model?.name} — ${a.assetTag}`,
+      label: a.customName
+        ? `${a.customName} (${a.assetTag})`
+        : `${a.model?.name} — ${a.assetTag}`,
+      assetId: a.id,
+      assetTag: a.assetTag,
+      modelId: a.modelId,
     }))
   );
 }

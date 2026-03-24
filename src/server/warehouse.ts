@@ -1031,6 +1031,122 @@ export async function clearPrepContainer(projectId: string, containerName: strin
 }
 
 // ---------------------------------------------------------------------------
+// 6c. ensureContainerOnProject — add container asset as a line item if needed
+// ---------------------------------------------------------------------------
+
+export async function ensureContainerOnProject(
+  projectId: string,
+  assetId: string,
+  modelId: string,
+  containerName: string
+) {
+  const { organizationId, userId } = await requirePermission("warehouse", "check_out");
+
+  // Check if container asset is already on the project
+  const existing = await prisma.projectLineItem.findFirst({
+    where: { projectId, organizationId, assetId, isContainerLineItem: true },
+  });
+  if (existing) return serialize(existing);
+
+  // Get next sort order
+  const maxSort = await prisma.projectLineItem.aggregate({
+    where: { projectId, organizationId },
+    _max: { sortOrder: true },
+  });
+  const nextSort = (maxSort._max.sortOrder ?? -1) + 1;
+
+  const lineItem = await prisma.projectLineItem.create({
+    data: {
+      organizationId,
+      projectId,
+      type: "EQUIPMENT",
+      modelId,
+      assetId,
+      quantity: 1,
+      sortOrder: nextSort,
+      status: "CONFIRMED",
+      checkedOutQuantity: 0,
+      prepStatus: "PACKED",
+      prepContainer: containerName,
+      isContainerLineItem: true,
+    },
+    include: { model: true, asset: true },
+  });
+
+  return serialize(lineItem);
+}
+
+// ---------------------------------------------------------------------------
+// 6d. syncContainerStatus — auto deploy/return container when contents change
+// ---------------------------------------------------------------------------
+
+export async function syncContainerStatus(projectId: string, containerName: string) {
+  const { organizationId, userId } = await requirePermission("warehouse", "check_out");
+
+  // Find the container line item
+  const containerLI = await prisma.projectLineItem.findFirst({
+    where: { projectId, organizationId, isContainerLineItem: true, prepContainer: containerName },
+  });
+  if (!containerLI) return serialize({ updated: false });
+
+  // Get all non-container items in this container
+  const contentItems = await prisma.projectLineItem.findMany({
+    where: {
+      projectId,
+      organizationId,
+      prepContainer: containerName,
+      isContainerLineItem: false,
+    },
+    select: { status: true },
+  });
+
+  if (contentItems.length === 0) return serialize({ updated: false });
+
+  const allDeployed = contentItems.every((i) => i.status === "CHECKED_OUT");
+  const allReturned = contentItems.every((i) => i.status === "RETURNED");
+
+  const allDeployedFlag = allDeployed && containerLI.status !== "CHECKED_OUT";
+  const allReturnedFlag = allReturned && containerLI.status !== "RETURNED";
+
+  if (!allDeployedFlag && !allReturnedFlag) return serialize({ updated: false });
+
+  if (allDeployedFlag) {
+    await prisma.projectLineItem.update({
+      where: { id: containerLI.id },
+      data: {
+        status: "CHECKED_OUT",
+        checkedOutQuantity: 1,
+        checkedOutAt: new Date(),
+        checkedOutBy: { connect: { id: userId } },
+      },
+    });
+  } else {
+    await prisma.projectLineItem.update({
+      where: { id: containerLI.id },
+      data: {
+        status: "RETURNED",
+        returnedQuantity: 1,
+        returnedAt: new Date(),
+        returnedBy: { connect: { id: userId } },
+        returnCondition: "GOOD",
+      },
+    });
+  }
+
+  // Update the container asset status too
+  if (containerLI.assetId) {
+    await prisma.asset.update({
+      where: { id: containerLI.assetId },
+      data: {
+        status: allDeployedFlag ? "CHECKED_OUT" : "AVAILABLE",
+      },
+    });
+  }
+
+  return serialize({ updated: true, status: allDeployedFlag ? "CHECKED_OUT" : "RETURNED" });
+}
+
+// ---------------------------------------------------------------------------
 // 7. getAvailableAssetsForModel
 // ---------------------------------------------------------------------------
 

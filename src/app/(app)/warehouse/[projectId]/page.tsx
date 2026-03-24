@@ -34,6 +34,8 @@ import {
   getAvailableAssetsForModel,
   quickAddAndCheckOut,
   clearPrepContainer,
+  ensureContainerOnProject,
+  syncContainerStatus,
 } from "@/server/warehouse";
 import { lineItemStatusLabels, formatLabel } from "@/lib/status-labels";
 import { Button } from "@/components/ui/button";
@@ -139,6 +141,7 @@ interface LineItem {
   kit: { id: string; assetTag: string; name: string; checkMode?: string; _count?: { kitCheckItems: number } } | null;
   prepStatus: string | null;
   prepContainer: string | null;
+  isContainerLineItem: boolean;
   isSubhire: boolean;
   childLineItems?: LineItem[];
 }
@@ -760,24 +763,51 @@ function WarehouseProjectPage({
     setSelectedIn(new Set());
   };
 
+  // Helper: ensure container asset is on the project when prepping into it
+  // Uses refs so it can be called from mutations defined before containerOptions
+  const ensureContainerIfNeeded = useCallback(async () => {
+    const asset = selectedContainerAssetRef.current;
+    const container = selectedContainerRef.current;
+    if (asset?.assetId && asset.modelId) {
+      await ensureContainerOnProject(projectId, asset.assetId, asset.modelId, container);
+    }
+  }, [projectId]);
+
   const checkOutMutation = useMutation({
-    mutationFn: (items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>) =>
-      checkOutItems(projectId, items),
+    mutationFn: async (items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>) => {
+      const result = await checkOutItems(projectId, items);
+      // Sync container status for affected containers
+      const containers = new Set(
+        items.map((i) => lineItems.find((l) => l.id === i.lineItemId)?.prepContainer).filter(Boolean) as string[]
+      );
+      for (const c of containers) await syncContainerStatus(projectId, c);
+      return result;
+    },
     onSuccess: invalidate,
     onError: (e) => toast.error(e.message),
   });
 
   const checkInMutation = useMutation({
-    mutationFn: (data: {
+    mutationFn: async (data: {
       items: Array<{ lineItemId: string; returnCondition: "GOOD" | "DAMAGED" | "MISSING"; quantity?: number; notes?: string }>;
-    }) => checkInItems(projectId, data.items),
+    }) => {
+      const result = await checkInItems(projectId, data.items);
+      // Sync container status for affected containers
+      const containers = new Set(
+        data.items.map((i) => lineItems.find((l) => l.id === i.lineItemId)?.prepContainer).filter(Boolean) as string[]
+      );
+      for (const c of containers) await syncContainerStatus(projectId, c);
+      return result;
+    },
     onSuccess: invalidate,
     onError: (e) => toast.error(e.message),
   });
 
   const quickAddMutation = useMutation({
-    mutationFn: (data: { modelId: string; assetId?: string; bulkAssetId?: string; quantity?: number }) =>
-      quickAddAndCheckOut(projectId, { ...data, prepContainer: selectedContainer || null }),
+    mutationFn: async (data: { modelId: string; assetId?: string; bulkAssetId?: string; quantity?: number }) => {
+      await ensureContainerIfNeeded();
+      return quickAddAndCheckOut(projectId, { ...data, prepContainer: selectedContainer || null });
+    },
     onSuccess: () => {
       invalidate();
       toast.success(`Added to project and prepped: ${addPromptData?.assetName || "Asset"}`);
@@ -827,7 +857,7 @@ function WarehouseProjectPage({
   // --- Scan mutations ---
   const scanMutation = useMutation({
     mutationFn: (assetTag: string) => lookupAssetForScan(projectId, assetTag, "checkout"),
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
       // Handle kit scans — prep the kit (not deploy)
       if (result.found && result.type === "kit") {
         const kitResult = result as { kitId: string; kitAssetTag: string; assetName: string; lineItemId: string | null; reason: string | null };
@@ -907,6 +937,9 @@ function WarehouseProjectPage({
       }
 
       if (result.found && result.lineItemId) {
+        // Ensure container asset is on project before prepping
+        await ensureContainerIfNeeded();
+
         // Check if model has check items — if so, open check form for prep
         const matchedLi = lineItems.find((l) => l.id === result.lineItemId);
         const hasChecks = matchedLi?.model?._count?.modelCheckItems && matchedLi.model._count.modelCheckItems > 0;
@@ -928,7 +961,7 @@ function WarehouseProjectPage({
           scanInputRef.current?.focus();
         } else {
           // No check items — prep directly (set prepStatus=PACKED, no deploy)
-          prepItemDirect(projectId, result.lineItemId, result.assetId || undefined)
+          prepItemDirect(projectId, result.lineItemId, result.assetId || undefined, undefined, selectedContainer || null)
             .then(() => {
               toast.success(`Prepped: ${result.assetName || "Asset"}`);
               setScanValue("");
@@ -1260,14 +1293,16 @@ function WarehouseProjectPage({
     staleTime: 60_000,
   });
 
+  type ContainerAsset = { value: string; label: string; assetId?: string; assetTag?: string; modelId?: string };
+
   // Build container options from existing prepContainer values + case category assets
   const containerOptions = useMemo(() => {
     const seen = new Set<string>();
-    const options: Array<{ value: string; label: string }> = [];
+    const options: ContainerAsset[] = [];
 
     // Add case category assets first
     if (caseAssets) {
-      for (const asset of caseAssets as Array<{ value: string; label: string }>) {
+      for (const asset of caseAssets as ContainerAsset[]) {
         if (!seen.has(asset.value)) {
           seen.add(asset.value);
           options.push(asset);
@@ -1286,8 +1321,20 @@ function WarehouseProjectPage({
     return options.sort((a, b) => a.label.localeCompare(b.label));
   }, [lineItems, caseAssets]);
 
-  // Filter out kit children — they show under their parent row
-  const equipmentItems = lineItems.filter((item) => item.type === "EQUIPMENT" && !item.isKitChild);
+  // Look up the selected container's asset info (if it's a real asset, not custom name)
+  const selectedContainerAsset = useMemo(() => {
+    if (!selectedContainer) return null;
+    return containerOptions.find((o) => o.value === selectedContainer && o.assetId) || null;
+  }, [selectedContainer, containerOptions]);
+
+  // Keep ref updated so mutations defined earlier can call it
+  const selectedContainerAssetRef = useRef(selectedContainerAsset);
+  selectedContainerAssetRef.current = selectedContainerAsset;
+  const selectedContainerRef = useRef(selectedContainer);
+  selectedContainerRef.current = selectedContainer;
+
+  // Filter out kit children and container line items — they show under their parent row / auto-managed
+  const equipmentItems = lineItems.filter((item) => item.type === "EQUIPMENT" && !item.isKitChild && !item.isContainerLineItem);
 
   // Pick/Prep: items that need to be picked and prepped (not yet PACKED)
   const pickPrepItems = equipmentItems.filter((item) => {
@@ -1448,6 +1495,9 @@ function WarehouseProjectPage({
   // --- Prep selected items (for manual selection without scanner) ---
   const handlePrepSelected = async () => {
     try {
+      // If prepping into a container asset, ensure it's on the project
+      await ensureContainerIfNeeded();
+
       const items: { lineItemId: string; assetId?: string; quantity?: number }[] = [];
       const kitLineItemIds: string[] = [];
       const bulkItems: { lineItemId: string; quantity: number }[] = [];

@@ -52,6 +52,7 @@ function ComboboxPicker({
     return options.filter(
       (opt) =>
         opt.label.toLowerCase().includes(lower) ||
+        opt.value.toLowerCase().includes(lower) ||
         opt.description?.toLowerCase().includes(lower)
     )
   }, [options, search])
@@ -268,6 +269,7 @@ function MultiComboboxPicker({
     return options.filter(
       (opt) =>
         opt.label.toLowerCase().includes(lower) ||
+        opt.value.toLowerCase().includes(lower) ||
         opt.description?.toLowerCase().includes(lower)
     )
   }, [options, search])

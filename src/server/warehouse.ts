@@ -1150,24 +1150,32 @@ export async function syncContainerStatus(projectId: string, containerName: stri
 export async function getAvailableAssetsForModel(modelId: string) {
   const { organizationId } = await getOrgContext();
 
+  // First, find all asset IDs of this model that are currently assigned to
+  // an active line item on an active project (i.e. "in use")
+  const inUseLineItems = await prisma.projectLineItem.findMany({
+    where: {
+      organizationId,
+      assetId: { not: null },
+      status: { notIn: ["RETURNED", "CANCELLED"] },
+      project: {
+        status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
+      },
+      asset: { modelId },
+    },
+    select: { assetId: true },
+  });
+  const inUseAssetIds = new Set(
+    inUseLineItems.map((li) => li.assetId).filter(Boolean) as string[]
+  );
+
   const assets = await prisma.asset.findMany({
     where: {
       organizationId,
       modelId,
       status: "AVAILABLE",
-      // Exclude assets currently assigned to an active line item on any active project.
-      // An asset is "in use" if it has any line item that is not returned/cancelled
-      // on a project that is itself not cancelled/returned/completed/invoiced.
-      NOT: {
-        lineItems: {
-          some: {
-            status: { notIn: ["RETURNED", "CANCELLED"] },
-            project: {
-              status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
-            },
-          },
-        },
-      },
+      ...(inUseAssetIds.size > 0
+        ? { id: { notIn: [...inUseAssetIds] } }
+        : {}),
     },
     orderBy: { assetTag: "asc" },
     select: {

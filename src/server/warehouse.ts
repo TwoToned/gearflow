@@ -1039,35 +1039,38 @@ export async function ensureContainerOnProject(
 ) {
   const { organizationId, userId } = await requirePermission("warehouse", "check_out");
 
-  // Check if container asset is already on the project
-  const existing = await prisma.projectLineItem.findFirst({
-    where: { projectId, organizationId, assetId, isContainerLineItem: true },
-  });
-  if (existing) return serialize(existing);
+  // Atomic check-then-create inside a transaction to prevent duplicates
+  const lineItem = await prisma.$transaction(async (tx) => {
+    const existing = await tx.projectLineItem.findFirst({
+      where: { projectId, organizationId, assetId, isContainerLineItem: true },
+      include: { model: true, asset: true },
+    });
+    if (existing) return existing;
 
-  // Get next sort order
-  const maxSort = await prisma.projectLineItem.aggregate({
-    where: { projectId, organizationId },
-    _max: { sortOrder: true },
-  });
-  const nextSort = (maxSort._max.sortOrder ?? -1) + 1;
+    // Get next sort order
+    const maxSort = await tx.projectLineItem.aggregate({
+      where: { projectId, organizationId },
+      _max: { sortOrder: true },
+    });
+    const nextSort = (maxSort._max.sortOrder ?? -1) + 1;
 
-  const lineItem = await prisma.projectLineItem.create({
-    data: {
-      organizationId,
-      projectId,
-      type: "EQUIPMENT",
-      modelId,
-      assetId,
-      quantity: 1,
-      sortOrder: nextSort,
-      status: "CONFIRMED",
-      checkedOutQuantity: 0,
-      prepStatus: "PACKED",
-      prepContainer: containerName,
-      isContainerLineItem: true,
-    },
-    include: { model: true, asset: true },
+    return tx.projectLineItem.create({
+      data: {
+        organizationId,
+        projectId,
+        type: "EQUIPMENT",
+        modelId,
+        assetId,
+        quantity: 1,
+        sortOrder: nextSort,
+        status: "CONFIRMED",
+        checkedOutQuantity: 0,
+        prepStatus: "PACKED",
+        prepContainer: containerName,
+        isContainerLineItem: true,
+      },
+      include: { model: true, asset: true },
+    });
   });
 
   return serialize(lineItem);

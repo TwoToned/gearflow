@@ -573,7 +573,7 @@ export async function prepKitChildren(
     projectId,
   });
 
-  return { success: true };
+  return serialize({ success: true });
 }
 
 export async function unpackItem(projectId: string, lineItemId: string) {
@@ -1263,7 +1263,7 @@ export async function saveKitLevelChecks(
     );
   });
 
-  return { success: true };
+  return serialize({ success: true });
 }
 
 /**
@@ -1283,6 +1283,8 @@ export async function saveChildItemChecks(
     context === "PREP" ? "check_out" : "check_in"
   );
 
+  let resolvedAssetId = "";
+
   await prisma.$transaction(async (tx) => {
     // Verify line item exists
     const lineItem = await tx.projectLineItem.findFirst({
@@ -1290,7 +1292,7 @@ export async function saveChildItemChecks(
     });
     if (!lineItem) throw new Error("Line item not found");
 
-    const resolvedAssetId = assetId || lineItem.assetId || "";
+    resolvedAssetId = assetId || lineItem.assetId || "";
 
     await saveCheckRecords(
       tx,
@@ -1302,24 +1304,24 @@ export async function saveChildItemChecks(
       context,
       checks
     );
-
-    // Predictive maintenance for serialized assets with fails
-    if (resolvedAssetId) {
-      const failedCheckItemIds = checks
-        .filter((c) => c.result === "FAIL")
-        .map((c) => c.checkItemId);
-      if (failedCheckItemIds.length > 0) {
-        const { userName } = await requirePermission("warehouse", context === "PREP" ? "check_out" : "check_in");
-        await checkPredictiveMaintenance(
-          organizationId,
-          userId,
-          userName,
-          resolvedAssetId,
-          failedCheckItemIds
-        );
-      }
-    }
   });
 
-  return { success: true };
+  // Post-commit: predictive maintenance (uses prisma, not tx — must run after commit)
+  if (resolvedAssetId) {
+    const failedCheckItemIds = checks
+      .filter((c) => c.result === "FAIL")
+      .map((c) => c.checkItemId);
+    if (failedCheckItemIds.length > 0) {
+      const { userName } = await requirePermission("warehouse", context === "PREP" ? "check_out" : "check_in");
+      await checkPredictiveMaintenance(
+        organizationId,
+        userId,
+        userName,
+        resolvedAssetId,
+        failedCheckItemIds
+      ).catch(console.error);
+    }
+  }
+
+  return serialize({ success: true });
 }

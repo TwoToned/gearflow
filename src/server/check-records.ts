@@ -537,10 +537,10 @@ export async function prepKitChildren(
     for (const child of children) {
       if (child.status === "CHECKED_OUT" || child.status === "CANCELLED") continue;
 
-      // Mark child as prepped
+      // Mark child as prepped (reset status in case of re-prep after return)
       await tx.projectLineItem.update({
         where: { id: child.id },
-        data: { prepStatus: "PACKED" },
+        data: { status: "CONFIRMED", prepStatus: "PACKED" },
       });
 
       // If child is a nested kit, also mark its grandchildren
@@ -549,7 +549,7 @@ export async function prepKitChildren(
         if (gc.status === "CHECKED_OUT" || gc.status === "CANCELLED") continue;
         await tx.projectLineItem.update({
           where: { id: gc.id },
-          data: { prepStatus: "PACKED" },
+          data: { status: "CONFIRMED", prepStatus: "PACKED" },
         });
       }
     }
@@ -557,7 +557,7 @@ export async function prepKitChildren(
     // Mark the parent kit line item as prepped too
     await tx.projectLineItem.update({
       where: { id: parentLineItemId },
-      data: { prepStatus: "PACKED" },
+      data: { status: "CONFIRMED", prepStatus: "PACKED" },
     });
   });
 
@@ -712,6 +712,7 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
       await tx.projectLineItem.update({
         where: { id: parsed.lineItemId },
         data: {
+          status: "CONFIRMED",
           prepStatus: "PACKED",
           ...(parsed.prepContainer !== undefined ? { prepContainer: parsed.prepContainer } : {}),
         },
@@ -776,6 +777,7 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
           ...(parsed.assetId
             ? { asset: { connect: { id: parsed.assetId } } }
             : {}),
+          status: "CONFIRMED",
           prepStatus: "PACKED",
           ...(parsed.prepContainer !== undefined ? { prepContainer: parsed.prepContainer } : {}),
         },

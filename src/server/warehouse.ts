@@ -1152,8 +1152,9 @@ export async function getAvailableAssetsForModel(modelId: string) {
 
   // Single query: get assets that have NO active line item referencing them.
   // Uses Prisma's `none` relation filter — equivalent to SQL NOT EXISTS.
-  // An asset is "in use" if ANY line item on an active project references it
-  // (regardless of the line item's own status, except RETURNED/CANCELLED).
+  // An asset is "in use" if ANY line item on an active project:
+  //   a) has a non-terminal status (not RETURNED/CANCELLED), OR
+  //   b) has prepStatus = PACKED (belt-and-suspenders for re-prep edge cases)
   const available = await prisma.asset.findMany({
     where: {
       organizationId,
@@ -1162,7 +1163,10 @@ export async function getAvailableAssetsForModel(modelId: string) {
       isActive: true,
       lineItems: {
         none: {
-          status: { notIn: ["RETURNED", "CANCELLED"] },
+          OR: [
+            { status: { notIn: ["RETURNED", "CANCELLED"] } },
+            { prepStatus: "PACKED" },
+          ],
           project: {
             isTemplate: false,
             status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },

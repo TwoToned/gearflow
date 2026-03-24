@@ -1438,6 +1438,33 @@ function WarehouseProjectPage({
 
   const groupedIn = groupCheckinItems(checkedOutItems);
 
+  // Group return items by container for visual sectioning
+  const returnContainerGroups = useMemo(() => {
+    const groups: Array<{ container: string | null; entries: typeof groupedIn }> = [];
+    const containerMap = new Map<string | null, typeof groupedIn>();
+
+    for (const entry of groupedIn) {
+      const item = entry.kind === "serialized-group" ? entry.items[0] : entry.item;
+      const container = item.prepContainer || null;
+      if (!containerMap.has(container)) {
+        containerMap.set(container, []);
+      }
+      containerMap.get(container)!.push(entry);
+    }
+
+    const sorted = Array.from(containerMap.entries()).sort(([a], [b]) => {
+      if (a === null && b === null) return 0;
+      if (a === null) return 1;
+      if (b === null) return -1;
+      return a.localeCompare(b);
+    });
+
+    for (const [container, entries] of sorted) {
+      groups.push({ container, entries });
+    }
+    return groups;
+  }, [groupedIn]);
+
   // Build all selectable keys for pick/prep
   const allPrepKeys = useMemo(() => {
     const keys: string[] = [];
@@ -2734,7 +2761,19 @@ function WarehouseProjectPage({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {groupedIn.map((entry) => {
+                    {returnContainerGroups.map(({ container, entries }) => (
+                      <Fragment key={container || "__ungrouped"}>
+                        {container && (
+                          <TableRow className="bg-bg-inset/50">
+                            <TableCell colSpan={5} className="py-1.5">
+                              <div className="flex items-center gap-1.5 text-xs font-semibold text-fg-2 uppercase tracking-wide">
+                                <Package className="h-3.5 w-3.5" />
+                                {container}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                        {entries.map((entry) => {
                       // --- Serialized group ---
                       if (entry.kind === "serialized-group") {
                         const childKeys = entry.items.map((i) => i.id);
@@ -2931,6 +2970,8 @@ function WarehouseProjectPage({
                         </TableRow>
                       );
                     })}
+                      </Fragment>
+                    ))}
                   </TableBody>
                 </Table>
               </div>

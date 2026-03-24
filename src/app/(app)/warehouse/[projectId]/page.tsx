@@ -368,17 +368,19 @@ function groupItems(items: LineItem[], mode: "prep" | "deploy" = "prep"): GroupE
         children: deployChildren,
       });
     } else if (isBulkItem(item)) {
-      // For prep tab: show unprepped units (quantity - checkedOutQuantity)
-      // For deploy tab: show prepped units (checkedOutQuantity)
-      const unitCount = mode === "deploy"
-        ? item.checkedOutQuantity
-        : (item.status === "RETURNED" ? item.quantity : item.quantity - item.checkedOutQuantity);
-      result.push({
-        kind: "bulk-group",
-        groupKey: `bulk-${item.id}`,
-        item,
-        unitCount: Math.max(unitCount, 0),
-      });
+      if (mode === "prep") {
+        // Prep tab: show as single row — checking it preps 1 unit, qty shows remaining
+        result.push({ kind: "single", item });
+      } else {
+        // Deploy tab: show prepped units as expandable group
+        const unitCount = item.checkedOutQuantity;
+        result.push({
+          kind: "bulk-group",
+          groupKey: `bulk-${item.id}`,
+          item,
+          unitCount: Math.max(unitCount, 0),
+        });
+      }
     } else if (item.model) {
       const key = item.model.name + (item.model.modelNumber ? ` - ${item.model.modelNumber}` : "");
       const existing = serializedByModel.get(key);
@@ -1545,6 +1547,7 @@ function WarehouseProjectPage({
 
       for (const key of selectedPrep) {
         if (key.includes(":")) {
+          // Bulk unit key from deploy tab (id:unitIndex)
           const lineItemId = key.split(":")[0];
           const existing = bulkItems.find((i) => i.lineItemId === lineItemId);
           if (existing) {
@@ -1554,7 +1557,10 @@ function WarehouseProjectPage({
           }
         } else {
           const li = lineItems.find((l) => l.id === key);
-          if (li && li.kitId && !li.isKitChild) {
+          // Bulk items in prep tab are single rows — prep 1 unit each
+          if (li && isBulkItem(li)) {
+            bulkItems.push({ lineItemId: key, quantity: 1 });
+          } else if (li && li.kitId && !li.isKitChild) {
             kitLineItemIds.push(key);
           } else {
             items.push({ lineItemId: key, assetId: li?.assetId || undefined });
@@ -2344,8 +2350,10 @@ function WarehouseProjectPage({
                         );
                       }
 
-                      // Single item
+                      // Single item (includes bulk items shown as flat rows in prep tab)
                       const item = entry.item;
+                      const isBulk = isBulkItem(item);
+                      const remainingPrep = isBulk ? item.quantity - item.checkedOutQuantity : item.quantity;
                       return (
                         <TableRow key={item.id}>
                           <TableCell>
@@ -2363,7 +2371,9 @@ function WarehouseProjectPage({
                           <TableCell className="font-mono text-sm text-fg-3">
                             {item.asset?.assetTag || item.bulkAsset?.assetTag || "—"}
                           </TableCell>
-                          <TableCell className="text-center">{item.quantity}</TableCell>
+                          <TableCell className="text-center">
+                            {isBulk ? `${remainingPrep}/${item.quantity}` : item.quantity}
+                          </TableCell>
                           <TableCell>
                             <PrepStatusBadge item={item} />
                           </TableCell>

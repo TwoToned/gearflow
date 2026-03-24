@@ -484,7 +484,7 @@ function SortableItemRow({
             description?: string | null;
             asset?: { assetTag: string } | null;
             kitId?: string | null;
-            kit?: { assetTag: string; name: string; isPrep?: boolean } | null;
+            kit?: { assetTag: string; name: string } | null;
             childLineItems?: Array<{
               id: string;
               model?: { name: string } | null;

@@ -89,6 +89,7 @@ export const completeCheckAndPackSchema = z.object({
   lineItemId: z.string().min(1),
   assetId: z.string().optional(),
   bulkAssetId: z.string().optional(),
+  prepContainer: z.string().nullish(),
   checks: z.array(checkRecordSchema).min(1),
 });
 

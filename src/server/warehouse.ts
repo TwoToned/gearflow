@@ -961,6 +961,7 @@ export async function quickAddAndCheckOut(
     assetId?: string;
     bulkAssetId?: string;
     quantity?: number;
+    prepContainer?: string | null;
   }
 ) {
   const { organizationId, userId } = await requirePermission("warehouse", "check_out");
@@ -990,6 +991,7 @@ export async function quickAddAndCheckOut(
         status: "CONFIRMED",
         checkedOutQuantity: data.bulkAssetId ? qty : (data.assetId ? 1 : 1),
         prepStatus: "PACKED",
+        prepContainer: data.prepContainer || null,
       },
       include: { model: true, asset: true, bulkAsset: true },
     });
@@ -1149,12 +1151,6 @@ export async function forceReturnAsset(assetId: string) {
     select: { id: true },
   });
 
-  // Check if this asset is used as a case for any prep-kits (same assetTag)
-  const prepKits = await prisma.kit.findMany({
-    where: { organizationId, assetTag: asset.assetTag, isPrep: true },
-    select: { id: true },
-  });
-
   await prisma.$transaction(async (tx) => {
     // Return all checked-out line items for this asset across all projects
     await tx.projectLineItem.updateMany({
@@ -1166,50 +1162,6 @@ export async function forceReturnAsset(assetId: string) {
         returnCondition: "GOOD",
       },
     });
-
-    // Clean up any prep-kits that use this asset as a case
-    for (const prepKit of prepKits) {
-      // Find and clean up prep-kit line items
-      const prepParents = await tx.projectLineItem.findMany({
-        where: { kitId: prepKit.id, organizationId, isKitChild: false },
-        select: { id: true },
-      });
-      for (const parent of prepParents) {
-        // Get children and grandchildren
-        const children = await tx.projectLineItem.findMany({
-          where: { parentLineItemId: parent.id, organizationId },
-          select: { id: true, kitId: true, assetId: true },
-        });
-        // Handle grandchildren of nested kits
-        for (const child of children) {
-          if (child.kitId) {
-            await tx.projectLineItem.updateMany({
-              where: { parentLineItemId: child.id, organizationId },
-              data: { isKitChild: false, parentLineItemId: null },
-            });
-          }
-        }
-        // Un-parent all children
-        await tx.projectLineItem.updateMany({
-          where: { parentLineItemId: parent.id, organizationId },
-          data: { isKitChild: false, parentLineItemId: null },
-        });
-        // Reset child assets
-        const childAssetIds = children.filter((c) => c.assetId).map((c) => c.assetId!);
-        if (childAssetIds.length > 0) {
-          await tx.asset.updateMany({
-            where: { id: { in: childAssetIds }, status: "CHECKED_OUT" },
-            data: { status: "AVAILABLE", locationId: defaultLocation?.id ?? null },
-          });
-        }
-        // Delete the parent line item
-        await tx.projectLineItem.delete({ where: { id: parent.id } });
-      }
-      // Delete prep-kit record
-      await tx.kitSerializedItem.deleteMany({ where: { kitId: prepKit.id } });
-      await tx.kitBulkItem.deleteMany({ where: { kitId: prepKit.id } });
-      await tx.kit.delete({ where: { id: prepKit.id } });
-    }
 
     // Reset asset status and location
     await tx.asset.update({
@@ -1229,7 +1181,7 @@ export async function forceReturnAsset(assetId: string) {
     entityType: "asset",
     entityId: assetId,
     entityName: asset.assetTag,
-    summary: `Force returned asset ${asset.assetTag} to available${prepKits.length > 0 ? ` (dissolved ${prepKits.length} prep-kit${prepKits.length > 1 ? "s" : ""})` : ""}`,
+    summary: `Force returned asset ${asset.assetTag} to available`,
   });
 
   return serialize({ success: true });
@@ -1244,11 +1196,11 @@ export async function forceReturnKit(kitId: string) {
 
   const kit = await prisma.kit.findFirst({
     where: { id: kitId, organizationId },
-    select: { id: true, assetTag: true, name: true, status: true, isPrep: true },
+    select: { id: true, assetTag: true, name: true, status: true },
   });
 
   if (!kit) throw new Error("Kit not found");
-  if (kit.status === "AVAILABLE" && !kit.isPrep) throw new Error("Kit is already available");
+  if (kit.status === "AVAILABLE") throw new Error("Kit is already available");
 
   const defaultLocation = await prisma.location.findFirst({
     where: { organizationId, isDefault: true },
@@ -1342,38 +1294,10 @@ export async function forceReturnKit(kitId: string) {
         });
       }
 
-      // If prep-kit: delete the parent line item and un-parent children
-      if (kit.isPrep) {
-        // Un-parent all children (they become standalone project line items)
-        await tx.projectLineItem.updateMany({
-          where: { parentLineItemId: parent.id, organizationId },
-          data: { isKitChild: false, parentLineItemId: null },
-        });
-        // Also un-parent grandchildren of nested kits
-        for (const child of nestedKitChildren) {
-          await tx.projectLineItem.updateMany({
-            where: { parentLineItemId: child.id, organizationId },
-            data: { isKitChild: false, parentLineItemId: null },
-          });
-          // Un-parent the nested kit line item itself
-          await tx.projectLineItem.update({
-            where: { id: child.id },
-            data: { isKitChild: false, parentLineItemId: null },
-          });
-        }
-        // Delete the prep-kit parent line item
-        await tx.projectLineItem.delete({ where: { id: parent.id } });
-      }
     }
 
-    if (kit.isPrep) {
-      // Delete the prep-kit Kit record entirely
-      await tx.kitSerializedItem.deleteMany({ where: { kitId } });
-      await tx.kitBulkItem.deleteMany({ where: { kitId } });
-      await tx.kit.delete({ where: { id: kitId } });
-    } else {
-      // Regular kit: just reset status
-      await tx.kit.update({
+    // Reset kit status
+    await tx.kit.update({
         where: { id: kitId },
         data: resetData,
       });
@@ -1400,12 +1324,10 @@ export async function forceReturnKit(kitId: string) {
     entityType: "kit",
     entityId: kitId,
     entityName: `${kit.assetTag} - ${kit.name}`,
-    summary: kit.isPrep
-      ? `Force returned and dissolved prep-kit ${kit.assetTag}`
-      : `Force returned kit ${kit.assetTag} and all contents to available`,
+    summary: `Force returned kit ${kit.assetTag} and all contents to available`,
   });
 
-  return serialize({ success: true, deleted: kit.isPrep });
+  return serialize({ success: true });
 }
 
 // ---------------------------------------------------------------------------

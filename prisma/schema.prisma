@@ -1113,6 +1113,7 @@ model ProjectLineItem {
   returnCondition ReturnCondition?
   returnNotes     String?
   prepStatus      PrepStatus?
+  prepContainer   String?
   returnStatus    ReturnStatus?
   isSubhire         Boolean        @default(false)
   showSubhireOnDocs Boolean        @default(false)

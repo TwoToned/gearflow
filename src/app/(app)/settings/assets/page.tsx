@@ -120,7 +120,7 @@ export default function AssetsSettingsPage() {
             </div>
           </FormSection>
 
-          <FormSection title="Prep-Kit Cases" description="Select which category contains your cases and containers. Assets in this category (and its subcategories) can be used as prep-kit containers.">
+          <FormSection title="Prep Containers" description="Select which category contains your cases and containers. Assets in this category can be selected as prep containers in the warehouse.">
             <div className="space-y-2">
               <Label htmlFor="prepKitCategory">Case Category</Label>
               <Select

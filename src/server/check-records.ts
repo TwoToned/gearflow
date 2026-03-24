@@ -197,7 +197,8 @@ export async function prepItemDirect(
   projectId: string,
   lineItemId: string,
   assetId?: string,
-  quantity?: number
+  quantity?: number,
+  prepContainer?: string | null
 ) {
   const { organizationId, userId, userName } = await requirePermission(
     "warehouse",
@@ -233,6 +234,7 @@ export async function prepItemDirect(
           returnedQuantity:
             lineItem.status === "RETURNED" ? 0 : lineItem.returnedQuantity,
           prepStatus: "PACKED",
+          ...(prepContainer !== undefined ? { prepContainer } : {}),
         },
         include: { model: true, asset: true, bulkAsset: true },
       });
@@ -270,6 +272,7 @@ export async function prepItemDirect(
           pricingMode: lineItem.pricingMode,
           assetId,
           prepStatus: "PACKED",
+          ...(prepContainer !== undefined ? { prepContainer } : {}),
         },
         include: { model: true, asset: true, bulkAsset: true },
       });
@@ -295,6 +298,7 @@ export async function prepItemDirect(
       data: {
         ...(assetId ? { asset: { connect: { id: assetId } } } : {}),
         prepStatus: "PACKED",
+        ...(prepContainer !== undefined ? { prepContainer } : {}),
       },
       include: { model: true, asset: true, bulkAsset: true },
     });
@@ -626,6 +630,7 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
           returnedQuantity:
             lineItem.status === "RETURNED" ? 0 : lineItem.returnedQuantity,
           prepStatus: "PACKED",
+          ...(parsed.prepContainer !== undefined ? { prepContainer: parsed.prepContainer } : {}),
         },
       });
     } else {
@@ -660,6 +665,7 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
             pricingMode: lineItem.pricingMode,
             assetId: parsed.assetId,
             prepStatus: "PACKED",
+            ...(parsed.prepContainer !== undefined ? { prepContainer: parsed.prepContainer } : {}),
           },
           include: { model: true, asset: true, bulkAsset: true },
         });
@@ -687,6 +693,7 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
             ? { asset: { connect: { id: parsed.assetId } } }
             : {}),
           prepStatus: "PACKED",
+          ...(parsed.prepContainer !== undefined ? { prepContainer: parsed.prepContainer } : {}),
         },
       });
     }

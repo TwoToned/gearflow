@@ -80,7 +80,6 @@ import {
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
 import { OnlinePickList } from "@/components/warehouse/online-pick-list";
-import { PrepsTab } from "@/components/warehouse/preps-tab";
 import { ItemCheckForm } from "@/components/warehouse/item-check-form";
 import { CloseOutTab } from "@/components/warehouse/close-out-tab";
 import {
@@ -133,7 +132,7 @@ interface LineItem {
   model: { name: string; modelNumber?: string | null; assetType?: string; _count?: { modelCheckItems: number } } | null;
   asset: { assetTag: string } | null;
   bulkAsset: { assetTag: string } | null;
-  kit: { id: string; assetTag: string; name: string; isPrep: boolean; checkMode?: string; _count?: { kitCheckItems: number } } | null;
+  kit: { id: string; assetTag: string; name: string; checkMode?: string; _count?: { kitCheckItems: number } } | null;
   prepStatus: string | null;
   isSubhire: boolean;
   childLineItems?: LineItem[];
@@ -476,7 +475,7 @@ function WarehouseProjectPage({
   const { projectId } = use(params);
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const initialTab = tabParam === "check-in" ? "check-in" : tabParam === "check-out" ? "check-out" : tabParam === "preps" ? "preps" : tabParam === "close-out" ? "close-out" : "pick-prep";
+  const initialTab = tabParam === "check-in" ? "check-in" : tabParam === "check-out" ? "check-out" : tabParam === "close-out" ? "close-out" : "pick-prep";
   const queryClient = useQueryClient();
   const scanInputRef = useRef<HTMLInputElement>(null);
   const deployScanInputRef = useRef<HTMLInputElement>(null);
@@ -1945,10 +1944,6 @@ function WarehouseProjectPage({
             <PackageX className="mr-1.5 h-4 w-4" />
             Return ({checkedOutItems.length})
           </TabsTrigger>
-          <TabsTrigger value="preps">
-            <Package className="mr-1.5 h-4 w-4" />
-            Preps
-          </TabsTrigger>
           <TabsTrigger value="close-out">
             <PackageCheck className="mr-1.5 h-4 w-4" />
             Close-Out
@@ -2112,8 +2107,8 @@ function WarehouseProjectPage({
                                   <ChevronRight className={`h-4 w-4 text-fg-3 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
                                   <Container className="h-4 w-4 text-fg-3" />
                                   <span className="font-medium">{entry.item.description || entry.item.kit?.name || "Kit"}</span>
-                                  <Badge variant="secondary" className={`ml-1 text-[10px] px-1.5 py-0 ${entry.item.kit?.isPrep ? "bg-purple-500/10 text-purple-500 border-purple-500/20" : ""}`}>
-                                    {entry.item.kit?.isPrep ? "Prep" : "Kit"}
+                                  <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">
+                                    Kit
                                   </Badge>
                                   {allIds.length > 0 && (
                                     <Badge
@@ -2131,7 +2126,7 @@ function WarehouseProjectPage({
                                 </div>
                               </TableCell>
                               <TableCell className="font-mono text-sm text-fg-3">
-                                {entry.item.kit?.isPrep && entry.item.kit.assetTag.startsWith("PREP-") ? "—" : (entry.item.kit?.assetTag || "—")}
+                                {entry.item.kit?.assetTag || "—"}
                               </TableCell>
                               <TableCell className="text-center">{entry.children.length}</TableCell>
                               <TableCell>
@@ -2395,8 +2390,8 @@ function WarehouseProjectPage({
                                   <ChevronRight className={`h-4 w-4 text-fg-3 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
                                   <Container className="h-4 w-4 text-fg-3" />
                                   <span className="font-medium">{entry.item.description || entry.item.kit?.name || "Kit"}</span>
-                                  <Badge variant="secondary" className={`ml-1 text-[10px] px-1.5 py-0 ${entry.item.kit?.isPrep ? "bg-purple-500/10 text-purple-500 border-purple-500/20" : ""}`}>
-                                    {entry.item.kit?.isPrep ? "Prep" : "Kit"}
+                                  <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">
+                                    Kit
                                   </Badge>
                                   {allIds.length > 0 && (
                                     <Badge
@@ -2414,7 +2409,7 @@ function WarehouseProjectPage({
                                 </div>
                               </TableCell>
                               <TableCell className="font-mono text-sm text-fg-3">
-                                {entry.item.kit?.isPrep && entry.item.kit.assetTag.startsWith("PREP-") ? "—" : (entry.item.kit?.assetTag || "—")}
+                                {entry.item.kit?.assetTag || "—"}
                               </TableCell>
                               <TableCell className="text-center">{entry.children.length}</TableCell>
                               <TableCell>
@@ -2671,8 +2666,8 @@ function WarehouseProjectPage({
                                   <ChevronRight className={`h-4 w-4 text-fg-3 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
                                   <Container className="h-4 w-4 text-fg-3" />
                                   <span className="font-medium">{entry.item.description || entry.item.kit?.name || "Kit"}</span>
-                                  <Badge variant="secondary" className={`ml-1 text-[10px] px-1.5 py-0 ${entry.item.kit?.isPrep ? "bg-purple-500/10 text-purple-500 border-purple-500/20" : ""}`}>
-                                    {entry.item.kit?.isPrep ? "Prep" : "Kit"}
+                                  <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">
+                                    Kit
                                   </Badge>
                                   {allIds.length > 0 && (
                                     <Badge
@@ -2690,7 +2685,7 @@ function WarehouseProjectPage({
                                 </div>
                               </TableCell>
                               <TableCell className="font-mono text-sm text-fg-3">
-                                {entry.item.kit?.isPrep && entry.item.kit.assetTag.startsWith("PREP-") ? "—" : (entry.item.kit?.assetTag || "—")}
+                                {entry.item.kit?.assetTag || "—"}
                               </TableCell>
                               <TableCell className="text-center">{entry.children.length}</TableCell>
                               <TableCell>
@@ -2769,13 +2764,6 @@ function WarehouseProjectPage({
               </div>
             )}
           </div>
-        </TabsContent>
-
-        {/* ================================================================ */}
-        {/* PREPS TAB                                                        */}
-        {/* ================================================================ */}
-        <TabsContent value="preps">
-          <PrepsTab projectId={projectId} />
         </TabsContent>
 
         {/* ================================================================ */}

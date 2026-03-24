@@ -136,7 +136,6 @@ function getItemName(item: DocumentLineItem, isKit: boolean): string {
 /** Get asset tag display */
 function getAssetTag(item: DocumentLineItem, isKit: boolean): string {
   if (isKit) {
-    if (item.kit?.isPrep && item.kit.assetTag.startsWith("PREP-")) return "-";
     return item.kit?.assetTag || "-";
   }
   return item.asset?.assetTag || item.bulkAsset?.assetTag || "-";
@@ -339,7 +338,7 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
 
             // Kit prefix for packing list
             const displayName = (config.documentType === "packing-list" && isKit)
-              ? `[${item.kit?.isPrep ? "Prep" : "Kit"}] ${itemName}`
+              ? `[Kit] ${itemName}`
               : itemName;
 
             const font = isKit ? fonts.bold : fonts.regular;

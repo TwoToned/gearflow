@@ -297,10 +297,18 @@ function isKitParent(item: LineItem) {
 }
 
 function PrepStatusBadge({ item }: { item: LineItem }) {
+  // Bulk items: show partial progress based on quantity ratio
+  if (isBulkItem(item) && item.checkedOutQuantity > 0 && item.checkedOutQuantity < item.quantity) {
+    return <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20">{item.checkedOutQuantity}/{item.quantity} Prepped</Badge>;
+  }
   if (item.prepStatus === "PACKED") {
     return <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">Prepped</Badge>;
   }
   if (item.prepStatus === "PULLED") {
+    // For bulk items, PULLED means partially prepped
+    if (isBulkItem(item) && item.checkedOutQuantity > 0) {
+      return <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20">{item.checkedOutQuantity}/{item.quantity} Prepped</Badge>;
+    }
     return <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20">Pulled</Badge>;
   }
   return <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20">Needs prep</Badge>;
@@ -1380,8 +1388,8 @@ function WarehouseProjectPage({
         return false;
       });
     }
-    // Bulk items: show if any units are prepped
-    if (isBulkItem(item)) return item.checkedOutQuantity > 0;
+    // Bulk items: only show in deploy when ALL units are prepped (PACKED)
+    if (isBulkItem(item)) return item.prepStatus === "PACKED" && item.checkedOutQuantity > 0;
     return item.prepStatus === "PACKED";
   });
 

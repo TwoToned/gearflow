@@ -226,6 +226,7 @@ export async function prepItemDirect(
       // Use checkedOutQuantity to track prepped units for bulk items
       // Cap at line item quantity to prevent over-counting
       const newPreppedQty = Math.min(baseCheckedOut + prepQty, lineItem.quantity);
+      const fullyPrepped = newPreppedQty >= lineItem.quantity;
 
       const updated = await tx.projectLineItem.update({
         where: { id: lineItemId },
@@ -233,7 +234,7 @@ export async function prepItemDirect(
           checkedOutQuantity: newPreppedQty,
           returnedQuantity:
             lineItem.status === "RETURNED" ? 0 : lineItem.returnedQuantity,
-          prepStatus: "PACKED",
+          prepStatus: fullyPrepped ? "PACKED" : "PULLED",
           ...(prepContainer !== undefined ? { prepContainer } : {}),
         },
         include: { model: true, asset: true, bulkAsset: true },
@@ -353,7 +354,7 @@ export async function deprepItem(
         where: { id: lineItemId },
         data: {
           checkedOutQuantity: newQty,
-          prepStatus: newQty > 0 ? "PACKED" : "PENDING",
+          prepStatus: newQty >= lineItem.quantity ? "PACKED" : newQty > 0 ? "PULLED" : "PENDING",
         },
         include: { model: true, asset: true, bulkAsset: true },
       });
@@ -622,6 +623,7 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
       const baseCheckedOut =
         lineItem.status === "RETURNED" ? 0 : lineItem.checkedOutQuantity;
       const newPreppedQty = Math.min(baseCheckedOut + 1, lineItem.quantity);
+      const fullyPrepped = newPreppedQty >= lineItem.quantity;
 
       await tx.projectLineItem.update({
         where: { id: parsed.lineItemId },
@@ -629,7 +631,7 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
           checkedOutQuantity: newPreppedQty,
           returnedQuantity:
             lineItem.status === "RETURNED" ? 0 : lineItem.returnedQuantity,
-          prepStatus: "PACKED",
+          prepStatus: fullyPrepped ? "PACKED" : "PULLED",
           ...(parsed.prepContainer !== undefined ? { prepContainer: parsed.prepContainer } : {}),
         },
       });

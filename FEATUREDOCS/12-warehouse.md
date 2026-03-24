@@ -15,26 +15,29 @@ The warehouse uses a Pick/Prep → Deploy → Return flow. Items are **prepped**
 - Container dropdown next to scan input — select a case asset or type a custom container name
 - Container assets (from configured case category) auto-added to project on first prep
 - `prepItemDirect()` sets `prepStatus=PACKED` and `prepContainer` without deploying (status stays `CONFIRMED`)
-- For bulk items, `checkedOutQuantity` tracks prepped units (capped at `quantity` via `Math.min`)
-- For multi-qty serialized items, splits off qty=1 line items with assigned assets
+- **Unified split approach**: both serialized and bulk multi-qty items use the same split pattern:
+  - When prepping 1 unit from a qty > 1 item, a new qty=1 line item is created with `prepStatus=PACKED`
+  - For serialized items: the split item gets the assigned `assetId`
+  - For bulk items: the split item inherits the `bulkAssetId`
+  - The original item's `quantity` decrements by 1
+  - When original reaches qty=0, it's hidden from the prep tab
+  - When original reaches qty=1, the last unit is prepped in-place (no split)
 - Items with no check items assigned are prepped directly; items with checks go through the check queue
-- Bulk items can be selected via checkboxes and prepped in batch ("Prep Selected")
-- `deprepItem()` reverses prep: decrements `checkedOutQuantity` for bulk, clears `prepStatus` for serialized
+- Bulk items display as expandable groups with individual unit rows (Unit 1, Unit 2, etc.) — each unit gets its own check dialog
+- `deprepItem()` reverses prep: clears `prepStatus` to PENDING (split items stay as independent line items)
 
 ### Deploy Tab
-- Shows items with `prepStatus=PACKED` (prepped but not yet deployed)
+- Shows items with `prepStatus=PACKED` and `quantity > 0` (prepped but not yet deployed)
+- Split items (qty=1) flow through the serialized deploy path regardless of whether they have a `bulkAssetId`
 - Items grouped by `prepContainer` with section headers (Package icon + container name)
 - X button on container headers to clear container assignment
 - Container line items auto-deploy when all contents are deployed (`syncContainerStatus`)
-- For bulk items: filter is `checkedOutQuantity > 0`
-- `checkOutItems()` detects `alreadyPrepped` items (prepStatus=PACKED + checkedOutQuantity > 0) and skips incrementing `checkedOutQuantity` again — just updates `status` to `CHECKED_OUT`
-- For multi-qty serialized items, splits off qty=1 line items during checkout
 
 ### Return Tab
 - Shows items with `status === "CHECKED_OUT"` only
+- Split bulk items (qty=1 with bulkAssetId) use the serialized return path
 - Items grouped by `prepContainer` with section headers (same as Deploy tab)
 - Container line items auto-return when all contents are returned (`syncContainerStatus`)
-- Bulk items require BOTH `status === "CHECKED_OUT"` AND `checkedOutQuantity > returnedQuantity` — prevents prepped-but-not-deployed items from appearing
 
 ### Scan Flow
 - `quickAddAndCheckOut()` adds items to project and **preps** them (sets `status: "CONFIRMED"`, `prepStatus: "PACKED"`) — does NOT deploy directly

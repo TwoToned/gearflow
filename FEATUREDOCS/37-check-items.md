@@ -22,8 +22,17 @@ Quality check system integrated into the warehouse prep/return flow. Warehouse o
 |-------|---------|------------|
 | `CheckItem` | Library of check definitions | label, type, category, measurementUnit/Min/Max, dropdownOptions |
 | `ModelCheckItem` | Join: model ↔ check item | modelId, checkItemId, sortOrder |
-| `CheckRecord` | Individual check result | context, result, value, notes, photos[], snapshotLabel, snapshotType |
+| `KitCheckItem` | Join: kit ↔ check item | kitId, checkItemId, sortOrder |
+| `CheckRecord` | Individual check result | context, result, value, notes, photos[], snapshotLabel, snapshotType, kitId? |
 | `WarehouseClose` | Close-out record per project | storedCount, damagedCount, lostCount, closedById |
+
+### Kit Check System
+
+- `KitCheckMode` enum: `KIT_LEVEL` (check kit once, all contents inherit) or `PER_ITEM` (each child uses its model's checks)
+- `Kit.checkMode` field defaults to `KIT_LEVEL`
+- `KitCheckItem` join table links check items to kits (like `ModelCheckItem` for models)
+- `CheckRecord.kitId` — optional FK for kit-level check results
+- Kit check item CRUD: `getKitCheckItems`, `addCheckItemToKit`, `removeCheckItemFromKit`, `reorderKitCheckItems` in `src/server/check-items.ts`
 
 ### Modified Models
 
@@ -50,6 +59,8 @@ Quality check system integrated into the warehouse prep/return flow. Warehouse o
 | Function | Permission | Description |
 |----------|-----------|-------------|
 | `pullItem(projectId, lineItemId)` | warehouse.scan | Set prepStatus=PULLED |
+| `prepItemDirect(projectId, lineItemId, assetId?, qty?)` | warehouse.check_out | Prep without checks (PACKED) |
+| `deprepItem(projectId, lineItemId, qty?)` | warehouse.check_out | Reverse prep (back to PENDING) |
 | `unpackItem(projectId, lineItemId)` | warehouse.scan | Set returnStatus=UNPACKED |
 | `completeCheckAndPack(data)` | warehouse.scan | Save records + checkout + PACKED |
 | `completeCheckAndFlag(data)` | warehouse.scan | Save records + flag (FAULTY/TT_OVERDUE) |
@@ -92,9 +103,21 @@ Quality check system integrated into the warehouse prep/return flow. Warehouse o
 
 - **Route** (`/check/[assetTag]`): Standalone page to check any asset outside a project.
 
+## Check Queue
+
+The warehouse page builds a **check queue** when prepping or returning multiple items. Items with check items assigned go through the `ItemCheckForm` sheet one at a time; items without checks are prepped/returned directly via `prepItemDirect` or `deprepItem`.
+
+### Bulk Items in Check Queue
+- Each selected bulk unit generates a separate `CheckQueueItem` entry
+- `completeCheckAndPack` caps `checkedOutQuantity` at `lineItem.quantity` via `Math.min` to prevent over-counting
+- No-check bulk items are prepped directly before the check queue starts (not passed as `directItems` to avoid double-prep)
+
+### Multi-Qty Serialized Items
+- When prepping/checking out a serialized item with `quantity > 1` and a specific `assetId`, both `prepItemDirect` and `checkOutItems` split off a new line item with `qty=1` for the assigned asset and decrement the original
+
 ## Feature Gate
 
-Models with 0 check items skip the check form entirely. The `model._count.modelCheckItems` count (included in warehouse queries) is checked before opening the form — preserving existing behavior for models without checks.
+Models with 0 check items skip the check form entirely. The `model._count.modelCheckItems` count (included in warehouse queries) is checked before opening the form — preserving existing behavior for models without checks. Kit check items use `kit._count.kitCheckItems` similarly.
 
 ## Predictive Maintenance
 

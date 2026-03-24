@@ -2,7 +2,9 @@
 
 ## Data Model
 - `Kit` has own `assetTag`, `status`, `condition`, `isPrep` (default `false`)
+- `Kit.checkMode`: `KIT_LEVEL` (default) or `PER_ITEM` — controls whether kit-level check items are used or each child uses its model's checks
 - Contents: `KitSerializedItem[]` (Kit → Asset, one asset per kit) and `KitBulkItem[]` (Kit → BulkAsset with quantity)
+- `KitCheckItem[]`: check items assigned to the kit (used when `checkMode=KIT_LEVEL`)
 - Join tables use `addedAt` (not `createdAt`), plus `position`, `sortOrder`, `addedById`, `notes`
 - `isPrep: true` kits are temporary prep-kits — see [Preps](./32-preps.md) for full details
 

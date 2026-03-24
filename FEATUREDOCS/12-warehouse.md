@@ -6,14 +6,37 @@
 - `CHECKED_OUT` status displays as **"Deployed"**
 - Internal code (function names, enum values, API params) still uses `checkOut`/`checkIn`/`CHECKED_OUT`
 
-## Deploy Flow (Check Out)
-1. User opens project in warehouse view (`/warehouse/[projectId]`)
-2. Scans barcode or selects asset from dropdown
-3. `lookupAssetForScan` validates: asset exists, matches a line item model, not already deployed elsewhere
-4. For serialized: `checkOutItems` assigns `assetId` to line item, sets asset status to `CHECKED_OUT`
-5. For bulk: increments `checkedOutQuantity` on line item, decrements `availableQuantity` on bulk asset
-6. For kit: `checkOutKit` atomically updates kit + all member assets + all child line items + all grandchildren (nested kits inside prep-kits)
-7. For prep-kit: same `checkOutKit` flow — handles children, nested kit entities, and grandchild assets via `ProjectLineItem.assetId` (not `KitSerializedItem`)
+## Three-Phase Warehouse Flow
+
+The warehouse uses a Pick/Prep → Deploy → Return flow. Items are **prepped** (packed) before being **deployed** (checked out).
+
+### Pick/Prep Tab
+- Scan or select items to prep
+- `prepItemDirect()` sets `prepStatus=PACKED` without deploying (status stays `CONFIRMED`)
+- For bulk items, `checkedOutQuantity` tracks prepped units (capped at `quantity` via `Math.min`)
+- For multi-qty serialized items, splits off qty=1 line items with assigned assets
+- Items with no check items assigned are prepped directly; items with checks go through the check queue
+- Bulk items can be selected via checkboxes and prepped in batch ("Prep Selected")
+- `deprepItem()` reverses prep: decrements `checkedOutQuantity` for bulk, clears `prepStatus` for serialized
+
+### Deploy Tab
+- Shows items with `prepStatus=PACKED` (prepped but not yet deployed)
+- For bulk items: filter is `checkedOutQuantity > 0`
+- `checkOutItems()` detects `alreadyPrepped` items (prepStatus=PACKED + checkedOutQuantity > 0) and skips incrementing `checkedOutQuantity` again — just updates `status` to `CHECKED_OUT`
+- For multi-qty serialized items, splits off qty=1 line items during checkout
+
+### Return Tab
+- Shows items with `status === "CHECKED_OUT"` only
+- Bulk items require BOTH `status === "CHECKED_OUT"` AND `checkedOutQuantity > returnedQuantity` — prevents prepped-but-not-deployed items from appearing
+
+### Scan Flow
+- `quickAddAndCheckOut()` adds items to project and **preps** them (sets `status: "CONFIRMED"`, `prepStatus: "PACKED"`) — does NOT deploy directly
+- `lookupAssetForScan()` treats scanned serialized assets as serialized (not bulk) even if the matching line item has qty > 1
+
+### Kit/Prep-Kit Flows
+- Kit checkout: `checkOutKit()` — atomic transaction updating kit + all member assets + grandchildren
+- Kit checkin: `checkInKit()` — same pattern, handles grandchildren and prep-kit assets
+- For prep-kit: same `checkOutKit` flow via `ProjectLineItem.assetId` (not `KitSerializedItem`)
 
 ## Return Flow (Check In)
 1. User selects items to return, specifies condition per item

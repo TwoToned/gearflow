@@ -1,26 +1,22 @@
 "use client";
 
-import { Fragment, use, useState, useRef, useCallback, useMemo, Suspense } from "react";
+import { use, useState, useRef, useCallback, useMemo, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ScanBarcode,
   ChevronRight,
-  Package,
   ArrowLeft,
   Printer,
   PackageCheck,
   PackageX,
   Container,
-  CircleCheck,
-  Circle,
   ClipboardList,
   MoreVertical,
   FileText,
   ChevronDown,
   ExternalLink,
-  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -37,14 +33,9 @@ import {
   ensureContainerOnProject,
   syncContainerStatus,
 } from "@/server/warehouse";
-import { lineItemStatusLabels, formatLabel } from "@/lib/status-labels";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
-import { Input } from "@/components/ui/input";
-import { ScanInput } from "@/components/ui/scan-input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 
 import {
@@ -54,11 +45,7 @@ import {
   TabsContent,
 } from "@/components/ui/tabs";
 import {
-  Table,
-  TableBody,
   TableCell,
-  TableHead,
-  TableHeader,
   TableRow,
 } from "@/components/ui/table";
 import {
@@ -75,7 +62,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -87,6 +73,17 @@ import { FadeIn } from "@/components/ui/motion";
 import { OnlinePickList } from "@/components/warehouse/online-pick-list";
 import { ItemCheckForm } from "@/components/warehouse/item-check-form";
 import { CloseOutTab } from "@/components/warehouse/close-out-tab";
+import { PickPrepTab } from "@/components/warehouse/pick-prep-tab";
+import { DeployTab } from "@/components/warehouse/deploy-tab";
+import { ReturnTab } from "@/components/warehouse/return-tab";
+import type { LineItem, AvailableAsset, GroupEntry } from "@/components/warehouse/warehouse-types";
+import {
+  isBulkItem,
+  modelDisplayName,
+  isKitParent,
+  collectAllVerifiableIds,
+  bulkUnitKey,
+} from "@/components/warehouse/warehouse-types";
 import {
   pullItem,
   prepItemDirect,
@@ -121,226 +118,18 @@ const statusLabels: Record<string, string> = {
 };
 
 
-interface LineItem {
-  id: string;
-  type: string;
-  status: string;
-  quantity: number;
-  checkedOutQuantity: number;
-  returnedQuantity: number;
-  description: string | null;
-  modelId: string | null;
-  assetId: string | null;
-  bulkAssetId: string | null;
-  kitId: string | null;
-  isKitChild: boolean;
-  parentLineItemId: string | null;
-  model: { name: string; modelNumber?: string | null; assetType?: string; _count?: { modelCheckItems: number } } | null;
-  asset: { assetTag: string } | null;
-  bulkAsset: { assetTag: string } | null;
-  kit: { id: string; assetTag: string; name: string; checkMode?: string; _count?: { kitCheckItems: number } } | null;
-  prepStatus: string | null;
-  prepContainer: string | null;
-  isContainerLineItem: boolean;
-  isSubhire: boolean;
-  childLineItems?: LineItem[];
-}
+// LineItem, AvailableAsset, GroupEntry types are imported from warehouse-types
 
-interface AvailableAsset {
-  id: string;
-  assetTag: string;
-  serialNumber: string | null;
-  customName: string | null;
-}
+// isBulkItem, modelDisplayName are imported from warehouse-types
 
-// "Bulk" means: a multi-unit line item without individual serialized assets.
-// This covers both items backed by a BulkAsset AND generic multi-qty items
-// with no assetId (e.g. consumables, accessories added with qty > 1).
-// After prep-splitting, each unit becomes qty=1 and is no longer "bulk" — it flows
-// through the serialized path for deploy/return.
-function isBulkItem(item: LineItem) {
-  if (item.quantity <= 1) return false;
-  // Has a bulkAssetId → definitely bulk
-  if (item.bulkAssetId) return true;
-  // Multi-qty with no serialized asset → treat as bulk (expandable group)
-  if (!item.assetId) return true;
-  return false;
-}
-
-function modelDisplayName(item: LineItem) {
-  if (!item.model) return item.description || "Unnamed item";
-  return [item.model.name, item.model.modelNumber].filter(Boolean).join(" - ");
-}
-
-// ---------------------------------------------------------------------------
-// Render kit children (with nested kit support for prep-kits)
-// ---------------------------------------------------------------------------
-function KitChildRows({
-  kitChildren,
-  verifiedKitItems,
-  expandedGroups,
-  toggleExpanded,
-  onToggleVerify,
-  mode,
-}: {
-  kitChildren: LineItem[];
-  verifiedKitItems: Set<string>;
-  expandedGroups: Set<string>;
-  toggleExpanded: (key: string) => void;
-  onToggleVerify: (assetId: string) => void;
-  mode: "deploy" | "return";
-}) {
-  return (
-    <>
-      {kitChildren.map((child) => {
-        const isVerified = verifiedKitItems.has(child.id);
-        const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
-        const nestedExpanded = expandedGroups.has(`nested-${child.id}`);
-
-        // Filter nested kit grandchildren based on deploy/return mode
-        const allGrandchildren = isNestedKit ? (child.childLineItems as LineItem[]) : [];
-        const filteredGrandchildren = isNestedKit
-          ? mode === "deploy"
-            ? allGrandchildren.filter((gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED")
-            : allGrandchildren.filter((gc) => gc.status === "CHECKED_OUT")
-          : [];
-
-        // For nested kits: detect partial deployment
-        const nestedKitPartial = isNestedKit
-          && allGrandchildren.some((gc) => gc.status === "CHECKED_OUT")
-          && allGrandchildren.some((gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED");
-
-        // Skip nested kits with no relevant grandchildren in this mode
-        // (but still show regular items based on the parent's filtering)
-        if (isNestedKit && filteredGrandchildren.length === 0) return null;
-
-        return (
-          <Fragment key={child.id}>
-            <TableRow
-              className={`${isVerified ? "bg-green-500/5" : "bg-bg-inset/30"} ${isNestedKit ? "cursor-pointer" : ""}`}
-              onClick={isNestedKit ? () => toggleExpanded(`nested-${child.id}`) : undefined}
-            >
-              <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
-                <button type="button" onClick={() => onToggleVerify(child.id)} className="mx-auto block">
-                  {isVerified
-                    ? <CircleCheck className="h-4 w-4 text-green-500" />
-                    : <Circle className="h-4 w-4 text-fg-3/30 hover:text-fg-3 transition-colors" />
-                  }
-                </button>
-              </TableCell>
-              <TableCell className="pl-12 text-sm text-fg-3">
-                <div className="flex items-center gap-1.5">
-                  {isNestedKit && (
-                    <ChevronRight className={`h-3.5 w-3.5 text-fg-3 transition-transform ${nestedExpanded ? "rotate-90" : ""}`} />
-                  )}
-                  {isNestedKit && <Container className="h-3.5 w-3.5 text-fg-3" />}
-                  <span>{child.model?.name || child.description || "Item"}</span>
-                  {isNestedKit && (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Kit</Badge>
-                  )}
-                  {nestedKitPartial && (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-amber-500/10 text-amber-500 border-amber-500/20">Partial</Badge>
-                  )}
-                </div>
-              </TableCell>
-              <TableCell className="font-mono text-sm text-fg-3">
-                {child.asset?.assetTag || child.bulkAsset?.assetTag || (isNestedKit ? (child.kit?.assetTag || "—") : "—")}
-              </TableCell>
-              <TableCell className="text-center">{isNestedKit ? filteredGrandchildren.length : child.quantity}</TableCell>
-              <TableCell>
-                {isVerified
-                  ? <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">Verified</Badge>
-                  : nestedKitPartial
-                    ? <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20">Partial</Badge>
-                    : <PrepStatusBadge item={child} />
-                }
-              </TableCell>
-            </TableRow>
-            {isNestedKit && nestedExpanded && filteredGrandchildren.map((nested) => {
-              const nestedVerified = verifiedKitItems.has(nested.id);
-              return (
-                <TableRow key={nested.id} className={nestedVerified ? "bg-green-500/5" : "bg-bg-inset/20"}>
-                  <TableCell className="text-center">
-                    <button type="button" onClick={() => onToggleVerify(nested.id)} className="mx-auto block">
-                      {nestedVerified
-                        ? <CircleCheck className="h-4 w-4 text-green-500" />
-                        : <Circle className="h-4 w-4 text-fg-3/30 hover:text-fg-3 transition-colors" />
-                      }
-                    </button>
-                  </TableCell>
-                  <TableCell className="pl-20 text-sm text-fg-3">
-                    {nested.model?.name || nested.description || "Item"}
-                  </TableCell>
-                  <TableCell className="font-mono text-sm text-fg-3">
-                    {nested.asset?.assetTag || nested.bulkAsset?.assetTag || "—"}
-                  </TableCell>
-                  <TableCell className="text-center">{nested.quantity}</TableCell>
-                  <TableCell>
-                    {nestedVerified
-                      ? <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">Verified</Badge>
-                      : <PrepStatusBadge item={nested} />
-                    }
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </Fragment>
-        );
-      })}
-    </>
-  );
-}
+// KitChildRows is imported from @/components/warehouse/kit-child-rows
 
 // ---------------------------------------------------------------------------
 // Grouping: serialized items with same model get grouped, bulk items become
 // expandable with per-unit rows, single serialized items stay flat.
 // ---------------------------------------------------------------------------
 
-type GroupEntry =
-  | { kind: "single"; item: LineItem }
-  | { kind: "serialized-group"; groupKey: string; modelName: string; items: LineItem[] }
-  | { kind: "bulk-group"; groupKey: string; item: LineItem; unitCount: number }
-  | { kind: "kit-group"; groupKey: string; item: LineItem; children: LineItem[] };
-
-function isKitParent(item: LineItem) {
-  return !!item.kitId && !item.isKitChild;
-}
-
-function PrepStatusBadge({ item }: { item: LineItem }) {
-  if (item.prepStatus === "PACKED") {
-    return <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">Prepped</Badge>;
-  }
-  if (item.prepStatus === "PULLED") {
-    return <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20">Pulled</Badge>;
-  }
-  return <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20">Needs prep</Badge>;
-}
-
-function collectAllVerifiableIds(children: LineItem[], mode: "deploy" | "return"): string[] {
-  const ids: string[] = [];
-  for (const child of children) {
-    const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
-
-    if (isNestedKit) {
-      // For nested kits, only count relevant grandchildren (not the nested kit parent itself)
-      const grandchildren = child.childLineItems as LineItem[];
-      const filtered = mode === "deploy"
-        ? grandchildren.filter((gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED")
-        : grandchildren.filter((gc) => gc.status === "CHECKED_OUT");
-      for (const gc of filtered) {
-        ids.push(gc.id);
-      }
-    } else {
-      // Regular child: include based on mode
-      if (mode === "deploy" && child.status !== "CHECKED_OUT" && child.status !== "CANCELLED") {
-        ids.push(child.id);
-      } else if (mode === "return" && child.status === "CHECKED_OUT") {
-        ids.push(child.id);
-      }
-    }
-  }
-  return ids;
-}
+// GroupEntry, isKitParent, PrepStatusBadge, collectAllVerifiableIds are imported from warehouse-types / components
 
 function groupItems(items: LineItem[], mode: "prep" | "deploy" = "prep"): GroupEntry[] {
   const serializedByModel = new Map<string, LineItem[]>();
@@ -466,12 +255,7 @@ function groupCheckinItems(items: LineItem[]): GroupEntry[] {
   });
 }
 
-// Selection key helpers
-// Serialized: just the lineItem id
-// Bulk unit: `${lineItemId}:${unitIndex}`
-function bulkUnitKey(lineItemId: string, unitIndex: number) {
-  return `${lineItemId}:${unitIndex}`;
-}
+// bulkUnitKey is imported from warehouse-types
 
 // ---------------------------------------------------------------------------
 // Page component
@@ -2126,878 +1910,123 @@ function WarehouseProjectPage({
           </TabsTrigger>
         </TabsList>
 
-        {/* ================================================================ */}
-        {/* PICK / PREP TAB                                                  */}
-        {/* ================================================================ */}
-        <TabsContent value="pick-prep">
-          <div className="space-y-4 pt-4">
-            <div className="rounded-lg bg-bg-surface surface-ring py-4 px-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
-                    <ScanInput
-                      ref={scanInputRef}
-                      placeholder="Scan or enter asset tag to prep..."
-                      value={scanValue}
-                      onChange={(e) => setScanValue(e.target.value)}
-                      onKeyDown={handleScanKeyDown}
-                      onScan={(value) => scanMutation.mutate(value)}
-                      scannerTitle="Scan asset to prep"
-                      continuous
-                      disabled={scanMutation.isPending}
-                      autoFocus
-                    />
-                  </div>
-                  <div className="w-48 shrink-0">
-                    <ComboboxPicker
-                      value={selectedContainer}
-                      onChange={setSelectedContainer}
-                      options={containerOptions}
-                      placeholder="No container"
-                      searchPlaceholder="Search or create..."
-                      creatable
-                      allowClear
-                    />
-                  </div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-fg-3">
-                    Items that need to be picked and prepped.
-                    {selectedContainer && <span className="ml-1 text-fg-2 font-medium">→ {selectedContainer}</span>}
-                  </p>
-                  <Button
-                    onClick={handlePrepSelected}
-                    disabled={selectedPrepCount === 0 || scanMutation.isPending}
-                    className="shrink-0"
-                  >
-                    Prep{selectedPrepCount > 0 ? ` (${selectedPrepCount})` : ""}
-                  </Button>
-                </div>
-            </div>
+        {/* Pick/Prep Tab */}
+        <PickPrepTab
+          scanInputRef={scanInputRef}
+          scanValue={scanValue}
+          setScanValue={setScanValue}
+          handleScanKeyDown={handleScanKeyDown}
+          scanMutationMutate={(v) => scanMutation.mutate(v)}
+          scanMutationIsPending={scanMutation.isPending}
+          selectedContainer={selectedContainer}
+          setSelectedContainer={setSelectedContainer}
+          containerOptions={containerOptions}
+          selectedPrep={selectedPrep}
+          setSelectedPrep={setSelectedPrep}
+          selectedPrepCount={selectedPrepCount}
+          allPrepKeys={allPrepKeys}
+          pickPrepItems={pickPrepItems}
+          groupedPrep={groupedPrep}
+          verifiedKitItems={verifiedKitItems}
+          setVerifiedKitItems={setVerifiedKitItems}
+          expandedGroups={expandedGroups}
+          toggleExpanded={toggleExpanded}
+          handlePrepSelected={handlePrepSelected}
+          toggleSelection={toggleSelection}
+          toggleGroupSelection={toggleGroupSelection}
+          toggleAll={toggleAll}
+          renderGroupHeader={renderGroupHeader}
+        />
 
-            {pickPrepItems.length === 0 ? (
-              <div className="rounded-lg bg-bg-surface surface-ring py-8 text-center text-fg-3">
-                  <PackageCheck className="mx-auto mb-2 h-8 w-8 opacity-50" />
-                  <p>All items prepped.</p>
-                  <p className="text-xs mt-1">Head to the Deploy tab to send them out.</p>
-              </div>
-            ) : (
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-10">
-                        <Checkbox
-                          checked={allPrepKeys.length > 0 && (allPrepKeys.every((k) => selectedPrep.has(k)) || allPrepKeys.some((k) => selectedPrep.has(k)))}
-                          indeterminate={allPrepKeys.length > 0 && allPrepKeys.some((k) => selectedPrep.has(k)) && !allPrepKeys.every((k) => selectedPrep.has(k))}
-                          onCheckedChange={() => toggleAll(selectedPrep, setSelectedPrep, allPrepKeys)}
-                        />
-                      </TableHead>
-                      <TableHead>Item</TableHead>
-                      <TableHead>Asset Tag</TableHead>
-                      <TableHead className="text-center w-16">Qty</TableHead>
-                      <TableHead className="w-28">Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {groupedPrep.map((entry) => {
-                      if (entry.kind === "serialized-group") {
-                        const childKeys = entry.items.map((i) => i.id);
-                        const isExpanded = expandedGroups.has(entry.groupKey);
-                        return (
-                          <Fragment key={entry.groupKey}>
-                            {renderGroupHeader(
-                              entry, childKeys, selectedPrep, setSelectedPrep,
-                              <TableCell>
-                                {entry.items.every((i) => i.prepStatus === "PACKED")
-                                  ? <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">Prepped</Badge>
-                                  : entry.items.some((i) => i.prepStatus === "PACKED")
-                                    ? <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20">Partial</Badge>
-                                    : <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20">Needs prep</Badge>}
-                              </TableCell>
-                            )}
-                            {isExpanded && entry.items.map((item, idx) => (
-                              <TableRow key={item.id} className="bg-bg-inset/30">
-                                <TableCell>
-                                  <Checkbox
-                                    checked={selectedPrep.has(item.id)}
-                                    onCheckedChange={() => toggleSelection(selectedPrep, setSelectedPrep, item.id)}
-                                  />
-                                </TableCell>
-                                <TableCell className="pl-12 text-sm text-fg-3">
-                                  {item.asset?.assetTag ? `${item.model?.name || "Asset"}` : `Unit ${idx + 1}`}
-                                </TableCell>
-                                <TableCell className="font-mono text-sm text-fg-3">
-                                  {item.asset?.assetTag || "—"}
-                                </TableCell>
-                                <TableCell className="text-center">1</TableCell>
-                                <TableCell>
-                                  <PrepStatusBadge item={item} />
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </Fragment>
-                        );
-                      }
+        {/* Deploy Tab */}
+        <DeployTab
+          deployScanInputRef={deployScanInputRef}
+          deployScanValue={deployScanValue}
+          setDeployScanValue={setDeployScanValue}
+          handleDeployScanKeyDown={handleDeployScanKeyDown}
+          deployScanMutationMutate={(v) => deployScanMutation.mutate(v)}
+          deployScanMutationIsPending={deployScanMutation.isPending}
+          selectedOut={selectedOut}
+          setSelectedOut={setSelectedOut}
+          selectedOutCount={selectedOutCount}
+          allOutKeys={allOutKeys}
+          checkOutItemsList={checkOutItemsList}
+          deployContainerGroups={deployContainerGroups}
+          verifiedKitItems={verifiedKitItems}
+          setVerifiedKitItems={setVerifiedKitItems}
+          expandedGroups={expandedGroups}
+          toggleExpanded={toggleExpanded}
+          handleCheckOutSelected={handleCheckOutSelected}
+          handleDeprep={(ids) => {
+            if (ids.size === 0) return;
+            const bulkDeprepMap = new Map<string, number>();
+            const directIds: string[] = [];
+            ids.forEach((id) => {
+              if (id.includes(":")) {
+                const lineItemId = id.split(":")[0];
+                bulkDeprepMap.set(lineItemId, (bulkDeprepMap.get(lineItemId) || 0) + 1);
+              } else {
+                directIds.push(id);
+              }
+            });
+            for (const [lineItemId, count] of bulkDeprepMap) {
+              deprepMutation.mutate({ lineItemId, quantity: count });
+            }
+            directIds.forEach((id) => {
+              const li = lineItems.find((l) => l.id === id);
+              if (li && isKitParent(li)) {
+                deprepKit(projectId, id)
+                  .then(() => {
+                    toast.success("Kit removed from prep");
+                    invalidate();
+                  })
+                  .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to deprep kit"));
+              } else {
+                deprepMutation.mutate(id);
+              }
+            });
+            setSelectedOut(new Set());
+          }}
+          deprepIsPending={deprepMutation.isPending}
+          clearContainerMutate={(c) => clearContainerMutation.mutate(c)}
+          clearContainerIsPending={clearContainerMutation.isPending}
+          checkOutIsPending={checkOutMutation.isPending}
+          toggleSelection={toggleSelection}
+          toggleGroupSelection={toggleGroupSelection}
+          toggleAll={toggleAll}
+          renderGroupHeader={renderGroupHeader}
+        />
 
-                      if (entry.kind === "bulk-group") {
-                        const childKeys = Array.from({ length: entry.unitCount }, (_, i) => bulkUnitKey(entry.item.id, i));
-                        const isExpanded = expandedGroups.has(entry.groupKey);
-                        const checkedCount = childKeys.filter((k) => selectedPrep.has(k)).length;
-                        return (
-                          <Fragment key={entry.groupKey}>
-                            {renderGroupHeader(
-                              entry, childKeys, selectedPrep, setSelectedPrep,
-                              <TableCell>
-                                {checkedCount > 0 ? (
-                                  <Badge variant="outline" className="bg-purple-500/10 text-purple-500 border-purple-500/20">
-                                    {checkedCount} selected
-                                  </Badge>
-                                ) : (
-                                  <PrepStatusBadge item={entry.item} />
-                                )}
-                              </TableCell>
-                            )}
-                            {isExpanded && childKeys.map((key, idx) => (
-                              <TableRow key={key} className="bg-bg-inset/30">
-                                <TableCell>
-                                  <Checkbox
-                                    checked={selectedPrep.has(key)}
-                                    onCheckedChange={() => toggleSelection(selectedPrep, setSelectedPrep, key)}
-                                  />
-                                </TableCell>
-                                <TableCell className="pl-12 text-sm text-fg-3">
-                                  Unit {idx + 1}
-                                </TableCell>
-                                <TableCell className="font-mono text-sm text-fg-3">
-                                  {entry.item.bulkAsset?.assetTag || "—"}
-                                </TableCell>
-                                <TableCell className="text-center">1</TableCell>
-                                <TableCell />
-                              </TableRow>
-                            ))}
-                          </Fragment>
-                        );
-                      }
+        {/* Return Tab */}
+        <ReturnTab
+          returnScanInputRef={returnScanInputRef}
+          returnScanValue={returnScanValue}
+          setReturnScanValue={setReturnScanValue}
+          handleReturnScanKeyDown={handleReturnScanKeyDown}
+          returnScanMutationMutate={(v) => returnScanMutation.mutate(v)}
+          returnScanMutationIsPending={returnScanMutation.isPending}
+          returnCondition={returnCondition}
+          setReturnCondition={setReturnCondition}
+          returnNotes={returnNotes}
+          setReturnNotes={setReturnNotes}
+          selectedIn={selectedIn}
+          setSelectedIn={setSelectedIn}
+          selectedInCount={selectedInCount}
+          allInKeys={allInKeys}
+          checkedOutItems={checkedOutItems}
+          returnContainerGroups={returnContainerGroups}
+          verifiedKitItems={verifiedKitItems}
+          setVerifiedKitItems={setVerifiedKitItems}
+          expandedGroups={expandedGroups}
+          toggleExpanded={toggleExpanded}
+          handleReturnSelected={handleReturnSelected}
+          checkInIsPending={checkInMutation.isPending}
+          toggleSelection={toggleSelection}
+          toggleGroupSelection={toggleGroupSelection}
+          toggleAll={toggleAll}
+          renderGroupHeader={renderGroupHeader}
+        />
 
-                      if (entry.kind === "kit-group") {
-                        const isExpanded = expandedGroups.has(entry.groupKey);
-                        const allIds = collectAllVerifiableIds(entry.children, "deploy");
-                        const verifiedCount = allIds.filter((id) => verifiedKitItems.has(id)).length;
-                        const allVerified = allIds.length > 0 && verifiedCount === allIds.length;
-                        return (
-                          <Fragment key={entry.groupKey}>
-                            <TableRow
-                              className="cursor-pointer hover:bg-accent/50"
-                              onClick={() => toggleExpanded(entry.groupKey)}
-                            >
-                              <TableCell onClick={(e) => e.stopPropagation()}>
-                                <Checkbox
-                                  checked={selectedPrep.has(entry.item.id)}
-                                  onCheckedChange={() => toggleSelection(selectedPrep, setSelectedPrep, entry.item.id)}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-1.5">
-                                  <ChevronRight className={`h-4 w-4 text-fg-3 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
-                                  <Container className="h-4 w-4 text-fg-3" />
-                                  <span className="font-medium">{entry.item.description || entry.item.kit?.name || "Kit"}</span>
-                                  <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">
-                                    Kit
-                                  </Badge>
-                                  {allIds.length > 0 && (
-                                    <Badge
-                                      variant="outline"
-                                      className={allVerified
-                                        ? "ml-1 text-[10px] px-1.5 py-0 bg-green-500/10 text-green-500 border-green-500/20"
-                                        : verifiedCount > 0
-                                          ? "ml-1 text-[10px] px-1.5 py-0 bg-amber-500/10 text-amber-500 border-amber-500/20"
-                                          : "ml-1 text-[10px] px-1.5 py-0"
-                                      }
-                                    >
-                                      {verifiedCount}/{allIds.length} verified
-                                    </Badge>
-                                  )}
-                                </div>
-                              </TableCell>
-                              <TableCell className="font-mono text-sm text-fg-3">
-                                {entry.item.kit?.assetTag || "—"}
-                              </TableCell>
-                              <TableCell className="text-center">{entry.children.length}</TableCell>
-                              <TableCell>
-                                <PrepStatusBadge item={entry.item} />
-                              </TableCell>
-                            </TableRow>
-                            {isExpanded && (
-                              <KitChildRows
-                                kitChildren={entry.children}
-                                mode="deploy"
-                                verifiedKitItems={verifiedKitItems}
-                                expandedGroups={expandedGroups}
-                                toggleExpanded={toggleExpanded}
-                                onToggleVerify={(assetId) => {
-                                  setVerifiedKitItems((prev) => {
-                                    const next = new Set(prev);
-                                    if (next.has(assetId)) next.delete(assetId);
-                                    else next.add(assetId);
-                                    return next;
-                                  });
-                                }}
-                              />
-                            )}
-                          </Fragment>
-                        );
-                      }
-
-                      // Single item
-                      const item = entry.item;
-                      return (
-                        <TableRow key={item.id}>
-                          <TableCell>
-                            <Checkbox
-                              checked={selectedPrep.has(item.id)}
-                              onCheckedChange={() => toggleSelection(selectedPrep, setSelectedPrep, item.id)}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <span className="font-medium">{modelDisplayName(item)}</span>
-                            {item.isSubhire && (
-                              <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0 bg-cyan-500/10 text-cyan-600 border-cyan-500/20">Subhire</Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className="font-mono text-sm text-fg-3">
-                            {item.asset?.assetTag || item.bulkAsset?.assetTag || "—"}
-                          </TableCell>
-                          <TableCell className="text-center">{item.quantity}</TableCell>
-                          <TableCell>
-                            <PrepStatusBadge item={item} />
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </div>
-        </TabsContent>
-
-        {/* ================================================================ */}
-        {/* DEPLOY TAB                                                       */}
-        {/* ================================================================ */}
-        <TabsContent value="check-out">
-          <div className="space-y-4 pt-4">
-            <div className="rounded-lg bg-bg-surface surface-ring py-4 px-4 space-y-3">
-                <ScanInput
-                  ref={deployScanInputRef}
-                  placeholder="Scan asset tag to deploy..."
-                  value={deployScanValue}
-                  onChange={(e) => setDeployScanValue(e.target.value)}
-                  onScan={(value) => deployScanMutation.mutate(value)}
-                  onKeyDown={handleDeployScanKeyDown}
-                  disabled={deployScanMutation.isPending || checkOutMutation.isPending}
-                />
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-fg-3">Items prepped and ready to deploy.</p>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        const ids = Array.from(selectedOut);
-                        if (ids.length === 0) return;
-
-                        // Collect bulk unit depreps by line item
-                        const bulkDeprepMap = new Map<string, number>();
-                        const directIds: string[] = [];
-
-                        ids.forEach((id) => {
-                          if (id.includes(":")) {
-                            const lineItemId = id.split(":")[0];
-                            bulkDeprepMap.set(lineItemId, (bulkDeprepMap.get(lineItemId) || 0) + 1);
-                          } else {
-                            directIds.push(id);
-                          }
-                        });
-
-                        // Deprep bulk items (single call with quantity)
-                        for (const [lineItemId, count] of bulkDeprepMap) {
-                          deprepMutation.mutate({ lineItemId, quantity: count });
-                        }
-
-                        // Deprep serialized/kit items
-                        directIds.forEach((id) => {
-                          const li = lineItems.find((l) => l.id === id);
-                          if (li && isKitParent(li)) {
-                            deprepKit(projectId, id)
-                              .then(() => {
-                                toast.success("Kit removed from prep");
-                                invalidate();
-                              })
-                              .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to deprep kit"));
-                          } else {
-                            deprepMutation.mutate(id);
-                          }
-                        });
-                        setSelectedOut(new Set());
-                      }}
-                      disabled={selectedOutCount === 0 || deprepMutation.isPending}
-                    >
-                      Deprep{selectedOutCount > 0 ? ` (${selectedOutCount})` : ""}
-                    </Button>
-                    <Button
-                      onClick={handleCheckOutSelected}
-                      disabled={selectedOutCount === 0 || checkOutMutation.isPending}
-                      className="shrink-0"
-                    >
-                      Deploy{selectedOutCount > 0 ? ` (${selectedOutCount})` : ""}
-                    </Button>
-                  </div>
-                </div>
-            </div>
-
-            {checkOutItemsList.length === 0 ? (
-              <div className="rounded-lg bg-bg-surface surface-ring py-8 text-center text-fg-3">
-                  <Package className="mx-auto mb-2 h-8 w-8 opacity-50" />
-                  <p>No prepped items ready to deploy.</p>
-                  <p className="text-xs mt-1">Pick and prep items first in the Pick/Prep tab.</p>
-              </div>
-            ) : (
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-10">
-                        <Checkbox
-                          checked={allOutKeys.length > 0 && (allOutKeys.every((k) => selectedOut.has(k)) || allOutKeys.some((k) => selectedOut.has(k)))}
-                          indeterminate={allOutKeys.length > 0 && allOutKeys.some((k) => selectedOut.has(k)) && !allOutKeys.every((k) => selectedOut.has(k))}
-                          onCheckedChange={() => toggleAll(selectedOut, setSelectedOut, allOutKeys)}
-                        />
-                      </TableHead>
-                      <TableHead>Item</TableHead>
-                      <TableHead>Asset Tag</TableHead>
-                      <TableHead className="text-center w-16">Qty</TableHead>
-                      <TableHead className="w-28">Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {deployContainerGroups.map(({ container, entries }) => (
-                      <Fragment key={container || "__ungrouped"}>
-                        {container && (
-                          <TableRow className="bg-bg-inset/50">
-                            <TableCell colSpan={5} className="py-1.5">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-1.5 text-xs font-semibold text-fg-2 uppercase tracking-wide">
-                                  <Package className="h-3.5 w-3.5" />
-                                  {container}
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => clearContainerMutation.mutate(container)}
-                                  disabled={clearContainerMutation.isPending}
-                                  className="rounded p-0.5 text-fg-3 hover:text-fg-1 hover:bg-bg-hover transition-colors"
-                                  title="Remove container"
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        )}
-                        {entries.map((entry) => {
-                      // --- Serialized group ---
-                      if (entry.kind === "serialized-group") {
-                        const childKeys = entry.items.map((i) => i.id);
-                        const isExpanded = expandedGroups.has(entry.groupKey);
-                        return (
-                          <Fragment key={entry.groupKey}>
-                            {renderGroupHeader(
-                              entry, childKeys, selectedOut, setSelectedOut,
-                              <TableCell>
-                                <PrepStatusBadge item={entry.items[0]} />
-                              </TableCell>
-                            )}
-                            {isExpanded && entry.items.map((item, idx) => (
-                              <TableRow key={item.id} className="bg-bg-inset/30">
-                                <TableCell>
-                                  <Checkbox
-                                    checked={selectedOut.has(item.id)}
-                                    onCheckedChange={() => toggleSelection(selectedOut, setSelectedOut, item.id)}
-                                  />
-                                </TableCell>
-                                <TableCell className="pl-12 text-sm text-fg-3">
-                                  {item.asset?.assetTag ? `${item.model?.name || "Asset"}` : `Unit ${idx + 1}`}
-                                </TableCell>
-                                <TableCell className="font-mono text-sm text-fg-3">
-                                  {item.asset?.assetTag || "—"}
-                                </TableCell>
-                                <TableCell className="text-center">1</TableCell>
-                                <TableCell>
-                                  <PrepStatusBadge item={item} />
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </Fragment>
-                        );
-                      }
-
-                      // --- Bulk group ---
-                      if (entry.kind === "bulk-group") {
-                        const childKeys = Array.from({ length: entry.unitCount }, (_, i) => bulkUnitKey(entry.item.id, i));
-                        const isExpanded = expandedGroups.has(entry.groupKey);
-                        const checkedCount = childKeys.filter((k) => selectedOut.has(k)).length;
-                        return (
-                          <Fragment key={entry.groupKey}>
-                            {renderGroupHeader(
-                              entry, childKeys, selectedOut, setSelectedOut,
-                              <TableCell>
-                                {checkedCount > 0 ? (
-                                  <Badge variant="outline" className="bg-purple-500/10 text-purple-500 border-purple-500/20">
-                                    {checkedCount} selected
-                                  </Badge>
-                                ) : (
-                                  <PrepStatusBadge item={entry.item} />
-                                )}
-                              </TableCell>
-                            )}
-                            {isExpanded && childKeys.map((key, idx) => (
-                              <TableRow key={key} className="bg-bg-inset/30">
-                                <TableCell>
-                                  <Checkbox
-                                    checked={selectedOut.has(key)}
-                                    onCheckedChange={() => toggleSelection(selectedOut, setSelectedOut, key)}
-                                  />
-                                </TableCell>
-                                <TableCell className="pl-12 text-sm text-fg-3">
-                                  Unit {idx + 1}
-                                </TableCell>
-                                <TableCell className="font-mono text-sm text-fg-3">
-                                  {entry.item.bulkAsset?.assetTag || "—"}
-                                </TableCell>
-                                <TableCell className="text-center">1</TableCell>
-                                <TableCell />
-                              </TableRow>
-                            ))}
-                          </Fragment>
-                        );
-                      }
-
-                      // --- Kit group ---
-                      if (entry.kind === "kit-group") {
-                        const isExpanded = expandedGroups.has(entry.groupKey);
-                        const allIds = collectAllVerifiableIds(entry.children, "deploy");
-                        const verifiedCount = allIds.filter((id) => verifiedKitItems.has(id)).length;
-                        const allVerified = allIds.length > 0 && verifiedCount === allIds.length;
-                        // Detect partial deployment: parent is checked out but some children still need deploying
-                        const allChildren = (entry.item.childLineItems || []) as LineItem[];
-                        const isPartiallyDeployed = entry.item.status === "CHECKED_OUT" && allChildren.some((c) => c.status === "CHECKED_OUT");
-                        return (
-                          <Fragment key={entry.groupKey}>
-                            <TableRow
-                              className="cursor-pointer hover:bg-accent/50"
-                              onClick={() => toggleExpanded(entry.groupKey)}
-                            >
-                              <TableCell onClick={(e) => e.stopPropagation()}>
-                                <Checkbox
-                                  checked={selectedOut.has(entry.item.id)}
-                                  onCheckedChange={() => toggleSelection(selectedOut, setSelectedOut, entry.item.id)}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-1.5">
-                                  <ChevronRight className={`h-4 w-4 text-fg-3 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
-                                  <Container className="h-4 w-4 text-fg-3" />
-                                  <span className="font-medium">{entry.item.description || entry.item.kit?.name || "Kit"}</span>
-                                  <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">
-                                    Kit
-                                  </Badge>
-                                  {allIds.length > 0 && (
-                                    <Badge
-                                      variant="outline"
-                                      className={allVerified
-                                        ? "ml-1 text-[10px] px-1.5 py-0 bg-green-500/10 text-green-500 border-green-500/20"
-                                        : verifiedCount > 0
-                                          ? "ml-1 text-[10px] px-1.5 py-0 bg-amber-500/10 text-amber-500 border-amber-500/20"
-                                          : "ml-1 text-[10px] px-1.5 py-0"
-                                      }
-                                    >
-                                      {verifiedCount}/{allIds.length} verified
-                                    </Badge>
-                                  )}
-                                </div>
-                              </TableCell>
-                              <TableCell className="font-mono text-sm text-fg-3">
-                                {entry.item.kit?.assetTag || "—"}
-                              </TableCell>
-                              <TableCell className="text-center">{entry.children.length}</TableCell>
-                              <TableCell>
-                                {isPartiallyDeployed ? (
-                                  <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20">
-                                    Partial
-                                  </Badge>
-                                ) : (
-                                  <PrepStatusBadge item={entry.item} />
-                                )}
-                              </TableCell>
-                            </TableRow>
-                            {isExpanded && (
-                              <KitChildRows
-                                kitChildren={entry.children}
-                                verifiedKitItems={verifiedKitItems}
-                                expandedGroups={expandedGroups}
-                                toggleExpanded={toggleExpanded}
-                                mode="deploy"
-                                onToggleVerify={(assetId) => {
-                                  setVerifiedKitItems((prev) => {
-                                    const next = new Set(prev);
-                                    if (next.has(assetId)) next.delete(assetId);
-                                    else next.add(assetId);
-                                    return next;
-                                  });
-                                }}
-                              />
-                            )}
-                          </Fragment>
-                        );
-                      }
-
-                      // --- Single item ---
-                      const item = entry.item;
-                      return (
-                        <TableRow key={item.id}>
-                          <TableCell>
-                            <Checkbox
-                              checked={selectedOut.has(item.id)}
-                              onCheckedChange={() => toggleSelection(selectedOut, setSelectedOut, item.id)}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <span className="font-medium">{modelDisplayName(item)}</span>
-                            {item.isSubhire && (
-                              <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0 bg-cyan-500/10 text-cyan-600 border-cyan-500/20">Subhire</Badge>
-                            )}
-
-                          </TableCell>
-                          <TableCell className="font-mono text-sm text-fg-3">
-                            {item.asset?.assetTag || item.bulkAsset?.assetTag || "—"}
-                          </TableCell>
-                          <TableCell className="text-center">{item.quantity}</TableCell>
-                          <TableCell>
-                            <PrepStatusBadge item={item} />
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                      </Fragment>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </div>
-        </TabsContent>
-
-        {/* ================================================================ */}
-        {/* CHECK IN TAB                                                     */}
-        {/* ================================================================ */}
-        <TabsContent value="check-in">
-          <div className="space-y-4 pt-4">
-            <div className="rounded-lg bg-bg-surface surface-ring py-4 px-4 space-y-3">
-                <div className="flex items-center gap-3">
-                  <ScanBarcode className="h-5 w-5 text-fg-3 shrink-0 hidden sm:block" />
-                  <div className="flex-1">
-                    <Label htmlFor="scan-checkin" className="sr-only">Scan asset tag</Label>
-                    <ScanInput
-                      ref={returnScanInputRef}
-                      id="scan-checkin"
-                      placeholder="Scan or enter asset tag to return..."
-                      value={returnScanValue}
-                      onChange={(e) => setReturnScanValue(e.target.value)}
-                      onKeyDown={handleReturnScanKeyDown}
-                      onScan={(value) => returnScanMutation.mutate(value)}
-                      scannerTitle="Scan asset to return"
-                      continuous
-                      disabled={returnScanMutation.isPending || checkInMutation.isPending}
-                    />
-                  </div>
-                  <Button
-                    onClick={handleReturnSelected}
-                    disabled={selectedInCount === 0 || checkInMutation.isPending}
-                    className="shrink-0"
-                  >
-                    <span className="hidden sm:inline">Return</span>
-                    <span className="sm:hidden">In</span>
-                    {selectedInCount > 0 ? ` (${selectedInCount})` : ""}
-                  </Button>
-                </div>
-                <div className="flex items-center gap-4 pl-8">
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="return-condition" className="text-sm">Condition:</Label>
-                    <select
-                      id="return-condition"
-                      value={returnCondition}
-                      onChange={(e) => setReturnCondition(e.target.value)}
-                      className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    >
-                      <option value="GOOD">Good</option>
-                      <option value="DAMAGED">Damaged</option>
-                      <option value="MISSING">Missing</option>
-                    </select>
-                  </div>
-                  {(returnCondition === "DAMAGED" || returnCondition === "MISSING") && (
-                    <div className="flex-1">
-                      <Textarea
-                        placeholder="Notes about damage or missing items..."
-                        value={returnNotes}
-                        onChange={(e) => setReturnNotes(e.target.value)}
-                        rows={2}
-                        className="text-sm"
-                      />
-                    </div>
-                  )}
-                </div>
-            </div>
-
-            {checkedOutItems.length === 0 ? (
-              <div className="rounded-lg bg-bg-surface surface-ring py-8 text-center text-fg-3">
-                  <Package className="mx-auto mb-2 h-8 w-8 opacity-50" />
-                  <p>No items currently deployed.</p>
-              </div>
-            ) : (
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-10">
-                        <Checkbox
-                          checked={allInKeys.length > 0 && (allInKeys.every((k) => selectedIn.has(k)) || allInKeys.some((k) => selectedIn.has(k)))}
-                          indeterminate={allInKeys.length > 0 && allInKeys.some((k) => selectedIn.has(k)) && !allInKeys.every((k) => selectedIn.has(k))}
-                          onCheckedChange={() => toggleAll(selectedIn, setSelectedIn, allInKeys)}
-                        />
-                      </TableHead>
-                      <TableHead>Item</TableHead>
-                      <TableHead>Asset Tag</TableHead>
-                      <TableHead className="text-center w-16">Qty</TableHead>
-                      <TableHead className="w-28">Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {returnContainerGroups.map(({ container, entries }) => (
-                      <Fragment key={container || "__ungrouped"}>
-                        {container && (
-                          <TableRow className="bg-bg-inset/50">
-                            <TableCell colSpan={5} className="py-1.5">
-                              <div className="flex items-center gap-1.5 text-xs font-semibold text-fg-2 uppercase tracking-wide">
-                                <Package className="h-3.5 w-3.5" />
-                                {container}
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        )}
-                        {entries.map((entry) => {
-                      // --- Serialized group ---
-                      if (entry.kind === "serialized-group") {
-                        const childKeys = entry.items.map((i) => i.id);
-                        const isExpanded = expandedGroups.has(entry.groupKey);
-                        return (
-                          <Fragment key={entry.groupKey}>
-                            {renderGroupHeader(
-                              entry, childKeys, selectedIn, setSelectedIn,
-                              <TableCell>
-                                <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
-                              </TableCell>
-                            )}
-                            {isExpanded && entry.items.map((item, idx) => (
-                              <TableRow key={item.id} className="bg-bg-inset/30">
-                                <TableCell>
-                                  <Checkbox
-                                    checked={selectedIn.has(item.id)}
-                                    onCheckedChange={() => toggleSelection(selectedIn, setSelectedIn, item.id)}
-                                  />
-                                </TableCell>
-                                <TableCell className="pl-12 text-sm text-fg-3">
-                                  {item.asset?.assetTag ? `${item.model?.name || "Asset"}` : `Unit ${idx + 1}`}
-                                </TableCell>
-                                <TableCell className="font-mono text-sm text-fg-3">
-                                  {item.asset?.assetTag || "—"}
-                                </TableCell>
-                                <TableCell className="text-center">1</TableCell>
-                                <TableCell>
-                                  <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </Fragment>
-                        );
-                      }
-
-                      // --- Bulk group ---
-                      if (entry.kind === "bulk-group") {
-                        const childKeys = Array.from({ length: entry.unitCount }, (_, i) => bulkUnitKey(entry.item.id, i));
-                        const isExpanded = expandedGroups.has(entry.groupKey);
-                        const checkedCount = childKeys.filter((k) => selectedIn.has(k)).length;
-                        return (
-                          <Fragment key={entry.groupKey}>
-                            {renderGroupHeader(
-                              entry, childKeys, selectedIn, setSelectedIn,
-                              <TableCell>
-                                {checkedCount > 0 ? (
-                                  <Badge variant="outline" className="bg-teal-500/10 text-teal-500 border-teal-500/20">
-                                    {checkedCount} selected
-                                  </Badge>
-                                ) : (
-                                  <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
-                                )}
-                              </TableCell>
-                            )}
-                            {isExpanded && childKeys.map((key, idx) => (
-                              <TableRow key={key} className="bg-bg-inset/30">
-                                <TableCell>
-                                  <Checkbox
-                                    checked={selectedIn.has(key)}
-                                    onCheckedChange={() => toggleSelection(selectedIn, setSelectedIn, key)}
-                                  />
-                                </TableCell>
-                                <TableCell className="pl-12 text-sm text-fg-3">
-                                  Unit {idx + 1}
-                                </TableCell>
-                                <TableCell className="font-mono text-sm text-fg-3">
-                                  {entry.item.bulkAsset?.assetTag || "—"}
-                                </TableCell>
-                                <TableCell className="text-center">1</TableCell>
-                                <TableCell />
-                              </TableRow>
-                            ))}
-                          </Fragment>
-                        );
-                      }
-
-                      // --- Kit group ---
-                      if (entry.kind === "kit-group") {
-                        const isExpanded = expandedGroups.has(entry.groupKey);
-                        const allIds = collectAllVerifiableIds(entry.children, "return");
-                        const verifiedCount = allIds.filter((id) => verifiedKitItems.has(id)).length;
-                        const allVerified = allIds.length > 0 && verifiedCount === allIds.length;
-                        // Detect partial deployment: some children are deployed, others are not
-                        const allChildren = (entry.item.childLineItems || []) as LineItem[];
-                        const isPartiallyDeployed = allChildren.some((c) => c.status !== "CHECKED_OUT" && c.status !== "CANCELLED");
-                        return (
-                          <Fragment key={entry.groupKey}>
-                            <TableRow
-                              className="cursor-pointer hover:bg-accent/50"
-                              onClick={() => toggleExpanded(entry.groupKey)}
-                            >
-                              <TableCell onClick={(e) => e.stopPropagation()}>
-                                <Checkbox
-                                  checked={selectedIn.has(entry.item.id)}
-                                  onCheckedChange={() => toggleSelection(selectedIn, setSelectedIn, entry.item.id)}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-1.5">
-                                  <ChevronRight className={`h-4 w-4 text-fg-3 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
-                                  <Container className="h-4 w-4 text-fg-3" />
-                                  <span className="font-medium">{entry.item.description || entry.item.kit?.name || "Kit"}</span>
-                                  <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">
-                                    Kit
-                                  </Badge>
-                                  {allIds.length > 0 && (
-                                    <Badge
-                                      variant="outline"
-                                      className={allVerified
-                                        ? "ml-1 text-[10px] px-1.5 py-0 bg-green-500/10 text-green-500 border-green-500/20"
-                                        : verifiedCount > 0
-                                          ? "ml-1 text-[10px] px-1.5 py-0 bg-amber-500/10 text-amber-500 border-amber-500/20"
-                                          : "ml-1 text-[10px] px-1.5 py-0"
-                                      }
-                                    >
-                                      {verifiedCount}/{allIds.length} verified
-                                    </Badge>
-                                  )}
-                                </div>
-                              </TableCell>
-                              <TableCell className="font-mono text-sm text-fg-3">
-                                {entry.item.kit?.assetTag || "—"}
-                              </TableCell>
-                              <TableCell className="text-center">{entry.children.length}</TableCell>
-                              <TableCell>
-                                {isPartiallyDeployed ? (
-                                  <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20">
-                                    Partial
-                                  </Badge>
-                                ) : (
-                                  <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
-                                )}
-                              </TableCell>
-                            </TableRow>
-                            {isExpanded && (
-                              <KitChildRows
-                                kitChildren={entry.children}
-                                verifiedKitItems={verifiedKitItems}
-                                expandedGroups={expandedGroups}
-                                toggleExpanded={toggleExpanded}
-                                mode="return"
-                                onToggleVerify={(assetId) => {
-                                  setVerifiedKitItems((prev) => {
-                                    const next = new Set(prev);
-                                    if (next.has(assetId)) next.delete(assetId);
-                                    else next.add(assetId);
-                                    return next;
-                                  });
-                                }}
-                              />
-                            )}
-                          </Fragment>
-                        );
-                      }
-
-                      // --- Single item ---
-                      const item = entry.item;
-                      const isBulk = isBulkItem(item);
-                      const assetTag = item.asset?.assetTag || item.bulkAsset?.assetTag || null;
-                      return (
-                        <TableRow key={item.id}>
-                          <TableCell>
-                            <Checkbox
-                              checked={selectedIn.has(item.id)}
-                              onCheckedChange={() => toggleSelection(selectedIn, setSelectedIn, item.id)}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <span className="font-medium">{modelDisplayName(item)}</span>
-                            {item.isSubhire && (
-                              <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0 bg-cyan-500/10 text-cyan-600 border-cyan-500/20">Subhire</Badge>
-                            )}
-
-                          </TableCell>
-                          <TableCell className="font-mono text-sm text-fg-3">
-                            {assetTag || "—"}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {isBulk ? (
-                              <span>
-                                <span className={item.returnedQuantity > 0 ? "font-semibold text-teal-600" : ""}>
-                                  {item.returnedQuantity}
-                                </span>
-                                <span className="text-fg-3">/{item.checkedOutQuantity}</span>
-                              </span>
-                            ) : (
-                              <span>1</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                      </Fragment>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </div>
-        </TabsContent>
 
         {/* ================================================================ */}
         {/* CLOSE-OUT TAB                                                    */}

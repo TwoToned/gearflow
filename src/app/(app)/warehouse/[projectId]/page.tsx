@@ -677,14 +677,14 @@ function WarehouseProjectPage({
       const context = checkQueue[0]?.context;
       if (context === "PREP") {
         // Prep remaining items that had no checks (set prepStatus=PACKED)
-        Promise.all(
-          checkQueueDirectItems.map((i) =>
-            prepItemDirect(projectId, i.lineItemId, i.assetId, i.quantity, selectedContainer || null)
-          )
-        ).then(() => {
+        // Sequential to avoid race conditions when items share the same lineItemId
+        (async () => {
+          for (const i of checkQueueDirectItems) {
+            await prepItemDirect(projectId, i.lineItemId, i.assetId, i.quantity, selectedContainer || null);
+          }
           toast.success("Items prepped — ready to deploy");
           invalidate();
-        }).catch((e) => toast.error(e.message));
+        })().catch((e) => toast.error(e.message));
       } else {
         checkInMutation.mutate(
           { items: checkQueueDirectItems.map((i) => ({ lineItemId: i.lineItemId, returnCondition: (i.returnCondition || "GOOD") as "GOOD" | "DAMAGED" | "MISSING", quantity: i.quantity, notes: i.notes })) },
@@ -1863,15 +1863,16 @@ function WarehouseProjectPage({
       return;
     }
 
-    // No checks needed — prep all items directly
-    Promise.all(
-      withoutChecks.map((i) =>
-        prepItemDirect(projectId, i.lineItemId, "assetId" in i ? i.assetId : undefined, "quantity" in i ? i.quantity as number : undefined, selectedContainer || null)
-      )
-    ).then(() => {
+    // No checks needed — prep all items directly.
+    // Must be sequential (not Promise.all) because multiple items may share the
+    // same lineItemId and each call splits/decrements the original's quantity.
+    (async () => {
+      for (const i of withoutChecks) {
+        await prepItemDirect(projectId, i.lineItemId, "assetId" in i ? i.assetId : undefined, "quantity" in i ? i.quantity as number : undefined, selectedContainer || null);
+      }
       toast.success("Items prepped — ready to deploy");
       invalidate();
-    }).catch((e) => toast.error(e.message));
+    })().catch((e) => toast.error(e.message));
   };
 
   const handleReturnSelected = () => {

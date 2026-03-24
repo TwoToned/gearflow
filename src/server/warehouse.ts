@@ -1155,11 +1155,17 @@ export async function getAvailableAssetsForModel(modelId: string) {
       organizationId,
       modelId,
       status: "AVAILABLE",
-      // Exclude assets already assigned to an active line item on any project
-      // (prepped, confirmed, or checked out — not returned/cancelled)
-      lineItems: {
-        none: {
-          status: { notIn: ["RETURNED", "CANCELLED"] },
+      // Exclude assets currently assigned to an active line item on any active project.
+      // An asset is "in use" if it has any line item that is not returned/cancelled
+      // on a project that is itself not cancelled/returned/completed/invoiced.
+      NOT: {
+        lineItems: {
+          some: {
+            status: { notIn: ["RETURNED", "CANCELLED"] },
+            project: {
+              status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
+            },
+          },
         },
       },
     },

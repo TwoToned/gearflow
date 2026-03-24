@@ -1155,6 +1155,13 @@ export async function getAvailableAssetsForModel(modelId: string) {
       organizationId,
       modelId,
       status: "AVAILABLE",
+      // Exclude assets already assigned to an active line item on any project
+      // (prepped, confirmed, or checked out — not returned/cancelled)
+      lineItems: {
+        none: {
+          status: { notIn: ["RETURNED", "CANCELLED"] },
+        },
+      },
     },
     orderBy: { assetTag: "asc" },
     select: {

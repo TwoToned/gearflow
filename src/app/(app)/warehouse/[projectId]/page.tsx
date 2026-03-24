@@ -377,14 +377,18 @@ function groupItems(items: LineItem[], mode: "prep" | "deploy" = "prep"): GroupE
         unitCount: item.quantity,
       });
     } else if (item.model) {
-      const key = item.model.name + (item.model.modelNumber ? ` - ${item.model.modelNumber}` : "");
+      const modelKey = item.model.name + (item.model.modelNumber ? ` - ${item.model.modelNumber}` : "");
+      // In deploy mode, items in different containers must be in separate groups
+      // so each group's container is unambiguous for the container section headers
+      const containerSuffix = mode === "deploy" ? `\0${item.prepContainer || ""}` : "";
+      const key = modelKey + containerSuffix;
       const existing = serializedByModel.get(key);
       if (existing) {
         existing.push(item);
       } else {
         const arr = [item];
         serializedByModel.set(key, arr);
-        result.push({ kind: "serialized-group", groupKey: `ser-${key}`, modelName: key, items: arr });
+        result.push({ kind: "serialized-group", groupKey: `ser-${key}`, modelName: modelKey, items: arr });
       }
     } else {
       result.push({ kind: "single", item });
@@ -434,14 +438,17 @@ function groupCheckinItems(items: LineItem[]): GroupEntry[] {
         unitCount: Math.max(remaining, 0),
       });
     } else if (item.model) {
-      const key = item.model.name + (item.model.modelNumber ? ` - ${item.model.modelNumber}` : "");
+      const modelKey = item.model.name + (item.model.modelNumber ? ` - ${item.model.modelNumber}` : "");
+      // Items in different containers must be in separate groups
+      const containerSuffix = `\0${item.prepContainer || ""}`;
+      const key = modelKey + containerSuffix;
       const existing = serializedByModel.get(key);
       if (existing) {
         existing.push(item);
       } else {
         const arr = [item];
         serializedByModel.set(key, arr);
-        result.push({ kind: "serialized-group", groupKey: `ser-in-${key}`, modelName: key, items: arr });
+        result.push({ kind: "serialized-group", groupKey: `ser-in-${key}`, modelName: modelKey, items: arr });
       }
     } else {
       result.push({ kind: "single", item });

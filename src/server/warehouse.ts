@@ -1016,6 +1016,21 @@ export async function quickAddAndCheckOut(
 }
 
 // ---------------------------------------------------------------------------
+// 6b. clearPrepContainer — remove container assignment from line items
+// ---------------------------------------------------------------------------
+
+export async function clearPrepContainer(projectId: string, containerName: string) {
+  const { organizationId } = await requirePermission("warehouse", "check_out");
+
+  await prisma.projectLineItem.updateMany({
+    where: { projectId, organizationId, prepContainer: containerName },
+    data: { prepContainer: null },
+  });
+
+  return serialize({ success: true });
+}
+
+// ---------------------------------------------------------------------------
 // 7. getAvailableAssetsForModel
 // ---------------------------------------------------------------------------
 
@@ -1298,21 +1313,20 @@ export async function forceReturnKit(kitId: string) {
 
     // Reset kit status
     await tx.kit.update({
-        where: { id: kitId },
+      where: { id: kitId },
+      data: resetData,
+    });
+
+    // Reset all serialized assets inside this kit (KitSerializedItem records)
+    const kitItems = await tx.kitSerializedItem.findMany({
+      where: { kitId },
+      select: { assetId: true },
+    });
+    if (kitItems.length > 0) {
+      await tx.asset.updateMany({
+        where: { id: { in: kitItems.map((ki) => ki.assetId) } },
         data: resetData,
       });
-
-      // Reset all serialized assets inside this kit (KitSerializedItem records)
-      const kitItems = await tx.kitSerializedItem.findMany({
-        where: { kitId },
-        select: { assetId: true },
-      });
-      if (kitItems.length > 0) {
-        await tx.asset.updateMany({
-          where: { id: { in: kitItems.map((ki) => ki.assetId) } },
-          data: resetData,
-        });
-      }
     }
   });
 

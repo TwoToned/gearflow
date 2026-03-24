@@ -20,6 +20,7 @@ import {
   FileText,
   ChevronDown,
   ExternalLink,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -32,6 +33,7 @@ import {
   checkInKit,
   getAvailableAssetsForModel,
   quickAddAndCheckOut,
+  clearPrepContainer,
 } from "@/server/warehouse";
 import { lineItemStatusLabels, formatLabel } from "@/lib/status-labels";
 import { Button } from "@/components/ui/button";
@@ -71,6 +73,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -96,6 +99,7 @@ import {
   saveChildItemChecks,
 } from "@/server/check-records";
 import { getModelCheckItems, getKitCheckItems } from "@/server/check-items";
+import { searchContainerAssets } from "@/server/categories";
 import type { CheckRecordFormValues } from "@/lib/validations/check-item";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -134,6 +138,7 @@ interface LineItem {
   bulkAsset: { assetTag: string } | null;
   kit: { id: string; assetTag: string; name: string; checkMode?: string; _count?: { kitCheckItems: number } } | null;
   prepStatus: string | null;
+  prepContainer: string | null;
   isSubhire: boolean;
   childLineItems?: LineItem[];
 }
@@ -492,6 +497,9 @@ function WarehouseProjectPage({
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
+  // Container state for prep grouping
+  const [selectedContainer, setSelectedContainer] = useState<string>("");
+
   // Selection state
   const [selectedPrep, setSelectedPrep] = useState<Set<string>>(new Set());
   const [selectedOut, setSelectedOut] = useState<Set<string>>(new Set());
@@ -769,7 +777,7 @@ function WarehouseProjectPage({
 
   const quickAddMutation = useMutation({
     mutationFn: (data: { modelId: string; assetId?: string; bulkAssetId?: string; quantity?: number }) =>
-      quickAddAndCheckOut(projectId, data),
+      quickAddAndCheckOut(projectId, { ...data, prepContainer: selectedContainer || null }),
     onSuccess: () => {
       invalidate();
       toast.success(`Added to project and prepped: ${addPromptData?.assetName || "Asset"}`);
@@ -802,6 +810,15 @@ function WarehouseProjectPage({
     },
     onSuccess: () => {
       toast.success("Item removed from prep");
+      invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const clearContainerMutation = useMutation({
+    mutationFn: (containerName: string) => clearPrepContainer(projectId, containerName),
+    onSuccess: () => {
+      toast.success("Container removed");
       invalidate();
     },
     onError: (e) => toast.error(e.message),
@@ -1235,6 +1252,40 @@ function WarehouseProjectPage({
 
   // --- Derived data (must be before any early returns to keep hooks stable) ---
   const lineItems = project ? (project.lineItems || []) as unknown as LineItem[] : [];
+
+  // Fetch container assets from the configured case category
+  const { data: caseAssets } = useQuery({
+    queryKey: ["containerAssets", orgId],
+    queryFn: () => searchContainerAssets(""),
+    staleTime: 60_000,
+  });
+
+  // Build container options from existing prepContainer values + case category assets
+  const containerOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const options: Array<{ value: string; label: string }> = [];
+
+    // Add case category assets first
+    if (caseAssets) {
+      for (const asset of caseAssets as Array<{ value: string; label: string }>) {
+        if (!seen.has(asset.value)) {
+          seen.add(asset.value);
+          options.push(asset);
+        }
+      }
+    }
+
+    // Add existing prepContainer values from line items
+    for (const li of lineItems) {
+      if (li.prepContainer && !seen.has(li.prepContainer)) {
+        seen.add(li.prepContainer);
+        options.push({ value: li.prepContainer, label: li.prepContainer });
+      }
+    }
+
+    return options.sort((a, b) => a.label.localeCompare(b.label));
+  }, [lineItems, caseAssets]);
+
   // Filter out kit children — they show under their parent row
   const equipmentItems = lineItems.filter((item) => item.type === "EQUIPMENT" && !item.isKitChild);
 
@@ -1309,6 +1360,34 @@ function WarehouseProjectPage({
 
   const groupedPrep = groupItems(pickPrepItems);
   const groupedOut = groupItems(checkOutItemsList, "deploy");
+
+  // Group deploy items by container for visual sectioning
+  const deployContainerGroups = useMemo(() => {
+    const groups: Array<{ container: string | null; entries: typeof groupedOut }> = [];
+    const containerMap = new Map<string | null, typeof groupedOut>();
+
+    for (const entry of groupedOut) {
+      const item = entry.kind === "serialized-group" ? entry.items[0] : entry.item;
+      const container = item.prepContainer || null;
+      if (!containerMap.has(container)) {
+        containerMap.set(container, []);
+      }
+      containerMap.get(container)!.push(entry);
+    }
+
+    // Sort: named containers first (alphabetically), then ungrouped
+    const sorted = Array.from(containerMap.entries()).sort(([a], [b]) => {
+      if (a === null && b === null) return 0;
+      if (a === null) return 1;
+      if (b === null) return -1;
+      return a.localeCompare(b);
+    });
+
+    for (const [container, entries] of sorted) {
+      groups.push({ container, entries });
+    }
+    return groups;
+  }, [groupedOut]);
 
   const groupedIn = groupCheckinItems(checkedOutItems);
 
@@ -1519,7 +1598,7 @@ function WarehouseProjectPage({
 
       // Prep bulk items without checks directly
       for (const bi of bulkNoCheckItems) {
-        await prepItemDirect(projectId, bi.lineItemId, undefined, bi.quantity);
+        await prepItemDirect(projectId, bi.lineItemId, undefined, bi.quantity, selectedContainer || null);
       }
 
       // Build check queue for ready items with checks
@@ -1545,7 +1624,7 @@ function WarehouseProjectPage({
 
       // Prep ready items without checks directly
       for (const item of readyNoCheckItems) {
-        await prepItemDirect(projectId, item.lineItemId, item.assetId, item.quantity);
+        await prepItemDirect(projectId, item.lineItemId, item.assetId, item.quantity, selectedContainer || null);
       }
 
       // Start check queue if any items need checks
@@ -1956,20 +2035,38 @@ function WarehouseProjectPage({
         <TabsContent value="pick-prep">
           <div className="space-y-4 pt-4">
             <div className="rounded-lg bg-bg-surface surface-ring py-4 px-4 space-y-3">
-                <ScanInput
-                  ref={scanInputRef}
-                  placeholder="Scan or enter asset tag to prep..."
-                  value={scanValue}
-                  onChange={(e) => setScanValue(e.target.value)}
-                  onKeyDown={handleScanKeyDown}
-                  onScan={(value) => scanMutation.mutate(value)}
-                  scannerTitle="Scan asset to prep"
-                  continuous
-                  disabled={scanMutation.isPending}
-                  autoFocus
-                />
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <ScanInput
+                      ref={scanInputRef}
+                      placeholder="Scan or enter asset tag to prep..."
+                      value={scanValue}
+                      onChange={(e) => setScanValue(e.target.value)}
+                      onKeyDown={handleScanKeyDown}
+                      onScan={(value) => scanMutation.mutate(value)}
+                      scannerTitle="Scan asset to prep"
+                      continuous
+                      disabled={scanMutation.isPending}
+                      autoFocus
+                    />
+                  </div>
+                  <div className="w-48 shrink-0">
+                    <ComboboxPicker
+                      value={selectedContainer}
+                      onChange={setSelectedContainer}
+                      options={containerOptions}
+                      placeholder="No container"
+                      searchPlaceholder="Search or create..."
+                      creatable
+                      allowClear
+                    />
+                  </div>
+                </div>
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-fg-3">Items that need to be picked and prepped.</p>
+                  <p className="text-sm text-fg-3">
+                    Items that need to be picked and prepped.
+                    {selectedContainer && <span className="ml-1 text-fg-2 font-medium">→ {selectedContainer}</span>}
+                  </p>
                   <Button
                     onClick={handlePrepSelected}
                     disabled={selectedPrepCount === 0 || scanMutation.isPending}
@@ -2286,7 +2383,30 @@ function WarehouseProjectPage({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {groupedOut.map((entry) => {
+                    {deployContainerGroups.map(({ container, entries }) => (
+                      <Fragment key={container || "__ungrouped"}>
+                        {container && (
+                          <TableRow className="bg-bg-inset/50">
+                            <TableCell colSpan={5} className="py-1.5">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1.5 text-xs font-semibold text-fg-2 uppercase tracking-wide">
+                                  <Package className="h-3.5 w-3.5" />
+                                  {container}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => clearContainerMutation.mutate(container)}
+                                  disabled={clearContainerMutation.isPending}
+                                  className="rounded p-0.5 text-fg-3 hover:text-fg-1 hover:bg-bg-hover transition-colors"
+                                  title="Remove container"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                        {entries.map((entry) => {
                       // --- Serialized group ---
                       if (entry.kind === "serialized-group") {
                         const childKeys = entry.items.map((i) => i.id);
@@ -2470,6 +2590,8 @@ function WarehouseProjectPage({
                         </TableRow>
                       );
                     })}
+                      </Fragment>
+                    ))}
                   </TableBody>
                 </Table>
               </div>
@@ -3026,6 +3148,7 @@ function WarehouseProjectPage({
                     lineItemId: item.lineItemId,
                     assetId: item.assetId,
                     bulkAssetId: item.bulkAssetId,
+                    prepContainer: selectedContainer || null,
                     checks,
                   });
                 } else {
@@ -3088,6 +3211,7 @@ function WarehouseProjectPage({
                     lineItemId: checkFormData.lineItemId,
                     assetId: checkFormData.assetId,
                     bulkAssetId: checkFormData.bulkAssetId,
+                    prepContainer: selectedContainer || null,
                     checks,
                   });
                   toast.success("Item checked and packed");

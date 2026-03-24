@@ -13,20 +13,33 @@ Containers are **not backed by kits** — they are purely a `prepContainer` stri
 - Set during prep (Pick/Prep tab scan) based on the currently selected container
 - Cleared via the X button on container headers in the Deploy tab
 
-No separate container table exists. The container name is denormalized onto each line item.
+### `ProjectLineItem.isContainerLineItem`
+- Type: `Boolean` (default: `false`)
+- Marks line items that represent the physical container asset itself
+- Container line items are hidden from equipment lists and auto-managed
+- Auto-deployed when all contents are deployed, auto-returned when all contents are returned
 
 ### Container Sources
-1. **Case category assets** — Assets from the org's configured case category (`prepKitCategoryId` in org settings). Searched via `searchContainerAssets()` in `src/server/categories.ts`.
+1. **Case category assets** — Assets from the org's configured case category (`prepKitCategoryId` in org settings). Searched via `searchContainerAssets()` in `src/server/categories.ts`. Dropdown shows asset tag alongside the name.
 2. **Custom names** — Users can type any name in the creatable combobox to create ad-hoc container names.
 3. **Existing containers** — Any `prepContainer` value already set on project line items appears in the dropdown.
 
 ## Server Actions
 
 ### `searchContainerAssets(query)` — `src/server/categories.ts`
-Searches assets in the configured case category tree (BFS from `prepKitCategoryId`). Returns `{ value, label }[]` for the combobox. Limited to 20 results.
+Searches assets in the configured case category tree (BFS from `prepKitCategoryId`). Returns `{ value, label, assetId, assetTag, modelId }[]` for the combobox. Shows asset tag in labels. Supports searching by asset tag, custom name, or model name. Limited to 20 results.
 
 ### `clearPrepContainer(projectId, containerName)` — `src/server/warehouse.ts`
 Nulls out `prepContainer` on all line items matching the given container name. Used by the X button on container headers.
+
+### `ensureContainerOnProject(projectId, assetId, modelId, containerName)` — `src/server/warehouse.ts`
+Adds a container asset to the project as a line item with `isContainerLineItem: true` if not already present. Called automatically when prepping the first item into a container asset. The container line item gets `prepContainer` set to its own container name and `prepStatus: PACKED`.
+
+### `syncContainerStatus(projectId, containerName)` — `src/server/warehouse.ts`
+Checks if all non-container items in a container are deployed or returned, and auto-updates the container line item's status accordingly:
+- All deployed → container auto-deployed (status: `CHECKED_OUT`, asset status: `CHECKED_OUT`)
+- All returned → container auto-returned (status: `RETURNED`, asset status: `AVAILABLE`)
+Called after every `checkOutItems` and `checkInItems` operation.
 
 ### Modified Actions
 - **`prepItemDirect()`** — Accepts optional `prepContainer` parameter (6th arg). Sets `prepContainer` on the line item during prep.
@@ -39,8 +52,11 @@ Nulls out `prepContainer` on all line items matching the given container name. U
 Located next to the scan input on the Pick/Prep tab:
 - `ComboboxPicker` with `creatable` and `allowClear` props
 - Options merged from: case category assets + existing `prepContainer` values on line items
+- Case category assets show asset tag in the label (e.g., "Pelican 1510 — CASE001")
+- Search filters on label, value, and description (supports asset tag search)
 - When a container is selected, all subsequent prep operations tag items with that container name
 - "No container" (empty) means items are prepped without grouping
+- Selecting a container asset auto-adds it to the project on first prep
 
 ### Container Groups (Deploy Tab)
 Items in the Deploy tab are grouped by `prepContainer`:
@@ -48,6 +64,7 @@ Items in the Deploy tab are grouped by `prepContainer`:
 - Items without a container appear at the bottom (ungrouped)
 - X button on each container header to clear the container assignment from all items in that group
 - Groups sorted alphabetically, ungrouped last
+- Container line items are hidden from the table (auto-managed)
 
 ### Settings
 - **Prep Containers** section in Settings > Assets (`src/app/(app)/settings/assets/page.tsx`)

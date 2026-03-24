@@ -181,23 +181,23 @@ export async function lookupAssetForScan(
     });
   }
 
-  // Determine if the line item is bulk (multi-quantity without a specific serialized asset)
+  // Determine if the line item is bulk (multi-quantity with bulkAssetId)
+  // Split bulk items (qty=1) go through the serialized path naturally.
   // If a serialized asset was scanned, treat it as serialized even if the line item has qty > 1
-  // (the asset will be assigned to a split of the line item)
   const isBulk = asset
     ? false
-    : (!!lineItem.bulkAssetId || (!lineItem.assetId && lineItem.quantity > 1));
+    : !!lineItem.bulkAssetId && lineItem.quantity > 1;
 
   if (isBulk) {
     if (mode === "checkout") {
-      // Already fully checked out (and not returned yet)?
-      if (lineItem.checkedOutQuantity >= lineItem.quantity && lineItem.status !== "RETURNED") {
+      // In the split flow, all units are split off before checkout.
+      // If qty > 1 still, they haven't all been prepped yet.
+      if (lineItem.status === "CHECKED_OUT") {
         return serialize({ found: true as const, type: "bulk" as const, lineItemId: null, assetId: null, assetName, reason: "already_checked_out" as const });
       }
     } else {
       // checkin — need units that are checked out but not yet returned
-      const remaining = lineItem.checkedOutQuantity - lineItem.returnedQuantity;
-      if (remaining <= 0) {
+      if (lineItem.status !== "CHECKED_OUT") {
         return serialize({ found: true as const, type: "bulk" as const, lineItemId: null, assetId: null, assetName, reason: "already_returned" as const });
       }
     }
@@ -284,29 +284,24 @@ export async function checkOutItems(
         throw new Error(`Line item ${item.lineItemId} not found in project`);
       }
 
-      // Treat as bulk if: has bulkAssetId, or has no serialized asset and quantity > 1
-      // BUT: if the client provides a specific assetId, it's a serialized checkout
+      // With the split approach, prepped bulk items are qty=1 and behave like serialized.
+      // Only unsplit bulk items (qty > 1 with bulkAssetId) use the bulk checkout path.
       const isBulk = item.assetId
         ? false
-        : (!!lineItem.bulkAssetId || (!lineItem.assetId && lineItem.quantity > 1));
+        : !!lineItem.bulkAssetId && lineItem.quantity > 1;
       const checkoutQty = item.quantity || 1;
 
       if (isBulk) {
-        // In three-phase flow, checkedOutQuantity is already set during prep.
-        // Don't increment again — just deploy (update status).
-        const alreadyPrepped = lineItem.prepStatus === "PACKED" && lineItem.checkedOutQuantity > 0;
-        const baseCheckedOut = lineItem.status === "RETURNED" ? 0 : lineItem.checkedOutQuantity;
-        const newCheckedOutQty = alreadyPrepped ? baseCheckedOut : baseCheckedOut + checkoutQty;
-        const fullyCheckedOut = newCheckedOutQty >= lineItem.quantity;
-
+        // Unsplit bulk item — shouldn't normally reach here in the split flow,
+        // but handle gracefully: deploy the whole item at once.
         const updatedItem = await tx.projectLineItem.update({
           where: { id: item.lineItemId },
           data: {
-            checkedOutQuantity: newCheckedOutQty,
+            checkedOutQuantity: lineItem.quantity,
             returnedQuantity: lineItem.status === "RETURNED" ? 0 : lineItem.returnedQuantity,
-            status: fullyCheckedOut ? "CHECKED_OUT" : lineItem.status === "QUOTED" ? "CONFIRMED" : lineItem.status === "RETURNED" ? "CONFIRMED" : lineItem.status,
-            checkedOutAt: fullyCheckedOut ? new Date() : lineItem.checkedOutAt,
-            ...(fullyCheckedOut ? { checkedOutBy: { connect: { id: userId } } } : {}),
+            status: "CHECKED_OUT",
+            checkedOutAt: new Date(),
+            checkedOutBy: { connect: { id: userId } },
           },
           include: { model: true, asset: true, bulkAsset: true },
         });
@@ -535,12 +530,14 @@ export async function checkInItems(
         throw new Error(`Line item ${item.lineItemId} not found in project`);
       }
 
-      // Treat as bulk if: has bulkAssetId, or has no serialized asset and quantity > 1
-      const isBulk = !!lineItem.bulkAssetId || (!lineItem.assetId && lineItem.quantity > 1);
+      // With the split approach, deployed bulk items are qty=1 and behave like serialized.
+      // Only unsplit bulk items (qty > 1 with bulkAssetId) use the bulk return path.
+      const isBulk = !!lineItem.bulkAssetId && lineItem.quantity > 1;
       const returnQty = item.quantity || 1;
 
       if (isBulk) {
-        // Bulk asset: increment returnedQuantity
+        // Unsplit bulk item — shouldn't normally reach here in the split flow,
+        // but handle gracefully
         const newReturnedQty = lineItem.returnedQuantity + returnQty;
         const fullyReturned = newReturnedQty >= lineItem.checkedOutQuantity;
 
@@ -989,7 +986,7 @@ export async function quickAddAndCheckOut(
         sortOrder: nextSort,
         // Add to project and prep (not deploy — deploy is a separate step)
         status: "CONFIRMED",
-        checkedOutQuantity: data.bulkAssetId ? qty : (data.assetId ? 1 : 1),
+        checkedOutQuantity: 0,
         prepStatus: "PACKED",
         prepContainer: data.prepContainer || null,
       },

@@ -153,8 +153,12 @@ interface AvailableAsset {
   customName: string | null;
 }
 
+// "Bulk" means: a multi-unit line item backed by a BulkAsset (no individual asset tags).
+// After prep-splitting, each unit becomes qty=1 and is no longer "bulk" — it flows
+// through the serialized path for deploy/return. Items with qty > 1 but no bulkAssetId
+// are multi-qty serialized items (they need the asset picker, not the bulk flow).
 function isBulkItem(item: LineItem) {
-  return !!item.bulkAssetId || (!item.assetId && item.quantity > 1);
+  return !!item.bulkAssetId && item.quantity > 1;
 }
 
 function modelDisplayName(item: LineItem) {
@@ -297,16 +301,6 @@ function isKitParent(item: LineItem) {
 }
 
 function PrepStatusBadge({ item }: { item: LineItem }) {
-  // Bulk items: use checkedOutQuantity ratio as source of truth (not prepStatus which may be stale)
-  if (isBulkItem(item)) {
-    if (item.checkedOutQuantity >= item.quantity) {
-      return <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">Prepped</Badge>;
-    }
-    if (item.checkedOutQuantity > 0) {
-      return <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20">{item.checkedOutQuantity}/{item.quantity} Prepped</Badge>;
-    }
-    return <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20">Needs prep</Badge>;
-  }
   if (item.prepStatus === "PACKED") {
     return <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">Prepped</Badge>;
   }
@@ -368,19 +362,14 @@ function groupItems(items: LineItem[], mode: "prep" | "deploy" = "prep"): GroupE
         children: deployChildren,
       });
     } else if (isBulkItem(item)) {
-      if (mode === "prep") {
-        // Prep tab: show as single row — checking it preps 1 unit, qty shows remaining
-        result.push({ kind: "single", item });
-      } else {
-        // Deploy tab: show prepped units as expandable group
-        const unitCount = item.checkedOutQuantity;
-        result.push({
-          kind: "bulk-group",
-          groupKey: `bulk-${item.id}`,
-          item,
-          unitCount: Math.max(unitCount, 0),
-        });
-      }
+      // Bulk items (qty > 1) show as expandable groups with per-unit rows
+      // just like serialized groups. unitCount = item.quantity (remaining units).
+      result.push({
+        kind: "bulk-group",
+        groupKey: `bulk-${item.id}`,
+        item,
+        unitCount: item.quantity,
+      });
     } else if (item.model) {
       const key = item.model.name + (item.model.modelNumber ? ` - ${item.model.modelNumber}` : "");
       const existing = serializedByModel.get(key);
@@ -573,8 +562,6 @@ function WarehouseProjectPage({
     /** When true, this is a kit queue — on complete, deploy/return the kit atomically */
     kitQueueKitId?: string;
     kitQueueReturnCondition?: "GOOD" | "DAMAGED" | "MISSING";
-    /** For bulk items: prep this many units after check passes */
-    bulkPrepQty?: number;
   } | null>(null);
   const [checkFormSubmitting, setCheckFormSubmitting] = useState(false);
 
@@ -591,8 +578,6 @@ function WarehouseProjectPage({
     /** When set, this queue item is part of a kit PER_ITEM flow */
     kitQueueKitId?: string;
     kitQueueReturnCondition?: "GOOD" | "DAMAGED" | "MISSING";
-    /** For bulk items: prep this many units after check passes (instead of 1) */
-    bulkPrepQty?: number;
   };
   const [checkQueue, setCheckQueue] = useState<CheckQueueItem[]>([]);
   const [checkQueueIndex, setCheckQueueIndex] = useState(0);
@@ -1371,8 +1356,8 @@ function WarehouseProjectPage({
         return true;
       });
     }
-    // Bulk items: show if there are still unprepped units
-    if (isBulkItem(item)) return item.checkedOutQuantity < item.quantity;
+    // After prep-splitting, exhausted originals have qty=0 — hide them
+    if (item.quantity <= 0) return false;
     if (item.prepStatus === "PACKED") return false;
     if (item.status === "RETURNED") return true;
     return true;
@@ -1396,8 +1381,7 @@ function WarehouseProjectPage({
         return false;
       });
     }
-    // Bulk items: only show in deploy when ALL units are prepped
-    if (isBulkItem(item)) return item.checkedOutQuantity >= item.quantity;
+    if (item.quantity <= 0) return false;
     return item.prepStatus === "PACKED";
   });
 
@@ -1557,10 +1541,7 @@ function WarehouseProjectPage({
           }
         } else {
           const li = lineItems.find((l) => l.id === key);
-          // Bulk items in prep tab are single rows — prep 1 unit each
-          if (li && isBulkItem(li)) {
-            bulkItems.push({ lineItemId: key, quantity: 1 });
-          } else if (li && li.kitId && !li.isKitChild) {
+          if (li && li.kitId && !li.isKitChild) {
             kitLineItemIds.push(key);
           } else {
             items.push({ lineItemId: key, assetId: li?.assetId || undefined });
@@ -1672,32 +1653,35 @@ function WarehouseProjectPage({
 
       // Build check queue for bulk items with checks, and prep directly for those without
       // For bulk items, only ONE check is needed per item (not per unit) — the check
-      // covers the item type, then all selected units are prepped at once after passing.
+      // Bulk items: 1 check queue entry per unit (same as serialized).
+      // Each unit gets its own check dialog and is split into its own line item.
       const bulkCheckQueue: CheckQueueItem[] = [];
       const bulkNoCheckItems: typeof bulkItems = [];
       for (const bi of bulkItems) {
         const li = lineItems.find((l) => l.id === bi.lineItemId);
         const hasChecks = li?.model?._count?.modelCheckItems && li.model._count.modelCheckItems > 0;
         if (hasChecks && li?.modelId) {
-          // One check per bulk item type, with bulkPrepQty to prep all units after
-          bulkCheckQueue.push({
-            context: "PREP" as const,
-            modelId: li.modelId!,
-            assetTag: li.bulkAsset?.assetTag || "",
-            assetName: `${modelDisplayName(li)} (×${bi.quantity})`,
-            lineItemId: li.id,
-            assetId: "",
-            bulkAssetId: li.bulkAssetId || undefined,
-            bulkPrepQty: bi.quantity,
-          });
+          for (let i = 0; i < bi.quantity; i++) {
+            bulkCheckQueue.push({
+              context: "PREP" as const,
+              modelId: li.modelId!,
+              assetTag: li.bulkAsset?.assetTag || "",
+              assetName: `${modelDisplayName(li)} — Unit ${i + 1}`,
+              lineItemId: li.id,
+              assetId: "",
+              bulkAssetId: li.bulkAssetId || undefined,
+            });
+          }
         } else {
           bulkNoCheckItems.push(bi);
         }
       }
 
-      // Prep bulk items without checks directly
+      // Prep bulk items without checks — 1 call per unit (each splits off a line item)
       for (const bi of bulkNoCheckItems) {
-        await prepItemDirect(projectId, bi.lineItemId, undefined, bi.quantity, selectedContainer || null);
+        for (let i = 0; i < bi.quantity; i++) {
+          await prepItemDirect(projectId, bi.lineItemId, undefined, 1, selectedContainer || null);
+        }
       }
 
       // Build check queue for ready items with checks
@@ -2350,10 +2334,8 @@ function WarehouseProjectPage({
                         );
                       }
 
-                      // Single item (includes bulk items shown as flat rows in prep tab)
+                      // Single item
                       const item = entry.item;
-                      const isBulk = isBulkItem(item);
-                      const remainingPrep = isBulk ? item.quantity - item.checkedOutQuantity : item.quantity;
                       return (
                         <TableRow key={item.id}>
                           <TableCell>
@@ -2371,9 +2353,7 @@ function WarehouseProjectPage({
                           <TableCell className="font-mono text-sm text-fg-3">
                             {item.asset?.assetTag || item.bulkAsset?.assetTag || "—"}
                           </TableCell>
-                          <TableCell className="text-center">
-                            {isBulk ? `${remainingPrep}/${item.quantity}` : item.quantity}
-                          </TableCell>
+                          <TableCell className="text-center">{item.quantity}</TableCell>
                           <TableCell>
                             <PrepStatusBadge item={item} />
                           </TableCell>
@@ -3267,7 +3247,6 @@ function WarehouseProjectPage({
                     bulkAssetId: item.bulkAssetId,
                     prepContainer: selectedContainer || null,
                     checks,
-                    bulkPrepQty: item.bulkPrepQty,
                   });
                 } else {
                   await unpackItem(projectId, item.lineItemId).catch(() => {});
@@ -3331,7 +3310,6 @@ function WarehouseProjectPage({
                     bulkAssetId: checkFormData.bulkAssetId,
                     prepContainer: selectedContainer || null,
                     checks,
-                    bulkPrepQty: checkFormData.bulkPrepQty,
                   });
                   toast.success("Item checked and packed");
                 }

@@ -215,26 +215,70 @@ export async function prepItemDirect(
       throw new Error("Line item not found in project");
     }
 
+    // Bulk items use the same split approach as serialized items.
+    // A bulk item with qty > 1 splits off a qty=1 line item with prepStatus=PACKED,
+    // inheriting the bulkAssetId. The original's quantity decrements.
     const isBulk = assetId
       ? false
-      : !!lineItem.bulkAssetId || (!lineItem.assetId && lineItem.quantity > 1);
+      : !!lineItem.bulkAssetId && lineItem.quantity > 1;
 
     if (isBulk) {
-      const prepQty = quantity || 1;
-      const baseCheckedOut =
-        lineItem.status === "RETURNED" ? 0 : lineItem.checkedOutQuantity;
-      // Use checkedOutQuantity to track prepped units for bulk items
-      // Cap at line item quantity to prevent over-counting
-      const newPreppedQty = Math.min(baseCheckedOut + prepQty, lineItem.quantity);
-      const fullyPrepped = newPreppedQty >= lineItem.quantity;
+      // Split off 1 unit as a new qty=1 line item with PACKED status
+      const splitItem = await tx.projectLineItem.create({
+        data: {
+          organizationId: lineItem.organizationId,
+          projectId: lineItem.projectId,
+          type: lineItem.type,
+          modelId: lineItem.modelId,
+          description: lineItem.description,
+          quantity: 1,
+          unitPrice: lineItem.unitPrice,
+          pricingType: lineItem.pricingType,
+          duration: lineItem.duration,
+          discount: lineItem.discount,
+          lineTotal: lineItem.unitPrice
+            ? lineItem.unitPrice.toNumber() * lineItem.duration
+            : null,
+          sortOrder: lineItem.sortOrder,
+          groupName: lineItem.groupName,
+          notes: lineItem.notes,
+          isOptional: lineItem.isOptional,
+          isSubhire: lineItem.isSubhire,
+          showSubhireOnDocs: lineItem.showSubhireOnDocs,
+          supplierId: lineItem.supplierId,
+          subhireOrderNumber: lineItem.subhireOrderNumber,
+          supplierOrderId: lineItem.supplierOrderId,
+          isKitChild: lineItem.isKitChild,
+          parentLineItemId: lineItem.parentLineItemId,
+          pricingMode: lineItem.pricingMode,
+          bulkAssetId: lineItem.bulkAssetId,
+          prepStatus: "PACKED",
+          ...(prepContainer !== undefined ? { prepContainer } : {}),
+        },
+        include: { model: true, asset: true, bulkAsset: true },
+      });
 
+      // Reduce original line item's quantity
+      const newQty = lineItem.quantity - 1;
+      await tx.projectLineItem.update({
+        where: { id: lineItemId },
+        data: {
+          quantity: newQty,
+          lineTotal: lineItem.unitPrice
+            ? lineItem.unitPrice.toNumber() * newQty * lineItem.duration
+            : null,
+        },
+      });
+
+      return splitItem;
+    }
+
+    // Bulk item with qty=1 (last unit or already split): just mark PACKED
+    if (!assetId && !!lineItem.bulkAssetId && lineItem.quantity === 1) {
       const updated = await tx.projectLineItem.update({
         where: { id: lineItemId },
         data: {
-          checkedOutQuantity: newPreppedQty,
-          returnedQuantity:
-            lineItem.status === "RETURNED" ? 0 : lineItem.returnedQuantity,
-          prepStatus: fullyPrepped ? "PACKED" : "PULLED",
+          prepStatus: "PACKED",
           ...(prepContainer !== undefined ? { prepContainer } : {}),
         },
         include: { model: true, asset: true, bulkAsset: true },
@@ -347,19 +391,8 @@ export async function deprepItem(
       throw new Error("Item is already deployed — return it first");
     }
 
-    // For bulk items, decrement checkedOutQuantity (used to track prepped units)
-    if (lineItem.bulkAssetId || (!lineItem.assetId && lineItem.quantity > 1)) {
-      const newQty = Math.max(0, lineItem.checkedOutQuantity - quantity);
-      const updated = await tx.projectLineItem.update({
-        where: { id: lineItemId },
-        data: {
-          checkedOutQuantity: newQty,
-          prepStatus: newQty >= lineItem.quantity ? "PACKED" : newQty > 0 ? "PULLED" : "PENDING",
-        },
-        include: { model: true, asset: true, bulkAsset: true },
-      });
-      return updated;
-    }
+    // For bulk split items (qty=1 with bulkAssetId), just reset prepStatus like serialized
+    // The split item stays as-is (doesn't merge back into original)
 
     // Serialized item: clear prepStatus, unassign asset only for non-kit-child items
     const updated = await tx.projectLineItem.update({
@@ -615,24 +648,68 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
     );
 
     // 3. Set prepStatus to PACKED (no checkout — deploy is a separate step)
+    // Bulk items use the same split approach as serialized items.
     const isBulk = parsed.assetId
       ? false
-      : (!!lineItem.bulkAssetId || (!lineItem.assetId && lineItem.quantity > 1));
+      : !!lineItem.bulkAssetId && lineItem.quantity > 1;
 
     if (isBulk) {
-      const prepQty = parsed.bulkPrepQty || 1;
-      const baseCheckedOut =
-        lineItem.status === "RETURNED" ? 0 : lineItem.checkedOutQuantity;
-      const newPreppedQty = Math.min(baseCheckedOut + prepQty, lineItem.quantity);
-      const fullyPrepped = newPreppedQty >= lineItem.quantity;
+      // Split off 1 unit as a new qty=1 line item with PACKED status
+      const splitItem = await tx.projectLineItem.create({
+        data: {
+          organizationId: lineItem.organizationId,
+          projectId: lineItem.projectId,
+          type: lineItem.type,
+          modelId: lineItem.modelId,
+          description: lineItem.description,
+          quantity: 1,
+          unitPrice: lineItem.unitPrice,
+          pricingType: lineItem.pricingType,
+          duration: lineItem.duration,
+          discount: lineItem.discount,
+          lineTotal: lineItem.unitPrice
+            ? lineItem.unitPrice.toNumber() * lineItem.duration
+            : null,
+          sortOrder: lineItem.sortOrder,
+          groupName: lineItem.groupName,
+          notes: lineItem.notes,
+          isOptional: lineItem.isOptional,
+          isSubhire: lineItem.isSubhire,
+          showSubhireOnDocs: lineItem.showSubhireOnDocs,
+          supplierId: lineItem.supplierId,
+          subhireOrderNumber: lineItem.subhireOrderNumber,
+          supplierOrderId: lineItem.supplierOrderId,
+          isKitChild: lineItem.isKitChild,
+          parentLineItemId: lineItem.parentLineItemId,
+          pricingMode: lineItem.pricingMode,
+          bulkAssetId: lineItem.bulkAssetId,
+          prepStatus: "PACKED",
+          ...(parsed.prepContainer !== undefined ? { prepContainer: parsed.prepContainer } : {}),
+        },
+        include: { model: true, asset: true, bulkAsset: true },
+      });
 
+      // Reduce original line item's quantity
+      const newQty = lineItem.quantity - 1;
       await tx.projectLineItem.update({
         where: { id: parsed.lineItemId },
         data: {
-          checkedOutQuantity: newPreppedQty,
-          returnedQuantity:
-            lineItem.status === "RETURNED" ? 0 : lineItem.returnedQuantity,
-          prepStatus: fullyPrepped ? "PACKED" : "PULLED",
+          quantity: newQty,
+          lineTotal: lineItem.unitPrice
+            ? lineItem.unitPrice.toNumber() * newQty * lineItem.duration
+            : null,
+        },
+      });
+
+      return { updatedItem: splitItem, resolvedAssetId };
+    }
+
+    // Bulk item with qty=1 (last unit): just mark PACKED
+    if (!parsed.assetId && !!lineItem.bulkAssetId && lineItem.quantity === 1) {
+      await tx.projectLineItem.update({
+        where: { id: parsed.lineItemId },
+        data: {
+          prepStatus: "PACKED",
           ...(parsed.prepContainer !== undefined ? { prepContainer: parsed.prepContainer } : {}),
         },
       });

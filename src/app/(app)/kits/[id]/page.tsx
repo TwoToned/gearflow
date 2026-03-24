@@ -152,15 +152,10 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
 
   const forceReturnMutation = useMutation({
     mutationFn: () => forceReturnKit(id),
-    onSuccess: (result) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["kits"] });
-      if (result.deleted) {
-        toast.success("Prep-kit dissolved and all contents returned");
-        router.push("/kits");
-      } else {
-        toast.success("Kit force returned to available");
-        queryClient.invalidateQueries({ queryKey: ["kit", orgId, id] });
-      }
+      toast.success("Kit force returned to available");
+      queryClient.invalidateQueries({ queryKey: ["kit", orgId, id] });
     },
     onError: (e) => toast.error(e.message),
   });

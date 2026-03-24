@@ -58,13 +58,19 @@ Located next to the scan input on the Pick/Prep tab:
 - "No container" (empty) means items are prepped without grouping
 - Selecting a container asset auto-adds it to the project on first prep
 
-### Container Groups (Deploy Tab)
-Items in the Deploy tab are grouped by `prepContainer`:
+### Container Groups (Deploy & Return Tabs)
+Items in the Deploy and Return tabs are grouped by `prepContainer`:
 - Section headers with Package icon and container name
 - Items without a container appear at the bottom (ungrouped)
-- X button on each container header to clear the container assignment from all items in that group
+- X button on each container header in Deploy tab to clear the container assignment
 - Groups sorted alphabetically, ungrouped last
 - Container line items are hidden from the table (auto-managed)
+
+### PDF Documents
+Container grouping appears on all generated PDFs (packing list, delivery docket, return sheet, quote, invoice):
+- Items with `prepContainer` are grouped under the container name as a section header (uses `groupName` fallback)
+- Container line items (`isContainerLineItem`) are excluded from PDFs — they are not real equipment
+- If an item has both `groupName` and `prepContainer`, `groupName` takes precedence
 
 ### Settings
 - **Prep Containers** section in Settings > Assets (`src/app/(app)/settings/assets/page.tsx`)

@@ -61,6 +61,9 @@ export interface DocumentLineItem {
   // Subhire
   isSubhire?: boolean;
   showSubhireOnDocs?: boolean;
+  // Container
+  prepContainer?: string | null;
+  isContainerLineItem?: boolean;
   // Relations
   model: {
     name: string;

@@ -158,7 +158,7 @@ export function getFilteredParentItems(
   data: DocumentData,
   docType: DocumentType,
 ): DocumentLineItem[] {
-  let items = data.line_items.filter((i) => !i.isKitChild);
+  let items = data.line_items.filter((i) => !i.isKitChild && !i.isContainerLineItem);
 
   // filterOptional is currently always false for section-based templates,
   // but include it for correctness if it changes in the future
@@ -231,7 +231,7 @@ function calculateTableItemHeights(
   const groups = new Map<string, DocumentLineItem[]>();
   const groupOrder: string[] = [];
   for (const item of parentItems) {
-    const key = item.groupName || ungrouped;
+    const key = item.groupName || item.prepContainer || ungrouped;
     if (!groups.has(key)) {
       groups.set(key, []);
       groupOrder.push(key);
@@ -541,7 +541,7 @@ export function computePageLayout(
           const groups = new Map<string, DocumentLineItem[]>();
           const groupOrder: string[] = [];
           for (const item of parentItems) {
-            const key = item.groupName || ungrouped;
+            const key = item.groupName || item.prepContainer || ungrouped;
             if (!groups.has(key)) { groups.set(key, []); groupOrder.push(key); }
             groups.get(key)!.push(item);
           }

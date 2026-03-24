@@ -12,7 +12,9 @@ The warehouse uses a Pick/Prep → Deploy → Return flow. Items are **prepped**
 
 ### Pick/Prep Tab
 - Scan or select items to prep
-- `prepItemDirect()` sets `prepStatus=PACKED` without deploying (status stays `CONFIRMED`)
+- Container dropdown next to scan input — select a case asset or type a custom container name
+- Container assets (from configured case category) auto-added to project on first prep
+- `prepItemDirect()` sets `prepStatus=PACKED` and `prepContainer` without deploying (status stays `CONFIRMED`)
 - For bulk items, `checkedOutQuantity` tracks prepped units (capped at `quantity` via `Math.min`)
 - For multi-qty serialized items, splits off qty=1 line items with assigned assets
 - Items with no check items assigned are prepped directly; items with checks go through the check queue
@@ -21,12 +23,17 @@ The warehouse uses a Pick/Prep → Deploy → Return flow. Items are **prepped**
 
 ### Deploy Tab
 - Shows items with `prepStatus=PACKED` (prepped but not yet deployed)
+- Items grouped by `prepContainer` with section headers (Package icon + container name)
+- X button on container headers to clear container assignment
+- Container line items auto-deploy when all contents are deployed (`syncContainerStatus`)
 - For bulk items: filter is `checkedOutQuantity > 0`
 - `checkOutItems()` detects `alreadyPrepped` items (prepStatus=PACKED + checkedOutQuantity > 0) and skips incrementing `checkedOutQuantity` again — just updates `status` to `CHECKED_OUT`
 - For multi-qty serialized items, splits off qty=1 line items during checkout
 
 ### Return Tab
 - Shows items with `status === "CHECKED_OUT"` only
+- Items grouped by `prepContainer` with section headers (same as Deploy tab)
+- Container line items auto-return when all contents are returned (`syncContainerStatus`)
 - Bulk items require BOTH `status === "CHECKED_OUT"` AND `checkedOutQuantity > returnedQuantity` — prevents prepped-but-not-deployed items from appearing
 
 ### Scan Flow
@@ -69,8 +76,8 @@ Children of a kit/prep-kit that are themselves kits render with:
 - Prep-kits with case asset: show the case asset tag
 - Auto-generated `PREP-*` tags: hidden (display `—`)
 
-## Preps Tab
-Third tab on warehouse page (`?tab=preps`). Create prep-kits, scan items into them, deploy, return, dissolve. See [Preps](./32-preps.md) for full details.
+## Prep Containers
+Container dropdown on Pick/Prep tab for visual asset grouping. See [Preps](./32-preps.md) for full details.
 
 ## Partial Deploy/Return
 Kits and prep-kits support partial deployment:

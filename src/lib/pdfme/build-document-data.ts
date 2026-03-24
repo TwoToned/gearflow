@@ -177,7 +177,7 @@ export async function buildDocumentData(
   const lineItems: DocumentLineItem[] = serialized.lineItems as any;
 
   // Compute totals for packing list / delivery docket
-  const topLevelItems = lineItems.filter((i) => !i.isKitChild);
+  const topLevelItems = lineItems.filter((i) => !i.isKitChild && !i.isContainerLineItem);
   const totalItems = topLevelItems.reduce((sum, i) => {
     if (i.kitId && !i.isKitChild) {
       const children = i.childLineItems || [];

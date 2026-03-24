@@ -52,7 +52,7 @@ All PDF generation uses **pdfme** (`@pdfme/generator` + `@pdfme/common` + custom
 **Project Document Plugins:**
 | Plugin | Purpose |
 |--------|---------|
-| `gearflowTable` | Equipment table — grouping, kit children (3 levels), badges, checkboxes, conditions, per-unit expansion |
+| `gearflowTable` | Equipment table — grouping (by `groupName` or `prepContainer`), kit children (3 levels), badges, checkboxes, conditions, per-unit expansion. Container line items (`isContainerLineItem`) are excluded. |
 | `gearflowFinancialSummary` | Subtotal/discount/tax/total block with optional deposit/balance |
 | `gearflowPageHeader` | Three modes: logo, icon, none — org info + doc title |
 | `gearflowPageFooter` | Centered footer with top border |

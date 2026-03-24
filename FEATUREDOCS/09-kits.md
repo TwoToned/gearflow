@@ -1,21 +1,20 @@
 # Kit System
 
 ## Data Model
-- `Kit` has own `assetTag`, `status`, `condition`, `isPrep` (default `false`)
+- `Kit` has own `assetTag`, `status`, `condition`
 - `Kit.checkMode`: `KIT_LEVEL` (default) or `PER_ITEM` — controls whether kit-level check items are used or each child uses its model's checks
 - Contents: `KitSerializedItem[]` (Kit → Asset, one asset per kit) and `KitBulkItem[]` (Kit → BulkAsset with quantity)
 - `KitCheckItem[]`: check items assigned to the kit (used when `checkMode=KIT_LEVEL`)
 - Join tables use `addedAt` (not `createdAt`), plus `position`, `sortOrder`, `addedById`, `notes`
-- `isPrep: true` kits are temporary prep-kits — see [Preps](./32-preps.md) for full details
 
 ## Line Item Representation
 - Parent line item: `kitId` set, `isKitChild: false`, `pricingMode` = `KIT_PRICE` or `ITEMIZED`
 - Child line items: `isKitChild: true`, `parentLineItemId` pointing to parent
 - Detection: `!!lineItem.kitId && !lineItem.isKitChild` = kit parent
-- Children can themselves be kits (nested kits) — e.g., a kit inside a prep-kit
+- Children can themselves be kits (nested kits)
 
 ## Nested Kits
-- A kit added to a prep-kit becomes a child line item with its own `kitId`
+- A kit inside another kit becomes a child line item with its own `kitId`
 - Queries must include 2 levels of `childLineItems` with `kit: true` to render nested kit contents
 - This applies to: warehouse page, project page, PDF document API route, pull sheet queries
 - UI renders nested kits with chevron expand, Container icon, Kit badge, and indented grandchildren
@@ -25,8 +24,8 @@
 - **ITEMIZED**: Individual prices on each child row, parent has `unitPrice: 0`
 
 ## Warehouse Operations
-- Kit checkout: `checkOutKit()` — atomic transaction updating kit + all member assets + grandchildren (nested kits) + prep-kit child assets (via `ProjectLineItem.assetId`)
-- Kit checkin: `checkInKit()` — same pattern, handles grandchildren and prep-kit assets
+- Kit checkout: `checkOutKit()` — atomic transaction updating kit + all member assets + grandchildren (nested kits)
+- Kit checkin: `checkInKit()` — same pattern, handles grandchildren
 - `checkOutItems` skips already-deployed line items during partial re-deploy (no "already deployed" errors)
 - If scanning a member asset, warehouse shows "scan the kit instead"
 - In warehouse UI, kit items detected by `kitId` must route to `kitCheckOutMutation`, NOT regular `checkOutItems`
@@ -38,10 +37,7 @@
 - `collectAllVerifiableIds(children, mode)` filters by mode: deploy counts non-CHECKED_OUT items, return counts CHECKED_OUT items
 - Dialog shows "X/Y items verified" with option to proceed or cancel
 - "Deploy Verified" automatically includes nested kit parent line items when grandchildren are verified
-- Applies to both regular kits and prep-kits
 
 ## Force Return
-- **Regular kits**: `forceReturnKit()` resets kit + all children (including nested kits and grandchildren) to AVAILABLE, sets line items to RETURNED, always resets location (even to null if no default)
-- **Prep-kits**: `forceReturnKit()` dissolves entirely — un-parents children, deletes Kit record, returns `{ deleted: true }`
-- `forceReturnAsset()` also dissolves any prep-kits using the asset as a case
+- `forceReturnKit()` resets kit + all children (including nested kits and grandchildren) to AVAILABLE, sets line items to RETURNED, always resets location (even to null if no default)
 - Bulk force return available from kit list page selection bar

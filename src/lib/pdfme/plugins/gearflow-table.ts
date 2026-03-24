@@ -186,7 +186,7 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
   const bottomBoundary = layout.y; // Stop drawing when currentY reaches this
 
   // === Filter items ===
-  let filteredItems = items.filter(i => !i.isKitChild);
+  let filteredItems = items.filter(i => !i.isKitChild && !i.isContainerLineItem);
 
   if (config.filterOptional) {
     filteredItems = filteredItems.filter(i => !i.isOptional);
@@ -207,7 +207,7 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
 
   const groups = new Map<string, DocumentLineItem[]>();
   for (const item of filteredItems) {
-    const key = item.groupName || ungroupedKey;
+    const key = item.groupName || item.prepContainer || ungroupedKey;
     const arr = groups.get(key) || [];
     arr.push(item);
     groups.set(key, arr);

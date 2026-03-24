@@ -19,6 +19,69 @@ import {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
+/**
+ * Split a single unit off a multi-quantity line item.
+ * Creates a new qty=1 line item copying all shared fields from the original,
+ * decrements the original's quantity, and recalculates lineTotal for both.
+ *
+ * @param tx - Prisma transaction client
+ * @param lineItem - The original line item to split from (must have quantity > 1)
+ * @param overrides - Fields to set on the new split item (e.g. assetId, status, prepStatus)
+ * @returns The newly created qty=1 line item (with model, asset, bulkAsset included)
+ */
+export async function splitLineItem(
+  tx: Prisma.TransactionClient,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  lineItem: any,
+  overrides: Record<string, unknown> = {}
+) {
+  const splitItem = await tx.projectLineItem.create({
+    data: {
+      organizationId: lineItem.organizationId,
+      projectId: lineItem.projectId,
+      type: lineItem.type,
+      modelId: lineItem.modelId,
+      description: lineItem.description,
+      quantity: 1,
+      unitPrice: lineItem.unitPrice,
+      pricingType: lineItem.pricingType,
+      duration: lineItem.duration,
+      discount: lineItem.discount,
+      lineTotal: lineItem.unitPrice
+        ? lineItem.unitPrice.toNumber() * lineItem.duration
+        : null,
+      sortOrder: lineItem.sortOrder,
+      groupName: lineItem.groupName,
+      notes: lineItem.notes,
+      isOptional: lineItem.isOptional,
+      isSubhire: lineItem.isSubhire,
+      showSubhireOnDocs: lineItem.showSubhireOnDocs,
+      supplierId: lineItem.supplierId,
+      subhireOrderNumber: lineItem.subhireOrderNumber,
+      supplierOrderId: lineItem.supplierOrderId,
+      isKitChild: lineItem.isKitChild,
+      parentLineItemId: lineItem.parentLineItemId,
+      pricingMode: lineItem.pricingMode,
+      ...overrides,
+    },
+    include: { model: true, asset: true, bulkAsset: true },
+  });
+
+  // Decrement original line item's quantity and recalculate lineTotal
+  const newQty = lineItem.quantity - 1;
+  await tx.projectLineItem.update({
+    where: { id: lineItem.id },
+    data: {
+      quantity: newQty,
+      lineTotal: lineItem.unitPrice
+        ? lineItem.unitPrice.toNumber() * newQty * lineItem.duration
+        : null,
+    },
+  });
+
+  return splitItem;
+}
+
 async function saveCheckRecords(
   tx: Prisma.TransactionClient,
   organizationId: string,
@@ -221,55 +284,12 @@ export async function prepItemDirect(
     const isBulk = !assetId && !lineItem.assetId && lineItem.quantity > 1;
 
     if (isBulk) {
-      // Split off 1 unit as a new qty=1 line item with PACKED status
-      const splitItem = await tx.projectLineItem.create({
-        data: {
-          organizationId: lineItem.organizationId,
-          projectId: lineItem.projectId,
-          type: lineItem.type,
-          modelId: lineItem.modelId,
-          description: lineItem.description,
-          quantity: 1,
-          unitPrice: lineItem.unitPrice,
-          pricingType: lineItem.pricingType,
-          duration: lineItem.duration,
-          discount: lineItem.discount,
-          lineTotal: lineItem.unitPrice
-            ? lineItem.unitPrice.toNumber() * lineItem.duration
-            : null,
-          sortOrder: lineItem.sortOrder,
-          groupName: lineItem.groupName,
-          notes: lineItem.notes,
-          isOptional: lineItem.isOptional,
-          isSubhire: lineItem.isSubhire,
-          showSubhireOnDocs: lineItem.showSubhireOnDocs,
-          supplierId: lineItem.supplierId,
-          subhireOrderNumber: lineItem.subhireOrderNumber,
-          supplierOrderId: lineItem.supplierOrderId,
-          isKitChild: lineItem.isKitChild,
-          parentLineItemId: lineItem.parentLineItemId,
-          pricingMode: lineItem.pricingMode,
-          bulkAssetId: lineItem.bulkAssetId,
-          status: "CONFIRMED",
-          prepStatus: "PACKED",
-          ...(prepContainer !== undefined ? { prepContainer } : {}),
-        },
-        include: { model: true, asset: true, bulkAsset: true },
+      return await splitLineItem(tx, lineItem, {
+        bulkAssetId: lineItem.bulkAssetId,
+        status: "CONFIRMED",
+        prepStatus: "PACKED",
+        ...(prepContainer !== undefined ? { prepContainer } : {}),
       });
-
-      // Reduce original line item's quantity
-      const newQty = lineItem.quantity - 1;
-      await tx.projectLineItem.update({
-        where: { id: lineItemId },
-        data: {
-          quantity: newQty,
-          lineTotal: lineItem.unitPrice
-            ? lineItem.unitPrice.toNumber() * newQty * lineItem.duration
-            : null,
-        },
-      });
-
-      return splitItem;
     }
 
     // Bulk/generic item with qty=1 (last unit or already split): just mark PACKED
@@ -289,55 +309,12 @@ export async function prepItemDirect(
 
     // Serialized: if quantity > 1 and assetId provided, split off a line item
     if (lineItem.quantity > 1 && assetId) {
-
-      const splitItem = await tx.projectLineItem.create({
-        data: {
-          organizationId: lineItem.organizationId,
-          projectId: lineItem.projectId,
-          type: lineItem.type,
-          modelId: lineItem.modelId,
-          description: lineItem.description,
-          quantity: 1,
-          unitPrice: lineItem.unitPrice,
-          pricingType: lineItem.pricingType,
-          duration: lineItem.duration,
-          discount: lineItem.discount,
-          lineTotal: lineItem.unitPrice
-            ? lineItem.unitPrice.toNumber() * lineItem.duration
-            : null,
-          sortOrder: lineItem.sortOrder,
-          groupName: lineItem.groupName,
-          notes: lineItem.notes,
-          isOptional: lineItem.isOptional,
-          isSubhire: lineItem.isSubhire,
-          showSubhireOnDocs: lineItem.showSubhireOnDocs,
-          supplierId: lineItem.supplierId,
-          subhireOrderNumber: lineItem.subhireOrderNumber,
-          supplierOrderId: lineItem.supplierOrderId,
-          isKitChild: lineItem.isKitChild,
-          parentLineItemId: lineItem.parentLineItemId,
-          pricingMode: lineItem.pricingMode,
-          assetId,
-          status: "CONFIRMED",
-          prepStatus: "PACKED",
-          ...(prepContainer !== undefined ? { prepContainer } : {}),
-        },
-        include: { model: true, asset: true, bulkAsset: true },
+      return await splitLineItem(tx, lineItem, {
+        assetId,
+        status: "CONFIRMED",
+        prepStatus: "PACKED",
+        ...(prepContainer !== undefined ? { prepContainer } : {}),
       });
-
-      // Reduce original line item's quantity
-      const newQty = lineItem.quantity - 1;
-      await tx.projectLineItem.update({
-        where: { id: lineItemId },
-        data: {
-          quantity: newQty,
-          lineTotal: lineItem.unitPrice
-            ? lineItem.unitPrice.toNumber() * newQty * lineItem.duration
-            : null,
-        },
-      });
-
-      return splitItem;
     }
 
     // Normal serialized item (qty=1 with assetId)
@@ -656,54 +633,12 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
     const isBulk = !parsed.assetId && !lineItem.assetId && lineItem.quantity > 1;
 
     if (isBulk) {
-      // Split off 1 unit as a new qty=1 line item with PACKED status
-      const splitItem = await tx.projectLineItem.create({
-        data: {
-          organizationId: lineItem.organizationId,
-          projectId: lineItem.projectId,
-          type: lineItem.type,
-          modelId: lineItem.modelId,
-          description: lineItem.description,
-          quantity: 1,
-          unitPrice: lineItem.unitPrice,
-          pricingType: lineItem.pricingType,
-          duration: lineItem.duration,
-          discount: lineItem.discount,
-          lineTotal: lineItem.unitPrice
-            ? lineItem.unitPrice.toNumber() * lineItem.duration
-            : null,
-          sortOrder: lineItem.sortOrder,
-          groupName: lineItem.groupName,
-          notes: lineItem.notes,
-          isOptional: lineItem.isOptional,
-          isSubhire: lineItem.isSubhire,
-          showSubhireOnDocs: lineItem.showSubhireOnDocs,
-          supplierId: lineItem.supplierId,
-          subhireOrderNumber: lineItem.subhireOrderNumber,
-          supplierOrderId: lineItem.supplierOrderId,
-          isKitChild: lineItem.isKitChild,
-          parentLineItemId: lineItem.parentLineItemId,
-          pricingMode: lineItem.pricingMode,
-          bulkAssetId: lineItem.bulkAssetId,
-          status: "CONFIRMED",
-          prepStatus: "PACKED",
-          ...(parsed.prepContainer !== undefined ? { prepContainer: parsed.prepContainer } : {}),
-        },
-        include: { model: true, asset: true, bulkAsset: true },
+      const splitItem = await splitLineItem(tx, lineItem, {
+        bulkAssetId: lineItem.bulkAssetId,
+        status: "CONFIRMED",
+        prepStatus: "PACKED",
+        ...(parsed.prepContainer !== undefined ? { prepContainer: parsed.prepContainer } : {}),
       });
-
-      // Reduce original line item's quantity
-      const newQty = lineItem.quantity - 1;
-      await tx.projectLineItem.update({
-        where: { id: parsed.lineItemId },
-        data: {
-          quantity: newQty,
-          lineTotal: lineItem.unitPrice
-            ? lineItem.unitPrice.toNumber() * newQty * lineItem.duration
-            : null,
-        },
-      });
-
       return { updatedItem: splitItem, resolvedAssetId };
     }
 
@@ -720,53 +655,12 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
     } else {
       // Serialized asset — split if multi-qty with specific asset
       if (lineItem.quantity > 1 && parsed.assetId) {
-        const splitItem = await tx.projectLineItem.create({
-          data: {
-            organizationId: lineItem.organizationId,
-            projectId: lineItem.projectId,
-            type: lineItem.type,
-            modelId: lineItem.modelId,
-            description: lineItem.description,
-            quantity: 1,
-            unitPrice: lineItem.unitPrice,
-            pricingType: lineItem.pricingType,
-            duration: lineItem.duration,
-            discount: lineItem.discount,
-            lineTotal: lineItem.unitPrice
-              ? lineItem.unitPrice.toNumber() * lineItem.duration
-              : null,
-            sortOrder: lineItem.sortOrder,
-            groupName: lineItem.groupName,
-            notes: lineItem.notes,
-            isOptional: lineItem.isOptional,
-            isSubhire: lineItem.isSubhire,
-            showSubhireOnDocs: lineItem.showSubhireOnDocs,
-            supplierId: lineItem.supplierId,
-            subhireOrderNumber: lineItem.subhireOrderNumber,
-            supplierOrderId: lineItem.supplierOrderId,
-            isKitChild: lineItem.isKitChild,
-            parentLineItemId: lineItem.parentLineItemId,
-            pricingMode: lineItem.pricingMode,
-            assetId: parsed.assetId,
-            status: "CONFIRMED",
-            prepStatus: "PACKED",
-            ...(parsed.prepContainer !== undefined ? { prepContainer: parsed.prepContainer } : {}),
-          },
-          include: { model: true, asset: true, bulkAsset: true },
+        const splitItem = await splitLineItem(tx, lineItem, {
+          assetId: parsed.assetId,
+          status: "CONFIRMED",
+          prepStatus: "PACKED",
+          ...(parsed.prepContainer !== undefined ? { prepContainer: parsed.prepContainer } : {}),
         });
-
-        // Reduce original line item's quantity
-        const newQty = lineItem.quantity - 1;
-        await tx.projectLineItem.update({
-          where: { id: parsed.lineItemId },
-          data: {
-            quantity: newQty,
-            lineTotal: lineItem.unitPrice
-              ? lineItem.unitPrice.toNumber() * newQty * lineItem.duration
-              : null,
-          },
-        });
-
         return { updatedItem: splitItem, resolvedAssetId: parsed.assetId };
       }
 

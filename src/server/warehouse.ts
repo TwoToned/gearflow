@@ -6,6 +6,7 @@ import { serialize } from "@/lib/serialize";
 import { computeOverbookedStatus } from "@/lib/availability";
 import type { Prisma } from "@/generated/prisma/client";
 import { logActivity } from "@/lib/activity-log";
+import { splitLineItem } from "@/server/check-records";
 
 // ---------------------------------------------------------------------------
 // 1. getProjectForWarehouse
@@ -345,54 +346,12 @@ export async function checkOutItems(
         // where e.g. "4x SM57" gets individual assets assigned during checkout.
         let targetLineItemId = item.lineItemId;
         if (lineItem.quantity > 1 && item.assetId) {
-          // Create a new line item with quantity=1 for this specific asset
-          const splitItem = await tx.projectLineItem.create({
-            data: {
-              organizationId: lineItem.organizationId,
-              projectId: lineItem.projectId,
-              type: lineItem.type,
-              modelId: lineItem.modelId,
-              description: lineItem.description,
-              quantity: 1,
-              unitPrice: lineItem.unitPrice,
-              pricingType: lineItem.pricingType,
-              duration: lineItem.duration,
-              discount: lineItem.discount,
-              lineTotal: lineItem.unitPrice
-                ? lineItem.unitPrice.toNumber() * lineItem.duration
-                : null,
-              sortOrder: lineItem.sortOrder,
-              groupName: lineItem.groupName,
-              notes: lineItem.notes,
-              isOptional: lineItem.isOptional,
-              isSubhire: lineItem.isSubhire,
-              showSubhireOnDocs: lineItem.showSubhireOnDocs,
-              supplierId: lineItem.supplierId,
-              subhireOrderNumber: lineItem.subhireOrderNumber,
-              supplierOrderId: lineItem.supplierOrderId,
-              isKitChild: lineItem.isKitChild,
-              parentLineItemId: lineItem.parentLineItemId,
-              pricingMode: lineItem.pricingMode,
-              // Checkout fields
-              status: "CHECKED_OUT",
-              checkedOutQuantity: 1,
-              checkedOutAt: new Date(),
-              checkedOutById: userId,
-              assetId: item.assetId,
-            },
-            include: { model: true, asset: true, bulkAsset: true },
-          });
-
-          // Reduce original line item's quantity
-          const newQty = lineItem.quantity - 1;
-          await tx.projectLineItem.update({
-            where: { id: item.lineItemId },
-            data: {
-              quantity: newQty,
-              lineTotal: lineItem.unitPrice
-                ? lineItem.unitPrice.toNumber() * newQty * lineItem.duration
-                : null,
-            },
+          const splitItem = await splitLineItem(tx, lineItem, {
+            status: "CHECKED_OUT",
+            checkedOutQuantity: 1,
+            checkedOutAt: new Date(),
+            checkedOutById: userId,
+            assetId: item.assetId,
           });
 
           // Mark the asset as checked out

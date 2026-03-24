@@ -250,7 +250,7 @@ export async function prepItemDirect(
           parentLineItemId: lineItem.parentLineItemId,
           pricingMode: lineItem.pricingMode,
           bulkAssetId: lineItem.bulkAssetId,
-          status: lineItem.status,
+          status: "CONFIRMED",
           prepStatus: "PACKED",
           ...(prepContainer !== undefined ? { prepContainer } : {}),
         },
@@ -274,9 +274,11 @@ export async function prepItemDirect(
 
     // Bulk/generic item with qty=1 (last unit or already split): just mark PACKED
     if (!assetId && !lineItem.assetId && lineItem.quantity === 1) {
+
       const updated = await tx.projectLineItem.update({
         where: { id: lineItemId },
         data: {
+          status: "CONFIRMED",
           prepStatus: "PACKED",
           ...(prepContainer !== undefined ? { prepContainer } : {}),
         },
@@ -287,6 +289,7 @@ export async function prepItemDirect(
 
     // Serialized: if quantity > 1 and assetId provided, split off a line item
     if (lineItem.quantity > 1 && assetId) {
+
       const splitItem = await tx.projectLineItem.create({
         data: {
           organizationId: lineItem.organizationId,
@@ -315,7 +318,7 @@ export async function prepItemDirect(
           parentLineItemId: lineItem.parentLineItemId,
           pricingMode: lineItem.pricingMode,
           assetId,
-          status: lineItem.status,
+          status: "CONFIRMED",
           prepStatus: "PACKED",
           ...(prepContainer !== undefined ? { prepContainer } : {}),
         },
@@ -337,11 +340,12 @@ export async function prepItemDirect(
       return splitItem;
     }
 
-    // Normal serialized item
+    // Normal serialized item (qty=1 with assetId)
     const updated = await tx.projectLineItem.update({
       where: { id: lineItemId },
       data: {
         ...(assetId ? { asset: { connect: { id: assetId } } } : {}),
+        status: "CONFIRMED",
         prepStatus: "PACKED",
         ...(prepContainer !== undefined ? { prepContainer } : {}),
       },
@@ -681,7 +685,7 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
           parentLineItemId: lineItem.parentLineItemId,
           pricingMode: lineItem.pricingMode,
           bulkAssetId: lineItem.bulkAssetId,
-          status: lineItem.status,
+          status: "CONFIRMED",
           prepStatus: "PACKED",
           ...(parsed.prepContainer !== undefined ? { prepContainer: parsed.prepContainer } : {}),
         },
@@ -743,7 +747,7 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
             parentLineItemId: lineItem.parentLineItemId,
             pricingMode: lineItem.pricingMode,
             assetId: parsed.assetId,
-            status: lineItem.status,
+            status: "CONFIRMED",
             prepStatus: "PACKED",
             ...(parsed.prepContainer !== undefined ? { prepContainer: parsed.prepContainer } : {}),
           },

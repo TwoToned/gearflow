@@ -672,7 +672,7 @@ function WarehouseProjectPage({
         // Prep remaining items that had no checks (set prepStatus=PACKED)
         Promise.all(
           checkQueueDirectItems.map((i) =>
-            prepItemDirect(projectId, i.lineItemId, i.assetId, i.quantity)
+            prepItemDirect(projectId, i.lineItemId, i.assetId, i.quantity, selectedContainer || null)
           )
         ).then(() => {
           toast.success("Items prepped — ready to deploy");
@@ -1859,7 +1859,7 @@ function WarehouseProjectPage({
     // No checks needed — prep all items directly
     Promise.all(
       withoutChecks.map((i) =>
-        prepItemDirect(projectId, i.lineItemId, "assetId" in i ? i.assetId : undefined, "quantity" in i ? i.quantity as number : undefined)
+        prepItemDirect(projectId, i.lineItemId, "assetId" in i ? i.assetId : undefined, "quantity" in i ? i.quantity as number : undefined, selectedContainer || null)
       )
     ).then(() => {
       toast.success("Items prepped — ready to deploy");

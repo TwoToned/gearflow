@@ -26,17 +26,19 @@ export async function getProjectForWarehouse(projectId: string) {
           model: { include: { _count: { select: { modelCheckItems: true } } } },
           asset: true,
           bulkAsset: true,
-          kit: true,
+          kit: { include: { _count: { select: { kitCheckItems: true } } } },
           childLineItems: {
             orderBy: { sortOrder: "asc" },
             include: {
               model: { include: { _count: { select: { modelCheckItems: true } } } },
-              asset: true, bulkAsset: true, kit: true,
+              asset: true, bulkAsset: true,
+              kit: { include: { _count: { select: { kitCheckItems: true } } } },
               childLineItems: {
                 orderBy: { sortOrder: "asc" },
                 include: {
                   model: { include: { _count: { select: { modelCheckItems: true } } } },
-                  asset: true, bulkAsset: true, kit: true,
+                  asset: true, bulkAsset: true,
+                  kit: { include: { _count: { select: { kitCheckItems: true } } } },
                 },
               },
             },
@@ -180,7 +182,11 @@ export async function lookupAssetForScan(
   }
 
   // Determine if the line item is bulk (multi-quantity without a specific serialized asset)
-  const isBulk = !!lineItem.bulkAssetId || (!lineItem.assetId && lineItem.quantity > 1);
+  // If a serialized asset was scanned, treat it as serialized even if the line item has qty > 1
+  // (the asset will be assigned to a split of the line item)
+  const isBulk = asset
+    ? false
+    : (!!lineItem.bulkAssetId || (!lineItem.assetId && lineItem.quantity > 1));
 
   if (isBulk) {
     if (mode === "checkout") {
@@ -279,13 +285,18 @@ export async function checkOutItems(
       }
 
       // Treat as bulk if: has bulkAssetId, or has no serialized asset and quantity > 1
-      const isBulk = !!lineItem.bulkAssetId || (!lineItem.assetId && lineItem.quantity > 1);
+      // BUT: if the client provides a specific assetId, it's a serialized checkout
+      const isBulk = item.assetId
+        ? false
+        : (!!lineItem.bulkAssetId || (!lineItem.assetId && lineItem.quantity > 1));
       const checkoutQty = item.quantity || 1;
 
       if (isBulk) {
-        // If re-checking out after a return, reset counters
+        // In three-phase flow, checkedOutQuantity is already set during prep.
+        // Don't increment again — just deploy (update status).
+        const alreadyPrepped = lineItem.prepStatus === "PACKED" && lineItem.checkedOutQuantity > 0;
         const baseCheckedOut = lineItem.status === "RETURNED" ? 0 : lineItem.checkedOutQuantity;
-        const newCheckedOutQty = baseCheckedOut + checkoutQty;
+        const newCheckedOutQty = alreadyPrepped ? baseCheckedOut : baseCheckedOut + checkoutQty;
         const fullyCheckedOut = newCheckedOutQty >= lineItem.quantity;
 
         const updatedItem = await tx.projectLineItem.update({
@@ -314,7 +325,107 @@ export async function checkOutItems(
 
         updated.push(updatedItem);
       } else {
-        // Serialized asset
+        // Serialized asset checkout
+
+        // Verify the asset isn't already checked out on another project
+        const assetIdToCheck = item.assetId || lineItem.assetId;
+        if (assetIdToCheck) {
+          const assetRecord = await tx.asset.findUnique({
+            where: { id: assetIdToCheck },
+            select: { status: true, assetTag: true },
+          });
+          if (assetRecord && assetRecord.status === "CHECKED_OUT") {
+            if (lineItem.status === "CHECKED_OUT") {
+              continue;
+            }
+            throw new Error(`Asset ${assetRecord.assetTag} is already deployed`);
+          }
+          if (assetRecord && (assetRecord.status === "RETIRED" || assetRecord.status === "IN_MAINTENANCE" || assetRecord.status === "LOST")) {
+            throw new Error(`Asset ${assetRecord.assetTag} is ${assetRecord.status.replace("_", " ").toLowerCase()} and cannot be deployed`);
+          }
+        }
+
+        // If the line item has quantity > 1 and we're assigning a specific asset,
+        // split off a new line item with qty=1 for this asset. This handles the case
+        // where e.g. "4x SM57" gets individual assets assigned during checkout.
+        let targetLineItemId = item.lineItemId;
+        if (lineItem.quantity > 1 && item.assetId) {
+          // Create a new line item with quantity=1 for this specific asset
+          const splitItem = await tx.projectLineItem.create({
+            data: {
+              organizationId: lineItem.organizationId,
+              projectId: lineItem.projectId,
+              type: lineItem.type,
+              modelId: lineItem.modelId,
+              description: lineItem.description,
+              quantity: 1,
+              unitPrice: lineItem.unitPrice,
+              pricingType: lineItem.pricingType,
+              duration: lineItem.duration,
+              discount: lineItem.discount,
+              lineTotal: lineItem.unitPrice
+                ? lineItem.unitPrice.toNumber() * lineItem.duration
+                : null,
+              sortOrder: lineItem.sortOrder,
+              groupName: lineItem.groupName,
+              notes: lineItem.notes,
+              isOptional: lineItem.isOptional,
+              isSubhire: lineItem.isSubhire,
+              showSubhireOnDocs: lineItem.showSubhireOnDocs,
+              supplierId: lineItem.supplierId,
+              subhireOrderNumber: lineItem.subhireOrderNumber,
+              supplierOrderId: lineItem.supplierOrderId,
+              isKitChild: lineItem.isKitChild,
+              parentLineItemId: lineItem.parentLineItemId,
+              pricingMode: lineItem.pricingMode,
+              // Checkout fields
+              status: "CHECKED_OUT",
+              checkedOutQuantity: 1,
+              checkedOutAt: new Date(),
+              checkedOutById: userId,
+              assetId: item.assetId,
+            },
+            include: { model: true, asset: true, bulkAsset: true },
+          });
+
+          // Reduce original line item's quantity
+          const newQty = lineItem.quantity - 1;
+          await tx.projectLineItem.update({
+            where: { id: item.lineItemId },
+            data: {
+              quantity: newQty,
+              lineTotal: lineItem.unitPrice
+                ? lineItem.unitPrice.toNumber() * newQty * lineItem.duration
+                : null,
+            },
+          });
+
+          // Mark the asset as checked out
+          await tx.asset.update({
+            where: { id: item.assetId },
+            data: {
+              status: "CHECKED_OUT",
+              ...(projectLocationId && { locationId: projectLocationId }),
+            },
+          });
+
+          // Create scan log entry
+          await tx.assetScanLog.create({
+            data: {
+              organizationId,
+              assetId: item.assetId,
+              projectId,
+              action: "CHECK_OUT",
+              scannedById: userId,
+              notes: item.notes || null,
+            },
+          });
+
+          updated.push(splitItem);
+          continue; // Skip the normal update path
+        }
+
+        // Normal serialized checkout (quantity == 1 or no assetId provided)
         const updateData: Prisma.ProjectLineItemUpdateInput = {
           status: "CHECKED_OUT",
           checkedOutQuantity: 1,
@@ -326,32 +437,12 @@ export async function checkOutItems(
           checkedOutBy: { connect: { id: userId } },
         };
 
-        // Verify the asset isn't already checked out on another project
-        const assetIdToCheck = item.assetId || lineItem.assetId;
-        if (assetIdToCheck) {
-          const assetRecord = await tx.asset.findUnique({
-            where: { id: assetIdToCheck },
-            select: { status: true, assetTag: true },
-          });
-          if (assetRecord && assetRecord.status === "CHECKED_OUT") {
-            // If this line item is already CHECKED_OUT, skip it (partial re-deploy)
-            if (lineItem.status === "CHECKED_OUT") {
-              continue;
-            }
-            throw new Error(`Asset ${assetRecord.assetTag} is already deployed`);
-          }
-          if (assetRecord && (assetRecord.status === "RETIRED" || assetRecord.status === "IN_MAINTENANCE" || assetRecord.status === "LOST")) {
-            throw new Error(`Asset ${assetRecord.assetTag} is ${assetRecord.status.replace("_", " ").toLowerCase()} and cannot be deployed`);
-          }
-        }
-
-        // Assign or reassign the specific asset to this line item
         if (item.assetId) {
           updateData.asset = { connect: { id: item.assetId } };
         }
 
         const updatedItem = await tx.projectLineItem.update({
-          where: { id: item.lineItemId },
+          where: { id: targetLineItemId },
           data: updateData,
           include: { model: true, asset: true, bulkAsset: true },
         });
@@ -895,22 +986,13 @@ export async function quickAddAndCheckOut(
         bulkAssetId: data.bulkAssetId || null,
         quantity: qty,
         sortOrder: nextSort,
-        // Immediately check out
-        status: data.assetId ? "CHECKED_OUT" : (qty === 1 ? "CHECKED_OUT" : "CONFIRMED"),
-        checkedOutQuantity: data.assetId ? 1 : qty <= 1 ? 1 : 1,
-        checkedOutAt: new Date(),
-        checkedOutById: userId,
+        // Add to project and prep (not deploy — deploy is a separate step)
+        status: "CONFIRMED",
+        checkedOutQuantity: data.bulkAssetId ? qty : (data.assetId ? 1 : 1),
+        prepStatus: "PACKED",
       },
       include: { model: true, asset: true, bulkAsset: true },
     });
-
-    // Mark the serialized asset as checked out
-    if (data.assetId) {
-      await tx.asset.update({
-        where: { id: data.assetId },
-        data: { status: "CHECKED_OUT" },
-      });
-    }
 
     // Create scan log
     await tx.assetScanLog.create({
@@ -921,7 +1003,7 @@ export async function quickAddAndCheckOut(
         projectId,
         action: "CHECK_OUT",
         scannedById: userId,
-        notes: "Added to project and deployed via warehouse scan",
+        notes: "Added to project and prepped via warehouse scan",
       },
     });
 

@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { getModelCheckItems } from "@/server/check-items";
+import { getModelCheckItems, getKitCheckItems } from "@/server/check-items";
 import { useActiveOrganization } from "@/lib/auth-client";
 import type { CheckRecordFormValues } from "@/lib/validations/check-item";
 
@@ -69,11 +69,14 @@ interface CheckState {
 export interface ItemCheckFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  modelId: string;
+  /** Model ID — used to fetch model check items. Provide either modelId or kitId. */
+  modelId?: string;
+  /** Kit ID — used to fetch kit-level check items (KIT_LEVEL mode). */
+  kitId?: string;
   assetTag: string;
   assetName: string;
   context: "PREP" | "RETURN" | "AD_HOC";
-  onSubmit: (checks: CheckRecordFormValues[]) => void;
+  onSubmit: (checks: CheckRecordFormValues[], returnInfo?: { condition: "GOOD" | "DAMAGED" | "MISSING"; notes?: string }) => void;
   onCancel: () => void;
   isSubmitting?: boolean;
   /** Render inline instead of in a Sheet (for ad-hoc check page) */
@@ -92,6 +95,7 @@ export function ItemCheckForm({
   open,
   onOpenChange,
   modelId,
+  kitId,
   assetTag,
   assetName,
   context,
@@ -106,10 +110,10 @@ export function ItemCheckForm({
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: modelCheckItems = [], isLoading } = useQuery({
-    queryKey: ["model-check-items", orgId, modelId],
-    queryFn: () => getModelCheckItems(modelId),
-    enabled: open && !!modelId,
+  const { data: modelCheckItems = [], isLoading } = useQuery<unknown[]>({
+    queryKey: kitId ? ["kit-check-items", orgId, kitId] : ["model-check-items", orgId, modelId],
+    queryFn: () => (kitId ? getKitCheckItems(kitId) : getModelCheckItems(modelId!)) as Promise<unknown[]>,
+    enabled: open && !!(modelId || kitId),
   });
 
   const items = modelCheckItems as unknown as CheckItemData[];
@@ -118,6 +122,10 @@ export function ItemCheckForm({
   const [checkStates, setCheckStates] = useState<Record<string, CheckState>>({});
   const [passAllUndo, setPassAllUndo] = useState<ReturnType<typeof setTimeout> | null>(null);
   const passAllUndoRef = useRef<Record<string, CheckState> | null>(null);
+
+  // Return condition state (only used when context === "RETURN")
+  const [returnCondition, setReturnCondition] = useState<"GOOD" | "DAMAGED" | "MISSING">("GOOD");
+  const [returnNotes, setReturnNotes] = useState("");
 
   // Reset states when form opens with new items
   useEffect(() => {
@@ -134,6 +142,8 @@ export function ItemCheckForm({
       setCheckStates(initial);
       setPassAllUndo(null);
       passAllUndoRef.current = null;
+      setReturnCondition("GOOD");
+      setReturnNotes("");
     }
   }, [open, items.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -217,7 +227,17 @@ export function ItemCheckForm({
         photos: state?.photos || [],
       };
     });
-    onSubmit(checks);
+
+    if (context === "RETURN") {
+      // Auto-override condition to DAMAGED if any checks failed
+      const effectiveCondition = failCount > 0 ? "DAMAGED" : returnCondition;
+      onSubmit(checks, {
+        condition: effectiveCondition,
+        notes: returnNotes || undefined,
+      });
+    } else {
+      onSubmit(checks);
+    }
   }
 
   const failCount = Object.values(checkStates).filter((s) => s.result === "FAIL").length;
@@ -226,7 +246,7 @@ export function ItemCheckForm({
   const submitLabel = context === "PREP"
     ? failCount > 0 ? "Flag Item" : "Pack Item"
     : context === "RETURN"
-      ? "Complete Return"
+      ? failCount > 0 ? "Return as Damaged" : `Return as ${returnCondition === "GOOD" ? "Good" : returnCondition === "DAMAGED" ? "Damaged" : "Missing"}`
       : "Save Check";
 
   const formContent = (
@@ -272,9 +292,48 @@ export function ItemCheckForm({
         {failCount > 0 && (
           <div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
             <XCircle className="h-4 w-4 shrink-0" />
-            {failCount} item{failCount !== 1 ? "s" : ""} failed
+            {failCount} item{failCount !== 1 ? "s" : ""} failed — will be returned as damaged
           </div>
         )}
+
+        {/* Return condition selector */}
+        {context === "RETURN" && failCount === 0 && (
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Return Condition</Label>
+            <div className="flex gap-2">
+              {(["GOOD", "DAMAGED", "MISSING"] as const).map((cond) => (
+                <Button
+                  key={cond}
+                  type="button"
+                  variant={returnCondition === cond ? "default" : "outline"}
+                  size="sm"
+                  className={`flex-1 ${
+                    returnCondition === cond
+                      ? cond === "GOOD"
+                        ? "bg-green-600 hover:bg-green-700 text-white"
+                        : cond === "DAMAGED"
+                          ? "bg-amber-600 hover:bg-amber-700 text-white"
+                          : "bg-destructive hover:bg-destructive/90 text-white"
+                      : ""
+                  }`}
+                  onClick={() => setReturnCondition(cond)}
+                >
+                  {cond === "GOOD" ? "Good" : cond === "DAMAGED" ? "Damaged" : "Missing"}
+                </Button>
+              ))}
+            </div>
+            {(returnCondition === "DAMAGED" || returnCondition === "MISSING") && (
+              <Textarea
+                placeholder={`Notes about ${returnCondition === "DAMAGED" ? "damage" : "missing item"}...`}
+                value={returnNotes}
+                onChange={(e) => setReturnNotes(e.target.value)}
+                rows={2}
+                className="text-sm"
+              />
+            )}
+          </div>
+        )}
+
         <div className="flex gap-2">
           <Button
             variant="outline"
@@ -285,7 +344,11 @@ export function ItemCheckForm({
             Cancel
           </Button>
           <Button
-            className="flex-1"
+            className={`flex-1 ${
+              context === "RETURN" && failCount === 0 && returnCondition === "GOOD"
+                ? "bg-green-600 hover:bg-green-700"
+                : ""
+            }`}
             onClick={handleSubmit}
             disabled={!allComplete || isSubmitting}
           >

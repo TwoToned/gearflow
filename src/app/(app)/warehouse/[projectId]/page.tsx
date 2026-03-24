@@ -85,12 +85,18 @@ import { ItemCheckForm } from "@/components/warehouse/item-check-form";
 import { CloseOutTab } from "@/components/warehouse/close-out-tab";
 import {
   pullItem,
+  prepItemDirect,
+  deprepItem,
+  deprepKit,
+  prepKitChildren,
   completeCheckAndPack,
   completeCheckAndFlag,
   unpackItem,
   completeCheckAndStore,
+  saveKitLevelChecks,
+  saveChildItemChecks,
 } from "@/server/check-records";
-import { getModelCheckItems } from "@/server/check-items";
+import { getModelCheckItems, getKitCheckItems } from "@/server/check-items";
 import type { CheckRecordFormValues } from "@/lib/validations/check-item";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -124,10 +130,11 @@ interface LineItem {
   kitId: string | null;
   isKitChild: boolean;
   parentLineItemId: string | null;
-  model: { name: string; modelNumber?: string | null; _count?: { modelCheckItems: number } } | null;
+  model: { name: string; modelNumber?: string | null; assetType?: string; _count?: { modelCheckItems: number } } | null;
   asset: { assetTag: string } | null;
   bulkAsset: { assetTag: string } | null;
-  kit: { id: string; assetTag: string; name: string; isPrep: boolean } | null;
+  kit: { id: string; assetTag: string; name: string; isPrep: boolean; checkMode?: string; _count?: { kitCheckItems: number } } | null;
+  prepStatus: string | null;
   isSubhire: boolean;
   childLineItems?: LineItem[];
 }
@@ -228,7 +235,7 @@ function KitChildRows({
                   ? <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">Verified</Badge>
                   : nestedKitPartial
                     ? <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20">Partial</Badge>
-                    : <StatusIndicator category="lineItem" value={child.status} label={lineItemStatusLabels[child.status] || formatLabel(child.status)} variant="pill" />
+                    : <PrepStatusBadge item={child} />
                 }
               </TableCell>
             </TableRow>
@@ -254,7 +261,7 @@ function KitChildRows({
                   <TableCell>
                     {nestedVerified
                       ? <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">Verified</Badge>
-                      : <StatusIndicator category="lineItem" value={nested.status} label={lineItemStatusLabels[nested.status] || formatLabel(nested.status)} variant="pill" />
+                      : <PrepStatusBadge item={nested} />
                     }
                   </TableCell>
                 </TableRow>
@@ -280,6 +287,16 @@ type GroupEntry =
 
 function isKitParent(item: LineItem) {
   return !!item.kitId && !item.isKitChild;
+}
+
+function PrepStatusBadge({ item }: { item: LineItem }) {
+  if (item.prepStatus === "PACKED") {
+    return <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">Prepped</Badge>;
+  }
+  if (item.prepStatus === "PULLED") {
+    return <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20">Pulled</Badge>;
+  }
+  return <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20">Needs prep</Badge>;
 }
 
 function collectAllVerifiableIds(children: LineItem[], mode: "deploy" | "return"): string[] {
@@ -308,7 +325,7 @@ function collectAllVerifiableIds(children: LineItem[], mode: "deploy" | "return"
   return ids;
 }
 
-function groupItems(items: LineItem[]): GroupEntry[] {
+function groupItems(items: LineItem[], mode: "prep" | "deploy" = "prep"): GroupEntry[] {
   const serializedByModel = new Map<string, LineItem[]>();
   const result: GroupEntry[] = [];
 
@@ -334,8 +351,11 @@ function groupItems(items: LineItem[]): GroupEntry[] {
         children: deployChildren,
       });
     } else if (isBulkItem(item)) {
-      const remaining = item.quantity - item.checkedOutQuantity;
-      const unitCount = item.status === "RETURNED" ? item.quantity : remaining;
+      // For prep tab: show unprepped units (quantity - checkedOutQuantity)
+      // For deploy tab: show prepped units (checkedOutQuantity)
+      const unitCount = mode === "deploy"
+        ? item.checkedOutQuantity
+        : (item.status === "RETURNED" ? item.quantity : item.quantity - item.checkedOutQuantity);
       result.push({
         kind: "bulk-group",
         groupKey: `bulk-${item.id}`,
@@ -362,7 +382,7 @@ function groupItems(items: LineItem[]): GroupEntry[] {
     if (e.kind === "serialized-group" && e.items.length === 1) {
       return { kind: "single" as const, item: e.items[0] };
     }
-    if (e.kind === "bulk-group" && e.unitCount <= 1) {
+    if (e.kind === "bulk-group" && e.unitCount <= 1 && e.unitCount === e.item.quantity) {
       return { kind: "single" as const, item: e.item };
     }
     return e;
@@ -418,7 +438,7 @@ function groupCheckinItems(items: LineItem[]): GroupEntry[] {
     if (e.kind === "serialized-group" && e.items.length === 1) {
       return { kind: "single" as const, item: e.items[0] };
     }
-    if (e.kind === "bulk-group" && e.unitCount <= 1) {
+    if (e.kind === "bulk-group" && e.unitCount <= 1 && e.unitCount === e.item.quantity) {
       return { kind: "single" as const, item: e.item };
     }
     return e;
@@ -456,12 +476,14 @@ function WarehouseProjectPage({
   const { projectId } = use(params);
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const initialTab = tabParam === "check-in" ? "check-in" : tabParam === "preps" ? "preps" : tabParam === "close-out" ? "close-out" : "check-out";
+  const initialTab = tabParam === "check-in" ? "check-in" : tabParam === "check-out" ? "check-out" : tabParam === "preps" ? "preps" : tabParam === "close-out" ? "close-out" : "pick-prep";
   const queryClient = useQueryClient();
   const scanInputRef = useRef<HTMLInputElement>(null);
+  const deployScanInputRef = useRef<HTMLInputElement>(null);
   const returnScanInputRef = useRef<HTMLInputElement>(null);
 
   const [scanValue, setScanValue] = useState("");
+  const [deployScanValue, setDeployScanValue] = useState("");
   const [returnScanValue, setReturnScanValue] = useState("");
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [returnCondition, setReturnCondition] = useState("GOOD");
@@ -472,6 +494,7 @@ function WarehouseProjectPage({
   const orgId = activeOrg?.id;
 
   // Selection state
+  const [selectedPrep, setSelectedPrep] = useState<Set<string>>(new Set());
   const [selectedOut, setSelectedOut] = useState<Set<string>>(new Set());
   const [selectedIn, setSelectedIn] = useState<Set<string>>(new Set());
 
@@ -496,6 +519,7 @@ function WarehouseProjectPage({
     modelName: string;
     availableAssets: AvailableAsset[];
     selectedAssetId: string;
+    checkItemCount: number;
   }>>([]);
   const [assetPickerBulkItems, setAssetPickerBulkItems] = useState<Array<{
     lineItemId: string;
@@ -517,24 +541,32 @@ function WarehouseProjectPage({
   const [checkFormOpen, setCheckFormOpen] = useState(false);
   const [checkFormData, setCheckFormData] = useState<{
     context: "PREP" | "RETURN";
-    modelId: string;
+    modelId?: string;
+    kitId?: string;
     assetTag: string;
     assetName: string;
     lineItemId: string;
     assetId: string;
     bulkAssetId?: string;
+    /** When true, this is a kit queue — on complete, deploy/return the kit atomically */
+    kitQueueKitId?: string;
+    kitQueueReturnCondition?: "GOOD" | "DAMAGED" | "MISSING";
   } | null>(null);
   const [checkFormSubmitting, setCheckFormSubmitting] = useState(false);
 
   // Queue for multi-item check flows
   type CheckQueueItem = {
     context: "PREP" | "RETURN";
-    modelId: string;
+    modelId?: string;
+    kitId?: string;
     assetTag: string;
     assetName: string;
     lineItemId: string;
     assetId: string;
     bulkAssetId?: string;
+    /** When set, this queue item is part of a kit PER_ITEM flow */
+    kitQueueKitId?: string;
+    kitQueueReturnCondition?: "GOOD" | "DAMAGED" | "MISSING";
   };
   const [checkQueue, setCheckQueue] = useState<CheckQueueItem[]>([]);
   const [checkQueueIndex, setCheckQueueIndex] = useState(0);
@@ -552,11 +584,13 @@ function WarehouseProjectPage({
     const first = queue[0];
     setCheckFormData(first);
     setCheckFormOpen(true);
-    // Call pullItem/unpackItem for the first item
-    if (first.context === "PREP") {
-      pullItem(projectId, first.lineItemId).catch(() => {});
-    } else {
-      unpackItem(projectId, first.lineItemId).catch(() => {});
+    // Call pullItem/unpackItem for non-kit items (kit items are deployed atomically at the end)
+    if (!first.kitId && !first.kitQueueKitId) {
+      if (first.context === "PREP") {
+        pullItem(projectId, first.lineItemId).catch(() => {});
+      } else {
+        unpackItem(projectId, first.lineItemId).catch(() => {});
+      }
     }
     return true;
   }
@@ -568,11 +602,13 @@ function WarehouseProjectPage({
       setCheckQueueIndex(nextIndex);
       const next = checkQueue[nextIndex];
       setCheckFormData(next);
-      // Pull/unpack the next item
-      if (next.context === "PREP") {
-        pullItem(projectId, next.lineItemId).catch(() => {});
-      } else {
-        unpackItem(projectId, next.lineItemId).catch(() => {});
+      // Pull/unpack non-kit items (kit items are deployed atomically at the end)
+      if (!next.kitId && !next.kitQueueKitId) {
+        if (next.context === "PREP") {
+          pullItem(projectId, next.lineItemId).catch(() => {});
+        } else {
+          unpackItem(projectId, next.lineItemId).catch(() => {});
+        }
       }
       // Keep form open — it will reset via the modelId/assetTag change
     } else {
@@ -583,18 +619,48 @@ function WarehouseProjectPage({
 
   // Process remaining direct items after queue completes
   function finishCheckQueue() {
+    const kitQueueKitId = checkQueue[0]?.kitQueueKitId;
+    const kitQueueContext = checkQueue[0]?.context;
+    const kitQueueReturnCondition = checkQueue[0]?.kitQueueReturnCondition;
+
     setCheckFormOpen(false);
     setCheckFormData(null);
     setCheckQueue([]);
     setCheckQueueIndex(0);
 
-    if (checkQueueDirectItems.length > 0) {
+    if (kitQueueKitId) {
+      if (kitQueueContext === "PREP") {
+        // Kit prep: mark all kit children as PACKED after checks completed
+        const kitLi = lineItems.find((l) => l.kitId === kitQueueKitId && !l.isKitChild);
+        if (kitLi) {
+          prepKitChildren(projectId, kitLi.id)
+            .then(() => {
+              toast.success("Kit prepped — ready to deploy");
+              invalidate();
+            })
+            .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to prep kit"));
+        } else {
+          toast.success("Kit prepped — ready to deploy");
+          invalidate();
+        }
+      } else {
+        kitCheckInMutation.mutate(
+          { kitId: kitQueueKitId, returnCondition: kitQueueReturnCondition || "GOOD" },
+          { onSuccess: () => { toast.success("Kit returned after checks"); setReturnNotes(""); } }
+        );
+      }
+    } else if (checkQueueDirectItems.length > 0) {
       const context = checkQueue[0]?.context;
       if (context === "PREP") {
-        checkOutMutation.mutate(
-          checkQueueDirectItems.map((i) => ({ lineItemId: i.lineItemId, assetId: i.assetId, quantity: i.quantity })),
-          { onSuccess: () => toast.success(`Checked out remaining items`) }
-        );
+        // Prep remaining items that had no checks (set prepStatus=PACKED)
+        Promise.all(
+          checkQueueDirectItems.map((i) =>
+            prepItemDirect(projectId, i.lineItemId, i.assetId, i.quantity)
+          )
+        ).then(() => {
+          toast.success("Items prepped — ready to deploy");
+          invalidate();
+        }).catch((e) => toast.error(e.message));
       } else {
         checkInMutation.mutate(
           { items: checkQueueDirectItems.map((i) => ({ lineItemId: i.lineItemId, returnCondition: (i.returnCondition || "GOOD") as "GOOD" | "DAMAGED" | "MISSING", quantity: i.quantity, notes: i.notes })) },
@@ -605,6 +671,74 @@ function WarehouseProjectPage({
 
     setCheckQueueDirectItems([]);
     invalidate();
+  }
+
+  /**
+   * Check if a kit needs check forms before deploy/return.
+   * Returns true if a check flow was started (caller should NOT proceed with direct deploy/return).
+   * Returns false if no checks needed (caller should proceed with normal flow).
+   */
+  function startKitCheckFlow(
+    kitId: string,
+    kitLi: LineItem,
+    context: "PREP" | "RETURN",
+    kitReturnCondition?: "GOOD" | "DAMAGED" | "MISSING"
+  ): boolean {
+    const kit = kitLi.kit;
+    if (!kit) return false;
+
+    const checkMode = kit.checkMode || "KIT_LEVEL";
+    const children = (kitLi.childLineItems || []) as LineItem[];
+
+    if (checkMode === "KIT_LEVEL") {
+      // Kit-level: check the kit once using its own check items
+      const hasKitChecks = kit._count?.kitCheckItems && kit._count.kitCheckItems > 0;
+      if (!hasKitChecks) return false;
+
+      const queue: CheckQueueItem[] = [{
+        context,
+        kitId: kit.id,
+        assetTag: kit.assetTag,
+        assetName: kit.name,
+        lineItemId: kitLi.id,
+        assetId: "",
+        kitQueueKitId: kit.id,
+        kitQueueReturnCondition: kitReturnCondition,
+      }];
+      return startCheckQueue(queue);
+    } else {
+      // PER_ITEM: queue each child with model check items
+      const queue: CheckQueueItem[] = [];
+      for (const child of children) {
+        // Skip children not relevant to current flow
+        if (context === "PREP" && (child.status === "CHECKED_OUT" || child.status === "CANCELLED")) continue;
+        if (context === "RETURN" && child.status !== "CHECKED_OUT") continue;
+
+        const hasModelChecks = child.model?._count?.modelCheckItems && child.model._count.modelCheckItems > 0;
+        if (!hasModelChecks || !child.modelId) continue;
+
+        // For serialized items, one queue entry per child
+        // For bulk items, expand per quantity
+        const isBulk = !!child.bulkAssetId || (!child.assetId && child.quantity > 1);
+        const count = isBulk ? child.quantity : 1;
+        for (let i = 0; i < count; i++) {
+          queue.push({
+            context,
+            modelId: child.modelId,
+            assetTag: child.asset?.assetTag || child.bulkAsset?.assetTag || "",
+            assetName: `${modelDisplayName(child)}${count > 1 ? ` #${i + 1}` : ""}`,
+            lineItemId: child.id,
+            assetId: child.assetId || "",
+            bulkAssetId: child.bulkAssetId || undefined,
+            kitQueueKitId: kit.id,
+            kitQueueReturnCondition: kitReturnCondition,
+          });
+        }
+      }
+
+      if (queue.length === 0) return false;
+      return startCheckQueue(queue);
+    }
   }
 
   const { data: project, isLoading } = useQuery({
@@ -639,7 +773,7 @@ function WarehouseProjectPage({
       quickAddAndCheckOut(projectId, data),
     onSuccess: () => {
       invalidate();
-      toast.success(`Added to project and deployed: ${addPromptData?.assetName || "Asset"}`);
+      toast.success(`Added to project and prepped: ${addPromptData?.assetName || "Asset"}`);
       setAddPromptOpen(false);
       setAddPromptData(null);
       setScanValue("");
@@ -661,16 +795,29 @@ function WarehouseProjectPage({
     onError: (e) => toast.error(e.message),
   });
 
+  const deprepMutation = useMutation({
+    mutationFn: (args: string | { lineItemId: string; quantity?: number }) => {
+      const lineItemId = typeof args === "string" ? args : args.lineItemId;
+      const quantity = typeof args === "string" ? 1 : args.quantity;
+      return deprepItem(projectId, lineItemId, quantity);
+    },
+    onSuccess: () => {
+      toast.success("Item removed from prep");
+      invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   // --- Scan mutations ---
   const scanMutation = useMutation({
     mutationFn: (assetTag: string) => lookupAssetForScan(projectId, assetTag, "checkout"),
     onSuccess: (result) => {
-      // Handle kit scans
+      // Handle kit scans — prep the kit (not deploy)
       if (result.found && result.type === "kit") {
         const kitResult = result as { kitId: string; kitAssetTag: string; assetName: string; lineItemId: string | null; reason: string | null };
         if (kitResult.lineItemId && !kitResult.reason) {
-          // Check verification status before deploying
           const kitLi = lineItems.find((l) => l.kitId === kitResult.kitId && !l.isKitChild);
+          // Check verification status before prepping
           const children = kitLi ? ((kitLi.childLineItems || []) as LineItem[]) : [];
           const allIds = collectAllVerifiableIds(children, "deploy");
           const verifiedIds = allIds.filter((id) => verifiedKitItems.has(id));
@@ -687,20 +834,26 @@ function WarehouseProjectPage({
             setScanValue("");
             scanInputRef.current?.focus();
           } else {
-            kitCheckOutMutation.mutate(kitResult.kitId, {
-              onSuccess: () => {
-                toast.success(`Kit deployed: ${kitResult.assetName}`);
-                setScanValue("");
-                scanInputRef.current?.focus();
-              },
-            });
+            // Try to start kit check flow; if no checks needed, prep directly
+            const started = kitLi ? startKitCheckFlow(kitResult.kitId, kitLi, "PREP") : false;
+            if (!started && kitLi) {
+              // No checks — mark kit children as prepped
+              prepKitChildren(projectId, kitLi.id)
+                .then(() => {
+                  toast.success(`Kit prepped: ${kitResult.assetName}`);
+                  invalidate();
+                })
+                .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to prep kit"));
+              setScanValue("");
+              scanInputRef.current?.focus();
+            }
           }
         } else {
           const messages: Record<string, string> = {
             not_on_project: "Kit not assigned to this project",
             already_checked_out: "Kit already deployed",
           };
-          toast.error(messages[kitResult.reason as string] || "Cannot deploy this kit");
+          toast.error(messages[kitResult.reason as string] || "Cannot prep this kit");
           setScanValue("");
           scanInputRef.current?.focus();
         }
@@ -710,10 +863,8 @@ function WarehouseProjectPage({
       // Handle kit member scans — verify the item is present in the kit
       if (result.found && result.type === "kit_member") {
         const memberResult = result as { kitId: string | null; kitAssetTag: string | null; assetId: string | null; assetName: string };
-        // Check if this kit is on the project
         const kitOnProject = memberResult.kitId && lineItems.find((li) => li.kitId === memberResult.kitId && !li.isKitChild);
         if (kitOnProject && memberResult.assetId) {
-          // Find the child line item by assetId and verify by line item id
           const children = (kitOnProject.childLineItems || []) as LineItem[];
           const childLi = children.find((c) => c.assetId === memberResult.assetId)
             || children.flatMap((c) => (c.childLineItems || []) as LineItem[]).find((c) => c.assetId === memberResult.assetId);
@@ -724,7 +875,6 @@ function WarehouseProjectPage({
               return next;
             });
           }
-          // Auto-expand the kit group
           const kitGroupKey = `kit-${kitOnProject.id}`;
           setExpandedGroups((prev) => {
             const next = new Set(prev);
@@ -741,12 +891,12 @@ function WarehouseProjectPage({
       }
 
       if (result.found && result.lineItemId) {
-        // Check if model has check items — if so, open check form instead of direct checkout
+        // Check if model has check items — if so, open check form for prep
         const matchedLi = lineItems.find((l) => l.id === result.lineItemId);
         const hasChecks = matchedLi?.model?._count?.modelCheckItems && matchedLi.model._count.modelCheckItems > 0;
 
         if (hasChecks && matchedLi?.modelId) {
-          // Pull item first, then open check form
+          // Pull item first, then open check form (prep flow)
           pullItem(projectId, result.lineItemId).catch(() => {});
           setCheckFormData({
             context: "PREP",
@@ -761,17 +911,15 @@ function WarehouseProjectPage({
           setScanValue("");
           scanInputRef.current?.focus();
         } else {
-          // No check items — direct checkout (existing behavior)
-          checkOutMutation.mutate([{
-            lineItemId: result.lineItemId,
-            ...(result.assetId ? { assetId: result.assetId } : {}),
-          }], {
-            onSuccess: () => {
-              toast.success(`Deployed: ${result.assetName || "Asset"}`);
+          // No check items — prep directly (set prepStatus=PACKED, no deploy)
+          prepItemDirect(projectId, result.lineItemId, result.assetId || undefined)
+            .then(() => {
+              toast.success(`Prepped: ${result.assetName || "Asset"}`);
               setScanValue("");
               scanInputRef.current?.focus();
-            },
-          });
+              invalidate();
+            })
+            .catch((e) => toast.error(e.message));
         }
       } else if (result.found && !result.lineItemId) {
         if (result.reason === "not_on_project" && "modelId" in result && result.modelId) {
@@ -813,6 +961,62 @@ function WarehouseProjectPage({
     },
   });
 
+  const deployScanMutation = useMutation({
+    mutationFn: (assetTag: string) => lookupAssetForScan(projectId, assetTag, "checkout"),
+    onSuccess: (result) => {
+      // Deploy scan: find matching prepped item and deploy it
+      if (result.found && result.type === "kit") {
+        const kitResult = result as { kitId: string; assetName: string; lineItemId: string | null; reason: string | null };
+        const kitLi = lineItems.find((l) => l.kitId === kitResult.kitId && !l.isKitChild);
+        if (kitLi && kitLi.prepStatus === "PACKED") {
+          kitCheckOutMutation.mutate(kitResult.kitId, {
+            onSuccess: () => toast.success(`Deployed kit: ${kitResult.assetName}`),
+          });
+        } else if (kitResult.reason === "already_checked_out") {
+          toast.error("Kit already deployed");
+        } else {
+          toast.error("Kit is not prepped yet — prep it first in Pick/Prep");
+        }
+        setDeployScanValue("");
+        deployScanInputRef.current?.focus();
+        return;
+      }
+
+      if (result.found && result.type === "kit_member") {
+        const memberResult = result as { kitId: string | null; kitAssetTag: string | null; assetName: string };
+        toast.error(`This asset is in a kit${memberResult.kitAssetTag ? ` (${memberResult.kitAssetTag})` : ""} — scan the kit barcode to deploy`);
+        setDeployScanValue("");
+        deployScanInputRef.current?.focus();
+        return;
+      }
+
+      if (result.found && result.lineItemId) {
+        const matchedLi = lineItems.find((l) => l.id === result.lineItemId);
+        if (matchedLi?.prepStatus === "PACKED" && matchedLi.status !== "CHECKED_OUT") {
+          checkOutMutation.mutate(
+            [{ lineItemId: result.lineItemId, assetId: result.assetId || undefined }],
+            { onSuccess: () => toast.success(`Deployed: ${result.assetName || "Item"}`) }
+          );
+        } else if (matchedLi?.status === "CHECKED_OUT") {
+          toast.error("Item already deployed");
+        } else {
+          toast.error("Item is not prepped yet — prep it first in Pick/Prep");
+        }
+      } else if (result.found && !result.lineItemId) {
+        toast.error(result.reason === "not_on_project" ? "Asset not on this project" : "Cannot deploy this item");
+      } else {
+        toast.error("Asset not found");
+      }
+      setDeployScanValue("");
+      deployScanInputRef.current?.focus();
+    },
+    onError: (e) => {
+      toast.error(e.message);
+      setDeployScanValue("");
+      deployScanInputRef.current?.focus();
+    },
+  });
+
   const returnScanMutation = useMutation({
     mutationFn: (assetTag: string) => lookupAssetForScan(projectId, assetTag, "checkin"),
     onSuccess: (result) => {
@@ -838,17 +1042,21 @@ function WarehouseProjectPage({
             setReturnScanValue("");
             returnScanInputRef.current?.focus();
           } else {
-            kitCheckInMutation.mutate(
-              { kitId: kitResult.kitId, returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING" },
-              {
-                onSuccess: () => {
-                  toast.success(`Kit returned: ${kitResult.assetName}`);
-                  setReturnScanValue("");
-                  setReturnNotes("");
-                  returnScanInputRef.current?.focus();
-                },
-              }
-            );
+            // Try to start kit check flow; if no checks needed, return directly
+            const started = kitLi ? startKitCheckFlow(kitResult.kitId, kitLi, "RETURN", returnCondition as "GOOD" | "DAMAGED" | "MISSING") : false;
+            if (!started) {
+              kitCheckInMutation.mutate(
+                { kitId: kitResult.kitId, returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING" },
+                {
+                  onSuccess: () => {
+                    toast.success(`Kit returned: ${kitResult.assetName}`);
+                    setReturnScanValue("");
+                    setReturnNotes("");
+                    returnScanInputRef.current?.focus();
+                  },
+                }
+              );
+            }
           }
         } else {
           const messages: Record<string, string> = {
@@ -965,6 +1173,16 @@ function WarehouseProjectPage({
     [scanValue, scanMutation]
   );
 
+  const handleDeployScanKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Enter" && deployScanValue.trim()) {
+        e.preventDefault();
+        deployScanMutation.mutate(deployScanValue.trim());
+      }
+    },
+    [deployScanValue, deployScanMutation]
+  );
+
   const handleReturnScanKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === "Enter" && returnScanValue.trim()) {
@@ -1021,26 +1239,57 @@ function WarehouseProjectPage({
   // Filter out kit children — they show under their parent row
   const equipmentItems = lineItems.filter((item) => item.type === "EQUIPMENT" && !item.isKitChild);
 
-  const checkOutItemsList = equipmentItems.filter((item) => {
+  // Pick/Prep: items that need to be picked and prepped (not yet PACKED)
+  const pickPrepItems = equipmentItems.filter((item) => {
     if (item.status === "CANCELLED") return false;
-    // Kit parents: show in deploy tab if any children/grandchildren still need deploying
+    if (item.status === "CHECKED_OUT") return false;
+    // Kit parents: show if any children still need prepping
     if (isKitParent(item)) {
       const children = (item.childLineItems || []) as LineItem[];
       return children.some((c) => {
-        if (c.status !== "CHECKED_OUT" && c.status !== "CANCELLED") return true;
+        if (c.status === "CHECKED_OUT" || c.status === "CANCELLED") return false;
+        if (c.prepStatus === "PACKED") return false;
         // Nested kit: check grandchildren too
         if (c.kitId && c.childLineItems?.length) {
           return (c.childLineItems as LineItem[]).some(
-            (gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED"
+            (gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED" && gc.prepStatus !== "PACKED"
+          );
+        }
+        return true;
+      });
+    }
+    // Bulk items: show if there are still unprepped units
+    if (isBulkItem(item)) return item.checkedOutQuantity < item.quantity;
+    if (item.prepStatus === "PACKED") return false;
+    if (item.status === "RETURNED") return true;
+    return true;
+  });
+
+  // Deploy: items that are prepped (PACKED) but not yet deployed (CHECKED_OUT)
+  const preppedItems = equipmentItems.filter((item) => {
+    if (item.status === "CANCELLED") return false;
+    if (item.status === "CHECKED_OUT") return false;
+    // Kit parents: show if any children are prepped but not deployed
+    if (isKitParent(item)) {
+      const children = (item.childLineItems || []) as LineItem[];
+      return children.some((c) => {
+        if (c.status === "CHECKED_OUT" || c.status === "CANCELLED") return false;
+        if (c.prepStatus === "PACKED") return true;
+        if (c.kitId && c.childLineItems?.length) {
+          return (c.childLineItems as LineItem[]).some(
+            (gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED" && gc.prepStatus === "PACKED"
           );
         }
         return false;
       });
     }
-    if (item.status === "RETURNED") return true;
-    if (isBulkItem(item)) return item.checkedOutQuantity < item.quantity;
-    return item.status !== "CHECKED_OUT";
+    // Bulk items: show if any units are prepped
+    if (isBulkItem(item)) return item.checkedOutQuantity > 0;
+    return item.prepStatus === "PACKED";
   });
+
+  // Keep old name for compatibility with deploy tab selection logic
+  const checkOutItemsList = preppedItems;
 
   const checkedOutItems = equipmentItems.filter((item) => {
     // Kit parents: show in return tab if any children/grandchildren are deployed
@@ -1055,13 +1304,31 @@ function WarehouseProjectPage({
         return false;
       });
     }
-    if (isBulkItem(item)) return item.checkedOutQuantity > item.returnedQuantity;
+    if (isBulkItem(item)) return item.status === "CHECKED_OUT" && item.checkedOutQuantity > item.returnedQuantity;
     return item.status === "CHECKED_OUT";
   });
 
-  const groupedOut = groupItems(checkOutItemsList);
+  const groupedPrep = groupItems(pickPrepItems);
+  const groupedOut = groupItems(checkOutItemsList, "deploy");
 
   const groupedIn = groupCheckinItems(checkedOutItems);
+
+  // Build all selectable keys for pick/prep
+  const allPrepKeys = useMemo(() => {
+    const keys: string[] = [];
+    for (const entry of groupedPrep) {
+      if (entry.kind === "single") {
+        keys.push(entry.item.id);
+      } else if (entry.kind === "serialized-group") {
+        entry.items.forEach((i) => keys.push(i.id));
+      } else if (entry.kind === "kit-group") {
+        keys.push(entry.item.id);
+      } else {
+        for (let u = 0; u < entry.unitCount; u++) keys.push(bulkUnitKey(entry.item.id, u));
+      }
+    }
+    return keys;
+  }, [groupedPrep]);
 
   // Build all selectable keys for check-out
   const allOutKeys = useMemo(() => {
@@ -1096,12 +1363,212 @@ function WarehouseProjectPage({
     return keys;
   }, [groupedIn]);
 
+  const selectedPrepCount = selectedPrep.size;
   const selectedOutCount = selectedOut.size;
   const selectedInCount = selectedIn.size;
 
+  // --- Prep selected items (for manual selection without scanner) ---
+  const handlePrepSelected = async () => {
+    try {
+      const items: { lineItemId: string; assetId?: string; quantity?: number }[] = [];
+      const kitLineItemIds: string[] = [];
+      const bulkItems: { lineItemId: string; quantity: number }[] = [];
+
+      for (const key of selectedPrep) {
+        if (key.includes(":")) {
+          const lineItemId = key.split(":")[0];
+          const existing = bulkItems.find((i) => i.lineItemId === lineItemId);
+          if (existing) {
+            existing.quantity += 1;
+          } else {
+            bulkItems.push({ lineItemId, quantity: 1 });
+          }
+        } else {
+          const li = lineItems.find((l) => l.id === key);
+          if (li && li.kitId && !li.isKitChild) {
+            kitLineItemIds.push(key);
+          } else {
+            items.push({ lineItemId: key, assetId: li?.assetId || undefined });
+          }
+        }
+      }
+
+      // Check if any "bulk" items are actually multi-qty serialized (no bulkAssetId, SERIALIZED model)
+      // These need asset assignment via the picker, not the bulk prep flow
+      const actualBulkItems: typeof bulkItems = [];
+      for (const bi of bulkItems) {
+        const li = lineItems.find((l) => l.id === bi.lineItemId);
+        if (li && !li.bulkAssetId && li.model?.assetType === "SERIALIZED" && li.modelId) {
+          // Multi-qty serialized item — needs asset picker
+          items.push({ lineItemId: bi.lineItemId, quantity: bi.quantity });
+        } else {
+          actualBulkItems.push(bi);
+        }
+      }
+      // Replace bulkItems with only actual bulk items
+      bulkItems.length = 0;
+      bulkItems.push(...actualBulkItems);
+
+      // Check if any serialized items need asset assignment (no assetId)
+      const needsAssetPicker: typeof items = [];
+      const readyItems: typeof items = [];
+      for (const item of items) {
+        const li = lineItems.find((l) => l.id === item.lineItemId);
+        if (li && !li.assetId && !li.bulkAssetId && li.model?.assetType === "SERIALIZED" && li.modelId) {
+          needsAssetPicker.push(item);
+        } else {
+          readyItems.push(item);
+        }
+      }
+
+      // If any items need asset assignment, open the picker
+      if (needsAssetPicker.length > 0) {
+        const pickerItems: Array<{
+          lineItemId: string;
+          modelId: string;
+          modelName: string;
+          availableAssets: AvailableAsset[];
+          selectedAssetId: string;
+          checkItemCount: number;
+        }> = [];
+
+        for (const item of needsAssetPicker) {
+          const li = lineItems.find((l) => l.id === item.lineItemId);
+          if (!li?.modelId) continue;
+          // Use selected quantity if specified (from bulk unit selection), else full line item quantity
+          const count = item.quantity || li.quantity;
+          const available = await getAvailableAssetsForModel(li.modelId);
+          const checkItemCount = li.model?._count?.modelCheckItems || 0;
+          for (let i = 0; i < count; i++) {
+            pickerItems.push({
+              lineItemId: li.id,
+              modelId: li.modelId,
+              modelName: li.model?.name || modelDisplayName(li),
+              availableAssets: available as AvailableAsset[],
+              selectedAssetId: "",
+              checkItemCount,
+            });
+          }
+        }
+
+        if (pickerItems.length > 0) {
+          setAssetPickerItems(pickerItems);
+          setAssetPickerBulkItems(bulkItems);
+          setAssetPickerOpen(true);
+          setSelectedPrep(new Set());
+          return;
+        }
+      }
+
+      // Prep kits — check verification first, then check flow or direct prep
+      for (const kitItemId of kitLineItemIds) {
+        const li = lineItems.find((l) => l.id === kitItemId);
+        if (li?.kitId) {
+          const children = (li.childLineItems || []) as LineItem[];
+          const allIds = collectAllVerifiableIds(children, "deploy");
+          const verifiedIds = allIds.filter((id) => verifiedKitItems.has(id));
+
+          if (allIds.length > 0 && verifiedIds.length < allIds.length) {
+            // Not fully verified — prompt the user
+            setKitConfirm({
+              action: "deploy",
+              kitName: li.kit?.name || li.description || "Kit",
+              kitId: li.kitId,
+              parentLineItemId: li.id,
+              verifiedCount: verifiedIds.length,
+              totalCount: allIds.length,
+              verifiedIds,
+            });
+            continue;
+          }
+
+          // Fully verified (or no verifiable items) — proceed
+          const started = startKitCheckFlow(li.kitId, li, "PREP");
+          if (!started) {
+            prepKitChildren(projectId, li.id)
+              .then(() => {
+                toast.success(`Kit prepped: ${li.description || li.kit?.name || "Kit"}`);
+                invalidate();
+              })
+              .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to prep kit"));
+          }
+        }
+      }
+
+      // Build check queue for bulk items with checks, and prep directly for those without
+      const bulkCheckQueue: CheckQueueItem[] = [];
+      const bulkNoCheckItems: typeof bulkItems = [];
+      for (const bi of bulkItems) {
+        const li = lineItems.find((l) => l.id === bi.lineItemId);
+        const hasChecks = li?.model?._count?.modelCheckItems && li.model._count.modelCheckItems > 0;
+        if (hasChecks && li?.modelId) {
+          for (let i = 0; i < bi.quantity; i++) {
+            bulkCheckQueue.push({
+              context: "PREP" as const,
+              modelId: li.modelId!,
+              assetTag: li.bulkAsset?.assetTag || "",
+              assetName: modelDisplayName(li),
+              lineItemId: li.id,
+              assetId: "",
+              bulkAssetId: li.bulkAssetId || undefined,
+            });
+          }
+        } else {
+          bulkNoCheckItems.push(bi);
+        }
+      }
+
+      // Prep bulk items without checks directly
+      for (const bi of bulkNoCheckItems) {
+        await prepItemDirect(projectId, bi.lineItemId, undefined, bi.quantity);
+      }
+
+      // Build check queue for ready items with checks
+      const readyCheckQueue: CheckQueueItem[] = [];
+      const readyNoCheckItems: typeof readyItems = [];
+      for (const item of readyItems) {
+        const li = lineItems.find((l) => l.id === item.lineItemId);
+        const hasChecks = li?.model?._count?.modelCheckItems && li.model._count.modelCheckItems > 0;
+        if (hasChecks && li?.modelId) {
+          readyCheckQueue.push({
+            context: "PREP" as const,
+            modelId: li.modelId,
+            assetTag: li.asset?.assetTag || li.bulkAsset?.assetTag || "",
+            assetName: li.model?.name || modelDisplayName(li),
+            lineItemId: item.lineItemId,
+            assetId: li.assetId || "",
+            bulkAssetId: li.bulkAssetId || undefined,
+          });
+        } else {
+          readyNoCheckItems.push(item);
+        }
+      }
+
+      // Prep ready items without checks directly
+      for (const item of readyNoCheckItems) {
+        await prepItemDirect(projectId, item.lineItemId, item.assetId, item.quantity);
+      }
+
+      // Start check queue if any items need checks
+      const allChecks = [...readyCheckQueue, ...bulkCheckQueue];
+      if (allChecks.length > 0) {
+        // Don't include already-prepped items in directItems — they were prepped above
+        startCheckQueue(allChecks);
+      } else if (kitLineItemIds.length === 0 && (readyNoCheckItems.length > 0 || bulkNoCheckItems.length > 0)) {
+        toast.success(`Prepped ${readyNoCheckItems.length + bulkNoCheckItems.length} items`);
+      }
+
+      setSelectedPrep(new Set());
+      invalidate();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Prep failed");
+      invalidate();
+    }
+  };
+
   // --- Checkout / Checkin selected ---
+  // Deploy selected prepped items (no checks needed — items are already prepped)
   const handleCheckOutSelected = async () => {
-    // Separate bulk keys (contain ":"), kit items, and serialized keys
     const bulkQtyMap = new Map<string, number>();
     const serializedLineItemIds: string[] = [];
     const kitLineItemIds: string[] = [];
@@ -1120,183 +1587,117 @@ function WarehouseProjectPage({
       }
     }
 
-    // Check out kits (including prep-kits) — check verification first
+    // Deploy kits directly
     for (const kitItemId of kitLineItemIds) {
       const li = lineItems.find((l) => l.id === kitItemId);
       if (li?.kitId) {
-        const children = (li.childLineItems || []) as LineItem[];
-        const allIds = collectAllVerifiableIds(children, "deploy");
-        const verifiedIds = allIds.filter((id) => verifiedKitItems.has(id));
-        if (allIds.length > 0 && verifiedIds.length < allIds.length) {
-          // Not fully verified — prompt
-          setKitConfirm({
-            action: "deploy",
-            kitName: li.description || li.kit?.name || "Kit",
-            kitId: li.kitId,
-            parentLineItemId: li.id,
-            verifiedCount: verifiedIds.length,
-            totalCount: allIds.length,
-            verifiedIds,
-          });
-        } else {
-          kitCheckOutMutation.mutate(li.kitId);
-        }
+        kitCheckOutMutation.mutate(li.kitId);
       }
     }
 
-    // If only kits were selected, we're done
     if (serializedLineItemIds.length === 0 && bulkQtyMap.size === 0) return;
 
-    // Find serialized items that need asset assignment
-    const unassignedSerialized = serializedLineItemIds
-      .map((id) => lineItems.find((li) => li.id === id))
-      .filter((li): li is LineItem => !!li && !li.assetId && !isBulkItem(li) && !!li.modelId && !li.isSubhire);
+    const items = [
+      ...serializedLineItemIds.map((id) => {
+        const li = lineItems.find((l) => l.id === id);
+        return { lineItemId: id, assetId: li?.assetId || undefined };
+      }),
+      ...Array.from(bulkQtyMap.entries()).map(([lineItemId, qty]) => ({
+        lineItemId,
+        quantity: qty,
+      })),
+    ];
 
-    const alreadyAssigned = serializedLineItemIds
-      .map((id) => lineItems.find((li) => li.id === id))
-      .filter((li): li is LineItem => !!li && (!!li.assetId || isBulkItem(li) || li.isSubhire));
+    if (items.length === 0) return;
 
-    const bulkItems = Array.from(bulkQtyMap.entries()).map(([lineItemId, qty]) => ({
-      lineItemId,
-      quantity: qty,
-    }));
-
-    if (unassignedSerialized.length === 0) {
-      // No asset picker needed — check out directly
-      const items = [
-        ...alreadyAssigned.map((li) => ({ lineItemId: li.id, assetId: li.assetId || undefined })),
-        ...bulkItems,
-      ];
-      if (items.length === 0) return;
-
-      // Build check queue for items with check items assigned
-      const withChecks = alreadyAssigned.filter(
-        (li) => li.model?._count?.modelCheckItems && li.model._count.modelCheckItems > 0 && li.modelId
-      );
-      const withoutChecks = [
-        ...alreadyAssigned.filter(
-          (li) => !li.model?._count?.modelCheckItems || li.model._count.modelCheckItems === 0 || !li.modelId
-        ).map((li) => ({ lineItemId: li.id, assetId: li.assetId || undefined })),
-        ...bulkItems,
-      ];
-
-      if (withChecks.length > 0) {
-        const queue: CheckQueueItem[] = withChecks.map((li) => ({
-          context: "PREP" as const,
-          modelId: li.modelId!,
-          assetTag: li.asset?.assetTag || li.bulkAsset?.assetTag || "",
-          assetName: modelDisplayName(li),
-          lineItemId: li.id,
-          assetId: li.assetId || "",
-          bulkAssetId: li.bulkAssetId || undefined,
-        }));
-        startCheckQueue(queue, withoutChecks);
-        return;
-      }
-
-      checkOutMutation.mutate(items, {
-        onSuccess: () => toast.success(`Checked out ${selectedOutCount} items`),
-      });
-      return;
-    }
-
-    // Fetch available assets for each unique modelId
-    const uniqueModelIds = [...new Set(unassignedSerialized.map((li) => li.modelId!))];
-    const assetsByModel = new Map<string, AvailableAsset[]>();
-
-    try {
-      const results = await Promise.all(
-        uniqueModelIds.map(async (modelId) => {
-          const assets = await getAvailableAssetsForModel(modelId);
-          return { modelId, assets: assets as AvailableAsset[] };
-        })
-      );
-      for (const { modelId, assets } of results) {
-        assetsByModel.set(modelId, assets);
-      }
-    } catch {
-      toast.error("Failed to load available assets");
-      return;
-    }
-
-    // Open the picker dialog
-    setAssetPickerItems(
-      unassignedSerialized.map((li) => ({
-        lineItemId: li.id,
-        modelId: li.modelId!,
-        modelName: modelDisplayName(li),
-        availableAssets: assetsByModel.get(li.modelId!) || [],
-        selectedAssetId: "",
-      }))
-    );
-    setAssetPickerBulkItems(bulkItems);
-    setAssetPickerOpen(true);
+    checkOutMutation.mutate(items, {
+      onSuccess: () => toast.success(`Deployed ${selectedOutCount} items`),
+    });
   };
 
   const handleAssetPickerConfirm = () => {
-    // Validate all serialized items have an asset selected
     const incomplete = assetPickerItems.find((i) => !i.selectedAssetId);
     if (incomplete) {
       toast.error("Please select an asset for each item");
       return;
     }
 
-    // Check for duplicate asset selections
     const selectedIds = assetPickerItems.map((i) => i.selectedAssetId);
     if (new Set(selectedIds).size !== selectedIds.length) {
       toast.error("Each item must have a different asset assigned");
       return;
     }
 
-    // Also include already-assigned serialized items from the original selection
-    const serializedLineItemIds = [...selectedOut].filter((k) => !k.includes(":"));
-    const alreadyAssigned = serializedLineItemIds
-      .map((id) => lineItems.find((li) => li.id === id))
-      .filter((li): li is LineItem => !!li && !!li.assetId && !isBulkItem(li));
-
-    const items = [
-      ...assetPickerItems.map((i) => ({ lineItemId: i.lineItemId, assetId: i.selectedAssetId })),
-      ...alreadyAssigned.map((li) => ({ lineItemId: li.id, assetId: li.assetId || undefined })),
-      ...assetPickerBulkItems,
-    ];
-
     setAssetPickerOpen(false);
 
-    // Build check queue for items from the picker that have check items
-    const allPickedItems = [
-      ...assetPickerItems.map((i) => {
-        const li = lineItems.find((l) => l.id === i.lineItemId);
-        return { ...i, li, assetId: i.selectedAssetId };
-      }),
-    ];
-    const withChecks = allPickedItems.filter(
-      (i) => i.li?.model?._count?.modelCheckItems && i.li.model._count.modelCheckItems > 0 && i.li?.modelId
+    // Build check queue for items with checks; prep directly for items without checks
+    const allPickedItems = assetPickerItems.map((i) => {
+      const li = lineItems.find((l) => l.id === i.lineItemId);
+      return { ...i, li, assetId: i.selectedAssetId };
+    });
+    const serializedWithChecks = allPickedItems.filter(
+      (i) => i.checkItemCount > 0 && i.modelId
     );
+
+    const bulkCheckQueue: CheckQueueItem[] = [];
+    const bulkNoChecks: typeof assetPickerBulkItems = [];
+    for (const bi of assetPickerBulkItems) {
+      const li = lineItems.find((l) => l.id === bi.lineItemId);
+      if (li?.model?._count?.modelCheckItems && li.model._count.modelCheckItems > 0 && li.modelId) {
+        for (let i = 0; i < bi.quantity; i++) {
+          bulkCheckQueue.push({
+            context: "PREP" as const,
+            modelId: li.modelId!,
+            assetTag: li.bulkAsset?.assetTag || "",
+            assetName: modelDisplayName(li),
+            lineItemId: li.id,
+            assetId: "",
+            bulkAssetId: li.bulkAssetId || undefined,
+          });
+        }
+      } else {
+        bulkNoChecks.push(bi);
+      }
+    }
+
+    // Items without checks go through prepItemDirect
     const withoutChecks = [
       ...allPickedItems.filter(
-        (i) => !i.li?.model?._count?.modelCheckItems || i.li.model._count.modelCheckItems === 0 || !i.li?.modelId
+        (i) => !i.checkItemCount || i.checkItemCount === 0 || !i.modelId
       ).map((i) => ({ lineItemId: i.lineItemId, assetId: i.assetId })),
-      ...alreadyAssigned.map((li) => ({ lineItemId: li.id, assetId: li.assetId || undefined })),
-      ...assetPickerBulkItems,
+      ...bulkNoChecks.map((bi) => ({ lineItemId: bi.lineItemId, quantity: bi.quantity })),
     ];
 
-    if (withChecks.length > 0) {
-      const queue: CheckQueueItem[] = withChecks.map((i) => ({
-        context: "PREP" as const,
-        modelId: i.li!.modelId!,
-        assetTag: i.li?.asset?.assetTag || "",
-        assetName: modelDisplayName(i.li!),
-        lineItemId: i.lineItemId,
-        assetId: i.assetId || "",
-        bulkAssetId: i.li?.bulkAssetId || undefined,
-      }));
-      startCheckQueue(queue, withoutChecks);
+    const allWithChecks: CheckQueueItem[] = [
+      ...serializedWithChecks.map((i) => {
+        const selectedAsset = i.availableAssets.find((a) => a.id === i.assetId);
+        return {
+          context: "PREP" as const,
+          modelId: i.li!.modelId!,
+          assetTag: selectedAsset?.assetTag || i.li?.asset?.assetTag || "",
+          assetName: modelDisplayName(i.li!),
+          lineItemId: i.lineItemId,
+          assetId: i.assetId || "",
+          bulkAssetId: i.li?.bulkAssetId || undefined,
+        };
+      }),
+      ...bulkCheckQueue,
+    ];
+
+    if (allWithChecks.length > 0) {
+      startCheckQueue(allWithChecks, withoutChecks);
       return;
     }
 
-    checkOutMutation.mutate(items, {
-      onSuccess: () => toast.success(`Checked out ${selectedOutCount} items`),
-    });
+    // No checks needed — prep all items directly
+    Promise.all(
+      withoutChecks.map((i) =>
+        prepItemDirect(projectId, i.lineItemId, "assetId" in i ? i.assetId : undefined, "quantity" in i ? i.quantity as number : undefined)
+      )
+    ).then(() => {
+      toast.success("Items prepped — ready to deploy");
+      invalidate();
+    }).catch((e) => toast.error(e.message));
   };
 
   const handleReturnSelected = () => {
@@ -1333,10 +1734,13 @@ function WarehouseProjectPage({
           continue;
         }
       }
-      kitCheckInMutation.mutate({
-        kitId,
-        returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING",
-      });
+      // Try kit check flow first
+      const kitLiForCheck = lineItems.find((l) => l.kitId === kitId && !l.isKitChild);
+      const rc = returnCondition as "GOOD" | "DAMAGED" | "MISSING";
+      const started = kitLiForCheck ? startKitCheckFlow(kitId, kitLiForCheck, "RETURN", rc) : false;
+      if (!started) {
+        kitCheckInMutation.mutate({ kitId, returnCondition: rc });
+      }
     }
 
     // Return non-kit items
@@ -1352,26 +1756,36 @@ function WarehouseProjectPage({
         const li = lineItems.find((l) => l.id === item.lineItemId);
         return { item, li };
       });
-      const withChecks = returnLineItems.filter(
-        ({ li }) => li?.model?._count?.modelCheckItems && li.model._count.modelCheckItems > 0 && li?.modelId
-      );
-      const withoutChecks = returnLineItems
-        .filter(({ li }) => !li?.model?._count?.modelCheckItems || li.model._count.modelCheckItems === 0 || !li?.modelId)
-        .map(({ item }) => item);
 
-      if (withChecks.length > 0) {
-        const queue: CheckQueueItem[] = withChecks.map(({ item, li }) => ({
-          context: "RETURN" as const,
-          modelId: li!.modelId!,
-          assetTag: li?.asset?.assetTag || li?.bulkAsset?.assetTag || "",
-          assetName: modelDisplayName(li!),
-          lineItemId: item.lineItemId,
-          assetId: li?.assetId || "",
-          bulkAssetId: li?.bulkAssetId || undefined,
-        }));
+      // Expand items with checks: bulk items with qty > 1 get one queue entry per unit
+      const queue: CheckQueueItem[] = [];
+      const withoutCheckItems: typeof items = [];
+
+      for (const { item, li } of returnLineItems) {
+        const hasChecks = li?.model?._count?.modelCheckItems && li.model._count.modelCheckItems > 0 && li?.modelId;
+        if (hasChecks) {
+          const isBulk = !!li.bulkAssetId || (!li.assetId && li.quantity > 1);
+          const count = isBulk ? item.quantity : 1;
+          for (let i = 0; i < count; i++) {
+            queue.push({
+              context: "RETURN" as const,
+              modelId: li.modelId!,
+              assetTag: li.asset?.assetTag || li.bulkAsset?.assetTag || "",
+              assetName: modelDisplayName(li),
+              lineItemId: item.lineItemId,
+              assetId: li.assetId || "",
+              bulkAssetId: li.bulkAssetId || undefined,
+            });
+          }
+        } else {
+          withoutCheckItems.push(item);
+        }
+      }
+
+      if (queue.length > 0) {
         startCheckQueue(
           queue,
-          withoutChecks.map((i) => ({ lineItemId: i.lineItemId, returnCondition: i.returnCondition, quantity: i.quantity, notes: i.notes }))
+          withoutCheckItems.map((i) => ({ lineItemId: i.lineItemId, returnCondition: i.returnCondition, quantity: i.quantity, notes: i.notes }))
         );
         setReturnNotes("");
         return;
@@ -1519,9 +1933,13 @@ function WarehouseProjectPage({
 
       <Tabs defaultValue={initialTab}>
         <TabsList>
+          <TabsTrigger value="pick-prep">
+            <ScanBarcode className="mr-1.5 h-4 w-4" />
+            Pick/Prep ({pickPrepItems.length})
+          </TabsTrigger>
           <TabsTrigger value="check-out">
             <PackageCheck className="mr-1.5 h-4 w-4" />
-            Deploy ({checkOutItemsList.length})
+            Deploy ({preppedItems.length})
           </TabsTrigger>
           <TabsTrigger value="check-in">
             <PackageX className="mr-1.5 h-4 w-4" />
@@ -1538,45 +1956,321 @@ function WarehouseProjectPage({
         </TabsList>
 
         {/* ================================================================ */}
-        {/* CHECK OUT TAB                                                    */}
+        {/* PICK / PREP TAB                                                  */}
+        {/* ================================================================ */}
+        <TabsContent value="pick-prep">
+          <div className="space-y-4 pt-4">
+            <div className="rounded-lg bg-bg-surface surface-ring py-4 px-4 space-y-3">
+                <ScanInput
+                  ref={scanInputRef}
+                  placeholder="Scan or enter asset tag to prep..."
+                  value={scanValue}
+                  onChange={(e) => setScanValue(e.target.value)}
+                  onKeyDown={handleScanKeyDown}
+                  onScan={(value) => scanMutation.mutate(value)}
+                  scannerTitle="Scan asset to prep"
+                  continuous
+                  disabled={scanMutation.isPending}
+                  autoFocus
+                />
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-fg-3">Items that need to be picked and prepped.</p>
+                  <Button
+                    onClick={handlePrepSelected}
+                    disabled={selectedPrepCount === 0 || scanMutation.isPending}
+                    className="shrink-0"
+                  >
+                    Prep{selectedPrepCount > 0 ? ` (${selectedPrepCount})` : ""}
+                  </Button>
+                </div>
+            </div>
+
+            {pickPrepItems.length === 0 ? (
+              <div className="rounded-lg bg-bg-surface surface-ring py-8 text-center text-fg-3">
+                  <PackageCheck className="mx-auto mb-2 h-8 w-8 opacity-50" />
+                  <p>All items prepped.</p>
+                  <p className="text-xs mt-1">Head to the Deploy tab to send them out.</p>
+              </div>
+            ) : (
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={allPrepKeys.length > 0 && (allPrepKeys.every((k) => selectedPrep.has(k)) || allPrepKeys.some((k) => selectedPrep.has(k)))}
+                          indeterminate={allPrepKeys.length > 0 && allPrepKeys.some((k) => selectedPrep.has(k)) && !allPrepKeys.every((k) => selectedPrep.has(k))}
+                          onCheckedChange={() => toggleAll(selectedPrep, setSelectedPrep, allPrepKeys)}
+                        />
+                      </TableHead>
+                      <TableHead>Item</TableHead>
+                      <TableHead>Asset Tag</TableHead>
+                      <TableHead className="text-center w-16">Qty</TableHead>
+                      <TableHead className="w-28">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {groupedPrep.map((entry) => {
+                      if (entry.kind === "serialized-group") {
+                        const childKeys = entry.items.map((i) => i.id);
+                        const isExpanded = expandedGroups.has(entry.groupKey);
+                        return (
+                          <Fragment key={entry.groupKey}>
+                            {renderGroupHeader(
+                              entry, childKeys, selectedPrep, setSelectedPrep,
+                              <TableCell>
+                                {entry.items.every((i) => i.prepStatus === "PACKED")
+                                  ? <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">Prepped</Badge>
+                                  : entry.items.some((i) => i.prepStatus === "PACKED")
+                                    ? <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20">Partial</Badge>
+                                    : <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20">Needs prep</Badge>}
+                              </TableCell>
+                            )}
+                            {isExpanded && entry.items.map((item, idx) => (
+                              <TableRow key={item.id} className="bg-bg-inset/30">
+                                <TableCell>
+                                  <Checkbox
+                                    checked={selectedPrep.has(item.id)}
+                                    onCheckedChange={() => toggleSelection(selectedPrep, setSelectedPrep, item.id)}
+                                  />
+                                </TableCell>
+                                <TableCell className="pl-12 text-sm text-fg-3">
+                                  {item.asset?.assetTag ? `${item.model?.name || "Asset"}` : `Unit ${idx + 1}`}
+                                </TableCell>
+                                <TableCell className="font-mono text-sm text-fg-3">
+                                  {item.asset?.assetTag || "—"}
+                                </TableCell>
+                                <TableCell className="text-center">1</TableCell>
+                                <TableCell>
+                                  <PrepStatusBadge item={item} />
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </Fragment>
+                        );
+                      }
+
+                      if (entry.kind === "bulk-group") {
+                        const childKeys = Array.from({ length: entry.unitCount }, (_, i) => bulkUnitKey(entry.item.id, i));
+                        const isExpanded = expandedGroups.has(entry.groupKey);
+                        const checkedCount = childKeys.filter((k) => selectedPrep.has(k)).length;
+                        return (
+                          <Fragment key={entry.groupKey}>
+                            {renderGroupHeader(
+                              entry, childKeys, selectedPrep, setSelectedPrep,
+                              <TableCell>
+                                {checkedCount > 0 ? (
+                                  <Badge variant="outline" className="bg-purple-500/10 text-purple-500 border-purple-500/20">
+                                    {checkedCount} selected
+                                  </Badge>
+                                ) : (
+                                  <PrepStatusBadge item={entry.item} />
+                                )}
+                              </TableCell>
+                            )}
+                            {isExpanded && childKeys.map((key, idx) => (
+                              <TableRow key={key} className="bg-bg-inset/30">
+                                <TableCell>
+                                  <Checkbox
+                                    checked={selectedPrep.has(key)}
+                                    onCheckedChange={() => toggleSelection(selectedPrep, setSelectedPrep, key)}
+                                  />
+                                </TableCell>
+                                <TableCell className="pl-12 text-sm text-fg-3">
+                                  Unit {idx + 1}
+                                </TableCell>
+                                <TableCell className="font-mono text-sm text-fg-3">
+                                  {entry.item.bulkAsset?.assetTag || "—"}
+                                </TableCell>
+                                <TableCell className="text-center">1</TableCell>
+                                <TableCell />
+                              </TableRow>
+                            ))}
+                          </Fragment>
+                        );
+                      }
+
+                      if (entry.kind === "kit-group") {
+                        const isExpanded = expandedGroups.has(entry.groupKey);
+                        const allIds = collectAllVerifiableIds(entry.children, "deploy");
+                        const verifiedCount = allIds.filter((id) => verifiedKitItems.has(id)).length;
+                        const allVerified = allIds.length > 0 && verifiedCount === allIds.length;
+                        return (
+                          <Fragment key={entry.groupKey}>
+                            <TableRow
+                              className="cursor-pointer hover:bg-accent/50"
+                              onClick={() => toggleExpanded(entry.groupKey)}
+                            >
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                <Checkbox
+                                  checked={selectedPrep.has(entry.item.id)}
+                                  onCheckedChange={() => toggleSelection(selectedPrep, setSelectedPrep, entry.item.id)}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-1.5">
+                                  <ChevronRight className={`h-4 w-4 text-fg-3 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+                                  <Container className="h-4 w-4 text-fg-3" />
+                                  <span className="font-medium">{entry.item.description || entry.item.kit?.name || "Kit"}</span>
+                                  <Badge variant="secondary" className={`ml-1 text-[10px] px-1.5 py-0 ${entry.item.kit?.isPrep ? "bg-purple-500/10 text-purple-500 border-purple-500/20" : ""}`}>
+                                    {entry.item.kit?.isPrep ? "Prep" : "Kit"}
+                                  </Badge>
+                                  {allIds.length > 0 && (
+                                    <Badge
+                                      variant="outline"
+                                      className={allVerified
+                                        ? "ml-1 text-[10px] px-1.5 py-0 bg-green-500/10 text-green-500 border-green-500/20"
+                                        : verifiedCount > 0
+                                          ? "ml-1 text-[10px] px-1.5 py-0 bg-amber-500/10 text-amber-500 border-amber-500/20"
+                                          : "ml-1 text-[10px] px-1.5 py-0"
+                                      }
+                                    >
+                                      {verifiedCount}/{allIds.length} verified
+                                    </Badge>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="font-mono text-sm text-fg-3">
+                                {entry.item.kit?.isPrep && entry.item.kit.assetTag.startsWith("PREP-") ? "—" : (entry.item.kit?.assetTag || "—")}
+                              </TableCell>
+                              <TableCell className="text-center">{entry.children.length}</TableCell>
+                              <TableCell>
+                                <PrepStatusBadge item={entry.item} />
+                              </TableCell>
+                            </TableRow>
+                            {isExpanded && (
+                              <KitChildRows
+                                kitChildren={entry.children}
+                                mode="deploy"
+                                verifiedKitItems={verifiedKitItems}
+                                expandedGroups={expandedGroups}
+                                toggleExpanded={toggleExpanded}
+                                onToggleVerify={(assetId) => {
+                                  setVerifiedKitItems((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(assetId)) next.delete(assetId);
+                                    else next.add(assetId);
+                                    return next;
+                                  });
+                                }}
+                              />
+                            )}
+                          </Fragment>
+                        );
+                      }
+
+                      // Single item
+                      const item = entry.item;
+                      return (
+                        <TableRow key={item.id}>
+                          <TableCell>
+                            <Checkbox
+                              checked={selectedPrep.has(item.id)}
+                              onCheckedChange={() => toggleSelection(selectedPrep, setSelectedPrep, item.id)}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <span className="font-medium">{modelDisplayName(item)}</span>
+                            {item.isSubhire && (
+                              <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0 bg-cyan-500/10 text-cyan-600 border-cyan-500/20">Subhire</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="font-mono text-sm text-fg-3">
+                            {item.asset?.assetTag || item.bulkAsset?.assetTag || "—"}
+                          </TableCell>
+                          <TableCell className="text-center">{item.quantity}</TableCell>
+                          <TableCell>
+                            <PrepStatusBadge item={item} />
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
+        {/* ================================================================ */}
+        {/* DEPLOY TAB                                                       */}
         {/* ================================================================ */}
         <TabsContent value="check-out">
           <div className="space-y-4 pt-4">
-            <div className="rounded-lg bg-bg-surface surface-ring py-4 px-4">
-                <div className="flex items-center gap-3">
-                  <ScanBarcode className="h-5 w-5 text-fg-3 shrink-0 hidden sm:block" />
-                  <div className="flex-1">
-                    <Label htmlFor="scan-checkout" className="sr-only">Scan asset tag</Label>
-                    <ScanInput
-                      ref={scanInputRef}
-                      id="scan-checkout"
-                      placeholder="Scan or enter asset tag..."
-                      value={scanValue}
-                      onChange={(e) => setScanValue(e.target.value)}
-                      onKeyDown={handleScanKeyDown}
-                      onScan={(value) => scanMutation.mutate(value)}
-                      scannerTitle="Scan asset to deploy"
-                      continuous
-                      disabled={scanMutation.isPending || checkOutMutation.isPending}
-                      autoFocus
-                    />
+            <div className="rounded-lg bg-bg-surface surface-ring py-4 px-4 space-y-3">
+                <ScanInput
+                  ref={deployScanInputRef}
+                  placeholder="Scan asset tag to deploy..."
+                  value={deployScanValue}
+                  onChange={(e) => setDeployScanValue(e.target.value)}
+                  onScan={(value) => deployScanMutation.mutate(value)}
+                  onKeyDown={handleDeployScanKeyDown}
+                  disabled={deployScanMutation.isPending || checkOutMutation.isPending}
+                />
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-fg-3">Items prepped and ready to deploy.</p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const ids = Array.from(selectedOut);
+                        if (ids.length === 0) return;
+
+                        // Collect bulk unit depreps by line item
+                        const bulkDeprepMap = new Map<string, number>();
+                        const directIds: string[] = [];
+
+                        ids.forEach((id) => {
+                          if (id.includes(":")) {
+                            const lineItemId = id.split(":")[0];
+                            bulkDeprepMap.set(lineItemId, (bulkDeprepMap.get(lineItemId) || 0) + 1);
+                          } else {
+                            directIds.push(id);
+                          }
+                        });
+
+                        // Deprep bulk items (single call with quantity)
+                        for (const [lineItemId, count] of bulkDeprepMap) {
+                          deprepMutation.mutate({ lineItemId, quantity: count });
+                        }
+
+                        // Deprep serialized/kit items
+                        directIds.forEach((id) => {
+                          const li = lineItems.find((l) => l.id === id);
+                          if (li && isKitParent(li)) {
+                            deprepKit(projectId, id)
+                              .then(() => {
+                                toast.success("Kit removed from prep");
+                                invalidate();
+                              })
+                              .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to deprep kit"));
+                          } else {
+                            deprepMutation.mutate(id);
+                          }
+                        });
+                        setSelectedOut(new Set());
+                      }}
+                      disabled={selectedOutCount === 0 || deprepMutation.isPending}
+                    >
+                      Deprep{selectedOutCount > 0 ? ` (${selectedOutCount})` : ""}
+                    </Button>
+                    <Button
+                      onClick={handleCheckOutSelected}
+                      disabled={selectedOutCount === 0 || checkOutMutation.isPending}
+                      className="shrink-0"
+                    >
+                      Deploy{selectedOutCount > 0 ? ` (${selectedOutCount})` : ""}
+                    </Button>
                   </div>
-                  <Button
-                    onClick={handleCheckOutSelected}
-                    disabled={selectedOutCount === 0 || checkOutMutation.isPending}
-                    className="shrink-0"
-                  >
-                    <span className="hidden sm:inline">Deploy</span>
-                    <span className="sm:hidden">Deploy</span>
-                    {selectedOutCount > 0 ? ` (${selectedOutCount})` : ""}
-                  </Button>
                 </div>
             </div>
 
             {checkOutItemsList.length === 0 ? (
               <div className="rounded-lg bg-bg-surface surface-ring py-8 text-center text-fg-3">
                   <Package className="mx-auto mb-2 h-8 w-8 opacity-50" />
-                  <p>All items deployed.</p>
+                  <p>No prepped items ready to deploy.</p>
+                  <p className="text-xs mt-1">Pick and prep items first in the Pick/Prep tab.</p>
               </div>
             ) : (
               <div className="rounded-md border">
@@ -1607,10 +2301,10 @@ function WarehouseProjectPage({
                             {renderGroupHeader(
                               entry, childKeys, selectedOut, setSelectedOut,
                               <TableCell>
-                                <StatusIndicator category="lineItem" value={entry.items[0].status} label={lineItemStatusLabels[entry.items[0].status] || formatLabel(entry.items[0].status)} variant="pill" />
+                                <PrepStatusBadge item={entry.items[0]} />
                               </TableCell>
                             )}
-                            {isExpanded && entry.items.map((item) => (
+                            {isExpanded && entry.items.map((item, idx) => (
                               <TableRow key={item.id} className="bg-bg-inset/30">
                                 <TableCell>
                                   <Checkbox
@@ -1619,15 +2313,14 @@ function WarehouseProjectPage({
                                   />
                                 </TableCell>
                                 <TableCell className="pl-12 text-sm text-fg-3">
-                                  {item.asset?.assetTag ? `${item.model?.name || "Asset"}` : "Unassigned"}
-      
+                                  {item.asset?.assetTag ? `${item.model?.name || "Asset"}` : `Unit ${idx + 1}`}
                                 </TableCell>
                                 <TableCell className="font-mono text-sm text-fg-3">
                                   {item.asset?.assetTag || "—"}
                                 </TableCell>
                                 <TableCell className="text-center">1</TableCell>
                                 <TableCell>
-                                  <StatusIndicator category="lineItem" value={item.status} label={lineItemStatusLabels[item.status] || formatLabel(item.status)} variant="pill" />
+                                  <PrepStatusBadge item={item} />
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -1650,7 +2343,7 @@ function WarehouseProjectPage({
                                     {checkedCount} selected
                                   </Badge>
                                 ) : (
-                                  <StatusIndicator category="lineItem" value={entry.item.status} label={lineItemStatusLabels[entry.item.status] || formatLabel(entry.item.status)} variant="pill" />
+                                  <PrepStatusBadge item={entry.item} />
                                 )}
                               </TableCell>
                             )}
@@ -1730,7 +2423,7 @@ function WarehouseProjectPage({
                                     Partial
                                   </Badge>
                                 ) : (
-                                  <StatusIndicator category="lineItem" value={entry.item.status} label={lineItemStatusLabels[entry.item.status] || formatLabel(entry.item.status)} variant="pill" />
+                                  <PrepStatusBadge item={entry.item} />
                                 )}
                               </TableCell>
                             </TableRow>
@@ -1777,7 +2470,7 @@ function WarehouseProjectPage({
                           </TableCell>
                           <TableCell className="text-center">{item.quantity}</TableCell>
                           <TableCell>
-                            <StatusIndicator category="lineItem" value={item.status} label={lineItemStatusLabels[item.status] || formatLabel(item.status)} variant="pill" />
+                            <PrepStatusBadge item={item} />
                           </TableCell>
                         </TableRow>
                       );
@@ -1887,7 +2580,7 @@ function WarehouseProjectPage({
                                 <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
                               </TableCell>
                             )}
-                            {isExpanded && entry.items.map((item) => (
+                            {isExpanded && entry.items.map((item, idx) => (
                               <TableRow key={item.id} className="bg-bg-inset/30">
                                 <TableCell>
                                   <Checkbox
@@ -1896,8 +2589,7 @@ function WarehouseProjectPage({
                                   />
                                 </TableCell>
                                 <TableCell className="pl-12 text-sm text-fg-3">
-                                  {item.asset?.assetTag ? `${item.model?.name || "Asset"}` : "Unassigned"}
-      
+                                  {item.asset?.assetTag ? `${item.model?.name || "Asset"}` : `Unit ${idx + 1}`}
                                 </TableCell>
                                 <TableCell className="font-mono text-sm text-fg-3">
                                   {item.asset?.assetTag || "—"}
@@ -2100,13 +2792,13 @@ function WarehouseProjectPage({
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>
-                {kitConfirm.action === "deploy" ? "Deploy without full verification?" : "Return without full verification?"}
+                {kitConfirm.action === "deploy" ? "Prep without full verification?" : "Return without full verification?"}
               </DialogTitle>
             </DialogHeader>
             <p className="text-sm text-fg-3">
               <span className="font-medium text-fg">{kitConfirm.kitName}</span> has{" "}
               <span className="font-medium text-fg">{kitConfirm.verifiedCount}/{kitConfirm.totalCount}</span>{" "}
-              items verified. You can {kitConfirm.action === "deploy" ? "deploy" : "return"} only the verified items, or {kitConfirm.action === "deploy" ? "deploy" : "return"} everything.
+              items verified. You can {kitConfirm.action === "deploy" ? "prep" : "return"} only the verified items, or {kitConfirm.action === "deploy" ? "prep" : "return"} everything.
             </p>
             <DialogFooter className="flex-col sm:flex-row gap-2">
               <Button variant="outline" size="sm" onClick={() => setKitConfirm(null)}>
@@ -2118,31 +2810,15 @@ function WarehouseProjectPage({
                   size="sm"
                   onClick={() => {
                     if (kitConfirm.action === "deploy") {
-                      // Deploy verified children + the kit parent (if not already deployed) so it moves to return tab
-                      const parentLi = lineItems.find((l) => l.id === kitConfirm.parentLineItemId);
-                      const children = parentLi ? ((parentLi.childLineItems || []) as LineItem[]) : [];
-
-                      // Also include nested kit parent line items when their grandchildren are being deployed
-                      const nestedKitParentIds: string[] = [];
-                      for (const child of children) {
-                        if (child.kitId && child.childLineItems?.length) {
-                          const hasVerifiedGrandchild = (child.childLineItems as LineItem[]).some(
-                            (gc) => kitConfirm.verifiedIds.includes(gc.id)
-                          );
-                          if (hasVerifiedGrandchild && child.status !== "CHECKED_OUT") {
-                            nestedKitParentIds.push(child.id);
-                          }
-                        }
-                      }
-
-                      const items = [
-                        ...(parentLi?.status !== "CHECKED_OUT" ? [{ lineItemId: kitConfirm.parentLineItemId }] : []),
-                        ...nestedKitParentIds.map((id) => ({ lineItemId: id })),
-                        ...kitConfirm.verifiedIds.map((id) => ({ lineItemId: id })),
-                      ];
-                      checkOutMutation.mutate(items, {
-                        onSuccess: () => toast.success(`Deployed ${kitConfirm.verifiedCount} verified items`),
-                      });
+                      // Prep verified children
+                      Promise.all(
+                        kitConfirm.verifiedIds.map((id) =>
+                          prepItemDirect(projectId, id)
+                        )
+                      ).then(() => {
+                        toast.success(`Prepped ${kitConfirm.verifiedCount} verified items`);
+                        invalidate();
+                      }).catch((e) => toast.error(e.message));
                     } else {
                       // Return only verified children — kit parent stays deployed until all returned
                       checkInMutation.mutate(
@@ -2159,24 +2835,30 @@ function WarehouseProjectPage({
                     setKitConfirm(null);
                   }}
                 >
-                  {kitConfirm.action === "deploy" ? "Deploy" : "Return"} Verified ({kitConfirm.verifiedCount})
+                  {kitConfirm.action === "deploy" ? "Prep" : "Return"} Verified ({kitConfirm.verifiedCount})
                 </Button>
               )}
               <Button
                 size="sm"
                 onClick={() => {
-                  if (kitConfirm.action === "deploy") {
-                    kitCheckOutMutation.mutate(kitConfirm.kitId);
-                  } else {
-                    kitCheckInMutation.mutate({
-                      kitId: kitConfirm.kitId,
-                      returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING",
-                    });
+                  const kitLi = lineItems.find((l) => l.kitId === kitConfirm.kitId && !l.isKitChild);
+                  const rc = returnCondition as "GOOD" | "DAMAGED" | "MISSING";
+                  const started = kitLi
+                    ? startKitCheckFlow(kitConfirm.kitId, kitLi, kitConfirm.action === "deploy" ? "PREP" : "RETURN", rc)
+                    : false;
+                  if (!started) {
+                    if (kitConfirm.action === "deploy") {
+                      // No checks — prep all items
+                      toast.success(`Kit prepped: ${kitConfirm.kitName}`);
+                      invalidate();
+                    } else {
+                      kitCheckInMutation.mutate({ kitId: kitConfirm.kitId, returnCondition: rc });
+                    }
                   }
                   setKitConfirm(null);
                 }}
               >
-                {kitConfirm.action === "deploy" ? "Deploy" : "Return"} All ({kitConfirm.totalCount})
+                {kitConfirm.action === "deploy" ? "Prep" : "Return"} All ({kitConfirm.totalCount})
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -2233,8 +2915,13 @@ function WarehouseProjectPage({
               Select which specific asset to deploy for each item.
             </p>
             {assetPickerItems.map((pickerItem, idx) => (
-              <div key={pickerItem.lineItemId} className="space-y-1.5">
-                <Label className="text-sm font-medium">{pickerItem.modelName}</Label>
+              <div key={`${pickerItem.lineItemId}-${idx}`} className="space-y-1.5">
+                <Label className="text-sm font-medium">
+                  {pickerItem.modelName}
+                  {assetPickerItems.filter((i) => i.lineItemId === pickerItem.lineItemId).length > 1
+                    ? ` #${assetPickerItems.filter((i, j) => i.lineItemId === pickerItem.lineItemId && j <= idx).length}`
+                    : ""}
+                </Label>
                 {pickerItem.availableAssets.length === 0 ? (
                   <p className="text-sm text-destructive">No available assets</p>
                 ) : (
@@ -2249,7 +2936,14 @@ function WarehouseProjectPage({
                     }}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select an asset..." />
+                      <SelectValue placeholder="Select an asset...">
+                        {pickerItem.selectedAssetId
+                          ? (() => {
+                              const a = pickerItem.availableAssets.find((x) => x.id === pickerItem.selectedAssetId);
+                              return a ? `${a.assetTag}${a.customName ? ` — ${a.customName}` : ""}` : pickerItem.selectedAssetId;
+                            })()
+                          : "Select an asset..."}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {pickerItem.availableAssets
@@ -2281,7 +2975,7 @@ function WarehouseProjectPage({
               onClick={handleAssetPickerConfirm}
               disabled={assetPickerItems.some((i) => !i.selectedAssetId)}
             >
-              Deploy
+              Prep
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2299,6 +2993,7 @@ function WarehouseProjectPage({
             }
           }}
           modelId={checkFormData.modelId}
+          kitId={checkFormData.kitId}
           assetTag={checkFormData.assetTag}
           assetName={checkFormData.assetName}
           context={checkFormData.context}
@@ -2317,15 +3012,26 @@ function WarehouseProjectPage({
             try {
               const remaining = checkQueue.slice(checkQueueIndex);
               for (const item of remaining) {
-                // Fetch check items for this model to build pass-all checks
-                const modelChecks = await getModelCheckItems(item.modelId);
-                const checks: CheckRecordFormValues[] = (modelChecks as Array<{ checkItem: { id: string; type: string } }>).map((mci) => ({
+                const isKitLevelItem = !!item.kitId;
+                const isKitQueueChild = !!item.kitQueueKitId && !item.kitId;
+
+                // Fetch check items (kit-level or model-level)
+                const checkItems = isKitLevelItem
+                  ? await getKitCheckItems(item.kitId!)
+                  : await getModelCheckItems(item.modelId!);
+                const checks: CheckRecordFormValues[] = (checkItems as Array<{ checkItem: { id: string; type: string } }>).map((mci) => ({
                   checkItemId: mci.checkItem.id,
                   result: mci.checkItem.type === "NOTES" ? "NOTES_ONLY" as const : "PASS" as const,
                   photos: [],
                 }));
 
-                if (item.context === "PREP") {
+                if (isKitLevelItem) {
+                  // Kit-level: save records only, deploy happens in finishCheckQueue
+                  await saveKitLevelChecks(projectId, item.kitId!, item.lineItemId, item.context, checks);
+                } else if (isKitQueueChild) {
+                  // PER_ITEM child: save records only, deploy happens in finishCheckQueue
+                  await saveChildItemChecks(projectId, item.lineItemId, item.assetId || undefined, item.bulkAssetId, item.context, checks);
+                } else if (item.context === "PREP") {
                   await pullItem(projectId, item.lineItemId).catch(() => {});
                   await completeCheckAndPack({
                     projectId,
@@ -2342,8 +3048,7 @@ function WarehouseProjectPage({
                     assetId: item.assetId,
                     bulkAssetId: item.bulkAssetId,
                     checks,
-                    condition: (returnCondition || "GOOD") as "GOOD" | "DAMAGED" | "MISSING",
-                    notes: returnNotes || undefined,
+                    condition: "GOOD",
                   });
                 }
               }
@@ -2355,13 +3060,30 @@ function WarehouseProjectPage({
               setCheckFormSubmitting(false);
             }
           } : undefined}
-          onSubmit={async (checks: CheckRecordFormValues[]) => {
+          onSubmit={async (checks: CheckRecordFormValues[], returnInfo?: { condition: "GOOD" | "DAMAGED" | "MISSING"; notes?: string }) => {
             if (!checkFormData) return;
             setCheckFormSubmitting(true);
             try {
               const hasFails = checks.some((c) => c.result === "FAIL");
+              const isKitLevelItem = !!checkFormData.kitId;
+              const isKitQueueChild = !!checkFormData.kitQueueKitId && !checkFormData.kitId;
 
-              if (checkFormData.context === "PREP") {
+              if (isKitLevelItem) {
+                // Kit-level check: save records, then deploy/return in finishCheckQueue
+                await saveKitLevelChecks(projectId, checkFormData.kitId!, checkFormData.lineItemId, checkFormData.context, checks);
+                toast.success(hasFails ? "Kit check completed with issues" : "Kit check passed");
+              } else if (isKitQueueChild) {
+                // PER_ITEM child: save records only, deploy/return happens in finishCheckQueue
+                await saveChildItemChecks(
+                  projectId,
+                  checkFormData.lineItemId,
+                  checkFormData.assetId || undefined,
+                  checkFormData.bulkAssetId,
+                  checkFormData.context,
+                  checks
+                );
+                toast.success(hasFails ? "Item check completed with issues" : "Item check passed");
+              } else if (checkFormData.context === "PREP") {
                 if (hasFails) {
                   await completeCheckAndFlag({
                     projectId,
@@ -2383,17 +3105,19 @@ function WarehouseProjectPage({
                   toast.success("Item checked and packed");
                 }
               } else {
-                // RETURN
+                // RETURN — condition comes from the check form
+                const condition = returnInfo?.condition || "GOOD";
                 await completeCheckAndStore({
                   projectId,
                   lineItemId: checkFormData.lineItemId,
                   assetId: checkFormData.assetId,
                   bulkAssetId: checkFormData.bulkAssetId,
                   checks,
-                  condition: (hasFails ? "DAMAGED" : returnCondition) as "GOOD" | "DAMAGED" | "MISSING",
-                  notes: returnNotes || undefined,
+                  condition,
+                  notes: returnInfo?.notes || undefined,
                 });
-                toast.success(`Item checked and ${hasFails ? "flagged damaged" : "stored"}`);
+                const condLabel = condition === "GOOD" ? "stored" : condition === "DAMAGED" ? "flagged damaged" : "flagged missing";
+                toast.success(`Item checked and ${condLabel}`);
               }
 
               // Advance queue or close
@@ -2401,11 +3125,8 @@ function WarehouseProjectPage({
                 advanceCheckQueue();
                 invalidate();
               } else {
-                setCheckFormOpen(false);
-                setCheckFormData(null);
-                setCheckQueue([]);
-                setCheckQueueIndex(0);
-                invalidate();
+                // Single item or last in queue — finish
+                finishCheckQueue();
               }
             } catch (e) {
               toast.error(e instanceof Error ? e.message : "Check submission failed");

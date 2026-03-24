@@ -27,7 +27,8 @@ async function saveCheckRecords(
   lineItemId: string | undefined | null,
   bulkAssetId: string | undefined | null,
   context: "PREP" | "RETURN" | "AD_HOC",
-  checks: CheckRecordFormValues[]
+  checks: CheckRecordFormValues[],
+  kitId?: string | null
 ) {
   // Fetch check item details for snapshots
   const checkItemIds = checks.map((c) => c.checkItemId);
@@ -60,6 +61,7 @@ async function saveCheckRecords(
           ...(lineItemId ? { lineItem: { connect: { id: lineItemId } } } : {}),
           ...(assetId ? { asset: { connect: { id: assetId } } } : {}),
           ...(bulkAssetId ? { bulkAsset: { connect: { id: bulkAssetId } } } : {}),
+          ...(kitId ? { kit: { connect: { id: kitId } } } : {}),
         },
       })
     );
@@ -187,6 +189,351 @@ export async function pullItem(projectId: string, lineItemId: string) {
   return serialize(result);
 }
 
+// ─── Prep item directly (no checks needed) ──────────────────────────────────
+// Assigns the asset to the line item and sets prepStatus=PACKED without deploying.
+// Used in the Pick/Prep flow for items that have no check items assigned.
+
+export async function prepItemDirect(
+  projectId: string,
+  lineItemId: string,
+  assetId?: string,
+  quantity?: number
+) {
+  const { organizationId, userId, userName } = await requirePermission(
+    "warehouse",
+    "check_out"
+  );
+
+  const result = await prisma.$transaction(async (tx) => {
+    const lineItem = await tx.projectLineItem.findFirst({
+      where: { id: lineItemId, projectId, organizationId },
+      include: { model: true },
+    });
+
+    if (!lineItem) {
+      throw new Error("Line item not found in project");
+    }
+
+    const isBulk = assetId
+      ? false
+      : !!lineItem.bulkAssetId || (!lineItem.assetId && lineItem.quantity > 1);
+
+    if (isBulk) {
+      const prepQty = quantity || 1;
+      const baseCheckedOut =
+        lineItem.status === "RETURNED" ? 0 : lineItem.checkedOutQuantity;
+      // Use checkedOutQuantity to track prepped units for bulk items
+      // Cap at line item quantity to prevent over-counting
+      const newPreppedQty = Math.min(baseCheckedOut + prepQty, lineItem.quantity);
+
+      const updated = await tx.projectLineItem.update({
+        where: { id: lineItemId },
+        data: {
+          checkedOutQuantity: newPreppedQty,
+          returnedQuantity:
+            lineItem.status === "RETURNED" ? 0 : lineItem.returnedQuantity,
+          prepStatus: "PACKED",
+        },
+        include: { model: true, asset: true, bulkAsset: true },
+      });
+      return updated;
+    }
+
+    // Serialized: if quantity > 1 and assetId provided, split off a line item
+    if (lineItem.quantity > 1 && assetId) {
+      const splitItem = await tx.projectLineItem.create({
+        data: {
+          organizationId: lineItem.organizationId,
+          projectId: lineItem.projectId,
+          type: lineItem.type,
+          modelId: lineItem.modelId,
+          description: lineItem.description,
+          quantity: 1,
+          unitPrice: lineItem.unitPrice,
+          pricingType: lineItem.pricingType,
+          duration: lineItem.duration,
+          discount: lineItem.discount,
+          lineTotal: lineItem.unitPrice
+            ? lineItem.unitPrice.toNumber() * lineItem.duration
+            : null,
+          sortOrder: lineItem.sortOrder,
+          groupName: lineItem.groupName,
+          notes: lineItem.notes,
+          isOptional: lineItem.isOptional,
+          isSubhire: lineItem.isSubhire,
+          showSubhireOnDocs: lineItem.showSubhireOnDocs,
+          supplierId: lineItem.supplierId,
+          subhireOrderNumber: lineItem.subhireOrderNumber,
+          supplierOrderId: lineItem.supplierOrderId,
+          isKitChild: lineItem.isKitChild,
+          parentLineItemId: lineItem.parentLineItemId,
+          pricingMode: lineItem.pricingMode,
+          assetId,
+          prepStatus: "PACKED",
+        },
+        include: { model: true, asset: true, bulkAsset: true },
+      });
+
+      // Reduce original line item's quantity
+      const newQty = lineItem.quantity - 1;
+      await tx.projectLineItem.update({
+        where: { id: lineItemId },
+        data: {
+          quantity: newQty,
+          lineTotal: lineItem.unitPrice
+            ? lineItem.unitPrice.toNumber() * newQty * lineItem.duration
+            : null,
+        },
+      });
+
+      return splitItem;
+    }
+
+    // Normal serialized item
+    const updated = await tx.projectLineItem.update({
+      where: { id: lineItemId },
+      data: {
+        ...(assetId ? { asset: { connect: { id: assetId } } } : {}),
+        prepStatus: "PACKED",
+      },
+      include: { model: true, asset: true, bulkAsset: true },
+    });
+    return updated;
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "asset",
+    entityId: lineItemId,
+    entityName: result.model?.name || "Line item",
+    summary: "Prepped item (no checks required)",
+    projectId,
+    assetId: assetId || result.assetId || undefined,
+  });
+
+  return serialize(result);
+}
+
+export async function deprepItem(
+  projectId: string,
+  lineItemId: string,
+  quantity: number = 1
+) {
+  const { organizationId, userId, userName } = await requirePermission(
+    "warehouse",
+    "check_out"
+  );
+
+  const result = await prisma.$transaction(async (tx) => {
+    const lineItem = await tx.projectLineItem.findFirst({
+      where: { id: lineItemId, projectId, organizationId },
+      include: { model: true, asset: true, bulkAsset: true },
+    });
+
+    if (!lineItem) {
+      throw new Error("Line item not found in project");
+    }
+
+    // Allow deprep from any non-deployed state (handles PACKED, PULLED, or inconsistent states)
+    if (lineItem.status === "CHECKED_OUT") {
+      throw new Error("Item is already deployed — return it first");
+    }
+
+    // For bulk items, decrement checkedOutQuantity (used to track prepped units)
+    if (lineItem.bulkAssetId || (!lineItem.assetId && lineItem.quantity > 1)) {
+      const newQty = Math.max(0, lineItem.checkedOutQuantity - quantity);
+      const updated = await tx.projectLineItem.update({
+        where: { id: lineItemId },
+        data: {
+          checkedOutQuantity: newQty,
+          prepStatus: newQty > 0 ? "PACKED" : "PENDING",
+        },
+        include: { model: true, asset: true, bulkAsset: true },
+      });
+      return updated;
+    }
+
+    // Serialized item: clear prepStatus, unassign asset only for non-kit-child items
+    const updated = await tx.projectLineItem.update({
+      where: { id: lineItemId },
+      data: {
+        prepStatus: "PENDING",
+        ...(!lineItem.isKitChild && lineItem.assetId ? { asset: { disconnect: true } } : {}),
+      },
+      include: { model: true, asset: true, bulkAsset: true },
+    });
+    return updated;
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "asset",
+    entityId: lineItemId,
+    entityName: result.model?.name || "Line item",
+    summary: "Removed item from prep",
+    projectId,
+    assetId: result.assetId || undefined,
+  });
+
+  return serialize(result);
+}
+
+/**
+ * Reverse prep for a kit: set parent + all children/grandchildren back to PENDING.
+ */
+export async function deprepKit(
+  projectId: string,
+  parentLineItemId: string
+) {
+  const { organizationId, userId, userName } = await requirePermission(
+    "warehouse",
+    "check_out"
+  );
+
+  const parentLi = await prisma.projectLineItem.findFirst({
+    where: { id: parentLineItemId, projectId, organizationId },
+    include: {
+      childLineItems: {
+        include: {
+          childLineItems: true,
+        },
+      },
+      kit: true,
+    },
+  });
+
+  if (!parentLi) throw new Error("Kit line item not found");
+
+  // Allow deprep if the kit or any children are in a prepped state
+  // (handles edge cases where parent/children are out of sync)
+  if (parentLi.prepStatus !== "PACKED" && parentLi.prepStatus !== "PULLED") {
+    // Check if any children are prepped even if parent isn't
+    const hasPreppedChildren = (parentLi.childLineItems || []).some(
+      (c) => c.prepStatus === "PACKED" || c.prepStatus === "PULLED"
+    );
+    if (!hasPreppedChildren) {
+      throw new Error("Kit is not prepped");
+    }
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const children = parentLi.childLineItems || [];
+    for (const child of children) {
+      if (child.status === "CHECKED_OUT" || child.status === "CANCELLED") continue;
+
+      await tx.projectLineItem.update({
+        where: { id: child.id },
+        data: { prepStatus: "PENDING" },
+      });
+
+      const grandchildren = child.childLineItems || [];
+      for (const gc of grandchildren) {
+        if (gc.status === "CHECKED_OUT" || gc.status === "CANCELLED") continue;
+        await tx.projectLineItem.update({
+          where: { id: gc.id },
+          data: { prepStatus: "PENDING" },
+        });
+      }
+    }
+
+    await tx.projectLineItem.update({
+      where: { id: parentLineItemId },
+      data: { prepStatus: "PENDING" },
+    });
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "asset",
+    entityId: parentLineItemId,
+    entityName: parentLi.kit?.name || "Kit",
+    summary: "Removed kit from prep",
+    projectId,
+  });
+
+  return serialize({ success: true });
+}
+
+/**
+ * Mark all children of a kit line item as prepped (prepStatus=PACKED).
+ * Called after kit check forms are completed in PREP context.
+ */
+export async function prepKitChildren(
+  projectId: string,
+  parentLineItemId: string
+) {
+  const { organizationId, userId, userName } = await requirePermission(
+    "warehouse",
+    "check_out"
+  );
+
+  const parentLi = await prisma.projectLineItem.findFirst({
+    where: { id: parentLineItemId, projectId, organizationId },
+    include: {
+      childLineItems: {
+        include: {
+          childLineItems: true, // nested kit grandchildren
+        },
+      },
+      kit: true,
+    },
+  });
+
+  if (!parentLi) throw new Error("Kit line item not found");
+
+  await prisma.$transaction(async (tx) => {
+    const children = parentLi.childLineItems || [];
+    for (const child of children) {
+      if (child.status === "CHECKED_OUT" || child.status === "CANCELLED") continue;
+
+      // Mark child as prepped
+      await tx.projectLineItem.update({
+        where: { id: child.id },
+        data: { prepStatus: "PACKED" },
+      });
+
+      // If child is a nested kit, also mark its grandchildren
+      const grandchildren = child.childLineItems || [];
+      for (const gc of grandchildren) {
+        if (gc.status === "CHECKED_OUT" || gc.status === "CANCELLED") continue;
+        await tx.projectLineItem.update({
+          where: { id: gc.id },
+          data: { prepStatus: "PACKED" },
+        });
+      }
+    }
+
+    // Mark the parent kit line item as prepped too
+    await tx.projectLineItem.update({
+      where: { id: parentLineItemId },
+      data: { prepStatus: "PACKED" },
+    });
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "asset",
+    entityId: parentLineItemId,
+    entityName: parentLi.kit?.name || "Kit",
+    summary: "Kit prepped (checks completed)",
+    projectId,
+  });
+
+  return { success: true };
+}
+
 export async function unpackItem(projectId: string, lineItemId: string) {
   const { organizationId, userId, userName } = await requirePermission(
     "warehouse",
@@ -224,7 +571,7 @@ export async function unpackItem(projectId: string, lineItemId: string) {
   return serialize(result);
 }
 
-// ─── Composite: Check + Pack (prep flow) ────────────────────────────────────
+// ─── Composite: Check + Prep (prep flow — saves checks + sets PACKED, no deploy) ─
 
 export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
   const { organizationId, userId, userName } = await requirePermission(
@@ -234,7 +581,7 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
   const parsed = completeCheckAndPackSchema.parse(data);
 
   const result = await prisma.$transaction(async (tx) => {
-    // 1. Verify line item (needed to resolve assetId)
+    // 1. Verify line item
     const lineItem = await tx.projectLineItem.findFirst({
       where: {
         id: parsed.lineItemId,
@@ -262,103 +609,87 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
       parsed.checks
     );
 
-    // 3. Fetch project location
-    const project = await tx.project.findUnique({
-      where: { id: parsed.projectId, organizationId },
-      select: { locationId: true },
-    });
-    const projectLocationId = project?.locationId || null;
-
-    // 4. Perform checkout (replicates checkOutItems internal logic)
-    const isBulk =
-      !!lineItem.bulkAssetId ||
-      (!lineItem.assetId && lineItem.quantity > 1);
+    // 3. Set prepStatus to PACKED (no checkout — deploy is a separate step)
+    const isBulk = parsed.assetId
+      ? false
+      : (!!lineItem.bulkAssetId || (!lineItem.assetId && lineItem.quantity > 1));
 
     if (isBulk) {
       const baseCheckedOut =
         lineItem.status === "RETURNED" ? 0 : lineItem.checkedOutQuantity;
-      const newCheckedOutQty = baseCheckedOut + 1;
-      const fullyCheckedOut = newCheckedOutQty >= lineItem.quantity;
+      const newPreppedQty = Math.min(baseCheckedOut + 1, lineItem.quantity);
 
       await tx.projectLineItem.update({
         where: { id: parsed.lineItemId },
         data: {
-          checkedOutQuantity: newCheckedOutQty,
+          checkedOutQuantity: newPreppedQty,
           returnedQuantity:
             lineItem.status === "RETURNED" ? 0 : lineItem.returnedQuantity,
-          status: fullyCheckedOut
-            ? "CHECKED_OUT"
-            : lineItem.status === "QUOTED" || lineItem.status === "RETURNED"
-              ? "CONFIRMED"
-              : lineItem.status,
-          checkedOutAt: fullyCheckedOut ? new Date() : lineItem.checkedOutAt,
-          ...(fullyCheckedOut
-            ? { checkedOutBy: { connect: { id: userId } } }
-            : {}),
           prepStatus: "PACKED",
         },
       });
     } else {
-      // Serialized asset
-      const assetId = parsed.assetId || lineItem.assetId;
-
-      if (assetId) {
-        const assetRecord = await tx.asset.findUnique({
-          where: { id: assetId },
-          select: { status: true, assetTag: true },
+      // Serialized asset — split if multi-qty with specific asset
+      if (lineItem.quantity > 1 && parsed.assetId) {
+        const splitItem = await tx.projectLineItem.create({
+          data: {
+            organizationId: lineItem.organizationId,
+            projectId: lineItem.projectId,
+            type: lineItem.type,
+            modelId: lineItem.modelId,
+            description: lineItem.description,
+            quantity: 1,
+            unitPrice: lineItem.unitPrice,
+            pricingType: lineItem.pricingType,
+            duration: lineItem.duration,
+            discount: lineItem.discount,
+            lineTotal: lineItem.unitPrice
+              ? lineItem.unitPrice.toNumber() * lineItem.duration
+              : null,
+            sortOrder: lineItem.sortOrder,
+            groupName: lineItem.groupName,
+            notes: lineItem.notes,
+            isOptional: lineItem.isOptional,
+            isSubhire: lineItem.isSubhire,
+            showSubhireOnDocs: lineItem.showSubhireOnDocs,
+            supplierId: lineItem.supplierId,
+            subhireOrderNumber: lineItem.subhireOrderNumber,
+            supplierOrderId: lineItem.supplierOrderId,
+            isKitChild: lineItem.isKitChild,
+            parentLineItemId: lineItem.parentLineItemId,
+            pricingMode: lineItem.pricingMode,
+            assetId: parsed.assetId,
+            prepStatus: "PACKED",
+          },
+          include: { model: true, asset: true, bulkAsset: true },
         });
-        if (
-          assetRecord &&
-          assetRecord.status === "CHECKED_OUT" &&
-          lineItem.status !== "CHECKED_OUT"
-        ) {
-          throw new Error(
-            `Asset ${assetRecord.assetTag} is already deployed`
-          );
-        }
+
+        // Reduce original line item's quantity
+        const newQty = lineItem.quantity - 1;
+        await tx.projectLineItem.update({
+          where: { id: parsed.lineItemId },
+          data: {
+            quantity: newQty,
+            lineTotal: lineItem.unitPrice
+              ? lineItem.unitPrice.toNumber() * newQty * lineItem.duration
+              : null,
+          },
+        });
+
+        return { updatedItem: splitItem, resolvedAssetId: parsed.assetId };
       }
 
+      // Normal serialized prep (quantity == 1)
       await tx.projectLineItem.update({
         where: { id: parsed.lineItemId },
         data: {
-          status: "CHECKED_OUT",
-          checkedOutQuantity: 1,
-          returnedQuantity: 0,
-          returnCondition: null,
-          returnNotes: null,
-          returnedAt: null,
-          checkedOutAt: new Date(),
-          checkedOutBy: { connect: { id: userId } },
           ...(parsed.assetId
             ? { asset: { connect: { id: parsed.assetId } } }
             : {}),
           prepStatus: "PACKED",
         },
       });
-
-      if (assetId) {
-        await tx.asset.update({
-          where: { id: assetId },
-          data: {
-            status: "CHECKED_OUT",
-            ...(projectLocationId && { locationId: projectLocationId }),
-          },
-        });
-      }
     }
-
-    // 5. Create scan log
-    await tx.assetScanLog.create({
-      data: {
-        organizationId,
-        assetId: parsed.assetId || lineItem.assetId || null,
-        bulkAssetId: lineItem.bulkAssetId || null,
-        projectId: parsed.projectId,
-        action: "CHECK_OUT",
-        scannedById: userId,
-        notes: "Checked + packed",
-      },
-    });
 
     const updatedItem = await tx.projectLineItem.findUnique({
       where: { id: parsed.lineItemId },
@@ -377,18 +708,18 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
       userName,
       result.resolvedAssetId,
       failedChecks.map((c) => c.checkItemId)
-    ).catch(console.error); // Don't fail the main operation
+    ).catch(console.error);
   }
 
   await logActivity({
     organizationId,
     userId,
     userName,
-    action: "CHECK_OUT",
+    action: "UPDATE",
     entityType: "asset",
     entityId: result.resolvedAssetId || parsed.lineItemId,
     entityName: `Line item ${parsed.lineItemId}`,
-    summary: `Completed check and packed item`,
+    summary: `Completed checks and prepped item`,
     projectId: parsed.projectId,
     assetId: result.resolvedAssetId || undefined,
   });
@@ -536,9 +867,10 @@ export async function completeCheckAndStore(
     }
 
     // 5. Perform checkin (replicates checkInItems internal logic)
-    const isBulk =
-      !!lineItem.bulkAssetId ||
-      (!lineItem.assetId && lineItem.quantity > 1);
+    const resolvedAssetIdForReturn = parsed.assetId || lineItem.assetId;
+    const isBulk = resolvedAssetIdForReturn
+      ? false
+      : (!!lineItem.bulkAssetId || (!lineItem.assetId && lineItem.quantity > 1));
 
     if (isBulk) {
       const newReturnedQty = lineItem.returnedQuantity + 1;
@@ -804,4 +1136,97 @@ export async function getModelFailureAnalytics(modelId: string) {
   );
 
   return serialize(analytics);
+}
+
+// ─── Kit Check Actions ──────────────────────────────────────────────────────
+
+/**
+ * Save check records for a kit-level check (KIT_LEVEL mode).
+ * Does NOT perform checkout/checkin — the caller handles that separately.
+ */
+export async function saveKitLevelChecks(
+  projectId: string,
+  kitId: string,
+  lineItemId: string,
+  context: "PREP" | "RETURN",
+  checks: CheckRecordFormValues[]
+) {
+  const { organizationId, userId } = await requirePermission(
+    "warehouse",
+    context === "PREP" ? "check_out" : "check_in"
+  );
+
+  await prisma.$transaction(async (tx) => {
+    await saveCheckRecords(
+      tx,
+      organizationId,
+      userId,
+      "", // no specific asset for kit-level
+      lineItemId,
+      null,
+      context,
+      checks,
+      kitId
+    );
+  });
+
+  return { success: true };
+}
+
+/**
+ * Save check records for a single child item (PER_ITEM mode).
+ * Does NOT perform checkout/checkin — the caller handles that via checkOutKit/checkInKit.
+ */
+export async function saveChildItemChecks(
+  projectId: string,
+  lineItemId: string,
+  assetId: string | undefined,
+  bulkAssetId: string | undefined,
+  context: "PREP" | "RETURN",
+  checks: CheckRecordFormValues[]
+) {
+  const { organizationId, userId } = await requirePermission(
+    "warehouse",
+    context === "PREP" ? "check_out" : "check_in"
+  );
+
+  await prisma.$transaction(async (tx) => {
+    // Verify line item exists
+    const lineItem = await tx.projectLineItem.findFirst({
+      where: { id: lineItemId, organizationId },
+    });
+    if (!lineItem) throw new Error("Line item not found");
+
+    const resolvedAssetId = assetId || lineItem.assetId || "";
+
+    await saveCheckRecords(
+      tx,
+      organizationId,
+      userId,
+      resolvedAssetId,
+      lineItemId,
+      bulkAssetId || lineItem.bulkAssetId,
+      context,
+      checks
+    );
+
+    // Predictive maintenance for serialized assets with fails
+    if (resolvedAssetId) {
+      const failedCheckItemIds = checks
+        .filter((c) => c.result === "FAIL")
+        .map((c) => c.checkItemId);
+      if (failedCheckItemIds.length > 0) {
+        const { userName } = await requirePermission("warehouse", context === "PREP" ? "check_out" : "check_in");
+        await checkPredictiveMaintenance(
+          organizationId,
+          userId,
+          userName,
+          resolvedAssetId,
+          failedCheckItemIds
+        );
+      }
+    }
+  });
+
+  return { success: true };
 }

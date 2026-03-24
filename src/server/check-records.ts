@@ -215,12 +215,10 @@ export async function prepItemDirect(
       throw new Error("Line item not found in project");
     }
 
-    // Bulk items use the same split approach as serialized items.
-    // A bulk item with qty > 1 splits off a qty=1 line item with prepStatus=PACKED,
-    // inheriting the bulkAssetId. The original's quantity decrements.
-    const isBulk = assetId
-      ? false
-      : !!lineItem.bulkAssetId && lineItem.quantity > 1;
+    // Bulk = any multi-qty item without a specific serialized asset.
+    // Covers items with bulkAssetId AND generic multi-qty items (no assetId).
+    // Uses the same split approach as serialized items: split off qty=1 with PACKED.
+    const isBulk = !assetId && !lineItem.assetId && lineItem.quantity > 1;
 
     if (isBulk) {
       // Split off 1 unit as a new qty=1 line item with PACKED status
@@ -273,8 +271,8 @@ export async function prepItemDirect(
       return splitItem;
     }
 
-    // Bulk item with qty=1 (last unit or already split): just mark PACKED
-    if (!assetId && !!lineItem.bulkAssetId && lineItem.quantity === 1) {
+    // Bulk/generic item with qty=1 (last unit or already split): just mark PACKED
+    if (!assetId && !lineItem.assetId && lineItem.quantity === 1) {
       const updated = await tx.projectLineItem.update({
         where: { id: lineItemId },
         data: {
@@ -648,10 +646,8 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
     );
 
     // 3. Set prepStatus to PACKED (no checkout — deploy is a separate step)
-    // Bulk items use the same split approach as serialized items.
-    const isBulk = parsed.assetId
-      ? false
-      : !!lineItem.bulkAssetId && lineItem.quantity > 1;
+    // Bulk = any multi-qty item without a specific serialized asset.
+    const isBulk = !parsed.assetId && !lineItem.assetId && lineItem.quantity > 1;
 
     if (isBulk) {
       // Split off 1 unit as a new qty=1 line item with PACKED status
@@ -704,8 +700,8 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
       return { updatedItem: splitItem, resolvedAssetId };
     }
 
-    // Bulk item with qty=1 (last unit): just mark PACKED
-    if (!parsed.assetId && !!lineItem.bulkAssetId && lineItem.quantity === 1) {
+    // Bulk/generic item with qty=1 (last unit): just mark PACKED
+    if (!parsed.assetId && !lineItem.assetId && lineItem.quantity === 1) {
       await tx.projectLineItem.update({
         where: { id: parsed.lineItemId },
         data: {

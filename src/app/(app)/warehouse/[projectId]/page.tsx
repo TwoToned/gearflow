@@ -153,12 +153,18 @@ interface AvailableAsset {
   customName: string | null;
 }
 
-// "Bulk" means: a multi-unit line item backed by a BulkAsset (no individual asset tags).
+// "Bulk" means: a multi-unit line item without individual serialized assets.
+// This covers both items backed by a BulkAsset AND generic multi-qty items
+// with no assetId (e.g. consumables, accessories added with qty > 1).
 // After prep-splitting, each unit becomes qty=1 and is no longer "bulk" — it flows
-// through the serialized path for deploy/return. Items with qty > 1 but no bulkAssetId
-// are multi-qty serialized items (they need the asset picker, not the bulk flow).
+// through the serialized path for deploy/return.
 function isBulkItem(item: LineItem) {
-  return !!item.bulkAssetId && item.quantity > 1;
+  if (item.quantity <= 1) return false;
+  // Has a bulkAssetId → definitely bulk
+  if (item.bulkAssetId) return true;
+  // Multi-qty with no serialized asset → treat as bulk (expandable group)
+  if (!item.assetId) return true;
+  return false;
 }
 
 function modelDisplayName(item: LineItem) {

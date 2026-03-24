@@ -181,12 +181,12 @@ export async function lookupAssetForScan(
     });
   }
 
-  // Determine if the line item is bulk (multi-quantity with bulkAssetId)
-  // Split bulk items (qty=1) go through the serialized path naturally.
+  // Determine if the line item is bulk (multi-quantity without serialized asset)
+  // Split items (qty=1) go through the serialized path naturally.
   // If a serialized asset was scanned, treat it as serialized even if the line item has qty > 1
   const isBulk = asset
     ? false
-    : !!lineItem.bulkAssetId && lineItem.quantity > 1;
+    : !lineItem.assetId && lineItem.quantity > 1;
 
   if (isBulk) {
     if (mode === "checkout") {
@@ -284,11 +284,11 @@ export async function checkOutItems(
         throw new Error(`Line item ${item.lineItemId} not found in project`);
       }
 
-      // With the split approach, prepped bulk items are qty=1 and behave like serialized.
-      // Only unsplit bulk items (qty > 1 with bulkAssetId) use the bulk checkout path.
+      // With the split approach, prepped items are qty=1 and behave like serialized.
+      // Only unsplit multi-qty items without a serialized asset use the bulk checkout path.
       const isBulk = item.assetId
         ? false
-        : !!lineItem.bulkAssetId && lineItem.quantity > 1;
+        : !lineItem.assetId && lineItem.quantity > 1;
       const checkoutQty = item.quantity || 1;
 
       if (isBulk) {
@@ -532,7 +532,7 @@ export async function checkInItems(
 
       // With the split approach, deployed bulk items are qty=1 and behave like serialized.
       // Only unsplit bulk items (qty > 1 with bulkAssetId) use the bulk return path.
-      const isBulk = !!lineItem.bulkAssetId && lineItem.quantity > 1;
+      const isBulk = !lineItem.assetId && lineItem.quantity > 1;
       const returnQty = item.quantity || 1;
 
       if (isBulk) {

@@ -1150,35 +1150,29 @@ export async function syncContainerStatus(projectId: string, containerName: stri
 export async function getAvailableAssetsForModel(modelId: string) {
   const { organizationId } = await getOrgContext();
 
-  // Step 1: Get all asset IDs for this model
-  const modelAssets = await prisma.asset.findMany({
-    where: { organizationId, modelId, status: "AVAILABLE" },
+  // Single query: get assets that have NO active line item referencing them.
+  // Uses Prisma's `none` relation filter — equivalent to SQL NOT EXISTS.
+  // An asset is "in use" if ANY line item on an active project references it
+  // (regardless of the line item's own status, except RETURNED/CANCELLED).
+  const available = await prisma.asset.findMany({
+    where: {
+      organizationId,
+      modelId,
+      status: "AVAILABLE",
+      isActive: true,
+      lineItems: {
+        none: {
+          status: { notIn: ["RETURNED", "CANCELLED"] },
+          project: {
+            isTemplate: false,
+            status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
+          },
+        },
+      },
+    },
     select: { id: true, assetTag: true, serialNumber: true, customName: true },
     orderBy: { assetTag: "asc" },
   });
-
-  if (modelAssets.length === 0) return serialize([]);
-
-  // Step 2: Find which of these assets are currently assigned to active line items
-  const assetIds = modelAssets.map((a) => a.id);
-  const inUseLineItems = await prisma.projectLineItem.findMany({
-    where: {
-      organizationId,
-      assetId: { in: assetIds },
-      status: { notIn: ["RETURNED", "CANCELLED"] },
-      project: {
-        status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
-      },
-    },
-    select: { assetId: true },
-  });
-
-  const inUseAssetIds = new Set(
-    inUseLineItems.map((li) => li.assetId).filter(Boolean) as string[]
-  );
-
-  // Step 3: Filter out in-use assets
-  const available = modelAssets.filter((a) => !inUseAssetIds.has(a.id));
 
   return serialize(available);
 }

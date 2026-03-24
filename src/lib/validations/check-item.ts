@@ -91,6 +91,8 @@ export const completeCheckAndPackSchema = z.object({
   bulkAssetId: z.string().optional(),
   prepContainer: z.string().nullish(),
   checks: z.array(checkRecordSchema).min(1),
+  /** For bulk items: prep this many units (default 1) */
+  bulkPrepQty: z.number().int().positive().optional(),
 });
 
 export type CompleteCheckAndPackValues = z.input<

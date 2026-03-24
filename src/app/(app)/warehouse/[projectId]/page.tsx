@@ -571,6 +571,8 @@ function WarehouseProjectPage({
     /** When true, this is a kit queue — on complete, deploy/return the kit atomically */
     kitQueueKitId?: string;
     kitQueueReturnCondition?: "GOOD" | "DAMAGED" | "MISSING";
+    /** For bulk items: prep this many units after check passes */
+    bulkPrepQty?: number;
   } | null>(null);
   const [checkFormSubmitting, setCheckFormSubmitting] = useState(false);
 
@@ -587,6 +589,8 @@ function WarehouseProjectPage({
     /** When set, this queue item is part of a kit PER_ITEM flow */
     kitQueueKitId?: string;
     kitQueueReturnCondition?: "GOOD" | "DAMAGED" | "MISSING";
+    /** For bulk items: prep this many units after check passes (instead of 1) */
+    bulkPrepQty?: number;
   };
   const [checkQueue, setCheckQueue] = useState<CheckQueueItem[]>([]);
   const [checkQueueIndex, setCheckQueueIndex] = useState(0);
@@ -1661,23 +1665,25 @@ function WarehouseProjectPage({
       }
 
       // Build check queue for bulk items with checks, and prep directly for those without
+      // For bulk items, only ONE check is needed per item (not per unit) — the check
+      // covers the item type, then all selected units are prepped at once after passing.
       const bulkCheckQueue: CheckQueueItem[] = [];
       const bulkNoCheckItems: typeof bulkItems = [];
       for (const bi of bulkItems) {
         const li = lineItems.find((l) => l.id === bi.lineItemId);
         const hasChecks = li?.model?._count?.modelCheckItems && li.model._count.modelCheckItems > 0;
         if (hasChecks && li?.modelId) {
-          for (let i = 0; i < bi.quantity; i++) {
-            bulkCheckQueue.push({
-              context: "PREP" as const,
-              modelId: li.modelId!,
-              assetTag: li.bulkAsset?.assetTag || "",
-              assetName: modelDisplayName(li),
-              lineItemId: li.id,
-              assetId: "",
-              bulkAssetId: li.bulkAssetId || undefined,
-            });
-          }
+          // One check per bulk item type, with bulkPrepQty to prep all units after
+          bulkCheckQueue.push({
+            context: "PREP" as const,
+            modelId: li.modelId!,
+            assetTag: li.bulkAsset?.assetTag || "",
+            assetName: `${modelDisplayName(li)} (×${bi.quantity})`,
+            lineItemId: li.id,
+            assetId: "",
+            bulkAssetId: li.bulkAssetId || undefined,
+            bulkPrepQty: bi.quantity,
+          });
         } else {
           bulkNoCheckItems.push(bi);
         }
@@ -3251,6 +3257,7 @@ function WarehouseProjectPage({
                     bulkAssetId: item.bulkAssetId,
                     prepContainer: selectedContainer || null,
                     checks,
+                    bulkPrepQty: item.bulkPrepQty,
                   });
                 } else {
                   await unpackItem(projectId, item.lineItemId).catch(() => {});
@@ -3314,6 +3321,7 @@ function WarehouseProjectPage({
                     bulkAssetId: checkFormData.bulkAssetId,
                     prepContainer: selectedContainer || null,
                     checks,
+                    bulkPrepQty: checkFormData.bulkPrepQty,
                   });
                   toast.success("Item checked and packed");
                 }

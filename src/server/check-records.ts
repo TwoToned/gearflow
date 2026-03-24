@@ -620,9 +620,10 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
       : (!!lineItem.bulkAssetId || (!lineItem.assetId && lineItem.quantity > 1));
 
     if (isBulk) {
+      const prepQty = parsed.bulkPrepQty || 1;
       const baseCheckedOut =
         lineItem.status === "RETURNED" ? 0 : lineItem.checkedOutQuantity;
-      const newPreppedQty = Math.min(baseCheckedOut + 1, lineItem.quantity);
+      const newPreppedQty = Math.min(baseCheckedOut + prepQty, lineItem.quantity);
       const fullyPrepped = newPreppedQty >= lineItem.quantity;
 
       await tx.projectLineItem.update({

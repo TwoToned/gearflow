@@ -606,13 +606,41 @@ function WarehouseProjectPage({
       await ensureContainerIfNeeded();
       return quickAddAndCheckOut(projectId, { ...data, prepContainer: selectedContainer || null });
     },
-    onSuccess: () => {
-      invalidate();
-      toast.success(`Added to project and prepped: ${addPromptData?.assetName || "Asset"}`);
+    onSuccess: (result) => {
+      const assetName = addPromptData?.assetName || "Asset";
       setAddPromptOpen(false);
       setAddPromptData(null);
       setScanValue("");
-      scanInputRef.current?.focus();
+      invalidate();
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const li = result as any;
+      const hasChecks = li?.model?._count?.modelCheckItems > 0;
+
+      if (hasChecks && li.modelId) {
+        // Route through check queue — pull first, then open check form
+        pullItem(projectId, li.id).catch(() => {});
+        setCheckFormData({
+          context: "PREP",
+          modelId: li.modelId,
+          assetTag: li.asset?.assetTag || li.bulkAsset?.assetTag || "",
+          assetName,
+          lineItemId: li.id,
+          assetId: li.assetId || li.asset?.id || "",
+          bulkAssetId: li.bulkAssetId || undefined,
+        });
+        setCheckFormOpen(true);
+        scanInputRef.current?.focus();
+      } else {
+        // No checks — prep directly
+        prepItemDirect(projectId, li.id, li.assetId || undefined, undefined, selectedContainer || null)
+          .then(() => {
+            toast.success(`Added and prepped: ${assetName}`);
+            invalidate();
+          })
+          .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to prep"));
+        scanInputRef.current?.focus();
+      }
     },
     onError: (e) => toast.error(e.message),
   });

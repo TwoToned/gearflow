@@ -5,7 +5,7 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.4] - 2026-03-25
+## [0.2.5] - 2026-03-25
 
 ### Added
 - Warehouse check item system: org-scoped check item library with PASS_FAIL, NOTES, MEASUREMENT, and DROPDOWN types
@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Flagged asset notifications for project managers
 - Check items integrated into global search and page commands
 - `splitLineItem` helper for DRY multi-quantity line item splitting (extracted from 5 duplicated sites)
+- Bulk assign check items to multiple models from the model table (row selection + multi-select dialog)
 - 61 new validation tests for check item schemas
 - Container grouping in pull sheet PDFs with asset tag display
 
@@ -37,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Asset availability filtering: assets already assigned to other projects no longer appear in picker
 - Bulk items with checks now prep all units in one check dialog
 - Items of same model in different containers grouped separately
+- Quick-add scan now routes through check queue when model has check items (was skipping checks entirely)
 - WarehouseClose uses unique constraint to prevent duplicate close-outs (race condition fix)
 - deleteCheckItem blocks deletion when check item is used by kits (not just models)
 - Design system compliance: notices use left-edge accent bar, metrics use inline strip, teal palette for selection badges

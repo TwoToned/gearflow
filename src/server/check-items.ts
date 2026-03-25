@@ -257,6 +257,89 @@ export async function reorderModelCheckItems(
   return { success: true };
 }
 
+// ─── Bulk Model Check Items ──────────────────────────────────────────────────
+
+export async function bulkAddCheckItemsToModels(
+  modelIds: string[],
+  checkItemIds: string[]
+) {
+  const { organizationId, userId, userName } = await requirePermission(
+    "checkItem",
+    "update"
+  );
+
+  if (modelIds.length === 0 || checkItemIds.length === 0) {
+    throw new Error("No models or check items selected");
+  }
+
+  // Find existing assignments + max sortOrder per model so we skip duplicates
+  // and assign correct sequential sortOrder only for truly new items
+  const [maxSorts, existing] = await Promise.all([
+    prisma.modelCheckItem.groupBy({
+      by: ["modelId"],
+      where: { modelId: { in: modelIds }, organizationId },
+      _max: { sortOrder: true },
+    }),
+    prisma.modelCheckItem.findMany({
+      where: { modelId: { in: modelIds }, checkItemId: { in: checkItemIds }, organizationId },
+      select: { modelId: true, checkItemId: true },
+    }),
+  ]);
+  const sortMap = new Map(
+    maxSorts.map((m) => [m.modelId, (m._max.sortOrder ?? -1) + 1])
+  );
+  const existingSet = new Set(
+    existing.map((e) => `${e.modelId}:${e.checkItemId}`)
+  );
+
+  // Build rows only for items not already assigned — sequential sortOrder with no gaps
+  const rows = modelIds.flatMap((modelId) => {
+    const startSort = sortMap.get(modelId) ?? 0;
+    let offset = 0;
+    return checkItemIds
+      .filter((checkItemId) => !existingSet.has(`${modelId}:${checkItemId}`))
+      .map((checkItemId) => ({
+        organizationId,
+        modelId,
+        checkItemId,
+        sortOrder: startSort + offset++,
+      }));
+  });
+
+  const result = await prisma.modelCheckItem.createMany({
+    data: rows,
+    skipDuplicates: true,
+  });
+
+  // Fetch model names for audit log
+  const models = await prisma.model.findMany({
+    where: { id: { in: modelIds }, organizationId },
+    select: { id: true, name: true },
+  });
+  const checkItems = await prisma.checkItem.findMany({
+    where: { id: { in: checkItemIds }, organizationId },
+    select: { id: true, label: true },
+  });
+
+  const checkLabels = checkItems.map((c) => c.label).join(", ");
+  const modelNames = models.map((m) => m.name);
+
+  for (const model of models) {
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "UPDATE",
+      entityType: "model",
+      entityId: model.id,
+      entityName: model.name,
+      summary: `Bulk assigned check items [${checkLabels}] to model "${model.name}"`,
+    });
+  }
+
+  return serialize({ count: result.count, modelNames });
+}
+
 // ─── Kit Check Items ──────────────────────────────────────────────────────────
 
 export async function getKitCheckItems(kitId: string) {

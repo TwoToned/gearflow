@@ -28,6 +28,7 @@ const TYPE_LABELS: Record<string, string> = {
   RCD_PORTABLE: "RCD (P)",
   RCD_FIXED: "RCD (F)",
   THREE_PHASE: "3-Phase",
+  MICROWAVE: "Microwave",
   OTHER: "Other",
 };
 
@@ -48,6 +49,14 @@ interface OrgData {
   iconData?: string | null;
 }
 
+interface SubTestRecord {
+  label: string;
+  result: string;
+  earthContinuityReading: number | null;
+  insulationReading: number | null;
+  leakageCurrentReading: number | null;
+}
+
 interface TestRecordEntry {
   testDate: string | Date;
   testerName: string;
@@ -63,6 +72,7 @@ interface TestRecordEntry {
   rcdTripTimeReading: number | null;
   rcdTripTimeResult: string | null;
   notes?: string | null;
+  subTestRecords?: SubTestRecord[];
 }
 
 interface ItemHistoryData {
@@ -205,10 +215,31 @@ export function buildTtItemHistoryInputs(
     notes: rec.notes ?? "-",
   }));
 
+  // Add expanded notes for sub-tests
+  const expandedNotes: { rowIndex: number; text: string; bgColor?: string; textColor?: string }[] = [];
+  data.testRecords.forEach((rec, i) => {
+    if (rec.subTestRecords && rec.subTestRecords.length > 0) {
+      const subLines = rec.subTestRecords.map((st) => {
+        const parts = [st.label, st.result];
+        if (st.earthContinuityReading != null) parts.push(`Earth: ${st.earthContinuityReading.toFixed(2)}`);
+        if (st.insulationReading != null) parts.push(`Insul: ${st.insulationReading.toFixed(2)}`);
+        if (st.leakageCurrentReading != null) parts.push(`Leak: ${st.leakageCurrentReading.toFixed(2)}`);
+        return parts.join(" | ");
+      });
+      expandedNotes.push({
+        rowIndex: i,
+        text: `Sub-tests: ${subLines.join("  //  ")}`,
+        bgColor: "#f0fdfa",
+        textColor: "#115e59",
+      });
+    }
+  });
+
   const dataTableConfig: DataTableConfig = {
     columns,
     rows,
     documentColor: docColor,
+    expandedNotes: expandedNotes.length > 0 ? expandedNotes : undefined,
   };
 
   const footerConfig: FooterConfig = {

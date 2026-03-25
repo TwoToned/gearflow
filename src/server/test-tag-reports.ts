@@ -97,6 +97,7 @@ const applianceTypeLabels: Record<string, string> = {
   RCD_PORTABLE: "RCD (Portable)",
   RCD_FIXED: "RCD (Fixed)",
   THREE_PHASE: "Three Phase",
+  MICROWAVE: "Microwave",
   OTHER: "Other",
 };
 
@@ -243,14 +244,25 @@ export async function getSessionReportData(filters: ReportFilters) {
 export async function exportSessionCSV(filters: ReportFilters) {
   const data = await getSessionReportData(filters);
 
-  const headers = ["testDate", "testTagId", "description", "equipmentClass", "visual", "earthContinuity", "insulation", "leakage", "polarity", "rcd", "result", "tester", "notes"];
-  const rows = data.records.map((r: { testDate: Date | string; testTagAsset: { testTagId: string; description: string; equipmentClass: string }; visualInspectionResult: string; earthContinuityResult: string; insulationResult: string; leakageCurrentResult: string; polarityResult: string; rcdTripTimeResult: string; result: string; testerName: string; failureNotes: string | null; functionalTestNotes: string | null }) => [
-    fmtDate(r.testDate), r.testTagAsset.testTagId, r.testTagAsset.description,
-    equipmentClassLabels[r.testTagAsset.equipmentClass] || r.testTagAsset.equipmentClass,
-    r.visualInspectionResult, r.earthContinuityResult, r.insulationResult,
-    r.leakageCurrentResult, r.polarityResult, r.rcdTripTimeResult,
-    r.result, r.testerName, r.failureNotes || r.functionalTestNotes || "",
-  ]);
+  const headers = ["testDate", "testTagId", "description", "equipmentClass", "visual", "earthContinuity", "insulation", "leakage", "polarity", "rcd", "result", "tester", "notes", "subTests"];
+  const rows = data.records.map((r: { testDate: Date | string; testTagAsset: { testTagId: string; description: string; equipmentClass: string }; visualInspectionResult: string; earthContinuityResult: string; insulationResult: string; leakageCurrentResult: string; polarityResult: string; rcdTripTimeResult: string; result: string; testerName: string; failureNotes: string | null; functionalTestNotes: string | null; subTestRecords?: { label: string; result: string; earthContinuityReading: number | null; insulationReading: number | null; leakageCurrentReading: number | null }[] }) => {
+    const subTestSummary = r.subTestRecords && r.subTestRecords.length > 0
+      ? r.subTestRecords.map((st) => {
+          const parts = [st.label, st.result];
+          if (st.earthContinuityReading != null) parts.push(`Earth: ${st.earthContinuityReading.toFixed(2)}`);
+          if (st.insulationReading != null) parts.push(`Insul: ${st.insulationReading.toFixed(2)}`);
+          if (st.leakageCurrentReading != null) parts.push(`Leak: ${st.leakageCurrentReading.toFixed(2)}`);
+          return parts.join(" | ");
+        }).join(" // ")
+      : "";
+    return [
+      fmtDate(r.testDate), r.testTagAsset.testTagId, r.testTagAsset.description,
+      equipmentClassLabels[r.testTagAsset.equipmentClass] || r.testTagAsset.equipmentClass,
+      r.visualInspectionResult, r.earthContinuityResult, r.insulationResult,
+      r.leakageCurrentResult, r.polarityResult, r.rcdTripTimeResult,
+      r.result, r.testerName, r.failureNotes || r.functionalTestNotes || "", subTestSummary,
+    ];
+  });
 
   return escapeCSV(headers, rows);
 }
@@ -460,8 +472,8 @@ export async function getFailedItemsReportData(filters: ReportFilters) {
 export async function exportFailedItemsCSV(filters: ReportFilters) {
   const data = await getFailedItemsReportData(filters);
 
-  const headers = ["testDate", "testTagId", "description", "equipmentClass", "applianceType", "tester", "failedTests", "failureAction", "failureNotes"];
-  const rows = data.records.map((r: { testDate: Date | string; testTagAsset: { testTagId: string; description: string; equipmentClass: string; applianceType: string }; testerName: string; visualInspectionResult: string; earthContinuityResult: string; insulationResult: string; leakageCurrentResult: string; polarityResult: string; rcdTripTimeResult: string; failureAction: string; failureNotes: string | null }) => {
+  const headers = ["testDate", "testTagId", "description", "equipmentClass", "applianceType", "tester", "failedTests", "failureAction", "failureNotes", "subTests"];
+  const rows = data.records.map((r: { testDate: Date | string; testTagAsset: { testTagId: string; description: string; equipmentClass: string; applianceType: string }; testerName: string; visualInspectionResult: string; earthContinuityResult: string; insulationResult: string; leakageCurrentResult: string; polarityResult: string; rcdTripTimeResult: string; failureAction: string; failureNotes: string | null; subTestRecords?: { label: string; result: string; earthContinuityReading: number | null; insulationReading: number | null; leakageCurrentReading: number | null }[] }) => {
     const failed: string[] = [];
     if (r.visualInspectionResult === "FAIL") failed.push("Visual");
     if (r.earthContinuityResult === "FAIL") failed.push("Earth");
@@ -469,11 +481,20 @@ export async function exportFailedItemsCSV(filters: ReportFilters) {
     if (r.leakageCurrentResult === "FAIL") failed.push("Leakage");
     if (r.polarityResult === "FAIL") failed.push("Polarity");
     if (r.rcdTripTimeResult === "FAIL") failed.push("RCD");
+    const subTestSummary = r.subTestRecords && r.subTestRecords.length > 0
+      ? r.subTestRecords.map((st) => {
+          const parts = [st.label, st.result];
+          if (st.earthContinuityReading != null) parts.push(`Earth: ${st.earthContinuityReading.toFixed(2)}`);
+          if (st.insulationReading != null) parts.push(`Insul: ${st.insulationReading.toFixed(2)}`);
+          if (st.leakageCurrentReading != null) parts.push(`Leak: ${st.leakageCurrentReading.toFixed(2)}`);
+          return parts.join(" | ");
+        }).join(" // ")
+      : "";
     return [
       fmtDate(r.testDate), r.testTagAsset.testTagId, r.testTagAsset.description,
       equipmentClassLabels[r.testTagAsset.equipmentClass] || r.testTagAsset.equipmentClass,
       applianceTypeLabels[r.testTagAsset.applianceType] || r.testTagAsset.applianceType,
-      r.testerName, failed.join("; "), r.failureAction || "", r.failureNotes || "",
+      r.testerName, failed.join("; "), r.failureAction || "", r.failureNotes || "", subTestSummary,
     ];
   });
 

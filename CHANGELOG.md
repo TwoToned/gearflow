@@ -5,6 +5,42 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-03-25
+
+### Added
+- Warehouse check item system: org-scoped check item library with PASS_FAIL, NOTES, MEASUREMENT, and DROPDOWN types
+- Model and kit check item assignments with drag-to-reorder and library picker
+- Three-phase warehouse prep flow: Pick → Prep (with checks) → Deploy, replacing the old single-step checkout
+- Check form sheet (full-screen mobile, slide-over desktop) with "Pass All" shortcut and photo upload on failures
+- Multi-item check queue for serial/bulk prep and return flows
+- Container grouping system: prepContainer field with auto-add container assets, container picker with category search
+- Kit check modes: KIT_LEVEL (check the kit itself) and CHILD_ITEMS (check each child individually)
+- PrepStatus and ReturnStatus enums for independent warehouse lifecycle tracking
+- Warehouse close-out: per-project close with summary stats, batch close from dashboard
+- Check history tab on asset detail pages with context filtering
+- Model failure analytics widget showing per-check-item failure rates
+- Ad-hoc check route at `/check/[assetTag]` for standalone inspections
+- Predictive maintenance: auto-creates maintenance records when 2+ consecutive failures detected
+- Flagged asset notifications for project managers
+- Check items integrated into global search and page commands
+- `splitLineItem` helper for DRY multi-quantity line item splitting (extracted from 5 duplicated sites)
+- 61 new validation tests for check item schemas
+- Container grouping in pull sheet PDFs with asset tag display
+
+### Changed
+- Warehouse page split into tab components (deploy-tab, return-tab, pick-prep-tab, close-out-tab) from monolithic 2700-line page
+- Prep flow uses split-based pattern: multi-qty items split off qty=1 items during prep
+- Removed old prep-kit system in favor of prepContainer string field
+- Asset availability query rewritten as single atomic Prisma filter using `none` relation
+
+### Fixed
+- Asset availability filtering: assets already assigned to other projects no longer appear in picker
+- Bulk items with checks now prep all units in one check dialog
+- Items of same model in different containers grouped separately
+- WarehouseClose uses unique constraint to prevent duplicate close-outs (race condition fix)
+- deleteCheckItem blocks deletion when check item is used by kits (not just models)
+- Design system compliance: notices use left-edge accent bar, metrics use inline strip, teal palette for selection badges
+
 ## [0.2.3] - 2026-03-20
 
 ### Added

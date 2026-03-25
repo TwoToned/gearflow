@@ -228,6 +228,8 @@ export async function getSessionReportData(filters: ReportFilters) {
     include: {
       testTagAsset: { select: { testTagId: true, description: true, equipmentClass: true } },
       testedBy: { select: { name: true } },
+      testProfile: { select: { id: true, name: true } },
+      subTestRecords: { orderBy: { sortOrder: "asc" } },
     },
     orderBy: { testDate: "desc" },
   });
@@ -263,9 +265,14 @@ export async function getItemHistoryReportData(testTagAssetId: string) {
     include: {
       asset: { select: { assetTag: true, customName: true } },
       bulkAsset: { select: { assetTag: true } },
+      testProfile: { select: { id: true, name: true } },
       testRecords: {
         orderBy: { testDate: "desc" },
-        include: { testedBy: { select: { name: true } } },
+        include: {
+          testedBy: { select: { name: true } },
+          testProfile: { select: { id: true, name: true } },
+          subTestRecords: { orderBy: { sortOrder: "asc" } },
+        },
       },
     },
   });
@@ -430,6 +437,8 @@ export async function getFailedItemsReportData(filters: ReportFilters) {
     include: {
       testTagAsset: { select: { testTagId: true, description: true, equipmentClass: true, applianceType: true } },
       testedBy: { select: { name: true } },
+      testProfile: { select: { id: true, name: true } },
+      subTestRecords: { orderBy: { sortOrder: "asc" } },
     },
     orderBy: { testDate: "desc" },
   });

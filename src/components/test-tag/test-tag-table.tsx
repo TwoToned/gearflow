@@ -104,11 +104,24 @@ function useTestTagColumns(): ColumnDef<AnyItem>[] {
         { value: "RCD_PORTABLE", label: "RCD Portable" },
         { value: "RCD_FIXED", label: "RCD Fixed" },
         { value: "THREE_PHASE", label: "Three Phase" },
+        { value: "MICROWAVE", label: "Microwave" },
         { value: "OTHER", label: "Other" },
       ],
       cell: (row) => (
         <span className="text-sm text-fg-3">
           {formatApplianceType(row.applianceType)}
+        </span>
+      ),
+    },
+    {
+      id: "testProfile",
+      header: "Test Profile",
+      responsiveHide: "lg",
+      defaultVisible: false,
+      sortable: false,
+      cell: (row) => (
+        <span className="text-sm text-fg-3">
+          {row.testProfile?.name || "\u2014"}
         </span>
       ),
     },

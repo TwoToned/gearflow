@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import Link from "next/link";
+import { ChevronRight, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -98,6 +100,24 @@ export default function TestTagSettingsPage() {
           </div>
         </FormSection>
 
+        <FormSection title="Test Profiles" description="Configure which visual checks and electrical tests apply for each equipment type.">
+          <div className="sm:col-span-2">
+            <Link
+              href="/settings/test-and-tag/profiles"
+              className="flex items-center justify-between rounded-lg border border-border p-4 hover:bg-surface-hover transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <ShieldCheck className="h-5 w-5 text-fg-3" />
+                <div>
+                  <p className="font-medium text-fg-1">Manage Test Profiles</p>
+                  <p className="text-sm text-fg-3">Define visual checks, electrical tests, and thresholds per equipment type</p>
+                </div>
+              </div>
+              <ChevronRight className="h-4 w-4 text-fg-3" />
+            </Link>
+          </div>
+        </FormSection>
+
         <FormSection title="Testing Defaults" description="Default intervals and deployment policy.">
           <div className="space-y-2">
             <Label htmlFor="ttDefaultInterval">Default Interval (months)</Label>
@@ -121,16 +141,6 @@ export default function TestTagSettingsPage() {
               max={90}
               value={settings.testTag?.dueSoonThresholdDays ?? 14}
               onChange={(e) => updateTestTagSetting("dueSoonThresholdDays", parseInt(e.target.value) || 14)}
-              disabled={!canEdit}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="ttDefaultTester">Default Tester Name</Label>
-            <Input
-              id="ttDefaultTester"
-              value={settings.testTag?.defaultTesterName || ""}
-              onChange={(e) => updateTestTagSetting("defaultTesterName", e.target.value)}
-              placeholder="Pre-filled in Quick Test"
               disabled={!canEdit}
             />
           </div>

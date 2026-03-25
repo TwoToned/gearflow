@@ -1,18 +1,26 @@
 import { z } from "zod";
 
+const equipmentClassEnum = z.enum(["CLASS_I", "CLASS_II", "CLASS_II_DOUBLE_INSULATED", "LEAD_CORD_ASSEMBLY"]);
+const applianceTypeEnum = z.enum([
+  "APPLIANCE", "CORD_SET", "EXTENSION_LEAD", "POWER_BOARD",
+  "RCD_PORTABLE", "RCD_FIXED", "THREE_PHASE", "MICROWAVE", "OTHER",
+]);
+const testResultEnum = z.enum(["PASS", "FAIL", "NOT_APPLICABLE"]);
+
+// ─── Test Tag Asset ─────────────────────────────────────────────────────────
+
 export const testTagAssetSchema = z.object({
   testTagId: z.string().min(1, "Test Tag ID is required").max(50),
   description: z.string().min(1, "Description is required").max(500),
-  equipmentClass: z.enum(["CLASS_I", "CLASS_II", "CLASS_II_DOUBLE_INSULATED", "LEAD_CORD_ASSEMBLY"]).default("CLASS_I"),
-  applianceType: z.enum([
-    "APPLIANCE", "CORD_SET", "EXTENSION_LEAD", "POWER_BOARD",
-    "RCD_PORTABLE", "RCD_FIXED", "THREE_PHASE", "OTHER",
-  ]).default("APPLIANCE"),
+  equipmentClass: equipmentClassEnum.default("CLASS_I"),
+  applianceType: applianceTypeEnum.default("APPLIANCE"),
   make: z.string().max(200).optional(),
   modelName: z.string().max(200).optional(),
   serialNumber: z.string().max(200).optional(),
   location: z.string().max(200).optional(),
   testIntervalMonths: z.coerce.number().int().min(1).max(120).default(3),
+  testProfileId: z.string().optional(),
+  outletCount: z.coerce.number().int().min(1).max(50).optional(),
   notes: z.string().max(2000).optional(),
   assetId: z.string().optional(),
   bulkAssetId: z.string().optional(),
@@ -20,9 +28,31 @@ export const testTagAssetSchema = z.object({
 
 export type TestTagAssetFormValues = z.input<typeof testTagAssetSchema>;
 
+// ─── Sub-Test Record ────────────────────────────────────────────────────────
+
+export const subTestRecordSchema = z.object({
+  label: z.string().min(1).max(100),
+  sortOrder: z.number().int().min(0),
+  earthContinuityReading: z.coerce.number().min(0).nullable().optional(),
+  earthContinuityResult: testResultEnum.default("NOT_APPLICABLE"),
+  insulationReading: z.coerce.number().min(0).nullable().optional(),
+  insulationResult: testResultEnum.default("NOT_APPLICABLE"),
+  leakageCurrentReading: z.coerce.number().min(0).nullable().optional(),
+  leakageCurrentResult: testResultEnum.default("NOT_APPLICABLE"),
+  polarityResult: testResultEnum.default("NOT_APPLICABLE"),
+  result: z.enum(["PASS", "FAIL"]).default("PASS"),
+  notes: z.string().max(2000).optional(),
+});
+
+export type SubTestRecordFormValues = z.input<typeof subTestRecordSchema>;
+
+// ─── Test Tag Record ────────────────────────────────────────────────────────
+
 export const testTagRecordSchema = z.object({
   testTagAssetId: z.string().min(1, "Test tag asset is required"),
+  testProfileId: z.string().optional(),
   testDate: z.coerce.date(),
+  testedById: z.string().optional(), // Session tester — defaults to logged-in user on server
   testerName: z.string().min(1, "Tester name is required").max(200),
   result: z.enum(["PASS", "FAIL"]).default("PASS"),
 
@@ -40,30 +70,33 @@ export const testTagRecordSchema = z.object({
   visualNotes: z.string().max(2000).optional(),
 
   // Electrical tests
-  equipmentClassTested: z.enum(["CLASS_I", "CLASS_II", "CLASS_II_DOUBLE_INSULATED", "LEAD_CORD_ASSEMBLY"]).default("CLASS_I"),
+  equipmentClassTested: equipmentClassEnum.default("CLASS_I"),
   testMethod: z.enum(["INSULATION_RESISTANCE", "LEAKAGE_CURRENT", "BOTH"]).default("INSULATION_RESISTANCE"),
 
-  earthContinuityResult: z.enum(["PASS", "FAIL", "NOT_APPLICABLE"]).default("NOT_APPLICABLE"),
+  earthContinuityResult: testResultEnum.default("NOT_APPLICABLE"),
   earthContinuityReading: z.coerce.number().min(0).optional(),
 
-  insulationResult: z.enum(["PASS", "FAIL", "NOT_APPLICABLE"]).default("NOT_APPLICABLE"),
+  insulationResult: testResultEnum.default("NOT_APPLICABLE"),
   insulationReading: z.coerce.number().min(0).optional(),
   insulationTestVoltage: z.coerce.number().int().optional(),
 
-  leakageCurrentResult: z.enum(["PASS", "FAIL", "NOT_APPLICABLE"]).default("NOT_APPLICABLE"),
+  leakageCurrentResult: testResultEnum.default("NOT_APPLICABLE"),
   leakageCurrentReading: z.coerce.number().min(0).optional(),
 
-  polarityResult: z.enum(["PASS", "FAIL", "NOT_APPLICABLE"]).default("NOT_APPLICABLE"),
+  polarityResult: testResultEnum.default("NOT_APPLICABLE"),
 
-  rcdTripTimeResult: z.enum(["PASS", "FAIL", "NOT_APPLICABLE"]).default("NOT_APPLICABLE"),
+  rcdTripTimeResult: testResultEnum.default("NOT_APPLICABLE"),
   rcdTripTimeReading: z.coerce.number().min(0).optional(),
 
-  functionalTestResult: z.enum(["PASS", "FAIL", "NOT_APPLICABLE"]).default("NOT_APPLICABLE"),
+  functionalTestResult: testResultEnum.default("NOT_APPLICABLE"),
   functionalTestNotes: z.string().max(2000).optional(),
 
   // Failure details
   failureAction: z.enum(["NONE", "REPAIRED", "REMOVED_FROM_SERVICE", "DISPOSED", "REFERRED_TO_ELECTRICIAN"]).default("NONE"),
   failureNotes: z.string().max(2000).optional(),
+
+  // Sub-tests
+  subTests: z.array(subTestRecordSchema).optional(),
 
   // Next due
   nextDueDate: z.coerce.date(),
@@ -71,14 +104,13 @@ export const testTagRecordSchema = z.object({
 
 export type TestTagRecordFormValues = z.input<typeof testTagRecordSchema>;
 
+// ─── Batch Create ───────────────────────────────────────────────────────────
+
 export const batchCreateTestTagSchema = z.object({
   bulkAssetId: z.string().min(1, "Bulk asset is required"),
   count: z.coerce.number().int().min(1, "Must create at least 1").max(500),
-  equipmentClass: z.enum(["CLASS_I", "CLASS_II", "CLASS_II_DOUBLE_INSULATED", "LEAD_CORD_ASSEMBLY"]).default("CLASS_I"),
-  applianceType: z.enum([
-    "APPLIANCE", "CORD_SET", "EXTENSION_LEAD", "POWER_BOARD",
-    "RCD_PORTABLE", "RCD_FIXED", "THREE_PHASE", "OTHER",
-  ]).default("APPLIANCE"),
+  equipmentClass: equipmentClassEnum.default("CLASS_I"),
+  applianceType: applianceTypeEnum.default("APPLIANCE"),
   testIntervalMonths: z.coerce.number().int().min(1).max(120).default(3),
   description: z.string().min(1, "Description is required").max(500),
   make: z.string().max(200).optional(),
@@ -87,3 +119,45 @@ export const batchCreateTestTagSchema = z.object({
 });
 
 export type BatchCreateTestTagFormValues = z.input<typeof batchCreateTestTagSchema>;
+
+// ─── Test Profile ───────────────────────────────────────────────────────────
+
+const visualCheckSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  enabled: z.boolean(),
+});
+
+const electricalTestSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  threshold: z.number().nullable(),
+  operator: z.enum(["lt", "lte", "gt", "gte"]).nullable(),
+  unit: z.string(),
+  enabled: z.boolean(),
+});
+
+const thresholdsSchema = z.object({
+  earthMax: z.number().optional(),
+  insulationMin: z.number().optional(),
+  leakageMax: z.number().optional(),
+  rcdTripTimeMax: z.number().optional(),
+  rcdTripCurrentMin: z.number().optional(),
+  rcdTripCurrentMax: z.number().optional(),
+  microwaveLeakageMax: z.number().optional(),
+});
+
+export const testProfileSchema = z.object({
+  name: z.string().min(1, "Profile name is required").max(200),
+  equipmentClass: equipmentClassEnum.default("CLASS_I"),
+  applianceType: applianceTypeEnum.default("APPLIANCE"),
+  visualChecks: z.array(visualCheckSchema).min(1, "At least one visual check is required"),
+  electricalTests: z.array(electricalTestSchema),
+  thresholds: thresholdsSchema,
+  requiresSubTests: z.boolean().default(false),
+  defaultSubTestCount: z.coerce.number().int().min(1).max(50).default(1),
+  subTestLabel: z.string().min(1).max(50).default("Outlet"),
+  isActive: z.boolean().default(true),
+});
+
+export type TestProfileFormValues = z.input<typeof testProfileSchema>;

@@ -1,6 +1,6 @@
 "use client";
 
-import { use, Suspense } from "react";
+import { use, Fragment, Suspense, useState } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import {
   Zap,
   Pencil,
+  Printer,
   ArchiveX,
   Trash2,
   ChevronRight,
@@ -39,6 +40,7 @@ import { StatusIndicator } from "@/components/ui/status-indicator";
 import { FadeIn } from "@/components/ui/motion";
 import { SectionHeader } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
+import { LabelTemplate } from "@/components/test-tag/label-template";
 import type { ColorIntent } from "@/lib/status-colors";
 
 // ─── Helpers ──────────────────────────────────────────────────────
@@ -146,6 +148,8 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const [expandedRecordId, setExpandedRecordId] = useState<string | null>(null);
+
   if (isLoading) return <DetailPageSkeleton />;
 
   if (error || !item) {
@@ -208,6 +212,12 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   <Zap className="mr-2 h-4 w-4" />
                   Record Test
                 </Button>
+                {latestRecord && (
+                  <Button variant="outline" size="sm" onClick={() => window.print()}>
+                    <Printer className="mr-2 h-4 w-4" />
+                    Print Label
+                  </Button>
+                )}
                 <Button variant="outline" size="sm" disabled>
                   <Pencil className="mr-2 h-4 w-4" />
                   Edit
@@ -316,41 +326,180 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {item.testRecords.map((record: {
-                          id: string;
-                          testDate: string | Date;
-                          testerName: string;
-                          testedBy?: { id: string; name: string } | null;
-                          visualInspectionResult: string;
-                          earthContinuityResult: string;
-                          insulationResult: string;
-                          leakageCurrentResult: string;
-                          result: string;
-                          failureNotes?: string | null;
-                          functionalTestNotes?: string | null;
-                          visualNotes?: string | null;
-                        }) => (
-                          <TableRow key={record.id}>
-                            <TableCell className="text-sm">{formatDate(record.testDate)}</TableCell>
-                            <TableCell className="text-sm">
-                              {record.testedBy?.name || record.testerName}
-                            </TableCell>
-                            <TableCell>{resultBadge(record.visualInspectionResult)}</TableCell>
-                            <TableCell className="hidden sm:table-cell">
-                              {resultBadge(record.earthContinuityResult)}
-                            </TableCell>
-                            <TableCell className="hidden sm:table-cell">
-                              {resultBadge(record.insulationResult)}
-                            </TableCell>
-                            <TableCell className="hidden sm:table-cell">
-                              {resultBadge(record.leakageCurrentResult)}
-                            </TableCell>
-                            <TableCell>{resultBadge(record.result)}</TableCell>
-                            <TableCell className="hidden md:table-cell max-w-48 truncate text-xs text-fg-3">
-                              {record.failureNotes || record.functionalTestNotes || record.visualNotes || "\u2014"}
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                        {item.testRecords.map((record: any) => {
+                          const isExpanded = expandedRecordId === record.id;
+                          return (
+                            <Fragment key={record.id}>
+                              <TableRow
+                                className="cursor-pointer hover:bg-surface-hover"
+                                onClick={() => setExpandedRecordId(isExpanded ? null : record.id)}
+                              >
+                                <TableCell className="text-sm">{formatDate(record.testDate)}</TableCell>
+                                <TableCell className="text-sm">
+                                  {record.testedBy?.name || record.testerName}
+                                </TableCell>
+                                <TableCell>{resultBadge(record.visualInspectionResult)}</TableCell>
+                                <TableCell className="hidden sm:table-cell">
+                                  {resultBadge(record.earthContinuityResult)}
+                                </TableCell>
+                                <TableCell className="hidden sm:table-cell">
+                                  {resultBadge(record.insulationResult)}
+                                </TableCell>
+                                <TableCell className="hidden sm:table-cell">
+                                  {resultBadge(record.leakageCurrentResult)}
+                                </TableCell>
+                                <TableCell>{resultBadge(record.result)}</TableCell>
+                                <TableCell className="hidden md:table-cell max-w-48 truncate text-xs text-fg-3">
+                                  {record.failureNotes || record.functionalTestNotes || record.visualNotes || "\u2014"}
+                                </TableCell>
+                              </TableRow>
+                              {isExpanded && (
+                                <TableRow>
+                                  <TableCell colSpan={8} className="bg-bg-inset p-4">
+                                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 text-sm">
+                                      {/* Readings */}
+                                      <div className="space-y-2">
+                                        <h4 className="font-medium text-fg-1">Electrical Readings</h4>
+                                        <dl className="space-y-1 text-fg-3">
+                                          {record.earthContinuityReading != null && (
+                                            <div className="flex justify-between">
+                                              <dt>Earth Continuity</dt>
+                                              <dd className="font-mono text-fg-2">{record.earthContinuityReading} &#8486;</dd>
+                                            </div>
+                                          )}
+                                          {record.insulationReading != null && (
+                                            <div className="flex justify-between">
+                                              <dt>Insulation{record.insulationTestVoltage ? ` (${record.insulationTestVoltage}V)` : ""}</dt>
+                                              <dd className="font-mono text-fg-2">{record.insulationReading} M&#8486;</dd>
+                                            </div>
+                                          )}
+                                          {record.leakageCurrentReading != null && (
+                                            <div className="flex justify-between">
+                                              <dt>Leakage Current</dt>
+                                              <dd className="font-mono text-fg-2">{record.leakageCurrentReading} mA</dd>
+                                            </div>
+                                          )}
+                                          {record.polarityResult && record.polarityResult !== "NOT_APPLICABLE" && (
+                                            <div className="flex justify-between">
+                                              <dt>Polarity</dt>
+                                              <dd>{resultBadge(record.polarityResult)}</dd>
+                                            </div>
+                                          )}
+                                          {record.rcdTripTimeReading != null && (
+                                            <div className="flex justify-between">
+                                              <dt>RCD Trip Time</dt>
+                                              <dd className="font-mono text-fg-2">{record.rcdTripTimeReading} ms</dd>
+                                            </div>
+                                          )}
+                                          {record.earthContinuityReading == null && record.insulationReading == null && record.leakageCurrentReading == null && (
+                                            <p className="text-fg-3">No electrical readings recorded</p>
+                                          )}
+                                        </dl>
+                                      </div>
+
+                                      {/* Visual Checks */}
+                                      <div className="space-y-2">
+                                        <h4 className="font-medium text-fg-1">Visual Inspection</h4>
+                                        <dl className="space-y-1 text-fg-3">
+                                          {[
+                                            ["Cord Condition", record.visualCordCondition],
+                                            ["Plug Condition", record.visualPlugCondition],
+                                            ["Housing", record.visualHousingCondition],
+                                            ["Switch", record.visualSwitchCondition],
+                                            ["Vents", record.visualVentsUnobstructed],
+                                            ["Cord Grip", record.visualCordGrip],
+                                            ["Earth Pin", record.visualEarthPin],
+                                            ["Markings", record.visualMarkingsLegible],
+                                            ["No Modifications", record.visualNoModifications],
+                                          ].filter(([, v]) => v != null).map(([label, value]) => (
+                                            <div key={label as string} className="flex justify-between">
+                                              <dt>{label}</dt>
+                                              <dd>{typeof value === "boolean"
+                                                ? <Badge variant={value ? "default" : "destructive"} className="text-[10px]">{value ? "OK" : "FAIL"}</Badge>
+                                                : resultBadge(value as string)}</dd>
+                                            </div>
+                                          ))}
+                                          {record.visualNotes && (
+                                            <div className="pt-1">
+                                              <dt className="text-xs text-fg-3">Notes</dt>
+                                              <dd className="text-fg-2">{record.visualNotes}</dd>
+                                            </div>
+                                          )}
+                                        </dl>
+                                      </div>
+
+                                      {/* Meta */}
+                                      <div className="space-y-2">
+                                        <h4 className="font-medium text-fg-1">Details</h4>
+                                        <dl className="space-y-1 text-fg-3">
+                                          {record.testMethod && (
+                                            <div className="flex justify-between">
+                                              <dt>Test Method</dt>
+                                              <dd className="text-fg-2">{record.testMethod.replace(/_/g, " ")}</dd>
+                                            </div>
+                                          )}
+                                          {record.equipmentClassTested && (
+                                            <div className="flex justify-between">
+                                              <dt>Class Tested</dt>
+                                              <dd className="text-fg-2">{record.equipmentClassTested.replace(/_/g, " ")}</dd>
+                                            </div>
+                                          )}
+                                          {record.nextDueDate && (
+                                            <div className="flex justify-between">
+                                              <dt>Next Due</dt>
+                                              <dd className="text-fg-2">{formatDate(record.nextDueDate)}</dd>
+                                            </div>
+                                          )}
+                                          {record.failureAction && record.failureAction !== "NONE" && (
+                                            <div className="flex justify-between">
+                                              <dt>Failure Action</dt>
+                                              <dd className="text-fg-2">{record.failureAction.replace(/_/g, " ")}</dd>
+                                            </div>
+                                          )}
+                                          {record.failureNotes && (
+                                            <div className="pt-1">
+                                              <dt className="text-xs text-fg-3">Failure Notes</dt>
+                                              <dd className="text-fg-2">{record.failureNotes}</dd>
+                                            </div>
+                                          )}
+                                        </dl>
+                                      </div>
+
+                                      {/* Sub-tests */}
+                                      {record.subTestRecords && record.subTestRecords.length > 0 && (
+                                        <div className="sm:col-span-2 lg:col-span-3 space-y-2">
+                                          <h4 className="font-medium text-fg-1">Sub-Tests</h4>
+                                          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                                            {record.subTestRecords.map((st: any) => (
+                                              <div key={st.id} className="border rounded p-2 text-xs">
+                                                <div className="flex items-center justify-between mb-1">
+                                                  <span className="font-medium">{st.label}</span>
+                                                  {resultBadge(st.result)}
+                                                </div>
+                                                <dl className="space-y-0.5 text-fg-3">
+                                                  {st.earthContinuityReading != null && (
+                                                    <div className="flex justify-between"><dt>Earth</dt><dd className="font-mono">{st.earthContinuityReading} &#8486;</dd></div>
+                                                  )}
+                                                  {st.insulationReading != null && (
+                                                    <div className="flex justify-between"><dt>Insulation</dt><dd className="font-mono">{st.insulationReading} M&#8486;</dd></div>
+                                                  )}
+                                                  {st.leakageCurrentReading != null && (
+                                                    <div className="flex justify-between"><dt>Leakage</dt><dd className="font-mono">{st.leakageCurrentReading} mA</dd></div>
+                                                  )}
+                                                </dl>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </Fragment>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </div>
@@ -519,6 +668,18 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
           </div>
         </div>
       </div>
+      {/* Hidden label for printing */}
+      {latestRecord && (
+        <div className="hidden print:block">
+          <LabelTemplate
+            testTagId={item.testTagId}
+            result={latestRecord.result === "PASS" ? "PASS" : "FAIL"}
+            testDate={latestRecord.testDate}
+            nextDueDate={item.nextDueDate || latestRecord.testDate}
+            testerName={latestRecord.testedBy?.name || latestRecord.testerName || "—"}
+          />
+        </div>
+      )}
     </FadeIn>
   );
 }

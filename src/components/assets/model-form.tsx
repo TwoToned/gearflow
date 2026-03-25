@@ -12,6 +12,7 @@ import { Controller } from "react-hook-form";
 import { modelSchema, type ModelFormValues } from "@/lib/validations/model";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { createModel, updateModel } from "@/server/models";
+import { getTestProfiles } from "@/server/test-tag-profiles";
 import { getCategories } from "@/server/categories";
 import { getOrgTags } from "@/server/tags";
 import { TagInput } from "@/components/ui/tag-input";
@@ -48,6 +49,7 @@ const applianceTypeOptions = [
   { value: "RCD_PORTABLE", label: "RCD (Portable)" },
   { value: "RCD_FIXED", label: "RCD (Fixed)" },
   { value: "THREE_PHASE", label: "Three Phase" },
+  { value: "MICROWAVE", label: "Microwave" },
   { value: "OTHER", label: "Other" },
 ];
 
@@ -71,6 +73,14 @@ export function ModelForm({ initialData }: ModelFormProps) {
     queryKey: ["org-tags", orgId],
     queryFn: () => getOrgTags(),
   });
+
+  const { data: testProfiles } = useQuery({
+    queryKey: ["testProfiles", orgId],
+    queryFn: () => getTestProfiles(),
+    enabled: !!orgId,
+  });
+
+  const activeProfiles = ((testProfiles || []) as { id: string; name: string; equipmentClass: string; applianceType: string; isActive: boolean }[]).filter(p => p.isActive);
 
   const form = useForm<ModelFormValues>({
     resolver: zodResolver(modelSchema),
@@ -216,42 +226,28 @@ export function ModelForm({ initialData }: ModelFormProps) {
               <Label htmlFor="requiresTestAndTag">Requires Test & Tag</Label>
             </div>
             {form.watch("requiresTestAndTag") && (
-              <div className="grid gap-4 sm:grid-cols-3 pl-6 border-l-2 border-primary/20">
+              <div className="grid gap-4 sm:grid-cols-2 pl-6 border-l-2 border-primary/20">
                 <div className="space-y-2">
-                  <Label>Equipment Class</Label>
-                  <Select
-                    value={form.watch("defaultEquipmentClass") || "CLASS_I"}
-                    onValueChange={(v) => v && form.setValue("defaultEquipmentClass", v as ModelFormValues["defaultEquipmentClass"])}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue>
-                        {equipmentClassOptions.find((o) => o.value === (form.watch("defaultEquipmentClass") || "CLASS_I"))?.label}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {equipmentClassOptions.map((opt) => (
-                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Appliance Type</Label>
-                  <Select
-                    value={form.watch("defaultApplianceType") || "APPLIANCE"}
-                    onValueChange={(v) => v && form.setValue("defaultApplianceType", v as ModelFormValues["defaultApplianceType"])}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue>
-                        {applianceTypeOptions.find((o) => o.value === (form.watch("defaultApplianceType") || "APPLIANCE"))?.label}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {applianceTypeOptions.map((opt) => (
-                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label>Test Profile</Label>
+                  {activeProfiles.length > 0 ? (
+                    <ComboboxPicker
+                      value={form.watch("defaultTestProfileId") || ""}
+                      onChange={(v) => {
+                        form.setValue("defaultTestProfileId", v);
+                        const profile = activeProfiles.find(p => p.id === v);
+                        if (profile) {
+                          form.setValue("defaultEquipmentClass", profile.equipmentClass as ModelFormValues["defaultEquipmentClass"]);
+                          form.setValue("defaultApplianceType", profile.applianceType as ModelFormValues["defaultApplianceType"]);
+                        }
+                      }}
+                      options={activeProfiles.map(p => ({ value: p.id, label: p.name }))}
+                      placeholder="Select profile..."
+                      searchPlaceholder="Search profiles..."
+                    />
+                  ) : (
+                    <p className="text-sm text-fg-3 py-2">No test profiles configured. <a href="/settings/test-and-tag/profiles" className="text-primary hover:underline">Set up profiles</a></p>
+                  )}
+                  <p className="text-xs text-fg-3">Determines equipment class, type, and required tests</p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="testAndTagIntervalDays">Test Validity (days)</Label>

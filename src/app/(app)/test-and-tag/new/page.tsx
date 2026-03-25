@@ -13,6 +13,7 @@ import { testTagAssetSchema, type TestTagAssetFormValues } from "@/lib/validatio
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { createTestTagAsset, peekNextTestTagIds } from "@/server/test-tag-assets";
+import { getTestProfiles } from "@/server/test-tag-profiles";
 import { getAssets } from "@/server/assets";
 import { getBulkAssets } from "@/server/bulk-assets";
 import { Button } from "@/components/ui/button";
@@ -22,33 +23,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { FadeIn } from "@/components/ui/motion";
 
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { useActiveOrganization } from "@/lib/auth-client";
-
-const equipmentClassOptions = [
-  { value: "CLASS_I", label: "Class I" },
-  { value: "CLASS_II", label: "Class II" },
-  { value: "CLASS_II_DOUBLE_INSULATED", label: "Class II (Double Insulated)" },
-  { value: "LEAD_CORD_ASSEMBLY", label: "Lead / Cord Assembly" },
-];
-
-const applianceTypeOptions = [
-  { value: "APPLIANCE", label: "Appliance" },
-  { value: "CORD_SET", label: "Cord Set" },
-  { value: "EXTENSION_LEAD", label: "Extension Lead" },
-  { value: "POWER_BOARD", label: "Power Board" },
-  { value: "RCD_PORTABLE", label: "RCD (Portable)" },
-  { value: "RCD_FIXED", label: "RCD (Fixed)" },
-  { value: "THREE_PHASE", label: "Three Phase" },
-  { value: "OTHER", label: "Other" },
-];
 
 function NewTestTagAssetInner() {
   const router = useRouter();
@@ -90,6 +66,15 @@ function NewTestTagAssetInner() {
     queryKey: ["bulk-assets", orgId, { pageSize: 500 }],
     queryFn: () => getBulkAssets({ pageSize: 500 }),
   });
+
+  const profilesQuery = useQuery({
+    queryKey: ["testProfiles", orgId],
+    queryFn: () => getTestProfiles(),
+    enabled: !!orgId,
+  });
+
+  const profileList = (profilesQuery.data || []) as { id: string; name: string; equipmentClass: string; applianceType: string; isActive: boolean }[];
+  const activeProfiles = profileList.filter(p => p.isActive);
 
   // Auto-populate the test tag ID from peek (only when no linked asset)
   useEffect(() => {
@@ -134,6 +119,7 @@ function NewTestTagAssetInner() {
       model: {
         name: string; manufacturer: string | null; modelNumber: string | null;
         defaultEquipmentClass: string | null; defaultApplianceType: string | null;
+        defaultTestProfileId: string | null;
         testAndTagIntervalDays: number | null;
       };
       location?: { name: string } | null;
@@ -144,11 +130,20 @@ function NewTestTagAssetInner() {
     form.setValue("description", `${model.manufacturer ? model.manufacturer + " " : ""}${model.name}`);
     if (model.manufacturer) form.setValue("make", model.manufacturer);
     if (model.modelNumber) form.setValue("modelName", model.modelNumber);
-    if (model.defaultEquipmentClass) {
-      form.setValue("equipmentClass", model.defaultEquipmentClass as TestTagAssetFormValues["equipmentClass"]);
-    }
-    if (model.defaultApplianceType) {
-      form.setValue("applianceType", model.defaultApplianceType as TestTagAssetFormValues["applianceType"]);
+    if (model.defaultTestProfileId) {
+      form.setValue("testProfileId", model.defaultTestProfileId);
+      const profile = activeProfiles.find(p => p.id === model.defaultTestProfileId);
+      if (profile) {
+        form.setValue("equipmentClass", profile.equipmentClass as TestTagAssetFormValues["equipmentClass"]);
+        form.setValue("applianceType", profile.applianceType as TestTagAssetFormValues["applianceType"]);
+      }
+    } else {
+      if (model.defaultEquipmentClass) {
+        form.setValue("equipmentClass", model.defaultEquipmentClass as TestTagAssetFormValues["equipmentClass"]);
+      }
+      if (model.defaultApplianceType) {
+        form.setValue("applianceType", model.defaultApplianceType as TestTagAssetFormValues["applianceType"]);
+      }
     }
     if (model.testAndTagIntervalDays) {
       form.setValue("testIntervalMonths", Math.max(1, Math.round(model.testAndTagIntervalDays / 30)));
@@ -158,6 +153,7 @@ function NewTestTagAssetInner() {
 
   const watchBulkAssetId = form.watch("bulkAssetId");
   const watchAssetId = form.watch("assetId");
+  const watchProfileId = form.watch("testProfileId");
 
   const mutation = useMutation({
     mutationFn: (data: TestTagAssetFormValues) =>
@@ -174,6 +170,7 @@ function NewTestTagAssetInner() {
         notes: data.notes || undefined,
         assetId: data.assetId || undefined,
         bulkAssetId: data.bulkAssetId || undefined,
+        testProfileId: data.testProfileId || undefined,
       }),
     onSuccess: (result) => {
       toast.success("Test tag asset created");
@@ -242,7 +239,11 @@ function NewTestTagAssetInner() {
                       form.setValue("bulkAssetId", "");
                       const asset = (assetsQuery.data?.assets || []).find((a: { id: string }) => a.id === v) as {
                         id: string; assetTag: string; serialNumber?: string | null;
-                        model?: { name?: string; manufacturer?: string | null; modelNumber?: string | null } | null;
+                        model?: {
+                          name?: string; manufacturer?: string | null; modelNumber?: string | null;
+                          defaultTestProfileId?: string | null;
+                          defaultEquipmentClass?: string | null; defaultApplianceType?: string | null;
+                        } | null;
                       } | undefined;
                       if (asset) {
                         form.setValue("testTagId", asset.assetTag);
@@ -252,6 +253,14 @@ function NewTestTagAssetInner() {
                         if (asset.model?.manufacturer) form.setValue("make", asset.model.manufacturer);
                         if (asset.model?.modelNumber) form.setValue("modelName", asset.model.modelNumber);
                         if (asset.serialNumber) form.setValue("serialNumber", asset.serialNumber);
+                        if (asset.model?.defaultTestProfileId) {
+                          form.setValue("testProfileId", asset.model.defaultTestProfileId);
+                          const profile = activeProfiles.find(p => p.id === asset.model?.defaultTestProfileId);
+                          if (profile) {
+                            form.setValue("equipmentClass", profile.equipmentClass as TestTagAssetFormValues["equipmentClass"]);
+                            form.setValue("applianceType", profile.applianceType as TestTagAssetFormValues["applianceType"]);
+                          }
+                        }
                       }
                     } else {
                       form.setValue("testTagId", peekQuery.data?.[0] || "");
@@ -341,43 +350,29 @@ function NewTestTagAssetInner() {
         <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
           <h3 className="t-heading text-fg mb-4">Classification</h3>
           <div className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Equipment Class</Label>
-                <Select
-                  value={form.watch("equipmentClass")}
-                  onValueChange={(v) => v && form.setValue("equipmentClass", v as TestTagAssetFormValues["equipmentClass"])}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {equipmentClassOptions.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Appliance Type</Label>
-                <Select
-                  value={form.watch("applianceType")}
-                  onValueChange={(v) => v && form.setValue("applianceType", v as TestTagAssetFormValues["applianceType"])}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {applianceTypeOptions.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="space-y-2">
+              <Label>Test Profile *</Label>
+              {activeProfiles.length > 0 ? (
+                <ComboboxPicker
+                  value={watchProfileId || ""}
+                  onChange={(v) => {
+                    form.setValue("testProfileId", v);
+                    const profile = activeProfiles.find(p => p.id === v);
+                    if (profile) {
+                      form.setValue("equipmentClass", profile.equipmentClass as TestTagAssetFormValues["equipmentClass"]);
+                      form.setValue("applianceType", profile.applianceType as TestTagAssetFormValues["applianceType"]);
+                    }
+                  }}
+                  options={activeProfiles.map(p => ({ value: p.id, label: p.name }))}
+                  placeholder="Select test profile..."
+                  searchPlaceholder="Search profiles..."
+                />
+              ) : (
+                <p className="text-sm text-fg-3 py-2">No test profiles configured. <a href="/settings/test-and-tag/profiles" className="text-primary hover:underline">Set up profiles</a></p>
+              )}
+              <p className="text-xs text-fg-3">
+                Determines equipment class, appliance type, and which tests are required.
+              </p>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">

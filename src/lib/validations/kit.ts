@@ -16,6 +16,7 @@ export const kitSchema = z.object({
   purchasePrice: z.coerce.number().min(0).optional(),
   image: z.string().optional(),
   images: z.array(z.string()).default([]),
+  checkMode: z.enum(["KIT_LEVEL", "PER_ITEM"]).default("KIT_LEVEL"),
   isActive: z.boolean().default(true),
   tags: z.array(z.string()).default([]),
 });

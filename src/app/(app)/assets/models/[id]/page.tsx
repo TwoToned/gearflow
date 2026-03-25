@@ -40,6 +40,8 @@ import { BookingCalendar } from "@/components/bookings/booking-calendar";
 import { FadeIn } from "@/components/ui/motion";
 import { SectionHeader } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
+import { ModelChecksTab } from "@/components/assets/model-checks-tab";
+import { ModelFailureAnalytics } from "@/components/assets/model-failure-analytics";
 
 import { assetStatusLabels, bulkAssetStatusLabels, formatLabel } from "@/lib/status-labels";
 import { StatusIndicator } from "@/components/ui/status-indicator";
@@ -221,6 +223,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   </TabsTrigger>
                   <TabsTrigger value="photos">Photos ({photos.length})</TabsTrigger>
                   <TabsTrigger value="documents">Documents ({documents.length})</TabsTrigger>
+                  <TabsTrigger value="checks">Checks</TabsTrigger>
                 </TabsList>
               </div>
 
@@ -479,6 +482,13 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                         await removeModelMedia(mediaId);
                       }}
                     />
+                </div>
+              </TabsContent>
+
+              <TabsContent value="checks" className="mt-4">
+                <div className="space-y-6">
+                  <ModelChecksTab modelId={id} />
+                  <ModelFailureAnalytics modelId={id} />
                 </div>
               </TabsContent>
             </Tabs>

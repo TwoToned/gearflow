@@ -6,14 +6,47 @@
 - `CHECKED_OUT` status displays as **"Deployed"**
 - Internal code (function names, enum values, API params) still uses `checkOut`/`checkIn`/`CHECKED_OUT`
 
-## Deploy Flow (Check Out)
-1. User opens project in warehouse view (`/warehouse/[projectId]`)
-2. Scans barcode or selects asset from dropdown
-3. `lookupAssetForScan` validates: asset exists, matches a line item model, not already deployed elsewhere
-4. For serialized: `checkOutItems` assigns `assetId` to line item, sets asset status to `CHECKED_OUT`
-5. For bulk: increments `checkedOutQuantity` on line item, decrements `availableQuantity` on bulk asset
-6. For kit: `checkOutKit` atomically updates kit + all member assets + all child line items + all grandchildren (nested kits inside prep-kits)
-7. For prep-kit: same `checkOutKit` flow — handles children, nested kit entities, and grandchild assets via `ProjectLineItem.assetId` (not `KitSerializedItem`)
+## Three-Phase Warehouse Flow
+
+The warehouse uses a Pick/Prep → Deploy → Return flow. Items are **prepped** (packed) before being **deployed** (checked out).
+
+### Pick/Prep Tab
+- Scan or select items to prep
+- Container dropdown next to scan input — select a case asset or type a custom container name
+- Container assets (from configured case category) auto-added to project on first prep
+- `prepItemDirect()` sets `prepStatus=PACKED` and `prepContainer` without deploying (status stays `CONFIRMED`)
+- **Unified split approach**: both serialized and bulk multi-qty items use the same split pattern:
+  - When prepping 1 unit from a qty > 1 item, a new qty=1 line item is created with `prepStatus=PACKED`
+  - For serialized items: the split item gets the assigned `assetId`
+  - For bulk items: the split item inherits the `bulkAssetId`
+  - The original item's `quantity` decrements by 1
+  - When original reaches qty=0, it's hidden from the prep tab
+  - When original reaches qty=1, the last unit is prepped in-place (no split)
+- Items with no check items assigned are prepped directly; items with checks go through the check queue
+- Bulk items display as expandable groups with individual unit rows (Unit 1, Unit 2, etc.) — each unit gets its own check dialog
+- `deprepItem()` reverses prep: clears `prepStatus` to PENDING (split items stay as independent line items)
+
+### Deploy Tab
+- Shows items with `prepStatus=PACKED` and `quantity > 0` (prepped but not yet deployed)
+- Split items (qty=1) flow through the serialized deploy path regardless of whether they have a `bulkAssetId`
+- Items grouped by `prepContainer` with section headers (Package icon + container name)
+- X button on container headers to clear container assignment
+- Container line items auto-deploy when all contents are deployed (`syncContainerStatus`)
+
+### Return Tab
+- Shows items with `status === "CHECKED_OUT"` only
+- Split bulk items (qty=1 with bulkAssetId) use the serialized return path
+- Items grouped by `prepContainer` with section headers (same as Deploy tab)
+- Container line items auto-return when all contents are returned (`syncContainerStatus`)
+
+### Scan Flow
+- `quickAddAndCheckOut()` adds items to project and **preps** them (sets `status: "CONFIRMED"`, `prepStatus: "PACKED"`) — does NOT deploy directly
+- `lookupAssetForScan()` treats scanned serialized assets as serialized (not bulk) even if the matching line item has qty > 1
+
+### Kit/Prep-Kit Flows
+- Kit checkout: `checkOutKit()` — atomic transaction updating kit + all member assets + grandchildren
+- Kit checkin: `checkInKit()` — same pattern, handles grandchildren and prep-kit assets
+- For prep-kit: same `checkOutKit` flow via `ProjectLineItem.assetId` (not `KitSerializedItem`)
 
 ## Return Flow (Check In)
 1. User selects items to return, specifies condition per item
@@ -46,8 +79,8 @@ Children of a kit/prep-kit that are themselves kits render with:
 - Prep-kits with case asset: show the case asset tag
 - Auto-generated `PREP-*` tags: hidden (display `—`)
 
-## Preps Tab
-Third tab on warehouse page (`?tab=preps`). Create prep-kits, scan items into them, deploy, return, dissolve. See [Preps](./32-preps.md) for full details.
+## Prep Containers
+Container dropdown on Pick/Prep tab for visual asset grouping. See [Preps](./32-preps.md) for full details.
 
 ## Partial Deploy/Return
 Kits and prep-kits support partial deployment:

@@ -301,6 +301,15 @@ export const PAGE_COMMANDS: PageCommand[] = [
         icon: "Users",
         description: "Team members, roles, and permissions",
       },
+      {
+        label: "Check Items",
+        href: "/settings/check-items",
+        aliases: ["checkitems", "checks", "qualitychecks", "qc", "inspections"],
+        icon: "ClipboardCheck",
+        description: "Quality check item library",
+        searchable: true,
+        searchType: "check-item" as const,
+      },
     ],
   },
   {

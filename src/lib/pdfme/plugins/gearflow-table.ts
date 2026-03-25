@@ -136,7 +136,6 @@ function getItemName(item: DocumentLineItem, isKit: boolean): string {
 /** Get asset tag display */
 function getAssetTag(item: DocumentLineItem, isKit: boolean): string {
   if (isKit) {
-    if (item.kit?.isPrep && item.kit.assetTag.startsWith("PREP-")) return "-";
     return item.kit?.assetTag || "-";
   }
   return item.asset?.assetTag || item.bulkAsset?.assetTag || "-";
@@ -187,7 +186,7 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
   const bottomBoundary = layout.y; // Stop drawing when currentY reaches this
 
   // === Filter items ===
-  let filteredItems = items.filter(i => !i.isKitChild);
+  let filteredItems = items.filter(i => !i.isKitChild && !i.isContainerLineItem);
 
   if (config.filterOptional) {
     filteredItems = filteredItems.filter(i => !i.isOptional);
@@ -208,7 +207,7 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
 
   const groups = new Map<string, DocumentLineItem[]>();
   for (const item of filteredItems) {
-    const key = item.groupName || ungroupedKey;
+    const key = item.groupName || item.prepContainer || ungroupedKey;
     const arr = groups.get(key) || [];
     arr.push(item);
     groups.set(key, arr);
@@ -339,7 +338,7 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
 
             // Kit prefix for packing list
             const displayName = (config.documentType === "packing-list" && isKit)
-              ? `[${item.kit?.isPrep ? "Prep" : "Kit"}] ${itemName}`
+              ? `[Kit] ${itemName}`
               : itemName;
 
             const font = isKit ? fonts.bold : fonts.regular;

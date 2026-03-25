@@ -704,7 +704,7 @@ export async function deleteProject(id: string) {
           assetId: true,
           kitId: true,
           status: true,
-          kit: { select: { id: true, isPrep: true } },
+          kit: { select: { id: true } },
         },
       },
     },
@@ -716,18 +716,13 @@ export async function deleteProject(id: string) {
   // Collect IDs to reset
   const checkedOutAssetIds: string[] = [];
   const checkedOutKitIds: string[] = [];
-  const prepKitIds: string[] = [];
 
   for (const li of project.lineItems) {
     if (li.assetId && (li.status === "CHECKED_OUT" || li.status === "CONFIRMED")) {
       checkedOutAssetIds.push(li.assetId);
     }
-    if (li.kitId) {
-      if (li.kit?.isPrep) {
-        prepKitIds.push(li.kitId);
-      } else if (li.status === "CHECKED_OUT" || li.status === "CONFIRMED") {
-        checkedOutKitIds.push(li.kitId);
-      }
+    if (li.kitId && (li.status === "CHECKED_OUT" || li.status === "CONFIRMED")) {
+      checkedOutKitIds.push(li.kitId);
     }
   }
 
@@ -774,28 +769,6 @@ export async function deleteProject(id: string) {
       }
     }
 
-    // Delete prep-kits (their line items cascade with project delete, but the Kit records don't)
-    if (prepKitIds.length > 0) {
-      // First reset any serialized assets inside prep-kits
-      const prepKitAssets = await tx.kitSerializedItem.findMany({
-        where: { kitId: { in: prepKitIds } },
-        select: { assetId: true },
-      });
-      if (prepKitAssets.length > 0) {
-        await tx.asset.updateMany({
-          where: { id: { in: prepKitAssets.map((ka) => ka.assetId) }, organizationId, status: "CHECKED_OUT" },
-          data: {
-            status: "AVAILABLE",
-            locationId: defaultLocation?.id ?? null,
-          },
-        });
-      }
-      // Delete kit contents then kits
-      await tx.kitSerializedItem.deleteMany({ where: { kitId: { in: prepKitIds } } });
-      await tx.kitBulkItem.deleteMany({ where: { kitId: { in: prepKitIds } } });
-      await tx.kit.deleteMany({ where: { id: { in: prepKitIds }, organizationId } });
-    }
-
     // Delete the project (cascades to line items, media, etc.)
     await tx.project.delete({ where: { id, organizationId } });
   });
@@ -813,7 +786,6 @@ export async function deleteProject(id: string) {
       deleted: { projectNumber: project.projectNumber, name: project.name },
       freedAssets: checkedOutAssetIds.length,
       freedKits: checkedOutKitIds.length,
-      deletedPrepKits: prepKitIds.length,
     },
   });
 }

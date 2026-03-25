@@ -61,6 +61,9 @@ export interface DocumentLineItem {
   // Subhire
   isSubhire?: boolean;
   showSubhireOnDocs?: boolean;
+  // Container
+  prepContainer?: string | null;
+  isContainerLineItem?: boolean;
   // Relations
   model: {
     name: string;
@@ -70,7 +73,7 @@ export interface DocumentLineItem {
   } | null;
   asset: { assetTag: string } | null;
   bulkAsset: { assetTag: string } | null;
-  kit?: { assetTag: string; name: string; isPrep?: boolean } | null;
+  kit?: { assetTag: string; name: string } | null;
   childLineItems?: DocumentLineItem[];
 }
 

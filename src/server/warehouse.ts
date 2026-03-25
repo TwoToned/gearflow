@@ -6,6 +6,7 @@ import { serialize } from "@/lib/serialize";
 import { computeOverbookedStatus } from "@/lib/availability";
 import type { Prisma } from "@/generated/prisma/client";
 import { logActivity } from "@/lib/activity-log";
+import { splitLineItem } from "@/server/check-records";
 
 // ---------------------------------------------------------------------------
 // 1. getProjectForWarehouse
@@ -23,17 +24,23 @@ export async function getProjectForWarehouse(projectId: string) {
         where: { type: "EQUIPMENT" },
         orderBy: { sortOrder: "asc" },
         include: {
-          model: true,
+          model: { include: { _count: { select: { modelCheckItems: true } } } },
           asset: true,
           bulkAsset: true,
-          kit: true,
+          kit: { include: { _count: { select: { kitCheckItems: true } } } },
           childLineItems: {
             orderBy: { sortOrder: "asc" },
             include: {
-              model: true, asset: true, bulkAsset: true, kit: true,
+              model: { include: { _count: { select: { modelCheckItems: true } } } },
+              asset: true, bulkAsset: true,
+              kit: { include: { _count: { select: { kitCheckItems: true } } } },
               childLineItems: {
                 orderBy: { sortOrder: "asc" },
-                include: { model: true, asset: true, bulkAsset: true, kit: true },
+                include: {
+                  model: { include: { _count: { select: { modelCheckItems: true } } } },
+                  asset: true, bulkAsset: true,
+                  kit: { include: { _count: { select: { kitCheckItems: true } } } },
+                },
               },
             },
           },
@@ -68,11 +75,11 @@ export async function lookupAssetForScan(
   const [asset, bulkAsset, kit] = await Promise.all([
     prisma.asset.findUnique({
       where: { organizationId_assetTag: { organizationId, assetTag } },
-      include: { model: { include: { category: true } } },
+      include: { model: { include: { category: true, _count: { select: { modelCheckItems: true } } } } },
     }),
     prisma.bulkAsset.findUnique({
       where: { organizationId_assetTag: { organizationId, assetTag } },
-      include: { model: { include: { category: true } } },
+      include: { model: { include: { category: true, _count: { select: { modelCheckItems: true } } } } },
     }),
     prisma.kit.findUnique({
       where: { organizationId_assetTag: { organizationId, assetTag } },
@@ -175,19 +182,23 @@ export async function lookupAssetForScan(
     });
   }
 
-  // Determine if the line item is bulk (multi-quantity without a specific serialized asset)
-  const isBulk = !!lineItem.bulkAssetId || (!lineItem.assetId && lineItem.quantity > 1);
+  // Determine if the line item is bulk (multi-quantity without serialized asset)
+  // Split items (qty=1) go through the serialized path naturally.
+  // If a serialized asset was scanned, treat it as serialized even if the line item has qty > 1
+  const isBulk = asset
+    ? false
+    : !lineItem.assetId && lineItem.quantity > 1;
 
   if (isBulk) {
     if (mode === "checkout") {
-      // Already fully checked out (and not returned yet)?
-      if (lineItem.checkedOutQuantity >= lineItem.quantity && lineItem.status !== "RETURNED") {
+      // In the split flow, all units are split off before checkout.
+      // If qty > 1 still, they haven't all been prepped yet.
+      if (lineItem.status === "CHECKED_OUT") {
         return serialize({ found: true as const, type: "bulk" as const, lineItemId: null, assetId: null, assetName, reason: "already_checked_out" as const });
       }
     } else {
       // checkin — need units that are checked out but not yet returned
-      const remaining = lineItem.checkedOutQuantity - lineItem.returnedQuantity;
-      if (remaining <= 0) {
+      if (lineItem.status !== "CHECKED_OUT") {
         return serialize({ found: true as const, type: "bulk" as const, lineItemId: null, assetId: null, assetName, reason: "already_returned" as const });
       }
     }
@@ -274,24 +285,24 @@ export async function checkOutItems(
         throw new Error(`Line item ${item.lineItemId} not found in project`);
       }
 
-      // Treat as bulk if: has bulkAssetId, or has no serialized asset and quantity > 1
-      const isBulk = !!lineItem.bulkAssetId || (!lineItem.assetId && lineItem.quantity > 1);
+      // With the split approach, prepped items are qty=1 and behave like serialized.
+      // Only unsplit multi-qty items without a serialized asset use the bulk checkout path.
+      const isBulk = item.assetId
+        ? false
+        : !lineItem.assetId && lineItem.quantity > 1;
       const checkoutQty = item.quantity || 1;
 
       if (isBulk) {
-        // If re-checking out after a return, reset counters
-        const baseCheckedOut = lineItem.status === "RETURNED" ? 0 : lineItem.checkedOutQuantity;
-        const newCheckedOutQty = baseCheckedOut + checkoutQty;
-        const fullyCheckedOut = newCheckedOutQty >= lineItem.quantity;
-
+        // Unsplit bulk item — shouldn't normally reach here in the split flow,
+        // but handle gracefully: deploy the whole item at once.
         const updatedItem = await tx.projectLineItem.update({
           where: { id: item.lineItemId },
           data: {
-            checkedOutQuantity: newCheckedOutQty,
+            checkedOutQuantity: lineItem.quantity,
             returnedQuantity: lineItem.status === "RETURNED" ? 0 : lineItem.returnedQuantity,
-            status: fullyCheckedOut ? "CHECKED_OUT" : lineItem.status === "QUOTED" ? "CONFIRMED" : lineItem.status === "RETURNED" ? "CONFIRMED" : lineItem.status,
-            checkedOutAt: fullyCheckedOut ? new Date() : lineItem.checkedOutAt,
-            ...(fullyCheckedOut ? { checkedOutBy: { connect: { id: userId } } } : {}),
+            status: "CHECKED_OUT",
+            checkedOutAt: new Date(),
+            checkedOutBy: { connect: { id: userId } },
           },
           include: { model: true, asset: true, bulkAsset: true },
         });
@@ -310,7 +321,65 @@ export async function checkOutItems(
 
         updated.push(updatedItem);
       } else {
-        // Serialized asset
+        // Serialized asset checkout
+
+        // Verify the asset isn't already checked out on another project
+        const assetIdToCheck = item.assetId || lineItem.assetId;
+        if (assetIdToCheck) {
+          const assetRecord = await tx.asset.findUnique({
+            where: { id: assetIdToCheck },
+            select: { status: true, assetTag: true },
+          });
+          if (assetRecord && assetRecord.status === "CHECKED_OUT") {
+            if (lineItem.status === "CHECKED_OUT") {
+              continue;
+            }
+            throw new Error(`Asset ${assetRecord.assetTag} is already deployed`);
+          }
+          if (assetRecord && (assetRecord.status === "RETIRED" || assetRecord.status === "IN_MAINTENANCE" || assetRecord.status === "LOST")) {
+            throw new Error(`Asset ${assetRecord.assetTag} is ${assetRecord.status.replace("_", " ").toLowerCase()} and cannot be deployed`);
+          }
+        }
+
+        // If the line item has quantity > 1 and we're assigning a specific asset,
+        // split off a new line item with qty=1 for this asset. This handles the case
+        // where e.g. "4x SM57" gets individual assets assigned during checkout.
+        let targetLineItemId = item.lineItemId;
+        if (lineItem.quantity > 1 && item.assetId) {
+          const splitItem = await splitLineItem(tx, lineItem, {
+            status: "CHECKED_OUT",
+            checkedOutQuantity: 1,
+            checkedOutAt: new Date(),
+            checkedOutById: userId,
+            assetId: item.assetId,
+          });
+
+          // Mark the asset as checked out
+          await tx.asset.update({
+            where: { id: item.assetId },
+            data: {
+              status: "CHECKED_OUT",
+              ...(projectLocationId && { locationId: projectLocationId }),
+            },
+          });
+
+          // Create scan log entry
+          await tx.assetScanLog.create({
+            data: {
+              organizationId,
+              assetId: item.assetId,
+              projectId,
+              action: "CHECK_OUT",
+              scannedById: userId,
+              notes: item.notes || null,
+            },
+          });
+
+          updated.push(splitItem);
+          continue; // Skip the normal update path
+        }
+
+        // Normal serialized checkout (quantity == 1 or no assetId provided)
         const updateData: Prisma.ProjectLineItemUpdateInput = {
           status: "CHECKED_OUT",
           checkedOutQuantity: 1,
@@ -322,32 +391,12 @@ export async function checkOutItems(
           checkedOutBy: { connect: { id: userId } },
         };
 
-        // Verify the asset isn't already checked out on another project
-        const assetIdToCheck = item.assetId || lineItem.assetId;
-        if (assetIdToCheck) {
-          const assetRecord = await tx.asset.findUnique({
-            where: { id: assetIdToCheck },
-            select: { status: true, assetTag: true },
-          });
-          if (assetRecord && assetRecord.status === "CHECKED_OUT") {
-            // If this line item is already CHECKED_OUT, skip it (partial re-deploy)
-            if (lineItem.status === "CHECKED_OUT") {
-              continue;
-            }
-            throw new Error(`Asset ${assetRecord.assetTag} is already deployed`);
-          }
-          if (assetRecord && (assetRecord.status === "RETIRED" || assetRecord.status === "IN_MAINTENANCE" || assetRecord.status === "LOST")) {
-            throw new Error(`Asset ${assetRecord.assetTag} is ${assetRecord.status.replace("_", " ").toLowerCase()} and cannot be deployed`);
-          }
-        }
-
-        // Assign or reassign the specific asset to this line item
         if (item.assetId) {
           updateData.asset = { connect: { id: item.assetId } };
         }
 
         const updatedItem = await tx.projectLineItem.update({
-          where: { id: item.lineItemId },
+          where: { id: targetLineItemId },
           data: updateData,
           include: { model: true, asset: true, bulkAsset: true },
         });
@@ -440,12 +489,14 @@ export async function checkInItems(
         throw new Error(`Line item ${item.lineItemId} not found in project`);
       }
 
-      // Treat as bulk if: has bulkAssetId, or has no serialized asset and quantity > 1
-      const isBulk = !!lineItem.bulkAssetId || (!lineItem.assetId && lineItem.quantity > 1);
+      // With the split approach, deployed bulk items are qty=1 and behave like serialized.
+      // Only unsplit bulk items (qty > 1 with bulkAssetId) use the bulk return path.
+      const isBulk = !lineItem.assetId && lineItem.quantity > 1;
       const returnQty = item.quantity || 1;
 
       if (isBulk) {
-        // Bulk asset: increment returnedQuantity
+        // Unsplit bulk item — shouldn't normally reach here in the split flow,
+        // but handle gracefully
         const newReturnedQty = lineItem.returnedQuantity + returnQty;
         const fullyReturned = newReturnedQty >= lineItem.checkedOutQuantity;
 
@@ -866,6 +917,7 @@ export async function quickAddAndCheckOut(
     assetId?: string;
     bulkAssetId?: string;
     quantity?: number;
+    prepContainer?: string | null;
   }
 ) {
   const { organizationId, userId } = await requirePermission("warehouse", "check_out");
@@ -891,22 +943,14 @@ export async function quickAddAndCheckOut(
         bulkAssetId: data.bulkAssetId || null,
         quantity: qty,
         sortOrder: nextSort,
-        // Immediately check out
-        status: data.assetId ? "CHECKED_OUT" : (qty === 1 ? "CHECKED_OUT" : "CONFIRMED"),
-        checkedOutQuantity: data.assetId ? 1 : qty <= 1 ? 1 : 1,
-        checkedOutAt: new Date(),
-        checkedOutById: userId,
+        // Add to project and prep (not deploy — deploy is a separate step)
+        status: "CONFIRMED",
+        checkedOutQuantity: 0,
+        prepStatus: "PACKED",
+        prepContainer: data.prepContainer || null,
       },
       include: { model: true, asset: true, bulkAsset: true },
     });
-
-    // Mark the serialized asset as checked out
-    if (data.assetId) {
-      await tx.asset.update({
-        where: { id: data.assetId },
-        data: { status: "CHECKED_OUT" },
-      });
-    }
 
     // Create scan log
     await tx.assetScanLog.create({
@@ -917,7 +961,7 @@ export async function quickAddAndCheckOut(
         projectId,
         action: "CHECK_OUT",
         scannedById: userId,
-        notes: "Added to project and deployed via warehouse scan",
+        notes: "Added to project and prepped via warehouse scan",
       },
     });
 
@@ -928,28 +972,175 @@ export async function quickAddAndCheckOut(
 }
 
 // ---------------------------------------------------------------------------
+// 6b. clearPrepContainer — remove container assignment from line items
+// ---------------------------------------------------------------------------
+
+export async function clearPrepContainer(projectId: string, containerName: string) {
+  const { organizationId } = await requirePermission("warehouse", "check_out");
+
+  await prisma.projectLineItem.updateMany({
+    where: { projectId, organizationId, prepContainer: containerName },
+    data: { prepContainer: null },
+  });
+
+  return serialize({ success: true });
+}
+
+// ---------------------------------------------------------------------------
+// 6c. ensureContainerOnProject — add container asset as a line item if needed
+// ---------------------------------------------------------------------------
+
+export async function ensureContainerOnProject(
+  projectId: string,
+  assetId: string,
+  modelId: string,
+  containerName: string
+) {
+  const { organizationId, userId } = await requirePermission("warehouse", "check_out");
+
+  // Atomic check-then-create inside a transaction to prevent duplicates
+  const lineItem = await prisma.$transaction(async (tx) => {
+    const existing = await tx.projectLineItem.findFirst({
+      where: { projectId, organizationId, assetId, isContainerLineItem: true },
+      include: { model: true, asset: true },
+    });
+    if (existing) return existing;
+
+    // Get next sort order
+    const maxSort = await tx.projectLineItem.aggregate({
+      where: { projectId, organizationId },
+      _max: { sortOrder: true },
+    });
+    const nextSort = (maxSort._max.sortOrder ?? -1) + 1;
+
+    return tx.projectLineItem.create({
+      data: {
+        organizationId,
+        projectId,
+        type: "EQUIPMENT",
+        modelId,
+        assetId,
+        quantity: 1,
+        sortOrder: nextSort,
+        status: "CONFIRMED",
+        checkedOutQuantity: 0,
+        prepStatus: "PACKED",
+        prepContainer: containerName,
+        isContainerLineItem: true,
+      },
+      include: { model: true, asset: true },
+    });
+  });
+
+  return serialize(lineItem);
+}
+
+// ---------------------------------------------------------------------------
+// 6d. syncContainerStatus — auto deploy/return container when contents change
+// ---------------------------------------------------------------------------
+
+export async function syncContainerStatus(projectId: string, containerName: string) {
+  const { organizationId, userId } = await requirePermission("warehouse", "check_out");
+
+  // Find the container line item
+  const containerLI = await prisma.projectLineItem.findFirst({
+    where: { projectId, organizationId, isContainerLineItem: true, prepContainer: containerName },
+  });
+  if (!containerLI) return serialize({ updated: false });
+
+  // Get all non-container items in this container
+  const contentItems = await prisma.projectLineItem.findMany({
+    where: {
+      projectId,
+      organizationId,
+      prepContainer: containerName,
+      isContainerLineItem: false,
+    },
+    select: { status: true },
+  });
+
+  if (contentItems.length === 0) return serialize({ updated: false });
+
+  const allDeployed = contentItems.every((i) => i.status === "CHECKED_OUT");
+  const allReturned = contentItems.every((i) => i.status === "RETURNED");
+
+  const allDeployedFlag = allDeployed && containerLI.status !== "CHECKED_OUT";
+  const allReturnedFlag = allReturned && containerLI.status !== "RETURNED";
+
+  if (!allDeployedFlag && !allReturnedFlag) return serialize({ updated: false });
+
+  if (allDeployedFlag) {
+    await prisma.projectLineItem.update({
+      where: { id: containerLI.id },
+      data: {
+        status: "CHECKED_OUT",
+        checkedOutQuantity: 1,
+        checkedOutAt: new Date(),
+        checkedOutBy: { connect: { id: userId } },
+      },
+    });
+  } else {
+    await prisma.projectLineItem.update({
+      where: { id: containerLI.id },
+      data: {
+        status: "RETURNED",
+        returnedQuantity: 1,
+        returnedAt: new Date(),
+        returnedBy: { connect: { id: userId } },
+        returnCondition: "GOOD",
+      },
+    });
+  }
+
+  // Update the container asset status too
+  if (containerLI.assetId) {
+    await prisma.asset.update({
+      where: { id: containerLI.assetId },
+      data: {
+        status: allDeployedFlag ? "CHECKED_OUT" : "AVAILABLE",
+      },
+    });
+  }
+
+  return serialize({ updated: true, status: allDeployedFlag ? "CHECKED_OUT" : "RETURNED" });
+}
+
+// ---------------------------------------------------------------------------
 // 7. getAvailableAssetsForModel
 // ---------------------------------------------------------------------------
 
 export async function getAvailableAssetsForModel(modelId: string) {
   const { organizationId } = await getOrgContext();
 
-  const assets = await prisma.asset.findMany({
+  // Single query: get assets that have NO active line item referencing them.
+  // Uses Prisma's `none` relation filter — equivalent to SQL NOT EXISTS.
+  // An asset is "in use" if ANY line item on an active project:
+  //   a) has a non-terminal status (not RETURNED/CANCELLED), OR
+  //   b) has prepStatus = PACKED (belt-and-suspenders for re-prep edge cases)
+  const available = await prisma.asset.findMany({
     where: {
       organizationId,
       modelId,
       status: "AVAILABLE",
+      isActive: true,
+      lineItems: {
+        none: {
+          OR: [
+            { status: { notIn: ["RETURNED", "CANCELLED"] } },
+            { prepStatus: "PACKED" },
+          ],
+          project: {
+            isTemplate: false,
+            status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
+          },
+        },
+      },
     },
+    select: { id: true, assetTag: true, serialNumber: true, customName: true },
     orderBy: { assetTag: "asc" },
-    select: {
-      id: true,
-      assetTag: true,
-      serialNumber: true,
-      customName: true,
-    },
   });
 
-  return serialize(assets);
+  return serialize(available);
 }
 
 // ---------------------------------------------------------------------------
@@ -971,7 +1162,7 @@ export async function getProjectPullSheet(projectId: string) {
         },
         orderBy: { sortOrder: "asc" },
         include: {
-          model: { include: { category: true } },
+          model: { include: { category: true, _count: { select: { modelCheckItems: true } } } },
           asset: { include: { location: true } },
           bulkAsset: true,
           kit: true,
@@ -979,7 +1170,7 @@ export async function getProjectPullSheet(projectId: string) {
             where: { status: { not: "CANCELLED" } },
             orderBy: { sortOrder: "asc" },
             include: {
-              model: { include: { category: true } },
+              model: { include: { category: true, _count: { select: { modelCheckItems: true } } } },
               asset: { include: { location: true } },
               bulkAsset: true,
               kit: true,
@@ -987,7 +1178,7 @@ export async function getProjectPullSheet(projectId: string) {
                 where: { status: { not: "CANCELLED" } },
                 orderBy: { sortOrder: "asc" },
                 include: {
-                  model: { include: { category: true } },
+                  model: { include: { category: true, _count: { select: { modelCheckItems: true } } } },
                   asset: { include: { location: true } },
                   bulkAsset: true,
                 },
@@ -1063,12 +1254,6 @@ export async function forceReturnAsset(assetId: string) {
     select: { id: true },
   });
 
-  // Check if this asset is used as a case for any prep-kits (same assetTag)
-  const prepKits = await prisma.kit.findMany({
-    where: { organizationId, assetTag: asset.assetTag, isPrep: true },
-    select: { id: true },
-  });
-
   await prisma.$transaction(async (tx) => {
     // Return all checked-out line items for this asset across all projects
     await tx.projectLineItem.updateMany({
@@ -1080,50 +1265,6 @@ export async function forceReturnAsset(assetId: string) {
         returnCondition: "GOOD",
       },
     });
-
-    // Clean up any prep-kits that use this asset as a case
-    for (const prepKit of prepKits) {
-      // Find and clean up prep-kit line items
-      const prepParents = await tx.projectLineItem.findMany({
-        where: { kitId: prepKit.id, organizationId, isKitChild: false },
-        select: { id: true },
-      });
-      for (const parent of prepParents) {
-        // Get children and grandchildren
-        const children = await tx.projectLineItem.findMany({
-          where: { parentLineItemId: parent.id, organizationId },
-          select: { id: true, kitId: true, assetId: true },
-        });
-        // Handle grandchildren of nested kits
-        for (const child of children) {
-          if (child.kitId) {
-            await tx.projectLineItem.updateMany({
-              where: { parentLineItemId: child.id, organizationId },
-              data: { isKitChild: false, parentLineItemId: null },
-            });
-          }
-        }
-        // Un-parent all children
-        await tx.projectLineItem.updateMany({
-          where: { parentLineItemId: parent.id, organizationId },
-          data: { isKitChild: false, parentLineItemId: null },
-        });
-        // Reset child assets
-        const childAssetIds = children.filter((c) => c.assetId).map((c) => c.assetId!);
-        if (childAssetIds.length > 0) {
-          await tx.asset.updateMany({
-            where: { id: { in: childAssetIds }, status: "CHECKED_OUT" },
-            data: { status: "AVAILABLE", locationId: defaultLocation?.id ?? null },
-          });
-        }
-        // Delete the parent line item
-        await tx.projectLineItem.delete({ where: { id: parent.id } });
-      }
-      // Delete prep-kit record
-      await tx.kitSerializedItem.deleteMany({ where: { kitId: prepKit.id } });
-      await tx.kitBulkItem.deleteMany({ where: { kitId: prepKit.id } });
-      await tx.kit.delete({ where: { id: prepKit.id } });
-    }
 
     // Reset asset status and location
     await tx.asset.update({
@@ -1143,7 +1284,7 @@ export async function forceReturnAsset(assetId: string) {
     entityType: "asset",
     entityId: assetId,
     entityName: asset.assetTag,
-    summary: `Force returned asset ${asset.assetTag} to available${prepKits.length > 0 ? ` (dissolved ${prepKits.length} prep-kit${prepKits.length > 1 ? "s" : ""})` : ""}`,
+    summary: `Force returned asset ${asset.assetTag} to available`,
   });
 
   return serialize({ success: true });
@@ -1158,11 +1299,11 @@ export async function forceReturnKit(kitId: string) {
 
   const kit = await prisma.kit.findFirst({
     where: { id: kitId, organizationId },
-    select: { id: true, assetTag: true, name: true, status: true, isPrep: true },
+    select: { id: true, assetTag: true, name: true, status: true },
   });
 
   if (!kit) throw new Error("Kit not found");
-  if (kit.status === "AVAILABLE" && !kit.isPrep) throw new Error("Kit is already available");
+  if (kit.status === "AVAILABLE") throw new Error("Kit is already available");
 
   const defaultLocation = await prisma.location.findFirst({
     where: { organizationId, isDefault: true },
@@ -1256,53 +1397,24 @@ export async function forceReturnKit(kitId: string) {
         });
       }
 
-      // If prep-kit: delete the parent line item and un-parent children
-      if (kit.isPrep) {
-        // Un-parent all children (they become standalone project line items)
-        await tx.projectLineItem.updateMany({
-          where: { parentLineItemId: parent.id, organizationId },
-          data: { isKitChild: false, parentLineItemId: null },
-        });
-        // Also un-parent grandchildren of nested kits
-        for (const child of nestedKitChildren) {
-          await tx.projectLineItem.updateMany({
-            where: { parentLineItemId: child.id, organizationId },
-            data: { isKitChild: false, parentLineItemId: null },
-          });
-          // Un-parent the nested kit line item itself
-          await tx.projectLineItem.update({
-            where: { id: child.id },
-            data: { isKitChild: false, parentLineItemId: null },
-          });
-        }
-        // Delete the prep-kit parent line item
-        await tx.projectLineItem.delete({ where: { id: parent.id } });
-      }
     }
 
-    if (kit.isPrep) {
-      // Delete the prep-kit Kit record entirely
-      await tx.kitSerializedItem.deleteMany({ where: { kitId } });
-      await tx.kitBulkItem.deleteMany({ where: { kitId } });
-      await tx.kit.delete({ where: { id: kitId } });
-    } else {
-      // Regular kit: just reset status
-      await tx.kit.update({
-        where: { id: kitId },
+    // Reset kit status
+    await tx.kit.update({
+      where: { id: kitId },
+      data: resetData,
+    });
+
+    // Reset all serialized assets inside this kit (KitSerializedItem records)
+    const kitItems = await tx.kitSerializedItem.findMany({
+      where: { kitId },
+      select: { assetId: true },
+    });
+    if (kitItems.length > 0) {
+      await tx.asset.updateMany({
+        where: { id: { in: kitItems.map((ki) => ki.assetId) } },
         data: resetData,
       });
-
-      // Reset all serialized assets inside this kit (KitSerializedItem records)
-      const kitItems = await tx.kitSerializedItem.findMany({
-        where: { kitId },
-        select: { assetId: true },
-      });
-      if (kitItems.length > 0) {
-        await tx.asset.updateMany({
-          where: { id: { in: kitItems.map((ki) => ki.assetId) } },
-          data: resetData,
-        });
-      }
     }
   });
 
@@ -1314,12 +1426,10 @@ export async function forceReturnKit(kitId: string) {
     entityType: "kit",
     entityId: kitId,
     entityName: `${kit.assetTag} - ${kit.name}`,
-    summary: kit.isPrep
-      ? `Force returned and dissolved prep-kit ${kit.assetTag}`
-      : `Force returned kit ${kit.assetTag} and all contents to available`,
+    summary: `Force returned kit ${kit.assetTag} and all contents to available`,
   });
 
-  return serialize({ success: true, deleted: kit.isPrep });
+  return serialize({ success: true });
 }
 
 // ---------------------------------------------------------------------------

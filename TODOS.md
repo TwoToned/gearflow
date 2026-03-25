@@ -9,7 +9,7 @@ Deferred work items tracked from engineering reviews and planning sessions.
 **Why:** Server actions contain the most critical logic — availability checking, warehouse checkout, kit expansion, permission enforcement, activity logging. Unit tests on validation schemas catch input errors, but integration tests catch logic bugs in the actual database operations.
 **Pros:** Catches real bugs (stale data, race conditions, permission bypass), enables safe refactoring of the largest files (kits.ts at 58KB, warehouse.ts at 49KB).
 **Cons:** Requires setting up a test database, Prisma test helpers, and auth mocking. Significant one-time setup cost.
-**Context:** Start with the 10 most critical files: assets.ts, projects.ts, kits.ts, warehouse.ts, line-items.ts, categories.ts, clients.ts, bulk-assets.ts, crew.ts, and permissions enforcement in org-context.ts. Each server action follows the same pattern (requirePermission → query → logActivity → serialize), so test helpers can be shared.
+**Context:** Start with the 10 most critical files: assets.ts, projects.ts, kits.ts, warehouse.ts, line-items.ts, categories.ts, clients.ts, bulk-assets.ts, crew.ts, and permissions enforcement in org-context.ts. Also include the new check system files when they ship: check-items.ts, check-records.ts, warehouse-close.ts. Each server action follows the same pattern (requirePermission → query → logActivity → serialize), so test helpers can be shared.
 **Depends on:** Test infrastructure (completed in v0.2.0). Needs test DB setup (docker-compose or test env).
 **Estimate:** human ~4 weeks / CC ~3-4 hours
 
@@ -59,6 +59,18 @@ Deferred work items tracked from engineering reviews and planning sessions.
 **Context:** Accepted in eng review (issue #1).
 **Depends on:** Nothing.
 **Estimate:** human ~1 hour / CC ~5 min
+
+## Warehouse Check System
+
+### Customer-Facing Inspection Report PDF
+**What:** Generate a printable proof-of-inspection document showing all check results for a deployment — pass/fail per item, photos, T&T status, measurement readings, and operator signature.
+**Why:** Clients need proof that gear was inspected before dispatch. Currently there's no way to produce this evidence for sign-off or compliance records.
+**Pros:** Builds client trust, supports compliance workflows, reuses existing PDF template system and CheckRecord data.
+**Cons:** Requires designing a new PDF template type. Check system must ship first to have data to render.
+**Context:** Deferred during CEO review (scope expansion #1). The CheckRecord table already captures all needed data (result, value, notes, photos, performedBy, performedAt). The existing section-based PDF template builder could be extended with check-specific section types (check-results-table, photo-evidence-grid, tt-summary). Route: generate from project detail or warehouse close-out.
+**Depends on:** Warehouse check system (CheckRecord table, check form, prep/return flows).
+**Estimate:** human ~1 week / CC ~30 min
+**Priority:** P2
 
 ## PDF Template System
 

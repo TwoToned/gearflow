@@ -80,7 +80,7 @@ export async function getCategoryTree() {
 }
 
 // ---------------------------------------------------------------------------
-// getCaseCategoryIds — get category + all descendant IDs for prep-kit cases
+// getCaseCategoryIds — get category + all descendant IDs for container cases
 // ---------------------------------------------------------------------------
 export async function getCaseCategoryIds(): Promise<string[]> {
   const { organizationId } = await getOrgContext();
@@ -120,6 +120,52 @@ export async function getCaseCategoryIds(): Promise<string[]> {
   }
 
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// searchContainerAssets — search assets in the configured container category
+// ---------------------------------------------------------------------------
+export async function searchContainerAssets(query: string = "") {
+  const { organizationId } = await getOrgContext();
+  const categoryIds = await getCaseCategoryIds();
+  if (categoryIds.length === 0) return serialize([]);
+
+  const assets = await prisma.asset.findMany({
+    where: {
+      organizationId,
+      model: { categoryId: { in: categoryIds } },
+      ...(query
+        ? {
+            OR: [
+              { assetTag: { contains: query, mode: "insensitive" } },
+              { customName: { contains: query, mode: "insensitive" } },
+              { model: { name: { contains: query, mode: "insensitive" } } },
+            ],
+          }
+        : {}),
+    },
+    select: {
+      id: true,
+      assetTag: true,
+      customName: true,
+      modelId: true,
+      model: { select: { name: true } },
+    },
+    orderBy: { assetTag: "asc" },
+    take: 20,
+  });
+
+  return serialize(
+    assets.map((a) => ({
+      value: a.customName || a.assetTag,
+      label: a.customName
+        ? `${a.customName} (${a.assetTag})`
+        : `${a.model?.name} — ${a.assetTag}`,
+      assetId: a.id,
+      assetTag: a.assetTag,
+      modelId: a.modelId,
+    }))
+  );
 }
 
 export async function createCategory(data: CategoryFormValues) {

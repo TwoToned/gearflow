@@ -15,6 +15,7 @@ import {
   MonitorPlay,
   Shield,
   ShoppingCart,
+  ClipboardCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCanDo } from "@/lib/use-permissions";
@@ -29,6 +30,7 @@ const settingsNav = [
   { title: "Documents", href: "/settings/documents", icon: FileText, permission: "document" as const },
   { title: "Branding", href: "/settings/branding", icon: Palette, permission: "orgSettings" as const },
   { title: "Calendars", href: "/settings/calendars", icon: CalendarSync, permission: "orgSettings" as const },
+  { title: "Check Items", href: "/settings/check-items", icon: ClipboardCheck, permission: "checkItem" as const },
   { title: "Displays", href: "/settings/displays", icon: MonitorPlay, permission: "orgSettings" as const },
   { title: "Team", href: "/settings/team", icon: Users, permission: "orgMembers" as const },
   { title: "WooCommerce", href: "/settings/woocommerce", icon: ShoppingCart, permission: "orgSettings" as const },
@@ -40,6 +42,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   const canReadSettings = useCanDo("orgSettings", "read");
   const canReadMembers = useCanDo("orgMembers", "read");
   const canManageTemplates = useCanDo("document", "manage_templates");
+  const canReadCheckItems = useCanDo("checkItem", "read");
   const { data: activeOrg } = useActiveOrganization();
 
   if (!canReadSettings && !canReadMembers) {
@@ -57,6 +60,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     if (item.permission === "orgSettings") return canReadSettings;
     if (item.permission === "orgMembers") return canReadMembers;
     if (item.permission === "document") return canManageTemplates;
+    if (item.permission === "checkItem") return canReadCheckItems;
     return true;
   });
 

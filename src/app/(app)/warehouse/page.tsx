@@ -12,11 +12,13 @@ import {
   CheckCircle,
   AlertTriangle,
   ScanBarcode,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
 import { getProjects, updateProjectStatus } from "@/server/projects";
+import { batchCloseOut } from "@/server/warehouse-close";
 import { Input } from "@/components/ui/input";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Button } from "@/components/ui/button";
@@ -125,6 +127,7 @@ const urgencyBorder: Record<UrgencyGroup, string> = {
 export default function WarehousePage() {
   const [search, setSearch] = useState("");
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [selectedForClose, setSelectedForClose] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
@@ -153,9 +156,46 @@ export default function WarehousePage() {
     onError: (e) => toast.error(e.message),
   });
 
+  const batchCloseMutation = useMutation({
+    mutationFn: (projectIds: string[]) => batchCloseOut(projectIds),
+    onSuccess: (results) => {
+      const r = results as Array<{ projectId: string; success: boolean; error?: string }>;
+      const succeeded = r.filter((r) => r.success).length;
+      const failed = r.filter((r) => !r.success).length;
+      if (failed === 0) {
+        toast.success(`${succeeded} project${succeeded !== 1 ? "s" : ""} closed out`);
+      } else {
+        toast.warning(`${succeeded} closed, ${failed} failed`);
+      }
+      setSelectedForClose(new Set());
+      queryClient.invalidateQueries({ queryKey: ["warehouse-projects"] });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const projects = (data?.projects || []).filter((p) =>
     WAREHOUSE_STATUSES.includes(p.status)
   ) as Project[];
+
+  const returnedProjects = projects.filter((p) => p.status === "RETURNED");
+
+  function toggleCloseSelection(projectId: string) {
+    setSelectedForClose((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectId)) next.delete(projectId);
+      else if (next.size < 25) next.add(projectId);
+      else toast.error("Maximum 25 projects per batch close-out");
+      return next;
+    });
+  }
+
+  function toggleAllReturned() {
+    if (selectedForClose.size === returnedProjects.length) {
+      setSelectedForClose(new Set());
+    } else {
+      setSelectedForClose(new Set(returnedProjects.slice(0, 25).map((p) => p.id)));
+    }
+  }
 
   // Group projects by urgency
   const grouped = useMemo(() => {
@@ -298,6 +338,39 @@ export default function WarehousePage() {
         </div>
       </FadeIn>
 
+      {/* Batch close-out bar */}
+      {returnedProjects.length > 0 && (
+        <FadeIn delay={0.08}>
+          <div className="flex items-center gap-3 rounded-lg bg-bg-surface p-3 surface-ring">
+            <label className="flex items-center gap-2 text-sm text-fg-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={selectedForClose.size > 0 && selectedForClose.size === returnedProjects.length}
+                ref={(el) => {
+                  if (el) el.indeterminate = selectedForClose.size > 0 && selectedForClose.size < returnedProjects.length;
+                }}
+                onChange={toggleAllReturned}
+                className="rounded border-border"
+              />
+              {selectedForClose.size > 0
+                ? `${selectedForClose.size} of ${returnedProjects.length} returned project${returnedProjects.length !== 1 ? "s" : ""} selected`
+                : `${returnedProjects.length} returned project${returnedProjects.length !== 1 ? "s" : ""} ready to close out`}
+            </label>
+            {selectedForClose.size > 0 && (
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => batchCloseMutation.mutate(Array.from(selectedForClose))}
+                disabled={batchCloseMutation.isPending}
+              >
+                {batchCloseMutation.isPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                Close Out {selectedForClose.size} Project{selectedForClose.size !== 1 ? "s" : ""}
+              </Button>
+            )}
+          </div>
+        </FadeIn>
+      )}
+
       {/* Project lists grouped by urgency */}
       {isLoading ? (
         <div className="text-fg-3 text-sm py-8">Loading projects...</div>
@@ -328,6 +401,8 @@ export default function WarehousePage() {
                       project={project}
                       urgency="overdue"
                       onStatusAction={handleStatusAction}
+                      isSelected={selectedForClose.has(project.id)}
+                      onToggleSelect={() => toggleCloseSelection(project.id)}
                     />
                   </StaggerItem>
                 ))}
@@ -348,6 +423,8 @@ export default function WarehousePage() {
                       project={project}
                       urgency="today"
                       onStatusAction={handleStatusAction}
+                      isSelected={selectedForClose.has(project.id)}
+                      onToggleSelect={() => toggleCloseSelection(project.id)}
                     />
                   </StaggerItem>
                 ))}
@@ -368,6 +445,8 @@ export default function WarehousePage() {
                       project={project}
                       urgency="upcoming"
                       onStatusAction={handleStatusAction}
+                      isSelected={selectedForClose.has(project.id)}
+                      onToggleSelect={() => toggleCloseSelection(project.id)}
                     />
                   </StaggerItem>
                 ))}
@@ -423,6 +502,8 @@ function ProjectCard({
   project,
   urgency,
   onStatusAction,
+  isSelected,
+  onToggleSelect,
 }: {
   project: Project;
   urgency: UrgencyGroup;
@@ -430,6 +511,8 @@ function ProjectCard({
     project: Project,
     targetStatus: "CHECKED_OUT" | "RETURNED" | "COMPLETED"
   ) => void;
+  isSelected?: boolean;
+  onToggleSelect?: () => void;
 }) {
   return (
     <div
@@ -437,9 +520,20 @@ function ProjectCard({
     >
       <div className="pb-2">
         <div className="flex items-center justify-between">
-          <span className="font-mono text-xs text-fg-3">
-            {project.projectNumber}
-          </span>
+          <div className="flex items-center gap-2">
+            {project.status === "RETURNED" && onToggleSelect && (
+              <input
+                type="checkbox"
+                checked={isSelected}
+                onChange={onToggleSelect}
+                className="rounded border-border"
+                onClick={(e) => e.stopPropagation()}
+              />
+            )}
+            <span className="font-mono text-xs text-fg-3">
+              {project.projectNumber}
+            </span>
+          </div>
           <StatusIndicator
             category="project"
             value={project.status}

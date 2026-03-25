@@ -54,6 +54,7 @@ import {
   Briefcase,
   Clock,
   CalendarOff,
+  ClipboardCheck,
 } from "lucide-react";
 import {
   Dialog,
@@ -81,6 +82,7 @@ const typeIcons: Record<SearchResultType, React.ComponentType<{ className?: stri
   supplier: Truck,
   maintenance: Wrench,
   crew: HardHat,
+  "check-item": ClipboardCheck,
 };
 
 const typeLabels: Record<SearchResultType, string> = {
@@ -95,6 +97,7 @@ const typeLabels: Record<SearchResultType, string> = {
   category: "Category",
   maintenance: "Maintenance",
   crew: "Crew",
+  "check-item": "Check Item",
 };
 
 const pageIcons: Record<string, React.ComponentType<{ className?: string }>> = {

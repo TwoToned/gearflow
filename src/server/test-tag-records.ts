@@ -223,7 +223,7 @@ export async function createTestTagRecord(data: {
       },
     });
 
-    // Handle failure actions: mark asset out of service or retired
+    // Handle failure actions: mark asset out of service, retired, or create maintenance record
     if (data.result === "FAIL") {
       if (data.failureAction === "REMOVED_FROM_SERVICE") {
         await tx.testTagAsset.update({
@@ -234,6 +234,26 @@ export async function createTestTagRecord(data: {
         await tx.testTagAsset.update({
           where: { id: data.testTagAssetId },
           data: { status: "RETIRED", isActive: false },
+        });
+      } else if (data.failureAction === "REFERRED_TO_ELECTRICIAN" && testTagAsset.assetId) {
+        // Create a maintenance record for the linked asset
+        await tx.maintenanceRecord.create({
+          data: {
+            organizationId,
+            type: "REPAIR",
+            status: "SCHEDULED",
+            title: `Electrician referral — ${testTagAsset.testTagId}`,
+            description: data.failureNotes
+              ? `Failed test & tag inspection. Notes: ${data.failureNotes}`
+              : `Failed test & tag inspection on ${testDate.toLocaleDateString()}. Referred to electrician for repair.`,
+            reportedById: userId,
+            assets: { create: [{ assetId: testTagAsset.assetId }] },
+          },
+        });
+        // Mark the linked asset as in maintenance
+        await tx.asset.update({
+          where: { id: testTagAsset.assetId },
+          data: { status: "IN_MAINTENANCE" },
         });
       }
     }

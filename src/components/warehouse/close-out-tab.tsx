@@ -88,7 +88,7 @@ export function CloseOutTab({ projectId }: { projectId: string }) {
     <div className="space-y-6">
       {/* Already closed banner */}
       {alreadyClosed && (
-        <div className="flex items-center gap-3 rounded-lg border border-green-500/30 bg-green-500/5 p-4">
+        <div className="flex items-center gap-3 rounded-lg border-l-[3px] border-l-green-500 bg-bg-surface p-4">
           <CheckCircle2 className="h-5 w-5 text-green-500 shrink-0" />
           <div>
             <p className="text-sm font-medium text-green-500">Project Closed Out</p>
@@ -99,33 +99,33 @@ export function CloseOutTab({ projectId }: { projectId: string }) {
         </div>
       )}
 
-      {/* Summary stats */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-lg bg-bg-surface p-4 surface-ring text-center">
+      {/* Summary metrics strip */}
+      <div className="flex items-center rounded-lg bg-bg-surface surface-ring divide-x divide-border">
+        <div className="flex-1 px-4 py-3">
           <p className="text-2xl font-bold t-data">{totalItems}</p>
-          <p className="text-xs text-fg-3 mt-1">Total Items</p>
+          <p className="text-xs text-fg-3 mt-0.5">Total Items</p>
         </div>
-        <div className="rounded-lg bg-bg-surface p-4 surface-ring text-center">
+        <div className="flex-1 px-4 py-3">
           <p className="text-2xl font-bold text-green-500">{storedCount}</p>
-          <p className="text-xs text-fg-3 mt-1">Stored</p>
+          <p className="text-xs text-fg-3 mt-0.5">Stored</p>
         </div>
-        <div className="rounded-lg bg-bg-surface p-4 surface-ring text-center">
+        <div className="flex-1 px-4 py-3">
           <p className={`text-2xl font-bold ${damagedCount > 0 ? "text-amber-500" : "text-fg-3"}`}>
             {damagedCount}
           </p>
-          <p className="text-xs text-fg-3 mt-1">Damaged</p>
+          <p className="text-xs text-fg-3 mt-0.5">Damaged</p>
         </div>
-        <div className="rounded-lg bg-bg-surface p-4 surface-ring text-center">
+        <div className="flex-1 px-4 py-3">
           <p className={`text-2xl font-bold ${lostCount > 0 ? "text-destructive" : "text-fg-3"}`}>
             {lostCount}
           </p>
-          <p className="text-xs text-fg-3 mt-1">Lost</p>
+          <p className="text-xs text-fg-3 mt-0.5">Lost</p>
         </div>
       </div>
 
       {/* Pending items warning */}
       {pendingCount > 0 && (
-        <div className="flex items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
+        <div className="flex items-center gap-3 rounded-lg border-l-[3px] border-l-amber-500 bg-bg-surface p-4">
           <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0" />
           <div>
             <p className="text-sm font-medium text-amber-500">

@@ -227,7 +227,7 @@ export function PickPrepTab({
                           entry, childKeys, selectedPrep, setSelectedPrep,
                           <TableCell>
                             {checkedCount > 0 ? (
-                              <Badge variant="outline" className="bg-purple-500/10 text-purple-500 border-purple-500/20">
+                              <Badge variant="outline" className="bg-teal-500/10 text-teal-500 border-teal-500/20">
                                 {checkedCount} selected
                               </Badge>
                             ) : (

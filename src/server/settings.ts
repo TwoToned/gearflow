@@ -30,6 +30,7 @@ export interface TestTagSettings {
   companyName?: string;
   defaultTestMethod?: "INSULATION_RESISTANCE" | "LEAKAGE_CURRENT" | "BOTH";
   checkoutPolicy?: "WARN" | "BLOCK";
+  emailReminders?: boolean;
 }
 
 export interface OrgSettings {

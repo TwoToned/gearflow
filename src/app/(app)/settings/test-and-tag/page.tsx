@@ -49,7 +49,7 @@ export default function TestTagSettingsPage() {
     onError: (e) => toast.error(e.message),
   });
 
-  const updateTestTagSetting = (key: string, value: string | number) => {
+  const updateTestTagSetting = (key: string, value: string | number | boolean) => {
     setSettings((prev) => ({
       ...prev,
       testTag: { ...prev.testTag, [key]: value },
@@ -159,6 +159,22 @@ export default function TestTagSettingsPage() {
             <p className="text-xs text-fg-3">
               What happens when deploying an asset with an overdue test tag
             </p>
+          </div>
+        </FormSection>
+
+        <FormSection title="Email Reminders" description="Daily digest emails for overdue and due-soon items.">
+          <div className="sm:col-span-2 flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="ttEmailReminders"
+              checked={settings.testTag?.emailReminders !== false}
+              onChange={(e) => updateTestTagSetting("emailReminders", e.target.checked)}
+              disabled={!canEdit}
+              className="h-4 w-4 rounded border-border text-teal-600 focus:ring-teal-500"
+            />
+            <Label htmlFor="ttEmailReminders" className="cursor-pointer">
+              Send daily digest emails to admins when items are overdue or due soon
+            </Label>
           </div>
         </FormSection>
       </div>

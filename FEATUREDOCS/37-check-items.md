@@ -53,6 +53,7 @@ Quality check system integrated into the warehouse prep/return flow. Warehouse o
 | `addCheckItemToModel(modelId, checkItemId)` | checkItem.update | Assign to model |
 | `removeCheckItemFromModel(modelId, checkItemId)` | checkItem.update | Unassign |
 | `reorderModelCheckItems(modelId, orderedIds)` | checkItem.update | Reorder |
+| `bulkAddCheckItemsToModels(modelIds[], checkItemIds[])` | checkItem.update | Bulk assign checks to multiple models |
 
 ### Check Records (`src/server/check-records.ts`)
 

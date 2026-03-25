@@ -932,7 +932,8 @@ export async function quickAddAndCheckOut(
 
     const qty = data.quantity || 1;
 
-    // Create the line item
+    // Create the line item — starts as PENDING so the client can route through
+    // the check queue if the model has check items assigned
     const lineItem = await tx.projectLineItem.create({
       data: {
         organizationId,
@@ -943,13 +944,16 @@ export async function quickAddAndCheckOut(
         bulkAssetId: data.bulkAssetId || null,
         quantity: qty,
         sortOrder: nextSort,
-        // Add to project and prep (not deploy — deploy is a separate step)
         status: "CONFIRMED",
         checkedOutQuantity: 0,
-        prepStatus: "PACKED",
+        prepStatus: "PENDING",
         prepContainer: data.prepContainer || null,
       },
-      include: { model: true, asset: true, bulkAsset: true },
+      include: {
+        model: { include: { _count: { select: { modelCheckItems: true } } } },
+        asset: true,
+        bulkAsset: true,
+      },
     });
 
     // Create scan log

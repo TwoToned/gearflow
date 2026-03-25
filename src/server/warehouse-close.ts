@@ -203,15 +203,6 @@ export async function closeOutProject(data: WarehouseCloseFormValues) {
     );
   }
 
-  // Check if already closed
-  const existingClose = await prisma.warehouseClose.findFirst({
-    where: { projectId: parsed.projectId, organizationId },
-  });
-
-  if (existingClose) {
-    throw new Error("Project has already been closed out");
-  }
-
   // Get counts for the close record
   const lineItems = await prisma.projectLineItem.findMany({
     where: {
@@ -234,20 +225,33 @@ export async function closeOutProject(data: WarehouseCloseFormValues) {
     (i) => i.returnCondition === "MISSING"
   ).length;
 
-  const result = await prisma.warehouseClose.create({
-    data: {
-      organizationId,
-      projectId: parsed.projectId,
-      closedById: userId,
-      storedCount,
-      damagedCount,
-      lostCount,
-    },
-    include: {
-      project: { select: { name: true, projectNumber: true } },
-      closedBy: { select: { name: true } },
-    },
-  });
+  // Unique constraint on [projectId, organizationId] prevents duplicate close-outs
+  let result;
+  try {
+    result = await prisma.warehouseClose.create({
+      data: {
+        organizationId,
+        projectId: parsed.projectId,
+        closedById: userId,
+        storedCount,
+        damagedCount,
+        lostCount,
+      },
+      include: {
+        project: { select: { name: true, projectNumber: true } },
+        closedBy: { select: { name: true } },
+      },
+    });
+  } catch (err) {
+    // Handle unique constraint violation (concurrent close-out)
+    if (
+      err instanceof Error &&
+      err.message.includes("Unique constraint failed")
+    ) {
+      throw new Error("Project has already been closed out");
+    }
+    throw err;
+  }
 
   await logActivity({
     organizationId,

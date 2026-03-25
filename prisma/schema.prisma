@@ -2274,8 +2274,8 @@ model WarehouseClose {
   damagedCount   Int          @default(0)
   lostCount      Int          @default(0)
 
+  @@unique([projectId, organizationId])
   @@index([organizationId])
-  @@index([organizationId, projectId])
   @@map("warehouse_close")
 }
 

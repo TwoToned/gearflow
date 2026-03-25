@@ -113,14 +113,22 @@ export async function deleteCheckItem(id: string) {
     "delete"
   );
 
-  // Block delete if in use by any model
-  const usageCount = await prisma.modelCheckItem.count({
-    where: { checkItemId: id, organizationId },
-  });
+  // Block delete if in use by any model or kit
+  const [modelUsage, kitUsage] = await Promise.all([
+    prisma.modelCheckItem.count({
+      where: { checkItemId: id, organizationId },
+    }),
+    prisma.kitCheckItem.count({
+      where: { checkItemId: id, organizationId },
+    }),
+  ]);
 
-  if (usageCount > 0) {
+  if (modelUsage > 0 || kitUsage > 0) {
+    const parts: string[] = [];
+    if (modelUsage > 0) parts.push(`${modelUsage} model${modelUsage === 1 ? "" : "s"}`);
+    if (kitUsage > 0) parts.push(`${kitUsage} kit${kitUsage === 1 ? "" : "s"}`);
     throw new Error(
-      `Cannot delete: this check item is used by ${usageCount} model${usageCount === 1 ? "" : "s"}`
+      `Cannot delete: this check item is used by ${parts.join(" and ")}`
     );
   }
 

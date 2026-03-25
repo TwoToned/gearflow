@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import Link from "next/link";
-import { ChevronRight, ShieldCheck } from "lucide-react";
+import { ChevronRight, ShieldCheck, Copy, Trash2, Plus, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,12 @@ import {
   updateOrganization,
   type OrgSettings,
 } from "@/server/settings";
+import {
+  getAuditorTokens,
+  createAuditorToken,
+  revokeAuditorToken,
+  deleteAuditorToken,
+} from "@/server/test-tag-auditor";
 import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { FadeIn } from "@/components/ui/motion";
@@ -177,6 +183,12 @@ export default function TestTagSettingsPage() {
             </Label>
           </div>
         </FormSection>
+
+        <FormSection title="Auditor Portal Links" description="Share read-only compliance views with auditors and insurers.">
+          <div className="sm:col-span-2">
+            <AuditorLinksSection canEdit={canEdit} />
+          </div>
+        </FormSection>
       </div>
 
       {canEdit && (
@@ -191,5 +203,186 @@ export default function TestTagSettingsPage() {
       )}
     </div>
     </FadeIn>
+  );
+}
+
+// ─── Auditor Links Sub-Component ─────────────────────────────────────────────
+
+function AuditorLinksSection({ canEdit }: { canEdit: boolean }) {
+  const queryClient = useQueryClient();
+  const [newName, setNewName] = useState("");
+  const [newExpiry, setNewExpiry] = useState("");
+  const [showCreate, setShowCreate] = useState(false);
+
+  const { data: tokens } = useQuery({
+    queryKey: ["auditorTokens"],
+    queryFn: getAuditorTokens,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: () => createAuditorToken({
+      name: newName,
+      expiresAt: newExpiry || null,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["auditorTokens"] });
+      toast.success("Auditor link created");
+      setNewName("");
+      setNewExpiry("");
+      setShowCreate(false);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: revokeAuditorToken,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["auditorTokens"] });
+      toast.success("Link revoked");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteAuditorToken,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["auditorTokens"] });
+      toast.success("Link deleted");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const copyLink = (token: string) => {
+    const url = `${window.location.origin}/auditor/${token}`;
+    navigator.clipboard.writeText(url);
+    toast.success("Link copied to clipboard");
+  };
+
+  const tokenList = (tokens || []) as unknown as {
+    id: string;
+    name: string;
+    token: string;
+    isActive: boolean;
+    expiresAt: string | null;
+    lastAccessedAt: string | null;
+    createdAt: string;
+    createdBy: { name: string; email: string };
+  }[];
+
+  return (
+    <div className="space-y-3">
+      {tokenList.map((t) => (
+        <div
+          key={t.id}
+          className={`flex items-center justify-between rounded-lg border p-3 ${
+            t.isActive ? "border-border" : "border-border opacity-50"
+          }`}
+        >
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <p className="font-medium text-sm text-fg-1">{t.name}</p>
+              {!t.isActive && (
+                <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded">Revoked</span>
+              )}
+              {t.expiresAt && new Date(t.expiresAt) < new Date() && t.isActive && (
+                <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Expired</span>
+              )}
+            </div>
+            <p className="text-xs text-fg-3 mt-0.5">
+              Created by {t.createdBy.name || t.createdBy.email} · {new Date(t.createdAt).toLocaleDateString()}
+              {t.expiresAt && ` · Expires ${new Date(t.expiresAt).toLocaleDateString()}`}
+              {t.lastAccessedAt && ` · Last accessed ${new Date(t.lastAccessedAt).toLocaleDateString()}`}
+            </p>
+          </div>
+          <div className="flex items-center gap-1 ml-3">
+            {t.isActive && (
+              <>
+                <Button variant="ghost" size="sm" onClick={() => copyLink(t.token)} title="Copy link">
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+                <a
+                  href={`/auditor/${t.token}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Button variant="ghost" size="sm" title="Open portal">
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </Button>
+                </a>
+                {canEdit && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => revokeMutation.mutate(t.id)}
+                    disabled={revokeMutation.isPending}
+                    title="Revoke"
+                    className="text-red-500 hover:text-red-700"
+                  >
+                    Revoke
+                  </Button>
+                )}
+              </>
+            )}
+            {!t.isActive && canEdit && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => deleteMutation.mutate(t.id)}
+                disabled={deleteMutation.isPending}
+                title="Delete"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
+        </div>
+      ))}
+
+      {tokenList.length === 0 && !showCreate && (
+        <p className="text-sm text-fg-3">No auditor links created yet.</p>
+      )}
+
+      {canEdit && !showCreate && (
+        <Button variant="outline" size="sm" onClick={() => setShowCreate(true)}>
+          <Plus className="h-3.5 w-3.5 mr-1.5" />
+          Create Auditor Link
+        </Button>
+      )}
+
+      {showCreate && (
+        <div className="border rounded-lg p-4 space-y-3 bg-surface-hover">
+          <div className="space-y-2">
+            <Label htmlFor="auditorName">Link Name</Label>
+            <Input
+              id="auditorName"
+              placeholder="e.g. Insurance Auditor 2026"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="auditorExpiry">Expires (optional)</Label>
+            <Input
+              id="auditorExpiry"
+              type="date"
+              value={newExpiry}
+              onChange={(e) => setNewExpiry(e.target.value)}
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              onClick={() => createMutation.mutate()}
+              disabled={!newName.trim() || createMutation.isPending}
+            >
+              {createMutation.isPending ? "Creating..." : "Create"}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setShowCreate(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

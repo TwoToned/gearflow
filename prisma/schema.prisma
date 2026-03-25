@@ -52,6 +52,7 @@ model User {
   pendingSSOApprovals     PendingSSOApproval[]
   reviewedSSOApprovals    PendingSSOApproval[] @relation("SSOReviewer")
   warehouseDashboardTokens WarehouseDashboardToken[]
+  testTagAuditorTokens     TestTagAuditorToken[]
   savedReports             SavedReport[]
   checkItems               CheckItem[]
   checkRecords             CheckRecord[]  @relation("CheckRecordPerformedBy")
@@ -160,6 +161,7 @@ model Organization {
   ssoProviders               SsoProvider[]
   pendingSSOApprovals        PendingSSOApproval[]
   warehouseDashboardTokens   WarehouseDashboardToken[]
+  testTagAuditorTokens       TestTagAuditorToken[]
   wooCommerceIntegration     WooCommerceIntegration?
   wooCommerceOrderLogs       WooCommerceOrderLog[]
   savedReports               SavedReport[]
@@ -2130,6 +2132,28 @@ model WarehouseDashboardToken {
 
   @@index([organizationId])
   @@map("warehouse_dashboard_token")
+}
+
+// ─── Test & Tag Auditor Portal ───────────────────────────────────────────────
+
+model TestTagAuditorToken {
+  id              String    @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name            String               // "Insurance Auditor", "Annual Compliance Check"
+  token           String               // Raw access token (displayed in settings)
+  tokenHash       String    @unique    // SHA-256 for secure lookup
+  isActive        Boolean   @default(true)
+  expiresAt       DateTime?            // Optional expiry date
+
+  createdById     String
+  createdBy       User     @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  lastAccessedAt  DateTime?
+  createdAt       DateTime @default(now())
+
+  @@index([organizationId])
+  @@map("test_tag_auditor_token")
 }
 
 // ─── WooCommerce Integration ─────────────────────────────────────────────────

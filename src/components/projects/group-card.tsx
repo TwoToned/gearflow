@@ -15,11 +15,6 @@ import {
 import { formatCurrency } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 
-interface LineItemSummary {
-  modelName: string | null;
-  quantity: number;
-}
-
 interface GroupCardProps {
   id: string;
   title: string;
@@ -30,7 +25,6 @@ interface GroupCardProps {
   rentalPeriod: string | null;
   rentalQuantity: number | null;
   lineItemCount: number;
-  lineItemSummary?: LineItemSummary[];
   children: React.ReactNode;
   onAcceptSuggested?: () => void;
   onEditPrice?: () => void;
@@ -38,6 +32,8 @@ interface GroupCardProps {
   onDelete?: () => void;
   onSaveAsTemplate?: () => void;
   onAddEquipment?: () => void;
+  onAddKit?: () => void;
+  onAddSubhire?: () => void;
   dragHandleProps?: Record<string, unknown>;
   defaultExpanded?: boolean;
 }
@@ -51,7 +47,6 @@ export function GroupCard({
   rentalPeriod,
   rentalQuantity,
   lineItemCount,
-  lineItemSummary = [],
   children,
   onAcceptSuggested,
   onEditPrice,
@@ -59,6 +54,8 @@ export function GroupCard({
   onDelete,
   onSaveAsTemplate,
   onAddEquipment,
+  onAddKit,
+  onAddSubhire,
   dragHandleProps,
   defaultExpanded = false,
 }: GroupCardProps) {
@@ -169,41 +166,50 @@ export function GroupCard({
       {expanded && (
         <div className="border-t border-foreground/5 px-3 pb-3 pt-2">
           {description && (
-            <p className="mb-2 text-xs leading-relaxed text-fg-3">{description}</p>
-          )}
-
-          {/* Tracked items as compact pills */}
-          {lineItemSummary.length > 0 && (
-            <div className="mb-2 flex flex-wrap gap-1">
-              {lineItemSummary.map((item, i) => (
-                <span
-                  key={i}
-                  className="inline-flex items-center gap-1 rounded-full bg-bg-inset px-2 py-0.5 text-[11px] text-fg-3"
-                >
-                  {item.modelName ?? "Item"}
-                  {item.quantity > 1 && (
-                    <span className="tabular-nums text-fg-4">×{item.quantity}</span>
-                  )}
-                </span>
-              ))}
-            </div>
+            <p className="mb-2 line-clamp-1 text-xs leading-relaxed text-fg-3">{description}</p>
           )}
 
           {children}
 
-          {/* Add equipment button */}
+          {/* Add items buttons */}
           {onAddEquipment && (
             <div className="mt-2 flex items-center justify-between">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAddEquipment();
-                }}
-                className="flex items-center gap-1 text-xs text-fg-4 hover:text-fg-3 transition-colors"
-              >
-                <Plus className="h-3 w-3" />
-                Add equipment
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAddEquipment();
+                  }}
+                  className="flex items-center gap-1 text-xs text-fg-4 hover:text-fg-3 transition-colors"
+                >
+                  <Plus className="h-3 w-3" />
+                  Equipment
+                </button>
+                {onAddKit && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAddKit();
+                    }}
+                    className="flex items-center gap-1 text-xs text-fg-4 hover:text-fg-3 transition-colors"
+                  >
+                    <Plus className="h-3 w-3" />
+                    Kit
+                  </button>
+                )}
+                {onAddSubhire && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAddSubhire();
+                    }}
+                    className="flex items-center gap-1 text-xs text-fg-4 hover:text-fg-3 transition-colors"
+                  >
+                    <Plus className="h-3 w-3" />
+                    Subhire
+                  </button>
+                )}
+              </div>
               {onSaveAsTemplate && lineItemCount > 0 && (
                 <button
                   onClick={(e) => {

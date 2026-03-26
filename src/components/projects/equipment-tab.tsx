@@ -18,7 +18,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, FolderPlus, Package, ArrowUpRight } from "lucide-react";
+import { Plus, FolderPlus, Package, ArrowUpRight, MoreHorizontal, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { getProjectCategories } from "@/server/project-categories";
@@ -39,6 +39,14 @@ import {
 import { getGroupTemplates, applyGroupTemplate } from "@/server/group-templates";
 import { removeLineItem, addKitLineItem, checkKitAvailability } from "@/server/line-items";
 import { getKits } from "@/server/kits";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -71,6 +79,8 @@ function SortableGroupCard({
   categoryId,
   onMutate,
   onAddEquipment,
+  onAddKit,
+  onAddSubhire,
   onEditPrice,
   onAcceptSuggested,
   onDelete,
@@ -81,6 +91,8 @@ function SortableGroupCard({
   categoryId: string;
   onMutate: () => void;
   onAddEquipment: (categoryId: string, groupId: string) => void;
+  onAddKit: (categoryId: string, groupId: string) => void;
+  onAddSubhire: (categoryId: string, groupId: string) => void;
   onEditPrice: (groupId: string, currentPrice: number | null) => void;
   onAcceptSuggested: (groupId: string) => void;
   onDelete: (groupId: string, title: string, price: number, itemCount: number) => void;
@@ -94,12 +106,6 @@ function SortableGroupCard({
     transition,
     opacity: isDragging ? 0.5 : 1,
   };
-
-  // Build compact pill summaries from line items
-  const lineItemSummary = (group.lineItems ?? []).map((li) => ({
-    modelName: li.model?.name ?? li.description,
-    quantity: li.quantity,
-  }));
 
   const priceVal = group.price != null ? Number(group.price) : null;
 
@@ -115,13 +121,14 @@ function SortableGroupCard({
         rentalPeriod={group.rentalPeriod}
         rentalQuantity={group.rentalQuantity}
         lineItemCount={group.lineItems?.length ?? 0}
-        lineItemSummary={lineItemSummary}
         dragHandleProps={{ ...attributes, ...listeners }}
         onAcceptSuggested={() => onAcceptSuggested(group.id)}
         onEditPrice={() => onEditPrice(group.id, priceVal)}
         onDelete={() => onDelete(group.id, group.title, priceVal ?? 0, group.lineItems?.length ?? 0)}
         onEdit={() => onEdit(group)}
         onAddEquipment={() => onAddEquipment(categoryId, group.id)}
+        onAddKit={() => onAddKit(categoryId, group.id)}
+        onAddSubhire={() => onAddSubhire(categoryId, group.id)}
       >
         <LineItemTable items={group.lineItems ?? []} projectId={projectId} onMutate={onMutate} />
       </GroupCard>
@@ -150,6 +157,15 @@ function LineItemTable({
   projectId: string;
   onMutate: () => void;
 }) {
+  const removeMut = useMutation({
+    mutationFn: (id: string) => removeLineItem(id),
+    onSuccess: () => {
+      onMutate();
+      toast.success("Item removed");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   if (items.length === 0) {
     return (
       <div className="py-3 text-center text-xs text-fg-4">
@@ -163,7 +179,7 @@ function LineItemTable({
       {items.map((item) => (
         <div
           key={item.id}
-          className="flex items-center gap-3 rounded px-2 py-1.5 text-xs hover:bg-bg-inset/50"
+          className="group/item flex items-center gap-3 rounded px-2 py-1.5 text-xs hover:bg-bg-inset/50"
         >
           <span className="min-w-0 flex-1 truncate text-fg-2">
             {item.model?.name ?? item.description ?? "—"}
@@ -178,6 +194,23 @@ function LineItemTable({
           <span className="w-20 flex-none text-right tabular-nums font-medium text-fg">
             {formatCurrency(item.lineTotal != null ? Number(item.lineTotal) : null)}
           </span>
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-6 w-6 flex-none opacity-0 group-hover/item:opacity-100 transition-opacity" />}>
+              <MoreHorizontal className="h-3 w-3" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Item</DropdownMenuLabel>
+                <DropdownMenuItem
+                  onClick={() => removeMut.mutate(item.id)}
+                  className="text-[oklch(0.58_0.22_27)]"
+                >
+                  <Trash2 className="mr-2 h-3.5 w-3.5" />
+                  Remove
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       ))}
     </div>
@@ -232,6 +265,16 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
 
   // Subhire dialog state
   const [showSubhireDialog, setShowSubhireDialog] = useState(false);
+  const [subhireTarget, setSubhireTarget] = useState<{
+    categoryId?: string;
+    groupId?: string;
+  }>({});
+
+  // Kit target state (for adding kits to specific groups)
+  const [kitTarget, setKitTarget] = useState<{
+    categoryId?: string;
+    groupId?: string;
+  }>({});
 
   // Price edit dialog state
   const [priceEditGroupId, setPriceEditGroupId] = useState<string | null>(null);
@@ -379,6 +422,9 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
         selectedKitId,
         kitPricingMode,
         kitPricingMode === "KIT_PRICE" && kitUnitPrice ? parseFloat(kitUnitPrice) : undefined,
+        undefined, // groupName
+        kitTarget.categoryId,
+        kitTarget.groupId,
       ),
     onSuccess: () => {
       invalidate();
@@ -386,6 +432,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
       setSelectedKitId("");
       setKitPricingMode("KIT_PRICE");
       setKitUnitPrice("");
+      setKitTarget({});
       toast.success("Kit added to project");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -446,7 +493,10 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
           variant="outline"
           size="sm"
           className="gap-1.5"
-          onClick={() => setShowKitDialog(true)}
+          onClick={() => {
+            setKitTarget({});
+            setShowKitDialog(true);
+          }}
         >
           <Package className="h-3.5 w-3.5" />
           Add Kit
@@ -455,7 +505,10 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
           variant="outline"
           size="sm"
           className="gap-1.5"
-          onClick={() => setShowSubhireDialog(true)}
+          onClick={() => {
+            setSubhireTarget({});
+            setShowSubhireDialog(true);
+          }}
         >
           <ArrowUpRight className="h-3.5 w-3.5" />
           Add Subhire
@@ -524,6 +577,14 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                       onAddEquipment={(catId, grpId) => {
                         setAddEquipmentTarget({ categoryId: catId, groupId: grpId });
                         setShowAddEquipment(true);
+                      }}
+                      onAddKit={(catId, grpId) => {
+                        setKitTarget({ categoryId: catId, groupId: grpId });
+                        setShowKitDialog(true);
+                      }}
+                      onAddSubhire={(catId, grpId) => {
+                        setSubhireTarget({ categoryId: catId, groupId: grpId });
+                        setShowSubhireDialog(true);
                       }}
                       onEditPrice={(groupId, currentPrice) => {
                         setPriceEditGroupId(groupId);
@@ -725,7 +786,12 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
       <AddSubhireDialog
         projectId={projectId}
         open={showSubhireDialog}
-        onOpenChange={setShowSubhireDialog}
+        onOpenChange={(open) => {
+          setShowSubhireDialog(open);
+          if (!open) setSubhireTarget({});
+        }}
+        categoryId={subhireTarget.categoryId}
+        groupId={subhireTarget.groupId}
       />
 
       {/* Add kit dialog */}
@@ -737,6 +803,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
             setSelectedKitId("");
             setKitPricingMode("KIT_PRICE");
             setKitUnitPrice("");
+            setKitTarget({});
           }
         }}
       >

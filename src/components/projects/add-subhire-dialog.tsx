@@ -35,6 +35,10 @@ interface AddSubhireDialogProps {
   onGroupCreated?: (group: string) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Pre-set category for the line item */
+  categoryId?: string;
+  /** Pre-set group for the line item */
+  groupId?: string;
 }
 
 export function AddSubhireDialog({
@@ -43,6 +47,8 @@ export function AddSubhireDialog({
   onGroupCreated,
   open,
   onOpenChange,
+  categoryId,
+  groupId,
 }: AddSubhireDialogProps) {
   const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
@@ -69,13 +75,14 @@ export function AddSubhireDialog({
   });
 
   const mutation = useMutation({
-    mutationFn: (data: LineItemFormValues) => addLineItem(projectId, data),
+    mutationFn: (data: LineItemFormValues) => addLineItem(projectId, { ...data, categoryId, groupId }),
     onSuccess: (_result, variables) => {
       if (variables.groupName && onGroupCreated) {
         onGroupCreated(variables.groupName);
       }
       toast.success("Subhire item added");
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project-categories", projectId] });
       onOpenChange(false);
       form.reset();
     },

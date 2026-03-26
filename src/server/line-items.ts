@@ -304,6 +304,8 @@ export async function addKitLineItem(
   pricingMode: "KIT_PRICE" | "ITEMIZED" = "KIT_PRICE",
   unitPrice?: number,
   groupName?: string,
+  categoryId?: string,
+  groupId?: string,
 ) {
   const { organizationId } = await requirePermission("project", "manage_line_items");
 
@@ -348,6 +350,8 @@ export async function addKitLineItem(
         quantity: 1, unitPrice: unitPrice ?? null, pricingType: "PER_DAY", duration: 1,
         lineTotal: unitPrice ?? null, sortOrder: nextSort++, pricingMode,
         groupName: groupName || null,
+        categoryId: categoryId || null,
+        groupId: groupId || null,
       },
     });
 

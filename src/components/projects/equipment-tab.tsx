@@ -35,6 +35,7 @@ import {
   createProjectCategory,
   reorderProjectCategories,
 } from "@/server/project-categories";
+import { getGroupTemplates, applyGroupTemplate } from "@/server/group-templates";
 import { removeLineItem } from "@/server/line-items";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,11 +61,15 @@ interface EquipmentTabProps {
 function SortableGroupCard({
   group,
   projectId,
+  categoryId,
   onMutate,
+  onAddEquipment,
 }: {
   group: GroupData;
   projectId: string;
+  categoryId: string;
   onMutate: () => void;
+  onAddEquipment: (categoryId: string, groupId: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: group.id });
@@ -74,6 +79,12 @@ function SortableGroupCard({
     transition,
     opacity: isDragging ? 0.5 : 1,
   };
+
+  // Build compact pill summaries from line items
+  const lineItemSummary = (group.lineItems ?? []).map((li) => ({
+    modelName: li.model?.name ?? li.description,
+    quantity: li.quantity,
+  }));
 
   return (
     <div ref={setNodeRef} style={style}>
@@ -87,10 +98,12 @@ function SortableGroupCard({
         rentalPeriod={group.rentalPeriod}
         rentalQuantity={group.rentalQuantity}
         lineItemCount={group.lineItems?.length ?? 0}
+        lineItemSummary={lineItemSummary}
         dragHandleProps={{ ...attributes, ...listeners }}
         onAcceptSuggested={() => onMutate()}
         onEditPrice={() => onMutate()}
         onDelete={() => onMutate()}
+        onAddEquipment={() => onAddEquipment(categoryId, group.id)}
       >
         <LineItemTable items={group.lineItems ?? []} projectId={projectId} onMutate={onMutate} />
       </GroupCard>
@@ -213,6 +226,16 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
     staleTime: 60_000,
   });
 
+  const { data: templates = [] } = useQuery({
+    queryKey: ["group-templates"],
+    queryFn: () => getGroupTemplates(),
+    staleTime: 60_000,
+  });
+
+  const templateOptions = (templates as { id: string; name: string; description: string | null; items: unknown[] }[]).map(
+    (t) => ({ id: t.id, name: t.name, description: t.description, itemCount: t.items.length })
+  );
+
   const invalidate = useCallback(() => {
     queryClient.invalidateQueries({ queryKey });
     queryClient.invalidateQueries({ queryKey: ["project", projectId] });
@@ -232,8 +255,12 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
   });
 
   const createGroupMut = useMutation({
-    mutationFn: ({ categoryId, title }: { categoryId: string; title: string }) =>
-      createProjectGroup(projectId, { categoryId, title, quantity: 1 }),
+    mutationFn: ({ categoryId, title, templateId }: { categoryId: string; title: string; templateId?: string }) => {
+      if (templateId) {
+        return applyGroupTemplate(projectId, { templateId, categoryId, title });
+      }
+      return createProjectGroup(projectId, { categoryId, title, quantity: 1 });
+    },
     onSuccess: () => {
       invalidate();
       toast.success("Group created");
@@ -369,9 +396,10 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
             groupCount={cat.groups.length}
             standaloneCount={cat.lineItems?.length ?? 0}
             categoryTotal={categoryTotal}
-            onAddGroup={(title) =>
-              createGroupMut.mutate({ categoryId: cat.id, title })
+            onAddGroup={(title, templateId) =>
+              createGroupMut.mutate({ categoryId: cat.id, title, templateId })
             }
+            templates={templateOptions}
             onAcceptAllPrices={() => acceptAllPricesMut.mutate(cat.id)}
           >
             <DndContext
@@ -389,7 +417,12 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                       key={group.id}
                       group={group}
                       projectId={projectId}
+                      categoryId={cat.id}
                       onMutate={invalidate}
+                      onAddEquipment={(catId, grpId) => {
+                        setAddEquipmentTarget({ categoryId: catId, groupId: grpId });
+                        setShowAddEquipment(true);
+                      }}
                     />
                   ))}
                 </div>

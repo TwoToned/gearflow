@@ -697,24 +697,38 @@ export default function ProjectDetailPage({
                 </div>
 
                 {/* Financial Summary */}
-                {!project.isTemplate && (
-                  <div className="border-b border-border pb-4">
-                    <FinancialSummary
-                      equipmentRevenue={project.equipmentRevenue as number | null}
-                      serviceCostTotal={project.serviceCostTotal as number | null}
-                      labourCostTotal={project.labourCostTotal as number | null}
-                      subtotal={project.subtotal as number | null}
-                      discountPercent={project.discountPercent as number | null}
-                      discountAmount={project.discountAmount as number | null}
-                      taxRate={project.taxRate as number | null}
-                      taxAmount={project.taxAmount as number | null}
-                      total={project.total as number | null}
-                      margin={project.margin as number | null}
-                      depositPercent={project.depositPercent as number | null}
-                      depositPaid={project.depositPaid as number | null}
-                    />
-                  </div>
-                )}
+                {!project.isTemplate && (() => {
+                  // Compute group pricing stats from categories
+                  const allGroups = (project.categories as { groups: { title: string; quantity: number; price: unknown }[] }[] | undefined)
+                    ?.flatMap((c) => c.groups) ?? [];
+                  const totalGroupCount = allGroups.length;
+                  const pricedGroupCount = allGroups.filter((g) => g.price != null && Number(g.price) > 0).length;
+                  const groupBreakdown = allGroups
+                    .filter((g) => g.price != null && Number(g.price) > 0)
+                    .map((g) => ({ title: g.title, quantity: g.quantity, price: Number(g.price) }));
+
+                  return (
+                    <div className="border-b border-border pb-4">
+                      <FinancialSummary
+                        equipmentRevenue={project.equipmentRevenue as number | null}
+                        serviceCostTotal={project.serviceCostTotal as number | null}
+                        labourCostTotal={project.labourCostTotal as number | null}
+                        subtotal={project.subtotal as number | null}
+                        discountPercent={project.discountPercent as number | null}
+                        discountAmount={project.discountAmount as number | null}
+                        taxRate={project.taxRate as number | null}
+                        taxAmount={project.taxAmount as number | null}
+                        total={project.total as number | null}
+                        margin={project.margin as number | null}
+                        depositPercent={project.depositPercent as number | null}
+                        depositPaid={project.depositPaid as number | null}
+                        pricedGroupCount={pricedGroupCount}
+                        totalGroupCount={totalGroupCount}
+                        groupBreakdown={groupBreakdown}
+                      />
+                    </div>
+                  );
+                })()}
 
                 {/* Quick Actions */}
                 {!project.isTemplate && (

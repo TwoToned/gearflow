@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, GripVertical, MoreHorizontal } from "lucide-react";
+import { ChevronDown, ChevronRight, GripVertical, MoreHorizontal, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -15,6 +15,11 @@ import {
 import { formatCurrency } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 
+interface LineItemSummary {
+  modelName: string | null;
+  quantity: number;
+}
+
 interface GroupCardProps {
   id: string;
   title: string;
@@ -25,12 +30,14 @@ interface GroupCardProps {
   rentalPeriod: string | null;
   rentalQuantity: number | null;
   lineItemCount: number;
+  lineItemSummary?: LineItemSummary[];
   children: React.ReactNode;
   onAcceptSuggested?: () => void;
   onEditPrice?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
   onSaveAsTemplate?: () => void;
+  onAddEquipment?: () => void;
   dragHandleProps?: Record<string, unknown>;
   defaultExpanded?: boolean;
 }
@@ -44,12 +51,14 @@ export function GroupCard({
   rentalPeriod,
   rentalQuantity,
   lineItemCount,
+  lineItemSummary = [],
   children,
   onAcceptSuggested,
   onEditPrice,
   onEdit,
   onDelete,
   onSaveAsTemplate,
+  onAddEquipment,
   dragHandleProps,
   defaultExpanded = false,
 }: GroupCardProps) {
@@ -64,16 +73,16 @@ export function GroupCard({
   const qtyLabel = rentalQuantity ? `${rentalQuantity} ${periodLabel}${rentalQuantity > 1 ? "s" : ""}` : null;
 
   return (
-    <div className="rounded-lg bg-bg-surface ring-1 ring-foreground/8 transition-shadow hover:ring-foreground/12">
+    <div className="group/card rounded-lg bg-bg-surface ring-1 ring-foreground/8 transition-shadow hover:ring-foreground/12">
       {/* Collapsed header — always visible */}
       <div
         className="flex items-center gap-2 px-3 py-2.5 cursor-pointer select-none"
         onClick={() => setExpanded(!expanded)}
       >
-        {/* Drag handle */}
+        {/* Drag handle — visible on hover only */}
         {dragHandleProps && (
           <div
-            className="flex-none cursor-grab text-fg-4 hover:text-fg-3 active:cursor-grabbing"
+            className="flex-none cursor-grab text-fg-4 opacity-0 transition-opacity group-hover/card:opacity-100 hover:text-fg-3 active:cursor-grabbing"
             onClick={(e) => e.stopPropagation()}
             {...dragHandleProps}
           >
@@ -162,7 +171,52 @@ export function GroupCard({
           {description && (
             <p className="mb-2 text-xs leading-relaxed text-fg-3">{description}</p>
           )}
+
+          {/* Tracked items as compact pills */}
+          {lineItemSummary.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-1">
+              {lineItemSummary.map((item, i) => (
+                <span
+                  key={i}
+                  className="inline-flex items-center gap-1 rounded-full bg-bg-inset px-2 py-0.5 text-[11px] text-fg-3"
+                >
+                  {item.modelName ?? "Item"}
+                  {item.quantity > 1 && (
+                    <span className="tabular-nums text-fg-4">×{item.quantity}</span>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
+
           {children}
+
+          {/* Add equipment button */}
+          {onAddEquipment && (
+            <div className="mt-2 flex items-center justify-between">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddEquipment();
+                }}
+                className="flex items-center gap-1 text-xs text-fg-4 hover:text-fg-3 transition-colors"
+              >
+                <Plus className="h-3 w-3" />
+                Add equipment
+              </button>
+              {onSaveAsTemplate && lineItemCount > 0 && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSaveAsTemplate();
+                  }}
+                  className="text-xs text-fg-4 hover:text-fg-3 transition-colors"
+                >
+                  Save as template
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

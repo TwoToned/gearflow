@@ -4,8 +4,22 @@ import { useState, useRef } from "react";
 import { ChevronDown, ChevronRight, Plus, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/formatters";
+
+interface TemplateOption {
+  id: string;
+  name: string;
+  description: string | null;
+  itemCount: number;
+}
 
 interface CategorySectionProps {
   id: string;
@@ -14,11 +28,12 @@ interface CategorySectionProps {
   standaloneCount: number;
   categoryTotal: number;
   children: React.ReactNode;
-  onAddGroup?: (title: string) => void;
+  onAddGroup?: (title: string, templateId?: string) => void;
   onAcceptAllPrices?: () => void;
   onRename?: (name: string) => void;
   onDelete?: () => void;
   defaultExpanded?: boolean;
+  templates?: TemplateOption[];
 }
 
 export function CategorySection({
@@ -30,10 +45,12 @@ export function CategorySection({
   onAddGroup,
   onAcceptAllPrices,
   defaultExpanded = true,
+  templates = [],
 }: CategorySectionProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [showInlineForm, setShowInlineForm] = useState(false);
   const [newGroupTitle, setNewGroupTitle] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   const totalItems = groupCount + standaloneCount;
@@ -41,8 +58,9 @@ export function CategorySection({
   function handleCreateGroup() {
     const trimmed = newGroupTitle.trim();
     if (!trimmed) return;
-    onAddGroup?.(trimmed);
+    onAddGroup?.(trimmed, selectedTemplateId || undefined);
     setNewGroupTitle("");
+    setSelectedTemplateId("");
     setShowInlineForm(false);
   }
 
@@ -97,7 +115,7 @@ export function CategorySection({
 
           {/* Inline group creation form */}
           {showInlineForm ? (
-            <div className="flex items-center gap-2 rounded-lg border border-dashed border-foreground/10 bg-bg-inset/50 px-3 py-2">
+            <div className="space-y-2 rounded-lg border border-dashed border-foreground/10 bg-bg-inset/50 px-3 py-2.5">
               <Input
                 ref={inputRef}
                 placeholder="Group title..."
@@ -108,30 +126,54 @@ export function CategorySection({
                   if (e.key === "Escape") {
                     setShowInlineForm(false);
                     setNewGroupTitle("");
+                    setSelectedTemplateId("");
                   }
                 }}
-                className="h-7 flex-1 border-0 bg-transparent text-sm shadow-none focus-visible:ring-0"
+                className="h-7 border-0 bg-transparent text-sm shadow-none focus-visible:ring-0"
                 autoFocus
               />
-              <Button
-                size="sm"
-                className="h-7 px-2 text-xs"
-                onClick={handleCreateGroup}
-                disabled={!newGroupTitle.trim()}
-              >
-                Create
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-xs text-fg-4"
-                onClick={() => {
-                  setShowInlineForm(false);
-                  setNewGroupTitle("");
-                }}
-              >
-                Cancel
-              </Button>
+              <div className="flex items-center gap-2">
+                {templates.length > 0 && (
+                  <Select value={selectedTemplateId} onValueChange={(v) => setSelectedTemplateId(v ?? "")}>
+                    <SelectTrigger className="h-7 w-48 text-xs">
+                      <SelectValue placeholder="From template...">
+                        {selectedTemplateId
+                          ? templates.find((t) => t.id === selectedTemplateId)?.name ?? "Template"
+                          : "From template..."}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No template</SelectItem>
+                      {templates.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          {t.name} ({t.itemCount} items)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                <div className="flex-1" />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs text-fg-4"
+                  onClick={() => {
+                    setShowInlineForm(false);
+                    setNewGroupTitle("");
+                    setSelectedTemplateId("");
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={handleCreateGroup}
+                  disabled={!newGroupTitle.trim()}
+                >
+                  Create
+                </Button>
+              </div>
             </div>
           ) : (
             <button

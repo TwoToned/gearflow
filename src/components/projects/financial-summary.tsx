@@ -1,7 +1,15 @@
 "use client";
 
+import { useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { formatCurrency } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
+
+interface GroupBreakdownItem {
+  title: string;
+  quantity: number;
+  price: number;
+}
 
 interface FinancialSummaryProps {
   equipmentRevenue: number | null;
@@ -16,6 +24,9 @@ interface FinancialSummaryProps {
   margin: number | null;
   depositPercent: number | null;
   depositPaid: number | null;
+  pricedGroupCount?: number;
+  totalGroupCount?: number;
+  groupBreakdown?: GroupBreakdownItem[];
 }
 
 function MarginBar({ margin, total }: { margin: number; total: number }) {
@@ -82,12 +93,19 @@ export function FinancialSummary({
   margin,
   depositPercent,
   depositPaid,
+  pricedGroupCount,
+  totalGroupCount,
+  groupBreakdown = [],
 }: FinancialSummaryProps) {
+  const [showBreakdown, setShowBreakdown] = useState(false);
   const totalVal = total != null ? Number(total) : 0;
   const marginVal = margin != null ? Number(margin) : 0;
   const costs =
     (serviceCostTotal != null ? Number(serviceCostTotal) : 0) +
     (labourCostTotal != null ? Number(labourCostTotal) : 0);
+
+  const allGroupsPriced =
+    totalGroupCount != null && pricedGroupCount != null && pricedGroupCount >= totalGroupCount;
 
   return (
     <div className="space-y-4">
@@ -105,8 +123,21 @@ export function FinancialSummary({
           </span>
         </div>
         <MarginBar margin={marginVal} total={totalVal} />
-        <div className="text-right text-[11px] text-fg-4">
-          Margin: {formatCurrency(marginVal)}
+        <div className="flex items-baseline justify-between">
+          <span className="text-right text-[11px] text-fg-4">
+            Margin: {formatCurrency(marginVal)}
+          </span>
+          {/* Pricing progress indicator */}
+          {totalGroupCount != null && totalGroupCount > 0 && (
+            <span
+              className={cn(
+                "text-[11px] tabular-nums",
+                allGroupsPriced ? "text-fg-4" : "text-[oklch(0.72_0.17_70)]"
+              )}
+            >
+              {pricedGroupCount}/{totalGroupCount} groups priced
+            </span>
+          )}
         </div>
       </div>
 
@@ -157,6 +188,38 @@ export function FinancialSummary({
               <Row label="Paid" value={formatCurrency(depositPaid)} />
             )}
           </div>
+        </>
+      )}
+
+      {/* Audit trail breakdown */}
+      {groupBreakdown.length > 0 && (
+        <>
+          <div className="h-px bg-border" />
+          <button
+            onClick={() => setShowBreakdown(!showBreakdown)}
+            className="flex w-full items-center gap-1 text-xs text-fg-4 hover:text-fg-3 transition-colors"
+          >
+            {showBreakdown ? (
+              <ChevronDown className="h-3 w-3" />
+            ) : (
+              <ChevronRight className="h-3 w-3" />
+            )}
+            Breakdown
+          </button>
+          {showBreakdown && (
+            <div className="space-y-0.5">
+              {groupBreakdown.map((g, i) => (
+                <div key={i} className="flex items-baseline justify-between text-[11px]">
+                  <span className="min-w-0 truncate text-fg-4">{g.title}</span>
+                  <span className="flex-none tabular-nums text-fg-3">
+                    {g.quantity > 1 ? `${g.quantity} × ` : ""}
+                    {formatCurrency(g.price)}
+                    {g.quantity > 1 && ` = ${formatCurrency(g.price * g.quantity)}`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       )}
     </div>

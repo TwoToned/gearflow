@@ -2146,6 +2146,7 @@ model TestTagAuditorToken {
   tokenHash       String    @unique    // SHA-256 for secure lookup
   isActive        Boolean   @default(true)
   expiresAt       DateTime?            // Optional expiry date
+  scope           String?              // JSON: { categories?, equipmentClasses?, locations?, assetIds? }
 
   createdById     String
   createdBy       User     @relation(fields: [createdById], references: [id], onDelete: Cascade)

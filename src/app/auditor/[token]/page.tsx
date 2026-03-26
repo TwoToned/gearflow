@@ -1,9 +1,8 @@
 "use client";
 
-import { use, useState, useMemo } from "react";
+import { use, useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Shield, Search, ArrowUpDown } from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { Shield, Search, ArrowUpDown, Sun, Moon, Lock } from "lucide-react";
 
 const STATUS_LABELS: Record<string, string> = {
   CURRENT: "Current",
@@ -14,12 +13,20 @@ const STATUS_LABELS: Record<string, string> = {
   RETIRED: "Retired",
 };
 
-const STATUS_COLORS: Record<string, string> = {
+const STATUS_COLORS_LIGHT: Record<string, string> = {
   CURRENT: "bg-teal-100 text-teal-800",
   DUE_SOON: "bg-amber-100 text-amber-800",
   OVERDUE: "bg-red-100 text-red-800",
   FAILED: "bg-red-100 text-red-800",
   NOT_YET_TESTED: "bg-gray-100 text-gray-600",
+};
+
+const STATUS_COLORS_DARK: Record<string, string> = {
+  CURRENT: "bg-teal-900/50 text-teal-300",
+  DUE_SOON: "bg-amber-900/50 text-amber-300",
+  OVERDUE: "bg-red-900/50 text-red-300",
+  FAILED: "bg-red-900/50 text-red-300",
+  NOT_YET_TESTED: "bg-gray-800 text-gray-400",
 };
 
 const CLASS_LABELS: Record<string, string> = {
@@ -67,6 +74,7 @@ interface AuditorData {
     notTested: number;
     complianceRate: number;
   };
+  scopeDescription: string | null;
   generatedAt: string;
 }
 
@@ -80,6 +88,14 @@ export default function AuditorPortalPage({
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [sortField, setSortField] = useState<string>("testTagId");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [dark, setDark] = useState(false);
+
+  // Detect system preference on mount
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      setDark(true);
+    }
+  }, []);
 
   const { data, isLoading, error } = useQuery<AuditorData>({
     queryKey: ["auditor", token],
@@ -109,7 +125,8 @@ export default function AuditorPortalPage({
           a.testTagId.toLowerCase().includes(q) ||
           a.description.toLowerCase().includes(q) ||
           (a.location && a.location.toLowerCase().includes(q)) ||
-          (a.serialNumber && a.serialNumber.toLowerCase().includes(q))
+          (a.serialNumber && a.serialNumber.toLowerCase().includes(q)) ||
+          (a.make && a.make.toLowerCase().includes(q))
       );
     }
 
@@ -132,9 +149,26 @@ export default function AuditorPortalPage({
     }
   };
 
+  const statusColors = dark ? STATUS_COLORS_DARK : STATUS_COLORS_LIGHT;
+
+  // Theme classes
+  const bg = dark ? "bg-gray-950" : "bg-gray-50";
+  const headerBg = dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200";
+  const cardBg = dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200";
+  const textPrimary = dark ? "text-gray-100" : "text-gray-900";
+  const textSecondary = dark ? "text-gray-400" : "text-gray-500";
+  const textMuted = dark ? "text-gray-500" : "text-gray-400";
+  const inputBg = dark ? "bg-gray-800 border-gray-700 text-gray-100 placeholder:text-gray-500" : "bg-white border-gray-300 text-gray-900 placeholder:text-gray-400";
+  const tableBg = dark ? "bg-gray-900" : "bg-white";
+  const tableHeaderBg = dark ? "bg-gray-800/50" : "bg-gray-50";
+  const tableHover = dark ? "hover:bg-gray-800/50" : "hover:bg-gray-50";
+  const tableBorder = dark ? "divide-gray-800" : "divide-gray-200";
+  const tableFooterBg = dark ? "bg-gray-800/50 border-gray-800" : "bg-gray-50 border-gray-200";
+  const selectBg = dark ? "bg-gray-800 border-gray-700 text-gray-100" : "bg-white border-gray-300 text-gray-900";
+
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className={`min-h-screen flex items-center justify-center ${bg}`}>
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-500" />
       </div>
     );
@@ -142,11 +176,11 @@ export default function AuditorPortalPage({
 
   if (error || !data) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className={`min-h-screen flex items-center justify-center ${bg}`}>
         <div className="text-center max-w-md mx-auto p-8">
-          <Shield className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-          <h1 className="text-xl font-semibold text-gray-900 mb-2">Link Not Found</h1>
-          <p className="text-gray-500">
+          <Shield className={`h-12 w-12 mx-auto mb-4 ${textMuted}`} />
+          <h1 className={`text-xl font-semibold mb-2 ${textPrimary}`}>Link Not Found</h1>
+          <p className={textSecondary}>
             This auditor link is invalid, expired, or has been revoked.
             Please contact the organisation for a new link.
           </p>
@@ -156,22 +190,37 @@ export default function AuditorPortalPage({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className={`min-h-screen ${bg} transition-colors duration-200`}>
       {/* Header */}
-      <div className="bg-white border-b shadow-sm">
+      <div className={`${headerBg} border-b shadow-sm transition-colors duration-200`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <Shield className="h-5 w-5 text-teal-600" />
-                <span className="text-sm font-medium text-teal-600">Auditor Portal</span>
+                <Shield className="h-5 w-5 text-teal-500" />
+                <span className="text-sm font-medium text-teal-500">Auditor Portal</span>
+                {data.scopeDescription && (
+                  <span className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${dark ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-500"}`}>
+                    <Lock className="h-3 w-3" />
+                    {data.scopeDescription}
+                  </span>
+                )}
               </div>
-              <h1 className="text-xl font-semibold text-gray-900">{data.orgName}</h1>
-              <p className="text-sm text-gray-500">{data.tokenName} · Generated {formatDate(data.generatedAt)}</p>
+              <h1 className={`text-xl font-semibold ${textPrimary}`}>{data.orgName}</h1>
+              <p className={`text-sm ${textSecondary}`}>{data.tokenName} · Generated {formatDate(data.generatedAt)}</p>
             </div>
-            <div className="text-right">
-              <div className="text-3xl font-bold text-teal-600">{data.summary.complianceRate}%</div>
-              <div className="text-sm text-gray-500">Compliance Rate</div>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setDark(!dark)}
+                className={`p-2 rounded-lg transition-colors ${dark ? "hover:bg-gray-800 text-gray-400" : "hover:bg-gray-100 text-gray-500"}`}
+                title={dark ? "Switch to light mode" : "Switch to dark mode"}
+              >
+                {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+              </button>
+              <div className="text-right">
+                <div className="text-3xl font-bold text-teal-500">{data.summary.complianceRate}%</div>
+                <div className={`text-sm ${textSecondary}`}>Compliance Rate</div>
+              </div>
             </div>
           </div>
         </div>
@@ -181,16 +230,16 @@ export default function AuditorPortalPage({
         {/* Summary cards */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
           {[
-            { label: "Total", value: data.summary.total, color: "text-gray-900", bg: "bg-white" },
-            { label: "Current", value: data.summary.current, color: "text-teal-700", bg: "bg-teal-50" },
-            { label: "Due Soon", value: data.summary.dueSoon, color: "text-amber-700", bg: "bg-amber-50" },
-            { label: "Overdue", value: data.summary.overdue, color: "text-red-700", bg: "bg-red-50" },
-            { label: "Failed", value: data.summary.failed, color: "text-red-700", bg: "bg-red-50" },
-            { label: "Not Tested", value: data.summary.notTested, color: "text-gray-600", bg: "bg-gray-50" },
+            { label: "Total", value: data.summary.total, color: textPrimary, cardBgColor: dark ? "bg-gray-900" : "bg-white" },
+            { label: "Current", value: data.summary.current, color: "text-teal-500", cardBgColor: dark ? "bg-teal-950/30" : "bg-teal-50" },
+            { label: "Due Soon", value: data.summary.dueSoon, color: dark ? "text-amber-400" : "text-amber-600", cardBgColor: dark ? "bg-amber-950/30" : "bg-amber-50" },
+            { label: "Overdue", value: data.summary.overdue, color: dark ? "text-red-400" : "text-red-600", cardBgColor: dark ? "bg-red-950/30" : "bg-red-50" },
+            { label: "Failed", value: data.summary.failed, color: dark ? "text-red-400" : "text-red-600", cardBgColor: dark ? "bg-red-950/30" : "bg-red-50" },
+            { label: "Not Tested", value: data.summary.notTested, color: textSecondary, cardBgColor: dark ? "bg-gray-800" : "bg-gray-50" },
           ].map((card) => (
-            <div key={card.label} className={`${card.bg} rounded-lg p-3 border`}>
+            <div key={card.label} className={`${card.cardBgColor} rounded-lg p-3 border ${dark ? "border-gray-800" : "border-gray-200"} transition-colors duration-200`}>
               <div className={`text-2xl font-bold ${card.color}`}>{card.value}</div>
-              <div className="text-xs text-gray-500">{card.label}</div>
+              <div className={`text-xs ${textSecondary}`}>{card.label}</div>
             </div>
           ))}
         </div>
@@ -198,18 +247,18 @@ export default function AuditorPortalPage({
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-3 mb-4">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <Input
-              placeholder="Search by tag, description, location, serial..."
+            <Search className={`absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 ${textMuted}`} />
+            <input
+              placeholder="Search by tag, description, location, serial, make..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
+              className={`w-full rounded-md border px-3 py-2 pl-9 text-sm ${inputBg} focus:outline-none focus:ring-2 focus:ring-teal-500 transition-colors`}
             />
           </div>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="rounded-md border px-3 py-2 text-sm bg-white"
+            className={`rounded-md border px-3 py-2 text-sm ${selectBg} transition-colors`}
           >
             <option value="all">All Statuses</option>
             <option value="CURRENT">Current</option>
@@ -221,10 +270,10 @@ export default function AuditorPortalPage({
         </div>
 
         {/* Table */}
-        <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
+        <div className={`${tableBg} rounded-lg border shadow-sm overflow-hidden ${dark ? "border-gray-800" : "border-gray-200"} transition-colors duration-200`}>
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            <table className={`min-w-full divide-y ${tableBorder}`}>
+              <thead className={tableHeaderBg}>
                 <tr>
                   {[
                     { key: "testTagId", label: "Tag ID" },
@@ -237,7 +286,7 @@ export default function AuditorPortalPage({
                   ].map((col) => (
                     <th
                       key={col.key}
-                      className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                      className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer select-none transition-colors ${dark ? "text-gray-400 hover:bg-gray-700/50" : "text-gray-500 hover:bg-gray-100"}`}
                       onClick={() => toggleSort(col.key)}
                     >
                       <div className="flex items-center gap-1">
@@ -248,17 +297,17 @@ export default function AuditorPortalPage({
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody className={`divide-y ${tableBorder}`}>
                 {filteredAssets.map((asset) => (
-                  <tr key={asset.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm font-mono font-medium text-gray-900">{asset.testTagId}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{asset.description}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{CLASS_LABELS[asset.equipmentClass] || asset.equipmentClass}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{asset.location || "-"}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{formatDate(asset.lastTestDate)}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{formatDate(asset.nextDueDate)}</td>
+                  <tr key={asset.id} className={`${tableHover} transition-colors`}>
+                    <td className={`px-4 py-3 text-sm font-mono font-medium ${textPrimary}`}>{asset.testTagId}</td>
+                    <td className={`px-4 py-3 text-sm ${textSecondary}`}>{asset.description}</td>
+                    <td className={`px-4 py-3 text-sm ${textSecondary}`}>{CLASS_LABELS[asset.equipmentClass] || asset.equipmentClass}</td>
+                    <td className={`px-4 py-3 text-sm ${textSecondary}`}>{asset.location || "-"}</td>
+                    <td className={`px-4 py-3 text-sm ${textSecondary}`}>{formatDate(asset.lastTestDate)}</td>
+                    <td className={`px-4 py-3 text-sm ${textSecondary}`}>{formatDate(asset.nextDueDate)}</td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[asset.status] || "bg-gray-100 text-gray-600"}`}>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[asset.status] || (dark ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-600")}`}>
                         {STATUS_LABELS[asset.status] || asset.status}
                       </span>
                     </td>
@@ -266,7 +315,7 @@ export default function AuditorPortalPage({
                 ))}
                 {filteredAssets.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500">
+                    <td colSpan={7} className={`px-4 py-8 text-center text-sm ${textSecondary}`}>
                       No items match your filters.
                     </td>
                   </tr>
@@ -274,13 +323,13 @@ export default function AuditorPortalPage({
               </tbody>
             </table>
           </div>
-          <div className="px-4 py-3 border-t bg-gray-50 text-xs text-gray-500">
+          <div className={`px-4 py-3 border-t text-xs ${tableFooterBg} ${textSecondary} transition-colors`}>
             Showing {filteredAssets.length} of {data.assets.length} items
           </div>
         </div>
 
         {/* Footer */}
-        <div className="mt-6 text-center text-xs text-gray-400">
+        <div className={`mt-6 text-center text-xs ${textMuted}`}>
           <p>This is a read-only compliance view. Data shown is live from {data.orgName}.</p>
           <p className="mt-1">Powered by GearFlow</p>
         </div>

@@ -25,7 +25,10 @@ export function middleware(request: NextRequest) {
       !pathname.startsWith("/api/crew/calendar/assignment")) ||
     pathname.startsWith("/api/crew/respond/") ||
     pathname.startsWith("/warehouse/display/") ||
-    pathname.startsWith("/api/warehouse/display/")
+    pathname.startsWith("/api/warehouse/display/") ||
+    pathname.startsWith("/auditor/") ||
+    pathname.startsWith("/api/auditor/") ||
+    pathname.startsWith("/api/cron/")
   ) {
     return NextResponse.next();
   }

@@ -20,6 +20,8 @@ import {
   createAuditorToken,
   revokeAuditorToken,
   deleteAuditorToken,
+  getAuditorScopeOptions,
+  type AuditorTokenScope,
 } from "@/server/test-tag-auditor";
 import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -206,6 +208,27 @@ export default function TestTagSettingsPage() {
   );
 }
 
+// ─── Label Maps ──────────────────────────────────────────────────────────────
+
+const CATEGORY_LABELS: Record<string, string> = {
+  APPLIANCE: "Appliance",
+  CORD_SET: "Cord Set",
+  EXTENSION_LEAD: "Extension Lead",
+  POWER_BOARD: "Power Board",
+  RCD_PORTABLE: "RCD (Portable)",
+  RCD_FIXED: "RCD (Fixed)",
+  THREE_PHASE: "Three Phase",
+  MICROWAVE: "Microwave",
+  OTHER: "Other",
+};
+
+const CLASS_LABELS: Record<string, string> = {
+  CLASS_I: "Class I",
+  CLASS_II: "Class II",
+  CLASS_II_DOUBLE_INSULATED: "Class II (Double Insulated)",
+  LEAD_CORD_ASSEMBLY: "Lead / Cord Assembly",
+};
+
 // ─── Auditor Links Sub-Component ─────────────────────────────────────────────
 
 function AuditorLinksSection({ canEdit }: { canEdit: boolean }) {
@@ -213,23 +236,34 @@ function AuditorLinksSection({ canEdit }: { canEdit: boolean }) {
   const [newName, setNewName] = useState("");
   const [newExpiry, setNewExpiry] = useState("");
   const [showCreate, setShowCreate] = useState(false);
+  const [showScopeOptions, setShowScopeOptions] = useState(false);
+  const [scope, setScope] = useState<AuditorTokenScope>({});
 
   const { data: tokens } = useQuery({
     queryKey: ["auditorTokens"],
     queryFn: getAuditorTokens,
   });
 
+  const { data: scopeOptions } = useQuery({
+    queryKey: ["auditorScopeOptions"],
+    queryFn: getAuditorScopeOptions,
+    enabled: showCreate,
+  });
+
   const createMutation = useMutation({
     mutationFn: () => createAuditorToken({
       name: newName,
       expiresAt: newExpiry || null,
+      scope: hasScopeFilters(scope) ? scope : null,
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["auditorTokens"] });
       toast.success("Auditor link created");
       setNewName("");
       setNewExpiry("");
+      setScope({});
       setShowCreate(false);
+      setShowScopeOptions(false);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -258,6 +292,14 @@ function AuditorLinksSection({ canEdit }: { canEdit: boolean }) {
     toast.success("Link copied to clipboard");
   };
 
+  const toggleScopeItem = (key: keyof AuditorTokenScope, value: string) => {
+    setScope((prev) => {
+      const arr = prev[key] || [];
+      const next = arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];
+      return { ...prev, [key]: next };
+    });
+  };
+
   const tokenList = (tokens || []) as unknown as {
     id: string;
     name: string;
@@ -266,77 +308,102 @@ function AuditorLinksSection({ canEdit }: { canEdit: boolean }) {
     expiresAt: string | null;
     lastAccessedAt: string | null;
     createdAt: string;
+    scope: string | null;
     createdBy: { name: string; email: string };
   }[];
 
+  const opts = scopeOptions as unknown as {
+    applianceTypes: string[];
+    equipmentClasses: string[];
+    locations: string[];
+    assets: { id: string; testTagId: string; description: string }[];
+  } | undefined;
+
   return (
     <div className="space-y-3">
-      {tokenList.map((t) => (
-        <div
-          key={t.id}
-          className={`flex items-center justify-between rounded-lg border p-3 ${
-            t.isActive ? "border-border" : "border-border opacity-50"
-          }`}
-        >
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <p className="font-medium text-sm text-fg-1">{t.name}</p>
-              {!t.isActive && (
-                <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded">Revoked</span>
+      {tokenList.map((t) => {
+        const tokenScope = t.scope ? (JSON.parse(t.scope) as AuditorTokenScope) : null;
+        const scopeParts: string[] = [];
+        if (tokenScope?.categories?.length) scopeParts.push(`${tokenScope.categories.length} categories`);
+        if (tokenScope?.equipmentClasses?.length) scopeParts.push(`${tokenScope.equipmentClasses.length} classes`);
+        if (tokenScope?.locations?.length) scopeParts.push(`${tokenScope.locations.length} locations`);
+        if (tokenScope?.assetIds?.length) scopeParts.push(`${tokenScope.assetIds.length} assets`);
+
+        return (
+          <div
+            key={t.id}
+            className={`flex items-center justify-between rounded-lg border p-3 ${
+              t.isActive ? "border-border" : "border-border opacity-50"
+            }`}
+          >
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="font-medium text-sm text-fg-1">{t.name}</p>
+                {!t.isActive && (
+                  <span className="text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 px-1.5 py-0.5 rounded">Revoked</span>
+                )}
+                {t.expiresAt && new Date(t.expiresAt) < new Date() && t.isActive && (
+                  <span className="text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-1.5 py-0.5 rounded">Expired</span>
+                )}
+                {scopeParts.length > 0 && (
+                  <span className="text-xs bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400 px-1.5 py-0.5 rounded">
+                    Scoped: {scopeParts.join(", ")}
+                  </span>
+                )}
+                {tokenScope === null && t.isActive && (
+                  <span className="text-xs text-fg-3">All assets</span>
+                )}
+              </div>
+              <p className="text-xs text-fg-3 mt-0.5">
+                Created by {t.createdBy.name || t.createdBy.email} · {new Date(t.createdAt).toLocaleDateString()}
+                {t.expiresAt && ` · Expires ${new Date(t.expiresAt).toLocaleDateString()}`}
+                {t.lastAccessedAt && ` · Last accessed ${new Date(t.lastAccessedAt).toLocaleDateString()}`}
+              </p>
+            </div>
+            <div className="flex items-center gap-1 ml-3">
+              {t.isActive && (
+                <>
+                  <Button variant="ghost" size="sm" onClick={() => copyLink(t.token)} title="Copy link">
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                  <a
+                    href={`/auditor/${t.token}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Button variant="ghost" size="sm" title="Open portal">
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </Button>
+                  </a>
+                  {canEdit && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => revokeMutation.mutate(t.id)}
+                      disabled={revokeMutation.isPending}
+                      title="Revoke"
+                      className="text-red-500 hover:text-red-700"
+                    >
+                      Revoke
+                    </Button>
+                  )}
+                </>
               )}
-              {t.expiresAt && new Date(t.expiresAt) < new Date() && t.isActive && (
-                <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Expired</span>
+              {!t.isActive && canEdit && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => deleteMutation.mutate(t.id)}
+                  disabled={deleteMutation.isPending}
+                  title="Delete"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
               )}
             </div>
-            <p className="text-xs text-fg-3 mt-0.5">
-              Created by {t.createdBy.name || t.createdBy.email} · {new Date(t.createdAt).toLocaleDateString()}
-              {t.expiresAt && ` · Expires ${new Date(t.expiresAt).toLocaleDateString()}`}
-              {t.lastAccessedAt && ` · Last accessed ${new Date(t.lastAccessedAt).toLocaleDateString()}`}
-            </p>
           </div>
-          <div className="flex items-center gap-1 ml-3">
-            {t.isActive && (
-              <>
-                <Button variant="ghost" size="sm" onClick={() => copyLink(t.token)} title="Copy link">
-                  <Copy className="h-3.5 w-3.5" />
-                </Button>
-                <a
-                  href={`/auditor/${t.token}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <Button variant="ghost" size="sm" title="Open portal">
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </Button>
-                </a>
-                {canEdit && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => revokeMutation.mutate(t.id)}
-                    disabled={revokeMutation.isPending}
-                    title="Revoke"
-                    className="text-red-500 hover:text-red-700"
-                  >
-                    Revoke
-                  </Button>
-                )}
-              </>
-            )}
-            {!t.isActive && canEdit && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => deleteMutation.mutate(t.id)}
-                disabled={deleteMutation.isPending}
-                title="Delete"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            )}
-          </div>
-        </div>
-      ))}
+        );
+      })}
 
       {tokenList.length === 0 && !showCreate && (
         <p className="text-sm text-fg-3">No auditor links created yet.</p>
@@ -350,7 +417,7 @@ function AuditorLinksSection({ canEdit }: { canEdit: boolean }) {
       )}
 
       {showCreate && (
-        <div className="border rounded-lg p-4 space-y-3 bg-surface-hover">
+        <div className="border rounded-lg p-4 space-y-4 bg-surface-hover">
           <div className="space-y-2">
             <Label htmlFor="auditorName">Link Name</Label>
             <Input
@@ -369,7 +436,81 @@ function AuditorLinksSection({ canEdit }: { canEdit: boolean }) {
               onChange={(e) => setNewExpiry(e.target.value)}
             />
           </div>
-          <div className="flex gap-2">
+
+          {/* Scope toggle */}
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowScopeOptions(!showScopeOptions)}
+              className="text-sm text-teal-500 hover:text-teal-400 font-medium flex items-center gap-1"
+            >
+              <ChevronRight className={`h-3.5 w-3.5 transition-transform ${showScopeOptions ? "rotate-90" : ""}`} />
+              {showScopeOptions ? "Hide" : "Show"} visibility filters
+            </button>
+            <p className="text-xs text-fg-3 mt-1">
+              {hasScopeFilters(scope)
+                ? `Filtered: ${describeScopeFilters(scope)}`
+                : "No filters — auditor sees all assets"}
+            </p>
+          </div>
+
+          {showScopeOptions && opts && (
+            <div className="space-y-4 border-t border-border pt-4">
+              {/* Categories (Appliance Type) */}
+              {opts.applianceTypes.length > 0 && (
+                <ScopeCheckboxGroup
+                  label="Categories (Appliance Type)"
+                  items={opts.applianceTypes.map((v) => ({ value: v, label: CATEGORY_LABELS[v] || v }))}
+                  selected={scope.categories || []}
+                  onToggle={(v) => toggleScopeItem("categories", v)}
+                />
+              )}
+
+              {/* Equipment Classes */}
+              {opts.equipmentClasses.length > 0 && (
+                <ScopeCheckboxGroup
+                  label="Equipment Classes"
+                  items={opts.equipmentClasses.map((v) => ({ value: v, label: CLASS_LABELS[v] || v }))}
+                  selected={scope.equipmentClasses || []}
+                  onToggle={(v) => toggleScopeItem("equipmentClasses", v)}
+                />
+              )}
+
+              {/* Locations */}
+              {opts.locations.length > 0 && (
+                <ScopeCheckboxGroup
+                  label="Locations"
+                  items={opts.locations.map((v) => ({ value: v, label: v }))}
+                  selected={scope.locations || []}
+                  onToggle={(v) => toggleScopeItem("locations", v)}
+                />
+              )}
+
+              {/* Specific Assets */}
+              {opts.assets.length > 0 && opts.assets.length <= 200 && (
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-fg-2">Specific Assets</Label>
+                  <p className="text-xs text-fg-3">Select individual assets to include. Leave empty to include all matching assets above.</p>
+                  <div className="max-h-40 overflow-y-auto rounded border border-border bg-bg-surface p-2 space-y-1">
+                    {opts.assets.map((a) => (
+                      <label key={a.id} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-surface-hover rounded px-1 py-0.5">
+                        <input
+                          type="checkbox"
+                          checked={(scope.assetIds || []).includes(a.id)}
+                          onChange={() => toggleScopeItem("assetIds", a.id)}
+                          className="h-3 w-3 rounded border-border text-teal-600"
+                        />
+                        <span className="font-mono text-fg-2">{a.testTagId}</span>
+                        <span className="text-fg-3 truncate">{a.description}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
             <Button
               size="sm"
               onClick={() => createMutation.mutate()}
@@ -377,12 +518,69 @@ function AuditorLinksSection({ canEdit }: { canEdit: boolean }) {
             >
               {createMutation.isPending ? "Creating..." : "Create"}
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => setShowCreate(false)}>
+            <Button variant="ghost" size="sm" onClick={() => { setShowCreate(false); setShowScopeOptions(false); setScope({}); }}>
               Cancel
             </Button>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Scope Helpers ───────────────────────────────────────────────────────────
+
+function hasScopeFilters(scope: AuditorTokenScope): boolean {
+  return !!(
+    scope.categories?.length ||
+    scope.equipmentClasses?.length ||
+    scope.locations?.length ||
+    scope.assetIds?.length
+  );
+}
+
+function describeScopeFilters(scope: AuditorTokenScope): string {
+  const parts: string[] = [];
+  if (scope.categories?.length) parts.push(`${scope.categories.length} categories`);
+  if (scope.equipmentClasses?.length) parts.push(`${scope.equipmentClasses.length} classes`);
+  if (scope.locations?.length) parts.push(`${scope.locations.length} locations`);
+  if (scope.assetIds?.length) parts.push(`${scope.assetIds.length} specific assets`);
+  return parts.join(", ");
+}
+
+function ScopeCheckboxGroup({
+  label,
+  items,
+  selected,
+  onToggle,
+}: {
+  label: string;
+  items: { value: string; label: string }[];
+  selected: string[];
+  onToggle: (value: string) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs font-medium text-fg-2">{label}</Label>
+      <div className="flex flex-wrap gap-2">
+        {items.map((item) => {
+          const isSelected = selected.includes(item.value);
+          return (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => onToggle(item.value)}
+              className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
+                isSelected
+                  ? "border-teal-500 bg-teal-500/10 text-teal-600 dark:text-teal-400"
+                  : "border-border text-fg-3 hover:border-fg-3"
+              }`}
+            >
+              {item.label}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

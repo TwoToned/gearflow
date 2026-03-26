@@ -21,7 +21,7 @@ export async function GET(
     );
   }
 
-  const data = await getAuditorPortalData(record.organizationId);
+  const data = await getAuditorPortalData(record.organizationId, record.parsedScope);
 
   return NextResponse.json(
     { ...data, tokenName: record.name },

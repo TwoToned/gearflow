@@ -7,6 +7,7 @@ CREATE TABLE "test_tag_auditor_token" (
     "tokenHash" TEXT NOT NULL,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "expiresAt" TIMESTAMP(3),
+    "scope" TEXT,
     "createdById" TEXT NOT NULL,
     "lastAccessedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -38,6 +38,10 @@ interface AddEquipmentDialogProps {
   onGroupCreated?: (group: string) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Pre-set category for the line item (new group/category system) */
+  categoryId?: string;
+  /** Pre-set group for the line item (new group/category system) */
+  groupId?: string;
 }
 
 export function AddEquipmentDialog({
@@ -48,6 +52,8 @@ export function AddEquipmentDialog({
   onGroupCreated,
   open,
   onOpenChange,
+  categoryId,
+  groupId,
 }: AddEquipmentDialogProps) {
   const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
@@ -145,7 +151,8 @@ export function AddEquipmentDialog({
   }, [assetLookup, form]);
 
   const mutation = useMutation({
-    mutationFn: (data: LineItemFormValues) => addLineItem(projectId, data, overbookConfirmed),
+    mutationFn: (data: LineItemFormValues) =>
+      addLineItem(projectId, { ...data, categoryId, groupId }, overbookConfirmed),
     onSuccess: (_result, variables) => {
       if (variables.groupName && onGroupCreated) {
         onGroupCreated(variables.groupName);

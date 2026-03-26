@@ -89,6 +89,10 @@ export default function EditProjectPage({
     tags: project.tags || [],
   };
 
+  const initialManagerIds = ((project as { projectManagers?: { user: { id: string } }[] }).projectManagers ?? []).map(
+    (pm) => pm.user.id
+  );
+
   return (
     <RequirePermission resource="project" action="update">
     <CanDo resource="project" action="update" fallback={<div className="p-8 text-center text-fg-3">You don&apos;t have permission to perform this action.</div>}>
@@ -115,7 +119,7 @@ export default function EditProjectPage({
               {project.projectNumber} &middot; {project.name}
             </p>
           </div>
-          <ProjectForm initialData={initialData} />
+          <ProjectForm initialData={initialData} initialManagerIds={initialManagerIds} />
         </div>
       </FadeIn>
     </CanDo>

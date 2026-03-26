@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -13,8 +13,10 @@ import {
   type ProjectFormValues,
 } from "@/lib/validations/project";
 import { createProject, updateProject } from "@/server/projects";
+import { addProjectManager, removeProjectManager } from "@/server/project-managers";
 import { getClients } from "@/server/clients";
 import { getLocations } from "@/server/locations";
+import { getOrgMembers } from "@/server/org-members";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,6 +32,7 @@ import { TagInput } from "@/components/ui/tag-input";
 interface ProjectFormProps {
   initialData?: ProjectFormValues & { id: string; isTemplate?: boolean };
   isTemplate?: boolean;
+  initialManagerIds?: string[];
 }
 
 function formatDateForInput(date: unknown): string {
@@ -39,7 +42,7 @@ function formatDateForInput(date: unknown): string {
   return d.toISOString().split("T")[0];
 }
 
-export function ProjectForm({ initialData, isTemplate: isTemplateProp }: ProjectFormProps) {
+export function ProjectForm({ initialData, isTemplate: isTemplateProp, initialManagerIds = [] }: ProjectFormProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
@@ -48,6 +51,7 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
   const isTemplate = isTemplateProp ?? initialData?.isTemplate ?? false;
   const [quickCreateClientOpen, setQuickCreateClientOpen] = useState(false);
   const [quickCreateLocationOpen, setQuickCreateLocationOpen] = useState(false);
+  const [selectedManagerIds, setSelectedManagerIds] = useState<string[]>(initialManagerIds);
 
   const form = useForm<ProjectFormValues>({
     resolver: zodResolver(projectSchema),
@@ -114,6 +118,17 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
     queryFn: () => getOrgTags(),
   });
 
+  const { data: membersData } = useQuery({
+    queryKey: ["org-members", orgId],
+    queryFn: () => getOrgMembers({ pageSize: 200 }),
+  });
+
+  const memberOptions = (membersData?.members || []).map((m) => ({
+    value: m.user.id,
+    label: m.user.name || m.user.email,
+    description: m.user.name ? m.user.email : undefined,
+  }));
+
   const locationOptions = (locationsData?.locations || []).map((l) => ({
     value: l.id,
     label: l.parent ? `${l.parent.name} → ${l.name}` : l.name,
@@ -121,10 +136,22 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
   }));
 
   const mutation = useMutation({
-    mutationFn: (data: ProjectFormValues) =>
-      isEditing
-        ? updateProject(initialData.id, data)
-        : createProject({ ...data, isTemplate }),
+    mutationFn: async (data: ProjectFormValues) => {
+      const result = isEditing
+        ? await updateProject(initialData.id, data)
+        : await createProject({ ...data, isTemplate });
+
+      // Sync project managers
+      const projectId = result.id;
+      const toAdd = selectedManagerIds.filter((id) => !initialManagerIds.includes(id));
+      const toRemove = initialManagerIds.filter((id) => !selectedManagerIds.includes(id));
+      await Promise.all([
+        ...toAdd.map((userId) => addProjectManager(projectId, userId)),
+        ...toRemove.map((userId) => removeProjectManager(projectId, userId)),
+      ]);
+
+      return result;
+    },
     onSuccess: (result) => {
       toast.success(
         isEditing
@@ -194,6 +221,43 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
                     />
                   )}
                 />
+              </div>
+              <div className="space-y-2">
+                <Label>Project Manager(s)</Label>
+                <ComboboxPicker
+                  value=""
+                  onChange={(userId) => {
+                    if (userId && !selectedManagerIds.includes(userId)) {
+                      setSelectedManagerIds((prev) => [...prev, userId]);
+                    }
+                  }}
+                  options={memberOptions.filter((m) => !selectedManagerIds.includes(m.value))}
+                  placeholder="Add project manager..."
+                  searchPlaceholder="Search members..."
+                  emptyMessage="No members found."
+                />
+                {selectedManagerIds.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {selectedManagerIds.map((id) => {
+                      const member = memberOptions.find((m) => m.value === id);
+                      return (
+                        <span
+                          key={id}
+                          className="inline-flex items-center gap-1 rounded-md bg-bg-muted px-2 py-0.5 text-xs text-fg-2"
+                        >
+                          {member?.label ?? id}
+                          <button
+                            type="button"
+                            onClick={() => setSelectedManagerIds((prev) => prev.filter((mid) => mid !== id))}
+                            className="text-fg-4 hover:text-fg"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="type">Type</Label>

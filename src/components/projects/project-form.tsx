@@ -420,30 +420,30 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
               </div>
             </FormSection>
 
-            {/* Rental & Pricing Defaults */}
-            <SectionHeader label="Rental Defaults" />
+            {/* Billing & Pricing Defaults */}
+            <SectionHeader label="Billing Defaults" />
             <FormSection className="[&>div:last-child]:lg:grid-cols-3">
               <div className="space-y-2">
-                <Label htmlFor="defaultRentalPeriod">Default Rental Period</Label>
-                <select
-                  id="defaultRentalPeriod"
-                  {...form.register("defaultRentalPeriod")}
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                >
-                  <option value="">Inherit from org</option>
-                  <option value="DAILY">Daily</option>
-                  <option value="WEEKLY">Weekly</option>
-                </select>
+                <Label htmlFor="billingWeeks">Billing Weeks</Label>
+                <Input
+                  id="billingWeeks"
+                  type="number"
+                  min="0"
+                  {...form.register("billingWeeks")}
+                  placeholder="0"
+                />
+                <p className="text-[11px] text-fg-4">Number of weeks to charge at the weekly rate</p>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="defaultRentalQuantity">Default Rental Quantity</Label>
+                <Label htmlFor="billingDays">Billing Days</Label>
                 <Input
-                  id="defaultRentalQuantity"
+                  id="billingDays"
                   type="number"
-                  min="1"
-                  {...form.register("defaultRentalQuantity")}
-                  placeholder="e.g. 3 days or 2 weeks"
+                  min="0"
+                  {...form.register("billingDays")}
+                  placeholder="0"
                 />
+                <p className="text-[11px] text-fg-4">Number of days to charge at the daily rate</p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="taxRate">Tax Rate (%)</Label>

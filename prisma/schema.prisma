@@ -1056,6 +1056,8 @@ model Project {
   projectManager       User?         @relation("ProjectManager", fields: [projectManagerId], references: [id])
   defaultRentalPeriod  RentalPeriod?
   defaultRentalQuantity Int?
+  billingWeeks         Int?
+  billingDays          Int?
   taxRate              Decimal?      @db.Decimal(5, 2)
   equipmentRevenue     Decimal?      @db.Decimal(12, 2)
   serviceCostTotal     Decimal?      @db.Decimal(12, 2)
@@ -1215,6 +1217,8 @@ model ProjectGroup {
   suggestedPrice  Decimal?      @db.Decimal(12, 2)
   rentalPeriod    RentalPeriod?
   rentalQuantity  Int?
+  billingWeeks    Int?
+  billingDays     Int?
   sortOrder       Int           @default(0)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt

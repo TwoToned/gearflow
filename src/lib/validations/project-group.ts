@@ -8,6 +8,8 @@ export const projectGroupSchema = z.object({
   price: z.coerce.number().min(0).optional(),
   rentalPeriod: z.enum(["DAILY", "WEEKLY"]).optional(),
   rentalQuantity: z.coerce.number().int().min(1).optional(),
+  billingWeeks: z.coerce.number().int().min(0).optional(),
+  billingDays: z.coerce.number().int().min(0).optional(),
   sortOrder: z.coerce.number().int().min(0).optional().default(0),
 });
 

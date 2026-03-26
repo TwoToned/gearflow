@@ -16,9 +16,13 @@ import { recalculateProjectTotals } from "./line-items";
 /**
  * Calculate the suggested price for a group based on its line items' rates.
  *
- *   suggestedPrice = SUM(item.unitPrice × item.quantity × item.duration)
+ * Billing model: the project (or group override) specifies how many weeks and
+ * days the gig spans for billing purposes. The suggested price is:
  *
- * Uses the group's rentalPeriod/rentalQuantity, falling back to the project defaults.
+ *   SUM( (weeklyRate × weeks) + (dailyRate × days) ) × item.quantity
+ *
+ * Falls back to the old rentalPeriod/rentalQuantity model if billingWeeks/billingDays
+ * are not set.
  */
 export async function calculateSuggestedPrice(groupId: string): Promise<number> {
   const group = await prisma.projectGroup.findUniqueOrThrow({
@@ -28,6 +32,8 @@ export async function calculateSuggestedPrice(groupId: string): Promise<number> 
         select: {
           defaultRentalPeriod: true,
           defaultRentalQuantity: true,
+          billingWeeks: true,
+          billingDays: true,
         },
       },
       lineItems: {
@@ -37,16 +43,32 @@ export async function calculateSuggestedPrice(groupId: string): Promise<number> 
     },
   });
 
-  const rentalPeriod = group.rentalPeriod ?? group.project.defaultRentalPeriod ?? "DAILY";
-  const rentalQuantity = group.rentalQuantity ?? group.project.defaultRentalQuantity ?? 1;
+  // Prefer weeks+days billing model, fall back to legacy rentalPeriod/rentalQuantity
+  const weeks = group.billingWeeks ?? group.project.billingWeeks;
+  const days = group.billingDays ?? group.project.billingDays;
+  const useWeeksDays = weeks != null || days != null;
 
   let total = 0;
-  for (const item of group.lineItems) {
-    const rate =
-      rentalPeriod === "WEEKLY"
-        ? Number(item.model?.weeklyRate ?? item.model?.dailyRate ?? item.unitPrice ?? 0)
-        : Number(item.model?.dailyRate ?? item.unitPrice ?? 0);
-    total += rate * item.quantity * rentalQuantity;
+
+  if (useWeeksDays) {
+    const w = weeks ?? 0;
+    const d = days ?? 0;
+    for (const item of group.lineItems) {
+      const weeklyRate = Number(item.model?.weeklyRate ?? 0);
+      const dailyRate = Number(item.model?.dailyRate ?? item.unitPrice ?? 0);
+      total += ((weeklyRate * w) + (dailyRate * d)) * item.quantity;
+    }
+  } else {
+    // Legacy fallback
+    const rentalPeriod = group.rentalPeriod ?? group.project.defaultRentalPeriod ?? "DAILY";
+    const rentalQuantity = group.rentalQuantity ?? group.project.defaultRentalQuantity ?? 1;
+    for (const item of group.lineItems) {
+      const rate =
+        rentalPeriod === "WEEKLY"
+          ? Number(item.model?.weeklyRate ?? item.model?.dailyRate ?? item.unitPrice ?? 0)
+          : Number(item.model?.dailyRate ?? item.unitPrice ?? 0);
+      total += rate * item.quantity * rentalQuantity;
+    }
   }
 
   return roundCurrency(total);
@@ -76,6 +98,8 @@ export async function createProjectGroup(
       price: parsed.price != null ? parsed.price : null,
       rentalPeriod: parsed.rentalPeriod || null,
       rentalQuantity: parsed.rentalQuantity || null,
+      billingWeeks: parsed.billingWeeks ?? null,
+      billingDays: parsed.billingDays ?? null,
       sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
       suggestedPrice: 0,
     },
@@ -109,12 +133,14 @@ export async function updateProjectGroup(
       ...(data.quantity !== undefined && { quantity: Number(data.quantity) }),
       ...(data.rentalPeriod !== undefined && { rentalPeriod: data.rentalPeriod || null }),
       ...(data.rentalQuantity !== undefined && { rentalQuantity: data.rentalQuantity ? Number(data.rentalQuantity) : null }),
+      ...(data.billingWeeks !== undefined && { billingWeeks: data.billingWeeks != null ? Number(data.billingWeeks) : null }),
+      ...(data.billingDays !== undefined && { billingDays: data.billingDays != null ? Number(data.billingDays) : null }),
       ...(data.sortOrder !== undefined && { sortOrder: Number(data.sortOrder) }),
     },
   });
 
-  // Recalculate suggestion if rental period changed
-  if (data.rentalPeriod !== undefined || data.rentalQuantity !== undefined) {
+  // Recalculate suggestion if billing/rental settings changed
+  if (data.rentalPeriod !== undefined || data.rentalQuantity !== undefined || data.billingWeeks !== undefined || data.billingDays !== undefined) {
     const suggested = await calculateSuggestedPrice(groupId);
     await prisma.projectGroup.update({
       where: { id: groupId },

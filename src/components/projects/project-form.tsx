@@ -420,6 +420,45 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
               </div>
             </FormSection>
 
+            {/* Rental & Pricing Defaults */}
+            <SectionHeader label="Rental Defaults" />
+            <FormSection className="[&>div:last-child]:lg:grid-cols-3">
+              <div className="space-y-2">
+                <Label htmlFor="defaultRentalPeriod">Default Rental Period</Label>
+                <select
+                  id="defaultRentalPeriod"
+                  {...form.register("defaultRentalPeriod")}
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <option value="">Inherit from org</option>
+                  <option value="DAILY">Daily</option>
+                  <option value="WEEKLY">Weekly</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="defaultRentalQuantity">Default Rental Quantity</Label>
+                <Input
+                  id="defaultRentalQuantity"
+                  type="number"
+                  min="1"
+                  {...form.register("defaultRentalQuantity")}
+                  placeholder="e.g. 3 days or 2 weeks"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="taxRate">Tax Rate (%)</Label>
+                <Input
+                  id="taxRate"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  {...form.register("taxRate")}
+                  placeholder="Inherit from org"
+                />
+              </div>
+            </FormSection>
+
             {/* Financial */}
             <SectionHeader label="Financial" />
             <FormSection className="[&>div:last-child]:lg:grid-cols-4">

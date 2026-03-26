@@ -27,6 +27,7 @@ import { EquipmentTab } from "@/components/projects/equipment-tab";
 import { CrewPanel } from "@/components/projects/crew-panel";
 import { ServicesPanel } from "@/components/projects/services-panel";
 import { FinancialSummary } from "@/components/projects/financial-summary";
+import { ProjectManagersPanel } from "@/components/projects/project-managers-panel";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -545,6 +546,22 @@ export default function ProjectDetailPage({
                     </CanDo>
                   </div>
                 )}
+
+                {/* Project Managers */}
+                <ProjectManagersPanel
+                  projectId={id}
+                  managers={
+                    (project.projectManagers as {
+                      userId: string;
+                      user: {
+                        id: string;
+                        name: string | null;
+                        email: string;
+                        image: string | null;
+                      };
+                    }[]) ?? []
+                  }
+                />
 
                 {/* Client */}
                 <div className="border-b border-border pb-4 space-y-2">

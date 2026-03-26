@@ -57,6 +57,7 @@ model User {
   checkItems               CheckItem[]
   checkRecords             CheckRecord[]  @relation("CheckRecordPerformedBy")
   warehouseCloses          WarehouseClose[] @relation("WarehouseClosedBy")
+  projectManagerAssignments ProjectManager[] @relation("ProjectManagerAssignment")
 
   @@map("user")
 }
@@ -115,7 +116,8 @@ model Organization {
   logo      String?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
-  metadata  String?   // JSON string for extended org settings
+  metadata       String?   // JSON string for extended org settings
+  defaultTaxRate Decimal?  @db.Decimal(5, 2)
 
   members     Member[]
   invitations Invitation[]
@@ -170,6 +172,11 @@ model Organization {
   kitCheckItems              KitCheckItem[]
   checkRecords               CheckRecord[]
   warehouseCloses            WarehouseClose[]
+  projectCategories          ProjectCategory[]
+  projectGroups              ProjectGroup[]
+  groupTemplates             GroupTemplate[]
+  groupTemplateItems         GroupTemplateItem[]
+  projectManagers            ProjectManager[]
   @@map("organization")
 }
 
@@ -378,6 +385,11 @@ enum PricingType {
   PER_WEEK
   FLAT
   PER_HOUR
+}
+
+enum RentalPeriod {
+  DAILY
+  WEEKLY
 }
 
 enum LineItemStatus {
@@ -589,6 +601,8 @@ model Model {
   specifications          Json?        // key-value pairs
   customFields            Json?        // org-defined fields inherited by assets
   defaultRentalPrice      Decimal?     @db.Decimal(10, 2)
+  dailyRate               Decimal?     @db.Decimal(10, 2)
+  weeklyRate              Decimal?     @db.Decimal(10, 2)
   defaultPurchasePrice    Decimal?     @db.Decimal(10, 2)
   replacementCost         Decimal?     @db.Decimal(10, 2)
   weight                  Decimal?     @db.Decimal(8, 2)
@@ -607,11 +621,12 @@ model Model {
   createdAt               DateTime     @default(now())
   updatedAt               DateTime     @updatedAt
 
-  assets          Asset[]
-  bulkAssets      BulkAsset[]
-  lineItems       ProjectLineItem[]
-  media           ModelMedia[]
-  modelCheckItems ModelCheckItem[]
+  assets              Asset[]
+  bulkAssets          BulkAsset[]
+  lineItems           ProjectLineItem[]
+  media               ModelMedia[]
+  modelCheckItems     ModelCheckItem[]
+  groupTemplateItems  GroupTemplateItem[]
 
   supplierOrderItems  SupplierOrderItem[]
 
@@ -1037,8 +1052,15 @@ model Project {
   loadOutTime       String?
   rentalStartDate   DateTime?
   rentalEndDate     DateTime?
-  projectManagerId  String?
-  projectManager    User?         @relation("ProjectManager", fields: [projectManagerId], references: [id])
+  projectManagerId     String?
+  projectManager       User?         @relation("ProjectManager", fields: [projectManagerId], references: [id])
+  defaultRentalPeriod  RentalPeriod?
+  defaultRentalQuantity Int?
+  taxRate              Decimal?      @db.Decimal(5, 2)
+  equipmentRevenue     Decimal?      @db.Decimal(12, 2)
+  serviceCostTotal     Decimal?      @db.Decimal(12, 2)
+  labourCostTotal      Decimal?      @db.Decimal(12, 2)
+  margin               Decimal?      @db.Decimal(12, 2)
   crewNotes         String?
   internalNotes     String?
   clientNotes       String?
@@ -1063,6 +1085,9 @@ model Project {
   services         ProjectService[]
   wooCommerceOrderLogs WooCommerceOrderLog[]
   warehouseCloses      WarehouseClose[]
+  categories       ProjectCategory[]
+  groups           ProjectGroup[]
+  projectManagers  ProjectManager[]
 
   @@unique([organizationId, projectNumber])
   @@index([organizationId])
@@ -1105,6 +1130,10 @@ model ProjectLineItem {
   lineTotal       Decimal?       @db.Decimal(12, 2)
   sortOrder       Int            @default(0)
   groupName       String?
+  categoryId      String?
+  category        ProjectCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  groupId         String?
+  group           ProjectGroup?    @relation(fields: [groupId], references: [id], onDelete: SetNull)
   notes           String?
   isOptional      Boolean        @default(false)
   status              LineItemStatus @default(QUOTED)
@@ -1143,7 +1172,113 @@ model ProjectLineItem {
   @@index([parentLineItemId])
   @@index([supplierId])
   @@index([supplierOrderId])
+  @@index([categoryId])
+  @@index([groupId])
   @@map("project_line_item")
+}
+
+// ─── Project Category ───────────────────────────────────────────────────────
+
+model ProjectCategory {
+  id              String   @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name            String
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  groups          ProjectGroup[]
+  lineItems       ProjectLineItem[]
+
+  @@index([projectId])
+  @@index([organizationId])
+  @@map("project_category")
+}
+
+// ─── Project Group ──────────────────────────────────────────────────────────
+
+model ProjectGroup {
+  id              String        @id @default(cuid())
+  organizationId  String
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId       String
+  project         Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  categoryId      String
+  category        ProjectCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  title           String
+  description     String?
+  quantity        Int           @default(1)
+  price           Decimal?      @db.Decimal(12, 2)
+  suggestedPrice  Decimal?      @db.Decimal(12, 2)
+  rentalPeriod    RentalPeriod?
+  rentalQuantity  Int?
+  sortOrder       Int           @default(0)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  lineItems       ProjectLineItem[]
+
+  @@index([projectId])
+  @@index([categoryId])
+  @@index([organizationId])
+  @@map("project_group")
+}
+
+// ─── Project Manager (join table) ───────────────────────────────────────────
+
+model ProjectManager {
+  id              String   @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User     @relation("ProjectManagerAssignment", fields: [userId], references: [id], onDelete: Cascade)
+  addedAt         DateTime @default(now())
+
+  @@unique([projectId, userId])
+  @@index([projectId])
+  @@index([userId])
+  @@index([organizationId])
+  @@map("project_manager")
+}
+
+// ─── Group Template ─────────────────────────────────────────────────────────
+
+model GroupTemplate {
+  id              String   @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name            String
+  description     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  items           GroupTemplateItem[]
+
+  @@index([organizationId])
+  @@map("group_template")
+}
+
+// ─── Group Template Item ────────────────────────────────────────────────────
+
+model GroupTemplateItem {
+  id              String   @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  templateId      String
+  template        GroupTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  modelId         String
+  model           Model    @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  quantity        Int      @default(1)
+
+  @@index([templateId])
+  @@index([modelId])
+  @@index([organizationId])
+  @@map("group_template_item")
 }
 
 // ─── Asset Scan Log ──────────────────────────────────────────────────────────
@@ -1959,15 +2094,17 @@ model ProjectService {
 
   // Financial
   showOnDocuments Boolean  @default(false)
+  billableToClient Boolean @default(false)
   unitPrice       Decimal? @db.Decimal(10, 2)
   quantity        Int      @default(1)
   pricingType     PricingType?
   duration        Decimal? @db.Decimal(6, 2)
   discount        Decimal? @db.Decimal(5, 2)
   lineTotal       Decimal? @db.Decimal(10, 2)
+  costTotal       Decimal? @db.Decimal(12, 2)
   taxable         Boolean  @default(true)
 
-  // Linked line item (auto-generated when showOnDocuments is true)
+  // Linked line item (legacy — being phased out, kept for migration)
   lineItemId      String?  @unique
   lineItem        ProjectLineItem? @relation(fields: [lineItemId], references: [id], onDelete: SetNull)
 

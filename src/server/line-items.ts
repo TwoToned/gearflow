@@ -8,6 +8,8 @@ import {
 } from "@/lib/validations/line-item";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import { roundCurrency } from "@/lib/formatters";
+import { calculateSuggestedPrice } from "./project-groups";
 
 export async function addLineItem(projectId: string, data: LineItemFormValues, allowOverbook = false) {
   const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
@@ -103,7 +105,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
     }
   }
 
-  // If adding by model (no specific asset), merge into existing line item for same model on this project
+  // If adding by model (no specific asset), merge into existing line item within the same group/category
   if (parsed.type === "EQUIPMENT" && parsed.modelId && !parsed.assetId) {
     const existing = await prisma.projectLineItem.findFirst({
       where: {
@@ -111,6 +113,8 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         organizationId,
         modelId: parsed.modelId,
         assetId: null,
+        groupId: parsed.groupId ?? null,
+        categoryId: parsed.categoryId ?? null,
         isKitChild: false,
         status: { not: "CANCELLED" },
       },
@@ -180,6 +184,8 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
     data: {
       organizationId,
       projectId,
+      categoryId: parsed.categoryId || null,
+      groupId: parsed.groupId || null,
       type: parsed.type,
       modelId: parsed.modelId || null,
       assetId: parsed.assetId || null,
@@ -207,6 +213,15 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
       supplier: true,
     },
   });
+
+  // Recalculate group suggested price if item was added to a group
+  if (result.groupId) {
+    const suggested = await calculateSuggestedPrice(result.groupId);
+    await prisma.projectGroup.update({
+      where: { id: result.groupId },
+      data: { suggestedPrice: suggested },
+    });
+  }
 
   await recalculateProjectTotals(projectId);
 
@@ -664,11 +679,6 @@ export async function checkKitAvailability(
 
 // --- Internal helpers ---
 
-/** Round to 2 decimal places to avoid floating-point drift in financial calculations */
-function roundCurrency(n: number): number {
-  return Math.round(n * 100) / 100;
-}
-
 function calculateLineTotal(
   unitPrice: number | undefined,
   quantity: number,
@@ -681,46 +691,116 @@ function calculateLineTotal(
   return Math.max(0, roundCurrency(gross - disc));
 }
 
+/**
+ * Recalculate all project financial totals from source data.
+ *
+ *   equipmentRevenue = SUM(group.price × group.quantity)  [groups]
+ *                    + SUM(standalone.lineTotal)           [ungrouped items]
+ *   serviceCostTotal = SUM(service.costTotal) WHERE NOT billableToClient
+ *   labourCostTotal  = SUM(assignment.estimatedCost)
+ *   subtotal         = equipmentRevenue
+ *   discountAmount   = subtotal × discountPercent / 100
+ *   taxableAmount    = subtotal - discountAmount
+ *   taxRate          = project.taxRate ?? org.defaultTaxRate ?? 10
+ *   taxAmount        = taxableAmount × taxRate / 100
+ *   total            = taxableAmount + taxAmount
+ *   margin           = total - (serviceCostTotal + labourCostTotal)
+ */
 export async function recalculateProjectTotals(projectId: string) {
-  const lineItems = await prisma.projectLineItem.findMany({
-    where: {
-      projectId,
-      isOptional: false,
-      status: { not: "CANCELLED" },
+  const project = await prisma.project.findUniqueOrThrow({
+    where: { id: projectId },
+    select: {
+      discountPercent: true,
+      taxRate: true,
+      organizationId: true,
     },
   });
 
-  const subtotal = roundCurrency(
-    lineItems.reduce((sum, li) => {
-      const lt =
-        li.lineTotal != null
-          ? typeof li.lineTotal === "number"
-            ? li.lineTotal
-            : Number(li.lineTotal)
-          : 0;
-      return sum + lt;
-    }, 0)
-  );
-
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    select: { discountPercent: true },
+  // 1. Equipment revenue from groups (price × quantity)
+  const groups = await prisma.projectGroup.findMany({
+    where: { projectId },
+    select: { price: true, quantity: true },
   });
 
-  const discountPercent =
-    project?.discountPercent != null ? Number(project.discountPercent) : 0;
+  const groupRevenue = groups.reduce((sum, g) => {
+    const price = g.price != null ? Number(g.price) : 0;
+    return sum + price * g.quantity;
+  }, 0);
+
+  // 2. Equipment revenue from standalone (ungrouped) line items
+  const standaloneItems = await prisma.projectLineItem.findMany({
+    where: {
+      projectId,
+      groupId: null,
+      isOptional: false,
+      isKitChild: false,
+      status: { not: "CANCELLED" },
+    },
+    select: { lineTotal: true },
+  });
+
+  const standaloneRevenue = standaloneItems.reduce((sum, li) => {
+    const lt = li.lineTotal != null ? Number(li.lineTotal) : 0;
+    return sum + lt;
+  }, 0);
+
+  const equipmentRevenue = roundCurrency(groupRevenue + standaloneRevenue);
+
+  // 3. Service costs (non-billable services = internal costs)
+  const services = await prisma.projectService.findMany({
+    where: { projectId, billableToClient: false },
+    select: { costTotal: true },
+  });
+
+  const serviceCostTotal = roundCurrency(
+    services.reduce((sum, s) => sum + (s.costTotal != null ? Number(s.costTotal) : 0), 0)
+  );
+
+  // 4. Labour costs from crew assignments
+  const assignments = await prisma.crewAssignment.findMany({
+    where: { projectId },
+    select: { estimatedCost: true },
+  });
+
+  const labourCostTotal = roundCurrency(
+    assignments.reduce((sum, a) => sum + (a.estimatedCost != null ? Number(a.estimatedCost) : 0), 0)
+  );
+
+  // 5. Calculate totals
+  const subtotal = equipmentRevenue;
+  const discountPercent = project.discountPercent != null ? Number(project.discountPercent) : 0;
   const discountAmount = roundCurrency(subtotal * (discountPercent / 100));
   const taxableAmount = roundCurrency(subtotal - discountAmount);
-  const taxAmount = roundCurrency(taxableAmount * 0.1); // 10% GST
+
+  // Tax rate: project override → org default → 10%
+  let taxRate = 10;
+  if (project.taxRate != null) {
+    taxRate = Number(project.taxRate);
+  } else {
+    const org = await prisma.organization.findUnique({
+      where: { id: project.organizationId },
+      select: { defaultTaxRate: true },
+    });
+    if (org?.defaultTaxRate != null) {
+      taxRate = Number(org.defaultTaxRate);
+    }
+  }
+
+  const taxAmount = roundCurrency(taxableAmount * (taxRate / 100));
   const total = roundCurrency(taxableAmount + taxAmount);
+  const margin = roundCurrency(total - (serviceCostTotal + labourCostTotal));
 
   await prisma.project.update({
     where: { id: projectId },
     data: {
+      equipmentRevenue,
+      serviceCostTotal,
+      labourCostTotal,
       subtotal,
       discountAmount,
       taxAmount,
       total,
+      margin,
     },
   });
 }

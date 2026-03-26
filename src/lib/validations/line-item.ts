@@ -7,6 +7,8 @@ export const lineItemSchema = z.object({
   modelId: z.string().optional(),
   assetId: z.string().optional(),
   bulkAssetId: z.string().optional(),
+  categoryId: z.string().optional(),
+  groupId: z.string().optional(),
   description: z.string().max(500).optional(),
   quantity: z.coerce.number().int().min(1).max(99999).default(1),
   unitPrice: z.coerce.number().min(0).max(999999.99).optional(),

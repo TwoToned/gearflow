@@ -567,38 +567,6 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp, initialMa
               </div>
             </FormSection>
 
-            {/* ─── Notes ─── */}
-            <SectionHeader label="Notes" />
-            <FormSection>
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="crewNotes">Crew Notes</Label>
-                <Textarea
-                  id="crewNotes"
-                  {...form.register("crewNotes")}
-                  placeholder="Notes visible to crew members"
-                  rows={2}
-                />
-              </div>
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="internalNotes">Internal Notes</Label>
-                <Textarea
-                  id="internalNotes"
-                  {...form.register("internalNotes")}
-                  placeholder="Internal notes (not visible to client)"
-                  rows={2}
-                />
-              </div>
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="clientNotes">Client Notes</Label>
-                <Textarea
-                  id="clientNotes"
-                  {...form.register("clientNotes")}
-                  placeholder="Notes visible on client-facing documents"
-                  rows={2}
-                />
-              </div>
-            </FormSection>
-
             {/* ─── Financial (edit only) ─── */}
             {isEditing && (
               <>

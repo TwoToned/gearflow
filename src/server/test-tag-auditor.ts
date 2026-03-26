@@ -87,6 +87,56 @@ export async function getAuditorTokens() {
   return serialize(tokens);
 }
 
+export async function updateAuditorToken(id: string, data: {
+  name?: string;
+  expiresAt?: Date | string | null;
+  scope?: AuditorTokenScope | null;
+}) {
+  const { organizationId, userId, userName } = await requirePermission("testTag", "update");
+
+  const existing = await prisma.testTagAuditorToken.findFirst({
+    where: { id, organizationId },
+  });
+  if (!existing) throw new Error("Auditor token not found");
+
+  // Clean up empty scope arrays
+  let scopeJson: string | null | undefined = undefined;
+  if (data.scope !== undefined) {
+    if (data.scope === null) {
+      scopeJson = null;
+    } else {
+      const cleaned: AuditorTokenScope = {};
+      if (data.scope.categories?.length) cleaned.categories = data.scope.categories;
+      if (data.scope.equipmentClasses?.length) cleaned.equipmentClasses = data.scope.equipmentClasses;
+      if (data.scope.locations?.length) cleaned.locations = data.scope.locations;
+      if (data.scope.assetIds?.length) cleaned.assetIds = data.scope.assetIds;
+      scopeJson = Object.keys(cleaned).length > 0 ? JSON.stringify(cleaned) : null;
+    }
+  }
+
+  const updated = await prisma.testTagAuditorToken.update({
+    where: { id },
+    data: {
+      ...(data.name !== undefined && { name: data.name }),
+      ...(data.expiresAt !== undefined && { expiresAt: data.expiresAt ? new Date(data.expiresAt) : null }),
+      ...(scopeJson !== undefined && { scope: scopeJson }),
+    },
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "testTagAuditorToken",
+    entityId: id,
+    entityName: data.name || existing.name,
+    summary: `Updated auditor portal link "${data.name || existing.name}"`,
+  });
+
+  return serialize(updated);
+}
+
 export async function revokeAuditorToken(id: string) {
   const { organizationId, userId, userName } = await requirePermission("testTag", "delete");
 

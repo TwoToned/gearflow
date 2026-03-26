@@ -260,6 +260,64 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
               </div>
             </FormSection>
 
+            {/* Billing Time */}
+            <SectionHeader label="Billing Time" />
+            <FormSection>
+              <div className="space-y-2">
+                <Label htmlFor="billingWeeks">Weeks</Label>
+                <Input
+                  id="billingWeeks"
+                  type="number"
+                  min="0"
+                  {...form.register("billingWeeks")}
+                  placeholder="0"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="billingDays">Days</Label>
+                <Input
+                  id="billingDays"
+                  type="number"
+                  min="0"
+                  {...form.register("billingDays")}
+                  placeholder="0"
+                />
+              </div>
+              <div className="flex items-end sm:col-span-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const start = form.getValues("rentalStartDate");
+                    const end = form.getValues("rentalEndDate");
+                    if (!start || !end) {
+                      toast.error("Set rental start and end dates first");
+                      return;
+                    }
+                    const startDate = new Date(String(start));
+                    const endDate = new Date(String(end));
+                    const diffMs = endDate.getTime() - startDate.getTime();
+                    if (diffMs <= 0) {
+                      toast.error("Rental end must be after rental start");
+                      return;
+                    }
+                    const totalDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+                    const weeks = Math.floor(totalDays / 7);
+                    const days = totalDays % 7;
+                    form.setValue("billingWeeks", weeks);
+                    form.setValue("billingDays", days);
+                    toast.success(`Set to ${weeks} week${weeks !== 1 ? "s" : ""} and ${days} day${days !== 1 ? "s" : ""}`);
+                  }}
+                >
+                  Match rental dates
+                </Button>
+              </div>
+              <p className="text-[11px] text-fg-4 sm:col-span-2">
+                Used to calculate pricing: (weekly rate x weeks) + (daily rate x days) per item
+              </p>
+            </FormSection>
+
             {/* Dates & Times */}
             <SectionHeader label="Dates & Times" />
             <FormSection>
@@ -416,45 +474,6 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
                   {...form.register("clientNotes")}
                   placeholder="Notes visible on client-facing documents"
                   rows={3}
-                />
-              </div>
-            </FormSection>
-
-            {/* Billing & Pricing Defaults */}
-            <SectionHeader label="Billing Defaults" />
-            <FormSection className="[&>div:last-child]:lg:grid-cols-3">
-              <div className="space-y-2">
-                <Label htmlFor="billingWeeks">Billing Weeks</Label>
-                <Input
-                  id="billingWeeks"
-                  type="number"
-                  min="0"
-                  {...form.register("billingWeeks")}
-                  placeholder="0"
-                />
-                <p className="text-[11px] text-fg-4">Number of weeks to charge at the weekly rate</p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="billingDays">Billing Days</Label>
-                <Input
-                  id="billingDays"
-                  type="number"
-                  min="0"
-                  {...form.register("billingDays")}
-                  placeholder="0"
-                />
-                <p className="text-[11px] text-fg-4">Number of days to charge at the daily rate</p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="taxRate">Tax Rate (%)</Label>
-                <Input
-                  id="taxRate"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max="100"
-                  {...form.register("taxRate")}
-                  placeholder="Inherit from org"
                 />
               </div>
             </FormSection>

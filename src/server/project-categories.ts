@@ -70,7 +70,8 @@ export async function createProjectCategory(
     action: "created",
     entityType: "project",
     entityId: projectId,
-    details: `Created category "${parsed.name}"`,
+    entityName: parsed.name,
+    summary: `Created category "${parsed.name}"`,
   });
 
   return serialize(category);
@@ -86,7 +87,7 @@ export async function updateProjectCategory(
     where: { id: categoryId, organizationId },
     data: {
       ...(data.name !== undefined && { name: data.name }),
-      ...(data.sortOrder !== undefined && { sortOrder: data.sortOrder }),
+      ...(data.sortOrder !== undefined && { sortOrder: Number(data.sortOrder) }),
     },
   });
 
@@ -97,7 +98,8 @@ export async function updateProjectCategory(
     action: "updated",
     entityType: "project",
     entityId: category.projectId,
-    details: `Updated category "${category.name}"`,
+    entityName: category.name,
+    summary: `Updated category "${category.name}"`,
   });
 
   return serialize(category);
@@ -147,7 +149,8 @@ export async function deleteProjectCategory(categoryId: string) {
     action: "deleted",
     entityType: "project",
     entityId: category.projectId,
-    details: `Deleted category "${category.name}" — ${allLineItemIds.length} items moved to uncategorized`,
+    entityName: category.name,
+    summary: `Deleted category "${category.name}" — ${allLineItemIds.length} items moved to uncategorized`,
   });
 
   return serialize({ success: true });

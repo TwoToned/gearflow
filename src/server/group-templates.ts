@@ -72,10 +72,11 @@ export async function createGroupTemplate(data: GroupTemplateFormValues) {
     organizationId,
     userId,
     userName,
-    action: "created",
+    action: "CREATE",
     entityType: "group_template",
     entityId: template.id,
-    details: `Created group template "${parsed.name}" with ${parsed.items.length} item(s)`,
+    entityName: parsed.name,
+    summary: `Created group template "${parsed.name}" with ${parsed.items.length} item(s)`,
   });
 
   return serialize(template);
@@ -135,10 +136,11 @@ export async function saveGroupAsTemplate(
     organizationId,
     userId,
     userName,
-    action: "created",
+    action: "CREATE",
     entityType: "group_template",
     entityId: template.id,
-    details: `Saved group "${group.title}" as template "${name}"`,
+    entityName: name,
+    summary: `Saved group "${group.title}" as template "${name}"`,
   });
 
   return serialize(template);
@@ -238,10 +240,11 @@ export async function applyGroupTemplate(
     organizationId,
     userId,
     userName,
-    action: "created",
+    action: "CREATE",
     entityType: "project",
     entityId: projectId,
-    details: `Applied template "${template.name}" as group "${parsed.title}" with ${template.items.length} item(s)`,
+    entityName: parsed.title,
+    summary: `Applied template "${template.name}" as group "${parsed.title}" with ${template.items.length} item(s)`,
   });
 
   return serialize(group);
@@ -292,10 +295,11 @@ export async function updateGroupTemplate(
     organizationId,
     userId,
     userName,
-    action: "updated",
+    action: "UPDATE",
     entityType: "group_template",
     entityId: templateId,
-    details: `Updated group template "${template.name}"`,
+    entityName: template.name,
+    summary: `Updated group template "${template.name}"`,
   });
 
   return serialize(template);
@@ -319,10 +323,11 @@ export async function deleteGroupTemplate(templateId: string) {
     organizationId,
     userId,
     userName,
-    action: "deleted",
+    action: "DELETE",
     entityType: "group_template",
     entityId: templateId,
-    details: `Deleted group template "${template.name}"`,
+    entityName: template.name,
+    summary: `Deleted group template "${template.name}"`,
   });
 
   return serialize({ success: true });

@@ -55,7 +55,8 @@ export async function addProjectManager(projectId: string, userId: string) {
     action: "updated",
     entityType: "project",
     entityId: projectId,
-    details: `Added ${manager.user.name ?? manager.user.email} as project manager`,
+    entityName: manager.user.name ?? manager.user.email,
+    summary: `Added ${manager.user.name ?? manager.user.email} as project manager`,
   });
 
   return serialize(manager);
@@ -91,7 +92,8 @@ export async function removeProjectManager(projectId: string, userId: string) {
     action: "updated",
     entityType: "project",
     entityId: projectId,
-    details: `Removed ${manager.user.name ?? manager.user.email} as project manager`,
+    entityName: manager.user.name ?? manager.user.email,
+    summary: `Removed ${manager.user.name ?? manager.user.email} as project manager`,
   });
 
   return serialize({ success: true });

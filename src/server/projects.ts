@@ -481,7 +481,7 @@ export async function archiveProject(id: string) {
 export async function duplicateProject(sourceId: string, newProjectNumber: string, newName: string) {
   const { organizationId } = await requirePermission("project", "create");
 
-  const source = await prisma.project.findUnique({
+  const source = await prisma.project.findUniqueOrThrow({
     where: { id: sourceId, organizationId },
     include: {
       categories: {
@@ -511,8 +511,6 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
       projectManagers: true,
     },
   });
-
-  if (!source) throw new Error("Project not found");
 
   try {
     const result = await prisma.$transaction(async (tx) => {

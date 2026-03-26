@@ -88,7 +88,8 @@ export async function createProjectGroup(
     action: "created",
     entityType: "project",
     entityId: projectId,
-    details: `Created group "${parsed.title}"`,
+    entityName: parsed.title,
+    summary: `Created group "${parsed.title}"`,
   });
 
   return serialize(group);
@@ -105,10 +106,10 @@ export async function updateProjectGroup(
     data: {
       ...(data.title !== undefined && { title: data.title }),
       ...(data.description !== undefined && { description: data.description || null }),
-      ...(data.quantity !== undefined && { quantity: data.quantity }),
+      ...(data.quantity !== undefined && { quantity: Number(data.quantity) }),
       ...(data.rentalPeriod !== undefined && { rentalPeriod: data.rentalPeriod || null }),
-      ...(data.rentalQuantity !== undefined && { rentalQuantity: data.rentalQuantity || null }),
-      ...(data.sortOrder !== undefined && { sortOrder: data.sortOrder }),
+      ...(data.rentalQuantity !== undefined && { rentalQuantity: data.rentalQuantity ? Number(data.rentalQuantity) : null }),
+      ...(data.sortOrder !== undefined && { sortOrder: Number(data.sortOrder) }),
     },
   });
 
@@ -128,7 +129,8 @@ export async function updateProjectGroup(
     action: "updated",
     entityType: "project",
     entityId: group.projectId,
-    details: `Updated group "${group.title}"`,
+    entityName: group.title,
+    summary: `Updated group "${group.title}"`,
   });
 
   await recalculateProjectTotals(group.projectId);
@@ -152,7 +154,8 @@ export async function updateGroupPrice(groupId: string, price: number) {
     action: "updated",
     entityType: "project",
     entityId: group.projectId,
-    details: `Set price on group "${group.title}" to $${price.toFixed(2)}`,
+    entityName: group.title,
+    summary: `Set price on group "${group.title}" to $${price.toFixed(2)}`,
   });
 
   await recalculateProjectTotals(group.projectId);
@@ -181,7 +184,8 @@ export async function acceptSuggestedPrice(groupId: string) {
     action: "updated",
     entityType: "project",
     entityId: group.projectId,
-    details: `Accepted suggested price $${suggested.toFixed(2)} for group "${group.title}"`,
+    entityName: group.title,
+    summary: `Accepted suggested price $${suggested.toFixed(2)} for group "${group.title}"`,
   });
 
   await recalculateProjectTotals(group.projectId);
@@ -222,7 +226,8 @@ export async function acceptAllSuggestedPrices(
     action: "updated",
     entityType: "project",
     entityId: projectId,
-    details: `Accepted suggested prices for ${count} group(s)`,
+    entityName: "Batch pricing",
+    summary: `Accepted suggested prices for ${count} group(s)`,
   });
 
   await recalculateProjectTotals(projectId);
@@ -256,7 +261,8 @@ export async function deleteProjectGroup(groupId: string) {
     action: "deleted",
     entityType: "project",
     entityId: group.projectId,
-    details: `Deleted group "${group.title}" — ${group.lineItems.length} items moved to standalone`,
+    entityName: group.title,
+    summary: `Deleted group "${group.title}" — ${group.lineItems.length} items moved to standalone`,
   });
 
   await recalculateProjectTotals(group.projectId);
@@ -307,7 +313,8 @@ export async function moveLineItemToGroup(
     action: "updated",
     entityType: "project",
     entityId: lineItem.projectId,
-    details: `Moved line item to ${parsed.targetGroupId ? "group" : "standalone"}`,
+    entityName: lineItem.description ?? "Line item",
+    summary: `Moved line item to ${parsed.targetGroupId ? "group" : "standalone"}`,
   });
 
   await recalculateProjectTotals(lineItem.projectId);

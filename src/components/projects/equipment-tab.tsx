@@ -18,12 +18,13 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, FolderPlus } from "lucide-react";
+import { Plus, FolderPlus, Package, ArrowUpRight } from "lucide-react";
 import { toast } from "sonner";
 
 import { getProjectCategories } from "@/server/project-categories";
 import {
   createProjectGroup,
+  updateProjectGroup,
   updateGroupPrice,
   acceptSuggestedPrice,
   acceptAllSuggestedPrices,
@@ -36,9 +37,12 @@ import {
   reorderProjectCategories,
 } from "@/server/project-categories";
 import { getGroupTemplates, applyGroupTemplate } from "@/server/group-templates";
-import { removeLineItem } from "@/server/line-items";
+import { removeLineItem, addKitLineItem, checkKitAvailability } from "@/server/line-items";
+import { getKits } from "@/server/kits";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -47,10 +51,13 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { formatCurrency } from "@/lib/formatters";
+import { useActiveOrganization } from "@/lib/auth-client";
 import { CategorySection } from "./category-section";
 import { GroupCard } from "./group-card";
 import { AddEquipmentDialog } from "./add-equipment-dialog";
+import { AddSubhireDialog } from "./add-subhire-dialog";
 
 interface EquipmentTabProps {
   projectId: string;
@@ -64,12 +71,20 @@ function SortableGroupCard({
   categoryId,
   onMutate,
   onAddEquipment,
+  onEditPrice,
+  onAcceptSuggested,
+  onDelete,
+  onEdit,
 }: {
   group: GroupData;
   projectId: string;
   categoryId: string;
   onMutate: () => void;
   onAddEquipment: (categoryId: string, groupId: string) => void;
+  onEditPrice: (groupId: string, currentPrice: number | null) => void;
+  onAcceptSuggested: (groupId: string) => void;
+  onDelete: (groupId: string, title: string, price: number, itemCount: number) => void;
+  onEdit: (group: GroupData) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: group.id });
@@ -86,6 +101,8 @@ function SortableGroupCard({
     quantity: li.quantity,
   }));
 
+  const priceVal = group.price != null ? Number(group.price) : null;
+
   return (
     <div ref={setNodeRef} style={style}>
       <GroupCard
@@ -93,16 +110,17 @@ function SortableGroupCard({
         title={group.title}
         description={group.description}
         quantity={group.quantity}
-        price={group.price != null ? Number(group.price) : null}
+        price={priceVal}
         suggestedPrice={group.suggestedPrice != null ? Number(group.suggestedPrice) : null}
         rentalPeriod={group.rentalPeriod}
         rentalQuantity={group.rentalQuantity}
         lineItemCount={group.lineItems?.length ?? 0}
         lineItemSummary={lineItemSummary}
         dragHandleProps={{ ...attributes, ...listeners }}
-        onAcceptSuggested={() => onMutate()}
-        onEditPrice={() => onMutate()}
-        onDelete={() => onMutate()}
+        onAcceptSuggested={() => onAcceptSuggested(group.id)}
+        onEditPrice={() => onEditPrice(group.id, priceVal)}
+        onDelete={() => onDelete(group.id, group.title, priceVal ?? 0, group.lineItems?.length ?? 0)}
+        onEdit={() => onEdit(group)}
         onAddEquipment={() => onAddEquipment(categoryId, group.id)}
       >
         <LineItemTable items={group.lineItems ?? []} projectId={projectId} onMutate={onMutate} />
@@ -193,6 +211,9 @@ interface CategoryData {
 
 export function EquipmentTab({ projectId }: EquipmentTabProps) {
   const queryClient = useQueryClient();
+  const { data: activeOrg } = useActiveOrganization();
+  const orgId = activeOrg?.id;
+
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [showAddEquipment, setShowAddEquipment] = useState(false);
@@ -200,6 +221,15 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
     categoryId?: string;
     groupId?: string;
   }>({});
+
+  // Kit dialog state
+  const [showKitDialog, setShowKitDialog] = useState(false);
+  const [selectedKitId, setSelectedKitId] = useState("");
+  const [kitPricingMode, setKitPricingMode] = useState<"KIT_PRICE" | "ITEMIZED">("KIT_PRICE");
+  const [kitUnitPrice, setKitUnitPrice] = useState("");
+
+  // Subhire dialog state
+  const [showSubhireDialog, setShowSubhireDialog] = useState(false);
 
   // Price edit dialog state
   const [priceEditGroupId, setPriceEditGroupId] = useState<string | null>(null);
@@ -212,6 +242,12 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
     price: number;
     itemCount: number;
   } | null>(null);
+
+  // Group edit dialog state
+  const [editGroupData, setEditGroupData] = useState<GroupData | null>(null);
+  const [editGroupTitle, setEditGroupTitle] = useState("");
+  const [editGroupDescription, setEditGroupDescription] = useState("");
+  const [editGroupQuantity, setEditGroupQuantity] = useState("1");
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -308,6 +344,49 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const updateGroupMut = useMutation({
+    mutationFn: ({ groupId, data }: { groupId: string; data: Partial<{ title: string; description: string; quantity: number }> }) =>
+      updateProjectGroup(groupId, data),
+    onSuccess: () => {
+      invalidate();
+      setEditGroupData(null);
+      toast.success("Group updated");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Kit queries and mutations
+  const { data: kitsData } = useQuery({
+    queryKey: ["kits", orgId],
+    queryFn: () => getKits({ pageSize: 200 }),
+    enabled: showKitDialog,
+  });
+
+  const { data: kitAvailability } = useQuery({
+    queryKey: ["kit-availability", orgId, selectedKitId, projectId],
+    queryFn: () => checkKitAvailability(selectedKitId, new Date(), new Date(), projectId),
+    enabled: showKitDialog && !!selectedKitId,
+  });
+
+  const addKitMut = useMutation({
+    mutationFn: () =>
+      addKitLineItem(
+        projectId,
+        selectedKitId,
+        kitPricingMode,
+        kitPricingMode === "KIT_PRICE" && kitUnitPrice ? parseFloat(kitUnitPrice) : undefined,
+      ),
+    onSuccess: () => {
+      invalidate();
+      setShowKitDialog(false);
+      setSelectedKitId("");
+      setKitPricingMode("KIT_PRICE");
+      setKitUnitPrice("");
+      toast.success("Kit added to project");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   // ─── DnD handlers ─────────────────────────────────────────────────────────
 
   function handleGroupDragEnd(categoryId: string, event: DragEndEvent) {
@@ -349,15 +428,6 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
       {/* Toolbar */}
       <div className="flex items-center gap-2">
         <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          onClick={() => setShowAddCategory(true)}
-        >
-          <FolderPlus className="h-3.5 w-3.5" />
-          Add category
-        </Button>
-        <Button
           size="sm"
           className="gap-1.5"
           onClick={() => {
@@ -366,7 +436,35 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
           }}
         >
           <Plus className="h-3.5 w-3.5" />
-          Add equipment
+          Add Equipment
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => setShowKitDialog(true)}
+        >
+          <Package className="h-3.5 w-3.5" />
+          Add Kit
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => setShowSubhireDialog(true)}
+        >
+          <ArrowUpRight className="h-3.5 w-3.5" />
+          Add Subhire
+        </Button>
+        <div className="flex-1" />
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => setShowAddCategory(true)}
+        >
+          <FolderPlus className="h-3.5 w-3.5" />
+          Add Category
         </Button>
       </div>
 
@@ -422,6 +520,21 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                       onAddEquipment={(catId, grpId) => {
                         setAddEquipmentTarget({ categoryId: catId, groupId: grpId });
                         setShowAddEquipment(true);
+                      }}
+                      onEditPrice={(groupId, currentPrice) => {
+                        setPriceEditGroupId(groupId);
+                        setPriceEditValue(currentPrice != null ? String(currentPrice) : "");
+                      }}
+                      onAcceptSuggested={(groupId) => acceptPriceMut.mutate(groupId)}
+                      onDelete={(groupId, title, price, itemCount) => {
+                        setDeleteGroupId(groupId);
+                        setDeleteGroupInfo({ title, price, itemCount });
+                      }}
+                      onEdit={(g) => {
+                        setEditGroupData(g);
+                        setEditGroupTitle(g.title);
+                        setEditGroupDescription(g.description ?? "");
+                        setEditGroupQuantity(String(g.quantity));
                       }}
                     />
                   ))}
@@ -601,6 +714,182 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
           groupId={addEquipmentTarget.groupId}
         />
       )}
+
+      {/* Add subhire dialog */}
+      <AddSubhireDialog
+        projectId={projectId}
+        open={showSubhireDialog}
+        onOpenChange={setShowSubhireDialog}
+      />
+
+      {/* Add kit dialog */}
+      <Dialog
+        open={showKitDialog}
+        onOpenChange={(open) => {
+          setShowKitDialog(open);
+          if (!open) {
+            setSelectedKitId("");
+            setKitPricingMode("KIT_PRICE");
+            setKitUnitPrice("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Kit to Project</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Kit</Label>
+              <ComboboxPicker
+                value={selectedKitId}
+                onChange={setSelectedKitId}
+                options={(kitsData?.kits || []).map((kit: { id: string; assetTag: string; name: string; category?: { name: string } | null }) => ({
+                  value: kit.id,
+                  label: `${kit.assetTag} - ${kit.name}`,
+                  description: kit.category?.name,
+                }))}
+                placeholder="Select a kit..."
+                searchPlaceholder="Search kits..."
+                emptyMessage="No kits found."
+              />
+            </div>
+
+            {selectedKitId && kitAvailability && !kitAvailability.available && (
+              <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+                Kit is unavailable: {kitAvailability.conflictsWith}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>Pricing Mode</Label>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="radio"
+                    name="kitPricingMode"
+                    value="KIT_PRICE"
+                    checked={kitPricingMode === "KIT_PRICE"}
+                    onChange={() => setKitPricingMode("KIT_PRICE")}
+                    className="accent-primary"
+                  />
+                  Kit Price
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="radio"
+                    name="kitPricingMode"
+                    value="ITEMIZED"
+                    checked={kitPricingMode === "ITEMIZED"}
+                    onChange={() => setKitPricingMode("ITEMIZED")}
+                    className="accent-primary"
+                  />
+                  Itemized
+                </label>
+              </div>
+              <p className="text-xs text-fg-3">
+                {kitPricingMode === "KIT_PRICE"
+                  ? "One price for the whole kit."
+                  : "Each item in the kit priced individually."}
+              </p>
+            </div>
+
+            {kitPricingMode === "KIT_PRICE" && (
+              <div className="space-y-2">
+                <Label>Unit Price</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={kitUnitPrice}
+                  onChange={(e) => setKitUnitPrice(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={() => addKitMut.mutate()}
+              disabled={
+                !selectedKitId ||
+                addKitMut.isPending ||
+                (kitAvailability && !kitAvailability.available)
+              }
+            >
+              {addKitMut.isPending ? "Adding..." : "Add Kit"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit group dialog */}
+      <Dialog
+        open={editGroupData != null}
+        onOpenChange={(open) => {
+          if (!open) setEditGroupData(null);
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Edit Group</DialogTitle>
+            <DialogDescription>
+              Update the group&apos;s title, description, and quantity.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Title</Label>
+              <Input
+                value={editGroupTitle}
+                onChange={(e) => setEditGroupTitle(e.target.value)}
+                placeholder="Group title"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <Textarea
+                value={editGroupDescription}
+                onChange={(e) => setEditGroupDescription(e.target.value)}
+                placeholder="Optional description..."
+                rows={3}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Quantity</Label>
+              <Input
+                type="number"
+                min="1"
+                value={editGroupQuantity}
+                onChange={(e) => setEditGroupQuantity(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditGroupData(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (editGroupData && editGroupTitle.trim()) {
+                  updateGroupMut.mutate({
+                    groupId: editGroupData.id,
+                    data: {
+                      title: editGroupTitle.trim(),
+                      description: editGroupDescription.trim() || undefined,
+                      quantity: parseInt(editGroupQuantity) || 1,
+                    },
+                  });
+                }
+              }}
+              disabled={!editGroupTitle.trim() || updateGroupMut.isPending}
+            >
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

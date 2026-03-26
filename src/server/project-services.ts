@@ -10,15 +10,12 @@ import {
   type ServiceTemplateFormValues,
 } from "@/lib/validations/project-service";
 import { logActivity } from "@/lib/activity-log";
+import { roundCurrency } from "@/lib/formatters";
 import { sendCrewOffer } from "@/server/crew-communication";
 import { recalculateProjectTotals } from "@/server/line-items";
 import type { ServiceType, LineItemType, PricingType, ProjectPhase } from "@/generated/prisma/client";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function roundCurrency(n: number): number {
-  return Math.round(n * 100) / 100;
-}
 
 function calculateServiceLineTotal(
   unitPrice: number | undefined,
@@ -189,6 +186,7 @@ export async function createProjectService(
       latitude: parsed.latitude ?? null,
       longitude: parsed.longitude ?? null,
       showOnDocuments: parsed.showOnDocuments,
+      billableToClient: parsed.billableToClient,
       unitPrice: parsed.unitPrice ?? null,
       quantity: parsed.quantity,
       pricingType: (parsed.pricingType && String(parsed.pricingType) !== ""
@@ -197,6 +195,7 @@ export async function createProjectService(
       duration: parsed.duration ?? null,
       discount: parsed.discount ?? null,
       lineTotal,
+      costTotal: parsed.billableToClient ? null : (parsed.costTotal ?? lineTotal),
       taxable: parsed.taxable,
       vehicleDescription: parsed.vehicleDescription || null,
       numberOfTrips: parsed.numberOfTrips || null,
@@ -300,6 +299,7 @@ export async function updateProjectService(
       latitude: parsed.latitude ?? null,
       longitude: parsed.longitude ?? null,
       showOnDocuments: parsed.showOnDocuments,
+      billableToClient: parsed.billableToClient,
       unitPrice: parsed.unitPrice ?? null,
       quantity: parsed.quantity,
       pricingType: (parsed.pricingType && String(parsed.pricingType) !== ""
@@ -308,6 +308,7 @@ export async function updateProjectService(
       duration: parsed.duration ?? null,
       discount: parsed.discount ?? null,
       lineTotal,
+      costTotal: parsed.billableToClient ? null : (parsed.costTotal ?? lineTotal),
       taxable: parsed.taxable,
       vehicleDescription: parsed.vehicleDescription || null,
       numberOfTrips: parsed.numberOfTrips || null,

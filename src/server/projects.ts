@@ -186,6 +186,43 @@ export async function getProject(id: string) {
     include: {
       client: true,
       location: { include: { parent: true } },
+      projectManagers: {
+        include: {
+          user: { select: { id: true, name: true, email: true, image: true } },
+        },
+        orderBy: { addedAt: "asc" },
+      },
+      categories: {
+        include: {
+          groups: {
+            include: {
+              lineItems: {
+                include: {
+                  model: true, asset: true, bulkAsset: true, kit: true,
+                  childLineItems: {
+                    include: { model: true, asset: true, bulkAsset: true, kit: true },
+                    orderBy: { sortOrder: "asc" },
+                  },
+                },
+                orderBy: { sortOrder: "asc" },
+              },
+            },
+            orderBy: { sortOrder: "asc" },
+          },
+          lineItems: {
+            where: { groupId: null },
+            include: {
+              model: true, asset: true, bulkAsset: true, kit: true,
+              childLineItems: {
+                include: { model: true, asset: true, bulkAsset: true, kit: true },
+                orderBy: { sortOrder: "asc" },
+              },
+            },
+            orderBy: { sortOrder: "asc" },
+          },
+        },
+        orderBy: { sortOrder: "asc" },
+      },
       lineItems: {
         include: {
           model: true,
@@ -297,6 +334,9 @@ export async function createProject(data: ProjectFormValues & { isTemplate?: boo
         crewNotes: parsed.crewNotes || null,
         internalNotes: parsed.internalNotes || null,
         clientNotes: parsed.clientNotes || null,
+        defaultRentalPeriod: parsed.defaultRentalPeriod || null,
+        defaultRentalQuantity: parsed.defaultRentalQuantity || null,
+        taxRate: parsed.taxRate ?? null,
         discountPercent: parsed.discountPercent ?? null,
         depositPercent: parsed.depositPercent ?? null,
         depositPaid: parsed.depositPaid ?? null,
@@ -353,6 +393,9 @@ export async function updateProject(id: string, data: ProjectFormValues) {
       loadOutTime: parsed.loadOutTime || null,
       rentalStartDate: parsed.rentalStartDate ?? null,
       rentalEndDate: parsed.rentalEndDate ?? null,
+      defaultRentalPeriod: parsed.defaultRentalPeriod || null,
+      defaultRentalQuantity: parsed.defaultRentalQuantity || null,
+      taxRate: parsed.taxRate ?? null,
       crewNotes: parsed.crewNotes || null,
       internalNotes: parsed.internalNotes || null,
       clientNotes: parsed.clientNotes || null,
@@ -363,6 +406,11 @@ export async function updateProject(id: string, data: ProjectFormValues) {
       tags: parsed.tags,
     },
   });
+
+  // Recalculate totals if tax rate changed
+  if (parsed.taxRate !== undefined) {
+    await recalculateProjectTotals(id);
+  }
 
   await logActivity({
     organizationId,
@@ -436,13 +484,31 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
   const source = await prisma.project.findUnique({
     where: { id: sourceId, organizationId },
     include: {
-      lineItems: {
-        where: { isKitChild: false },
+      categories: {
         include: {
-          childLineItems: true,
+          groups: {
+            include: {
+              lineItems: {
+                include: { childLineItems: true },
+                orderBy: { sortOrder: "asc" },
+              },
+            },
+            orderBy: { sortOrder: "asc" },
+          },
+          lineItems: {
+            where: { groupId: null },
+            include: { childLineItems: true },
+            orderBy: { sortOrder: "asc" },
+          },
         },
         orderBy: { sortOrder: "asc" },
       },
+      lineItems: {
+        where: { isKitChild: false, categoryId: null },
+        include: { childLineItems: true },
+        orderBy: { sortOrder: "asc" },
+      },
+      projectManagers: true,
     },
   });
 
@@ -468,17 +534,38 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
           clientNotes: source.clientNotes,
           discountPercent: source.discountPercent,
           depositPercent: source.depositPercent,
+          defaultRentalPeriod: source.defaultRentalPeriod,
+          defaultRentalQuantity: source.defaultRentalQuantity,
+          taxRate: source.taxRate,
           tags: source.tags,
           isTemplate: false,
         },
       });
 
-      // Copy line items (parent items first, then children)
-      for (const li of source.lineItems) {
-        const parentItem = await tx.projectLineItem.create({
+      // Copy project managers
+      for (const pm of source.projectManagers) {
+        await tx.projectManager.create({
           data: {
             organizationId,
             projectId: newProject.id,
+            userId: pm.userId,
+          },
+        });
+      }
+
+      // Helper to copy a line item and its children
+      async function copyLineItem(
+        li: typeof source.lineItems[0],
+        newProjectId: string,
+        newCategoryId: string | null,
+        newGroupId: string | null,
+      ) {
+        const parentItem = await tx.projectLineItem.create({
+          data: {
+            organizationId,
+            projectId: newProjectId,
+            categoryId: newCategoryId,
+            groupId: newGroupId,
             type: li.type,
             modelId: li.modelId,
             bulkAssetId: li.bulkAssetId,
@@ -503,13 +590,14 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
           },
         });
 
-        // Copy child line items (kit children)
         if (li.childLineItems?.length) {
           for (const child of li.childLineItems) {
             await tx.projectLineItem.create({
               data: {
                 organizationId,
-                projectId: newProject.id,
+                projectId: newProjectId,
+                categoryId: newCategoryId,
+                groupId: newGroupId,
                 type: child.type,
                 modelId: child.modelId,
                 bulkAssetId: child.bulkAssetId,
@@ -530,6 +618,50 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
             });
           }
         }
+      }
+
+      // Copy categories → groups → line items
+      for (const cat of source.categories) {
+        const newCat = await tx.projectCategory.create({
+          data: {
+            organizationId,
+            projectId: newProject.id,
+            name: cat.name,
+            sortOrder: cat.sortOrder,
+          },
+        });
+
+        for (const group of cat.groups) {
+          const newGroup = await tx.projectGroup.create({
+            data: {
+              organizationId,
+              projectId: newProject.id,
+              categoryId: newCat.id,
+              title: group.title,
+              description: group.description,
+              quantity: group.quantity,
+              price: group.price,
+              suggestedPrice: group.suggestedPrice,
+              rentalPeriod: group.rentalPeriod,
+              rentalQuantity: group.rentalQuantity,
+              sortOrder: group.sortOrder,
+            },
+          });
+
+          for (const li of group.lineItems) {
+            await copyLineItem(li, newProject.id, newCat.id, newGroup.id);
+          }
+        }
+
+        // Copy standalone line items in category
+        for (const li of cat.lineItems) {
+          await copyLineItem(li, newProject.id, newCat.id, null);
+        }
+      }
+
+      // Copy uncategorized line items
+      for (const li of source.lineItems) {
+        await copyLineItem(li, newProject.id, null, null);
       }
 
       return newProject;

@@ -30,6 +30,8 @@ export const projectServiceSchema = z.object({
   duration: z.coerce.number().optional(),
   discount: z.coerce.number().optional(),
   taxable: z.boolean().default(true),
+  billableToClient: z.boolean().default(false),
+  costTotal: z.coerce.number().min(0).optional(),
 
   vehicleDescription: z.string().optional(),
   numberOfTrips: z.coerce.number().optional(),

@@ -195,6 +195,8 @@ interface GroupData {
   suggestedPrice: unknown;
   rentalPeriod: string | null;
   rentalQuantity: number | null;
+  billingWeeks: number | null;
+  billingDays: number | null;
   sortOrder: number;
   lineItems?: LineItemData[];
 }
@@ -248,6 +250,8 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
   const [editGroupTitle, setEditGroupTitle] = useState("");
   const [editGroupDescription, setEditGroupDescription] = useState("");
   const [editGroupQuantity, setEditGroupQuantity] = useState("1");
+  const [editGroupBillingWeeks, setEditGroupBillingWeeks] = useState("");
+  const [editGroupBillingDays, setEditGroupBillingDays] = useState("");
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -345,7 +349,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
   });
 
   const updateGroupMut = useMutation({
-    mutationFn: ({ groupId, data }: { groupId: string; data: Partial<{ title: string; description: string; quantity: number }> }) =>
+    mutationFn: ({ groupId, data }: { groupId: string; data: Partial<{ title: string; description: string; quantity: number; billingWeeks: number; billingDays: number }> }) =>
       updateProjectGroup(groupId, data),
     onSuccess: () => {
       invalidate();
@@ -535,6 +539,8 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                         setEditGroupTitle(g.title);
                         setEditGroupDescription(g.description ?? "");
                         setEditGroupQuantity(String(g.quantity));
+                        setEditGroupBillingWeeks(g.billingWeeks != null ? String(g.billingWeeks) : "");
+                        setEditGroupBillingDays(g.billingDays != null ? String(g.billingDays) : "");
                       }}
                     />
                   ))}
@@ -865,6 +871,31 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                 onChange={(e) => setEditGroupQuantity(e.target.value)}
               />
             </div>
+            <div className="space-y-2">
+              <Label className="text-muted-foreground text-xs">Billing Override (leave blank to use project defaults)</Label>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label>Weeks</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={editGroupBillingWeeks}
+                    onChange={(e) => setEditGroupBillingWeeks(e.target.value)}
+                    placeholder="—"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Days</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={editGroupBillingDays}
+                    onChange={(e) => setEditGroupBillingDays(e.target.value)}
+                    placeholder="—"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditGroupData(null)}>
@@ -879,6 +910,8 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                       title: editGroupTitle.trim(),
                       description: editGroupDescription.trim() || undefined,
                       quantity: parseInt(editGroupQuantity) || 1,
+                      billingWeeks: editGroupBillingWeeks !== "" ? parseInt(editGroupBillingWeeks) : undefined,
+                      billingDays: editGroupBillingDays !== "" ? parseInt(editGroupBillingDays) : undefined,
                     },
                   });
                 }

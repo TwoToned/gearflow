@@ -75,9 +75,25 @@ async function recalculateStatus(
   }
 }
 
+type SubTestInput = {
+  label: string;
+  sortOrder: number;
+  result: "PASS" | "FAIL";
+  earthContinuityResult?: "PASS" | "FAIL" | "NOT_APPLICABLE";
+  earthContinuityReading?: number | null;
+  insulationResult?: "PASS" | "FAIL" | "NOT_APPLICABLE";
+  insulationReading?: number | null;
+  leakageCurrentResult?: "PASS" | "FAIL" | "NOT_APPLICABLE";
+  leakageCurrentReading?: number | null;
+  polarityResult?: "PASS" | "FAIL" | "NOT_APPLICABLE";
+  notes?: string;
+};
+
 export async function createTestTagRecord(data: {
   testTagAssetId: string;
+  testProfileId?: string;
   testDate: Date | string;
+  testedById?: string; // Session tester — defaults to logged-in user
   testerName: string;
   result: "PASS" | "FAIL";
   visualInspectionResult?: "PASS" | "FAIL";
@@ -108,6 +124,8 @@ export async function createTestTagRecord(data: {
   failureAction?: "NONE" | "REPAIRED" | "REMOVED_FROM_SERVICE" | "DISPOSED" | "REFERRED_TO_ELECTRICIAN";
   failureNotes?: string;
   nextDueDate: Date | string;
+  subTests?: SubTestInput[];
+  outletCount?: number;
 }) {
   const { organizationId, userId, userName } = await requirePermission("testTag", "create");
 
@@ -117,6 +135,17 @@ export async function createTestTagRecord(data: {
   });
   if (!testTagAsset) throw new Error("Test tag asset not found");
 
+  // Use the provided tester ID or default to logged-in user
+  const testedById = data.testedById || userId;
+
+  // Verify tester is a member of the org if different from logged-in user
+  if (testedById !== userId) {
+    const member = await prisma.member.findFirst({
+      where: { userId: testedById, organizationId },
+    });
+    if (!member) throw new Error("Selected tester is not a member of this organisation");
+  }
+
   const testDate = new Date(data.testDate);
   const nextDueDate = new Date(data.nextDueDate);
 
@@ -125,8 +154,9 @@ export async function createTestTagRecord(data: {
       data: {
         organizationId,
         testTagAssetId: data.testTagAssetId,
+        testProfileId: data.testProfileId || null,
         testDate,
-        testedById: userId,
+        testedById,
         testerName: data.testerName,
         result: data.result,
         visualInspectionResult: data.visualInspectionResult || "PASS",
@@ -160,16 +190,75 @@ export async function createTestTagRecord(data: {
       },
     });
 
+    // Create sub-test records if provided
+    if (data.subTests && data.subTests.length > 0) {
+      await tx.subTestRecord.createMany({
+        data: data.subTests.map(st => ({
+          testTagRecordId: created.id,
+          label: st.label,
+          sortOrder: st.sortOrder,
+          result: st.result,
+          earthContinuityResult: st.earthContinuityResult || "NOT_APPLICABLE",
+          earthContinuityReading: st.earthContinuityReading ?? null,
+          insulationResult: st.insulationResult || "NOT_APPLICABLE",
+          insulationReading: st.insulationReading ?? null,
+          leakageCurrentResult: st.leakageCurrentResult || "NOT_APPLICABLE",
+          leakageCurrentReading: st.leakageCurrentReading ?? null,
+          polarityResult: st.polarityResult || "NOT_APPLICABLE",
+          notes: st.notes || null,
+        })),
+      });
+    }
+
     // Update parent TestTagAsset
     await tx.testTagAsset.update({
       where: { id: data.testTagAssetId },
       data: {
         lastTestDate: testDate,
         nextDueDate,
+        // Remember outlet count for next time
+        ...(data.outletCount && { outletCount: data.outletCount }),
+        // Assign profile to asset if not already set
+        ...(!testTagAsset.testProfileId && data.testProfileId && { testProfileId: data.testProfileId }),
       },
     });
 
-    // Recalculate status
+    // Handle failure actions: mark asset out of service, retired, or create maintenance record
+    if (data.result === "FAIL") {
+      if (data.failureAction === "REMOVED_FROM_SERVICE") {
+        await tx.testTagAsset.update({
+          where: { id: data.testTagAssetId },
+          data: { status: "FAILED" },
+        });
+      } else if (data.failureAction === "DISPOSED") {
+        await tx.testTagAsset.update({
+          where: { id: data.testTagAssetId },
+          data: { status: "RETIRED", isActive: false },
+        });
+      } else if (data.failureAction === "REFERRED_TO_ELECTRICIAN" && testTagAsset.assetId) {
+        // Create a maintenance record for the linked asset
+        await tx.maintenanceRecord.create({
+          data: {
+            organizationId,
+            type: "REPAIR",
+            status: "SCHEDULED",
+            title: `Electrician referral — ${testTagAsset.testTagId}`,
+            description: data.failureNotes
+              ? `Failed test & tag inspection. Notes: ${data.failureNotes}`
+              : `Failed test & tag inspection on ${testDate.toLocaleDateString()}. Referred to electrician for repair.`,
+            reportedById: userId,
+            assets: { create: [{ assetId: testTagAsset.assetId }] },
+          },
+        });
+        // Mark the linked asset as in maintenance
+        await tx.asset.update({
+          where: { id: testTagAsset.assetId },
+          data: { status: "IN_MAINTENANCE" },
+        });
+      }
+    }
+
+    // Recalculate status (handles PASS cases and FAIL without explicit action)
     await recalculateStatus(data.testTagAssetId, organizationId, tx);
 
     return created;
@@ -184,7 +273,7 @@ export async function createTestTagRecord(data: {
     entityId: record.id,
     entityName: testTagAsset.testTagId,
     summary: `Recorded ${data.result} test for ${testTagAsset.testTagId}`,
-    details: { result: data.result, testerName: data.testerName },
+    details: { result: data.result, testerName: data.testerName, profileId: data.testProfileId },
   });
 
   return serialize(record);
@@ -207,6 +296,8 @@ export async function getTestTagRecords(testTagAssetId: string, params?: {
       take: pageSize,
       include: {
         testedBy: { select: { id: true, name: true } },
+        testProfile: { select: { id: true, name: true } },
+        subTestRecords: { orderBy: { sortOrder: "asc" } },
       },
     }),
     prisma.testTagRecord.count({ where }),
@@ -221,3 +312,21 @@ export async function getTestTagRecords(testTagAssetId: string, params?: {
   });
 }
 
+/**
+ * Get the latest test record for an asset (used for Quick Pass pre-fill).
+ */
+export async function getLatestTestRecord(testTagAssetId: string) {
+  const { organizationId } = await getOrgContext();
+
+  const record = await prisma.testTagRecord.findFirst({
+    where: { organizationId, testTagAssetId },
+    orderBy: { testDate: "desc" },
+    include: {
+      testedBy: { select: { id: true, name: true } },
+      testProfile: { select: { id: true, name: true } },
+      subTestRecords: { orderBy: { sortOrder: "asc" } },
+    },
+  });
+
+  return record ? serialize(record) : null;
+}

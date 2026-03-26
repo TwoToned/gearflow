@@ -52,6 +52,7 @@ export async function getTestTagAssets(params?: {
       include: {
         asset: { select: { id: true, assetTag: true, customName: true } },
         bulkAsset: { select: { id: true, assetTag: true } },
+        testProfile: { select: { id: true, name: true } },
         _count: { select: { testRecords: true } },
       },
       orderBy: { [sortBy]: sortOrder },
@@ -88,11 +89,14 @@ export async function getTestTagAsset(id: string) {
           model: { select: { name: true, manufacturer: true } },
         },
       },
+      testProfile: { select: { id: true, name: true } },
       testRecords: {
         orderBy: { testDate: "desc" },
         take: 10,
         include: {
           testedBy: { select: { id: true, name: true } },
+          testProfile: { select: { id: true, name: true } },
+          subTestRecords: { orderBy: { sortOrder: "asc" } },
         },
       },
       _count: { select: { testRecords: true } },
@@ -106,16 +110,24 @@ export async function getTestTagAsset(id: string) {
 export async function lookupTestTagAsset(testTagId: string) {
   const { organizationId } = await getOrgContext();
 
+  // Also check retired items so we can block with reactivate option
   const item = await prisma.testTagAsset.findFirst({
-    where: { organizationId, testTagId, isActive: true },
+    where: { organizationId, testTagId },
     include: {
-      asset: { select: { id: true, assetTag: true, customName: true } },
+      asset: {
+        select: {
+          id: true, assetTag: true, customName: true,
+          model: { select: { id: true, name: true, defaultTestProfileId: true } },
+        },
+      },
       bulkAsset: { select: { id: true, assetTag: true } },
+      testProfile: true,
       testRecords: {
         orderBy: { testDate: "desc" },
         take: 1,
         include: {
           testedBy: { select: { id: true, name: true } },
+          subTestRecords: { orderBy: { sortOrder: "asc" } },
         },
       },
     },
@@ -134,6 +146,8 @@ export async function createTestTagAsset(data: {
   serialNumber?: string;
   location?: string;
   testIntervalMonths?: number;
+  testProfileId?: string;
+  outletCount?: number;
   notes?: string;
   assetId?: string;
   bulkAssetId?: string;
@@ -174,6 +188,8 @@ export async function createTestTagAsset(data: {
       serialNumber: data.serialNumber || null,
       location: data.location || null,
       testIntervalMonths: data.testIntervalMonths || 3,
+      testProfileId: data.testProfileId || null,
+      outletCount: data.outletCount || null,
       notes: data.notes || null,
       assetId: data.assetId || null,
       bulkAssetId: data.bulkAssetId || null,
@@ -260,6 +276,8 @@ export async function updateTestTagAsset(id: string, data: {
   serialNumber?: string;
   location?: string;
   testIntervalMonths?: number;
+  testProfileId?: string | null;
+  outletCount?: number | null;
   notes?: string;
   assetId?: string | null;
   bulkAssetId?: string | null;
@@ -282,6 +300,8 @@ export async function updateTestTagAsset(id: string, data: {
       ...(data.serialNumber !== undefined && { serialNumber: data.serialNumber || null }),
       ...(data.location !== undefined && { location: data.location || null }),
       ...(data.testIntervalMonths !== undefined && { testIntervalMonths: data.testIntervalMonths }),
+      ...(data.testProfileId !== undefined && { testProfileId: data.testProfileId }),
+      ...(data.outletCount !== undefined && { outletCount: data.outletCount }),
       ...(data.notes !== undefined && { notes: data.notes || null }),
       ...(data.assetId !== undefined && { assetId: data.assetId }),
       ...(data.bulkAssetId !== undefined && { bulkAssetId: data.bulkAssetId }),
@@ -404,7 +424,7 @@ export async function backfillTestTagAssets() {
       testTagAsset: null,
     },
     include: {
-      model: { select: { name: true, manufacturer: true, modelNumber: true, testAndTagIntervalDays: true, defaultEquipmentClass: true, defaultApplianceType: true } },
+      model: { select: { name: true, manufacturer: true, modelNumber: true, testAndTagIntervalDays: true, defaultEquipmentClass: true, defaultApplianceType: true, defaultTestProfileId: true } },
     },
   });
 
@@ -477,6 +497,7 @@ export async function backfillTestTagAssets() {
           modelName: asset.model.modelNumber || null,
           serialNumber: asset.serialNumber || null,
           testIntervalMonths: intervalMonths,
+          testProfileId: asset.model.defaultTestProfileId || null,
           status: "NOT_YET_TESTED",
           assetId: asset.id,
         },
@@ -485,6 +506,34 @@ export async function backfillTestTagAssets() {
   );
 
   return { created: unlinkedAssets.length, retired };
+}
+
+export async function reactivateTestTagAsset(id: string) {
+  const { organizationId, userId, userName } = await requirePermission("testTag", "update");
+
+  const existing = await prisma.testTagAsset.findFirst({
+    where: { id, organizationId },
+  });
+  if (!existing) throw new Error("Test tag asset not found");
+  if (existing.status !== "RETIRED") throw new Error("Only retired items can be reactivated");
+
+  const item = await prisma.testTagAsset.update({
+    where: { id, organizationId },
+    data: { status: "NOT_YET_TESTED", isActive: true },
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "testTagAsset",
+    entityId: item.id,
+    entityName: item.testTagId,
+    summary: `Reactivated test tag asset ${item.testTagId}`,
+  });
+
+  return serialize(item);
 }
 
 export { peekNextTestTagIds };

@@ -28,9 +28,9 @@ export interface TestTagSettings {
   defaultEquipmentClass?: "CLASS_I" | "CLASS_II" | "CLASS_II_DOUBLE_INSULATED" | "LEAD_CORD_ASSEMBLY";
   dueSoonThresholdDays?: number;
   companyName?: string;
-  defaultTesterName?: string;
   defaultTestMethod?: "INSULATION_RESISTANCE" | "LEAKAGE_CURRENT" | "BOTH";
   checkoutPolicy?: "WARN" | "BLOCK";
+  emailReminders?: boolean;
 }
 
 export interface OrgSettings {

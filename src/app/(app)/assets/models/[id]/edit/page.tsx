@@ -43,6 +43,7 @@ export default function EditModelPage({ params }: { params: Promise<{ id: string
     powerDraw: model.powerDraw || undefined,
     requiresTestAndTag: model.requiresTestAndTag,
     testAndTagIntervalDays: model.testAndTagIntervalDays || undefined,
+    defaultTestProfileId: model.defaultTestProfileId || undefined,
     defaultEquipmentClass: model.defaultEquipmentClass || undefined,
     defaultApplianceType: model.defaultApplianceType || undefined,
     maintenanceIntervalDays: model.maintenanceIntervalDays || undefined,

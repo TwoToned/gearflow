@@ -52,6 +52,7 @@ model User {
   pendingSSOApprovals     PendingSSOApproval[]
   reviewedSSOApprovals    PendingSSOApproval[] @relation("SSOReviewer")
   warehouseDashboardTokens WarehouseDashboardToken[]
+  testTagAuditorTokens     TestTagAuditorToken[]
   savedReports             SavedReport[]
   checkItems               CheckItem[]
   checkRecords             CheckRecord[]  @relation("CheckRecordPerformedBy")
@@ -143,6 +144,7 @@ model Organization {
   projectMedia       ProjectMedia[]
   clientMedia        ClientMedia[]
   locationMedia      LocationMedia[]
+  testProfiles       TestProfile[]
   testTagAssets      TestTagAsset[]
   testTagRecords     TestTagRecord[]
   activityLogs       ActivityLog[]
@@ -159,6 +161,7 @@ model Organization {
   ssoProviders               SsoProvider[]
   pendingSSOApprovals        PendingSSOApproval[]
   warehouseDashboardTokens   WarehouseDashboardToken[]
+  testTagAuditorTokens       TestTagAuditorToken[]
   wooCommerceIntegration     WooCommerceIntegration?
   wooCommerceOrderLogs       WooCommerceOrderLog[]
   savedReports               SavedReport[]
@@ -489,6 +492,7 @@ enum ApplianceType {
   RCD_PORTABLE
   RCD_FIXED
   THREE_PHASE
+  MICROWAVE
   OTHER
 }
 
@@ -593,6 +597,8 @@ model Model {
   testAndTagIntervalDays     Int?
   defaultEquipmentClass      EquipmentClass?
   defaultApplianceType       ApplianceType?
+  defaultTestProfileId       String?
+  defaultTestProfile         TestProfile?    @relation("ModelDefaultTestProfile", fields: [defaultTestProfileId], references: [id], onDelete: SetNull)
   maintenanceIntervalDays    Int?
   assetType               AssetType    @default(SERIALIZED)
   barcodeLabelTemplate    String?
@@ -1316,6 +1322,36 @@ model LocationMedia {
   @@map("location_media")
 }
 
+// ─── Test Profile ─────────────────────────────────────────────────────────
+
+model TestProfile {
+  id                   String         @id @default(cuid())
+  organizationId       String
+  organization         Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name                 String
+  equipmentClass       EquipmentClass @default(CLASS_I)
+  applianceType        ApplianceType  @default(APPLIANCE)
+  visualChecks         Json           // Array of {key, label, enabled}
+  electricalTests      Json           // Array of {key, label, threshold, operator, unit, enabled}
+  thresholds           Json           // {earthMax, insulationMin, leakageMax, rcdTripTimeMax, ...}
+  requiresSubTests     Boolean        @default(false)
+  defaultSubTestCount  Int            @default(1)
+  subTestLabel         String         @default("Outlet") // "Outlet" | "Phase" | custom
+  isDefault            Boolean        @default(false)
+  isActive             Boolean        @default(true)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  testTagAssets        TestTagAsset[]
+  testTagRecords       TestTagRecord[]
+  models               Model[]        @relation("ModelDefaultTestProfile")
+
+  @@unique([organizationId, name])
+  @@index([organizationId, isActive])
+  @@index([organizationId, equipmentClass, applianceType])
+  @@map("test_profile")
+}
+
 // ─── Test & Tag Asset ───────────────────────────────────────────────────────
 
 model TestTagAsset {
@@ -1341,6 +1377,10 @@ model TestTagAsset {
   bulkAssetId        String?
   bulkAsset          BulkAsset?     @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
 
+  testProfileId      String?
+  testProfile        TestProfile?   @relation(fields: [testProfileId], references: [id], onDelete: SetNull)
+  outletCount        Int?
+
   isActive           Boolean        @default(true)
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
@@ -1352,6 +1392,7 @@ model TestTagAsset {
   @@index([organizationId, nextDueDate])
   @@index([organizationId, assetId])
   @@index([organizationId, bulkAssetId])
+  @@index([testProfileId])
   @@map("test_tag_asset")
 }
 
@@ -1363,6 +1404,8 @@ model TestTagRecord {
   organization           Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   testTagAssetId         String
   testTagAsset           TestTagAsset   @relation(fields: [testTagAssetId], references: [id], onDelete: Cascade)
+  testProfileId          String?
+  testProfile            TestProfile?   @relation(fields: [testProfileId], references: [id], onDelete: SetNull)
   testDate               DateTime
   testedById             String
   testedBy               User           @relation(fields: [testedById], references: [id])
@@ -1421,9 +1464,38 @@ model TestTagRecord {
   createdAt              DateTime       @default(now())
   updatedAt              DateTime       @updatedAt
 
+  subTestRecords         SubTestRecord[]
+
   @@index([organizationId, testTagAssetId])
   @@index([organizationId, testDate])
+  @@index([testProfileId])
   @@map("test_tag_record")
+}
+
+// ─── Sub-Test Record ──────────────────────────────────────────────────────
+
+model SubTestRecord {
+  id                     String         @id @default(cuid())
+  testTagRecordId        String
+  testTagRecord          TestTagRecord  @relation(fields: [testTagRecordId], references: [id], onDelete: Cascade)
+  label                  String         // "Outlet 1", "Phase L1-L2", etc.
+  sortOrder              Int            @default(0)
+  result                 TestResult     @default(PASS)
+
+  // Electrical readings (same columns as parent record)
+  earthContinuityResult  TestResult     @default(NOT_APPLICABLE)
+  earthContinuityReading Float?
+  insulationResult       TestResult     @default(NOT_APPLICABLE)
+  insulationReading      Float?
+  leakageCurrentResult   TestResult     @default(NOT_APPLICABLE)
+  leakageCurrentReading  Float?
+  polarityResult         TestResult     @default(NOT_APPLICABLE)
+  notes                  String?
+
+  createdAt              DateTime       @default(now())
+
+  @@index([testTagRecordId, sortOrder])
+  @@map("sub_test_record")
 }
 
 // ─── Better Auth Two-Factor Tables ──────────────────────────────────────────
@@ -2060,6 +2132,29 @@ model WarehouseDashboardToken {
 
   @@index([organizationId])
   @@map("warehouse_dashboard_token")
+}
+
+// ─── Test & Tag Auditor Portal ───────────────────────────────────────────────
+
+model TestTagAuditorToken {
+  id              String    @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name            String               // "Insurance Auditor", "Annual Compliance Check"
+  token           String               // Raw access token (displayed in settings)
+  tokenHash       String    @unique    // SHA-256 for secure lookup
+  isActive        Boolean   @default(true)
+  expiresAt       DateTime?            // Optional expiry date
+  scope           String?              // JSON: { categories?, equipmentClasses?, locations?, assetIds? }
+
+  createdById     String
+  createdBy       User     @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  lastAccessedAt  DateTime?
+  createdAt       DateTime @default(now())
+
+  @@index([organizationId])
+  @@map("test_tag_auditor_token")
 }
 
 // ─── WooCommerce Integration ─────────────────────────────────────────────────

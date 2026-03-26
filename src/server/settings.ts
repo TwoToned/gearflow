@@ -78,6 +78,7 @@ export async function getOrganization() {
 export async function updateOrganization(data: {
   name: string;
   settings: OrgSettings;
+  defaultTaxRate?: number | null;
 }) {
   const { organizationId, userId, userName } = await requirePermission("orgSettings", "update");
 
@@ -86,6 +87,9 @@ export async function updateOrganization(data: {
     data: {
       name: data.name,
       metadata: JSON.stringify(data.settings),
+      ...(data.defaultTaxRate !== undefined && {
+        defaultTaxRate: data.defaultTaxRate,
+      }),
     },
   });
 

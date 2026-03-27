@@ -35,6 +35,7 @@ import {
 import {
   createProjectCategory,
   reorderProjectCategories,
+  getUncategorizedLineItems,
 } from "@/server/project-categories";
 import { getGroupTemplates, applyGroupTemplate } from "@/server/group-templates";
 import { removeLineItem, addKitLineItem, checkKitAvailability } from "@/server/line-items";
@@ -312,6 +313,12 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
     staleTime: 60_000,
   });
 
+  const { data: uncategorizedItems = [] } = useQuery({
+    queryKey: ["uncategorized-items", projectId],
+    queryFn: () => getUncategorizedLineItems(projectId),
+    staleTime: 60_000,
+  });
+
   const { data: templates = [] } = useQuery({
     queryKey: ["group-templates"],
     queryFn: () => getGroupTemplates(),
@@ -324,6 +331,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
 
   const invalidate = useCallback(() => {
     queryClient.invalidateQueries({ queryKey });
+    queryClient.invalidateQueries({ queryKey: ["uncategorized-items", projectId] });
     queryClient.invalidateQueries({ queryKey: ["project", projectId] });
   }, [queryClient, queryKey, projectId]);
 
@@ -529,7 +537,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
       </div>
 
       {/* Categories */}
-      {!hasCategories && (
+      {!hasCategories && (uncategorizedItems as LineItemData[]).length === 0 && (
         <div className="rounded-lg border border-dashed border-foreground/10 py-12 text-center">
           <p className="text-sm text-fg-3">No categories yet.</p>
           <p className="mt-1 text-xs text-fg-4">
@@ -628,6 +636,35 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
           </CategorySection>
         );
       })}
+
+      {/* Uncategorized items */}
+      {(uncategorizedItems as LineItemData[]).length > 0 && (
+        <div className="rounded-lg bg-bg-surface ring-1 ring-foreground/8">
+          <div className="flex items-center justify-between px-3 py-2.5">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-fg">Uncategorized</span>
+              <span className="text-xs text-fg-4">
+                {(uncategorizedItems as LineItemData[]).length} item{(uncategorizedItems as LineItemData[]).length !== 1 ? "s" : ""}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setAddEquipmentTarget({});
+                  setShowAddEquipment(true);
+                }}
+                className="flex items-center gap-1 text-xs text-fg-4 hover:text-fg-3 transition-colors"
+              >
+                <Plus className="h-3 w-3" />
+                Equipment
+              </button>
+            </div>
+          </div>
+          <div className="border-t border-foreground/5 px-3 pb-3 pt-2">
+            <LineItemTable items={uncategorizedItems as LineItemData[]} projectId={projectId} onMutate={invalidate} />
+          </div>
+        </div>
+      )}
 
       {/* Add category dialog */}
       <Dialog open={showAddCategory} onOpenChange={setShowAddCategory}>

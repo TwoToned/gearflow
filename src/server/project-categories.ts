@@ -156,6 +156,26 @@ export async function deleteProjectCategory(categoryId: string) {
   return serialize({ success: true });
 }
 
+export async function getUncategorizedLineItems(projectId: string) {
+  const { organizationId } = await requirePermission("project", "read");
+  const items = await prisma.projectLineItem.findMany({
+    where: {
+      projectId,
+      organizationId,
+      categoryId: null,
+      groupId: null,
+    },
+    include: {
+      model: true,
+      asset: true,
+      bulkAsset: true,
+      kit: true,
+    },
+    orderBy: { sortOrder: "asc" },
+  });
+  return serialize(items);
+}
+
 export async function reorderProjectCategories(
   projectId: string,
   orderedIds: string[]

@@ -173,7 +173,7 @@ function SortableGroupRow({
           <GripVertical className="h-4 w-4" />
         </button>
       </TableCell>
-      <TableCell className="pl-4">
+      <TableCell className="pl-6">
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -960,7 +960,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                                 {/* Expanded line items — sortable */}
                                 {isExpanded && groupItems.length === 0 && (
                                   <TableRow className="hover:bg-transparent">
-                                    <TableCell colSpan={COL_COUNT} className="pl-8 py-3 text-center text-xs text-fg-4">
+                                    <TableCell colSpan={COL_COUNT} className="pl-10 py-3 text-center text-xs text-fg-4">
                                       No items in this group yet. Add equipment to get started.
                                     </TableCell>
                                   </TableRow>
@@ -979,7 +979,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                                         <SortableLineItemRow
                                           key={item.id}
                                           item={item}
-                                          indent="pl-8"
+                                          indent="pl-10"
                                           onEdit={() => openEditLineItem(item)}
                                           onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
                                           onRemove={() => removeMut.mutate(item.id)}
@@ -1009,7 +1009,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                               <SortableLineItemRow
                                 key={item.id}
                                 item={item}
-                                indent="pl-4"
+                                indent="pl-6"
                                 onEdit={() => openEditLineItem(item)}
                                 onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
                                 onRemove={() => removeMut.mutate(item.id)}

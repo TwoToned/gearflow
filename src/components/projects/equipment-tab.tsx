@@ -18,7 +18,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, FolderPlus, Package, ArrowUpRight, MoreHorizontal, Trash2, Pencil, Loader2, ChevronRight, GripVertical } from "lucide-react";
+import { Plus, FolderPlus, Package, ArrowUpRight, MoreHorizontal, Trash2, Pencil, Loader2, ChevronRight, GripVertical, DollarSign } from "lucide-react";
 import { toast } from "sonner";
 
 import { getProjectCategories } from "@/server/project-categories";
@@ -163,6 +163,7 @@ function SortableGroupRow({
   };
 
   const priceVal = group.price != null ? Number(group.price) : null;
+  const suggestedPrice = group.suggestedPrice;
 
   return (
     <TableRow ref={setNodeRef} style={style} className={`group/row ${isDragging ? "opacity-30" : ""}`}>
@@ -204,20 +205,24 @@ function SortableGroupRow({
       </TableCell>
       <TableCell>
         <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon-sm" onClick={onEdit}>
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="opacity-0 group-hover/row:opacity-100 transition-opacity" />}>
+            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" />}>
               <MoreHorizontal className="h-3.5 w-3.5" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuGroup>
                 <DropdownMenuLabel>Group</DropdownMenuLabel>
-                <DropdownMenuItem onClick={onEdit}>
-                  <Pencil className="mr-2 h-3.5 w-3.5" />
-                  Edit
-                </DropdownMenuItem>
                 <DropdownMenuItem onClick={onEditPrice}>
-                  <Pencil className="mr-2 h-3.5 w-3.5" />
+                  <DollarSign className="mr-2 h-3.5 w-3.5" />
                   Set Price
+                  {suggestedPrice != null && priceVal == null && (
+                    <span className="ml-auto text-xs text-fg-3">
+                      suggested {formatCurrency(Number(suggestedPrice))}
+                    </span>
+                  )}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={onAddEquipment}>
                   <Plus className="mr-2 h-3.5 w-3.5" />

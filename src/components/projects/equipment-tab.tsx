@@ -32,6 +32,8 @@ import {
 } from "@/server/project-groups";
 import {
   createProjectCategory,
+  updateProjectCategory,
+  deleteProjectCategory,
   reorderProjectCategories,
   getUncategorizedLineItems,
 } from "@/server/project-categories";
@@ -381,6 +383,24 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const renameCategoryMut = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => updateProjectCategory(id, { name }),
+    onSuccess: () => {
+      invalidate();
+      toast.success("Category renamed");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const deleteCategoryMut = useMutation({
+    mutationFn: (id: string) => deleteProjectCategory(id),
+    onSuccess: () => {
+      invalidate();
+      toast.success("Category deleted — items moved to uncategorized");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const moveLineItemMut = useMutation({
     mutationFn: ({ lineItemId, targetGroupId, targetCategoryId }: {
       lineItemId: string;
@@ -631,6 +651,8 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
             onAddGroup={(title, templateId) =>
               createGroupMut.mutate({ categoryId: cat.id, title, templateId })
             }
+            onRename={(newName) => renameCategoryMut.mutate({ id: cat.id, name: newName })}
+            onDelete={() => deleteCategoryMut.mutate(cat.id)}
             templates={templateOptions}
           >
             <DndContext

@@ -18,7 +18,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, FolderPlus, Package, ArrowUpRight, MoreHorizontal, Trash2, Pencil, Loader2, ChevronRight, GripVertical, DollarSign } from "lucide-react";
+import { Plus, FolderPlus, Package, ArrowUpRight, MoreHorizontal, Trash2, Pencil, Loader2, ChevronRight, GripVertical } from "lucide-react";
 import { toast } from "sonner";
 
 import { getProjectCategories } from "@/server/project-categories";
@@ -135,7 +135,6 @@ function SortableGroupRow({
   isExpanded,
   indented,
   onToggle,
-  onEditPrice,
   onDelete,
   onEdit,
   onAddEquipment,
@@ -146,7 +145,6 @@ function SortableGroupRow({
   isExpanded: boolean;
   indented?: boolean;
   onToggle: () => void;
-  onEditPrice: () => void;
   onDelete: () => void;
   onEdit: () => void;
   onAddEquipment: () => void;
@@ -163,7 +161,6 @@ function SortableGroupRow({
   };
 
   const priceVal = group.price != null ? Number(group.price) : null;
-  const suggestedPrice = group.suggestedPrice;
 
   return (
     <TableRow ref={setNodeRef} style={style} className={`group/row ${isDragging ? "opacity-30" : ""}`}>
@@ -215,15 +212,6 @@ function SortableGroupRow({
             <DropdownMenuContent align="end">
               <DropdownMenuGroup>
                 <DropdownMenuLabel>Group</DropdownMenuLabel>
-                <DropdownMenuItem onClick={onEditPrice}>
-                  <DollarSign className="mr-2 h-3.5 w-3.5" />
-                  Set Price
-                  {suggestedPrice != null && priceVal == null && (
-                    <span className="ml-auto text-xs text-fg-3">
-                      suggested {formatCurrency(Number(suggestedPrice))}
-                    </span>
-                  )}
-                </DropdownMenuItem>
                 <DropdownMenuItem onClick={onAddEquipment}>
                   <Plus className="mr-2 h-3.5 w-3.5" />
                   Add Equipment
@@ -471,6 +459,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
   const [editGroupQuantity, setEditGroupQuantity] = useState("1");
   const [editGroupBillingWeeks, setEditGroupBillingWeeks] = useState("");
   const [editGroupBillingDays, setEditGroupBillingDays] = useState("");
+  const [editGroupPrice, setEditGroupPrice] = useState("");
 
   // Category rename state
   const [renameCategoryId, setRenameCategoryId] = useState<string | null>(null);
@@ -907,10 +896,6 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                                   isExpanded={isExpanded}
                                   indented
                                   onToggle={() => toggleGroup(group.id)}
-                                  onEditPrice={() => {
-                                    setPriceEditGroupId(group.id);
-                                    setPriceEditValue(priceVal != null ? String(priceVal) : "");
-                                  }}
                                   onDelete={() => {
                                     setDeleteGroupId(group.id);
                                     setDeleteGroupInfo({
@@ -926,6 +911,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                                     setEditGroupQuantity(String(group.quantity));
                                     setEditGroupBillingWeeks(group.billingWeeks != null ? String(group.billingWeeks) : "");
                                     setEditGroupBillingDays(group.billingDays != null ? String(group.billingDays) : "");
+                                    setEditGroupPrice(priceVal != null ? String(priceVal) : "");
                                   }}
                                   onAddEquipment={() => {
                                     setAddEquipmentTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
@@ -1599,6 +1585,26 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
               />
             </div>
             <div className="space-y-2">
+              <Label>Price</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={editGroupPrice}
+                onChange={(e) => setEditGroupPrice(e.target.value)}
+                placeholder="Leave blank for no price"
+              />
+              {editGroupData?.suggestedPrice != null && (
+                <button
+                  type="button"
+                  className="text-xs text-fg-3 hover:text-fg transition-colors"
+                  onClick={() => setEditGroupPrice(String(Number(editGroupData.suggestedPrice)))}
+                >
+                  Suggested: {formatCurrency(Number(editGroupData.suggestedPrice))}
+                </button>
+              )}
+            </div>
+            <div className="space-y-2">
               <Label className="text-muted-foreground text-xs">Billing Override (leave blank to use project defaults)</Label>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
@@ -1641,6 +1647,12 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                       billingDays: editGroupBillingDays !== "" ? parseInt(editGroupBillingDays) : undefined,
                     },
                   });
+                  if (editGroupPrice !== "") {
+                    updatePriceMut.mutate({
+                      groupId: editGroupData.id,
+                      price: parseFloat(editGroupPrice) || 0,
+                    });
+                  }
                 }
               }}
               disabled={!editGroupTitle.trim() || updateGroupMut.isPending}

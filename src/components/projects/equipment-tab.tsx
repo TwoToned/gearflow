@@ -18,7 +18,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, FolderPlus, Package, ArrowUpRight, MoreHorizontal, Trash2, Pencil, Loader2 } from "lucide-react";
+import { Plus, FolderPlus, Package, ArrowUpRight, MoreHorizontal, Trash2, Pencil, Loader2, ArrowRightLeft } from "lucide-react";
 import { toast } from "sonner";
 
 import { getProjectCategories } from "@/server/project-categories";
@@ -84,6 +84,7 @@ function SortableGroupCard({
   onDelete,
   onEdit,
   onEditLineItem,
+  onMoveLineItem,
 }: {
   group: GroupData;
   projectId: string;
@@ -94,6 +95,7 @@ function SortableGroupCard({
   onAddSubhire: (categoryId: string, groupId: string, groupTitle: string) => void;
   onEditPrice: (groupId: string, currentPrice: number | null) => void;
   onEditLineItem: (item: LineItemData) => void;
+  onMoveLineItem: (itemId: string) => void;
   onDelete: (groupId: string, title: string, price: number, itemCount: number) => void;
   onEdit: (group: GroupData) => void;
 }) {
@@ -128,7 +130,7 @@ function SortableGroupCard({
         onAddKit={() => onAddKit(categoryId, group.id, group.title)}
         onAddSubhire={() => onAddSubhire(categoryId, group.id, group.title)}
       >
-        <LineItemTable items={group.lineItems ?? []} projectId={projectId} onMutate={onMutate} onEditItem={onEditLineItem} />
+        <LineItemTable items={group.lineItems ?? []} projectId={projectId} onMutate={onMutate} onEditItem={onEditLineItem} onMoveItem={onMoveLineItem} />
       </GroupCard>
     </div>
   );
@@ -156,11 +158,13 @@ function LineItemTable({
   projectId,
   onMutate,
   onEditItem,
+  onMoveItem,
 }: {
   items: LineItemData[];
   projectId: string;
   onMutate: () => void;
   onEditItem?: (item: LineItemData) => void;
+  onMoveItem?: (itemId: string) => void;
 }) {
   const removeMut = useMutation({
     mutationFn: (id: string) => removeLineItem(id),
@@ -210,6 +214,12 @@ function LineItemTable({
                   <DropdownMenuItem onClick={() => onEditItem(item)}>
                     <Pencil className="mr-2 h-3.5 w-3.5" />
                     Edit
+                  </DropdownMenuItem>
+                )}
+                {onMoveItem && (
+                  <DropdownMenuItem onClick={() => onMoveItem(item.id)}>
+                    <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
+                    Move to...
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem
@@ -302,6 +312,10 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
     itemCount: number;
   } | null>(null);
 
+  // Move line item dialog state
+  const [moveLineItemId, setMoveLineItemId] = useState<string | null>(null);
+  const [moveTargetGroupId, setMoveTargetGroupId] = useState<string>("__uncategorized__");
+
   // Line item edit dialog state
   const [editLineItem, setEditLineItem] = useState<LineItemData | null>(null);
   const [editQuantity, setEditQuantity] = useState("1");
@@ -363,6 +377,20 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
       setShowAddCategory(false);
       setNewCategoryName("");
       toast.success("Category created");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const moveLineItemMut = useMutation({
+    mutationFn: ({ lineItemId, targetGroupId, targetCategoryId }: {
+      lineItemId: string;
+      targetGroupId: string | null;
+      targetCategoryId: string | null;
+    }) => moveLineItemToGroup({ lineItemId, targetGroupId, targetCategoryId }),
+    onSuccess: () => {
+      invalidate();
+      setMoveLineItemId(null);
+      toast.success("Item moved");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -651,6 +679,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                         setEditGroupBillingDays(g.billingDays != null ? String(g.billingDays) : "");
                       }}
                       onEditLineItem={openEditLineItem}
+                      onMoveLineItem={(id) => { setMoveLineItemId(id); setMoveTargetGroupId("__uncategorized__"); }}
                     />
                   ))}
                 </div>
@@ -668,6 +697,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                   projectId={projectId}
                   onMutate={invalidate}
                   onEditItem={openEditLineItem}
+                  onMoveItem={(id) => { setMoveLineItemId(id); setMoveTargetGroupId("__uncategorized__"); }}
                 />
               </div>
             )}
@@ -699,7 +729,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
             </div>
           </div>
           <div className="border-t border-foreground/5 px-3 pb-3 pt-2">
-            <LineItemTable items={uncategorizedItems as LineItemData[]} projectId={projectId} onMutate={invalidate} onEditItem={openEditLineItem} />
+            <LineItemTable items={uncategorizedItems as LineItemData[]} projectId={projectId} onMutate={invalidate} onEditItem={openEditLineItem} onMoveItem={(id) => { setMoveLineItemId(id); setMoveTargetGroupId("__uncategorized__"); }} />
           </div>
         </div>
       )}
@@ -933,6 +963,54 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
             <Button onClick={handleSaveEditLineItem} disabled={updateLineItemMut.isPending}>
               {updateLineItemMut.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Move line item dialog */}
+      <Dialog open={moveLineItemId != null} onOpenChange={(open) => { if (!open) setMoveLineItemId(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Move Item</DialogTitle>
+            <DialogDescription>
+              Choose a destination group for this item.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <select
+              value={moveTargetGroupId}
+              onChange={(e) => setMoveTargetGroupId(e.target.value)}
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <option value="__uncategorized__">Uncategorized (no group)</option>
+              {typedCategories.map((cat) =>
+                cat.groups.map((g) => (
+                  <option key={g.id} value={`${cat.id}|${g.id}`}>
+                    {cat.name} &gt; {g.title}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMoveLineItemId(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!moveLineItemId) return;
+                if (moveTargetGroupId === "__uncategorized__") {
+                  moveLineItemMut.mutate({ lineItemId: moveLineItemId, targetGroupId: null, targetCategoryId: null });
+                } else {
+                  const [catId, grpId] = moveTargetGroupId.split("|");
+                  moveLineItemMut.mutate({ lineItemId: moveLineItemId, targetGroupId: grpId, targetCategoryId: catId });
+                }
+              }}
+              disabled={moveLineItemMut.isPending}
+            >
+              {moveLineItemMut.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Move
             </Button>
           </DialogFooter>
         </DialogContent>

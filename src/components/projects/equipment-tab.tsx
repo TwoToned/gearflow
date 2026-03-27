@@ -18,7 +18,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, FolderPlus, Package, ArrowUpRight, MoreHorizontal, Trash2, Pencil, Loader2, ArrowRightLeft } from "lucide-react";
+import { Plus, FolderPlus, Package, ArrowUpRight, MoreHorizontal, Trash2, Pencil, Loader2, ArrowRightLeft, ChevronRight, GripVertical } from "lucide-react";
 import { toast } from "sonner";
 
 import { getProjectCategories } from "@/server/project-categories";
@@ -52,6 +52,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -60,11 +61,17 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { formatCurrency } from "@/lib/formatters";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { CategorySection } from "./category-section";
-import { GroupCard } from "./group-card";
 import { AddEquipmentDialog } from "./add-equipment-dialog";
 import { AddSubhireDialog } from "./add-subhire-dialog";
 
@@ -72,73 +79,7 @@ interface EquipmentTabProps {
   projectId: string;
 }
 
-// ─── Sortable wrapper for groups ─────────────────────────────────────────────
-
-function SortableGroupCard({
-  group,
-  projectId,
-  categoryId,
-  onMutate,
-  onAddEquipment,
-  onAddKit,
-  onAddSubhire,
-  onEditPrice,
-  onDelete,
-  onEdit,
-  onEditLineItem,
-  onMoveLineItem,
-}: {
-  group: GroupData;
-  projectId: string;
-  categoryId: string;
-  onMutate: () => void;
-  onAddEquipment: (categoryId: string, groupId: string, groupTitle: string) => void;
-  onAddKit: (categoryId: string, groupId: string, groupTitle: string) => void;
-  onAddSubhire: (categoryId: string, groupId: string, groupTitle: string) => void;
-  onEditPrice: (groupId: string, currentPrice: number | null) => void;
-  onEditLineItem: (item: LineItemData) => void;
-  onMoveLineItem: (itemId: string) => void;
-  onDelete: (groupId: string, title: string, price: number, itemCount: number) => void;
-  onEdit: (group: GroupData) => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: group.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  const priceVal = group.price != null ? Number(group.price) : null;
-
-  return (
-    <div ref={setNodeRef} style={style}>
-      <GroupCard
-        id={group.id}
-        title={group.title}
-        description={group.description}
-        quantity={group.quantity}
-        price={priceVal}
-        suggestedPrice={group.suggestedPrice != null ? Number(group.suggestedPrice) : null}
-        rentalPeriod={group.rentalPeriod}
-        rentalQuantity={group.rentalQuantity}
-        lineItemCount={group.lineItems?.length ?? 0}
-        dragHandleProps={{ ...attributes, ...listeners }}
-        onEditPrice={() => onEditPrice(group.id, priceVal)}
-        onDelete={() => onDelete(group.id, group.title, priceVal ?? 0, group.lineItems?.length ?? 0)}
-        onEdit={() => onEdit(group)}
-        onAddEquipment={() => onAddEquipment(categoryId, group.id, group.title)}
-        onAddKit={() => onAddKit(categoryId, group.id, group.title)}
-        onAddSubhire={() => onAddSubhire(categoryId, group.id, group.title)}
-      >
-        <LineItemTable items={group.lineItems ?? []} projectId={projectId} onMutate={onMutate} onEditItem={onEditLineItem} onMoveItem={onMoveLineItem} />
-      </GroupCard>
-    </div>
-  );
-}
-
-// ─── Line item table within a group ──────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 interface LineItemData {
   id: string;
@@ -154,93 +95,6 @@ interface LineItemData {
   model?: { name: string; dailyRate?: unknown; weeklyRate?: unknown } | null;
   asset?: { assetTag?: string | null } | null;
 }
-
-function LineItemTable({
-  items,
-  projectId,
-  onMutate,
-  onEditItem,
-  onMoveItem,
-}: {
-  items: LineItemData[];
-  projectId: string;
-  onMutate: () => void;
-  onEditItem?: (item: LineItemData) => void;
-  onMoveItem?: (itemId: string) => void;
-}) {
-  const removeMut = useMutation({
-    mutationFn: (id: string) => removeLineItem(id),
-    onSuccess: () => {
-      onMutate();
-      toast.success("Item removed");
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  if (items.length === 0) {
-    return (
-      <div className="py-3 text-center text-xs text-fg-4">
-        No items in this group yet. Add equipment to get started.
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-0.5">
-      {items.map((item) => (
-        <div
-          key={item.id}
-          className="group/item flex items-center gap-3 rounded px-2 py-1.5 text-xs hover:bg-bg-inset/50"
-        >
-          <span className="min-w-0 flex-1 truncate text-fg-2">
-            {item.model?.name ?? item.description ?? "—"}
-          </span>
-          {item.asset?.assetTag && (
-            <span className="flex-none text-fg-4">{item.asset.assetTag}</span>
-          )}
-          <span className="flex-none tabular-nums text-fg-3">×{item.quantity}</span>
-          <span className="flex-none tabular-nums text-fg-2">
-            {formatCurrency(item.unitPrice != null ? Number(item.unitPrice) : null)}
-          </span>
-          <span className="w-20 flex-none text-right tabular-nums font-medium text-fg">
-            {formatCurrency(item.lineTotal != null ? Number(item.lineTotal) : null)}
-          </span>
-          <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-6 w-6 flex-none opacity-0 group-hover/item:opacity-100 transition-opacity" />}>
-              <MoreHorizontal className="h-3 w-3" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>Item</DropdownMenuLabel>
-                {onEditItem && (
-                  <DropdownMenuItem onClick={() => onEditItem(item)}>
-                    <Pencil className="mr-2 h-3.5 w-3.5" />
-                    Edit
-                  </DropdownMenuItem>
-                )}
-                {onMoveItem && (
-                  <DropdownMenuItem onClick={() => onMoveItem(item.id)}>
-                    <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
-                    Move to...
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem
-                  onClick={() => removeMut.mutate(item.id)}
-                  className="text-[oklch(0.58_0.22_27)]"
-                >
-                  <Trash2 className="mr-2 h-3.5 w-3.5" />
-                  Remove
-                </DropdownMenuItem>
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ─── Types ───────────────────────────────────────────────────────────────────
 
 interface GroupData {
   id: string;
@@ -263,6 +117,207 @@ interface CategoryData {
   sortOrder: number;
   groups: GroupData[];
   lineItems?: LineItemData[];
+}
+
+const pricingLabels: Record<string, string> = {
+  PER_DAY: "/day",
+  PER_WEEK: "/week",
+  FLAT: "flat",
+  PER_HOUR: "/hr",
+};
+
+// ─── Sortable group row ─────────────────────────────────────────────────────
+
+function SortableGroupRow({
+  group,
+  isExpanded,
+  onToggle,
+  onEditPrice,
+  onDelete,
+  onEdit,
+  onAddEquipment,
+  onAddKit,
+  onAddSubhire,
+}: {
+  group: GroupData;
+  isExpanded: boolean;
+  onToggle: () => void;
+  onEditPrice: () => void;
+  onDelete: () => void;
+  onEdit: () => void;
+  onAddEquipment: () => void;
+  onAddKit: () => void;
+  onAddSubhire: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: group.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const priceVal = group.price != null ? Number(group.price) : null;
+  const itemCount = group.lineItems?.length ?? 0;
+
+  return (
+    <TableRow ref={setNodeRef} style={style} className="group/row bg-bg-inset/30">
+      <TableCell className="w-8 px-1">
+        <button
+          type="button"
+          className="flex h-full cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+      </TableCell>
+      <TableCell className="pl-4">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onToggle}
+            className="flex items-center gap-1.5 text-left"
+          >
+            <ChevronRight
+              className={`h-4 w-4 shrink-0 text-fg-3 transition-transform ${
+                isExpanded ? "rotate-90" : ""
+              }`}
+            />
+            <span className="font-medium">{group.title}</span>
+          </button>
+          <Badge variant="outline" className="text-xs">
+            {itemCount} item{itemCount !== 1 ? "s" : ""}
+          </Badge>
+          {group.quantity > 1 && (
+            <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-600 border-blue-500/20">
+              x{group.quantity}
+            </Badge>
+          )}
+        </div>
+      </TableCell>
+      <TableCell className="text-center">{group.quantity}</TableCell>
+      <TableCell className="text-right hidden md:table-cell">
+        {priceVal != null ? formatCurrency(priceVal) : "--"}
+      </TableCell>
+      <TableCell className="text-center hidden lg:table-cell">
+        {group.rentalQuantity ?? "--"}
+      </TableCell>
+      <TableCell className="text-right font-medium hidden sm:table-cell">
+        {priceVal != null ? formatCurrency(priceVal * group.quantity) : "--"}
+      </TableCell>
+      <TableCell>
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="opacity-0 group-hover/row:opacity-100 transition-opacity" />}>
+            <MoreHorizontal className="h-3.5 w-3.5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Group</DropdownMenuLabel>
+              <DropdownMenuItem onClick={onEdit}>
+                <Pencil className="mr-2 h-3.5 w-3.5" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onEditPrice}>
+                <Pencil className="mr-2 h-3.5 w-3.5" />
+                Set Price
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onAddEquipment}>
+                <Plus className="mr-2 h-3.5 w-3.5" />
+                Add Equipment
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onAddKit}>
+                <Package className="mr-2 h-3.5 w-3.5" />
+                Add Kit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onAddSubhire}>
+                <ArrowUpRight className="mr-2 h-3.5 w-3.5" />
+                Add Subhire
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={onDelete}
+                className="text-[oklch(0.58_0.22_27)]"
+              >
+                <Trash2 className="mr-2 h-3.5 w-3.5" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+// ─── Line item row ──────────────────────────────────────────────────────────
+
+function LineItemRow({
+  item,
+  indent,
+  onEdit,
+  onMove,
+  onRemove,
+}: {
+  item: LineItemData;
+  indent: string;
+  onEdit: () => void;
+  onMove: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <TableRow className="group/row">
+      <TableCell className="w-8 px-1" />
+      <TableCell className={indent}>
+        <div className="flex items-center gap-2">
+          <span className="truncate text-fg-2">
+            {item.model?.name ?? item.description ?? "—"}
+          </span>
+          {item.asset?.assetTag && (
+            <span className="text-xs text-fg-4">({item.asset.assetTag})</span>
+          )}
+          {item.isOptional && (
+            <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/20">
+              Optional
+            </Badge>
+          )}
+          {item.type === "SUBHIRE" && (
+            <Badge variant="outline" className="text-xs bg-cyan-500/10 text-cyan-600 border-cyan-500/20">
+              Subhire
+            </Badge>
+          )}
+        </div>
+      </TableCell>
+      <TableCell className="text-center">{item.quantity}</TableCell>
+      <TableCell className="text-right hidden md:table-cell">
+        {formatCurrency(item.unitPrice != null ? Number(item.unitPrice) : null)}
+        {item.unitPrice != null && item.pricingType && (
+          <span className="text-xs text-fg-3 ml-0.5">
+            {pricingLabels[item.pricingType] ?? ""}
+          </span>
+        )}
+      </TableCell>
+      <TableCell className="text-center hidden lg:table-cell">
+        {item.duration ?? "--"}
+      </TableCell>
+      <TableCell className="text-right font-medium hidden sm:table-cell">
+        {formatCurrency(item.lineTotal != null ? Number(item.lineTotal) : null)}
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity">
+          <Button variant="ghost" size="icon-sm" onClick={onEdit}>
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon-sm" onClick={onMove}>
+            <ArrowRightLeft className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon-sm" onClick={onRemove}>
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
 }
 
 // ─── Main component ──────────────────────────────────────────────────────────
@@ -340,6 +395,25 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
   const [editGroupBillingWeeks, setEditGroupBillingWeeks] = useState("");
   const [editGroupBillingDays, setEditGroupBillingDays] = useState("");
 
+  // Category rename state
+  const [renameCategoryId, setRenameCategoryId] = useState<string | null>(null);
+  const [renameCategoryValue, setRenameCategoryValue] = useState("");
+
+  // Expanded groups state
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
+  const toggleGroup = useCallback((groupId: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  }, []);
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -392,6 +466,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
     mutationFn: ({ id, name }: { id: string; name: string }) => updateProjectCategory(id, { name }),
     onSuccess: () => {
       invalidate();
+      setRenameCategoryId(null);
       toast.success("Category renamed");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -427,6 +502,15 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
       invalidate();
       setEditLineItem(null);
       toast.success("Item updated");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const removeMut = useMutation({
+    mutationFn: (id: string) => removeLineItem(id),
+    onSuccess: () => {
+      invalidate();
+      toast.success("Item removed");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -575,6 +659,8 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
 
   const typedCategories = categories as CategoryData[];
   const hasCategories = typedCategories.length > 0;
+  const hasUncategorized = (uncategorizedItems as LineItemData[]).length > 0;
+  const COL_COUNT = 7;
 
   return (
     <div className="space-y-3">
@@ -636,136 +722,228 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
         </Button>
       </div>
 
-      {/* Categories */}
-      {!hasCategories && (uncategorizedItems as LineItemData[]).length === 0 && (
+      {/* Empty state */}
+      {!hasCategories && !hasUncategorized && (
         <div className="rounded-lg border border-dashed border-foreground/10 py-12 text-center">
           <p className="text-sm text-fg-3">No categories yet.</p>
           <p className="mt-1 text-xs text-fg-4">
-            Create a category (e.g. "RF", "IEM", "PA") to organize your equipment.
+            Create a category (e.g. &quot;RF&quot;, &quot;IEM&quot;, &quot;PA&quot;) to organize your equipment.
           </p>
         </div>
       )}
 
-      {typedCategories.map((cat) => {
-        const categoryTotal = cat.groups.reduce((sum, g) => {
-          const price = g.price != null ? Number(g.price) : 0;
-          return sum + price * g.quantity;
-        }, 0) + (cat.lineItems ?? []).reduce((sum, li) => {
-          return sum + (li.lineTotal != null ? Number(li.lineTotal) : 0);
-        }, 0);
+      {/* Main table */}
+      {(hasCategories || hasUncategorized) && (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-8 px-1" />
+              <TableHead>ITEM</TableHead>
+              <TableHead className="text-center">QTY</TableHead>
+              <TableHead className="text-right hidden md:table-cell">UNIT PRICE</TableHead>
+              <TableHead className="text-center hidden lg:table-cell">DURATION</TableHead>
+              <TableHead className="text-right hidden sm:table-cell">TOTAL</TableHead>
+              <TableHead className="w-24" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {typedCategories.map((cat) => {
+              const categoryTotal = cat.groups.reduce((sum, g) => {
+                const price = g.price != null ? Number(g.price) : 0;
+                return sum + price * g.quantity;
+              }, 0) + (cat.lineItems ?? []).reduce((sum, li) => {
+                return sum + (li.lineTotal != null ? Number(li.lineTotal) : 0);
+              }, 0);
 
-        return (
-          <CategorySection
-            key={cat.id}
-            id={cat.id}
-            name={cat.name}
-            groupCount={cat.groups.length}
-            standaloneCount={cat.lineItems?.length ?? 0}
-            categoryTotal={categoryTotal}
-            onAddGroup={(title, templateId) =>
-              createGroupMut.mutate({ categoryId: cat.id, title, templateId })
-            }
-            onRename={(newName) => renameCategoryMut.mutate({ id: cat.id, name: newName })}
-            onDelete={() => deleteCategoryMut.mutate(cat.id)}
-            templates={templateOptions}
-          >
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={(e) => handleGroupDragEnd(cat.id, e)}
-            >
-              <SortableContext
-                items={cat.groups.map((g) => g.id)}
-                strategy={verticalListSortingStrategy}
-              >
-                <div className="space-y-1.5">
-                  {cat.groups.map((group) => (
-                    <SortableGroupCard
-                      key={group.id}
-                      group={group}
-                      projectId={projectId}
-                      categoryId={cat.id}
-                      onMutate={invalidate}
-                      onAddEquipment={(catId, grpId, grpTitle) => {
-                        setAddEquipmentTarget({ categoryId: catId, groupId: grpId, label: `${cat.name} > ${grpTitle}` });
-                        setShowAddEquipment(true);
-                      }}
-                      onAddKit={(catId, grpId, grpTitle) => {
-                        setKitTarget({ categoryId: catId, groupId: grpId, label: `${cat.name} > ${grpTitle}` });
-                        setShowKitDialog(true);
-                      }}
-                      onAddSubhire={(catId, grpId, grpTitle) => {
-                        setSubhireTarget({ categoryId: catId, groupId: grpId, label: `${cat.name} > ${grpTitle}` });
-                        setShowSubhireDialog(true);
-                      }}
-                      onEditPrice={(groupId, currentPrice) => {
-                        setPriceEditGroupId(groupId);
-                        setPriceEditValue(currentPrice != null ? String(currentPrice) : "");
-                      }}
-                      onDelete={(groupId, title, price, itemCount) => {
-                        setDeleteGroupId(groupId);
-                        setDeleteGroupInfo({ title, price, itemCount });
-                      }}
-                      onEdit={(g) => {
-                        setEditGroupData(g);
-                        setEditGroupTitle(g.title);
-                        setEditGroupDescription(g.description ?? "");
-                        setEditGroupQuantity(String(g.quantity));
-                        setEditGroupBillingWeeks(g.billingWeeks != null ? String(g.billingWeeks) : "");
-                        setEditGroupBillingDays(g.billingDays != null ? String(g.billingDays) : "");
-                      }}
-                      onEditLineItem={openEditLineItem}
-                      onMoveLineItem={(id) => { setMoveLineItemId(id); setMoveTargetGroupId("__uncategorized__"); }}
-                    />
-                  ))}
-                </div>
-              </SortableContext>
-            </DndContext>
+              return (
+                <React.Fragment key={cat.id}>
+                  {/* Category section header */}
+                  <TableRow className="bg-transparent hover:bg-transparent border-b-0">
+                    <TableCell colSpan={COL_COUNT} className="pt-6 pb-1 px-3">
+                      <div className="group/cat flex items-center gap-2">
+                        <span className="t-overline text-fg-3 font-bold tracking-[0.08em]">
+                          {cat.name}
+                        </span>
+                        <span className="text-[10px] text-fg-4">
+                          {cat.groups.length} group{cat.groups.length !== 1 ? "s" : ""}
+                          {(cat.lineItems?.length ?? 0) > 0 && `, ${cat.lineItems!.length} standalone`}
+                        </span>
+                        <span className="text-xs font-medium text-fg-3 ml-auto mr-2">
+                          {formatCurrency(categoryTotal)}
+                        </span>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="opacity-0 group-hover/cat:opacity-100 transition-opacity" />}>
+                            <MoreHorizontal className="h-3.5 w-3.5" />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuGroup>
+                              <DropdownMenuLabel>Category</DropdownMenuLabel>
+                              <DropdownMenuItem onClick={() => {
+                                setRenameCategoryId(cat.id);
+                                setRenameCategoryValue(cat.name);
+                              }}>
+                                <Pencil className="mr-2 h-3.5 w-3.5" />
+                                Rename
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => deleteCategoryMut.mutate(cat.id)}
+                                className="text-[oklch(0.58_0.22_27)]"
+                              >
+                                <Trash2 className="mr-2 h-3.5 w-3.5" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuGroup>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </TableCell>
+                  </TableRow>
 
-            {/* Standalone line items */}
-            {(cat.lineItems ?? []).length > 0 && (
-              <div className="mt-2">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-4 mb-1">
-                  Standalone items
-                </div>
-                <LineItemTable
-                  items={cat.lineItems ?? []}
-                  projectId={projectId}
-                  onMutate={invalidate}
-                  onEditItem={openEditLineItem}
-                  onMoveItem={(id) => { setMoveLineItemId(id); setMoveTargetGroupId("__uncategorized__"); }}
-                />
-              </div>
+                  {/* Groups within category */}
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={(e) => handleGroupDragEnd(cat.id, e)}
+                  >
+                    <SortableContext
+                      items={cat.groups.map((g) => g.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      {cat.groups.map((group) => {
+                        const isExpanded = expandedGroups.has(group.id);
+                        const priceVal = group.price != null ? Number(group.price) : null;
+                        return (
+                          <React.Fragment key={group.id}>
+                            <SortableGroupRow
+                              group={group}
+                              isExpanded={isExpanded}
+                              onToggle={() => toggleGroup(group.id)}
+                              onEditPrice={() => {
+                                setPriceEditGroupId(group.id);
+                                setPriceEditValue(priceVal != null ? String(priceVal) : "");
+                              }}
+                              onDelete={() => {
+                                setDeleteGroupId(group.id);
+                                setDeleteGroupInfo({
+                                  title: group.title,
+                                  price: priceVal ?? 0,
+                                  itemCount: group.lineItems?.length ?? 0,
+                                });
+                              }}
+                              onEdit={() => {
+                                setEditGroupData(group);
+                                setEditGroupTitle(group.title);
+                                setEditGroupDescription(group.description ?? "");
+                                setEditGroupQuantity(String(group.quantity));
+                                setEditGroupBillingWeeks(group.billingWeeks != null ? String(group.billingWeeks) : "");
+                                setEditGroupBillingDays(group.billingDays != null ? String(group.billingDays) : "");
+                              }}
+                              onAddEquipment={() => {
+                                setAddEquipmentTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
+                                setShowAddEquipment(true);
+                              }}
+                              onAddKit={() => {
+                                setKitTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
+                                setShowKitDialog(true);
+                              }}
+                              onAddSubhire={() => {
+                                setSubhireTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
+                                setShowSubhireDialog(true);
+                              }}
+                            />
+                            {/* Expanded line items within group */}
+                            {isExpanded && (group.lineItems ?? []).length === 0 && (
+                              <TableRow className="hover:bg-transparent">
+                                <TableCell colSpan={COL_COUNT} className="pl-8 py-3 text-center text-xs text-fg-4">
+                                  No items in this group yet. Add equipment to get started.
+                                </TableCell>
+                              </TableRow>
+                            )}
+                            {isExpanded && (group.lineItems ?? []).map((item) => (
+                              <LineItemRow
+                                key={item.id}
+                                item={item}
+                                indent="pl-8"
+                                onEdit={() => openEditLineItem(item)}
+                                onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
+                                onRemove={() => removeMut.mutate(item.id)}
+                              />
+                            ))}
+                          </React.Fragment>
+                        );
+                      })}
+                    </SortableContext>
+                  </DndContext>
+
+                  {/* Standalone line items in category */}
+                  {(cat.lineItems ?? []).length > 0 && (
+                    <>
+                      <TableRow className="bg-transparent hover:bg-transparent border-b-0">
+                        <TableCell colSpan={COL_COUNT} className="pt-3 pb-1 px-3 pl-6">
+                          <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-4">
+                            Standalone items
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                      {(cat.lineItems ?? []).map((item) => (
+                        <LineItemRow
+                          key={item.id}
+                          item={item}
+                          indent="pl-4"
+                          onEdit={() => openEditLineItem(item)}
+                          onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
+                          onRemove={() => removeMut.mutate(item.id)}
+                        />
+                      ))}
+                    </>
+                  )}
+                </React.Fragment>
+              );
+            })}
+
+            {/* Uncategorized items */}
+            {hasUncategorized && (
+              <>
+                <TableRow className="bg-transparent hover:bg-transparent border-b-0">
+                  <TableCell colSpan={COL_COUNT} className="pt-6 pb-1 px-3">
+                    <div className="flex items-center gap-2">
+                      <span className="t-overline text-fg-3 font-bold tracking-[0.08em]">
+                        Uncategorized
+                      </span>
+                      <span className="text-[10px] text-fg-4">
+                        {(uncategorizedItems as LineItemData[]).length} item{(uncategorizedItems as LineItemData[]).length !== 1 ? "s" : ""}
+                      </span>
+                      <div className="flex-1" />
+                      <button
+                        onClick={() => {
+                          setAddEquipmentTarget({});
+                          setShowAddEquipment(true);
+                        }}
+                        className="flex items-center gap-1 text-xs text-fg-4 hover:text-fg-3 transition-colors"
+                      >
+                        <Plus className="h-3 w-3" />
+                        Equipment
+                      </button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+                {(uncategorizedItems as LineItemData[]).map((item) => (
+                  <LineItemRow
+                    key={item.id}
+                    item={item}
+                    indent="pl-4"
+                    onEdit={() => openEditLineItem(item)}
+                    onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
+                    onRemove={() => removeMut.mutate(item.id)}
+                  />
+                ))}
+              </>
             )}
-          </CategorySection>
-        );
-      })}
-
-      {/* Uncategorized items */}
-      {(uncategorizedItems as LineItemData[]).length > 0 && (
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-fg-3">Uncategorized</span>
-            <span className="text-[10px] text-fg-4">
-              {(uncategorizedItems as LineItemData[]).length} item{(uncategorizedItems as LineItemData[]).length !== 1 ? "s" : ""}
-            </span>
-            <div className="flex-1" />
-            <button
-              onClick={() => {
-                setAddEquipmentTarget({});
-                setShowAddEquipment(true);
-              }}
-              className="flex items-center gap-1 text-xs text-fg-4 hover:text-fg-3 transition-colors"
-            >
-              <Plus className="h-3 w-3" />
-              Equipment
-            </button>
-          </div>
-          <div className="pl-4">
-            <LineItemTable items={uncategorizedItems as LineItemData[]} projectId={projectId} onMutate={invalidate} onEditItem={openEditLineItem} onMoveItem={(id) => { setMoveLineItemId(id); setMoveTargetGroupId("__uncategorized__"); }} />
-          </div>
-        </div>
+          </TableBody>
+        </Table>
       )}
+
+      {/* ─── Dialogs ────────────────────────────────────────────────────────── */}
 
       {/* Add category dialog */}
       <Dialog open={showAddCategory} onOpenChange={setShowAddCategory}>
@@ -802,6 +980,41 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
               disabled={!newCategoryName.trim() || createCategoryMut.isPending}
             >
               Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rename category dialog */}
+      <Dialog open={renameCategoryId != null} onOpenChange={(open) => { if (!open) setRenameCategoryId(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Rename category</DialogTitle>
+          </DialogHeader>
+          <Input
+            placeholder="Category name"
+            value={renameCategoryValue}
+            onChange={(e) => setRenameCategoryValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && renameCategoryValue.trim() && renameCategoryId) {
+                renameCategoryMut.mutate({ id: renameCategoryId, name: renameCategoryValue.trim() });
+              }
+            }}
+            autoFocus
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameCategoryId(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (renameCategoryId && renameCategoryValue.trim()) {
+                  renameCategoryMut.mutate({ id: renameCategoryId, name: renameCategoryValue.trim() });
+                }
+              }}
+              disabled={!renameCategoryValue.trim() || renameCategoryMut.isPending}
+            >
+              Rename
             </Button>
           </DialogFooter>
         </DialogContent>

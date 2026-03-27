@@ -31,24 +31,23 @@ import { useActiveOrganization } from "@/lib/auth-client";
 
 interface AddSubhireDialogProps {
   projectId: string;
-  existingGroups?: string[];
-  onGroupCreated?: (group: string) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Pre-set category for the line item */
   categoryId?: string;
   /** Pre-set group for the line item */
   groupId?: string;
+  /** Human-readable label like "Audio > PA System" when adding inside a group */
+  targetLabel?: string;
 }
 
 export function AddSubhireDialog({
   projectId,
-  existingGroups = [],
-  onGroupCreated,
   open,
   onOpenChange,
   categoryId,
   groupId,
+  targetLabel,
 }: AddSubhireDialogProps) {
   const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
@@ -76,10 +75,7 @@ export function AddSubhireDialog({
 
   const mutation = useMutation({
     mutationFn: (data: LineItemFormValues) => addLineItem(projectId, { ...data, categoryId, groupId }),
-    onSuccess: (_result, variables) => {
-      if (variables.groupName && onGroupCreated) {
-        onGroupCreated(variables.groupName);
-      }
+    onSuccess: () => {
       toast.success("Subhire item added");
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
       queryClient.invalidateQueries({ queryKey: ["project-categories", projectId] });
@@ -197,25 +193,11 @@ export function AddSubhireDialog({
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label>Group Name</Label>
-              <Controller
-                control={form.control}
-                name="groupName"
-                render={({ field }) => (
-                  <ComboboxPicker
-                    value={field.value || ""}
-                    onChange={field.onChange}
-                    options={existingGroups.map((g) => ({ value: g, label: g }))}
-                    placeholder="e.g. Subhires, Audio"
-                    searchPlaceholder="Search or type new group..."
-                    emptyMessage="Type to create a new group."
-                    allowClear
-                    creatable
-                  />
-                )}
-              />
-            </div>
+            {targetLabel && (
+              <div className="rounded-md bg-accent/50 px-3 py-2 text-xs text-fg-3">
+                Adding to <span className="font-medium text-fg">{targetLabel}</span>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="sub-notes">Notes</Label>

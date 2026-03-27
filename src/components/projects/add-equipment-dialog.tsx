@@ -34,26 +34,25 @@ interface AddEquipmentDialogProps {
   projectId: string;
   rentalStartDate?: Date;
   rentalEndDate?: Date;
-  existingGroups?: string[];
-  onGroupCreated?: (group: string) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Pre-set category for the line item (new group/category system) */
+  /** Pre-set category for the line item */
   categoryId?: string;
-  /** Pre-set group for the line item (new group/category system) */
+  /** Pre-set group for the line item */
   groupId?: string;
+  /** Human-readable label like "Audio > PA System" when adding inside a group */
+  targetLabel?: string;
 }
 
 export function AddEquipmentDialog({
   projectId,
   rentalStartDate,
   rentalEndDate,
-  existingGroups = [],
-  onGroupCreated,
   open,
   onOpenChange,
   categoryId,
   groupId,
+  targetLabel,
 }: AddEquipmentDialogProps) {
   const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
@@ -153,10 +152,7 @@ export function AddEquipmentDialog({
   const mutation = useMutation({
     mutationFn: (data: LineItemFormValues) =>
       addLineItem(projectId, { ...data, categoryId, groupId }, overbookConfirmed),
-    onSuccess: (_result, variables) => {
-      if (variables.groupName && onGroupCreated) {
-        onGroupCreated(variables.groupName);
-      }
+    onSuccess: () => {
       toast.success("Equipment added");
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
       queryClient.invalidateQueries({ queryKey: ["availability"] });
@@ -455,25 +451,11 @@ export function AddEquipmentDialog({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label>Group Name</Label>
-            <Controller
-              control={form.control}
-              name="groupName"
-              render={({ field }) => (
-                <ComboboxPicker
-                  value={field.value || ""}
-                  onChange={field.onChange}
-                  options={existingGroups.map((g) => ({ value: g, label: g }))}
-                  placeholder="e.g. Audio, Lighting"
-                  searchPlaceholder="Search or type new group..."
-                  emptyMessage="Type to create a new group."
-                  allowClear
-                  creatable
-                />
-              )}
-            />
-          </div>
+          {targetLabel && (
+            <div className="rounded-md bg-accent/50 px-3 py-2 text-xs text-fg-3">
+              Adding to <span className="font-medium text-fg">{targetLabel}</span>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="eq-notes">Notes</Label>

@@ -90,9 +90,9 @@ function SortableGroupCard({
   projectId: string;
   categoryId: string;
   onMutate: () => void;
-  onAddEquipment: (categoryId: string, groupId: string) => void;
-  onAddKit: (categoryId: string, groupId: string) => void;
-  onAddSubhire: (categoryId: string, groupId: string) => void;
+  onAddEquipment: (categoryId: string, groupId: string, groupTitle: string) => void;
+  onAddKit: (categoryId: string, groupId: string, groupTitle: string) => void;
+  onAddSubhire: (categoryId: string, groupId: string, groupTitle: string) => void;
   onEditPrice: (groupId: string, currentPrice: number | null) => void;
   onAcceptSuggested: (groupId: string) => void;
   onDelete: (groupId: string, title: string, price: number, itemCount: number) => void;
@@ -126,9 +126,9 @@ function SortableGroupCard({
         onEditPrice={() => onEditPrice(group.id, priceVal)}
         onDelete={() => onDelete(group.id, group.title, priceVal ?? 0, group.lineItems?.length ?? 0)}
         onEdit={() => onEdit(group)}
-        onAddEquipment={() => onAddEquipment(categoryId, group.id)}
-        onAddKit={() => onAddKit(categoryId, group.id)}
-        onAddSubhire={() => onAddSubhire(categoryId, group.id)}
+        onAddEquipment={() => onAddEquipment(categoryId, group.id, group.title)}
+        onAddKit={() => onAddKit(categoryId, group.id, group.title)}
+        onAddSubhire={() => onAddSubhire(categoryId, group.id, group.title)}
       >
         <LineItemTable items={group.lineItems ?? []} projectId={projectId} onMutate={onMutate} />
       </GroupCard>
@@ -255,6 +255,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
   const [addEquipmentTarget, setAddEquipmentTarget] = useState<{
     categoryId?: string;
     groupId?: string;
+    label?: string;
   }>({});
 
   // Kit dialog state
@@ -268,12 +269,14 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
   const [subhireTarget, setSubhireTarget] = useState<{
     categoryId?: string;
     groupId?: string;
+    label?: string;
   }>({});
 
   // Kit target state (for adding kits to specific groups)
   const [kitTarget, setKitTarget] = useState<{
     categoryId?: string;
     groupId?: string;
+    label?: string;
   }>({});
 
   // Price edit dialog state
@@ -574,16 +577,16 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                       projectId={projectId}
                       categoryId={cat.id}
                       onMutate={invalidate}
-                      onAddEquipment={(catId, grpId) => {
-                        setAddEquipmentTarget({ categoryId: catId, groupId: grpId });
+                      onAddEquipment={(catId, grpId, grpTitle) => {
+                        setAddEquipmentTarget({ categoryId: catId, groupId: grpId, label: `${cat.name} > ${grpTitle}` });
                         setShowAddEquipment(true);
                       }}
-                      onAddKit={(catId, grpId) => {
-                        setKitTarget({ categoryId: catId, groupId: grpId });
+                      onAddKit={(catId, grpId, grpTitle) => {
+                        setKitTarget({ categoryId: catId, groupId: grpId, label: `${cat.name} > ${grpTitle}` });
                         setShowKitDialog(true);
                       }}
-                      onAddSubhire={(catId, grpId) => {
-                        setSubhireTarget({ categoryId: catId, groupId: grpId });
+                      onAddSubhire={(catId, grpId, grpTitle) => {
+                        setSubhireTarget({ categoryId: catId, groupId: grpId, label: `${cat.name} > ${grpTitle}` });
                         setShowSubhireDialog(true);
                       }}
                       onEditPrice={(groupId, currentPrice) => {
@@ -779,6 +782,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
           onOpenChange={setShowAddEquipment}
           categoryId={addEquipmentTarget.categoryId}
           groupId={addEquipmentTarget.groupId}
+          targetLabel={addEquipmentTarget.label}
         />
       )}
 
@@ -792,6 +796,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
         }}
         categoryId={subhireTarget.categoryId}
         groupId={subhireTarget.groupId}
+        targetLabel={subhireTarget.label}
       />
 
       {/* Add kit dialog */}

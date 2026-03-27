@@ -79,6 +79,7 @@ export function AddSubhireDialog({
       toast.success("Subhire item added");
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
       queryClient.invalidateQueries({ queryKey: ["project-categories", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["uncategorized-items", projectId] });
       onOpenChange(false);
       form.reset();
     },

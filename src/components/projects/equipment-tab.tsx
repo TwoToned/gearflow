@@ -1164,6 +1164,11 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
             <DialogTitle>Add Kit to Project</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {kitTarget.label && (
+              <div className="rounded-md bg-accent/50 px-3 py-2 text-xs text-fg-3">
+                Adding to <span className="font-medium text-fg">{kitTarget.label}</span>
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Kit</Label>
               <ComboboxPicker

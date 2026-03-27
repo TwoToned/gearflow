@@ -314,6 +314,11 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
     itemCount: number;
   } | null>(null);
 
+  // Add group from toolbar state
+  const [showAddGroupFromToolbar, setShowAddGroupFromToolbar] = useState(false);
+  const [toolbarGroupTitle, setToolbarGroupTitle] = useState("");
+  const [toolbarGroupCategoryId, setToolbarGroupCategoryId] = useState("");
+
   // Move line item dialog state
   const [moveLineItemId, setMoveLineItemId] = useState<string | null>(null);
   const [moveTargetGroupId, setMoveTargetGroupId] = useState<string>("__uncategorized__");
@@ -610,6 +615,15 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
           <ArrowUpRight className="h-3.5 w-3.5" />
           Add Subhire
         </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => setShowAddGroupFromToolbar(true)}
+        >
+          <FolderPlus className="h-3.5 w-3.5" />
+          Add Group
+        </Button>
         <div className="flex-1" />
         <Button
           variant="outline"
@@ -617,7 +631,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
           className="gap-1.5"
           onClick={() => setShowAddCategory(true)}
         >
-          <FolderPlus className="h-3.5 w-3.5" />
+          <Plus className="h-3.5 w-3.5" />
           Add Category
         </Button>
       </div>
@@ -789,6 +803,75 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
             <Button
               onClick={() => createCategoryMut.mutate(newCategoryName.trim())}
               disabled={!newCategoryName.trim() || createCategoryMut.isPending}
+            >
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add group from toolbar dialog */}
+      <Dialog open={showAddGroupFromToolbar} onOpenChange={(open) => {
+        setShowAddGroupFromToolbar(open);
+        if (!open) { setToolbarGroupTitle(""); setToolbarGroupCategoryId(""); }
+      }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Add Group</DialogTitle>
+            <DialogDescription>
+              Choose a category and name for the new group.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <select
+                value={toolbarGroupCategoryId}
+                onChange={(e) => setToolbarGroupCategoryId(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <option value="">Select category...</option>
+                {typedCategories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>{cat.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label>Group Title</Label>
+              <Input
+                value={toolbarGroupTitle}
+                onChange={(e) => setToolbarGroupTitle(e.target.value)}
+                placeholder="e.g. PA System, Lighting Rig"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && toolbarGroupTitle.trim() && toolbarGroupCategoryId) {
+                    createGroupMut.mutate({ categoryId: toolbarGroupCategoryId, title: toolbarGroupTitle.trim() });
+                    setShowAddGroupFromToolbar(false);
+                    setToolbarGroupTitle("");
+                    setToolbarGroupCategoryId("");
+                  }
+                }}
+                autoFocus
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setShowAddGroupFromToolbar(false);
+              setToolbarGroupTitle("");
+              setToolbarGroupCategoryId("");
+            }}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (toolbarGroupTitle.trim() && toolbarGroupCategoryId) {
+                  createGroupMut.mutate({ categoryId: toolbarGroupCategoryId, title: toolbarGroupTitle.trim() });
+                  setShowAddGroupFromToolbar(false);
+                  setToolbarGroupTitle("");
+                  setToolbarGroupCategoryId("");
+                }
+              }}
+              disabled={!toolbarGroupTitle.trim() || !toolbarGroupCategoryId || createGroupMut.isPending}
             >
               Create
             </Button>

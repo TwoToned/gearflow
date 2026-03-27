@@ -162,18 +162,22 @@ function SortableGroupRow({
     opacity: isDragging ? 0.5 : 1,
   };
 
+  const priceVal = group.price != null ? Number(group.price) : null;
+
   return (
-    <TableRow ref={setNodeRef} style={style} className={`group/row border-b-0 ${isDragging ? "opacity-30" : ""}`}>
-      <TableCell colSpan={COL_COUNT} className="py-2 px-1">
-        <div className={`flex items-center gap-1.5 ${indented ? "pl-6" : ""}`}>
-          <button
-            type="button"
-            className="flex cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
-            {...attributes}
-            {...listeners}
-          >
-            <GripVertical className="h-4 w-4" />
-          </button>
+    <TableRow ref={setNodeRef} style={style} className={`group/row ${isDragging ? "opacity-30" : ""}`}>
+      <TableCell className={`w-8 px-1 ${indented ? "pl-6" : ""}`}>
+        <button
+          type="button"
+          className="flex h-full cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={onToggle}
@@ -184,8 +188,22 @@ function SortableGroupRow({
                 isExpanded ? "rotate-90" : ""
               }`}
             />
-            <h3 className="text-sm font-semibold">{group.title}</h3>
+            <span className="font-semibold">{group.title}</span>
           </button>
+        </div>
+      </TableCell>
+      <TableCell className="text-center t-data">{group.quantity}</TableCell>
+      <TableCell className="text-right hidden md:table-cell t-data">
+        {priceVal != null ? formatCurrency(priceVal) : "--"}
+      </TableCell>
+      <TableCell className="text-center hidden lg:table-cell t-data">
+        {group.rentalQuantity ?? "--"}
+      </TableCell>
+      <TableCell className="text-right font-medium hidden sm:table-cell t-data">
+        {priceVal != null ? formatCurrency(priceVal * group.quantity) : "--"}
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-1">
           <DropdownMenu>
             <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="opacity-0 group-hover/row:opacity-100 transition-opacity" />}>
               <MoreHorizontal className="h-3.5 w-3.5" />

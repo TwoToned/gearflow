@@ -18,7 +18,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, FolderPlus, Package, ArrowUpRight, MoreHorizontal, Trash2 } from "lucide-react";
+import { Plus, FolderPlus, Package, ArrowUpRight, MoreHorizontal, Trash2, Pencil, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { getProjectCategories } from "@/server/project-categories";
@@ -36,7 +36,7 @@ import {
   getUncategorizedLineItems,
 } from "@/server/project-categories";
 import { getGroupTemplates, applyGroupTemplate } from "@/server/group-templates";
-import { removeLineItem, addKitLineItem, checkKitAvailability } from "@/server/line-items";
+import { removeLineItem, updateLineItem, addKitLineItem, checkKitAvailability } from "@/server/line-items";
 import { getKits } from "@/server/kits";
 import {
   DropdownMenu,
@@ -83,6 +83,7 @@ function SortableGroupCard({
   onEditPrice,
   onDelete,
   onEdit,
+  onEditLineItem,
 }: {
   group: GroupData;
   projectId: string;
@@ -92,6 +93,7 @@ function SortableGroupCard({
   onAddKit: (categoryId: string, groupId: string, groupTitle: string) => void;
   onAddSubhire: (categoryId: string, groupId: string, groupTitle: string) => void;
   onEditPrice: (groupId: string, currentPrice: number | null) => void;
+  onEditLineItem: (item: LineItemData) => void;
   onDelete: (groupId: string, title: string, price: number, itemCount: number) => void;
   onEdit: (group: GroupData) => void;
 }) {
@@ -126,7 +128,7 @@ function SortableGroupCard({
         onAddKit={() => onAddKit(categoryId, group.id, group.title)}
         onAddSubhire={() => onAddSubhire(categoryId, group.id, group.title)}
       >
-        <LineItemTable items={group.lineItems ?? []} projectId={projectId} onMutate={onMutate} />
+        <LineItemTable items={group.lineItems ?? []} projectId={projectId} onMutate={onMutate} onEditItem={onEditLineItem} />
       </GroupCard>
     </div>
   );
@@ -140,6 +142,11 @@ interface LineItemData {
   quantity: number;
   unitPrice: unknown;
   lineTotal: unknown;
+  pricingType?: string;
+  duration?: number;
+  notes?: string | null;
+  isOptional?: boolean;
+  type?: string;
   model?: { name: string; dailyRate?: unknown; weeklyRate?: unknown } | null;
   asset?: { assetTag?: string | null } | null;
 }
@@ -148,10 +155,12 @@ function LineItemTable({
   items,
   projectId,
   onMutate,
+  onEditItem,
 }: {
   items: LineItemData[];
   projectId: string;
   onMutate: () => void;
+  onEditItem?: (item: LineItemData) => void;
 }) {
   const removeMut = useMutation({
     mutationFn: (id: string) => removeLineItem(id),
@@ -197,6 +206,12 @@ function LineItemTable({
             <DropdownMenuContent align="end">
               <DropdownMenuGroup>
                 <DropdownMenuLabel>Item</DropdownMenuLabel>
+                {onEditItem && (
+                  <DropdownMenuItem onClick={() => onEditItem(item)}>
+                    <Pencil className="mr-2 h-3.5 w-3.5" />
+                    Edit
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   onClick={() => removeMut.mutate(item.id)}
                   className="text-[oklch(0.58_0.22_27)]"
@@ -287,6 +302,15 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
     itemCount: number;
   } | null>(null);
 
+  // Line item edit dialog state
+  const [editLineItem, setEditLineItem] = useState<LineItemData | null>(null);
+  const [editQuantity, setEditQuantity] = useState("1");
+  const [editUnitPrice, setEditUnitPrice] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editPricingType, setEditPricingType] = useState("PER_DAY");
+  const [editDuration, setEditDuration] = useState("1");
+  const [editNotes, setEditNotes] = useState("");
+
   // Group edit dialog state
   const [editGroupData, setEditGroupData] = useState<GroupData | null>(null);
   const [editGroupTitle, setEditGroupTitle] = useState("");
@@ -342,6 +366,43 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  const updateLineItemMut = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) =>
+      updateLineItem(id, data as Parameters<typeof updateLineItem>[1]),
+    onSuccess: () => {
+      invalidate();
+      setEditLineItem(null);
+      toast.success("Item updated");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  function openEditLineItem(item: LineItemData) {
+    setEditLineItem(item);
+    setEditQuantity(String(item.quantity));
+    setEditUnitPrice(item.unitPrice != null ? String(Number(item.unitPrice)) : "");
+    setEditDescription(item.description ?? item.model?.name ?? "");
+    setEditPricingType(item.pricingType ?? "PER_DAY");
+    setEditDuration(String(item.duration ?? 1));
+    setEditNotes(item.notes ?? "");
+  }
+
+  function handleSaveEditLineItem() {
+    if (!editLineItem) return;
+    updateLineItemMut.mutate({
+      id: editLineItem.id,
+      data: {
+        type: editLineItem.type ?? "EQUIPMENT",
+        quantity: Number(editQuantity) || 1,
+        unitPrice: editUnitPrice ? Number(editUnitPrice) : undefined,
+        description: editDescription,
+        pricingType: editPricingType,
+        duration: Number(editDuration) || 1,
+        notes: editNotes || undefined,
+      },
+    });
+  }
 
   const createGroupMut = useMutation({
     mutationFn: ({ categoryId, title, templateId }: { categoryId: string; title: string; templateId?: string }) => {
@@ -589,6 +650,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                         setEditGroupBillingWeeks(g.billingWeeks != null ? String(g.billingWeeks) : "");
                         setEditGroupBillingDays(g.billingDays != null ? String(g.billingDays) : "");
                       }}
+                      onEditLineItem={openEditLineItem}
                     />
                   ))}
                 </div>
@@ -605,6 +667,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                   items={cat.lineItems ?? []}
                   projectId={projectId}
                   onMutate={invalidate}
+                  onEditItem={openEditLineItem}
                 />
               </div>
             )}
@@ -636,7 +699,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
             </div>
           </div>
           <div className="border-t border-foreground/5 px-3 pb-3 pt-2">
-            <LineItemTable items={uncategorizedItems as LineItemData[]} projectId={projectId} onMutate={invalidate} />
+            <LineItemTable items={uncategorizedItems as LineItemData[]} projectId={projectId} onMutate={invalidate} onEditItem={openEditLineItem} />
           </div>
         </div>
       )}
@@ -781,6 +844,95 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
               disabled={deleteGroupMut.isPending}
             >
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit line item dialog */}
+      <Dialog open={editLineItem != null} onOpenChange={(open) => { if (!open) setEditLineItem(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Item</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="edit-description">Description</Label>
+              <Input
+                id="edit-description"
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="edit-quantity">Quantity</Label>
+                <Input
+                  id="edit-quantity"
+                  type="number"
+                  min={1}
+                  value={editQuantity}
+                  onChange={(e) => setEditQuantity(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-unitPrice">Unit Price ($)</Label>
+                <Input
+                  id="edit-unitPrice"
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  value={editUnitPrice}
+                  onChange={(e) => setEditUnitPrice(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="edit-pricingType">Pricing Type</Label>
+                <select
+                  id="edit-pricingType"
+                  value={editPricingType}
+                  onChange={(e) => setEditPricingType(e.target.value)}
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <option value="PER_DAY">Per Day</option>
+                  <option value="PER_WEEK">Per Week</option>
+                  <option value="FLAT">Flat</option>
+                  <option value="PER_HOUR">Per Hour</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-duration">Duration</Label>
+                <Input
+                  id="edit-duration"
+                  type="number"
+                  min={1}
+                  value={editDuration}
+                  onChange={(e) => setEditDuration(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-notes">Notes</Label>
+              <Textarea
+                id="edit-notes"
+                value={editNotes}
+                onChange={(e) => setEditNotes(e.target.value)}
+                rows={2}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditLineItem(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEditLineItem} disabled={updateLineItemMut.isPending}>
+              {updateLineItemMut.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -18,7 +18,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, FolderPlus, Package, ArrowUpRight, MoreHorizontal, Trash2, Pencil, Loader2, ArrowRightLeft, ChevronRight, GripVertical } from "lucide-react";
+import { Plus, FolderPlus, Package, ArrowUpRight, MoreHorizontal, Trash2, Pencil, Loader2, ChevronRight, GripVertical } from "lucide-react";
 import { toast } from "sonner";
 
 import { getProjectCategories } from "@/server/project-categories";
@@ -126,11 +126,14 @@ const pricingLabels: Record<string, string> = {
   PER_HOUR: "/hr",
 };
 
+const COL_COUNT = 7;
+
 // ─── Sortable group row ─────────────────────────────────────────────────────
 
 function SortableGroupRow({
   group,
   isExpanded,
+  indented,
   onToggle,
   onEditPrice,
   onDelete,
@@ -141,6 +144,7 @@ function SortableGroupRow({
 }: {
   group: GroupData;
   isExpanded: boolean;
+  indented?: boolean;
   onToggle: () => void;
   onEditPrice: () => void;
   onDelete: () => void;
@@ -158,23 +162,18 @@ function SortableGroupRow({
     opacity: isDragging ? 0.5 : 1,
   };
 
-  const priceVal = group.price != null ? Number(group.price) : null;
-  const itemCount = group.lineItems?.length ?? 0;
-
   return (
-    <TableRow ref={setNodeRef} style={style} className="group/row bg-bg-inset/30">
-      <TableCell className="w-8 px-1">
-        <button
-          type="button"
-          className="flex h-full cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="h-4 w-4" />
-        </button>
-      </TableCell>
-      <TableCell className="pl-6">
-        <div className="flex items-center gap-2">
+    <TableRow ref={setNodeRef} style={style} className={`group/row border-b-0 ${isDragging ? "opacity-30" : ""}`}>
+      <TableCell colSpan={COL_COUNT} className="py-2 px-1">
+        <div className={`flex items-center gap-1.5 ${indented ? "pl-6" : ""}`}>
+          <button
+            type="button"
+            className="flex cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
           <button
             type="button"
             onClick={onToggle}
@@ -185,66 +184,46 @@ function SortableGroupRow({
                 isExpanded ? "rotate-90" : ""
               }`}
             />
-            <span className="font-medium">{group.title}</span>
+            <h3 className="text-sm font-semibold text-fg-3">{group.title}</h3>
           </button>
-          <Badge variant="outline" className="text-xs">
-            {itemCount} item{itemCount !== 1 ? "s" : ""}
-          </Badge>
-          {group.quantity > 1 && (
-            <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-600 border-blue-500/20">
-              x{group.quantity}
-            </Badge>
-          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="opacity-0 group-hover/row:opacity-100 transition-opacity" />}>
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Group</DropdownMenuLabel>
+                <DropdownMenuItem onClick={onEdit}>
+                  <Pencil className="mr-2 h-3.5 w-3.5" />
+                  Edit
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onEditPrice}>
+                  <Pencil className="mr-2 h-3.5 w-3.5" />
+                  Set Price
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onAddEquipment}>
+                  <Plus className="mr-2 h-3.5 w-3.5" />
+                  Add Equipment
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onAddKit}>
+                  <Package className="mr-2 h-3.5 w-3.5" />
+                  Add Kit
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onAddSubhire}>
+                  <ArrowUpRight className="mr-2 h-3.5 w-3.5" />
+                  Add Subhire
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={onDelete}
+                  className="text-[oklch(0.58_0.22_27)]"
+                >
+                  <Trash2 className="mr-2 h-3.5 w-3.5" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
-      </TableCell>
-      <TableCell className="text-center">{group.quantity}</TableCell>
-      <TableCell className="text-right hidden md:table-cell">
-        {priceVal != null ? formatCurrency(priceVal) : "--"}
-      </TableCell>
-      <TableCell className="text-center hidden lg:table-cell">
-        {group.rentalQuantity ?? "--"}
-      </TableCell>
-      <TableCell className="text-right font-medium hidden sm:table-cell">
-        {priceVal != null ? formatCurrency(priceVal * group.quantity) : "--"}
-      </TableCell>
-      <TableCell>
-        <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="opacity-0 group-hover/row:opacity-100 transition-opacity" />}>
-            <MoreHorizontal className="h-3.5 w-3.5" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>Group</DropdownMenuLabel>
-              <DropdownMenuItem onClick={onEdit}>
-                <Pencil className="mr-2 h-3.5 w-3.5" />
-                Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onEditPrice}>
-                <Pencil className="mr-2 h-3.5 w-3.5" />
-                Set Price
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onAddEquipment}>
-                <Plus className="mr-2 h-3.5 w-3.5" />
-                Add Equipment
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onAddKit}>
-                <Package className="mr-2 h-3.5 w-3.5" />
-                Add Kit
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onAddSubhire}>
-                <ArrowUpRight className="mr-2 h-3.5 w-3.5" />
-                Add Subhire
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={onDelete}
-                className="text-[oklch(0.58_0.22_27)]"
-              >
-                <Trash2 className="mr-2 h-3.5 w-3.5" />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
       </TableCell>
     </TableRow>
   );
@@ -254,12 +233,10 @@ function SortableGroupRow({
 
 function SortableCategoryRow({
   cat,
-  categoryTotal,
   onRename,
   onDelete,
 }: {
   cat: CategoryData;
-  categoryTotal: number;
   onRename: () => void;
   onDelete: () => void;
 }) {
@@ -273,27 +250,20 @@ function SortableCategoryRow({
   };
 
   return (
-    <TableRow ref={setNodeRef} style={style} className="group/cat bg-transparent hover:bg-transparent border-b-0">
-      <TableCell className="w-8 px-1">
-        <button
-          type="button"
-          className="flex h-full cursor-grab items-center px-1 text-fg-4 opacity-0 group-hover/cat:opacity-100 transition-opacity hover:text-fg-3 active:cursor-grabbing"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="h-3.5 w-3.5" />
-        </button>
-      </TableCell>
-      <TableCell colSpan={4} className="py-1.5">
-        <span className="text-xs font-semibold text-fg-3">{cat.name}</span>
-      </TableCell>
-      <TableCell className="text-right font-medium text-xs text-fg-3">
-        {formatCurrency(categoryTotal)}
-      </TableCell>
-      <TableCell>
-        <div className="opacity-0 group-hover/cat:opacity-100 transition-opacity">
+    <TableRow ref={setNodeRef} style={style} className={`group/cat border-b-0 ${isDragging ? "opacity-30" : ""}`}>
+      <TableCell colSpan={COL_COUNT} className="py-2 px-1">
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            className="flex cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+          <h3 className="text-sm font-semibold text-fg-3">{cat.name}</h3>
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" />}>
+            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="opacity-0 group-hover/cat:opacity-100 transition-opacity" />}>
               <MoreHorizontal className="h-3.5 w-3.5" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -344,39 +314,39 @@ function SortableLineItemRow({
   };
 
   return (
-    <TableRow ref={setNodeRef} style={style} className="group/row">
-      <TableCell className="w-8 px-1">
+    <TableRow ref={setNodeRef} style={style} className={isDragging ? "opacity-30" : ""}>
+      <TableCell className={`w-8 px-1 ${indent}`}>
         <button
           type="button"
-          className="flex h-full cursor-grab items-center px-1 text-fg-4 opacity-0 group-hover/row:opacity-100 transition-opacity hover:text-fg-3 active:cursor-grabbing"
+          className="flex h-full cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
           {...attributes}
           {...listeners}
         >
-          <GripVertical className="h-3.5 w-3.5" />
+          <GripVertical className="h-4 w-4" />
         </button>
       </TableCell>
-      <TableCell className={indent}>
+      <TableCell>
         <div className="flex items-center gap-2">
-          <span className="truncate text-fg-2">
+          <span className="font-medium">
             {item.model?.name ?? item.description ?? "—"}
           </span>
           {item.asset?.assetTag && (
-            <span className="text-xs text-fg-4">({item.asset.assetTag})</span>
+            <span className="text-xs text-fg-3">({item.asset.assetTag})</span>
           )}
           {item.isOptional && (
-            <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/20">
+            <Badge variant="outline" className="ml-2 text-xs bg-amber-500/10 text-amber-600 border-amber-500/20">
               Optional
             </Badge>
           )}
           {item.type === "SUBHIRE" && (
-            <Badge variant="outline" className="text-xs bg-cyan-500/10 text-cyan-600 border-cyan-500/20">
+            <Badge variant="outline" className="ml-2 text-xs bg-cyan-500/10 text-cyan-600 border-cyan-500/20">
               Subhire
             </Badge>
           )}
         </div>
       </TableCell>
-      <TableCell className="text-center">{item.quantity}</TableCell>
-      <TableCell className="text-right hidden md:table-cell">
+      <TableCell className="text-center t-data">{item.quantity}</TableCell>
+      <TableCell className="text-right hidden md:table-cell t-data">
         {formatCurrency(item.unitPrice != null ? Number(item.unitPrice) : null)}
         {item.unitPrice != null && item.pricingType && (
           <span className="text-xs text-fg-3 ml-0.5">
@@ -384,19 +354,16 @@ function SortableLineItemRow({
           </span>
         )}
       </TableCell>
-      <TableCell className="text-center hidden lg:table-cell">
+      <TableCell className="text-center hidden lg:table-cell t-data">
         {item.duration ?? "--"}
       </TableCell>
-      <TableCell className="text-right font-medium hidden sm:table-cell">
+      <TableCell className="text-right font-medium hidden sm:table-cell t-data">
         {formatCurrency(item.lineTotal != null ? Number(item.lineTotal) : null)}
       </TableCell>
       <TableCell>
-        <div className="flex items-center gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity">
+        <div className="flex items-center gap-1">
           <Button variant="ghost" size="icon-sm" onClick={onEdit}>
             <Pencil className="h-3.5 w-3.5" />
-          </Button>
-          <Button variant="ghost" size="icon-sm" onClick={onMove}>
-            <ArrowRightLeft className="h-3.5 w-3.5" />
           </Button>
           <Button variant="ghost" size="icon-sm" onClick={onRemove}>
             <Trash2 className="h-3.5 w-3.5" />
@@ -784,7 +751,6 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
   const typedCategories = categories as CategoryData[];
   const hasCategories = typedCategories.length > 0;
   const hasUncategorized = (uncategorizedItems as LineItemData[]).length > 0;
-  const COL_COUNT = 7;
 
   return (
     <div className="space-y-3">
@@ -858,16 +824,17 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
 
       {/* Main table */}
       {(hasCategories || hasUncategorized) && (
+        <div className="rounded-md border overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead className="w-8 px-1" />
-              <TableHead>ITEM</TableHead>
-              <TableHead className="text-center">QTY</TableHead>
-              <TableHead className="text-right hidden md:table-cell">UNIT PRICE</TableHead>
-              <TableHead className="text-center hidden lg:table-cell">DURATION</TableHead>
-              <TableHead className="text-right hidden sm:table-cell">TOTAL</TableHead>
-              <TableHead className="w-24" />
+              <TableHead>Item</TableHead>
+              <TableHead className="text-center w-16">Qty</TableHead>
+              <TableHead className="text-right w-28 hidden md:table-cell">Unit Price</TableHead>
+              <TableHead className="text-center w-20 hidden lg:table-cell">Duration</TableHead>
+              <TableHead className="text-right w-28 hidden sm:table-cell">Total</TableHead>
+              <TableHead className="w-16" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -882,13 +849,6 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                 strategy={verticalListSortingStrategy}
               >
                 {typedCategories.map((cat) => {
-                  const categoryTotal = cat.groups.reduce((sum, g) => {
-                    const price = g.price != null ? Number(g.price) : 0;
-                    return sum + price * g.quantity;
-                  }, 0) + (cat.lineItems ?? []).reduce((sum, li) => {
-                    return sum + (li.lineTotal != null ? Number(li.lineTotal) : 0);
-                  }, 0);
-
                   const standaloneItems = cat.lineItems ?? [];
 
                   return (
@@ -896,7 +856,6 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                       {/* Category label row — sortable */}
                       <SortableCategoryRow
                         cat={cat}
-                        categoryTotal={categoryTotal}
                         onRename={() => {
                           setRenameCategoryId(cat.id);
                           setRenameCategoryValue(cat.name);
@@ -923,6 +882,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                                 <SortableGroupRow
                                   group={group}
                                   isExpanded={isExpanded}
+                                  indented
                                   onToggle={() => toggleGroup(group.id)}
                                   onEditPrice={() => {
                                     setPriceEditGroupId(group.id);
@@ -960,7 +920,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                                 {/* Expanded line items — sortable */}
                                 {isExpanded && groupItems.length === 0 && (
                                   <TableRow className="hover:bg-transparent">
-                                    <TableCell colSpan={COL_COUNT} className="pl-10 py-3 text-center text-xs text-fg-4">
+                                    <TableCell colSpan={COL_COUNT} className="pl-14 py-3 text-center text-xs text-fg-4">
                                       No items in this group yet. Add equipment to get started.
                                     </TableCell>
                                   </TableRow>
@@ -979,7 +939,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                                         <SortableLineItemRow
                                           key={item.id}
                                           item={item}
-                                          indent="pl-10"
+                                          indent="pl-12"
                                           onEdit={() => openEditLineItem(item)}
                                           onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
                                           onRemove={() => removeMut.mutate(item.id)}
@@ -1039,7 +999,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                     <SortableLineItemRow
                       key={item.id}
                       item={item}
-                      indent="pl-3"
+                      indent=""
                       onEdit={() => openEditLineItem(item)}
                       onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
                       onRemove={() => removeMut.mutate(item.id)}
@@ -1050,6 +1010,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
             )}
           </TableBody>
         </Table>
+        </div>
       )}
 
       {/* ─── Dialogs ────────────────────────────────────────────────────────── */}

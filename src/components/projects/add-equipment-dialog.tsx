@@ -152,10 +152,17 @@ export function AddEquipmentDialog({
   const mutation = useMutation({
     mutationFn: (data: LineItemFormValues) =>
       addLineItem(projectId, { ...data, categoryId, groupId }, overbookConfirmed),
-    onSuccess: () => {
-      toast.success("Equipment added");
+    onSuccess: (result) => {
+      const data = result as Record<string, unknown> | null;
+      if (data?._merged) {
+        toast.success(`Merged with existing — quantity updated to ${data._newQuantity}`);
+      } else {
+        toast.success("Equipment added");
+      }
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
       queryClient.invalidateQueries({ queryKey: ["availability"] });
+      queryClient.invalidateQueries({ queryKey: ["project-categories", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["uncategorized-items", projectId] });
       onOpenChange(false);
       resetState();
     },

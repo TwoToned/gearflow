@@ -163,7 +163,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         projectId,
       });
 
-      return serialize(result);
+      return serialize({ ...result, _merged: true, _newQuantity: newQuantity });
     }
   }
 

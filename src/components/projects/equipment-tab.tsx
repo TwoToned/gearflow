@@ -163,7 +163,7 @@ function SortableGroupRow({
   };
 
   return (
-    <TableRow ref={setNodeRef} style={style} className={`group/row border-b-0 ${isDragging ? "opacity-30" : ""}`}>
+    <TableRow ref={setNodeRef} style={style} className={`group/row border-b-0 bg-bg-inset/30 ${isDragging ? "opacity-30" : ""}`}>
       <TableCell colSpan={COL_COUNT} className="py-2 px-1">
         <div className={`flex items-center gap-1.5 ${indented ? "pl-6" : ""}`}>
           <button
@@ -250,7 +250,7 @@ function SortableCategoryRow({
   };
 
   return (
-    <TableRow ref={setNodeRef} style={style} className={`group/cat border-b-0 ${isDragging ? "opacity-30" : ""}`}>
+    <TableRow ref={setNodeRef} style={style} className={`group/cat border-b-0 bg-bg-inset/50 ${isDragging ? "opacity-30" : ""}`}>
       <TableCell colSpan={COL_COUNT} className="py-2 px-1">
         <div className="flex items-center gap-1.5">
           <button

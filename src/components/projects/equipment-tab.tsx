@@ -38,7 +38,7 @@ import {
   getUncategorizedLineItems,
 } from "@/server/project-categories";
 import { getGroupTemplates, applyGroupTemplate } from "@/server/group-templates";
-import { removeLineItem, updateLineItem, addKitLineItem, checkKitAvailability } from "@/server/line-items";
+import { removeLineItem, updateLineItem, addKitLineItem, checkKitAvailability, reorderLineItems } from "@/server/line-items";
 import { getKits } from "@/server/kits";
 import {
   DropdownMenu,
@@ -250,9 +250,78 @@ function SortableGroupRow({
   );
 }
 
-// ─── Line item row ──────────────────────────────────────────────────────────
+// ─── Sortable category row ──────────────────────────────────────────────────
 
-function LineItemRow({
+function SortableCategoryRow({
+  cat,
+  categoryTotal,
+  onRename,
+  onDelete,
+}: {
+  cat: CategoryData;
+  categoryTotal: number;
+  onRename: () => void;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: cat.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <TableRow ref={setNodeRef} style={style} className="group/cat bg-transparent hover:bg-transparent border-b-0">
+      <TableCell className="w-8 px-1">
+        <button
+          type="button"
+          className="flex h-full cursor-grab items-center px-1 text-fg-4 opacity-0 group-hover/cat:opacity-100 transition-opacity hover:text-fg-3 active:cursor-grabbing"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-3.5 w-3.5" />
+        </button>
+      </TableCell>
+      <TableCell colSpan={4} className="py-1.5">
+        <span className="text-xs font-semibold text-fg-3">{cat.name}</span>
+      </TableCell>
+      <TableCell className="text-right font-medium text-xs text-fg-3">
+        {formatCurrency(categoryTotal)}
+      </TableCell>
+      <TableCell>
+        <div className="opacity-0 group-hover/cat:opacity-100 transition-opacity">
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" />}>
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Category</DropdownMenuLabel>
+                <DropdownMenuItem onClick={onRename}>
+                  <Pencil className="mr-2 h-3.5 w-3.5" />
+                  Rename
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={onDelete}
+                  className="text-[oklch(0.58_0.22_27)]"
+                >
+                  <Trash2 className="mr-2 h-3.5 w-3.5" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+// ─── Sortable line item row ──────────────────────────────────────────────────
+
+function SortableLineItemRow({
   item,
   indent,
   onEdit,
@@ -265,9 +334,27 @@ function LineItemRow({
   onMove: () => void;
   onRemove: () => void;
 }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: item.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
   return (
-    <TableRow className="group/row">
-      <TableCell className="w-8 px-1" />
+    <TableRow ref={setNodeRef} style={style} className="group/row">
+      <TableCell className="w-8 px-1">
+        <button
+          type="button"
+          className="flex h-full cursor-grab items-center px-1 text-fg-4 opacity-0 group-hover/row:opacity-100 transition-opacity hover:text-fg-3 active:cursor-grabbing"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-3.5 w-3.5" />
+        </button>
+      </TableCell>
       <TableCell className={indent}>
         <div className="flex items-center gap-2">
           <span className="truncate text-fg-2">
@@ -647,6 +734,43 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
     invalidate();
   }
 
+  function handleCategoryDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const cats = categories as CategoryData[];
+    const oldIndex = cats.findIndex((c) => c.id === active.id);
+    const newIndex = cats.findIndex((c) => c.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = [...cats];
+    const [moved] = reordered.splice(oldIndex, 1);
+    reordered.splice(newIndex, 0, moved);
+
+    reorderProjectCategories(projectId, reordered.map((c) => c.id)).catch(() => {
+      toast.error("Failed to reorder categories");
+    });
+    invalidate();
+  }
+
+  function handleLineItemDragEnd(groupId: string | null, items: LineItemData[], event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = items.findIndex((i) => i.id === active.id);
+    const newIndex = items.findIndex((i) => i.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = [...items];
+    const [moved] = reordered.splice(oldIndex, 1);
+    reordered.splice(newIndex, 0, moved);
+
+    reorderLineItems(projectId, reordered.map((i) => i.id)).catch(() => {
+      toast.error("Failed to reorder items");
+    });
+    invalidate();
+  }
+
   // ─── Render ────────────────────────────────────────────────────────────────
 
   if (isLoading) {
@@ -747,157 +871,183 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {typedCategories.map((cat) => {
-              const categoryTotal = cat.groups.reduce((sum, g) => {
-                const price = g.price != null ? Number(g.price) : 0;
-                return sum + price * g.quantity;
-              }, 0) + (cat.lineItems ?? []).reduce((sum, li) => {
-                return sum + (li.lineTotal != null ? Number(li.lineTotal) : 0);
-              }, 0);
+            {/* Categories — sortable */}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleCategoryDragEnd}
+            >
+              <SortableContext
+                items={typedCategories.map((c) => c.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                {typedCategories.map((cat) => {
+                  const categoryTotal = cat.groups.reduce((sum, g) => {
+                    const price = g.price != null ? Number(g.price) : 0;
+                    return sum + price * g.quantity;
+                  }, 0) + (cat.lineItems ?? []).reduce((sum, li) => {
+                    return sum + (li.lineTotal != null ? Number(li.lineTotal) : 0);
+                  }, 0);
 
-              return (
-                <React.Fragment key={cat.id}>
-                  {/* Category label row — lightweight, like a group header */}
-                  <TableRow className="group/cat bg-transparent hover:bg-transparent border-b-0">
-                    <TableCell className="w-8 px-1" />
-                    <TableCell colSpan={COL_COUNT - 3} className="py-1.5">
-                      <span className="text-xs font-semibold text-fg-3">{cat.name}</span>
-                    </TableCell>
-                    <TableCell className="text-right font-medium text-xs text-fg-3">
-                      {formatCurrency(categoryTotal)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="opacity-0 group-hover/cat:opacity-100 transition-opacity">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" />}>
-                            <MoreHorizontal className="h-3.5 w-3.5" />
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuGroup>
-                              <DropdownMenuLabel>Category</DropdownMenuLabel>
-                              <DropdownMenuItem onClick={() => {
-                                setRenameCategoryId(cat.id);
-                                setRenameCategoryValue(cat.name);
-                              }}>
-                                <Pencil className="mr-2 h-3.5 w-3.5" />
-                                Rename
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => deleteCategoryMut.mutate(cat.id)}
-                                className="text-[oklch(0.58_0.22_27)]"
-                              >
-                                <Trash2 className="mr-2 h-3.5 w-3.5" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuGroup>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                  const standaloneItems = cat.lineItems ?? [];
 
-                  {/* Groups within category */}
-                  <DndContext
-                    sensors={sensors}
-                    collisionDetection={closestCenter}
-                    onDragEnd={(e) => handleGroupDragEnd(cat.id, e)}
-                  >
-                    <SortableContext
-                      items={cat.groups.map((g) => g.id)}
-                      strategy={verticalListSortingStrategy}
-                    >
-                      {cat.groups.map((group) => {
-                        const isExpanded = expandedGroups.has(group.id);
-                        const priceVal = group.price != null ? Number(group.price) : null;
-                        return (
-                          <React.Fragment key={group.id}>
-                            <SortableGroupRow
-                              group={group}
-                              isExpanded={isExpanded}
-                              onToggle={() => toggleGroup(group.id)}
-                              onEditPrice={() => {
-                                setPriceEditGroupId(group.id);
-                                setPriceEditValue(priceVal != null ? String(priceVal) : "");
-                              }}
-                              onDelete={() => {
-                                setDeleteGroupId(group.id);
-                                setDeleteGroupInfo({
-                                  title: group.title,
-                                  price: priceVal ?? 0,
-                                  itemCount: group.lineItems?.length ?? 0,
-                                });
-                              }}
-                              onEdit={() => {
-                                setEditGroupData(group);
-                                setEditGroupTitle(group.title);
-                                setEditGroupDescription(group.description ?? "");
-                                setEditGroupQuantity(String(group.quantity));
-                                setEditGroupBillingWeeks(group.billingWeeks != null ? String(group.billingWeeks) : "");
-                                setEditGroupBillingDays(group.billingDays != null ? String(group.billingDays) : "");
-                              }}
-                              onAddEquipment={() => {
-                                setAddEquipmentTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
-                                setShowAddEquipment(true);
-                              }}
-                              onAddKit={() => {
-                                setKitTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
-                                setShowKitDialog(true);
-                              }}
-                              onAddSubhire={() => {
-                                setSubhireTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
-                                setShowSubhireDialog(true);
-                              }}
-                            />
-                            {/* Expanded line items within group */}
-                            {isExpanded && (group.lineItems ?? []).length === 0 && (
-                              <TableRow className="hover:bg-transparent">
-                                <TableCell colSpan={COL_COUNT} className="pl-8 py-3 text-center text-xs text-fg-4">
-                                  No items in this group yet. Add equipment to get started.
-                                </TableCell>
-                              </TableRow>
-                            )}
-                            {isExpanded && (group.lineItems ?? []).map((item) => (
-                              <LineItemRow
+                  return (
+                    <React.Fragment key={cat.id}>
+                      {/* Category label row — sortable */}
+                      <SortableCategoryRow
+                        cat={cat}
+                        categoryTotal={categoryTotal}
+                        onRename={() => {
+                          setRenameCategoryId(cat.id);
+                          setRenameCategoryValue(cat.name);
+                        }}
+                        onDelete={() => deleteCategoryMut.mutate(cat.id)}
+                      />
+
+                      {/* Groups within category — sortable */}
+                      <DndContext
+                        sensors={sensors}
+                        collisionDetection={closestCenter}
+                        onDragEnd={(e) => handleGroupDragEnd(cat.id, e)}
+                      >
+                        <SortableContext
+                          items={cat.groups.map((g) => g.id)}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          {cat.groups.map((group) => {
+                            const isExpanded = expandedGroups.has(group.id);
+                            const priceVal = group.price != null ? Number(group.price) : null;
+                            const groupItems = group.lineItems ?? [];
+                            return (
+                              <React.Fragment key={group.id}>
+                                <SortableGroupRow
+                                  group={group}
+                                  isExpanded={isExpanded}
+                                  onToggle={() => toggleGroup(group.id)}
+                                  onEditPrice={() => {
+                                    setPriceEditGroupId(group.id);
+                                    setPriceEditValue(priceVal != null ? String(priceVal) : "");
+                                  }}
+                                  onDelete={() => {
+                                    setDeleteGroupId(group.id);
+                                    setDeleteGroupInfo({
+                                      title: group.title,
+                                      price: priceVal ?? 0,
+                                      itemCount: groupItems.length,
+                                    });
+                                  }}
+                                  onEdit={() => {
+                                    setEditGroupData(group);
+                                    setEditGroupTitle(group.title);
+                                    setEditGroupDescription(group.description ?? "");
+                                    setEditGroupQuantity(String(group.quantity));
+                                    setEditGroupBillingWeeks(group.billingWeeks != null ? String(group.billingWeeks) : "");
+                                    setEditGroupBillingDays(group.billingDays != null ? String(group.billingDays) : "");
+                                  }}
+                                  onAddEquipment={() => {
+                                    setAddEquipmentTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
+                                    setShowAddEquipment(true);
+                                  }}
+                                  onAddKit={() => {
+                                    setKitTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
+                                    setShowKitDialog(true);
+                                  }}
+                                  onAddSubhire={() => {
+                                    setSubhireTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
+                                    setShowSubhireDialog(true);
+                                  }}
+                                />
+                                {/* Expanded line items — sortable */}
+                                {isExpanded && groupItems.length === 0 && (
+                                  <TableRow className="hover:bg-transparent">
+                                    <TableCell colSpan={COL_COUNT} className="pl-8 py-3 text-center text-xs text-fg-4">
+                                      No items in this group yet. Add equipment to get started.
+                                    </TableCell>
+                                  </TableRow>
+                                )}
+                                {isExpanded && groupItems.length > 0 && (
+                                  <DndContext
+                                    sensors={sensors}
+                                    collisionDetection={closestCenter}
+                                    onDragEnd={(e) => handleLineItemDragEnd(group.id, groupItems, e)}
+                                  >
+                                    <SortableContext
+                                      items={groupItems.map((i) => i.id)}
+                                      strategy={verticalListSortingStrategy}
+                                    >
+                                      {groupItems.map((item) => (
+                                        <SortableLineItemRow
+                                          key={item.id}
+                                          item={item}
+                                          indent="pl-8"
+                                          onEdit={() => openEditLineItem(item)}
+                                          onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
+                                          onRemove={() => removeMut.mutate(item.id)}
+                                        />
+                                      ))}
+                                    </SortableContext>
+                                  </DndContext>
+                                )}
+                              </React.Fragment>
+                            );
+                          })}
+                        </SortableContext>
+                      </DndContext>
+
+                      {/* Standalone line items in category — sortable */}
+                      {standaloneItems.length > 0 && (
+                        <DndContext
+                          sensors={sensors}
+                          collisionDetection={closestCenter}
+                          onDragEnd={(e) => handleLineItemDragEnd(null, standaloneItems, e)}
+                        >
+                          <SortableContext
+                            items={standaloneItems.map((i) => i.id)}
+                            strategy={verticalListSortingStrategy}
+                          >
+                            {standaloneItems.map((item) => (
+                              <SortableLineItemRow
                                 key={item.id}
                                 item={item}
-                                indent="pl-8"
+                                indent="pl-4"
                                 onEdit={() => openEditLineItem(item)}
                                 onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
                                 onRemove={() => removeMut.mutate(item.id)}
                               />
                             ))}
-                          </React.Fragment>
-                        );
-                      })}
-                    </SortableContext>
-                  </DndContext>
+                          </SortableContext>
+                        </DndContext>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </SortableContext>
+            </DndContext>
 
-                  {/* Standalone line items in category — no sub-header, just indented rows */}
-                  {(cat.lineItems ?? []).map((item) => (
-                    <LineItemRow
+            {/* Uncategorized items — sortable, plain rows */}
+            {hasUncategorized && (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={(e) => handleLineItemDragEnd(null, uncategorizedItems as LineItemData[], e)}
+              >
+                <SortableContext
+                  items={(uncategorizedItems as LineItemData[]).map((i) => i.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {(uncategorizedItems as LineItemData[]).map((item) => (
+                    <SortableLineItemRow
                       key={item.id}
                       item={item}
-                      indent="pl-4"
+                      indent="pl-3"
                       onEdit={() => openEditLineItem(item)}
                       onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
                       onRemove={() => removeMut.mutate(item.id)}
                     />
                   ))}
-                </React.Fragment>
-              );
-            })}
-
-            {/* Uncategorized items — plain rows, no header */}
-            {hasUncategorized && (uncategorizedItems as LineItemData[]).map((item) => (
-              <LineItemRow
-                key={item.id}
-                item={item}
-                indent="pl-3"
-                onEdit={() => openEditLineItem(item)}
-                onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
-                onRemove={() => removeMut.mutate(item.id)}
-              />
-            ))}
+                </SortableContext>
+              </DndContext>
+            )}
           </TableBody>
         </Table>
       )}

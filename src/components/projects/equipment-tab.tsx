@@ -26,8 +26,6 @@ import {
   createProjectGroup,
   updateProjectGroup,
   updateGroupPrice,
-  acceptSuggestedPrice,
-  acceptAllSuggestedPrices,
   deleteProjectGroup,
   reorderProjectGroups,
   moveLineItemToGroup,
@@ -83,7 +81,6 @@ function SortableGroupCard({
   onAddKit,
   onAddSubhire,
   onEditPrice,
-  onAcceptSuggested,
   onDelete,
   onEdit,
 }: {
@@ -95,7 +92,6 @@ function SortableGroupCard({
   onAddKit: (categoryId: string, groupId: string, groupTitle: string) => void;
   onAddSubhire: (categoryId: string, groupId: string, groupTitle: string) => void;
   onEditPrice: (groupId: string, currentPrice: number | null) => void;
-  onAcceptSuggested: (groupId: string) => void;
   onDelete: (groupId: string, title: string, price: number, itemCount: number) => void;
   onEdit: (group: GroupData) => void;
 }) {
@@ -123,7 +119,6 @@ function SortableGroupCard({
         rentalQuantity={group.rentalQuantity}
         lineItemCount={group.lineItems?.length ?? 0}
         dragHandleProps={{ ...attributes, ...listeners }}
-        onAcceptSuggested={() => onAcceptSuggested(group.id)}
         onEditPrice={() => onEditPrice(group.id, priceVal)}
         onDelete={() => onDelete(group.id, group.title, priceVal ?? 0, group.lineItems?.length ?? 0)}
         onEdit={() => onEdit(group)}
@@ -373,24 +368,6 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const acceptPriceMut = useMutation({
-    mutationFn: (groupId: string) => acceptSuggestedPrice(groupId),
-    onSuccess: () => {
-      invalidate();
-      toast.success("Price accepted");
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  const acceptAllPricesMut = useMutation({
-    mutationFn: (categoryId: string) => acceptAllSuggestedPrices(projectId, categoryId),
-    onSuccess: (data) => {
-      invalidate();
-      toast.success(`Accepted prices for ${(data as { count: number }).count} group(s)`);
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
   const deleteGroupMut = useMutation({
     mutationFn: (groupId: string) => deleteProjectGroup(groupId),
     onSuccess: () => {
@@ -566,7 +543,6 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
               createGroupMut.mutate({ categoryId: cat.id, title, templateId })
             }
             templates={templateOptions}
-            onAcceptAllPrices={() => acceptAllPricesMut.mutate(cat.id)}
           >
             <DndContext
               sensors={sensors}
@@ -601,7 +577,6 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                         setPriceEditGroupId(groupId);
                         setPriceEditValue(currentPrice != null ? String(currentPrice) : "");
                       }}
-                      onAcceptSuggested={(groupId) => acceptPriceMut.mutate(groupId)}
                       onDelete={(groupId, title, price, itemCount) => {
                         setDeleteGroupId(groupId);
                         setDeleteGroupInfo({ title, price, itemCount });

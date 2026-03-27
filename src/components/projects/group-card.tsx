@@ -21,12 +21,11 @@ interface GroupCardProps {
   description: string | null;
   quantity: number;
   price: number | null;
-  suggestedPrice: number | null;
+  suggestedPrice?: number | null;
   rentalPeriod: string | null;
   rentalQuantity: number | null;
   lineItemCount: number;
   children: React.ReactNode;
-  onAcceptSuggested?: () => void;
   onEditPrice?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
@@ -48,7 +47,6 @@ export function GroupCard({
   rentalQuantity,
   lineItemCount,
   children,
-  onAcceptSuggested,
   onEditPrice,
   onEdit,
   onDelete,
@@ -62,9 +60,6 @@ export function GroupCard({
   const [expanded, setExpanded] = useState(defaultExpanded);
 
   const priceVal = price != null ? Number(price) : null;
-  const suggestedVal = suggestedPrice != null ? Number(suggestedPrice) : null;
-  const hasPriceDelta =
-    priceVal != null && suggestedVal != null && suggestedVal > 0 && priceVal !== suggestedVal;
 
   const periodLabel = rentalPeriod === "WEEKLY" ? "week" : "day";
   const qtyLabel = rentalQuantity ? `${rentalQuantity} ${periodLabel}${rentalQuantity > 1 ? "s" : ""}` : null;
@@ -112,18 +107,6 @@ export function GroupCard({
 
         {/* Price area */}
         <div className="flex flex-none items-center gap-2">
-          {hasPriceDelta && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onAcceptSuggested?.();
-              }}
-              className="rounded px-1.5 py-0.5 text-[11px] font-medium text-[oklch(0.45_0.12_195)] hover:bg-[oklch(0.96_0.02_195/10%)] transition-colors"
-              title={`Accept suggested: ${formatCurrency(suggestedVal)}`}
-            >
-              {formatCurrency(suggestedVal)}
-            </button>
-          )}
           <button
             onClick={(e) => {
               e.stopPropagation();

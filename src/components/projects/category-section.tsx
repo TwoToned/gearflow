@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { ChevronDown, ChevronRight, Plus, Check } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -29,7 +29,6 @@ interface CategorySectionProps {
   categoryTotal: number;
   children: React.ReactNode;
   onAddGroup?: (title: string, templateId?: string) => void;
-  onAcceptAllPrices?: () => void;
   onRename?: (name: string) => void;
   onDelete?: () => void;
   defaultExpanded?: boolean;
@@ -43,7 +42,6 @@ export function CategorySection({
   categoryTotal,
   children,
   onAddGroup,
-  onAcceptAllPrices,
   defaultExpanded = true,
   templates = [],
 }: CategorySectionProps) {
@@ -89,19 +87,6 @@ export function CategorySection({
         </span>
 
         <div className="flex-1" />
-
-        {/* Batch accept suggested prices */}
-        {onAcceptAllPrices && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 gap-1 px-2 text-[11px] text-fg-3 hover:text-fg-2"
-            onClick={onAcceptAllPrices}
-          >
-            <Check className="h-3 w-3" />
-            Accept all prices
-          </Button>
-        )}
 
         {/* Category total */}
         <span className="tabular-nums text-xs font-medium text-fg-2">

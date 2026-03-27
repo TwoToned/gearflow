@@ -65,10 +65,10 @@ export function GroupCard({
   const qtyLabel = rentalQuantity ? `${rentalQuantity} ${periodLabel}${rentalQuantity > 1 ? "s" : ""}` : null;
 
   return (
-    <div className="group/card rounded-lg bg-bg-surface ring-1 ring-foreground/8 transition-shadow hover:ring-foreground/12">
+    <div className="group/card">
       {/* Collapsed header — always visible */}
       <div
-        className="flex items-center gap-2 px-3 py-2.5 cursor-pointer select-none"
+        className="flex items-center gap-2 py-1 cursor-pointer select-none rounded px-1 -mx-1 hover:bg-bg-inset/50 transition-colors"
         onClick={() => setExpanded(!expanded)}
       >
         {/* Drag handle — visible on hover only */}
@@ -147,16 +147,16 @@ export function GroupCard({
 
       {/* Expanded content */}
       {expanded && (
-        <div className="border-t border-foreground/5 px-3 pb-3 pt-2">
+        <div className="pl-6 pb-1 pt-0.5">
           {description && (
-            <p className="mb-2 line-clamp-1 text-xs leading-relaxed text-fg-3">{description}</p>
+            <p className="mb-1 line-clamp-1 text-xs leading-relaxed text-fg-4">{description}</p>
           )}
 
           {children}
 
           {/* Add items buttons */}
           {onAddEquipment && (
-            <div className="mt-2 flex items-center justify-between">
+            <div className="mt-1 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <button
                   onClick={(e) => {

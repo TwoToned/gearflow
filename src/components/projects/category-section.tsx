@@ -77,7 +77,7 @@ export function CategorySection({
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1">
       {/* Category header — overline style per DESIGN.md SectionHeader */}
       <div className="group/cat flex items-center gap-2">
         <button
@@ -170,12 +170,12 @@ export function CategorySection({
       </div>
 
       {expanded && (
-        <div className="space-y-1.5 pl-5">
+        <div className="space-y-0.5 pl-4">
           {children}
 
           {/* Inline group creation form */}
           {showInlineForm ? (
-            <div className="space-y-2 rounded-lg border border-dashed border-foreground/10 bg-bg-inset/50 px-3 py-2.5">
+            <div className="space-y-1.5 py-1">
               <Input
                 ref={inputRef}
                 placeholder="Group title..."
@@ -241,11 +241,7 @@ export function CategorySection({
                 setShowInlineForm(true);
                 setTimeout(() => inputRef.current?.focus(), 50);
               }}
-              className={cn(
-                "flex w-full items-center gap-1.5 rounded-lg border border-dashed border-foreground/8",
-                "px-3 py-2 text-xs text-fg-4 transition-colors",
-                "hover:border-foreground/15 hover:text-fg-3"
-              )}
+              className="flex items-center gap-1 py-1 text-xs text-fg-4 transition-colors hover:text-fg-3"
             >
               <Plus className="h-3 w-3" />
               Add group

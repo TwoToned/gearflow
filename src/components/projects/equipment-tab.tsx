@@ -577,7 +577,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
   const hasCategories = typedCategories.length > 0;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Toolbar */}
       <div className="flex items-center gap-2">
         <Button
@@ -743,28 +743,25 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
 
       {/* Uncategorized items */}
       {(uncategorizedItems as LineItemData[]).length > 0 && (
-        <div className="rounded-lg bg-bg-surface ring-1 ring-foreground/8">
-          <div className="flex items-center justify-between px-3 py-2.5">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-fg">Uncategorized</span>
-              <span className="text-xs text-fg-4">
-                {(uncategorizedItems as LineItemData[]).length} item{(uncategorizedItems as LineItemData[]).length !== 1 ? "s" : ""}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  setAddEquipmentTarget({});
-                  setShowAddEquipment(true);
-                }}
-                className="flex items-center gap-1 text-xs text-fg-4 hover:text-fg-3 transition-colors"
-              >
-                <Plus className="h-3 w-3" />
-                Equipment
-              </button>
-            </div>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-fg-3">Uncategorized</span>
+            <span className="text-[10px] text-fg-4">
+              {(uncategorizedItems as LineItemData[]).length} item{(uncategorizedItems as LineItemData[]).length !== 1 ? "s" : ""}
+            </span>
+            <div className="flex-1" />
+            <button
+              onClick={() => {
+                setAddEquipmentTarget({});
+                setShowAddEquipment(true);
+              }}
+              className="flex items-center gap-1 text-xs text-fg-4 hover:text-fg-3 transition-colors"
+            >
+              <Plus className="h-3 w-3" />
+              Equipment
+            </button>
           </div>
-          <div className="border-t border-foreground/5 px-3 pb-3 pt-2">
+          <div className="pl-4">
             <LineItemTable items={uncategorizedItems as LineItemData[]} projectId={projectId} onMutate={invalidate} onEditItem={openEditLineItem} onMoveItem={(id) => { setMoveLineItemId(id); setMoveTargetGroupId("__uncategorized__"); }} />
           </div>
         </div>

@@ -825,8 +825,8 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
       {/* Main table */}
       {(hasCategories || hasUncategorized) && (
         <div className="rounded-md border overflow-x-auto">
-        <Table>
-          <TableHeader>
+          <Table>
+            <TableHeader>
             <TableRow>
               <TableHead className="w-8 px-1" />
               <TableHead>Item</TableHead>
@@ -1009,7 +1009,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
               </DndContext>
             )}
           </TableBody>
-        </Table>
+          </Table>
         </div>
       )}
 

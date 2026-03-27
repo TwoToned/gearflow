@@ -757,22 +757,19 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
 
               return (
                 <React.Fragment key={cat.id}>
-                  {/* Category section header */}
-                  <TableRow className="bg-transparent hover:bg-transparent border-b-0">
-                    <TableCell colSpan={COL_COUNT} className="pt-6 pb-1 px-3">
-                      <div className="group/cat flex items-center gap-2">
-                        <span className="t-overline text-fg-3 font-bold tracking-[0.08em]">
-                          {cat.name}
-                        </span>
-                        <span className="text-[10px] text-fg-4">
-                          {cat.groups.length} group{cat.groups.length !== 1 ? "s" : ""}
-                          {(cat.lineItems?.length ?? 0) > 0 && `, ${cat.lineItems!.length} standalone`}
-                        </span>
-                        <span className="text-xs font-medium text-fg-3 ml-auto mr-2">
-                          {formatCurrency(categoryTotal)}
-                        </span>
+                  {/* Category label row — lightweight, like a group header */}
+                  <TableRow className="group/cat bg-transparent hover:bg-transparent border-b-0">
+                    <TableCell className="w-8 px-1" />
+                    <TableCell colSpan={COL_COUNT - 3} className="py-1.5">
+                      <span className="text-xs font-semibold text-fg-3">{cat.name}</span>
+                    </TableCell>
+                    <TableCell className="text-right font-medium text-xs text-fg-3">
+                      {formatCurrency(categoryTotal)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="opacity-0 group-hover/cat:opacity-100 transition-opacity">
                         <DropdownMenu>
-                          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="opacity-0 group-hover/cat:opacity-100 transition-opacity" />}>
+                          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" />}>
                             <MoreHorizontal className="h-3.5 w-3.5" />
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
@@ -875,70 +872,32 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                     </SortableContext>
                   </DndContext>
 
-                  {/* Standalone line items in category */}
-                  {(cat.lineItems ?? []).length > 0 && (
-                    <>
-                      <TableRow className="bg-transparent hover:bg-transparent border-b-0">
-                        <TableCell colSpan={COL_COUNT} className="pt-3 pb-1 px-3 pl-6">
-                          <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-4">
-                            Standalone items
-                          </span>
-                        </TableCell>
-                      </TableRow>
-                      {(cat.lineItems ?? []).map((item) => (
-                        <LineItemRow
-                          key={item.id}
-                          item={item}
-                          indent="pl-4"
-                          onEdit={() => openEditLineItem(item)}
-                          onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
-                          onRemove={() => removeMut.mutate(item.id)}
-                        />
-                      ))}
-                    </>
-                  )}
+                  {/* Standalone line items in category — no sub-header, just indented rows */}
+                  {(cat.lineItems ?? []).map((item) => (
+                    <LineItemRow
+                      key={item.id}
+                      item={item}
+                      indent="pl-4"
+                      onEdit={() => openEditLineItem(item)}
+                      onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
+                      onRemove={() => removeMut.mutate(item.id)}
+                    />
+                  ))}
                 </React.Fragment>
               );
             })}
 
-            {/* Uncategorized items */}
-            {hasUncategorized && (
-              <>
-                <TableRow className="bg-transparent hover:bg-transparent border-b-0">
-                  <TableCell colSpan={COL_COUNT} className="pt-6 pb-1 px-3">
-                    <div className="flex items-center gap-2">
-                      <span className="t-overline text-fg-3 font-bold tracking-[0.08em]">
-                        Uncategorized
-                      </span>
-                      <span className="text-[10px] text-fg-4">
-                        {(uncategorizedItems as LineItemData[]).length} item{(uncategorizedItems as LineItemData[]).length !== 1 ? "s" : ""}
-                      </span>
-                      <div className="flex-1" />
-                      <button
-                        onClick={() => {
-                          setAddEquipmentTarget({});
-                          setShowAddEquipment(true);
-                        }}
-                        className="flex items-center gap-1 text-xs text-fg-4 hover:text-fg-3 transition-colors"
-                      >
-                        <Plus className="h-3 w-3" />
-                        Equipment
-                      </button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-                {(uncategorizedItems as LineItemData[]).map((item) => (
-                  <LineItemRow
-                    key={item.id}
-                    item={item}
-                    indent="pl-4"
-                    onEdit={() => openEditLineItem(item)}
-                    onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
-                    onRemove={() => removeMut.mutate(item.id)}
-                  />
-                ))}
-              </>
-            )}
+            {/* Uncategorized items — plain rows, no header */}
+            {hasUncategorized && (uncategorizedItems as LineItemData[]).map((item) => (
+              <LineItemRow
+                key={item.id}
+                item={item}
+                indent="pl-3"
+                onEdit={() => openEditLineItem(item)}
+                onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
+                onRemove={() => removeMut.mutate(item.id)}
+              />
+            ))}
           </TableBody>
         </Table>
       )}

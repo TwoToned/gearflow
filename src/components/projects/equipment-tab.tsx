@@ -957,7 +957,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                                         <SortableLineItemRow
                                           key={item.id}
                                           item={item}
-                                          indent="pl-8"
+                                          indent="pl-12"
                                           onEdit={() => openEditLineItem(item)}
                                           onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
                                           onRemove={() => removeMut.mutate(item.id)}

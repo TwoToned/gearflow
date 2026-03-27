@@ -166,7 +166,7 @@ function SortableGroupRow({
 
   return (
     <TableRow ref={setNodeRef} style={style} className={`group/row ${isDragging ? "opacity-30" : ""}`}>
-      <TableCell className={`w-8 px-1 ${indented ? "pl-6" : ""}`}>
+      <TableCell className="w-8 px-1">
         <button
           type="button"
           className="flex h-full cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
@@ -176,7 +176,7 @@ function SortableGroupRow({
           <GripVertical className="h-4 w-4" />
         </button>
       </TableCell>
-      <TableCell>
+      <TableCell className={indented ? "pl-4" : ""}>
         <div className="flex items-center gap-1.5">
           <button
             type="button"
@@ -333,7 +333,7 @@ function SortableLineItemRow({
 
   return (
     <TableRow ref={setNodeRef} style={style} className={isDragging ? "opacity-30" : ""}>
-      <TableCell className={`w-8 px-1 ${indent}`}>
+      <TableCell className="w-8 px-1">
         <button
           type="button"
           className="flex h-full cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
@@ -343,7 +343,7 @@ function SortableLineItemRow({
           <GripVertical className="h-4 w-4" />
         </button>
       </TableCell>
-      <TableCell>
+      <TableCell className={indent}>
         <div className="flex items-center gap-2">
           <span className="font-medium">
             {item.model?.name ?? item.description ?? "—"}
@@ -938,7 +938,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                                 {/* Expanded line items — sortable */}
                                 {isExpanded && groupItems.length === 0 && (
                                   <TableRow className="hover:bg-transparent">
-                                    <TableCell colSpan={COL_COUNT} className="pl-14 py-3 text-center text-xs text-fg-4">
+                                    <TableCell colSpan={COL_COUNT} className="py-3 text-center text-xs text-fg-4">
                                       No items in this group yet. Add equipment to get started.
                                     </TableCell>
                                   </TableRow>
@@ -957,7 +957,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                                         <SortableLineItemRow
                                           key={item.id}
                                           item={item}
-                                          indent="pl-12"
+                                          indent="pl-8"
                                           onEdit={() => openEditLineItem(item)}
                                           onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
                                           onRemove={() => removeMut.mutate(item.id)}
@@ -987,7 +987,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                               <SortableLineItemRow
                                 key={item.id}
                                 item={item}
-                                indent="pl-6"
+                                indent="pl-4"
                                 onEdit={() => openEditLineItem(item)}
                                 onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
                                 onRemove={() => removeMut.mutate(item.id)}

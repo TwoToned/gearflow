@@ -184,7 +184,7 @@ function SortableGroupRow({
                 isExpanded ? "rotate-90" : ""
               }`}
             />
-            <h3 className="text-sm font-semibold text-fg-3">{group.title}</h3>
+            <h3 className="text-sm font-semibold">{group.title}</h3>
           </button>
           <DropdownMenu>
             <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="opacity-0 group-hover/row:opacity-100 transition-opacity" />}>

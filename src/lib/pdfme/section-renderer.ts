@@ -190,6 +190,14 @@ function calculateItemHeight(
   settings: TableSectionSettings,
 ): number {
   let heightPt = PARENT_ROW_PT;
+
+  // Notes add extra height (multi-line with markdown support)
+  if (item.notes && settings.showNotes) {
+    const noteLineCount = item.notes.split("\n").length;
+    const noteLinePt = 7 + 2; // noteFontSize(7) + 2
+    heightPt += noteLineCount * noteLinePt;
+  }
+
   const isKit = !!item.kitId;
 
   // Per-unit checkbox rows for bulk items (qty > 1, non-kit)

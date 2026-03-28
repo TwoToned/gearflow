@@ -29,6 +29,8 @@ function makeLineItem(overrides: Partial<DocumentLineItem> = {}): DocumentLineIt
     discount: null,
     lineTotal: 100,
     groupName: null,
+    categoryName: null,
+    groupTitle: null,
     isOptional: false,
     isKitChild: false,
     notes: null,

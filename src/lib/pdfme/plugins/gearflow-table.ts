@@ -11,6 +11,7 @@ import type { PDFFont, PDFPage } from "@pdfme/pdf-lib";
 import {
   getLayoutProps, hexToRgb, lightenHex, getHelveticaFonts,
   formatCurrency, stubUiRender, stubPropPanel,
+  drawRichText, measureRichTextHeight,
 } from "./helpers";
 import type { DocumentLineItem, TablePluginConfig } from "../types";
 
@@ -200,7 +201,7 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
     });
   }
 
-  // === Group items ===
+  // === Group items by category (via groupName) falling back to prepContainer ===
   const ungroupedKey = config.documentType === "packing-list" ? "Ungrouped"
     : config.documentType === "delivery-docket" ? "General"
     : "_ungrouped";
@@ -276,9 +277,10 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
 
       if (!isContinuation) {
         // Calculate row content height
+        const noteLineHeight = noteFontSize + 2;
         let rowContentHeight = fontSize + rowPadding * 2;
         if (item.notes && config.showNotes) {
-          rowContentHeight += noteFontSize + 2;
+          rowContentHeight += measureRichTextHeight(item.notes, noteLineHeight);
         }
 
         // Bounds check: stop if this row won't fit
@@ -359,14 +361,15 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
               }
             }
 
-            // Notes
+            // Notes (with markdown support)
             if (item.notes && config.showNotes) {
-              page.drawText(item.notes, {
+              drawRichText(page, item.notes, {
                 x: descX,
                 y: textY - fontSize - 1,
-                size: noteFontSize,
-                font: fonts.regular,
+                fontSize: noteFontSize,
+                lineHeight: noteFontSize + 2,
                 color: noteTextColor,
+                fonts,
               });
             }
             break;

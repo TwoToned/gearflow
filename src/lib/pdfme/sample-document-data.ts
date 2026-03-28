@@ -202,6 +202,8 @@ function makeItem(
     discount: 0,
     lineTotal: qty * rate * 3,
     groupName: groupName || null,
+    categoryName: null,
+    groupTitle: null,
     isOptional: false,
     isKitChild: isKitChild || false,
     notes: null,

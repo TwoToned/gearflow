@@ -69,6 +69,11 @@ const TABLE_PADDING_BOTTOM_MM = 1;        // ~1mm safety margin at bottom
 
 function ptToMm(pt: number): number { return pt / PT_PER_MM; }
 
+/** Build group key — uses groupName (set to category name for structured projects) or prepContainer */
+function getItemGroupKey(item: DocumentLineItem, ungrouped: string): string {
+  return item.groupName || item.prepContainer || ungrouped;
+}
+
 /**
  * Check if a parent item has splittable sub-items (per-unit checkboxes).
  * Returns the total sub-item count, or 0 if not splittable.
@@ -185,6 +190,14 @@ function calculateItemHeight(
   settings: TableSectionSettings,
 ): number {
   let heightPt = PARENT_ROW_PT;
+
+  // Notes add extra height (multi-line with markdown support)
+  if (item.notes && settings.showNotes) {
+    const noteLineCount = item.notes.split("\n").length;
+    const noteLinePt = 7 + 2; // noteFontSize(7) + 2
+    heightPt += noteLineCount * noteLinePt;
+  }
+
   const isKit = !!item.kitId;
 
   // Per-unit checkbox rows for bulk items (qty > 1, non-kit)
@@ -231,7 +244,7 @@ function calculateTableItemHeights(
   const groups = new Map<string, DocumentLineItem[]>();
   const groupOrder: string[] = [];
   for (const item of parentItems) {
-    const key = item.groupName || item.prepContainer || ungrouped;
+    const key = getItemGroupKey(item, ungrouped);
     if (!groups.has(key)) {
       groups.set(key, []);
       groupOrder.push(key);
@@ -541,7 +554,7 @@ export function computePageLayout(
           const groups = new Map<string, DocumentLineItem[]>();
           const groupOrder: string[] = [];
           for (const item of parentItems) {
-            const key = item.groupName || item.prepContainer || ungrouped;
+            const key = getItemGroupKey(item, ungrouped);
             if (!groups.has(key)) { groups.set(key, []); groupOrder.push(key); }
             groups.get(key)!.push(item);
           }

@@ -327,7 +327,7 @@ function SortableLineItemRow({
   };
 
   // Map content indent to grip indent (margin-based to avoid affecting column width)
-  const gripIndent = indent === "ml-8" ? "ml-6" : indent === "ml-3" ? "ml-1" : "";
+  const gripIndent = indent === "ml-12" ? "ml-8" : indent === "ml-3" ? "ml-1" : "";
 
   return (
     <TableRow ref={setNodeRef} style={style} className={isDragging ? "opacity-30" : ""}>
@@ -1008,7 +1008,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                               <SortableLineItemRow
                                 key={item.id}
                                 item={item}
-                                indent="ml-8"
+                                indent="ml-12"
                                 onEdit={() => openEditLineItem(item)}
                                 onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
                                 onRemove={() => removeMut.mutate(item.id)}

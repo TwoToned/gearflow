@@ -176,8 +176,8 @@ function SortableGroupRow({
           </button>
         </div>
       </TableCell>
-      <TableCell className={indented ? "pl-0" : ""}>
-        <div className="flex items-center gap-1.5">
+      <TableCell>
+        <div className={`flex items-center gap-1.5 ${indented ? "ml-2" : ""}`}>
           <button
             type="button"
             onClick={onToggle}
@@ -343,8 +343,8 @@ function SortableLineItemRow({
           </button>
         </div>
       </TableCell>
-      <TableCell className={indent}>
-        <div className="flex items-center gap-2">
+      <TableCell>
+        <div className={`flex items-center gap-2 ${indent}`}>
           <span className="font-medium">
             {item.model?.name ?? item.description ?? "—"}
           </span>

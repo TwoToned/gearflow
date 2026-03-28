@@ -40,6 +40,7 @@ import {
   deleteProject,
 } from "@/server/projects";
 import { getProjectLabourCost } from "@/server/crew-assignments";
+import { getProjectServicesSummary } from "@/server/project-services";
 import { DuplicateProjectDialog } from "@/components/projects/duplicate-project-dialog";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -418,6 +419,15 @@ export default function ProjectDetailPage({
               </div>
             </div>
           </div>
+
+          {/* ── Summary Strip ──────────────────────────────────────── */}
+          {!project.isTemplate && (
+            <ProjectSummaryStrip
+              projectId={id}
+              equipmentRevenue={project.equipmentRevenue as number | null}
+              total={project.total as number | null}
+            />
+          )}
 
           {/* ── 2-Column Layout ────────────────────────────────────── */}
           <div className="flex flex-col gap-6 lg:flex-row">
@@ -817,5 +827,76 @@ function LabourCostDisplay({ projectId }: { projectId: string }) {
     <span className="t-data font-medium">
       {data ? formatCurrency(Number(data.totalLabourCost)) : "\u2014"}
     </span>
+  );
+}
+
+function ProjectSummaryStrip({
+  projectId,
+  equipmentRevenue,
+  total,
+}: {
+  projectId: string;
+  equipmentRevenue: number | null;
+  total: number | null;
+}) {
+  const { data: activeOrg } = useActiveOrganization();
+  const orgId = activeOrg?.id;
+
+  const { data: labourData } = useQuery({
+    queryKey: ["project-labour-cost", orgId, projectId],
+    queryFn: () => getProjectLabourCost(projectId),
+  });
+
+  const { data: serviceData } = useQuery({
+    queryKey: ["project-services-summary", orgId, projectId],
+    queryFn: () => getProjectServicesSummary(projectId),
+  });
+
+  const metrics = [
+    {
+      label: "Equipment",
+      value: formatCurrency(equipmentRevenue),
+    },
+    {
+      label: "Services",
+      value: serviceData
+        ? `${formatCurrency(serviceData.totalCost)} · ${serviceData.serviceCount}`
+        : "\u2014",
+    },
+    {
+      label: "Crew",
+      value: labourData
+        ? `${formatCurrency(Number(labourData.totalLabourCost))} · ${labourData.assignmentCount}`
+        : "\u2014",
+    },
+    {
+      label: "Total",
+      value: formatCurrency(total),
+      bold: true,
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 gap-px sm:grid-cols-4 sm:gap-0 sm:divide-x sm:divide-border rounded-md border border-border bg-border sm:bg-transparent">
+      {metrics.map((m) => (
+        <div
+          key={m.label}
+          className="bg-bg-surface px-4 py-3 sm:first:rounded-l-md sm:last:rounded-r-md"
+        >
+          <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-3">
+            {m.label}
+          </div>
+          <div
+            className={
+              m.bold
+                ? "text-base font-bold tabular-nums tracking-tight text-fg"
+                : "text-sm font-semibold tabular-nums text-fg-2"
+            }
+          >
+            {m.value}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }

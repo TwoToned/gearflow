@@ -229,6 +229,58 @@ describe("projectServiceSchema", () => {
       expect(result.data.quantity).toBe(1);
     }
   });
+
+  // billableToClient
+  it("defaults billableToClient to false", () => {
+    const result = projectServiceSchema.safeParse(minimal);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.billableToClient).toBe(false);
+    }
+  });
+
+  it("accepts billableToClient as true", () => {
+    const result = projectServiceSchema.safeParse({ ...minimal, billableToClient: true });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.billableToClient).toBe(true);
+    }
+  });
+
+  // costTotal
+  it("accepts costTotal as positive number", () => {
+    const result = projectServiceSchema.safeParse({ ...minimal, costTotal: 500 });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.costTotal).toBe(500);
+    }
+  });
+
+  it("accepts costTotal as zero", () => {
+    const result = projectServiceSchema.safeParse({ ...minimal, costTotal: 0 });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects negative costTotal", () => {
+    const result = projectServiceSchema.safeParse({ ...minimal, costTotal: -100 });
+    expect(result.success).toBe(false);
+  });
+
+  it("coerces string to number for costTotal", () => {
+    const result = projectServiceSchema.safeParse({ ...minimal, costTotal: "750.50" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.costTotal).toBe(750.5);
+    }
+  });
+
+  it("accepts undefined costTotal", () => {
+    const result = projectServiceSchema.safeParse(minimal);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.costTotal).toBeUndefined();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -86,8 +86,14 @@ export default function EditProjectPage({
     invoicedTotal: project.invoicedTotal
       ? Number(project.invoicedTotal)
       : undefined,
+    billingWeeks: (project as { billingWeeks?: number | null }).billingWeeks ?? undefined,
+    billingDays: (project as { billingDays?: number | null }).billingDays ?? undefined,
     tags: project.tags || [],
   };
+
+  const initialManagerIds = ((project as { projectManagers?: { user: { id: string } }[] }).projectManagers ?? []).map(
+    (pm) => pm.user.id
+  );
 
   return (
     <RequirePermission resource="project" action="update">
@@ -115,7 +121,7 @@ export default function EditProjectPage({
               {project.projectNumber} &middot; {project.name}
             </p>
           </div>
-          <ProjectForm initialData={initialData} />
+          <ProjectForm initialData={initialData} initialManagerIds={initialManagerIds} />
         </div>
       </FadeIn>
     </CanDo>

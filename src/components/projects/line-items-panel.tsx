@@ -1243,16 +1243,12 @@ export function LineItemsPanel({
         projectId={projectId}
         rentalStartDate={rentalStartDate}
         rentalEndDate={rentalEndDate}
-        existingGroups={existingGroups}
-        onGroupCreated={addExtraGroup}
         open={equipmentDialogOpen}
         onOpenChange={setEquipmentDialogOpen}
       />
 
       <AddSubhireDialog
         projectId={projectId}
-        existingGroups={existingGroups}
-        onGroupCreated={addExtraGroup}
         open={subhireDialogOpen}
         onOpenChange={setSubhireDialogOpen}
       />

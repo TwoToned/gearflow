@@ -5,6 +5,34 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.6] - 2026-03-28
+
+### Added
+- Project finance rewrite: billing weeks/days pricing model with per-group overrides
+- Equipment tab category/group/line-item hierarchy with drag-and-drop reordering
+- Line item edit dialog, move between groups, and uncategorized items section
+- Category rename/delete UI with inline editing
+- Group edit dialog with price field and suggested price hint
+- Project manager picker and rental defaults on project form
+- Merge notification toast when equipment items combine
+- Template picker, pricing progress bar, and audit trail on project detail
+- Default tax rate in org settings
+- Financial summary sidebar with margin tracking
+- 42 new validation and formatter tests for finance schemas
+
+### Changed
+- Equipment tab rewritten as proper flat table layout with table-layout fixed
+- Group rows match line item style with edit button and dropdown menu
+- Removed legacy groupName field from add dialogs, replaced with "Adding to" label
+- Removed pricing approval UI (accept suggested price buttons)
+- Project form UX overhaul: billing time under rental dates, match button
+
+### Fixed
+- Drag-and-drop: replaced nested DndContexts with single flat context using prefixed IDs
+- Table column reflow on group expand/collapse (table-layout: fixed + colgroup)
+- Broken callbacks and missing query invalidations in equipment tab
+- Move dialog now defaults to item's current group instead of uncategorized
+
 ## [0.2.5] - 2026-03-25
 
 ### Added

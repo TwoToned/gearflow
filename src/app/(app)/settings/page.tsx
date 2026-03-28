@@ -30,16 +30,24 @@ export default function GeneralSettingsPage() {
 
   const [name, setName] = useState("");
   const [settings, setSettings] = useState<OrgSettings>({});
+  const [defaultTaxRate, setDefaultTaxRate] = useState<string>("");
 
   useEffect(() => {
     if (org) {
       setName((org as Record<string, unknown>).name as string || ""); // eslint-disable-line react-hooks/set-state-in-effect
       setSettings((org as Record<string, unknown>).settings as OrgSettings || {}); // eslint-disable-line react-hooks/set-state-in-effect
+      const taxRate = (org as Record<string, unknown>).defaultTaxRate;
+      setDefaultTaxRate(taxRate != null ? String(taxRate) : ""); // eslint-disable-line react-hooks/set-state-in-effect
     }
   }, [org]);
 
   const updateMutation = useMutation({
-    mutationFn: () => updateOrganization({ name, settings }),
+    mutationFn: () =>
+      updateOrganization({
+        name,
+        settings,
+        defaultTaxRate: defaultTaxRate ? parseFloat(defaultTaxRate) : null,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["organization"] });
       toast.success("Settings saved");
@@ -186,6 +194,32 @@ export default function GeneralSettingsPage() {
               </select>
               <p className="text-xs text-fg-3">
                 Used for date display across the platform.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Project Defaults */}
+      <section>
+        <SectionHeader label="Project Defaults" />
+        <div className="mt-4 rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="defaultTaxRate">Default Tax Rate (%)</Label>
+              <Input
+                id="defaultTaxRate"
+                type="number"
+                step="0.01"
+                min="0"
+                max="100"
+                value={defaultTaxRate}
+                onChange={(e) => setDefaultTaxRate(e.target.value)}
+                placeholder="e.g. 10"
+                disabled={!canEdit}
+              />
+              <p className="text-xs text-fg-3">
+                Applied to new projects unless overridden. Used for GST/VAT calculation.
               </p>
             </div>
           </div>

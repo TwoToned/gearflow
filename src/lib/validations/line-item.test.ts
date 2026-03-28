@@ -280,4 +280,39 @@ describe("lineItemSchema", () => {
       }
     });
   });
+
+  describe("categoryId and groupId (optional)", () => {
+    it("accepts categoryId", () => {
+      const result = lineItemSchema.safeParse({ categoryId: "cat-1" });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.categoryId).toBe("cat-1");
+    });
+
+    it("accepts groupId", () => {
+      const result = lineItemSchema.safeParse({ groupId: "grp-1" });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.groupId).toBe("grp-1");
+    });
+
+    it("accepts both categoryId and groupId", () => {
+      const result = lineItemSchema.safeParse({
+        categoryId: "cat-1",
+        groupId: "grp-1",
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.categoryId).toBe("cat-1");
+        expect(result.data.groupId).toBe("grp-1");
+      }
+    });
+
+    it("defaults categoryId and groupId to undefined", () => {
+      const result = lineItemSchema.safeParse({});
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.categoryId).toBeUndefined();
+        expect(result.data.groupId).toBeUndefined();
+      }
+    });
+  });
 });

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { Loader2, X, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -13,14 +13,23 @@ import {
   type ProjectFormValues,
 } from "@/lib/validations/project";
 import { createProject, updateProject } from "@/server/projects";
+import { addProjectManager, removeProjectManager } from "@/server/project-managers";
 import { getClients } from "@/server/clients";
 import { getLocations } from "@/server/locations";
+import { getOrgMembers } from "@/server/org-members";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { FormSection, SectionHeader } from "@/components/layout/page-layouts";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { QuickCreateClient } from "@/components/clients/quick-create-client";
 import { QuickCreateLocation } from "@/components/assets/quick-create-location";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -30,7 +39,34 @@ import { TagInput } from "@/components/ui/tag-input";
 interface ProjectFormProps {
   initialData?: ProjectFormValues & { id: string; isTemplate?: boolean };
   isTemplate?: boolean;
+  initialManagerIds?: string[];
 }
+
+const TYPE_OPTIONS = [
+  { value: "DRY_HIRE", label: "Dry Hire" },
+  { value: "WET_HIRE", label: "Wet Hire" },
+  { value: "INSTALLATION", label: "Installation" },
+  { value: "TOUR", label: "Tour" },
+  { value: "CORPORATE", label: "Corporate" },
+  { value: "THEATRE", label: "Theatre" },
+  { value: "FESTIVAL", label: "Festival" },
+  { value: "CONFERENCE", label: "Conference" },
+  { value: "OTHER", label: "Other" },
+] as const;
+
+const STATUS_OPTIONS = [
+  { value: "ENQUIRY", label: "Enquiry" },
+  { value: "QUOTING", label: "Quoting" },
+  { value: "QUOTED", label: "Quoted" },
+  { value: "CONFIRMED", label: "Confirmed" },
+  { value: "PREPPING", label: "Prepping" },
+  { value: "CHECKED_OUT", label: "Checked Out" },
+  { value: "ON_SITE", label: "On Site" },
+  { value: "RETURNED", label: "Returned" },
+  { value: "COMPLETED", label: "Completed" },
+  { value: "INVOICED", label: "Invoiced" },
+  { value: "CANCELLED", label: "Cancelled" },
+] as const;
 
 function formatDateForInput(date: unknown): string {
   if (!date) return "";
@@ -39,7 +75,7 @@ function formatDateForInput(date: unknown): string {
   return d.toISOString().split("T")[0];
 }
 
-export function ProjectForm({ initialData, isTemplate: isTemplateProp }: ProjectFormProps) {
+export function ProjectForm({ initialData, isTemplate: isTemplateProp, initialManagerIds = [] }: ProjectFormProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
@@ -48,6 +84,7 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
   const isTemplate = isTemplateProp ?? initialData?.isTemplate ?? false;
   const [quickCreateClientOpen, setQuickCreateClientOpen] = useState(false);
   const [quickCreateLocationOpen, setQuickCreateLocationOpen] = useState(false);
+  const [selectedManagerIds, setSelectedManagerIds] = useState<string[]>(initialManagerIds);
 
   const form = useForm<ProjectFormValues>({
     resolver: zodResolver(projectSchema),
@@ -93,6 +130,9 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
         },
   });
 
+  const watchType = form.watch("type");
+  const watchStatus = form.watch("status");
+
   const { data: clientsData } = useQuery({
     queryKey: ["clients", orgId, { pageSize: 200 }],
     queryFn: () => getClients({ pageSize: 200 }),
@@ -114,6 +154,17 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
     queryFn: () => getOrgTags(),
   });
 
+  const { data: membersData } = useQuery({
+    queryKey: ["org-members", orgId],
+    queryFn: () => getOrgMembers({ pageSize: 200 }),
+  });
+
+  const memberOptions = (membersData?.members || []).map((m) => ({
+    value: m.user.id,
+    label: m.user.name || m.user.email,
+    description: m.user.name ? m.user.email : undefined,
+  }));
+
   const locationOptions = (locationsData?.locations || []).map((l) => ({
     value: l.id,
     label: l.parent ? `${l.parent.name} → ${l.name}` : l.name,
@@ -121,10 +172,22 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
   }));
 
   const mutation = useMutation({
-    mutationFn: (data: ProjectFormValues) =>
-      isEditing
-        ? updateProject(initialData.id, data)
-        : createProject({ ...data, isTemplate }),
+    mutationFn: async (data: ProjectFormValues) => {
+      const result = isEditing
+        ? await updateProject(initialData.id, data)
+        : await createProject({ ...data, isTemplate });
+
+      // Sync project managers
+      const projectId = result.id;
+      const toAdd = selectedManagerIds.filter((id) => !initialManagerIds.includes(id));
+      const toRemove = initialManagerIds.filter((id) => !selectedManagerIds.includes(id));
+      await Promise.all([
+        ...toAdd.map((userId) => addProjectManager(projectId, userId)),
+        ...toRemove.map((userId) => removeProjectManager(projectId, userId)),
+      ]);
+
+      return result;
+    },
     onSuccess: (result) => {
       toast.success(
         isEditing
@@ -143,12 +206,12 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
       >
         <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
           <div className="space-y-8">
-            {/* Project Details */}
+            {/* ─── Project Details ─── */}
             <SectionHeader label="Project Details" />
             <FormSection>
               {!isTemplate && (
                 <div className="space-y-2">
-                  <Label htmlFor="projectNumber">Project Code *</Label>
+                  <Label htmlFor="projectNumber">Project Code</Label>
                   <Input
                     id="projectNumber"
                     {...form.register("projectNumber")}
@@ -196,30 +259,97 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="type">Type</Label>
-                <select
-                  id="type"
-                  {...form.register("type")}
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                >
-                  <option value="DRY_HIRE">Dry Hire</option>
-                  <option value="WET_HIRE">Wet Hire</option>
-                  <option value="INSTALLATION">Installation</option>
-                  <option value="TOUR">Tour</option>
-                  <option value="CORPORATE">Corporate</option>
-                  <option value="THEATRE">Theatre</option>
-                  <option value="FESTIVAL">Festival</option>
-                  <option value="CONFERENCE">Conference</option>
-                  <option value="OTHER">Other</option>
-                </select>
+                <Label>Project Manager(s)</Label>
+                <ComboboxPicker
+                  value=""
+                  onChange={(userId) => {
+                    if (userId && !selectedManagerIds.includes(userId)) {
+                      setSelectedManagerIds((prev) => [...prev, userId]);
+                    }
+                  }}
+                  options={memberOptions.filter((m) => !selectedManagerIds.includes(m.value))}
+                  placeholder="Add project manager..."
+                  searchPlaceholder="Search members..."
+                  emptyMessage="No members found."
+                />
+                {selectedManagerIds.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {selectedManagerIds.map((id) => {
+                      const member = memberOptions.find((m) => m.value === id);
+                      return (
+                        <span
+                          key={id}
+                          className="inline-flex items-center gap-1 rounded-md bg-bg-muted px-2 py-0.5 text-xs text-fg-2"
+                        >
+                          {member?.label ?? id}
+                          <button
+                            type="button"
+                            onClick={() => setSelectedManagerIds((prev) => prev.filter((mid) => mid !== id))}
+                            className="text-fg-4 hover:text-fg"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
+              <div className="space-y-2">
+                <Label>Type</Label>
+                <Controller
+                  control={form.control}
+                  name="type"
+                  render={({ field }) => (
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger>
+                        <SelectValue>
+                          {TYPE_OPTIONS.find((o) => o.value === watchType)?.label ?? "Other"}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {TYPE_OPTIONS.map((o) => (
+                          <SelectItem key={o.value} value={o.value}>
+                            {o.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              </div>
+              {isEditing && (
+                <div className="space-y-2">
+                  <Label>Status</Label>
+                  <Controller
+                    control={form.control}
+                    name="status"
+                    render={({ field }) => (
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger>
+                          <SelectValue>
+                            {STATUS_OPTIONS.find((o) => o.value === watchStatus)?.label ?? watchStatus}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          {STATUS_OPTIONS.map((o) => (
+                            <SelectItem key={o.value} value={o.value}>
+                              {o.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                </div>
+              )}
               <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="description">Description</Label>
                 <Textarea
                   id="description"
                   {...form.register("description")}
                   placeholder="Brief description of the project"
-                  rows={3}
+                  rows={2}
                 />
               </div>
               <div className="space-y-2 sm:col-span-2">
@@ -239,9 +369,10 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
               </div>
             </FormSection>
 
-            {/* Rental Period */}
-            <SectionHeader label="Rental Period" />
+            {/* ─── Schedule ─── */}
+            <SectionHeader label="Schedule" />
             <FormSection>
+              {/* Rental period + billing in a compact layout */}
               <div className="space-y-2">
                 <Label htmlFor="rentalStartDate">Rental Start</Label>
                 <Input
@@ -258,11 +389,59 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
                   {...form.register("rentalEndDate")}
                 />
               </div>
-            </FormSection>
 
-            {/* Dates & Times */}
-            <SectionHeader label="Dates & Times" />
-            <FormSection>
+              {/* Billing time inline with rental dates */}
+              <div className="space-y-2">
+                <Label htmlFor="billingWeeks">Billing Weeks</Label>
+                <Input
+                  id="billingWeeks"
+                  type="number"
+                  min="0"
+                  {...form.register("billingWeeks")}
+                  placeholder="0"
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="billingDays">Billing Days</Label>
+                  <button
+                    type="button"
+                    className="text-[11px] text-primary hover:text-primary/80"
+                    onClick={() => {
+                      const start = form.getValues("rentalStartDate");
+                      const end = form.getValues("rentalEndDate");
+                      if (!start || !end) {
+                        toast.error("Set rental start and end dates first");
+                        return;
+                      }
+                      const startDate = new Date(String(start));
+                      const endDate = new Date(String(end));
+                      const diffMs = endDate.getTime() - startDate.getTime();
+                      if (diffMs <= 0) {
+                        toast.error("Rental end must be after rental start");
+                        return;
+                      }
+                      const totalDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+                      const weeks = Math.floor(totalDays / 7);
+                      const days = totalDays % 7;
+                      form.setValue("billingWeeks", weeks);
+                      form.setValue("billingDays", days);
+                      toast.success(`Set to ${weeks}w ${days}d`);
+                    }}
+                  >
+                    Auto from rental dates
+                  </button>
+                </div>
+                <Input
+                  id="billingDays"
+                  type="number"
+                  min="0"
+                  {...form.register("billingDays")}
+                  placeholder="0"
+                />
+              </div>
+
+              {/* Event dates */}
               <div className="space-y-2">
                 <Label htmlFor="loadInDate">Load In</Label>
                 <div className="flex gap-2">
@@ -276,7 +455,7 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
                     id="loadInTime"
                     type="time"
                     {...form.register("loadInTime")}
-                    className="w-32"
+                    className="w-28"
                   />
                 </div>
               </div>
@@ -293,7 +472,7 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
                     id="loadOutTime"
                     type="time"
                     {...form.register("loadOutTime")}
-                    className="w-32"
+                    className="w-28"
                   />
                 </div>
               </div>
@@ -310,7 +489,7 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
                     id="eventStartTime"
                     type="time"
                     {...form.register("eventStartTime")}
-                    className="w-32"
+                    className="w-28"
                   />
                 </div>
               </div>
@@ -327,13 +506,13 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
                     id="eventEndTime"
                     type="time"
                     {...form.register("eventEndTime")}
-                    className="w-32"
+                    className="w-28"
                   />
                 </div>
               </div>
             </FormSection>
 
-            {/* Location & Site Contact */}
+            {/* ─── Location & Site Contact ─── */}
             <SectionHeader label="Location & Site Contact" />
             <FormSection>
               <div className="space-y-2 sm:col-span-2">
@@ -357,7 +536,7 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="siteContactName">Site Contact Name</Label>
+                <Label htmlFor="siteContactName">Contact Name</Label>
                 <Input
                   id="siteContactName"
                   {...form.register("siteContactName")}
@@ -365,15 +544,15 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="siteContactPhone">Site Contact Phone</Label>
+                <Label htmlFor="siteContactPhone">Contact Phone</Label>
                 <Input
                   id="siteContactPhone"
                   {...form.register("siteContactPhone")}
                   placeholder="+61 400 000 000"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="siteContactEmail">Site Contact Email</Label>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="siteContactEmail">Contact Email</Label>
                 <Input
                   id="siteContactEmail"
                   type="email"
@@ -388,88 +567,60 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp }: Project
               </div>
             </FormSection>
 
-            {/* Notes */}
-            <SectionHeader label="Notes" />
-            <FormSection>
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="crewNotes">Crew Notes</Label>
-                <Textarea
-                  id="crewNotes"
-                  {...form.register("crewNotes")}
-                  placeholder="Notes visible to crew members"
-                  rows={3}
-                />
-              </div>
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="internalNotes">Internal Notes</Label>
-                <Textarea
-                  id="internalNotes"
-                  {...form.register("internalNotes")}
-                  placeholder="Internal notes (not visible to client)"
-                  rows={3}
-                />
-              </div>
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="clientNotes">Client Notes</Label>
-                <Textarea
-                  id="clientNotes"
-                  {...form.register("clientNotes")}
-                  placeholder="Notes visible on client-facing documents"
-                  rows={3}
-                />
-              </div>
-            </FormSection>
-
-            {/* Financial */}
-            <SectionHeader label="Financial" />
-            <FormSection className="[&>div:last-child]:lg:grid-cols-4">
-              <div className="space-y-2">
-                <Label htmlFor="discountPercent">Discount (%)</Label>
-                <Input
-                  id="discountPercent"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max="100"
-                  {...form.register("discountPercent")}
-                  placeholder="0"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="depositPercent">Deposit (%)</Label>
-                <Input
-                  id="depositPercent"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max="100"
-                  {...form.register("depositPercent")}
-                  placeholder="0"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="depositPaid">Deposit Paid ($)</Label>
-                <Input
-                  id="depositPaid"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  {...form.register("depositPaid")}
-                  placeholder="0.00"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="invoicedTotal">Invoiced Total ($)</Label>
-                <Input
-                  id="invoicedTotal"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  {...form.register("invoicedTotal")}
-                  placeholder="0.00"
-                />
-              </div>
-            </FormSection>
+            {/* ─── Financial (edit only) ─── */}
+            {isEditing && (
+              <>
+                <SectionHeader label="Financial" />
+                <FormSection>
+                  <div className="space-y-2">
+                    <Label htmlFor="discountPercent">Discount (%)</Label>
+                    <Input
+                      id="discountPercent"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="100"
+                      {...form.register("discountPercent")}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="depositPercent">Deposit (%)</Label>
+                    <Input
+                      id="depositPercent"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="100"
+                      {...form.register("depositPercent")}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="depositPaid">Deposit Paid ($)</Label>
+                    <Input
+                      id="depositPaid"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      {...form.register("depositPaid")}
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="invoicedTotal">Invoiced Total ($)</Label>
+                    <Input
+                      id="invoicedTotal"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      {...form.register("invoicedTotal")}
+                      placeholder="0.00"
+                    />
+                  </div>
+                </FormSection>
+              </>
+            )}
           </div>
 
           <div className="mt-6 flex gap-3 border-t border-border pt-4">

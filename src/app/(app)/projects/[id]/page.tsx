@@ -23,8 +23,11 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { LineItemsPanel } from "@/components/projects/line-items-panel";
+import { EquipmentTab } from "@/components/projects/equipment-tab";
 import { CrewPanel } from "@/components/projects/crew-panel";
 import { ServicesPanel } from "@/components/projects/services-panel";
+import { FinancialSummary } from "@/components/projects/financial-summary";
+import { ProjectManagersPanel } from "@/components/projects/project-managers-panel";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -243,6 +246,28 @@ export default function ProjectDetailPage({
                       Template
                     </Badge>
                   )}
+                  {/* PM Avatars */}
+                  {project.projectManagers && (project.projectManagers as { user: { id: string; name: string | null; email: string; image: string | null } }[]).length > 0 && (
+                    <div className="flex -space-x-1.5 ml-2">
+                      {(project.projectManagers as { user: { id: string; name: string | null; email: string; image: string | null } }[]).map((pm) => (
+                        <div
+                          key={pm.user.id}
+                          className="h-6 w-6 rounded-full bg-bg-inset ring-2 ring-bg-surface flex items-center justify-center text-[10px] font-medium text-fg-3"
+                          title={pm.user.name ?? pm.user.email}
+                        >
+                          {pm.user.image ? (
+                            <img
+                              src={pm.user.image}
+                              alt={pm.user.name ?? ""}
+                              className="h-6 w-6 rounded-full object-cover"
+                            />
+                          ) : (
+                            (pm.user.name ?? pm.user.email).charAt(0).toUpperCase()
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 {(project.client || project.location) && (
                   <p className="mt-1 text-sm text-fg-3">
@@ -401,26 +426,21 @@ export default function ProjectDetailPage({
               <Tabs defaultValue="equipment">
                 <TabsList>
                   <TabsTrigger value="equipment">Equipment</TabsTrigger>
-                  <TabsTrigger value="services">Services</TabsTrigger>
-                  <TabsTrigger value="crew">Crew</TabsTrigger>
+                  <TabsTrigger value="labour">Labour &amp; Logistics</TabsTrigger>
                   <TabsTrigger value="notes">Notes</TabsTrigger>
                   <TabsTrigger value="files">Files ({(project.media || []).length})</TabsTrigger>
                 </TabsList>
 
-                {/* Equipment Tab */}
+                {/* Equipment Tab — new category/group hierarchy */}
                 <TabsContent value="equipment">
                   <div className="pt-4">
-                    <LineItemsPanel
-                      projectId={id}
-                      rentalStartDate={rentalStart ?? undefined}
-                      rentalEndDate={rentalEnd ?? undefined}
-                    />
+                    <EquipmentTab projectId={id} />
                   </div>
                 </TabsContent>
 
-                {/* Services Tab */}
-                <TabsContent value="services">
-                  <div className="pt-4">
+                {/* Labour & Logistics Tab — unified services + crew */}
+                <TabsContent value="labour">
+                  <div className="space-y-6 pt-4">
                     <ServicesPanel
                       projectId={id}
                       projectAddress={project.location?.address || ""}
@@ -431,12 +451,7 @@ export default function ProjectDetailPage({
                       projectEventStartDate={project.eventStartDate ? new Date(project.eventStartDate as unknown as string).toISOString().slice(0, 10) : ""}
                       projectEventEndDate={project.eventEndDate ? new Date(project.eventEndDate as unknown as string).toISOString().slice(0, 10) : ""}
                     />
-                  </div>
-                </TabsContent>
-
-                {/* Crew Tab */}
-                <TabsContent value="crew">
-                  <div className="pt-4">
+                    <div className="h-px bg-border" />
                     <CrewPanel projectId={id} />
                   </div>
                 </TabsContent>
@@ -531,6 +546,22 @@ export default function ProjectDetailPage({
                     </CanDo>
                   </div>
                 )}
+
+                {/* Project Managers */}
+                <ProjectManagersPanel
+                  projectId={id}
+                  managers={
+                    (project.projectManagers as {
+                      userId: string;
+                      user: {
+                        id: string;
+                        name: string | null;
+                        email: string;
+                        image: string | null;
+                      };
+                    }[]) ?? []
+                  }
+                />
 
                 {/* Client */}
                 <div className="border-b border-border pb-4 space-y-2">
@@ -666,57 +697,38 @@ export default function ProjectDetailPage({
                 </div>
 
                 {/* Financial Summary */}
-                {!project.isTemplate && (
-                  <div className="border-b border-border pb-4 space-y-2">
-                    <SectionHeader label="Financials" />
-                    <div className="space-y-1.5 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-fg-3">Subtotal</span>
-                        <span className="t-data font-medium">{formatCurrency(project.subtotal as number | null)}</span>
-                      </div>
-                      {project.discountPercent != null && (
-                        <div className="flex justify-between">
-                          <span className="text-fg-3">Discount</span>
-                          <span className="t-data font-medium">
-                            {Number(project.discountPercent)}%
-                            {project.discountAmount != null && ` (${formatCurrency(project.discountAmount as unknown as number)})`}
-                          </span>
-                        </div>
-                      )}
-                      <div className="flex justify-between">
-                        <span className="text-fg-3">Tax</span>
-                        <span className="t-data font-medium">{formatCurrency(project.taxAmount as number | null)}</span>
-                      </div>
-                      <div className="flex justify-between items-center border-l-[3px] border-primary pl-2 -ml-2">
-                        <span className="text-fg font-medium">Total</span>
-                        <span className="t-data font-semibold text-base">{formatCurrency(project.total as number | null)}</span>
-                      </div>
-                      <div className="my-1 h-px bg-border" />
-                      <div className="flex justify-between">
-                        <span className="text-fg-3">Invoiced</span>
-                        <span className="t-data font-medium">
-                          {project.invoicedTotal != null
-                            ? formatCurrency(project.invoicedTotal as unknown as number)
-                            : "\u2014"}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-fg-3">Deposit</span>
-                        <span className="t-data font-medium">
-                          {project.depositPercent != null ? `${Number(project.depositPercent)}%` : "\u2014"}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-fg-3">Deposit Paid</span>
-                        <span className="t-data font-medium">{formatCurrency(project.depositPaid as number | null)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-fg-3">Est. Labour</span>
-                        <LabourCostDisplay projectId={id} />
-                      </div>
+                {!project.isTemplate && (() => {
+                  // Compute group pricing stats from categories
+                  const allGroups = (project.categories as { groups: { title: string; quantity: number; price: unknown }[] }[] | undefined)
+                    ?.flatMap((c) => c.groups) ?? [];
+                  const totalGroupCount = allGroups.length;
+                  const pricedGroupCount = allGroups.filter((g) => g.price != null && Number(g.price) > 0).length;
+                  const groupBreakdown = allGroups
+                    .filter((g) => g.price != null && Number(g.price) > 0)
+                    .map((g) => ({ title: g.title, quantity: g.quantity, price: Number(g.price) }));
+
+                  return (
+                    <div className="border-b border-border pb-4">
+                      <FinancialSummary
+                        equipmentRevenue={project.equipmentRevenue as number | null}
+                        serviceCostTotal={project.serviceCostTotal as number | null}
+                        labourCostTotal={project.labourCostTotal as number | null}
+                        subtotal={project.subtotal as number | null}
+                        discountPercent={project.discountPercent as number | null}
+                        discountAmount={project.discountAmount as number | null}
+                        taxRate={project.taxRate as number | null}
+                        taxAmount={project.taxAmount as number | null}
+                        total={project.total as number | null}
+                        margin={project.margin as number | null}
+                        depositPercent={project.depositPercent as number | null}
+                        depositPaid={project.depositPaid as number | null}
+                        pricedGroupCount={pricedGroupCount}
+                        totalGroupCount={totalGroupCount}
+                        groupBreakdown={groupBreakdown}
+                      />
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* Quick Actions */}
                 {!project.isTemplate && (

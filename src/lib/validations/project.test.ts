@@ -418,4 +418,105 @@ describe("projectSchema", () => {
       if (result.success) expect(result.data.tags).toEqual(["festival", "outdoor", "summer", "2024"]);
     });
   });
+
+  describe("defaultRentalPeriod (optional enum)", () => {
+    it("accepts DAILY", () => {
+      const result = projectSchema.safeParse({ ...validMinimal, defaultRentalPeriod: "DAILY" });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.defaultRentalPeriod).toBe("DAILY");
+    });
+
+    it("accepts WEEKLY", () => {
+      const result = projectSchema.safeParse({ ...validMinimal, defaultRentalPeriod: "WEEKLY" });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.defaultRentalPeriod).toBe("WEEKLY");
+    });
+
+    it("rejects invalid value", () => {
+      const result = projectSchema.safeParse({ ...validMinimal, defaultRentalPeriod: "MONTHLY" });
+      expect(result.success).toBe(false);
+    });
+
+    it("accepts undefined", () => {
+      const result = projectSchema.safeParse(validMinimal);
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.defaultRentalPeriod).toBeUndefined();
+    });
+  });
+
+  describe("defaultRentalQuantity (optional, int, min 1)", () => {
+    it("accepts positive integer", () => {
+      const result = projectSchema.safeParse({ ...validMinimal, defaultRentalQuantity: 5 });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.defaultRentalQuantity).toBe(5);
+    });
+
+    it("rejects zero", () => {
+      const result = projectSchema.safeParse({ ...validMinimal, defaultRentalQuantity: 0 });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects negative", () => {
+      const result = projectSchema.safeParse({ ...validMinimal, defaultRentalQuantity: -1 });
+      expect(result.success).toBe(false);
+    });
+
+    it("coerces string to number", () => {
+      const result = projectSchema.safeParse({ ...validMinimal, defaultRentalQuantity: "3" });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.defaultRentalQuantity).toBe(3);
+    });
+
+    it("accepts undefined", () => {
+      const result = projectSchema.safeParse(validMinimal);
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.defaultRentalQuantity).toBeUndefined();
+    });
+  });
+
+  describe("taxRate (optional, min 0, max 100)", () => {
+    it("accepts valid tax rate", () => {
+      const result = projectSchema.safeParse({ ...validMinimal, taxRate: 10 });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.taxRate).toBe(10);
+    });
+
+    it("accepts zero", () => {
+      const result = projectSchema.safeParse({ ...validMinimal, taxRate: 0 });
+      expect(result.success).toBe(true);
+    });
+
+    it("accepts 100", () => {
+      const result = projectSchema.safeParse({ ...validMinimal, taxRate: 100 });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects over 100", () => {
+      const result = projectSchema.safeParse({ ...validMinimal, taxRate: 101 });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects negative", () => {
+      const result = projectSchema.safeParse({ ...validMinimal, taxRate: -1 });
+      expect(result.success).toBe(false);
+    });
+
+    it("accepts decimal", () => {
+      const result = projectSchema.safeParse({ ...validMinimal, taxRate: 7.5 });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.taxRate).toBe(7.5);
+    });
+
+    it("coerces string to number", () => {
+      const result = projectSchema.safeParse({ ...validMinimal, taxRate: "10" });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.taxRate).toBe(10);
+    });
+
+    it("accepts undefined", () => {
+      const result = projectSchema.safeParse(validMinimal);
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.taxRate).toBeUndefined();
+    });
+  });
 });

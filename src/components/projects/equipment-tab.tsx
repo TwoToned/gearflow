@@ -1010,7 +1010,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                                 item={item}
                                 indent="ml-12"
                                 onEdit={() => openEditLineItem(item)}
-                                onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
+                                onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId(group.id); }}
                                 onRemove={() => removeMut.mutate(item.id)}
                               />
                             ))}

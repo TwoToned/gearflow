@@ -438,7 +438,11 @@ export async function getProjectLabourCost(projectId: string) {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-export async function getCrewMembersForAssignment(projectId: string, search?: string) {
+export async function getCrewMembersForAssignment(
+  projectId: string,
+  search?: string,
+  dateRange?: { start: string; end: string },
+) {
   const { organizationId } = await getOrgContext();
 
   const where = {
@@ -470,15 +474,74 @@ export async function getCrewMembersForAssignment(projectId: string, search?: st
       defaultDayRate: true,
       defaultHourlyRate: true,
       crewRole: { select: { id: true, name: true } },
-      // Check for existing assignments on this project
+      // Assignments on this project
       assignments: {
         where: { projectId },
-        select: { id: true, phase: true, status: true },
+        select: { id: true, phase: true, status: true, serviceId: true },
       },
     },
     orderBy: { lastName: "asc" },
     take: 50,
   });
 
-  return serialize(members);
+  // Cross-project availability check (Arch fix #2)
+  if (dateRange) {
+    const rangeStart = new Date(dateRange.start);
+    const rangeEnd = new Date(dateRange.end);
+    const memberIds = members.map((m) => m.id);
+
+    // Single query for all overlapping assignments across all projects
+    const conflicts = await prisma.crewAssignment.findMany({
+      where: {
+        crewMemberId: { in: memberIds },
+        projectId: { not: projectId }, // Other projects only
+        status: { notIn: ["CANCELLED", "DECLINED"] },
+        startDate: { lte: rangeEnd },
+        endDate: { gte: rangeStart },
+      },
+      select: {
+        crewMemberId: true,
+        projectId: true,
+        project: { select: { projectNumber: true, name: true } },
+        startDate: true,
+        endDate: true,
+      },
+    });
+
+    // Build conflict map
+    const conflictMap = new Map<string, typeof conflicts>();
+    for (const c of conflicts) {
+      const existing = conflictMap.get(c.crewMemberId) || [];
+      existing.push(c);
+      conflictMap.set(c.crewMemberId, existing);
+    }
+
+    // Also check crew availability blocks
+    const unavailable = await prisma.crewAvailability.findMany({
+      where: {
+        crewMemberId: { in: memberIds },
+        type: "UNAVAILABLE",
+        startDate: { lte: rangeEnd },
+        endDate: { gte: rangeStart },
+      },
+      select: { crewMemberId: true },
+    });
+    const unavailableSet = new Set(unavailable.map((u) => u.crewMemberId));
+
+    return serialize(
+      members.map((m) => ({
+        ...m,
+        conflicts: conflictMap.get(m.id) || [],
+        isUnavailable: unavailableSet.has(m.id),
+      })),
+    );
+  }
+
+  return serialize(
+    members.map((m) => ({
+      ...m,
+      conflicts: [],
+      isUnavailable: false,
+    })),
+  );
 }

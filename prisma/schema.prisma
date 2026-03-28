@@ -571,9 +571,10 @@ model Category {
   description    String?
   icon           String?
   sortOrder      Int          @default(0)
-  tags           String[]     @default([])
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  tags               String[]     @default([])
+  suggestedCrewRoles String[]     @default([])
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
 
   models Model[]
   kits   Kit[]
@@ -1942,7 +1943,8 @@ model CrewAssignment {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  @@unique([projectId, crewMemberId, phase])
+  // Partial unique index created via raw SQL migration:
+  // UNIQUE(projectId, crewMemberId, serviceId) WHERE serviceId IS NOT NULL
   @@index([organizationId])
   @@index([projectId])
   @@index([crewMemberId])

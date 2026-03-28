@@ -18,7 +18,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, FolderPlus, Package, ArrowUpRight, MoreHorizontal, Trash2, Pencil, Loader2, ChevronRight, GripVertical } from "lucide-react";
+import { Plus, FolderPlus, Package, ArrowUpRight, MoreHorizontal, Trash2, Pencil, Loader2, ChevronRight, GripVertical, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 import { getProjectCategories } from "@/server/project-categories";
@@ -29,6 +29,7 @@ import {
   deleteProjectGroup,
   reorderProjectGroups,
   moveLineItemToGroup,
+  recalculateGroupPrices,
 } from "@/server/project-groups";
 import {
   createProjectCategory,
@@ -92,7 +93,9 @@ interface LineItemData {
   notes?: string | null;
   isOptional?: boolean;
   type?: string;
-  model?: { name: string; dailyRate?: unknown; weeklyRate?: unknown } | null;
+  priceBreakdown?: string | null;
+  priceOverridden?: boolean;
+  model?: { name: string; dailyRate?: unknown; weeklyRate?: unknown; monthlyRate?: unknown } | null;
   asset?: { assetTag?: string | null } | null;
 }
 
@@ -105,6 +108,7 @@ interface GroupData {
   suggestedPrice: unknown;
   rentalPeriod: string | null;
   rentalQuantity: number | null;
+  billingMonths: number | null;
   billingWeeks: number | null;
   billingDays: number | null;
   sortOrder: number;
@@ -124,6 +128,7 @@ const pricingLabels: Record<string, string> = {
   PER_WEEK: "/week",
   FLAT: "flat",
   PER_HOUR: "/hr",
+  OPTIMIZED: "auto",
 };
 
 const COL_COUNT = 7;
@@ -140,6 +145,7 @@ function SortableGroupRow({
   onAddEquipment,
   onAddKit,
   onAddSubhire,
+  onRecalculate,
 }: {
   group: GroupData;
   isExpanded: boolean;
@@ -150,6 +156,7 @@ function SortableGroupRow({
   onAddEquipment: () => void;
   onAddKit: () => void;
   onAddSubhire: () => void;
+  onRecalculate?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: `grp-${group.id}` });
@@ -226,6 +233,12 @@ function SortableGroupRow({
                   <ArrowUpRight className="mr-2 h-3.5 w-3.5" />
                   Add Subhire
                 </DropdownMenuItem>
+                {onRecalculate && (
+                  <DropdownMenuItem onClick={onRecalculate}>
+                    <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                    Recalculate Prices
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   onClick={onDelete}
                   className="text-[oklch(0.58_0.22_27)]"
@@ -365,11 +378,21 @@ function SortableLineItemRow({
       </TableCell>
       <TableCell className="text-center t-data">{item.quantity}</TableCell>
       <TableCell className="text-right hidden md:table-cell t-data">
-        {formatCurrency(item.unitPrice != null ? Number(item.unitPrice) : null)}
-        {item.unitPrice != null && item.pricingType && (
-          <span className="text-xs text-fg-3 ml-0.5">
-            {pricingLabels[item.pricingType] ?? ""}
-          </span>
+        <div>
+          {formatCurrency(item.unitPrice != null ? Number(item.unitPrice) : null)}
+          {item.unitPrice != null && item.pricingType && (
+            <span className="text-xs text-fg-3 ml-0.5">
+              {pricingLabels[item.pricingType] ?? ""}
+            </span>
+          )}
+          {item.priceOverridden && (
+            <span className="ml-1 text-[10px] text-amber-500 font-medium" title="Price was manually set">manual</span>
+          )}
+        </div>
+        {item.priceBreakdown && !item.priceOverridden && (
+          <p className="text-[11px] text-fg-3 truncate max-w-[140px]" title={item.priceBreakdown}>
+            {item.priceBreakdown}
+          </p>
         )}
       </TableCell>
       <TableCell className="text-center hidden lg:table-cell t-data">
@@ -464,6 +487,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
   const [editGroupTitle, setEditGroupTitle] = useState("");
   const [editGroupDescription, setEditGroupDescription] = useState("");
   const [editGroupQuantity, setEditGroupQuantity] = useState("1");
+  const [editGroupBillingMonths, setEditGroupBillingMonths] = useState("");
   const [editGroupBillingWeeks, setEditGroupBillingWeeks] = useState("");
   const [editGroupBillingDays, setEditGroupBillingDays] = useState("");
   const [editGroupPrice, setEditGroupPrice] = useState("");
@@ -651,7 +675,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
   });
 
   const updateGroupMut = useMutation({
-    mutationFn: ({ groupId, data }: { groupId: string; data: Partial<{ title: string; description: string; quantity: number; billingWeeks: number; billingDays: number }> }) =>
+    mutationFn: ({ groupId, data }: { groupId: string; data: Partial<{ title: string; description: string; quantity: number; billingMonths: number; billingWeeks: number; billingDays: number }> }) =>
       updateProjectGroup(groupId, data),
     onSuccess: () => {
       invalidate();
@@ -979,6 +1003,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                                 setEditGroupTitle(group.title);
                                 setEditGroupDescription(group.description ?? "");
                                 setEditGroupQuantity(String(group.quantity));
+                                setEditGroupBillingMonths(group.billingMonths != null ? String(group.billingMonths) : "");
                                 setEditGroupBillingWeeks(group.billingWeeks != null ? String(group.billingWeeks) : "");
                                 setEditGroupBillingDays(group.billingDays != null ? String(group.billingDays) : "");
                                 setEditGroupPrice(priceVal != null ? String(priceVal) : "");
@@ -994,6 +1019,20 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                               onAddSubhire={() => {
                                 setSubhireTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
                                 setShowSubhireDialog(true);
+                              }}
+                              onRecalculate={async () => {
+                                try {
+                                  const count = await recalculateGroupPrices(group.id);
+                                  if (count === 0) {
+                                    toast.info("No items to recalculate");
+                                  } else {
+                                    toast.success(`Prices updated for ${count} item${count !== 1 ? "s" : ""}`);
+                                  }
+                                  queryClient.invalidateQueries({ queryKey: ["project-categories"] });
+                                  queryClient.invalidateQueries({ queryKey: ["project-line-items"] });
+                                } catch (e) {
+                                  toast.error(e instanceof Error ? e.message : "Failed to recalculate");
+                                }
                               }}
                             />
                             {/* Expanded line items */}
@@ -1635,7 +1674,17 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
             </div>
             <div className="space-y-2">
               <Label className="text-muted-foreground text-xs">Billing Override (leave blank to use project defaults)</Label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label>Months</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={editGroupBillingMonths}
+                    onChange={(e) => setEditGroupBillingMonths(e.target.value)}
+                    placeholder="—"
+                  />
+                </div>
                 <div className="space-y-1">
                   <Label>Weeks</Label>
                   <Input
@@ -1672,6 +1721,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                       title: editGroupTitle.trim(),
                       description: editGroupDescription.trim() || undefined,
                       quantity: parseInt(editGroupQuantity) || 1,
+                      billingMonths: editGroupBillingMonths !== "" ? parseInt(editGroupBillingMonths) : undefined,
                       billingWeeks: editGroupBillingWeeks !== "" ? parseInt(editGroupBillingWeeks) : undefined,
                       billingDays: editGroupBillingDays !== "" ? parseInt(editGroupBillingDays) : undefined,
                     },

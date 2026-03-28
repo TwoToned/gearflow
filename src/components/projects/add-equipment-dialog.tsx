@@ -125,13 +125,11 @@ export function AddEquipmentDialog({
   });
 
   // When a model is selected, update form fields
+  // Don't set unitPrice here — server-side optimizer will auto-price if billing period + rates exist
   useEffect(() => {
     if (selectedModel) {
       form.setValue("modelId", selectedModel.id);
       form.setValue("assetId", undefined);
-      if (selectedModel.defaultRentalPrice != null) {
-        form.setValue("unitPrice", Number(selectedModel.defaultRentalPrice));
-      }
     }
   }, [selectedModel, form]);
 
@@ -142,9 +140,6 @@ export function AddEquipmentDialog({
       form.setValue("modelId", asset.modelId);
       form.setValue("assetId", asset.id);
       form.setValue("quantity", 1);
-      if (asset.model.defaultRentalPrice != null) {
-        form.setValue("unitPrice", Number(asset.model.defaultRentalPrice));
-      }
       form.setValue("description", `${asset.model.name}${asset.customName ? ` (${asset.customName})` : ""} [${asset.assetTag}]`);
     }
   }, [assetLookup, form]);

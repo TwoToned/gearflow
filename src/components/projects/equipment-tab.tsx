@@ -152,7 +152,7 @@ function SortableGroupRow({
   onAddSubhire: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: group.id });
+    useSortable({ id: `grp-${group.id}` });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -164,17 +164,19 @@ function SortableGroupRow({
 
   return (
     <TableRow ref={setNodeRef} style={style} className={`group/row ${isDragging ? "opacity-30" : ""}`}>
-      <TableCell className="w-8 px-1">
-        <button
-          type="button"
-          className="flex h-full cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="h-4 w-4" />
-        </button>
+      <TableCell className="w-8 px-0">
+        <div className={`flex justify-end ${indented ? "pr-0 pl-4" : "px-1"}`}>
+          <button
+            type="button"
+            className="flex cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+        </div>
       </TableCell>
-      <TableCell className={indented ? "pl-4" : ""}>
+      <TableCell className={indented ? "pl-0" : ""}>
         <div className="flex items-center gap-1.5">
           <button
             type="button"
@@ -252,7 +254,7 @@ function SortableCategoryRow({
   onDelete: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: cat.id });
+    useSortable({ id: `cat-${cat.id}` });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -316,7 +318,7 @@ function SortableLineItemRow({
   onRemove: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: item.id });
+    useSortable({ id: `li-${item.id}` });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -324,17 +326,22 @@ function SortableLineItemRow({
     opacity: isDragging ? 0.5 : 1,
   };
 
+  // Map indent class to grip indent
+  const gripIndent = indent === "pl-12" ? "pl-8" : indent === "pl-4" ? "pl-2" : "";
+
   return (
     <TableRow ref={setNodeRef} style={style} className={isDragging ? "opacity-30" : ""}>
-      <TableCell className="w-8 px-1">
-        <button
-          type="button"
-          className="flex h-full cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="h-4 w-4" />
-        </button>
+      <TableCell className="w-8 px-0">
+        <div className={`flex justify-end ${gripIndent ? `${gripIndent} pr-0` : "px-1"}`}>
+          <button
+            type="button"
+            className="flex cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+        </div>
       </TableCell>
       <TableCell className={indent}>
         <div className="flex items-center gap-2">
@@ -692,62 +699,106 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
 
   // ─── DnD handlers ─────────────────────────────────────────────────────────
 
-  function handleGroupDragEnd(categoryId: string, event: DragEndEvent) {
+  function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const cat = (categories as CategoryData[]).find((c) => c.id === categoryId);
-    if (!cat) return;
+    const activeId = String(active.id);
+    const overId = String(over.id);
 
-    const oldIndex = cat.groups.findIndex((g) => g.id === active.id);
-    const newIndex = cat.groups.findIndex((g) => g.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
+    // Category reorder
+    if (activeId.startsWith("cat-") && overId.startsWith("cat-")) {
+      const cats = categories as CategoryData[];
+      const activeRealId = activeId.slice(4);
+      const overRealId = overId.slice(4);
+      const oldIndex = cats.findIndex((c) => c.id === activeRealId);
+      const newIndex = cats.findIndex((c) => c.id === overRealId);
+      if (oldIndex === -1 || newIndex === -1) return;
 
-    const reordered = [...cat.groups];
-    const [moved] = reordered.splice(oldIndex, 1);
-    reordered.splice(newIndex, 0, moved);
+      const reordered = [...cats];
+      const [moved] = reordered.splice(oldIndex, 1);
+      reordered.splice(newIndex, 0, moved);
 
-    reorderProjectGroups(categoryId, reordered.map((g) => g.id)).catch(() => {
-      toast.error("Failed to reorder groups");
-    });
-    invalidate();
-  }
+      reorderProjectCategories(projectId, reordered.map((c) => c.id)).catch(() => {
+        toast.error("Failed to reorder categories");
+      });
+      invalidate();
+      return;
+    }
 
-  function handleCategoryDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
+    // Group reorder
+    if (activeId.startsWith("grp-") && overId.startsWith("grp-")) {
+      const activeRealId = activeId.slice(4);
+      const overRealId = overId.slice(4);
+      // Find which category contains these groups
+      const cats = categories as CategoryData[];
+      const cat = cats.find((c) => c.groups.some((g) => g.id === activeRealId));
+      if (!cat) return;
 
-    const cats = categories as CategoryData[];
-    const oldIndex = cats.findIndex((c) => c.id === active.id);
-    const newIndex = cats.findIndex((c) => c.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
+      const oldIndex = cat.groups.findIndex((g) => g.id === activeRealId);
+      const newIndex = cat.groups.findIndex((g) => g.id === overRealId);
+      if (oldIndex === -1 || newIndex === -1) return;
 
-    const reordered = [...cats];
-    const [moved] = reordered.splice(oldIndex, 1);
-    reordered.splice(newIndex, 0, moved);
+      const reordered = [...cat.groups];
+      const [moved] = reordered.splice(oldIndex, 1);
+      reordered.splice(newIndex, 0, moved);
 
-    reorderProjectCategories(projectId, reordered.map((c) => c.id)).catch(() => {
-      toast.error("Failed to reorder categories");
-    });
-    invalidate();
-  }
+      reorderProjectGroups(cat.id, reordered.map((g) => g.id)).catch(() => {
+        toast.error("Failed to reorder groups");
+      });
+      invalidate();
+      return;
+    }
 
-  function handleLineItemDragEnd(groupId: string | null, items: LineItemData[], event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
+    // Line item reorder
+    if (activeId.startsWith("li-") && overId.startsWith("li-")) {
+      const activeRealId = activeId.slice(3);
+      const overRealId = overId.slice(3);
 
-    const oldIndex = items.findIndex((i) => i.id === active.id);
-    const newIndex = items.findIndex((i) => i.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
+      // Find the item list containing both items
+      const cats = categories as CategoryData[];
+      let items: LineItemData[] | undefined;
 
-    const reordered = [...items];
-    const [moved] = reordered.splice(oldIndex, 1);
-    reordered.splice(newIndex, 0, moved);
+      // Check groups
+      for (const cat of cats) {
+        for (const group of cat.groups) {
+          const groupItems = group.lineItems ?? [];
+          if (groupItems.some((i) => i.id === activeRealId)) {
+            items = groupItems;
+            break;
+          }
+        }
+        if (items) break;
+        // Check standalone items
+        const standalone = cat.lineItems ?? [];
+        if (standalone.some((i) => i.id === activeRealId)) {
+          items = standalone;
+          break;
+        }
+      }
+      // Check uncategorized
+      if (!items) {
+        const uncatItems = uncategorizedItems as LineItemData[];
+        if (uncatItems.some((i) => i.id === activeRealId)) {
+          items = uncatItems;
+        }
+      }
 
-    reorderLineItems(projectId, reordered.map((i) => i.id)).catch(() => {
-      toast.error("Failed to reorder items");
-    });
-    invalidate();
+      if (!items) return;
+
+      const oldIndex = items.findIndex((i) => i.id === activeRealId);
+      const newIndex = items.findIndex((i) => i.id === overRealId);
+      if (oldIndex === -1 || newIndex === -1) return;
+
+      const reordered = [...items];
+      const [moved] = reordered.splice(oldIndex, 1);
+      reordered.splice(newIndex, 0, moved);
+
+      reorderLineItems(projectId, reordered.map((i) => i.id)).catch(() => {
+        toast.error("Failed to reorder items");
+      });
+      invalidate();
+    }
   }
 
   // ─── Render ────────────────────────────────────────────────────────────────
@@ -763,6 +814,26 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
   const typedCategories = categories as CategoryData[];
   const hasCategories = typedCategories.length > 0;
   const hasUncategorized = (uncategorizedItems as LineItemData[]).length > 0;
+
+  // Build flat list of all sortable IDs for the single DndContext
+  const allSortableIds: string[] = [];
+  for (const cat of typedCategories) {
+    allSortableIds.push(`cat-${cat.id}`);
+    for (const group of cat.groups) {
+      allSortableIds.push(`grp-${group.id}`);
+      if (expandedGroups.has(group.id)) {
+        for (const item of group.lineItems ?? []) {
+          allSortableIds.push(`li-${item.id}`);
+        }
+      }
+    }
+    for (const item of cat.lineItems ?? []) {
+      allSortableIds.push(`li-${item.id}`);
+    }
+  }
+  for (const item of uncategorizedItems as LineItemData[]) {
+    allSortableIds.push(`li-${item.id}`);
+  }
 
   return (
     <div className="space-y-3">
@@ -849,17 +920,16 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
               <TableHead className="w-16" />
             </TableRow>
           </TableHeader>
-          <TableBody>
-            {/* Categories — sortable */}
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleCategoryDragEnd}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={allSortableIds}
+              strategy={verticalListSortingStrategy}
             >
-              <SortableContext
-                items={typedCategories.map((c) => c.id)}
-                strategy={verticalListSortingStrategy}
-              >
+              <TableBody>
                 {typedCategories.map((cat) => {
                   const standaloneItems = cat.lineItems ?? [];
 
@@ -875,149 +945,99 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                         onDelete={() => deleteCategoryMut.mutate(cat.id)}
                       />
 
-                      {/* Groups within category — sortable */}
-                      <DndContext
-                        sensors={sensors}
-                        collisionDetection={closestCenter}
-                        onDragEnd={(e) => handleGroupDragEnd(cat.id, e)}
-                      >
-                        <SortableContext
-                          items={cat.groups.map((g) => g.id)}
-                          strategy={verticalListSortingStrategy}
-                        >
-                          {cat.groups.map((group) => {
-                            const isExpanded = expandedGroups.has(group.id);
-                            const priceVal = group.price != null ? Number(group.price) : null;
-                            const groupItems = group.lineItems ?? [];
-                            return (
-                              <React.Fragment key={group.id}>
-                                <SortableGroupRow
-                                  group={group}
-                                  isExpanded={isExpanded}
-                                  indented
-                                  onToggle={() => toggleGroup(group.id)}
-                                  onDelete={() => {
-                                    setDeleteGroupId(group.id);
-                                    setDeleteGroupInfo({
-                                      title: group.title,
-                                      price: priceVal ?? 0,
-                                      itemCount: groupItems.length,
-                                    });
-                                  }}
-                                  onEdit={() => {
-                                    setEditGroupData(group);
-                                    setEditGroupTitle(group.title);
-                                    setEditGroupDescription(group.description ?? "");
-                                    setEditGroupQuantity(String(group.quantity));
-                                    setEditGroupBillingWeeks(group.billingWeeks != null ? String(group.billingWeeks) : "");
-                                    setEditGroupBillingDays(group.billingDays != null ? String(group.billingDays) : "");
-                                    setEditGroupPrice(priceVal != null ? String(priceVal) : "");
-                                  }}
-                                  onAddEquipment={() => {
-                                    setAddEquipmentTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
-                                    setShowAddEquipment(true);
-                                  }}
-                                  onAddKit={() => {
-                                    setKitTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
-                                    setShowKitDialog(true);
-                                  }}
-                                  onAddSubhire={() => {
-                                    setSubhireTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
-                                    setShowSubhireDialog(true);
-                                  }}
-                                />
-                                {/* Expanded line items — sortable */}
-                                {isExpanded && groupItems.length === 0 && (
-                                  <TableRow className="hover:bg-transparent">
-                                    <TableCell colSpan={COL_COUNT} className="py-3 text-center text-xs text-fg-4">
-                                      No items in this group yet. Add equipment to get started.
-                                    </TableCell>
-                                  </TableRow>
-                                )}
-                                {isExpanded && groupItems.length > 0 && (
-                                  <DndContext
-                                    sensors={sensors}
-                                    collisionDetection={closestCenter}
-                                    onDragEnd={(e) => handleLineItemDragEnd(group.id, groupItems, e)}
-                                  >
-                                    <SortableContext
-                                      items={groupItems.map((i) => i.id)}
-                                      strategy={verticalListSortingStrategy}
-                                    >
-                                      {groupItems.map((item) => (
-                                        <SortableLineItemRow
-                                          key={item.id}
-                                          item={item}
-                                          indent="pl-12"
-                                          onEdit={() => openEditLineItem(item)}
-                                          onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
-                                          onRemove={() => removeMut.mutate(item.id)}
-                                        />
-                                      ))}
-                                    </SortableContext>
-                                  </DndContext>
-                                )}
-                              </React.Fragment>
-                            );
-                          })}
-                        </SortableContext>
-                      </DndContext>
-
-                      {/* Standalone line items in category — sortable */}
-                      {standaloneItems.length > 0 && (
-                        <DndContext
-                          sensors={sensors}
-                          collisionDetection={closestCenter}
-                          onDragEnd={(e) => handleLineItemDragEnd(null, standaloneItems, e)}
-                        >
-                          <SortableContext
-                            items={standaloneItems.map((i) => i.id)}
-                            strategy={verticalListSortingStrategy}
-                          >
-                            {standaloneItems.map((item) => (
+                      {/* Groups within category */}
+                      {cat.groups.map((group) => {
+                        const isExpanded = expandedGroups.has(group.id);
+                        const priceVal = group.price != null ? Number(group.price) : null;
+                        const groupItems = group.lineItems ?? [];
+                        return (
+                          <React.Fragment key={group.id}>
+                            <SortableGroupRow
+                              group={group}
+                              isExpanded={isExpanded}
+                              indented
+                              onToggle={() => toggleGroup(group.id)}
+                              onDelete={() => {
+                                setDeleteGroupId(group.id);
+                                setDeleteGroupInfo({
+                                  title: group.title,
+                                  price: priceVal ?? 0,
+                                  itemCount: groupItems.length,
+                                });
+                              }}
+                              onEdit={() => {
+                                setEditGroupData(group);
+                                setEditGroupTitle(group.title);
+                                setEditGroupDescription(group.description ?? "");
+                                setEditGroupQuantity(String(group.quantity));
+                                setEditGroupBillingWeeks(group.billingWeeks != null ? String(group.billingWeeks) : "");
+                                setEditGroupBillingDays(group.billingDays != null ? String(group.billingDays) : "");
+                                setEditGroupPrice(priceVal != null ? String(priceVal) : "");
+                              }}
+                              onAddEquipment={() => {
+                                setAddEquipmentTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
+                                setShowAddEquipment(true);
+                              }}
+                              onAddKit={() => {
+                                setKitTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
+                                setShowKitDialog(true);
+                              }}
+                              onAddSubhire={() => {
+                                setSubhireTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
+                                setShowSubhireDialog(true);
+                              }}
+                            />
+                            {/* Expanded line items */}
+                            {isExpanded && groupItems.length === 0 && (
+                              <TableRow className="hover:bg-transparent">
+                                <TableCell colSpan={COL_COUNT} className="py-3 text-center text-xs text-fg-4">
+                                  No items in this group yet. Add equipment to get started.
+                                </TableCell>
+                              </TableRow>
+                            )}
+                            {isExpanded && groupItems.map((item) => (
                               <SortableLineItemRow
                                 key={item.id}
                                 item={item}
-                                indent="pl-4"
+                                indent="pl-12"
                                 onEdit={() => openEditLineItem(item)}
                                 onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
                                 onRemove={() => removeMut.mutate(item.id)}
                               />
                             ))}
-                          </SortableContext>
-                        </DndContext>
-                      )}
+                          </React.Fragment>
+                        );
+                      })}
+
+                      {/* Standalone line items in category */}
+                      {standaloneItems.map((item) => (
+                        <SortableLineItemRow
+                          key={item.id}
+                          item={item}
+                          indent="pl-4"
+                          onEdit={() => openEditLineItem(item)}
+                          onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
+                          onRemove={() => removeMut.mutate(item.id)}
+                        />
+                      ))}
                     </React.Fragment>
                   );
                 })}
-              </SortableContext>
-            </DndContext>
 
-            {/* Uncategorized items — sortable, plain rows */}
-            {hasUncategorized && (
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragEnd={(e) => handleLineItemDragEnd(null, uncategorizedItems as LineItemData[], e)}
-              >
-                <SortableContext
-                  items={(uncategorizedItems as LineItemData[]).map((i) => i.id)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  {(uncategorizedItems as LineItemData[]).map((item) => (
-                    <SortableLineItemRow
-                      key={item.id}
-                      item={item}
-                      indent=""
-                      onEdit={() => openEditLineItem(item)}
-                      onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
-                      onRemove={() => removeMut.mutate(item.id)}
-                    />
-                  ))}
-                </SortableContext>
-              </DndContext>
-            )}
-          </TableBody>
+                {/* Uncategorized items */}
+                {(uncategorizedItems as LineItemData[]).map((item) => (
+                  <SortableLineItemRow
+                    key={item.id}
+                    item={item}
+                    indent=""
+                    onEdit={() => openEditLineItem(item)}
+                    onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
+                    onRemove={() => removeMut.mutate(item.id)}
+                  />
+                ))}
+              </TableBody>
+            </SortableContext>
+          </DndContext>
           </Table>
         </div>
       )}

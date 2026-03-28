@@ -61,6 +61,7 @@ export function AddEquipmentDialog({
   const [selectedModelId, setSelectedModelId] = useState("");
   const [assetTagInput, setAssetTagInput] = useState("");
   const [lookupTag, setLookupTag] = useState("");
+  const [discountMode, setDiscountMode] = useState<"$" | "%">("$");
 
   const form = useForm<LineItemFormValues>({
     resolver: zodResolver(lineItemSchema),
@@ -145,8 +146,14 @@ export function AddEquipmentDialog({
   }, [assetLookup, form]);
 
   const mutation = useMutation({
-    mutationFn: (data: LineItemFormValues) =>
-      addLineItem(projectId, { ...data, categoryId, groupId }, overbookConfirmed),
+    mutationFn: (data: LineItemFormValues) => {
+      let disc = data.discount;
+      if (discountMode === "%" && disc && data.unitPrice) {
+        const gross = Number(data.unitPrice) * Number(data.quantity ?? 1) * Number(data.duration ?? 1);
+        disc = Math.round(gross * Number(disc) / 100 * 100) / 100;
+      }
+      return addLineItem(projectId, { ...data, discount: disc, categoryId, groupId }, overbookConfirmed);
+    },
     onSuccess: (result) => {
       const data = result as Record<string, unknown> | null;
       if (data?._merged) {
@@ -176,6 +183,7 @@ export function AddEquipmentDialog({
     setAssetTagInput("");
     setLookupTag("");
     setMode("model");
+    setDiscountMode("$");
     setOverbookConfirmed(false);
   }
 
@@ -405,17 +413,18 @@ export function AddEquipmentDialog({
             </>
           )}
 
-          <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-2">
-              <Label htmlFor="eq-quantity">Quantity</Label>
-              <Input
-                id="eq-quantity"
-                type="number"
-                min={1}
-                {...form.register("quantity")}
-                disabled={mode === "asset-tag"}
-              />
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="eq-quantity">Quantity</Label>
+            <Input
+              id="eq-quantity"
+              type="number"
+              min={1}
+              {...form.register("quantity")}
+              disabled={mode === "asset-tag"}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label htmlFor="eq-unitPrice">Unit Price ($)</Label>
               <Input
@@ -426,17 +435,30 @@ export function AddEquipmentDialog({
                 placeholder="Auto"
                 {...form.register("unitPrice")}
               />
+              {Number(form.watch("unitPrice")) > 0 && (
+                <p className="text-xs text-amber-500">Overrides auto-pricing</p>
+              )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="eq-discount">Discount ($)</Label>
-              <Input
-                id="eq-discount"
-                type="number"
-                step="0.01"
-                min={0}
-                placeholder="0.00"
-                {...form.register("discount")}
-              />
+              <Label htmlFor="eq-discount">Discount</Label>
+              <div className="flex gap-1">
+                <Input
+                  id="eq-discount"
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  placeholder="0"
+                  {...form.register("discount")}
+                  className="flex-1"
+                />
+                <button
+                  type="button"
+                  onClick={() => setDiscountMode(discountMode === "$" ? "%" : "$")}
+                  className="shrink-0 w-9 h-9 rounded-md border border-input text-sm font-medium hover:bg-accent transition-colors"
+                >
+                  {discountMode}
+                </button>
+              </div>
             </div>
           </div>
 

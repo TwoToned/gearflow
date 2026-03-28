@@ -467,6 +467,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
   const [editUnitPrice, setEditUnitPrice] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editDiscount, setEditDiscount] = useState("");
+  const [editDiscountMode, setEditDiscountMode] = useState<"$" | "%">("$");
   const [editNotes, setEditNotes] = useState("");
 
   // Group edit dialog state
@@ -604,22 +605,34 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
     setEditQuantity(String(item.quantity));
     setEditUnitPrice(item.unitPrice != null ? String(Number(item.unitPrice)) : "");
     setEditDescription(item.description ?? item.model?.name ?? "");
-    setEditDiscount(item.discount != null ? String(Number(item.discount)) : "");
+    setEditDiscount(item.discount != null && Number(item.discount) > 0 ? String(Number(item.discount)) : "");
+    setEditDiscountMode("$");
     setEditNotes(item.notes ?? "");
   }
 
   function handleSaveEditLineItem() {
     if (!editLineItem) return;
+    const qty = Number(editQuantity) || 1;
+    const price = editUnitPrice ? Number(editUnitPrice) : undefined;
+    const dur = editLineItem.duration ?? 1;
+    let disc: number | undefined;
+    if (editDiscount && Number(editDiscount) > 0) {
+      if (editDiscountMode === "%" && price != null) {
+        disc = Math.round((price * qty * dur * Number(editDiscount)) / 100 * 100) / 100;
+      } else {
+        disc = Number(editDiscount);
+      }
+    }
     updateLineItemMut.mutate({
       id: editLineItem.id,
       data: {
         type: editLineItem.type ?? "EQUIPMENT",
-        quantity: Number(editQuantity) || 1,
-        unitPrice: editUnitPrice ? Number(editUnitPrice) : undefined,
+        quantity: qty,
+        unitPrice: price,
         description: editDescription,
         pricingType: editLineItem.pricingType ?? "PER_DAY",
-        duration: editLineItem.duration ?? 1,
-        discount: editDiscount ? Number(editDiscount) : undefined,
+        duration: dur,
+        discount: disc,
         notes: editNotes || undefined,
       },
     });
@@ -1343,17 +1356,18 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
               />
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="edit-quantity">Quantity</Label>
+              <Input
+                id="edit-quantity"
+                type="number"
+                min={1}
+                value={editQuantity}
+                onChange={(e) => setEditQuantity(e.target.value)}
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="edit-quantity">Quantity</Label>
-                <Input
-                  id="edit-quantity"
-                  type="number"
-                  min={1}
-                  value={editQuantity}
-                  onChange={(e) => setEditQuantity(e.target.value)}
-                />
-              </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-unitPrice">Unit Price ($)</Label>
                 <Input
@@ -1363,21 +1377,34 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                   min={0}
                   value={editUnitPrice}
                   onChange={(e) => setEditUnitPrice(e.target.value)}
+                  placeholder={editLineItem?.pricingType === "OPTIMIZED" ? "Auto-priced" : undefined}
                 />
+                {editLineItem?.pricingType === "OPTIMIZED" && editUnitPrice && (
+                  <p className="text-xs text-amber-500">Overrides auto-calculated price</p>
+                )}
               </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="edit-discount">Discount ($)</Label>
-              <Input
-                id="edit-discount"
-                type="number"
-                step="0.01"
-                min={0}
-                placeholder="0.00"
-                value={editDiscount}
-                onChange={(e) => setEditDiscount(e.target.value)}
-              />
+              <div className="space-y-2">
+                <Label htmlFor="edit-discount">Discount</Label>
+                <div className="flex gap-1">
+                  <Input
+                    id="edit-discount"
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    placeholder="0"
+                    value={editDiscount}
+                    onChange={(e) => setEditDiscount(e.target.value)}
+                    className="flex-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setEditDiscountMode(editDiscountMode === "$" ? "%" : "$")}
+                    className="shrink-0 w-9 h-9 rounded-md border border-input text-sm font-medium hover:bg-accent transition-colors"
+                  >
+                    {editDiscountMode}
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-2">

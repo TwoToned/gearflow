@@ -243,7 +243,7 @@ export default function RunsheetPage({
                               </div>
                             </div>
                             <StatusIndicator
-                              category="service"
+                              category="assignment"
                               value={service.status}
                               label={SERVICE_STATUS_LABELS[service.status] || service.status}
                             />
@@ -308,7 +308,7 @@ export default function RunsheetPage({
                                       </span>
                                     </div>
                                     <StatusIndicator
-                                      category="service"
+                                      category="assignment"
                                       value={ca.status}
                                       label={SERVICE_STATUS_LABELS[ca.status] || ca.status}
                                       variant="pill"

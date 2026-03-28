@@ -685,9 +685,9 @@ export async function generateProjectServices(projectId: string) {
       loadOutDate: true,
       eventStartDate: true,
       eventEndDate: true,
-      address: true,
-      latitude: true,
-      longitude: true,
+      location: {
+        select: { address: true, latitude: true, longitude: true },
+      },
     },
   });
   if (!project) throw new Error("Project not found");
@@ -764,9 +764,7 @@ async function _createServicesFromTemplateData(
     loadOutDate: Date | null;
     eventStartDate: Date | null;
     eventEndDate: Date | null;
-    address: string | null;
-    latitude: number | null;
-    longitude: number | null;
+    location: { address: string | null; latitude: number | null; longitude: number | null } | null;
   },
   templates: Array<{
     type: ServiceType;
@@ -878,9 +876,9 @@ async function _createServicesFromTemplateData(
           description: svc.description,
           date: svc.date,
           endDate: svc.endDate,
-          address: project.address,
-          latitude: project.latitude,
-          longitude: project.longitude,
+          address: project.location?.address ?? null,
+          latitude: project.location?.latitude ?? null,
+          longitude: project.location?.longitude ?? null,
           crewCountRequired: svc.crewCountRequired,
           vehicleDescription: svc.vehicleDescription,
           pricingType: svc.pricingType,
@@ -1184,7 +1182,7 @@ export async function getCrewSuggestionsForProject(projectId: string) {
     where: {
       projectId,
       organizationId,
-      type: { in: ["EQUIPMENT", "SALE"] },
+      type: "EQUIPMENT",
     },
     select: { categoryId: true },
     distinct: ["categoryId"],
@@ -1245,7 +1243,7 @@ export async function generateCrewMessage(
     select: {
       name: true,
       projectNumber: true,
-      address: true,
+      location: { select: { address: true } },
       eventStartDate: true,
       eventEndDate: true,
       loadInDate: true,
@@ -1282,8 +1280,8 @@ export async function generateCrewMessage(
   lines.push(`Here are your details for ${project.name} (${project.projectNumber}):`);
   lines.push("");
 
-  if (project.address) {
-    lines.push(`Venue: ${project.address}`);
+  if (project.location?.address) {
+    lines.push(`Venue: ${project.location.address}`);
   }
   if (project.siteContactName) {
     lines.push(`Site Contact: ${project.siteContactName}${project.siteContactPhone ? ` (${project.siteContactPhone})` : ""}`);
@@ -1302,7 +1300,7 @@ export async function generateCrewMessage(
         : "";
       const role = a.crewRole?.name ? ` (${a.crewRole.name})` : "";
       lines.push(`  ${dateStr} — ${svc.title}${role}${timeStr ? `, ${timeStr}` : ""}`);
-      if (svc.address && svc.address !== project.address) {
+      if (svc.address && svc.address !== project.location?.address) {
         lines.push(`    Location: ${svc.address}`);
       }
     } else {

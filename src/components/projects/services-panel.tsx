@@ -390,18 +390,12 @@ export function ServicesPanel({
                 : "Set project dates first, then generate services automatically."
             }
             action={
-              hasProjectDates ? (
-                <Button
-                  onClick={() => generateMutation.mutate()}
-                  disabled={generateMutation.isPending}
-                >
-                  {generateMutation.isPending && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  )}
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  Generate Services
-                </Button>
-              ) : undefined
+              hasProjectDates
+                ? {
+                    label: "Generate Services",
+                    onClick: () => generateMutation.mutate(),
+                  }
+                : undefined
             }
           />
         )}

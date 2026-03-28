@@ -21,6 +21,7 @@ import {
   Navigation,
   Warehouse,
   ChevronRight,
+  ClipboardList,
 } from "lucide-react";
 import { LineItemsPanel } from "@/components/projects/line-items-panel";
 import { EquipmentTab } from "@/components/projects/equipment-tab";
@@ -292,6 +293,12 @@ export default function ProjectDetailPage({
                   <Button variant="outline" size="sm" render={<Link href={`/warehouse/${id}`} />}>
                     <Warehouse className="mr-2 h-4 w-4" />
                     <span className="hidden sm:inline">Warehouse</span>
+                  </Button>
+                )}
+                {!project.isTemplate && (
+                  <Button variant="outline" size="sm" render={<Link href={`/projects/${id}/runsheet`} />}>
+                    <ClipboardList className="mr-2 h-4 w-4" />
+                    <span className="hidden sm:inline">Runsheet</span>
                   </Button>
                 )}
                 {!project.isTemplate && (

@@ -42,14 +42,11 @@ Deferred work items tracked from engineering reviews and planning sessions.
 **Depends on:** Nothing.
 **Estimate:** human ~3 hours / CC ~15 min
 
-### Extract Shared Formatters
+### Extract Shared Formatters *(partially done)*
 **What:** Six+ pages define their own `formatDate()` and `formatCurrency()` with identical AU locale/AUD logic. Extract to `src/lib/formatters.ts`.
-**Why:** DRY violation. One locale/currency change requires editing 6+ files.
-**Pros:** Single source of truth for formatting, easier to add new formats later.
-**Cons:** Minor refactor. No risk.
-**Context:** Accepted in eng review (issue #3).
+**Status:** `src/lib/formatters.ts` created in v0.2.6 with `formatCurrency`, `formatDate`, and `formatLabel`. Remaining work: migrate existing inline formatters in other files to use the shared module.
 **Depends on:** Nothing.
-**Estimate:** human ~1 hour / CC ~5 min
+**Estimate:** human ~30 min / CC ~5 min
 
 ### Add ReducedMotionProvider Context
 **What:** All 6 motion components in `motion.tsx` each call `useReducedMotion()` individually. Extract to a React context provider so it's read once.

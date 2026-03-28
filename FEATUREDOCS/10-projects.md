@@ -48,10 +48,17 @@ marginPercent = margin / total × 100
 - Falls back to `Organization.defaultTaxRate` (configurable in Settings)
 - Falls back to 10% (GST default)
 
-### Rental Period Pricing
+### Billing Weeks/Days Pricing (Primary Model)
+- `Project.billingWeeks` (Int, nullable) + `Project.billingDays` (Int, nullable) — set on project form
+- Per-group override: `ProjectGroup.billingWeeks` + `billingDays`
+- Uses `Model.weeklyRate` and `Model.dailyRate` fields
+- Formula: `(weeklyRate × weeks + dailyRate × days) × quantity`
+- "Match" button on project form auto-calculates weeks/days from rental date range
+
+### Legacy Rental Period Pricing (Fallback)
 - `Project.defaultRentalPeriod` (DAILY | WEEKLY) + `defaultRentalQuantity` (Int)
 - Per-group override: `ProjectGroup.rentalPeriod` + `rentalQuantity`
-- Line item rates come from `Model.dailyRate` or `Model.weeklyRate` based on rental period
+- Used only when billingWeeks/billingDays are both null
 - Formula: `rate × quantity × rentalQuantity`
 
 ## Categories (`ProjectCategory`)
@@ -76,12 +83,20 @@ marginPercent = margin / total × 100
 
 ### Suggested Price Calculation (`calculateSuggestedPrice()`)
 ```
+# Primary: billing weeks/days (when billingWeeks or billingDays is set)
+weeks = group.billingWeeks ?? project.billingWeeks ?? 0
+days  = group.billingDays  ?? project.billingDays  ?? 0
+For each line item in group (excluding kit children):
+  total += (model.weeklyRate × weeks + model.dailyRate × days) × item.quantity
+
+# Fallback: legacy rental period
+rentalPeriod = group.rentalPeriod ?? project.defaultRentalPeriod ?? "DAILY"
+rentalQuantity = group.rentalQuantity ?? project.defaultRentalQuantity ?? 1
 For each line item in group (excluding kit children):
   rate = (rentalPeriod === "WEEKLY") ? model.weeklyRate : model.dailyRate
   total += rate × item.quantity × rentalQuantity
 ```
-- Recalculated when: items added/removed, rental period changed, item moved between groups
-- "Accept all suggestions" batch action per category
+- Recalculated when: items added/removed, billing period changed, item moved between groups
 
 ## Line Items (`ProjectLineItem`)
 - `categoryId` (nullable FK → ProjectCategory)
@@ -112,13 +127,15 @@ HEADER (full width):
 ```
 
 ### Equipment Tab
-- Categories as collapsible sections with overline headers
-- Groups as interactive cards (collapsed by default, expandable)
-- Group card shows: title, qty × price, suggested price with "Use" button
-- Expanded group shows: description, tracked items as pills, "+ Add equipment"
-- Inline "Add Group" form with template picker
-- Drag-and-drop group reordering via @dnd-kit
-- Standalone items shown below groups
+- Flat table layout (`table-layout: fixed` with `<colgroup>`) — no card chrome
+- Categories as collapsible row headers with tinted background
+- Groups as collapsible table rows with edit button + dropdown menu, showing qty/price columns
+- Line items indented under their parent group, drag-and-drop reorderable
+- Single flat `DndContext` with prefixed IDs (categories, groups, items all in one context)
+- Inline "Add Group" button in toolbar with template picker
+- Uncategorized line items shown at the bottom
+- Line item edit dialog, move-between-groups dialog
+- Category rename (inline) and delete with cascade warning
 
 ### Financial Summary Sidebar
 - Total with margin bar (green > 40%, amber 20-40%, red < 20%)
@@ -214,13 +231,13 @@ Only cancelled projects can be deleted (`deleteProject` in `src/server/projects.
 - `src/server/crew-assignments.ts` — Crew assignment management
 
 ## Validation Schemas
-- `src/lib/validations/project.ts` — Project form (includes defaultRentalPeriod, defaultRentalQuantity, taxRate)
+- `src/lib/validations/project.ts` — Project form (includes billingWeeks, billingDays, defaultRentalPeriod, defaultRentalQuantity, taxRate)
 - `src/lib/validations/project-category.ts` — Category (name, sortOrder)
-- `src/lib/validations/project-group.ts` — Group (categoryId, title, description, quantity, price, rentalPeriod, rentalQuantity)
+- `src/lib/validations/project-group.ts` — Group (categoryId, title, description, quantity, price, billingWeeks, billingDays, rentalPeriod, rentalQuantity)
 - `src/lib/validations/group-template.ts` — Template (name, description, items[])
 - `src/lib/validations/line-item.ts` — Line item (includes categoryId, groupId)
 - `src/lib/validations/project-service.ts` — Service (includes billableToClient, costTotal)
 
 ## Future-Proofing
-- **ROI Tracking**: Model.dailyRate/weeklyRate + Asset.purchasePrice support revenue attribution
+- **ROI Tracking**: Asset.purchasePrice supports revenue attribution against rental income
 - **Xero Integration**: Groups as line items + ungrouped standalone assets as separate line items

@@ -69,11 +69,8 @@ const TABLE_PADDING_BOTTOM_MM = 1;        // ~1mm safety margin at bottom
 
 function ptToMm(pt: number): number { return pt / PT_PER_MM; }
 
-/** Build group key from category/group (new finance model) or legacy groupName/prepContainer */
+/** Build group key — uses groupName (set to category name for structured projects) or prepContainer */
 function getItemGroupKey(item: DocumentLineItem, ungrouped: string): string {
-  if (item.categoryName && item.groupTitle) return `${item.categoryName} — ${item.groupTitle}`;
-  if (item.categoryName) return item.categoryName;
-  if (item.groupTitle) return item.groupTitle;
   return item.groupName || item.prepContainer || ungrouped;
 }
 

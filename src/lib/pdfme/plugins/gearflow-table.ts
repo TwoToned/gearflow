@@ -200,21 +200,14 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
     });
   }
 
-  // === Group items by category > group (falling back to legacy groupName/prepContainer) ===
+  // === Group items by category (via groupName) falling back to prepContainer ===
   const ungroupedKey = config.documentType === "packing-list" ? "Ungrouped"
     : config.documentType === "delivery-docket" ? "General"
     : "_ungrouped";
 
-  function getGroupKey(item: DocumentLineItem): string {
-    if (item.categoryName && item.groupTitle) return `${item.categoryName} — ${item.groupTitle}`;
-    if (item.categoryName) return item.categoryName;
-    if (item.groupTitle) return item.groupTitle;
-    return item.groupName || item.prepContainer || ungroupedKey;
-  }
-
   const groups = new Map<string, DocumentLineItem[]>();
   for (const item of filteredItems) {
-    const key = getGroupKey(item);
+    const key = item.groupName || item.prepContainer || ungroupedKey;
     const arr = groups.get(key) || [];
     arr.push(item);
     groups.set(key, arr);

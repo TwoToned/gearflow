@@ -46,6 +46,8 @@ export interface DocumentLineItem {
   groupName: string | null;
   categoryName: string | null;
   groupTitle: string | null;
+  /** True for synthetic rows representing a ProjectGroup (hides individual equipment) */
+  isGroupRow?: boolean;
   isOptional: boolean;
   isKitChild?: boolean;
   kitId?: string | null;

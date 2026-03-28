@@ -165,7 +165,7 @@ function SortableGroupRow({
   return (
     <TableRow ref={setNodeRef} style={style} className={`group/row ${isDragging ? "opacity-30" : ""}`}>
       <TableCell className="w-8 px-0">
-        <div className={`flex justify-end ${indented ? "pr-0 pl-4" : "px-1"}`}>
+        <div className={`flex justify-end ${indented ? "ml-3" : "px-1"}`}>
           <button
             type="button"
             className="flex cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
@@ -326,13 +326,13 @@ function SortableLineItemRow({
     opacity: isDragging ? 0.5 : 1,
   };
 
-  // Map indent class to grip indent
-  const gripIndent = indent === "pl-12" ? "pl-8" : indent === "pl-4" ? "pl-2" : "";
+  // Map content indent to grip indent (margin-based to avoid affecting column width)
+  const gripIndent = indent === "ml-8" ? "ml-6" : indent === "ml-3" ? "ml-1" : "";
 
   return (
     <TableRow ref={setNodeRef} style={style} className={isDragging ? "opacity-30" : ""}>
       <TableCell className="w-8 px-0">
-        <div className={`flex justify-end ${gripIndent ? `${gripIndent} pr-0` : "px-1"}`}>
+        <div className={`flex justify-end ${gripIndent || "px-1"}`}>
           <button
             type="button"
             className="flex cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
@@ -999,7 +999,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                               <SortableLineItemRow
                                 key={item.id}
                                 item={item}
-                                indent="pl-12"
+                                indent="ml-8"
                                 onEdit={() => openEditLineItem(item)}
                                 onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
                                 onRemove={() => removeMut.mutate(item.id)}
@@ -1014,7 +1014,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                         <SortableLineItemRow
                           key={item.id}
                           item={item}
-                          indent="pl-4"
+                          indent="ml-3"
                           onEdit={() => openEditLineItem(item)}
                           onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
                           onRemove={() => removeMut.mutate(item.id)}

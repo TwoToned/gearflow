@@ -355,6 +355,11 @@ export default function ProjectDetailPage({
                       >
                         Call Sheet
                       </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => window.open(`/api/documents/timeline/${id}`, "_blank")}
+                      >
+                        Project Timeline
+                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )}

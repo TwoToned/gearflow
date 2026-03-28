@@ -175,7 +175,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
   let priceBreakdown: string | null = null;
   let priceOverridden = false;
 
-  if (parsed.modelId && parsed.pricingType === "PER_DAY" && parsed.unitPrice == null) {
+  if (parsed.modelId && parsed.pricingType === "PER_DAY" && !parsed.unitPrice) {
     try {
       // Get billing period from group or project
       let billingTotalDays: number | null = null;

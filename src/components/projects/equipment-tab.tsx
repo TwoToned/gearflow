@@ -164,7 +164,7 @@ function SortableGroupRow({
 
   return (
     <TableRow ref={setNodeRef} style={style} className={`group/row ${isDragging ? "opacity-30" : ""}`}>
-      <TableCell className="w-8 px-0">
+      <TableCell className="px-0">
         <div className={`flex justify-end ${indented ? "ml-3" : "px-1"}`}>
           <button
             type="button"
@@ -331,7 +331,7 @@ function SortableLineItemRow({
 
   return (
     <TableRow ref={setNodeRef} style={style} className={isDragging ? "opacity-30" : ""}>
-      <TableCell className="w-8 px-0">
+      <TableCell className="px-0">
         <div className={`flex justify-end ${gripIndent || "px-1"}`}>
           <button
             type="button"
@@ -908,16 +908,25 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
       {/* Main table */}
       {(hasCategories || hasUncategorized) && (
         <div className="rounded-md border overflow-x-auto">
-          <Table>
+          <Table className="table-fixed">
+            <colgroup>
+              <col className="w-10" />
+              <col />
+              <col className="w-16" />
+              <col className="w-28 hidden md:table-column" />
+              <col className="w-20 hidden lg:table-column" />
+              <col className="w-28 hidden sm:table-column" />
+              <col className="w-20" />
+            </colgroup>
             <TableHeader>
             <TableRow>
-              <TableHead className="w-8 px-1" />
+              <TableHead className="px-1" />
               <TableHead>Item</TableHead>
-              <TableHead className="text-center w-16">Qty</TableHead>
-              <TableHead className="text-right w-28 hidden md:table-cell">Unit Price</TableHead>
-              <TableHead className="text-center w-20 hidden lg:table-cell">Duration</TableHead>
-              <TableHead className="text-right w-28 hidden sm:table-cell">Total</TableHead>
-              <TableHead className="w-16" />
+              <TableHead className="text-center">Qty</TableHead>
+              <TableHead className="text-right hidden md:table-cell">Unit Price</TableHead>
+              <TableHead className="text-center hidden lg:table-cell">Duration</TableHead>
+              <TableHead className="text-right hidden sm:table-cell">Total</TableHead>
+              <TableHead />
             </TableRow>
           </TableHeader>
           <DndContext

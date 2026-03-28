@@ -119,7 +119,10 @@ export async function createModel(data: ModelFormValues) {
       manuals: parsed.manuals,
       specifications: parsed.specifications ?? undefined,
       customFields: parsed.customFields ?? undefined,
-      defaultRentalPrice: parsed.defaultRentalPrice,
+      defaultRentalPrice: parsed.dailyRate ?? parsed.defaultRentalPrice,
+      dailyRate: parsed.dailyRate,
+      weeklyRate: parsed.weeklyRate,
+      monthlyRate: parsed.monthlyRate,
       defaultPurchasePrice: parsed.defaultPurchasePrice,
       replacementCost: parsed.replacementCost,
       weight: parsed.weight,
@@ -173,7 +176,10 @@ export async function updateModel(id: string, data: ModelFormValues) {
       manuals: parsed.manuals,
       specifications: parsed.specifications ?? undefined,
       customFields: parsed.customFields ?? undefined,
-      defaultRentalPrice: parsed.defaultRentalPrice,
+      defaultRentalPrice: parsed.dailyRate ?? parsed.defaultRentalPrice,
+      dailyRate: parsed.dailyRate,
+      weeklyRate: parsed.weeklyRate,
+      monthlyRate: parsed.monthlyRate,
       defaultPurchasePrice: parsed.defaultPurchasePrice,
       replacementCost: parsed.replacementCost,
       weight: parsed.weight,
@@ -263,4 +269,67 @@ export async function archiveModel(id: string) {
   });
 
   return serialize(archived);
+}
+
+export async function bulkUpdateRates(
+  modelIds: string[],
+  rateType: "dailyRate" | "weeklyRate" | "monthlyRate",
+  operation: "set" | "multiply" | "increase_percent",
+  value: number
+) {
+  const { organizationId, userId, userName } = await requirePermission("model", "update");
+
+  if (modelIds.length === 0) throw new Error("No models selected");
+  if (operation === "set" && value < 0) throw new Error("Rate cannot be negative");
+  if (operation === "multiply" && value <= 0) throw new Error("Multiplier must be positive");
+
+  const models = await prisma.model.findMany({
+    where: { id: { in: modelIds }, organizationId },
+    select: { id: true, name: true, dailyRate: true, weeklyRate: true, monthlyRate: true },
+  });
+
+  const updates = models.map((model) => {
+    const current = Number(model[rateType] ?? 0);
+    let newRate: number;
+
+    switch (operation) {
+      case "set":
+        newRate = value;
+        break;
+      case "multiply":
+        newRate = current * value;
+        break;
+      case "increase_percent":
+        newRate = current * (1 + value / 100);
+        break;
+    }
+
+    newRate = Math.round(newRate * 100) / 100;
+
+    const updateData: Prisma.ModelUpdateInput = { [rateType]: newRate };
+    // Auto-sync defaultRentalPrice when dailyRate changes
+    if (rateType === "dailyRate") {
+      updateData.defaultRentalPrice = newRate;
+    }
+
+    return prisma.model.update({
+      where: { id: model.id, organizationId },
+      data: updateData,
+    });
+  });
+
+  await prisma.$transaction(updates);
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "model",
+    entityId: modelIds[0],
+    entityName: `${models.length} models`,
+    summary: `Bulk updated ${rateType} on ${models.length} model(s): ${operation} ${value}`,
+  });
+
+  return serialize({ count: models.length });
 }

@@ -9,7 +9,8 @@ import {
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { roundCurrency } from "@/lib/formatters";
-import { calculateSuggestedPrice } from "./project-groups";
+import { calculateSuggestedPrice, getGroupBillingPeriod } from "./project-groups";
+import { optimizePrice, computeTotalDays } from "@/lib/pricing";
 
 export async function addLineItem(projectId: string, data: LineItemFormValues, allowOverbook = false) {
   const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
@@ -167,10 +168,67 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
     }
   }
 
+  // Auto-optimize pricing when model has rates and group/project has billing period
+  let optimizedUnitPrice = parsed.unitPrice;
+  let optimizedPricingType = parsed.pricingType;
+  let optimizedDuration = parsed.duration;
+  let priceBreakdown: string | null = null;
+  let priceOverridden = false;
+
+  if (parsed.modelId && parsed.pricingType === "PER_DAY" && parsed.unitPrice == null) {
+    try {
+      // Get billing period from group or project
+      let billingTotalDays: number | null = null;
+
+      if (parsed.groupId) {
+        const bp = await getGroupBillingPeriod(parsed.groupId);
+        if (bp) billingTotalDays = bp.totalDays;
+      }
+
+      if (billingTotalDays == null) {
+        // Try project-level billing
+        const proj = await prisma.project.findUnique({
+          where: { id: projectId },
+          select: { billingMonths: true, billingWeeks: true, billingDays: true },
+        });
+        if (proj && (proj.billingMonths != null || proj.billingWeeks != null || proj.billingDays != null)) {
+          billingTotalDays = computeTotalDays(
+            proj.billingMonths ?? 0,
+            proj.billingWeeks ?? 0,
+            proj.billingDays ?? 0
+          );
+        }
+      }
+
+      if (billingTotalDays != null && billingTotalDays > 0) {
+        const model = await prisma.model.findUnique({
+          where: { id: parsed.modelId },
+          select: { dailyRate: true, weeklyRate: true, monthlyRate: true },
+        });
+
+        if (model) {
+          const dailyRate = model.dailyRate != null ? Number(model.dailyRate) : null;
+          const weeklyRate = model.weeklyRate != null ? Number(model.weeklyRate) : null;
+          const monthlyRate = model.monthlyRate != null ? Number(model.monthlyRate) : null;
+
+          const result = optimizePrice(dailyRate, weeklyRate, monthlyRate, billingTotalDays);
+          if (result) {
+            optimizedUnitPrice = result.grandTotal;
+            optimizedPricingType = "OPTIMIZED";
+            optimizedDuration = 1; // CRITICAL: grandTotal already includes full period
+            priceBreakdown = result.breakdown;
+          }
+        }
+      }
+    } catch {
+      // Optimization failed — fall through to manual pricing
+    }
+  }
+
   const lineTotal = calculateLineTotal(
-    parsed.unitPrice,
+    optimizedUnitPrice,
     parsed.quantity,
-    parsed.duration,
+    optimizedDuration,
     parsed.discount
   );
 
@@ -192,11 +250,13 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
       bulkAssetId: parsed.bulkAssetId || null,
       description: parsed.description || null,
       quantity: parsed.quantity,
-      unitPrice: parsed.unitPrice ?? null,
-      pricingType: parsed.pricingType,
-      duration: parsed.duration,
+      unitPrice: optimizedUnitPrice ?? null,
+      pricingType: optimizedPricingType,
+      duration: optimizedDuration,
       discount: parsed.discount ?? null,
       lineTotal,
+      priceBreakdown,
+      priceOverridden,
       sortOrder: nextSort,
       groupName: parsed.groupName || null,
       notes: parsed.notes || null,
@@ -244,6 +304,16 @@ export async function updateLineItem(id: string, data: LineItemFormValues, allow
   const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
   const parsed = lineItemSchema.parse(data);
 
+  // Detect price override: if user changes unitPrice on an OPTIMIZED item
+  const existing = await prisma.projectLineItem.findUnique({
+    where: { id, organizationId },
+    select: { unitPrice: true, pricingType: true },
+  });
+
+  const isPriceChanged = existing && parsed.unitPrice != null
+    && existing.pricingType === "OPTIMIZED"
+    && Number(existing.unitPrice) !== parsed.unitPrice;
+
   const lineTotal = calculateLineTotal(
     parsed.unitPrice,
     parsed.quantity,
@@ -272,6 +342,12 @@ export async function updateLineItem(id: string, data: LineItemFormValues, allow
       showSubhireOnDocs: parsed.showSubhireOnDocs,
       supplierId: parsed.supplierId || null,
       subhireOrderNumber: parsed.subhireOrderNumber || null,
+      // Override detection
+      ...(isPriceChanged && {
+        priceOverridden: true,
+        priceBreakdown: null,
+        overrideReason: parsed.overrideReason || null,
+      }),
     },
     include: {
       model: true,

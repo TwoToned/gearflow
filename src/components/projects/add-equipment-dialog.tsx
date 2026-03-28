@@ -405,7 +405,7 @@ export function AddEquipmentDialog({
             </>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div className="space-y-2">
               <Label htmlFor="eq-quantity">Quantity</Label>
               <Input
@@ -423,32 +423,19 @@ export function AddEquipmentDialog({
                 type="number"
                 step="0.01"
                 min={0}
+                placeholder="Auto"
                 {...form.register("unitPrice")}
               />
             </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label htmlFor="eq-pricingType">Pricing Type</Label>
-              <select
-                id="eq-pricingType"
-                {...form.register("pricingType")}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                <option value="PER_DAY">Per Day</option>
-                <option value="PER_WEEK">Per Week</option>
-                <option value="FLAT">Flat</option>
-                <option value="PER_HOUR">Per Hour</option>
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="eq-duration">Duration</Label>
+              <Label htmlFor="eq-discount">Discount ($)</Label>
               <Input
-                id="eq-duration"
+                id="eq-discount"
                 type="number"
-                min={1}
-                {...form.register("duration")}
+                step="0.01"
+                min={0}
+                placeholder="0.00"
+                {...form.register("discount")}
               />
             </div>
           </div>

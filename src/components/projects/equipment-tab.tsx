@@ -90,6 +90,7 @@ interface LineItemData {
   lineTotal: unknown;
   pricingType?: string;
   duration?: number;
+  discount?: unknown;
   notes?: string | null;
   isOptional?: boolean;
   type?: string;
@@ -123,15 +124,7 @@ interface CategoryData {
   lineItems?: LineItemData[];
 }
 
-const pricingLabels: Record<string, string> = {
-  PER_DAY: "/day",
-  PER_WEEK: "/week",
-  FLAT: "flat",
-  PER_HOUR: "/hr",
-  OPTIMIZED: "auto",
-};
-
-const COL_COUNT = 7;
+const COL_COUNT = 6;
 
 // ─── Sortable group row ─────────────────────────────────────────────────────
 
@@ -380,11 +373,6 @@ function SortableLineItemRow({
       <TableCell className="text-right hidden md:table-cell t-data">
         <div>
           {formatCurrency(item.unitPrice != null ? Number(item.unitPrice) : null)}
-          {item.unitPrice != null && item.pricingType && (
-            <span className="text-xs text-fg-3 ml-0.5">
-              {pricingLabels[item.pricingType] ?? ""}
-            </span>
-          )}
           {item.priceOverridden && (
             <span className="ml-1 text-[10px] text-amber-500 font-medium" title="Price was manually set">manual</span>
           )}
@@ -394,9 +382,9 @@ function SortableLineItemRow({
             {item.priceBreakdown}
           </p>
         )}
-      </TableCell>
-      <TableCell className="text-center hidden lg:table-cell t-data">
-        {item.duration ?? "--"}
+        {item.discount != null && Number(item.discount) > 0 && (
+          <p className="text-[11px] text-green-500">-{formatCurrency(Number(item.discount))} disc.</p>
+        )}
       </TableCell>
       <TableCell className="text-right font-medium hidden sm:table-cell t-data">
         {formatCurrency(item.lineTotal != null ? Number(item.lineTotal) : null)}
@@ -478,8 +466,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
   const [editQuantity, setEditQuantity] = useState("1");
   const [editUnitPrice, setEditUnitPrice] = useState("");
   const [editDescription, setEditDescription] = useState("");
-  const [editPricingType, setEditPricingType] = useState("PER_DAY");
-  const [editDuration, setEditDuration] = useState("1");
+  const [editDiscount, setEditDiscount] = useState("");
   const [editNotes, setEditNotes] = useState("");
 
   // Group edit dialog state
@@ -617,8 +604,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
     setEditQuantity(String(item.quantity));
     setEditUnitPrice(item.unitPrice != null ? String(Number(item.unitPrice)) : "");
     setEditDescription(item.description ?? item.model?.name ?? "");
-    setEditPricingType(item.pricingType ?? "PER_DAY");
-    setEditDuration(String(item.duration ?? 1));
+    setEditDiscount(item.discount != null ? String(Number(item.discount)) : "");
     setEditNotes(item.notes ?? "");
   }
 
@@ -631,8 +617,9 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
         quantity: Number(editQuantity) || 1,
         unitPrice: editUnitPrice ? Number(editUnitPrice) : undefined,
         description: editDescription,
-        pricingType: editPricingType,
-        duration: Number(editDuration) || 1,
+        pricingType: editLineItem.pricingType ?? "PER_DAY",
+        duration: editLineItem.duration ?? 1,
+        discount: editDiscount ? Number(editDiscount) : undefined,
         notes: editNotes || undefined,
       },
     });
@@ -948,7 +935,6 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
               <TableHead>Item</TableHead>
               <TableHead className="text-center">Qty</TableHead>
               <TableHead className="text-right hidden md:table-cell">Unit Price</TableHead>
-              <TableHead className="text-center hidden lg:table-cell">Duration</TableHead>
               <TableHead className="text-right hidden sm:table-cell">Total</TableHead>
               <TableHead />
             </TableRow>
@@ -1381,31 +1367,17 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="edit-pricingType">Pricing Type</Label>
-                <select
-                  id="edit-pricingType"
-                  value={editPricingType}
-                  onChange={(e) => setEditPricingType(e.target.value)}
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                >
-                  <option value="PER_DAY">Per Day</option>
-                  <option value="PER_WEEK">Per Week</option>
-                  <option value="FLAT">Flat</option>
-                  <option value="PER_HOUR">Per Hour</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-duration">Duration</Label>
-                <Input
-                  id="edit-duration"
-                  type="number"
-                  min={1}
-                  value={editDuration}
-                  onChange={(e) => setEditDuration(e.target.value)}
-                />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-discount">Discount ($)</Label>
+              <Input
+                id="edit-discount"
+                type="number"
+                step="0.01"
+                min={0}
+                placeholder="0.00"
+                value={editDiscount}
+                onChange={(e) => setEditDiscount(e.target.value)}
+              />
             </div>
 
             <div className="space-y-2">

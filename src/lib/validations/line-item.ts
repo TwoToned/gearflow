@@ -11,10 +11,7 @@ export const lineItemSchema = z.object({
   groupId: z.string().optional(),
   description: z.string().max(500).optional(),
   quantity: z.coerce.number().int().min(1).max(99999).default(1),
-  unitPrice: z.preprocess(
-    (val) => (val === "" || val === undefined || val === null ? undefined : val),
-    z.coerce.number().min(0).max(999999.99).optional()
-  ),
+  unitPrice: z.coerce.number().min(0).max(999999.99).optional(),
   pricingType: z.enum(["PER_DAY", "PER_WEEK", "FLAT", "PER_HOUR", "OPTIMIZED"]).default("PER_DAY"),
   duration: z.coerce.number().int().min(1).max(3650).default(1),
   discount: z.coerce.number().min(0).max(999999.99).optional(),

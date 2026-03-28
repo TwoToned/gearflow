@@ -44,6 +44,8 @@ export interface DocumentLineItem {
   discount: number | null;
   lineTotal: number | null;
   groupName: string | null;
+  categoryName: string | null;
+  groupTitle: string | null;
   isOptional: boolean;
   isKitChild?: boolean;
   kitId?: string | null;

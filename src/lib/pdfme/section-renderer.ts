@@ -69,6 +69,14 @@ const TABLE_PADDING_BOTTOM_MM = 1;        // ~1mm safety margin at bottom
 
 function ptToMm(pt: number): number { return pt / PT_PER_MM; }
 
+/** Build group key from category/group (new finance model) or legacy groupName/prepContainer */
+function getItemGroupKey(item: DocumentLineItem, ungrouped: string): string {
+  if (item.categoryName && item.groupTitle) return `${item.categoryName} — ${item.groupTitle}`;
+  if (item.categoryName) return item.categoryName;
+  if (item.groupTitle) return item.groupTitle;
+  return item.groupName || item.prepContainer || ungrouped;
+}
+
 /**
  * Check if a parent item has splittable sub-items (per-unit checkboxes).
  * Returns the total sub-item count, or 0 if not splittable.
@@ -231,7 +239,7 @@ function calculateTableItemHeights(
   const groups = new Map<string, DocumentLineItem[]>();
   const groupOrder: string[] = [];
   for (const item of parentItems) {
-    const key = item.groupName || item.prepContainer || ungrouped;
+    const key = getItemGroupKey(item, ungrouped);
     if (!groups.has(key)) {
       groups.set(key, []);
       groupOrder.push(key);
@@ -541,7 +549,7 @@ export function computePageLayout(
           const groups = new Map<string, DocumentLineItem[]>();
           const groupOrder: string[] = [];
           for (const item of parentItems) {
-            const key = item.groupName || item.prepContainer || ungrouped;
+            const key = getItemGroupKey(item, ungrouped);
             if (!groups.has(key)) { groups.set(key, []); groupOrder.push(key); }
             groups.get(key)!.push(item);
           }

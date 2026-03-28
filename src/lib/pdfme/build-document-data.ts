@@ -17,6 +17,8 @@ const lineItemInclude = {
   asset: true,
   bulkAsset: true,
   kit: true,
+  category: { select: { id: true, name: true, sortOrder: true } },
+  group: { select: { id: true, title: true, sortOrder: true, categoryId: true } },
   childLineItems: {
     orderBy: { sortOrder: "asc" as const },
     include: {
@@ -24,6 +26,8 @@ const lineItemInclude = {
       asset: true,
       bulkAsset: true,
       kit: true,
+      category: { select: { id: true, name: true, sortOrder: true } },
+      group: { select: { id: true, title: true, sortOrder: true, categoryId: true } },
       childLineItems: {
         orderBy: { sortOrder: "asc" as const },
         include: {
@@ -143,13 +147,19 @@ export async function buildDocumentData(
     project.id
   );
 
-  // Enrich line items with overbooking flags
+  // Enrich line items with overbooking flags + category/group names
   type LineItemRow = (typeof project.lineItems)[number];
   const enrichedLineItems = project.lineItems.map((li: LineItemRow) => {
     const info = overbookedMap.get(li.id);
     const children = (li as unknown as { childLineItems?: LineItemRow[] }).childLineItems;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const liAny = li as any;
+    const categoryName: string | null = liAny.category?.name ?? null;
+    const groupTitle: string | null = liAny.group?.title ?? null;
     return {
       ...li,
+      categoryName,
+      groupTitle,
       isOverbooked: !!info,
       overbookedInherited: info?.inherited ?? false,
       overbookedReducedOnly: info?.reducedOnly ?? false,
@@ -157,8 +167,12 @@ export async function buildDocumentData(
       overbookedHasReduced: info?.hasReducedChildren ?? false,
       childLineItems: children?.map((child: LineItemRow) => {
         const childInfo = overbookedMap.get(child.id);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const childAny = child as any;
         return {
           ...child,
+          categoryName: childAny.category?.name ?? null,
+          groupTitle: childAny.group?.title ?? null,
           isOverbooked: !!childInfo,
           overbookedReducedOnly: childInfo?.reducedOnly ?? false,
         };

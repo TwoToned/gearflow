@@ -16,7 +16,17 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { getModels } from "@/server/models";
+import { getModels, bulkUpdateRates } from "@/server/models";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { DollarSign } from "lucide-react";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { getCategories } from "@/server/categories";
 import { exportModelsCSV } from "@/server/csv";
@@ -143,16 +153,30 @@ function useModelColumns(
       cell: (row) => row._count.assets + row._count.bulkAssets,
     },
     {
-      id: "defaultRentalPrice",
-      header: "Rental $/day",
-      accessorKey: "defaultRentalPrice",
-      sortKey: "defaultRentalPrice",
+      id: "dailyRate",
+      header: "Daily Rate",
+      accessorKey: "dailyRate",
+      sortKey: "dailyRate",
       align: "right",
-      cell: (row) => (
-        <span className="t-data">
-          {row.defaultRentalPrice ? `$${Number(row.defaultRentalPrice).toFixed(2)}` : "\u2014"}
-        </span>
-      ),
+      cell: (row) => {
+        const hasDaily = row.dailyRate != null;
+        const hasWeekly = row.weeklyRate != null;
+        const hasMonthly = row.monthlyRate != null;
+        const rateCount = [hasDaily, hasWeekly, hasMonthly].filter(Boolean).length;
+
+        return (
+          <div className="flex items-center justify-end gap-2">
+            {rateCount === 3 ? (
+              <span className="inline-block h-2 w-2 rounded-full bg-teal-500" aria-label="Pricing complete" />
+            ) : rateCount > 0 ? (
+              <span className="inline-block h-2 w-2 rounded-full bg-amber-500" aria-label="Pricing incomplete" />
+            ) : null}
+            <span className="t-data">
+              {hasDaily ? `$${Number(row.dailyRate).toFixed(2)}` : "\u2014"}
+            </span>
+          </div>
+        );
+      },
     },
     {
       id: "tags",
@@ -185,6 +209,7 @@ export function ModelTable() {
   const [importOpen, setImportOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [assignChecksOpen, setAssignChecksOpen] = useState(false);
+  const [bulkRatesOpen, setBulkRatesOpen] = useState(false);
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const queryClient = useQueryClient();
@@ -254,6 +279,12 @@ export function ModelTable() {
       {selectedIds.size > 0 && (
         <div className="flex items-center gap-3 rounded-md border bg-bg-inset/50 px-4 py-2">
           <span className="text-sm font-medium">{selectedIds.size} selected</span>
+          <CanDo resource="model" action="update">
+            <Button size="sm" variant="outline" onClick={() => setBulkRatesOpen(true)}>
+              <DollarSign className="mr-2 h-3 w-3" />
+              Set Rates
+            </Button>
+          </CanDo>
           <CanDo resource="checkItem" action="update">
             <Button size="sm" variant="outline" onClick={() => setAssignChecksOpen(true)}>
               <ClipboardCheck className="mr-2 h-3 w-3" />
@@ -321,6 +352,16 @@ export function ModelTable() {
       </CanDo>
 
       <CSVImportDialog type="models" open={importOpen} onOpenChange={setImportOpen} />
+
+      <BulkRateUpdateDialog
+        open={bulkRatesOpen}
+        onOpenChange={setBulkRatesOpen}
+        selectedModelIds={selectedIds}
+        onSuccess={() => {
+          clearSelection();
+          queryClient.invalidateQueries({ queryKey: ["models"] });
+        }}
+      />
 
       <BulkAssignChecksDialog
         open={assignChecksOpen}
@@ -504,6 +545,115 @@ function BulkAssignChecksDialog({
           >
             {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Assign {selectedCheckIds.size} Check{selectedCheckIds.size !== 1 ? "s" : ""}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Bulk Rate Update Dialog ──────────────────────────────────────────────
+
+function BulkRateUpdateDialog({
+  open,
+  onOpenChange,
+  selectedModelIds,
+  onSuccess,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  selectedModelIds: Set<string>;
+  onSuccess: () => void;
+}) {
+  const [rateType, setRateType] = useState<"dailyRate" | "weeklyRate" | "monthlyRate">("dailyRate");
+  const [operation, setOperation] = useState<"set" | "multiply" | "increase_percent">("set");
+  const [value, setValue] = useState("");
+
+  const rateTypeLabels: Record<string, string> = {
+    dailyRate: "Daily Rate",
+    weeklyRate: "Weekly Rate",
+    monthlyRate: "Monthly Rate",
+  };
+
+  const operationLabels: Record<string, string> = {
+    set: "Set fixed amount",
+    multiply: "Multiply by factor",
+    increase_percent: "Increase by %",
+  };
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      bulkUpdateRates(
+        Array.from(selectedModelIds),
+        rateType,
+        operation,
+        Number(value)
+      ),
+    onSuccess: (result) => {
+      toast.success(`Updated ${rateTypeLabels[rateType]} on ${result.count} model${result.count !== 1 ? "s" : ""}`);
+      setValue("");
+      onSuccess();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Set Rates — {selectedModelIds.size} model{selectedModelIds.size !== 1 ? "s" : ""}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label>Rate Type</Label>
+            <Select value={rateType} onValueChange={(v) => setRateType(v as typeof rateType)}>
+              <SelectTrigger>
+                <SelectValue>{rateTypeLabels[rateType]}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="dailyRate">Daily Rate</SelectItem>
+                <SelectItem value="weeklyRate">Weekly Rate</SelectItem>
+                <SelectItem value="monthlyRate">Monthly Rate</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Operation</Label>
+            <Select value={operation} onValueChange={(v) => setOperation(v as typeof operation)}>
+              <SelectTrigger>
+                <SelectValue>{operationLabels[operation]}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="set">Set fixed amount</SelectItem>
+                <SelectItem value="multiply">Multiply by factor</SelectItem>
+                <SelectItem value="increase_percent">Increase by %</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>
+              {operation === "set" ? "Amount ($)" : operation === "multiply" ? "Factor" : "Percentage (%)"}
+            </Label>
+            <Input
+              type="number"
+              step={operation === "set" ? "0.01" : "0.1"}
+              min={operation === "set" ? "0" : operation === "multiply" ? "0.01" : undefined}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder={operation === "set" ? "e.g. 100.00" : operation === "multiply" ? "e.g. 1.1" : "e.g. 10"}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending || !value || Number(value) === 0}
+          >
+            {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {mutation.isPending ? `Updating ${selectedModelIds.size} models...` : "Apply"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -872,7 +872,7 @@ function ProjectSummaryStrip({
     {
       label: "Services",
       value: serviceData
-        ? `${formatCurrency(serviceData.totalCost)} · ${serviceData.serviceCount}`
+        ? `${formatCurrency(serviceData.chargeTotal)} charge · ${formatCurrency(serviceData.costTotal)} cost`
         : "\u2014",
     },
     {

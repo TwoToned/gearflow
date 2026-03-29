@@ -112,7 +112,7 @@ function buildServiceData(parsed: ReturnType<typeof projectServiceSchema.parse>)
       duration: parsed.duration ?? null,
       discount: parsed.discount ?? null,
       lineTotal,
-      costTotal: parsed.billableToClient ? null : (parsed.costTotal ?? lineTotal),
+      costTotal: parsed.costTotal ?? null,
       taxable: parsed.taxable,
       vehicleDescription: parsed.vehicleDescription || null,
       numberOfTrips: parsed.numberOfTrips || null,
@@ -1460,25 +1460,24 @@ export async function getProjectServicesSummary(projectId: string) {
 
   const services = await prisma.projectService.findMany({
     where: { organizationId, projectId, status: { not: "CANCELLED" } },
-    select: { showOnDocuments: true, lineTotal: true },
+    select: { showOnDocuments: true, lineTotal: true, costTotal: true },
   });
 
-  let onDocumentsTotal = 0;
-  let internalTotal = 0;
+  let chargeTotal = 0; // What we charge clients (lineTotal)
+  let costTotal = 0;   // What it costs us (costTotal)
 
   for (const s of services) {
-    const total = s.lineTotal ? Number(s.lineTotal) : 0;
-    if (s.showOnDocuments) {
-      onDocumentsTotal += total;
-    } else {
-      internalTotal += total;
-    }
+    chargeTotal += s.lineTotal ? Number(s.lineTotal) : 0;
+    costTotal += s.costTotal ? Number(s.costTotal) : 0;
   }
 
   return serialize({
-    onDocumentsTotal: roundCurrency(onDocumentsTotal),
-    internalTotal: roundCurrency(internalTotal),
-    totalCost: roundCurrency(onDocumentsTotal + internalTotal),
+    chargeTotal: roundCurrency(chargeTotal),
+    costTotal: roundCurrency(costTotal),
+    // Legacy compatibility
+    totalCost: roundCurrency(costTotal),
+    onDocumentsTotal: roundCurrency(chargeTotal),
+    internalTotal: roundCurrency(costTotal),
     serviceCount: services.length,
   });
 }

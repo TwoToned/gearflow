@@ -165,6 +165,9 @@ interface ServiceRow {
   pricingType: string | null;
   duration: number | null;
   lineTotal: number | null;
+  costTotal: number | null;
+  billableToClient: boolean;
+  discount: number | null;
   vehicleDescription: string | null;
   crewCountRequired: number | null;
   crewRoleId: string | null;
@@ -679,18 +682,24 @@ function ServiceCard({
           )}
 
           {/* Financial */}
-          {service.lineTotal != null && (
-            <div className="flex items-center gap-1 text-sm">
-              <DollarSign className="h-3 w-3 text-fg-3" />
-              <span className="font-medium t-data">{formatCurrency(service.lineTotal)}</span>
-              {service.pricingType && (
-                <span className="text-fg-3">
-                  {PRICING_TYPE_LABELS[service.pricingType] || ""}
-                </span>
+          {(service.lineTotal != null || service.costTotal != null) && (
+            <div className="flex items-center gap-3 text-sm">
+              {service.lineTotal != null && (
+                <div className="flex items-center gap-1">
+                  <DollarSign className="h-3 w-3 text-fg-3" />
+                  <span className="font-medium t-data">{formatCurrency(service.lineTotal)}</span>
+                  <span className="text-fg-3 text-xs">charge</span>
+                </div>
               )}
-              <span className="text-fg-3">
-                {service.showOnDocuments ? "— On quote" : "— Internal"}
-              </span>
+              {service.costTotal != null && Number(service.costTotal) > 0 && (
+                <div className="flex items-center gap-1">
+                  <span className="t-data text-fg-3">{formatCurrency(service.costTotal)}</span>
+                  <span className="text-fg-3 text-xs">cost</span>
+                </div>
+              )}
+              {service.showOnDocuments && (
+                <span className="text-fg-3 text-xs">· On quote</span>
+              )}
             </div>
           )}
         </div>
@@ -1064,11 +1073,13 @@ function ServiceDialog({
         latitude: editingService.latitude as number | null,
         longitude: editingService.longitude as number | null,
         showOnDocuments: (editingService.showOnDocuments as boolean) || false,
+        billableToClient: (editingService.billableToClient as boolean) || false,
         unitPrice: (editingService.unitPrice as number) || undefined,
         quantity: (editingService.quantity as number) || 1,
         pricingType: (editingService.pricingType as "PER_DAY" | "PER_HOUR" | "FLAT" | "") || "",
         duration: (editingService.duration as number) || undefined,
         discount: (editingService.discount as number) || undefined,
+        costTotal: (editingService.costTotal as number) || undefined,
         taxable: editingService.taxable !== false,
         vehicleDescription: (editingService.vehicleDescription as string) || "",
         numberOfTrips: (editingService.numberOfTrips as number) || undefined,
@@ -1444,81 +1455,104 @@ function ServiceDialog({
           </div>
 
           {/* Financial Section */}
-          <div className="border-t pt-4 space-y-3">
+          <div className="border-t pt-4 space-y-4">
             <h4 className="text-sm font-medium">Pricing</h4>
 
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1.5">
-                <Label>Unit Price</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  {...form.register("unitPrice")}
-                  placeholder="0.00"
-                />
+            {/* Charge to Client */}
+            <div className="space-y-3 rounded-md border border-border p-3">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-3">
+                Charge to Client
               </div>
-              <div className="space-y-1.5">
-                <Label>Pricing Type</Label>
-                <Select
-                  value={form.watch("pricingType") || ""}
-                  onValueChange={(v) => form.setValue("pricingType", v as "PER_DAY" | "PER_HOUR" | "FLAT" | "")}
-                >
-                  <SelectTrigger>
-                    <SelectValue>
-                      {form.watch("pricingType")
-                        ? PRICING_TYPE_LABELS[form.watch("pricingType") as string] || form.watch("pricingType")
-                        : "Select..."}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="FLAT">Flat</SelectItem>
-                    <SelectItem value="PER_HOUR">Per Hour</SelectItem>
-                    <SelectItem value="PER_DAY">Per Day</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Rate</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    {...form.register("unitPrice")}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Type</Label>
+                  <Select
+                    value={form.watch("pricingType") || ""}
+                    onValueChange={(v) => form.setValue("pricingType", v as "PER_DAY" | "PER_HOUR" | "FLAT" | "")}
+                  >
+                    <SelectTrigger>
+                      <SelectValue>
+                        {form.watch("pricingType")
+                          ? PRICING_TYPE_LABELS[form.watch("pricingType") as string] || form.watch("pricingType")
+                          : "Flat"}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="FLAT">Flat</SelectItem>
+                      <SelectItem value="PER_HOUR">Per Hour</SelectItem>
+                      <SelectItem value="PER_DAY">Per Day</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Duration</Label>
+                  <Input
+                    type="number"
+                    step="0.5"
+                    {...form.register("duration")}
+                    placeholder="1"
+                  />
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <Label>Duration</Label>
-                <Input
-                  type="number"
-                  step="0.5"
-                  {...form.register("duration")}
-                  placeholder="1"
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Qty</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    {...form.register("quantity")}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Discount ($)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    {...form.register("discount")}
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="showOnDocuments"
+                  checked={form.watch("showOnDocuments")}
+                  onCheckedChange={(checked) =>
+                    form.setValue("showOnDocuments", !!checked)
+                  }
                 />
+                <Label htmlFor="showOnDocuments" className="text-sm font-normal cursor-pointer">
+                  Show on quote / invoice
+                </Label>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Quantity</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  {...form.register("quantity")}
-                />
+            {/* Cost to Business */}
+            <div className="space-y-3 rounded-md border border-border p-3">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-3">
+                Cost to Business
               </div>
               <div className="space-y-1.5">
-                <Label>Discount ($)</Label>
+                <Label>Total Cost</Label>
                 <Input
                   type="number"
                   step="0.01"
-                  {...form.register("discount")}
+                  {...form.register("costTotal")}
                   placeholder="0.00"
                 />
+                <p className="text-[11px] text-fg-4">
+                  What this service costs you (crew, transport, etc). Used for margin calculation.
+                </p>
               </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="showOnDocuments"
-                checked={form.watch("showOnDocuments")}
-                onCheckedChange={(checked) =>
-                  form.setValue("showOnDocuments", !!checked)
-                }
-              />
-              <Label htmlFor="showOnDocuments" className="text-sm font-normal cursor-pointer">
-                Show on client documents (quote/invoice)
-              </Label>
             </div>
           </div>
 

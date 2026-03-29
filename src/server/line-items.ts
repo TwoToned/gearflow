@@ -826,9 +826,9 @@ export async function recalculateProjectTotals(projectId: string) {
 
   const equipmentRevenue = roundCurrency(groupRevenue + standaloneRevenue);
 
-  // 3. Service costs (non-billable services = internal costs)
+  // 3. Service costs (costTotal = what it costs us, across all services)
   const services = await prisma.projectService.findMany({
-    where: { projectId, billableToClient: false },
+    where: { projectId, status: { not: "CANCELLED" } },
     select: { costTotal: true },
   });
 

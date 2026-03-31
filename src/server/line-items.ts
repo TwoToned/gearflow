@@ -826,14 +826,22 @@ export async function recalculateProjectTotals(projectId: string) {
 
   const equipmentRevenue = roundCurrency(groupRevenue + standaloneRevenue);
 
-  // 3. Service costs (costTotal = what it costs us, across all services)
+  // 3. Service financials
   const services = await prisma.projectService.findMany({
     where: { projectId, status: { not: "CANCELLED" } },
-    select: { costTotal: true },
+    select: { costTotal: true, lineTotal: true, showOnDocuments: true },
   });
 
+  // costTotal = what it costs us (all services)
   const serviceCostTotal = roundCurrency(
     services.reduce((sum, s) => sum + (s.costTotal != null ? Number(s.costTotal) : 0), 0)
+  );
+
+  // serviceRevenue = what we charge the client (only billable services shown on documents)
+  const serviceRevenue = roundCurrency(
+    services
+      .filter((s) => s.showOnDocuments)
+      .reduce((sum, s) => sum + (s.lineTotal != null ? Number(s.lineTotal) : 0), 0)
   );
 
   // 4. Labour costs from crew assignments
@@ -846,8 +854,8 @@ export async function recalculateProjectTotals(projectId: string) {
     assignments.reduce((sum, a) => sum + (a.estimatedCost != null ? Number(a.estimatedCost) : 0), 0)
   );
 
-  // 5. Calculate totals
-  const subtotal = equipmentRevenue;
+  // 5. Calculate totals (equipment + billable services)
+  const subtotal = roundCurrency(equipmentRevenue + serviceRevenue);
   const discountPercent = project.discountPercent != null ? Number(project.discountPercent) : 0;
   const discountAmount = roundCurrency(subtotal * (discountPercent / 100));
   const taxableAmount = roundCurrency(subtotal - discountAmount);

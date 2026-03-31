@@ -23,6 +23,7 @@ import {
   ChevronRight,
   Tags,
   Truck,
+  ArrowLeftRight,
   HardHat,
   Clock,
   Plus,
@@ -165,6 +166,7 @@ const navSections: NavSection[] = [
         ],
       },
       { title: "Suppliers", url: "/suppliers", icon: Truck, resource: "supplier" },
+      { title: "Sub-Hires", url: "/sub-hires", icon: ArrowLeftRight, resource: "subHire" },
     ],
   },
   {

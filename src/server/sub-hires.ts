@@ -706,6 +706,11 @@ async function generateSubHireLineItemsTx(
     // Determine showSubhireOnDocs from first item (parent inherits)
     const anyShowOnDocs = group.items.some((i) => i.showOnDocs);
 
+    // Group pricing: if price is set, parent uses KIT_PRICE mode (like project groups)
+    const hasGroupPrice = group.price != null;
+    const groupPrice = hasGroupPrice ? Number(group.price) : 0;
+    const groupLineTotal = hasGroupPrice ? roundCurrency(groupPrice * group.quantity) : 0;
+
     // Create parent line item for the group
     const parent = await tx.projectLineItem.create({
       data: {
@@ -713,10 +718,10 @@ async function generateSubHireLineItemsTx(
         projectId: subHire.projectId,
         type: "EQUIPMENT",
         description: group.title,
-        quantity: 1,
-        unitPrice: 0,
-        lineTotal: 0,
-        pricingMode: "ITEMIZED",
+        quantity: group.quantity,
+        unitPrice: hasGroupPrice ? groupPrice : 0,
+        lineTotal: groupLineTotal,
+        pricingMode: hasGroupPrice ? "KIT_PRICE" : "ITEMIZED",
         isSubhire: true,
         subHireId: subHire.id,
         subHireGroupId: group.id,
@@ -1044,6 +1049,8 @@ export async function createSubHireGroup(subHireId: string, input: unknown) {
     data: {
       subHireId,
       title: data.title,
+      quantity: data.quantity ?? 1,
+      price: data.price != null ? data.price : null,
       sortOrder: data.sortOrder ?? ((maxSort._max.sortOrder ?? -1) + 1),
       targetCategoryId: data.targetCategoryId || null,
       targetGroupId: data.targetGroupId || null,
@@ -1091,6 +1098,8 @@ export async function updateSubHireGroup(groupId: string, input: unknown) {
     where: { id: groupId },
     data: {
       title: data.title,
+      quantity: data.quantity ?? undefined,
+      price: data.price !== undefined ? (data.price != null ? data.price : null) : undefined,
       sortOrder: data.sortOrder,
       targetCategoryId: data.targetCategoryId !== undefined ? (data.targetCategoryId || null) : undefined,
       targetGroupId: data.targetGroupId !== undefined ? (data.targetGroupId || null) : undefined,
@@ -1421,6 +1430,8 @@ export async function duplicateSubHire(sourceId: string) {
         data: {
           subHireId: newSubHire.id,
           title: group.title,
+          quantity: group.quantity,
+          price: group.price,
           sortOrder: group.sortOrder,
           // Placement targets are NOT copied (new DRAFT starts uncategorized)
         },

@@ -559,6 +559,8 @@ function SubHireManageView({
   const [newGroupTitle, setNewGroupTitle] = useState("");
   const [showNewGroupInput, setShowNewGroupInput] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [editingGroup, setEditingGroup] = useState<Record<string, any> | null>(null);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: subHire, isLoading } = useQuery<any>({
@@ -616,6 +618,17 @@ function SubHireManageView({
     mutationFn: (groupId: string) => deleteSubHireGroup(groupId),
     onSuccess: () => {
       toast.success("Group deleted");
+      invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const updateGroupMutation = useMutation({
+    mutationFn: ({ groupId, data }: { groupId: string; data: Record<string, unknown> }) =>
+      updateSubHireGroup(groupId, data),
+    onSuccess: () => {
+      toast.success("Group updated");
+      setEditingGroup(null);
       invalidate();
     },
     onError: (e) => toast.error(e.message),
@@ -968,6 +981,13 @@ function SubHireManageView({
               {groups.map((group) => {
                 const groupItems = (group.items || []) as Array<Record<string, unknown>>;
                 const isGroupExpanded = expandedGroups.has(group.id);
+                const groupPrice = group.price != null ? Number(group.price) : null;
+                const groupQty = Number(group.quantity) || 1;
+                // Calculate suggested price from item charges
+                const suggestedPrice = groupItems.reduce((sum, item) => {
+                  const charge = Number(item.unitCharge) * Number(item.quantity) * Number(item.duration) * (1 - Number(item.discount) / 100);
+                  return sum + charge;
+                }, 0);
                 return (
                   <div key={group.id} className="rounded-md border">
                     {/* Group header */}
@@ -987,13 +1007,30 @@ function SubHireManageView({
                         <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isGroupExpanded ? "" : "-rotate-90"}`} />
                       </button>
                       <FolderPlus className="h-3.5 w-3.5 text-primary/70" />
-                      <span className="text-sm font-medium flex-1">{group.title}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-medium">{group.title}</span>
+                          {groupQty > 1 && (
+                            <span className="text-xs text-fg-4">×{groupQty}</span>
+                          )}
+                        </div>
+                      </div>
                       {(group.targetGroup || group.targetCategory) && (
                         <span className="text-[10px] text-fg-4 flex items-center gap-0.5" title="Placement override">
                           <MapPin className="h-2.5 w-2.5" />
                           {group.targetGroup?.title || group.targetCategory?.name}
                         </span>
                       )}
+                      {/* Pricing display */}
+                      {groupPrice != null ? (
+                        <span className="text-sm tabular-nums font-medium text-fg-2" title={`Group price: ${formatCurrency(groupPrice)} × ${groupQty}`}>
+                          {formatCurrency(groupPrice * groupQty)}
+                        </span>
+                      ) : suggestedPrice > 0 ? (
+                        <span className="text-sm tabular-nums text-fg-4" title="Suggested (from items)">
+                          ~{formatCurrency(suggestedPrice * groupQty)}
+                        </span>
+                      ) : null}
                       <span className="text-xs text-fg-4">{groupItems.length} item{groupItems.length !== 1 ? "s" : ""}</span>
                       <CanDo resource="subHire" action="update">
                         <DropdownMenu>
@@ -1003,6 +1040,12 @@ function SubHireManageView({
                           <DropdownMenuContent align="end">
                             <DropdownMenuGroup>
                               <DropdownMenuLabel>Group</DropdownMenuLabel>
+                              <DropdownMenuItem onClick={() => {
+                                setEditingGroup(group);
+                              }}>
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Edit Group
+                              </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => {
                                 setEditingItem(null);
                                 setAddToGroupId(group.id);
@@ -1272,12 +1315,127 @@ function SubHireManageView({
         }}
       />
 
+      {/* Edit group dialog */}
+      <SubHireGroupEditDialog
+        group={editingGroup}
+        onClose={() => setEditingGroup(null)}
+        onSave={(data) => {
+          if (!editingGroup) return;
+          updateGroupMutation.mutate({ groupId: editingGroup.id as string, data });
+        }}
+        isPending={updateGroupMutation.isPending}
+      />
+
       {/* Confirmation dialog */}
       <ConfirmDialog
         action={confirmAction}
         onClose={() => setConfirmAction(null)}
       />
     </>
+  );
+}
+
+// ─── Group Edit Dialog ──────────────────────────────────────────────────────
+
+function SubHireGroupEditDialog({
+  group,
+  onClose,
+  onSave,
+  isPending,
+}: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  group: Record<string, any> | null;
+  onClose: () => void;
+  onSave: (data: Record<string, unknown>) => void;
+  isPending: boolean;
+}) {
+  const [title, setTitle] = useState("");
+  const [quantity, setQuantity] = useState(1);
+  const [price, setPrice] = useState("");
+
+  useEffect(() => {
+    if (group) {
+      setTitle(group.title || "");
+      setQuantity(Number(group.quantity) || 1);
+      setPrice(group.price != null ? String(Number(group.price)) : "");
+    }
+  }, [group]);
+
+  if (!group) return null;
+
+  // Calculate suggested price from items
+  const items = (group.items || []) as Array<Record<string, unknown>>;
+  const suggestedPrice = items.reduce((sum, item) => {
+    const charge = Number(item.unitCharge) * Number(item.quantity) * Number(item.duration) * (1 - Number(item.discount) / 100);
+    return sum + charge;
+  }, 0);
+
+  return (
+    <Dialog open={!!group} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit Group</DialogTitle>
+          <DialogDescription>Update the group title, quantity, and pricing.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-2">
+            <Label>Title</Label>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Group title" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Quantity</Label>
+              <Input type="number" min={1} value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} />
+            </div>
+            <div className="space-y-2">
+              <Label>
+                Price ($)
+                <span className="text-fg-4 font-normal ml-1">(charge)</span>
+              </Label>
+              <div className="flex gap-1">
+                <Input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  placeholder="Itemized"
+                />
+                {suggestedPrice > 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0 text-xs h-9 px-2"
+                    title={`Use suggested price: ${formatCurrency(suggestedPrice)}`}
+                    onClick={() => setPrice(String(Math.round(suggestedPrice * 100) / 100))}
+                  >
+                    ~{formatCurrency(suggestedPrice)}
+                  </Button>
+                )}
+              </div>
+              <p className="text-[11px] text-fg-4">
+                {price ? "Group charged as a flat price to client" : "Itemized — each item's charge contributes individually"}
+              </p>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            onClick={() => onSave({
+              title,
+              quantity,
+              price: price ? Number(price) : null,
+            })}
+            disabled={!title.trim() || isPending}
+          >
+            {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

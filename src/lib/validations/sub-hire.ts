@@ -33,6 +33,8 @@ export type SubHireItemFormValues = z.input<typeof subHireItemSchema>;
 
 export const subHireGroupSchema = z.object({
   title: z.string().min(1, "Group title is required").max(200),
+  quantity: z.coerce.number().int().min(1).default(1),
+  price: z.coerce.number().min(0).optional().nullable(),
   sortOrder: z.coerce.number().int().optional(),
   targetCategoryId: z.string().optional().nullable(),
   targetGroupId: z.string().optional().nullable(),

@@ -151,19 +151,16 @@ export default function DashboardPage() {
               <MetricCell
                 label="Active Sub-Hires"
                 value={subHireStats?.activeSubHires}
-                href="/sub-hires?status=ON_HIRE"
               />
               <MetricCell
                 label="Monthly Sub-Hire Cost"
                 value={subHireStats?.monthlySubHireCost}
-                href="/sub-hires"
                 className="border-l border-border"
                 format="currency"
               />
               <MetricCell
                 label="Overdue Returns"
                 value={subHireStats?.overdueReturns}
-                href="/sub-hires?status=ON_HIRE&overdue=true"
                 className={`border-l border-border ${subHireStats?.overdueReturns ? "text-error" : ""}`}
               />
             </div>

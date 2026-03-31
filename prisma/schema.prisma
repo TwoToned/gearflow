@@ -58,6 +58,7 @@ model User {
   checkRecords             CheckRecord[]  @relation("CheckRecordPerformedBy")
   warehouseCloses          WarehouseClose[] @relation("WarehouseClosedBy")
   projectManagerAssignments ProjectManager[] @relation("ProjectManagerAssignment")
+  subHires                   SubHire[]
 
   @@map("user")
 }
@@ -177,6 +178,8 @@ model Organization {
   groupTemplates             GroupTemplate[]
   groupTemplateItems         GroupTemplateItem[]
   projectManagers            ProjectManager[]
+  subHires                   SubHire[]
+  supplierModelRates         SupplierModelRate[]
   @@map("organization")
 }
 
@@ -545,6 +548,14 @@ enum SupplierOrderStatus {
   CANCELLED
 }
 
+enum SubHireStatus {
+  DRAFT
+  CONFIRMED
+  ON_HIRE
+  RETURNED
+  CANCELLED
+}
+
 enum ProjectMediaType {
   FLOOR_PLAN
   QUOTE
@@ -632,6 +643,8 @@ model Model {
   groupTemplateItems  GroupTemplateItem[]
 
   supplierOrderItems  SupplierOrderItem[]
+  subHireItems        SubHireItem[]
+  supplierModelRates  SupplierModelRate[]
 
   @@unique([organizationId, sku])
   @@index([organizationId])
@@ -666,6 +679,8 @@ model Supplier {
   assets    Asset[]
   lineItems ProjectLineItem[]
   orders    SupplierOrder[]
+  subHires  SubHire[]
+  supplierModelRates SupplierModelRate[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -723,6 +738,79 @@ model SupplierOrderItem {
 
   @@index([orderId])
   @@map("supplier_order_item")
+}
+
+// ─── Sub-Hire (Renting gear from third-party suppliers) ─────────────────────
+
+model SubHire {
+  id              String        @id @default(cuid())
+  organizationId  String
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplierId      String
+  supplier        Supplier      @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  projectId       String?
+  project         Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  createdById     String
+  createdBy       User          @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  orderNumber     String
+  status          SubHireStatus @default(DRAFT)
+  hireStart       DateTime?
+  hireEnd         DateTime?
+  totalCost       Decimal       @default(0) @db.Decimal(10, 2)
+  totalCharge     Decimal       @default(0) @db.Decimal(10, 2)
+  showOnDocs      Boolean       @default(false)
+  notes           String?
+  items           SubHireItem[]
+  lineItems       ProjectLineItem[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([organizationId, orderNumber])
+  @@index([organizationId])
+  @@index([organizationId, supplierId])
+  @@index([organizationId, status])
+  @@index([organizationId, projectId])
+  @@map("sub_hire")
+}
+
+model SubHireItem {
+  id           String      @id @default(cuid())
+  subHireId    String
+  subHire      SubHire     @relation(fields: [subHireId], references: [id], onDelete: Cascade)
+  modelId      String?
+  model        Model?      @relation(fields: [modelId], references: [id], onDelete: SetNull)
+  description  String
+  quantity     Int         @default(1)
+  unitCost     Decimal     @default(0) @db.Decimal(10, 2)
+  unitCharge   Decimal     @default(0) @db.Decimal(10, 2)
+  pricingType  PricingType @default(FLAT)
+  duration     Int         @default(1)
+  discount     Decimal     @default(0) @db.Decimal(5, 2)
+  sortOrder    Int         @default(0)
+  lineItems    ProjectLineItem[]
+
+  @@index([subHireId])
+  @@index([modelId])
+  @@map("sub_hire_item")
+}
+
+model SupplierModelRate {
+  id              String       @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplierId      String
+  supplier        Supplier     @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  modelId         String
+  model           Model        @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  lastUnitCost    Decimal      @db.Decimal(10, 2)
+  pricingType     PricingType  @default(FLAT)
+  lastUsedAt      DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@unique([organizationId, supplierId, modelId])
+  @@index([organizationId, supplierId])
+  @@index([organizationId, modelId])
+  @@map("supplier_model_rate")
 }
 
 // ─── Kit (Physical Container) ────────────────────────────────────────────────
@@ -1087,6 +1175,7 @@ model Project {
   scanLogs         AssetScanLog[]
   media            ProjectMedia[]
   supplierOrders   SupplierOrder[]
+  subHires         SubHire[]
   crewAssignments  CrewAssignment[]
   services         ProjectService[]
   wooCommerceOrderLogs WooCommerceOrderLog[]
@@ -1167,6 +1256,10 @@ model ProjectLineItem {
   subhireOrderNumber String?
   supplierOrderId   String?
   supplierOrder     SupplierOrder? @relation(fields: [supplierOrderId], references: [id], onDelete: SetNull)
+  subHireId         String?
+  subHire           SubHire?       @relation(fields: [subHireId], references: [id], onDelete: SetNull)
+  subHireItemId     String?
+  subHireItem       SubHireItem?   @relation(fields: [subHireItemId], references: [id], onDelete: SetNull)
   service           ProjectService?
   checkRecords      CheckRecord[]
   createdAt         DateTime       @default(now())
@@ -1181,6 +1274,8 @@ model ProjectLineItem {
   @@index([parentLineItemId])
   @@index([supplierId])
   @@index([supplierOrderId])
+  @@index([subHireId])
+  @@index([subHireItemId])
   @@index([categoryId])
   @@index([groupId])
   @@map("project_line_item")

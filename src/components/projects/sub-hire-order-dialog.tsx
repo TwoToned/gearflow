@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Loader2, ArrowLeft, MoreVertical, AlertTriangle } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, ArrowLeft, MoreVertical, AlertTriangle, FolderPlus, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -17,6 +17,11 @@ import {
   getSubHires,
   getSupplierModelRate,
   getSupplierRateHistory,
+  createSubHireGroup,
+  updateSubHireGroup,
+  deleteSubHireGroup,
+  setItemGroup,
+  updateSubHireOrderPricing,
 } from "@/server/sub-hires";
 import { getSuppliers } from "@/server/suppliers";
 import { getModels } from "@/server/models";
@@ -462,7 +467,11 @@ function SubHireManageView({
   const [showItemForm, setShowItemForm] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [editingItem, setEditingItem] = useState<any>(null);
+  const [addToGroupId, setAddToGroupId] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+  const [newGroupTitle, setNewGroupTitle] = useState("");
+  const [showNewGroupInput, setShowNewGroupInput] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: subHire, isLoading } = useQuery<any>({
@@ -499,6 +508,44 @@ function SubHireManageView({
     mutationFn: (itemId: string) => removeSubHireItem(itemId),
     onSuccess: () => {
       toast.success("Item removed");
+      invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const createGroupMutation = useMutation({
+    mutationFn: (title: string) => createSubHireGroup(subHireId, { title }),
+    onSuccess: (result: Record<string, unknown>) => {
+      toast.success("Group created");
+      setShowNewGroupInput(false);
+      setNewGroupTitle("");
+      setExpandedGroups((prev) => new Set([...prev, result.id as string]));
+      invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const deleteGroupMutation = useMutation({
+    mutationFn: (groupId: string) => deleteSubHireGroup(groupId),
+    onSuccess: () => {
+      toast.success("Group deleted");
+      invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const moveItemMutation = useMutation({
+    mutationFn: ({ itemId, groupId }: { itemId: string; groupId: string | null }) =>
+      setItemGroup(itemId, groupId),
+    onSuccess: () => invalidate(),
+    onError: (e) => toast.error(e.message),
+  });
+
+  const pricingMutation = useMutation({
+    mutationFn: (data: { pricingMode: string; orderTotalCost?: number | null; orderTotalCharge?: number | null }) =>
+      updateSubHireOrderPricing(subHireId, data),
+    onSuccess: () => {
+      toast.success("Pricing updated");
       invalidate();
     },
     onError: (e) => toast.error(e.message),
@@ -565,7 +612,12 @@ function SubHireManageView({
   const transitions = VALID_TRANSITIONS[subHire.status] || {};
   const margin = Number(subHire.totalCharge) - Number(subHire.totalCost);
   const isOverdue = subHire.status === "ON_HIRE" && subHire.hireEnd && new Date(subHire.hireEnd) < new Date();
-  const items = (subHire.items || []) as Array<Record<string, unknown>>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const groups = (subHire.groups || []) as Array<Record<string, any>>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const allItems = (subHire.items || []) as Array<Record<string, any>>;
+  const ungroupedItems = allItems.filter((item) => !item.groupId);
+  const isOrderTotal = subHire.pricingMode === "ORDER_TOTAL";
 
   return (
     <>
@@ -613,104 +665,316 @@ function SubHireManageView({
           </div>
         </div>
 
-        {/* Items */}
+        {/* Pricing mode */}
+        <div className="rounded-md bg-bg-inset p-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium">Cost pricing</div>
+              <div className="text-xs text-fg-4">
+                {isOrderTotal
+                  ? "Flat total from supplier — items are for tracking only"
+                  : "Per-item cost and charge"}
+              </div>
+            </div>
+            <CanDo resource="subHire" action="update">
+              <Select
+                value={subHire.pricingMode}
+                onValueChange={(v) => {
+                  if (v) pricingMutation.mutate({
+                    pricingMode: v,
+                    orderTotalCost: v === "ORDER_TOTAL" ? Number(subHire.orderTotalCost ?? 0) : null,
+                    orderTotalCharge: v === "ORDER_TOTAL" ? (subHire.orderTotalCharge != null ? Number(subHire.orderTotalCharge) : null) : null,
+                  });
+                }}
+              >
+                <SelectTrigger className="w-[140px] h-8 text-xs">
+                  <SelectValue>{isOrderTotal ? "Order Total" : "Per Item"}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ITEMIZED">Per Item</SelectItem>
+                  <SelectItem value="ORDER_TOTAL">Order Total</SelectItem>
+                </SelectContent>
+              </Select>
+            </CanDo>
+          </div>
+          {isOrderTotal && (
+            <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-border/50">
+              <div className="space-y-1">
+                <Label className="text-xs">Total Cost ($)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  className="h-8 text-sm"
+                  defaultValue={Number(subHire.orderTotalCost ?? 0)}
+                  onBlur={(e) => {
+                    const val = Number(e.target.value);
+                    pricingMutation.mutate({
+                      pricingMode: "ORDER_TOTAL",
+                      orderTotalCost: val,
+                      orderTotalCharge: subHire.orderTotalCharge != null ? Number(subHire.orderTotalCharge) : null,
+                    });
+                  }}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Total Charge ($)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  className="h-8 text-sm"
+                  placeholder="Auto from items"
+                  defaultValue={subHire.orderTotalCharge != null ? Number(subHire.orderTotalCharge) : ""}
+                  onBlur={(e) => {
+                    const val = e.target.value ? Number(e.target.value) : null;
+                    pricingMutation.mutate({
+                      pricingMode: "ORDER_TOTAL",
+                      orderTotalCost: Number(subHire.orderTotalCost ?? 0),
+                      orderTotalCharge: val,
+                    });
+                  }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Items + Groups */}
         <div>
           <div className="flex items-center justify-between mb-2">
             <h4 className="text-sm font-semibold text-fg">Items</h4>
             <CanDo resource="subHire" action="update">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => { setEditingItem(null); setShowItemForm(true); }}
-              >
-                <Plus className="mr-1 h-3 w-3" />
-                Add Item
-              </Button>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowNewGroupInput(true)}
+                >
+                  <FolderPlus className="mr-1 h-3 w-3" />
+                  Add Group
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => { setEditingItem(null); setAddToGroupId(null); setShowItemForm(true); }}
+                >
+                  <Plus className="mr-1 h-3 w-3" />
+                  Add Item
+                </Button>
+              </div>
             </CanDo>
           </div>
 
-          {items.length === 0 ? (
+          {/* New group inline input */}
+          {showNewGroupInput && (
+            <div className="flex items-center gap-2 mb-2">
+              <Input
+                className="h-8 text-sm flex-1"
+                placeholder="Group title (e.g. Shure ULXD Kit)"
+                value={newGroupTitle}
+                onChange={(e) => setNewGroupTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newGroupTitle.trim()) {
+                    createGroupMutation.mutate(newGroupTitle.trim());
+                  }
+                  if (e.key === "Escape") {
+                    setShowNewGroupInput(false);
+                    setNewGroupTitle("");
+                  }
+                }}
+                autoFocus
+              />
+              <Button
+                size="sm"
+                disabled={!newGroupTitle.trim() || createGroupMutation.isPending}
+                onClick={() => {
+                  if (newGroupTitle.trim()) createGroupMutation.mutate(newGroupTitle.trim());
+                }}
+              >
+                {createGroupMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Create"}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => { setShowNewGroupInput(false); setNewGroupTitle(""); }}
+              >
+                Cancel
+              </Button>
+            </div>
+          )}
+
+          {allItems.length === 0 && groups.length === 0 ? (
             <div className="rounded-md border border-dashed border-border/60 p-6 text-center">
               <p className="text-sm text-fg-3 mb-2">No items yet</p>
-              <p className="text-xs text-fg-4 mb-3">Add items to track costs and charges for this sub-hire.</p>
+              <p className="text-xs text-fg-4 mb-3">Add items to track what you&apos;re sub-hiring, or create a group first.</p>
               <CanDo resource="subHire" action="update">
-                <Button
-                  size="sm"
-                  onClick={() => { setEditingItem(null); setShowItemForm(true); }}
-                >
-                  <Plus className="mr-1 h-3 w-3" />
-                  Add First Item
-                </Button>
+                <div className="flex items-center justify-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowNewGroupInput(true)}
+                  >
+                    <FolderPlus className="mr-1 h-3 w-3" />
+                    Create Group
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => { setEditingItem(null); setAddToGroupId(null); setShowItemForm(true); }}
+                  >
+                    <Plus className="mr-1 h-3 w-3" />
+                    Add Item
+                  </Button>
+                </div>
               </CanDo>
             </div>
           ) : (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Description</TableHead>
-                    <TableHead className="w-[60px] text-right">Qty</TableHead>
-                    <TableHead className="w-[90px] text-right">Unit Cost</TableHead>
-                    <TableHead className="w-[90px] text-right">Unit Charge</TableHead>
-                    <TableHead className="w-[80px] text-right">Margin</TableHead>
-                    <TableHead className="w-[40px]" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((item) => {
-                    const itemMargin = Number(item.unitCharge) - Number(item.unitCost);
-                    return (
-                      <TableRow key={item.id as string}>
-                        <TableCell>
-                          <div className="text-sm font-medium">{item.description as string}</div>
-                          {(item.model as Record<string, string>)?.name && (
-                            <div className="text-xs text-fg-4">{(item.model as Record<string, string>).name}</div>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums text-sm">{item.quantity as number}</TableCell>
-                        <TableCell className="text-right tabular-nums text-sm">{formatCurrency(Number(item.unitCost))}</TableCell>
-                        <TableCell className="text-right tabular-nums text-sm">{formatCurrency(Number(item.unitCharge))}</TableCell>
-                        <TableCell className={`text-right tabular-nums text-sm ${itemMargin > 0 ? "text-success" : itemMargin < 0 ? "text-error" : "text-fg-3"}`}>
-                          {formatCurrency(itemMargin)}
-                        </TableCell>
-                        <TableCell>
-                          <CanDo resource="subHire" action="update">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" />}>
-                                <MoreVertical className="h-3.5 w-3.5" />
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuGroup>
-                                  <DropdownMenuLabel>Item</DropdownMenuLabel>
-                                  <DropdownMenuItem onClick={() => { setEditingItem(item); setShowItemForm(true); }}>
-                                    <Pencil className="mr-2 h-4 w-4" />
-                                    Edit
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    className="text-destructive"
-                                    onClick={() => {
-                                      setConfirmAction({
-                                        title: "Remove item",
-                                        description: `Remove "${item.description}" from this sub-hire?`,
-                                        confirmLabel: "Remove",
-                                        variant: "destructive",
-                                        onConfirm: () => removeItemMutation.mutate(item.id as string),
-                                      });
-                                    }}
-                                  >
-                                    <Trash2 className="mr-2 h-4 w-4" />
-                                    Remove
-                                  </DropdownMenuItem>
-                                </DropdownMenuGroup>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </CanDo>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+            <div className="space-y-2">
+              {/* Groups */}
+              {groups.map((group) => {
+                const groupItems = (group.items || []) as Array<Record<string, unknown>>;
+                const isGroupExpanded = expandedGroups.has(group.id);
+                return (
+                  <div key={group.id} className="rounded-md border">
+                    {/* Group header */}
+                    <div className="flex items-center gap-2 px-3 py-2 bg-bg-inset/50">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedGroups((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(group.id)) next.delete(group.id);
+                            else next.add(group.id);
+                            return next;
+                          })
+                        }
+                        className="text-fg-3 hover:text-fg"
+                      >
+                        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isGroupExpanded ? "" : "-rotate-90"}`} />
+                      </button>
+                      <FolderPlus className="h-3.5 w-3.5 text-primary/70" />
+                      <span className="text-sm font-medium flex-1">{group.title}</span>
+                      <span className="text-xs text-fg-4">{groupItems.length} item{groupItems.length !== 1 ? "s" : ""}</span>
+                      <CanDo resource="subHire" action="update">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" />}>
+                            <MoreVertical className="h-3 w-3" />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuGroup>
+                              <DropdownMenuLabel>Group</DropdownMenuLabel>
+                              <DropdownMenuItem onClick={() => {
+                                setEditingItem(null);
+                                setAddToGroupId(group.id);
+                                setShowItemForm(true);
+                              }}>
+                                <Plus className="mr-2 h-4 w-4" />
+                                Add Item to Group
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-destructive"
+                                onClick={() => {
+                                  setConfirmAction({
+                                    title: "Delete group",
+                                    description: `Delete "${group.title}"? Items will be ungrouped, not deleted.`,
+                                    confirmLabel: "Delete Group",
+                                    variant: "destructive",
+                                    onConfirm: () => deleteGroupMutation.mutate(group.id),
+                                  });
+                                }}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete Group
+                              </DropdownMenuItem>
+                            </DropdownMenuGroup>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </CanDo>
+                    </div>
+                    {/* Group items */}
+                    {isGroupExpanded && (
+                      <div className="border-t border-border/50">
+                        {groupItems.length === 0 ? (
+                          <div className="px-3 py-3 text-center">
+                            <p className="text-xs text-fg-4 mb-2">No items in this group</p>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs"
+                              onClick={() => {
+                                setEditingItem(null);
+                                setAddToGroupId(group.id);
+                                setShowItemForm(true);
+                              }}
+                            >
+                              <Plus className="mr-1 h-3 w-3" />
+                              Add Item
+                            </Button>
+                          </div>
+                        ) : (
+                          <Table>
+                            <TableBody>
+                              {groupItems.map((item) => (
+                                <SubHireItemRow
+                                  key={item.id as string}
+                                  item={item}
+                                  groups={groups}
+                                  isOrderTotal={isOrderTotal}
+                                  onEdit={() => { setEditingItem(item); setShowItemForm(true); }}
+                                  onRemove={() => {
+                                    setConfirmAction({
+                                      title: "Remove item",
+                                      description: `Remove "${item.description}" from this sub-hire?`,
+                                      confirmLabel: "Remove",
+                                      variant: "destructive",
+                                      onConfirm: () => removeItemMutation.mutate(item.id as string),
+                                    });
+                                  }}
+                                  onMoveToGroup={(gId) => moveItemMutation.mutate({ itemId: item.id as string, groupId: gId })}
+                                />
+                              ))}
+                            </TableBody>
+                          </Table>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Ungrouped items */}
+              {ungroupedItems.length > 0 && (
+                <div className="rounded-md border">
+                  {groups.length > 0 && (
+                    <div className="px-3 py-1.5 bg-bg-inset/30 border-b border-border/50">
+                      <span className="text-xs text-fg-4 font-medium">Ungrouped</span>
+                    </div>
+                  )}
+                  <Table>
+                    <TableBody>
+                      {ungroupedItems.map((item) => (
+                        <SubHireItemRow
+                          key={item.id as string}
+                          item={item}
+                          groups={groups}
+                          isOrderTotal={isOrderTotal}
+                          onEdit={() => { setEditingItem(item); setShowItemForm(true); }}
+                          onRemove={() => {
+                            setConfirmAction({
+                              title: "Remove item",
+                              description: `Remove "${item.description}" from this sub-hire?`,
+                              confirmLabel: "Remove",
+                              variant: "destructive",
+                              onConfirm: () => removeItemMutation.mutate(item.id as string),
+                            });
+                          }}
+                          onMoveToGroup={(gId) => moveItemMutation.mutate({ itemId: item.id as string, groupId: gId })}
+                        />
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -804,14 +1068,16 @@ function SubHireManageView({
       {/* Item add/edit sub-dialog */}
       <SubHireItemForm
         open={showItemForm}
-        onOpenChange={(v) => { setShowItemForm(v); if (!v) setEditingItem(null); }}
+        onOpenChange={(v) => { setShowItemForm(v); if (!v) { setEditingItem(null); setAddToGroupId(null); } }}
         subHireId={subHireId}
         supplierId={subHire.supplier?.id || ""}
         editingItem={editingItem}
+        groupId={addToGroupId}
         onSuccess={() => {
           invalidate();
           setShowItemForm(false);
           setEditingItem(null);
+          setAddToGroupId(null);
         }}
       />
 
@@ -824,6 +1090,98 @@ function SubHireManageView({
   );
 }
 
+// ─── Item Row ────────────────────────────────────────────────────────────────
+
+function SubHireItemRow({
+  item,
+  groups,
+  isOrderTotal,
+  onEdit,
+  onRemove,
+  onMoveToGroup,
+}: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  item: Record<string, any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  groups: Array<Record<string, any>>;
+  isOrderTotal: boolean;
+  onEdit: () => void;
+  onRemove: () => void;
+  onMoveToGroup: (groupId: string | null) => void;
+}) {
+  const cost = Number(item.unitCost) * Number(item.quantity) * Number(item.duration);
+  const charge = Number(item.unitCharge) * Number(item.quantity) * Number(item.duration) * (1 - Number(item.discount) / 100);
+  const itemMargin = charge - cost;
+
+  return (
+    <TableRow className="group">
+      <TableCell className="py-2">
+        <div className="text-sm">{item.description}</div>
+        {item.model && (
+          <div className="text-xs text-fg-4">{String((item.model as Record<string, unknown>)?.name ?? "")}</div>
+        )}
+      </TableCell>
+      <TableCell className="py-2 text-right tabular-nums text-sm w-[50px]">
+        {item.quantity}
+      </TableCell>
+      {!isOrderTotal && (
+        <>
+          <TableCell className="py-2 text-right tabular-nums text-sm text-fg-2 w-[80px]">
+            {formatCurrency(Number(item.unitCost))}
+          </TableCell>
+          <TableCell className="py-2 text-right tabular-nums text-sm text-fg-2 w-[80px]">
+            {formatCurrency(Number(item.unitCharge))}
+          </TableCell>
+          <TableCell className={`py-2 text-right tabular-nums text-sm w-[80px] ${itemMargin > 0 ? "text-success" : itemMargin < 0 ? "text-error" : "text-fg-4"}`}>
+            {itemMargin > 0 ? "+" : ""}{formatCurrency(itemMargin)}
+          </TableCell>
+        </>
+      )}
+      <TableCell className="py-2 w-[40px]">
+        <CanDo resource="subHire" action="update">
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="opacity-0 group-hover:opacity-100 transition-opacity" />}>
+              <MoreVertical className="h-3 w-3" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Item</DropdownMenuLabel>
+                <DropdownMenuItem onClick={onEdit}>
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Edit
+                </DropdownMenuItem>
+                {/* Move to group options */}
+                {groups.length > 0 && (
+                  <>
+                    {item.groupId ? (
+                      <DropdownMenuItem onClick={() => onMoveToGroup(null)}>
+                        <ArrowLeft className="mr-2 h-4 w-4" />
+                        Ungroup
+                      </DropdownMenuItem>
+                    ) : null}
+                    {groups
+                      .filter((g) => g.id !== item.groupId)
+                      .map((g) => (
+                        <DropdownMenuItem key={g.id} onClick={() => onMoveToGroup(g.id)}>
+                          <FolderPlus className="mr-2 h-4 w-4" />
+                          Move to {g.title}
+                        </DropdownMenuItem>
+                      ))}
+                  </>
+                )}
+                <DropdownMenuItem className="text-destructive" onClick={onRemove}>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Remove
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </CanDo>
+      </TableCell>
+    </TableRow>
+  );
+}
+
 // ─── Item Form (nested dialog) ───────────────────────────────────────────────
 
 function SubHireItemForm({
@@ -832,6 +1190,7 @@ function SubHireItemForm({
   subHireId,
   supplierId,
   editingItem,
+  groupId,
   onSuccess,
 }: {
   open: boolean;
@@ -840,6 +1199,7 @@ function SubHireItemForm({
   supplierId: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   editingItem: any;
+  groupId?: string | null;
   onSuccess: () => void;
 }) {
   const [modelId, setModelId] = useState("");
@@ -920,8 +1280,8 @@ function SubHireItemForm({
   const addMutation = useMutation({
     mutationFn: () =>
       editingItem
-        ? updateSubHireItem(editingItem.id, { modelId: modelId || undefined, description, quantity, unitCost, unitCharge, pricingType, duration, discount })
-        : addSubHireItem(subHireId, { modelId: modelId || undefined, description, quantity, unitCost, unitCharge, pricingType, duration, discount }),
+        ? updateSubHireItem(editingItem.id, { modelId: modelId || undefined, description, quantity, unitCost, unitCharge, pricingType, duration, discount, groupId: editingItem.groupId || groupId || undefined })
+        : addSubHireItem(subHireId, { modelId: modelId || undefined, description, quantity, unitCost, unitCharge, pricingType, duration, discount, groupId: groupId || undefined }),
     onSuccess: () => {
       toast.success(editingItem ? "Item updated" : "Item added");
       onSuccess();

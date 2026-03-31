@@ -1173,6 +1173,7 @@ export async function getProjectPullSheet(projectId: string) {
           asset: { include: { location: true } },
           bulkAsset: true,
           kit: true,
+          supplier: { select: { name: true } },
           childLineItems: {
             where: { status: { not: "CANCELLED" } },
             orderBy: { sortOrder: "asc" },
@@ -1181,6 +1182,7 @@ export async function getProjectPullSheet(projectId: string) {
               asset: { include: { location: true } },
               bulkAsset: true,
               kit: true,
+              supplier: { select: { name: true } },
               childLineItems: {
                 where: { status: { not: "CANCELLED" } },
                 orderBy: { sortOrder: "asc" },
@@ -1188,6 +1190,7 @@ export async function getProjectPullSheet(projectId: string) {
                   model: { include: { category: true, _count: { select: { modelCheckItems: true } } } },
                   asset: { include: { location: true } },
                   bulkAsset: true,
+                  supplier: { select: { name: true } },
                 },
               },
             },

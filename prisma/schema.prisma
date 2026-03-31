@@ -548,6 +548,11 @@ enum SupplierOrderStatus {
   CANCELLED
 }
 
+enum SubHirePricingMode {
+  ITEMIZED
+  ORDER_TOTAL
+}
+
 enum SubHireStatus {
   DRAFT
   CONFIRMED
@@ -758,8 +763,12 @@ model SubHire {
   hireEnd         DateTime?
   totalCost       Decimal       @default(0) @db.Decimal(10, 2)
   totalCharge     Decimal       @default(0) @db.Decimal(10, 2)
+  pricingMode     SubHirePricingMode @default(ITEMIZED)
+  orderTotalCost  Decimal?      @db.Decimal(10, 2)
+  orderTotalCharge Decimal?     @db.Decimal(10, 2)
   showOnDocs      Boolean       @default(false)
   notes           String?
+  groups          SubHireGroup[]
   items           SubHireItem[]
   lineItems       ProjectLineItem[]
   createdAt       DateTime      @default(now())
@@ -774,24 +783,40 @@ model SubHire {
 }
 
 model SubHireItem {
-  id           String      @id @default(cuid())
+  id           String         @id @default(cuid())
   subHireId    String
-  subHire      SubHire     @relation(fields: [subHireId], references: [id], onDelete: Cascade)
+  subHire      SubHire        @relation(fields: [subHireId], references: [id], onDelete: Cascade)
+  groupId      String?
+  group        SubHireGroup?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
   modelId      String?
-  model        Model?      @relation(fields: [modelId], references: [id], onDelete: SetNull)
+  model        Model?         @relation(fields: [modelId], references: [id], onDelete: SetNull)
   description  String
-  quantity     Int         @default(1)
-  unitCost     Decimal     @default(0) @db.Decimal(10, 2)
-  unitCharge   Decimal     @default(0) @db.Decimal(10, 2)
-  pricingType  PricingType @default(FLAT)
-  duration     Int         @default(1)
-  discount     Decimal     @default(0) @db.Decimal(5, 2)
-  sortOrder    Int         @default(0)
+  quantity     Int            @default(1)
+  unitCost     Decimal        @default(0) @db.Decimal(10, 2)
+  unitCharge   Decimal        @default(0) @db.Decimal(10, 2)
+  pricingType  PricingType    @default(FLAT)
+  duration     Int            @default(1)
+  discount     Decimal        @default(0) @db.Decimal(5, 2)
+  sortOrder    Int            @default(0)
   lineItems    ProjectLineItem[]
 
   @@index([subHireId])
+  @@index([groupId])
   @@index([modelId])
   @@map("sub_hire_item")
+}
+
+model SubHireGroup {
+  id          String          @id @default(cuid())
+  subHireId   String
+  subHire     SubHire         @relation(fields: [subHireId], references: [id], onDelete: Cascade)
+  title       String
+  sortOrder   Int             @default(0)
+  items       SubHireItem[]
+  lineItems   ProjectLineItem[]
+
+  @@index([subHireId])
+  @@map("sub_hire_group")
 }
 
 model SupplierModelRate {
@@ -1260,6 +1285,8 @@ model ProjectLineItem {
   subHire           SubHire?       @relation(fields: [subHireId], references: [id], onDelete: SetNull)
   subHireItemId     String?
   subHireItem       SubHireItem?   @relation(fields: [subHireItemId], references: [id], onDelete: SetNull)
+  subHireGroupId    String?
+  subHireGroup      SubHireGroup?  @relation(fields: [subHireGroupId], references: [id], onDelete: SetNull)
   service           ProjectService?
   checkRecords      CheckRecord[]
   createdAt         DateTime       @default(now())
@@ -1276,6 +1303,7 @@ model ProjectLineItem {
   @@index([supplierOrderId])
   @@index([subHireId])
   @@index([subHireItemId])
+  @@index([subHireGroupId])
   @@index([categoryId])
   @@index([groupId])
   @@map("project_line_item")

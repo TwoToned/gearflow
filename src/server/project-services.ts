@@ -14,7 +14,7 @@ import { roundCurrency } from "@/lib/formatters";
 import { sendCrewOffer } from "@/server/crew-communication";
 import { recalculateProjectTotals } from "@/server/line-items";
 import { SERVICE_TYPE_LABELS } from "@/lib/constants/services";
-import type { ServiceType, LineItemType, PricingType, ProjectPhase } from "@/generated/prisma/client";
+import type { ServiceType, PricingType, ProjectPhase } from "@/generated/prisma/client";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -25,20 +25,6 @@ function calculateServiceLineTotal(
   if (unitPrice == null || unitPrice === 0) return null;
   const disc = discount ?? 0;
   return Math.max(0, roundCurrency(unitPrice - disc));
-}
-
-function serviceTypeToLineItemType(type: ServiceType): LineItemType {
-  switch (type) {
-    case "DELIVERY":
-    case "PICKUP":
-      return "TRANSPORT";
-    case "BUMP_IN":
-    case "BUMP_OUT":
-    case "LABOUR":
-      return "LABOUR";
-    case "MISC":
-      return "SERVICE";
-  }
 }
 
 function serviceTypeToPhase(type: ServiceType): ProjectPhase {
@@ -234,11 +220,6 @@ export async function createProjectService(
     return svc;
   });
 
-  // Sync line item if showOnDocuments
-  if (parsed.showOnDocuments) {
-    await syncServiceLineItem(service.id);
-  }
-
   // Always recalculate project totals — service charge/cost affects financials
   await recalculateProjectTotals(projectId);
 
@@ -338,23 +319,15 @@ export async function updateProjectService(
     return svc;
   });
 
-  // Sync line item based on showOnDocuments
-  const wasOnDocuments = existing.showOnDocuments;
-  const nowOnDocuments = parsed.showOnDocuments;
-
-  if (nowOnDocuments) {
-    await syncServiceLineItem(service.id);
-  } else if (wasOnDocuments && !nowOnDocuments) {
-    // Unlink line item — was on documents, now removed
-    if (existing.lineItemId) {
-      await prisma.projectLineItem.delete({
-        where: { id: existing.lineItemId },
-      });
-      await prisma.projectService.update({
-        where: { id },
-        data: { lineItemId: null },
-      });
-    }
+  // Clean up any legacy linked line item
+  if (existing.lineItemId) {
+    await prisma.projectLineItem.delete({
+      where: { id: existing.lineItemId },
+    }).catch(() => {});
+    await prisma.projectService.update({
+      where: { id },
+      data: { lineItemId: null },
+    });
   }
 
   // Always recalculate project totals — service charge/cost affects financials
@@ -563,90 +536,6 @@ export async function updateServiceCrewStatus(
   });
 
   return serialize({ updated: updatedCount });
-}
-
-// ─── Line Item Sync ───────────────────────────────────────────────────────────
-
-async function syncServiceLineItem(serviceId: string) {
-  const service = await prisma.projectService.findUnique({
-    where: { id: serviceId },
-  });
-  if (!service || !service.showOnDocuments) return;
-
-  const lineItemType = serviceTypeToLineItemType(service.type);
-  const pricingType = service.pricingType ?? "FLAT";
-  const duration = service.duration ? Number(service.duration) : 1;
-  const unitPrice = service.unitPrice ? Number(service.unitPrice) : null;
-  const discount = service.discount ? Number(service.discount) : null;
-  const lineTotal = service.lineTotal ? Number(service.lineTotal) : null;
-
-  if (service.lineItemId) {
-    // Guard: verify line item exists and is NOT a kit child (Arch fix #6)
-    const existingLineItem = await prisma.projectLineItem.findUnique({
-      where: { id: service.lineItemId },
-      select: { id: true, isKitChild: true },
-    });
-    if (!existingLineItem) {
-      // Line item was deleted externally — unlink and create fresh
-      await prisma.projectService.update({
-        where: { id: serviceId },
-        data: { lineItemId: null },
-      });
-    } else if (existingLineItem.isKitChild) {
-      // Service line items can never be kit children — unlink silently
-      await prisma.projectService.update({
-        where: { id: serviceId },
-        data: { lineItemId: null },
-      });
-    } else {
-      // Update existing line item
-      await prisma.projectLineItem.update({
-        where: { id: service.lineItemId },
-        data: {
-          type: lineItemType,
-          description: service.title,
-          quantity: service.quantity,
-          unitPrice,
-          pricingType,
-          duration: duration,
-          discount,
-          lineTotal,
-        },
-      });
-      await recalculateProjectTotals(service.projectId);
-      return;
-    }
-  }
-
-  // Create new line item
-  const maxSort = await prisma.projectLineItem.aggregate({
-    where: { projectId: service.projectId },
-    _max: { sortOrder: true },
-  });
-
-  const lineItem = await prisma.projectLineItem.create({
-    data: {
-      organizationId: service.organizationId,
-      projectId: service.projectId,
-      type: lineItemType,
-      description: service.title,
-      quantity: service.quantity,
-      unitPrice,
-      pricingType,
-      duration: duration,
-      discount,
-      lineTotal,
-      sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
-      groupName: "Services",
-    },
-  });
-
-  await prisma.projectService.update({
-    where: { id: serviceId },
-    data: { lineItemId: lineItem.id },
-  });
-
-  await recalculateProjectTotals(service.projectId);
 }
 
 // ─── Generate Services (Phase 1) ─────────────────────────────────────────────
@@ -902,13 +791,7 @@ async function _createServicesFromTemplateData(
   });
 
   // Sync line items for services that show on documents
-  let lineItemsCreated = 0;
-  for (const svc of createdServices) {
-    if (svc.showOnDocuments) {
-      await syncServiceLineItem(svc.id);
-      lineItemsCreated++;
-    }
-  }
+  await recalculateProjectTotals(projectId);
 
   await logActivity({
     organizationId,
@@ -924,7 +807,6 @@ async function _createServicesFromTemplateData(
 
   return serialize({
     created: createdServices.length,
-    lineItemsCreated,
   });
 }
 
@@ -1063,12 +945,7 @@ export async function cloneServicesFromProject(
     return results;
   });
 
-  // Sync line items for cloned services
-  for (const svc of created) {
-    if (svc.showOnDocuments) {
-      await syncServiceLineItem(svc.id);
-    }
-  }
+  await recalculateProjectTotals(targetProjectId);
 
   await logActivity({
     organizationId,

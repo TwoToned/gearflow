@@ -22,6 +22,7 @@ import { Plus, FolderPlus, Package, ArrowUpRight, MoreHorizontal, Trash2, Pencil
 import { toast } from "sonner";
 
 import { getProjectCategories } from "@/server/project-categories";
+import { getProjectServices } from "@/server/project-services";
 import {
   createProjectGroup,
   updateProjectGroup,
@@ -525,6 +526,12 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
   const { data: templates = [] } = useQuery({
     queryKey: ["group-templates"],
     queryFn: () => getGroupTemplates(),
+    staleTime: 60_000,
+  });
+
+  const { data: servicesData } = useQuery({
+    queryKey: ["project-services", projectId],
+    queryFn: () => getProjectServices(projectId),
     staleTime: 60_000,
   });
 
@@ -1096,6 +1103,41 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
           </Table>
         </div>
       )}
+
+      {/* ─── Billable Services on Documents ─────────────────────────────────── */}
+      {(() => {
+        const billable = (servicesData ?? []).filter(
+          (s: { showOnDocuments: boolean; status: string }) => s.showOnDocuments && s.status !== "CANCELLED"
+        );
+        if (billable.length === 0) return null;
+        return (
+          <div className="mt-6 rounded-lg border border-border/50 bg-card">
+            <div className="flex items-center gap-2 border-b border-border/50 px-4 py-3">
+              <h3 className="text-sm font-medium text-muted-foreground">Services on Documents</h3>
+              <span className="text-xs text-muted-foreground/60">({billable.length})</span>
+            </div>
+            <div className="divide-y divide-border/30">
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              {billable.map((svc: any) => (
+                <div key={svc.id} className="flex items-center justify-between px-4 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">{svc.title}</span>
+                    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{svc.type.replace("_", " ")}</span>
+                  </div>
+                  <div className="flex items-center gap-4 text-sm">
+                    {svc.lineTotal != null && Number(svc.lineTotal) > 0 && (
+                      <span className="text-foreground">{formatCurrency(Number(svc.lineTotal))}</span>
+                    )}
+                    {svc.costTotal != null && Number(svc.costTotal) > 0 && (
+                      <span className="text-xs text-muted-foreground">Cost: {formatCurrency(Number(svc.costTotal))}</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ─── Dialogs ────────────────────────────────────────────────────────── */}
 

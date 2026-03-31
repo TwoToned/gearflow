@@ -225,7 +225,7 @@ function PlacementPicker({
 
 const VALID_TRANSITIONS: Record<string, { forward?: { status: SubHireStatus; label: string }; cancel?: boolean }> = {
   DRAFT: { forward: { status: "CONFIRMED", label: "Confirm" }, cancel: true },
-  CONFIRMED: { forward: { status: "ON_HIRE", label: "Mark On Hire" }, cancel: true },
+  CONFIRMED: { forward: { status: "RETURNED", label: "Mark Returned" }, cancel: true },
   ON_HIRE: { forward: { status: "RETURNED", label: "Mark Returned" }, cancel: true },
   RETURNED: {},
   CANCELLED: {},

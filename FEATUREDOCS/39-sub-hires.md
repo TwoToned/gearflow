@@ -16,13 +16,15 @@ Sub-hires track gear rented from third-party suppliers with structured items, du
 ## Status Machine
 
 ```
-DRAFT → CONFIRMED → ON_HIRE → RETURNED
-  ↓         ↓          ↓
+DRAFT → CONFIRMED → RETURNED
+  ↓         ↓ ↘        ↓
+  ↓         ↓  ON_HIRE→↑
 CANCELLED CANCELLED  CANCELLED
 ```
 
 - **DRAFT → CONFIRMED**: requires `projectId` (server-validated). Line items already exist (generated on add). Confirmation regenerates for consistency and recalculates project totals.
-- **CONFIRMED → ON_HIRE**: manual, marks gear dispatched from supplier
+- **CONFIRMED → RETURNED**: marks gear returned from supplier. ON_HIRE step is optional.
+- **CONFIRMED → ON_HIRE**: set by warehouse operations (prep/deploy), not from the sub-hire dialog
 - **ON_HIRE → RETURNED**: manual, whole-unit return (no partial returns in v1)
 - **Any active → CANCELLED**: allowed from DRAFT/CONFIRMED/ON_HIRE
 

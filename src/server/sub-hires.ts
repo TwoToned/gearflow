@@ -13,7 +13,7 @@ import { deleteFromS3 } from "@/lib/storage";
 
 const VALID_TRANSITIONS: Record<SubHireStatus, SubHireStatus[]> = {
   DRAFT: ["CONFIRMED", "CANCELLED"],
-  CONFIRMED: ["ON_HIRE", "CANCELLED"],
+  CONFIRMED: ["ON_HIRE", "RETURNED", "CANCELLED"],
   ON_HIRE: ["RETURNED", "CANCELLED"],
   RETURNED: [],
   CANCELLED: [],

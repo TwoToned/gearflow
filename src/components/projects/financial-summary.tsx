@@ -13,6 +13,7 @@ interface GroupBreakdownItem {
 
 interface FinancialSummaryProps {
   equipmentRevenue: number | null;
+  serviceChargeTotal?: number | null;
   serviceCostTotal: number | null;
   labourCostTotal: number | null;
   subtotal: number | null;
@@ -82,6 +83,7 @@ function Row({
 
 export function FinancialSummary({
   equipmentRevenue,
+  serviceChargeTotal,
   serviceCostTotal,
   labourCostTotal,
   subtotal,
@@ -100,9 +102,11 @@ export function FinancialSummary({
   const [showBreakdown, setShowBreakdown] = useState(false);
   const totalVal = total != null ? Number(total) : 0;
   const marginVal = margin != null ? Number(margin) : 0;
-  const costs =
-    (serviceCostTotal != null ? Number(serviceCostTotal) : 0) +
-    (labourCostTotal != null ? Number(labourCostTotal) : 0);
+  const equipmentVal = equipmentRevenue != null ? Number(equipmentRevenue) : 0;
+  const serviceChargeVal = serviceChargeTotal != null ? Number(serviceChargeTotal) : 0;
+  const serviceCostVal = serviceCostTotal != null ? Number(serviceCostTotal) : 0;
+  const labourCostVal = labourCostTotal != null ? Number(labourCostTotal) : 0;
+  const costs = serviceCostVal + labourCostVal;
 
   const allGroupsPriced =
     totalGroupCount != null && pricedGroupCount != null && pricedGroupCount >= totalGroupCount;
@@ -143,9 +147,15 @@ export function FinancialSummary({
 
       <div className="h-px bg-border" />
 
-      {/* Revenue breakdown */}
+      {/* Client revenue breakdown */}
       <div className="space-y-1.5">
-        <Row label="Equipment" value={formatCurrency(equipmentRevenue)} />
+        <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-4">
+          Revenue
+        </div>
+        <Row label="Equipment" value={formatCurrency(equipmentVal)} />
+        {serviceChargeVal > 0 && (
+          <Row label="Services" value={formatCurrency(serviceChargeVal)} />
+        )}
         <Row label="Subtotal" value={formatCurrency(subtotal)} bold />
         {discountPercent != null && Number(discountPercent) > 0 && (
           <Row
@@ -163,15 +173,21 @@ export function FinancialSummary({
 
       <div className="h-px bg-border" />
 
-      {/* Costs */}
+      {/* Business costs */}
       <div className="space-y-1.5">
         <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-4">
           Costs
         </div>
-        <Row label="Services" value={formatCurrency(serviceCostTotal)} />
-        <Row label="Labour" value={formatCurrency(labourCostTotal)} />
-        {costs > 0 && (
+        {serviceCostVal > 0 && (
+          <Row label="Services" value={formatCurrency(serviceCostVal)} />
+        )}
+        {labourCostVal > 0 && (
+          <Row label="Labour" value={formatCurrency(labourCostVal)} />
+        )}
+        {costs > 0 ? (
           <Row label="Total costs" value={formatCurrency(costs)} bold />
+        ) : (
+          <Row label="No costs recorded" value="—" muted />
         )}
       </div>
 

@@ -733,6 +733,11 @@ export default function ProjectDetailPage({
                     <div className="border-b border-border pb-4">
                       <FinancialSummary
                         equipmentRevenue={project.equipmentRevenue as number | null}
+                        serviceChargeTotal={
+                          project.subtotal != null && project.equipmentRevenue != null
+                            ? Number(project.subtotal) - Number(project.equipmentRevenue)
+                            : null
+                        }
                         serviceCostTotal={project.serviceCostTotal as number | null}
                         labourCostTotal={project.labourCostTotal as number | null}
                         subtotal={project.subtotal as number | null}

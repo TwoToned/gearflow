@@ -1064,6 +1064,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
           Add Subhire
         </Button>
         <Button
+          variant="outline"
           size="sm"
           className="gap-1.5"
           onClick={() => {
@@ -2123,30 +2124,30 @@ function SubHireExpandedItems({ subHireId, orgId }: { subHireId: string; orgId?:
 
   if (items.length === 0) {
     return (
-      <div className="px-4 pb-3 pl-12 text-xs text-fg-4">
+      <div className="pb-3 ml-4 border-l-2 border-primary/20 pl-8 text-xs text-fg-4 py-2">
         No items in this order yet.
       </div>
     );
   }
 
   return (
-    <div className="pb-2">
+    <div className="pb-2 ml-4 border-l-2 border-primary/20">
       <table className="w-full">
         <tbody>
           {items.map((item) => {
             const itemMargin = Number(item.unitCharge) - Number(item.unitCost);
             return (
               <tr key={item.id as string} className="text-sm">
-                <td className="pl-12 py-1 text-fg-2">
+                <td className="pl-8 py-1.5 text-fg-2">
                   {item.description as string}
                   {(item.model as Record<string, string>)?.name && (
                     <span className="ml-1.5 text-xs text-fg-4">({(item.model as Record<string, string>).name})</span>
                   )}
                 </td>
-                <td className="px-3 py-1 text-right tabular-nums text-fg-3 w-12">&times;{item.quantity as number}</td>
-                <td className="px-3 py-1 text-right tabular-nums text-fg-3 w-24">{formatCurrency(Number(item.unitCost))} cost</td>
-                <td className="px-3 py-1 text-right tabular-nums w-24">{formatCurrency(Number(item.unitCharge))}</td>
-                <td className={`px-3 py-1 text-right tabular-nums w-20 ${itemMargin > 0 ? "text-success" : itemMargin < 0 ? "text-error" : "text-fg-4"}`}>
+                <td className="px-3 py-1.5 text-right tabular-nums text-fg-3 w-12">&times;{item.quantity as number}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums text-fg-3 w-24">{formatCurrency(Number(item.unitCost))} cost</td>
+                <td className="px-3 py-1.5 text-right tabular-nums w-24">{formatCurrency(Number(item.unitCharge))}</td>
+                <td className={`px-3 py-1.5 text-right tabular-nums w-20 ${itemMargin > 0 ? "text-success" : itemMargin < 0 ? "text-error" : "text-fg-4"}`}>
                   {formatCurrency(itemMargin)}
                 </td>
               </tr>

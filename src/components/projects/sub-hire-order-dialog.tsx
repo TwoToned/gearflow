@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Loader2, ArrowLeft } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, ArrowLeft, MoreVertical } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -147,6 +147,7 @@ export function SubHireOrderDialog({
             orgId={orgId}
             onCreateNew={() => setView("create")}
             onManage={(id) => { setManagingId(id); setView("manage"); }}
+            onClose={() => onOpenChange(false)}
           />
         )}
         {view === "create" && (
@@ -178,11 +179,13 @@ function SubHireListView({
   orgId,
   onCreateNew,
   onManage,
+  onClose,
 }: {
   projectId: string;
   orgId?: string;
   onCreateNew: () => void;
   onManage: (id: string) => void;
+  onClose: () => void;
 }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: subHires = [], isLoading } = useQuery<any[]>({
@@ -203,8 +206,11 @@ function SubHireListView({
             <Loader2 className="h-5 w-5 animate-spin text-fg-3" />
           </div>
         ) : subHires.length === 0 ? (
-          <div className="rounded-md border p-8 text-center">
-            <p className="text-sm text-fg-3 mb-3">No sub-hire orders yet</p>
+          <div className="rounded-md border border-dashed border-border/60 p-8 text-center">
+            <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-bg-inset">
+              <ArrowLeft className="h-5 w-5 text-fg-4 rotate-[135deg]" />
+            </div>
+            <p className="text-sm font-medium text-fg-2 mb-1">No sub-hire orders yet</p>
             <p className="text-xs text-fg-4 mb-4">Create a sub-hire when you need to rent equipment from a supplier for this project.</p>
             <CanDo resource="subHire" action="create">
               <Button size="sm" onClick={onCreateNew}>
@@ -258,7 +264,7 @@ function SubHireListView({
       </div>
       {subHires.length > 0 && (
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
+          <Button variant="outline" onClick={onClose}>Close</Button>
           <CanDo resource="subHire" action="create">
             <Button onClick={onCreateNew}>
               <Plus className="mr-1 h-3 w-3" />
@@ -269,11 +275,6 @@ function SubHireListView({
       )}
     </>
   );
-
-  // Helper to close (needs to be accessible)
-  function onOpenChange(v: boolean) {
-    // This is a noop - parent controls open state
-  }
 }
 
 // ─── Create View ─────────────────────────────────────────────────────────────
@@ -542,8 +543,18 @@ function SubHireManageView({
           </div>
 
           {items.length === 0 ? (
-            <div className="rounded-md border p-6 text-center text-fg-3 text-sm">
-              No items yet. Add items to track costs and charges.
+            <div className="rounded-md border border-dashed border-border/60 p-6 text-center">
+              <p className="text-sm text-fg-3 mb-2">No items yet</p>
+              <p className="text-xs text-fg-4 mb-3">Add items to track costs and charges for this sub-hire.</p>
+              <CanDo resource="subHire" action="update">
+                <Button
+                  size="sm"
+                  onClick={() => { setEditingItem(null); setShowItemForm(true); }}
+                >
+                  <Plus className="mr-1 h-3 w-3" />
+                  Add First Item
+                </Button>
+              </CanDo>
             </div>
           ) : (
             <div className="rounded-md border">
@@ -552,8 +563,8 @@ function SubHireManageView({
                   <TableRow>
                     <TableHead>Description</TableHead>
                     <TableHead className="w-[60px] text-right">Qty</TableHead>
-                    <TableHead className="w-[90px] text-right">Cost</TableHead>
-                    <TableHead className="w-[90px] text-right">Charge</TableHead>
+                    <TableHead className="w-[90px] text-right">Unit Cost</TableHead>
+                    <TableHead className="w-[90px] text-right">Unit Charge</TableHead>
                     <TableHead className="w-[80px] text-right">Margin</TableHead>
                     <TableHead className="w-[40px]" />
                   </TableRow>
@@ -579,7 +590,7 @@ function SubHireManageView({
                           <CanDo resource="subHire" action="update">
                             <DropdownMenu>
                               <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" />}>
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" /></svg>
+                                <MoreVertical className="h-3.5 w-3.5" />
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
                                 <DropdownMenuGroup>
@@ -611,39 +622,33 @@ function SubHireManageView({
           )}
         </div>
 
-        {/* Settings (collapsible) */}
-        <details className="group">
-          <summary className="flex cursor-pointer items-center gap-2 text-sm font-medium text-fg-2 hover:text-fg transition-colors select-none">
-            <svg className="h-3 w-3 transition-transform group-open:rotate-90" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
-            Order Settings
-          </summary>
-          <div className="mt-3 space-y-3 rounded-md bg-bg-inset p-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm">Show on client documents</div>
-                <div className="text-xs text-fg-4">Items appear on quotes, invoices, and packing lists</div>
-              </div>
-              <CanDo
-                resource="subHire"
-                action="update"
-                fallback={<span className="text-sm text-fg-3">{subHire.showOnDocs ? "Yes" : "No"}</span>}
-              >
-                <Switch
-                  checked={subHire.showOnDocs}
-                  onCheckedChange={(checked) =>
-                    updateMutation.mutate({ supplierId: subHire.supplier?.id, showOnDocs: checked })
-                  }
-                />
-              </CanDo>
+        {/* Order details */}
+        <div className="rounded-md bg-bg-inset p-3 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium">Show on client documents</div>
+              <div className="text-xs text-fg-4">Items appear on quotes, invoices, and packing lists</div>
             </div>
-            {subHire.notes && (
-              <div>
-                <div className="text-xs font-medium text-fg-3 mb-1">Notes</div>
-                <p className="text-sm text-fg-2">{subHire.notes}</p>
-              </div>
-            )}
+            <CanDo
+              resource="subHire"
+              action="update"
+              fallback={<span className="text-sm text-fg-3">{subHire.showOnDocs ? "Yes" : "No"}</span>}
+            >
+              <Switch
+                checked={subHire.showOnDocs}
+                onCheckedChange={(checked) =>
+                  updateMutation.mutate({ supplierId: subHire.supplier?.id, showOnDocs: checked })
+                }
+              />
+            </CanDo>
           </div>
-        </details>
+          {subHire.notes && (
+            <div className="border-t border-border/50 pt-3">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-fg-3 mb-1">Notes</div>
+              <p className="text-sm text-fg-2">{subHire.notes}</p>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Footer with status actions */}
@@ -823,6 +828,9 @@ function SubHireItemForm({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{editingItem ? "Edit Item" : "Add Item"}</DialogTitle>
+          <DialogDescription>
+            {editingItem ? "Update the item details below." : "Add an item to this sub-hire order."}
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 py-2">
           <div className="space-y-2">

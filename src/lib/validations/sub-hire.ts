@@ -14,6 +14,7 @@ export type SubHireFormValues = z.input<typeof subHireSchema>;
 
 export const subHireItemSchema = z.object({
   modelId: z.string().optional(),
+  groupId: z.string().optional(),
   description: z.string().min(1, "Description is required").max(500),
   quantity: z.coerce.number().int().min(1, "Quantity must be at least 1").default(1),
   unitCost: z.coerce.number().min(0, "Cost cannot be negative").default(0),
@@ -24,3 +25,18 @@ export const subHireItemSchema = z.object({
 });
 
 export type SubHireItemFormValues = z.input<typeof subHireItemSchema>;
+
+export const subHireGroupSchema = z.object({
+  title: z.string().min(1, "Group title is required").max(200),
+  sortOrder: z.coerce.number().int().optional(),
+});
+
+export type SubHireGroupFormValues = z.input<typeof subHireGroupSchema>;
+
+export const subHireOrderPricingSchema = z.object({
+  pricingMode: z.enum(["ITEMIZED", "ORDER_TOTAL"]),
+  orderTotalCost: z.coerce.number().min(0).optional().nullable(),
+  orderTotalCharge: z.coerce.number().min(0).optional().nullable(),
+});
+
+export type SubHireOrderPricingFormValues = z.input<typeof subHireOrderPricingSchema>;

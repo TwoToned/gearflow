@@ -294,15 +294,12 @@ function MetricCell({
 }: {
   label: string;
   value: number | undefined;
-  href: string;
+  href?: string;
   className?: string;
   format?: "currency";
 }) {
-  return (
-    <Link
-      href={href}
-      className={`group block px-5 py-4 transition-colors hover:bg-bg-elevated ${className ?? ""}`}
-    >
+  const content = (
+    <>
       <p className="text-xs text-fg-3">{label}</p>
       <div className="mt-1 text-2xl font-bold t-data">
         {typeof value === "number" ? (
@@ -315,7 +312,24 @@ function MetricCell({
           <span className="text-fg-3">&mdash;</span>
         )}
       </div>
-    </Link>
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className={`group block px-5 py-4 transition-colors hover:bg-bg-elevated ${className ?? ""}`}
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  return (
+    <div className={`block px-5 py-4 ${className ?? ""}`}>
+      {content}
+    </div>
   );
 }
 

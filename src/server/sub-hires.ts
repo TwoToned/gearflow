@@ -92,12 +92,38 @@ export async function getSubHires(filters?: {
     ];
   }
 
+  // When fetching for a specific project, include items and groups for equipment tab preview
+  const itemsInclude = filters?.projectId
+    ? {
+        items: {
+          include: {
+            model: { select: { id: true, name: true } },
+            targetCategory: { select: { id: true, name: true } },
+            targetGroup: { select: { id: true, title: true, categoryId: true } },
+          },
+          orderBy: { sortOrder: "asc" as const },
+        },
+        groups: {
+          include: {
+            targetCategory: { select: { id: true, name: true } },
+            targetGroup: { select: { id: true, title: true, categoryId: true } },
+            items: {
+              include: { model: { select: { id: true, name: true } } },
+              orderBy: { sortOrder: "asc" as const },
+            },
+          },
+          orderBy: { sortOrder: "asc" as const },
+        },
+      }
+    : {};
+
   const subHires = await prisma.subHire.findMany({
     where,
     include: {
       supplier: { select: { id: true, name: true } },
       project: { select: { id: true, name: true, projectNumber: true } },
       _count: { select: { items: true } },
+      ...itemsInclude,
     },
     orderBy: { createdAt: "desc" },
   });

@@ -356,6 +356,165 @@ function SortableGroupRow({
   );
 }
 
+// ─── Draft Sub-Hire Item (preview row) ──────────────────────────────────────
+
+interface DraftSubHirePreviewItem {
+  id: string;
+  description: string;
+  quantity: number;
+  unitCharge: number;
+  modelName?: string;
+  supplierName: string;
+  orderNumber: string;
+  subHireStatus: string;
+  resolvedGroupId: string | null;
+  resolvedCategoryId: string | null;
+}
+
+function DraftSubHireItemRow({
+  item,
+  indent,
+  onManage,
+}: {
+  item: DraftSubHirePreviewItem;
+  indent: string;
+  onManage: () => void;
+}) {
+  return (
+    <TableRow className="border-l-2 border-amber-500/50 bg-amber-500/[0.03] hover:bg-amber-500/[0.06]">
+      <TableCell className="px-0">
+        <div className="w-6" />
+      </TableCell>
+      <TableCell>
+        <div className={`flex items-center gap-2 ${indent}`}>
+          <span className="text-sm text-fg-2">{item.modelName ?? item.description}</span>
+          <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/20">
+            Draft — {item.orderNumber}
+          </Badge>
+          <span className="text-xs text-fg-4">via {item.supplierName}</span>
+        </div>
+      </TableCell>
+      <TableCell className="text-center t-data text-fg-3">{item.quantity}</TableCell>
+      <TableCell className="text-right hidden md:table-cell t-data text-fg-3">
+        {formatCurrency(item.unitCharge)}
+      </TableCell>
+      <TableCell className="text-right hidden md:table-cell t-data text-fg-3">
+        {formatCurrency(item.unitCharge * item.quantity)}
+      </TableCell>
+      <TableCell>
+        <Button variant="ghost" size="sm" className="text-xs text-fg-3 h-6 px-2" onClick={onManage}>
+          Manage
+        </Button>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+/**
+ * Extracts draft sub-hire items from project sub-hires and resolves their
+ * placement targets for display in the equipment table.
+ */
+function extractDraftSubHireItems(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  projectSubHires: any[],
+): {
+  byGroupId: Map<string, DraftSubHirePreviewItem[]>;
+  byCategoryId: Map<string, DraftSubHirePreviewItem[]>;
+  uncategorized: DraftSubHirePreviewItem[];
+} {
+  const byGroupId = new Map<string, DraftSubHirePreviewItem[]>();
+  const byCategoryId = new Map<string, DraftSubHirePreviewItem[]>();
+  const uncategorized: DraftSubHirePreviewItem[] = [];
+
+  for (const sh of projectSubHires) {
+    // Only show preview rows for non-confirmed sub-hires
+    if (sh.status !== "DRAFT") continue;
+    if (!sh.items) continue;
+
+    const orderDefaults = {
+      defaultTargetGroupId: sh.defaultTargetGroupId,
+      defaultTargetCategoryId: sh.defaultTargetCategoryId,
+    };
+
+    // Resolve grouped items
+    const groupedItemIds = new Set<string>();
+    if (sh.groups) {
+      for (const group of sh.groups) {
+        for (const item of group.items ?? []) {
+          groupedItemIds.add(item.id);
+          const gId = group.targetGroupId ?? orderDefaults.defaultTargetGroupId ?? null;
+          const cId = gId
+            ? (group.targetGroup?.categoryId ?? orderDefaults.defaultTargetCategoryId ?? null)
+            : (group.targetCategoryId ?? orderDefaults.defaultTargetCategoryId ?? null);
+
+          const preview: DraftSubHirePreviewItem = {
+            id: item.id,
+            description: item.description,
+            quantity: item.quantity,
+            unitCharge: Number(item.unitCharge),
+            modelName: item.model?.name,
+            supplierName: sh.supplier?.name ?? "Unknown",
+            orderNumber: sh.orderNumber,
+            subHireStatus: sh.status,
+            resolvedGroupId: gId,
+            resolvedCategoryId: cId,
+          };
+
+          if (gId) {
+            const list = byGroupId.get(gId) ?? [];
+            list.push(preview);
+            byGroupId.set(gId, list);
+          } else if (cId) {
+            const list = byCategoryId.get(cId) ?? [];
+            list.push(preview);
+            byCategoryId.set(cId, list);
+          } else {
+            uncategorized.push(preview);
+          }
+        }
+      }
+    }
+
+    // Resolve ungrouped items
+    for (const item of sh.items) {
+      if (groupedItemIds.has(item.id)) continue;
+      if (item.groupId) continue;
+
+      const gId = item.targetGroupId ?? orderDefaults.defaultTargetGroupId ?? null;
+      const cId = gId
+        ? (item.targetGroup?.categoryId ?? orderDefaults.defaultTargetCategoryId ?? null)
+        : (item.targetCategoryId ?? orderDefaults.defaultTargetCategoryId ?? null);
+
+      const preview: DraftSubHirePreviewItem = {
+        id: item.id,
+        description: item.description,
+        quantity: item.quantity,
+        unitCharge: Number(item.unitCharge),
+        modelName: item.model?.name,
+        supplierName: sh.supplier?.name ?? "Unknown",
+        orderNumber: sh.orderNumber,
+        subHireStatus: sh.status,
+        resolvedGroupId: gId,
+        resolvedCategoryId: cId,
+      };
+
+      if (gId) {
+        const list = byGroupId.get(gId) ?? [];
+        list.push(preview);
+        byGroupId.set(gId, list);
+      } else if (cId) {
+        const list = byCategoryId.get(cId) ?? [];
+        list.push(preview);
+        byCategoryId.set(cId, list);
+      } else {
+        uncategorized.push(preview);
+      }
+    }
+  }
+
+  return { byGroupId, byCategoryId, uncategorized };
+}
+
 // ─── Sortable category row ──────────────────────────────────────────────────
 
 function SortableCategoryRow({
@@ -1004,6 +1163,10 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
   const hasCategories = typedCategories.length > 0;
   const hasUncategorized = (uncategorizedItems as LineItemData[]).length > 0;
 
+  // Extract draft sub-hire items for preview in the table
+  const draftPreview = extractDraftSubHireItems(projectSubHires);
+  const hasDraftUncategorized = draftPreview.uncategorized.length > 0;
+
   // Build flat list of all sortable IDs for the single DndContext
   const allSortableIds: string[] = [];
   for (const cat of typedCategories) {
@@ -1097,7 +1260,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
       </div>
 
       {/* Empty state */}
-      {!hasCategories && !hasUncategorized && (
+      {!hasCategories && !hasUncategorized && !hasDraftUncategorized && (
         <div className="rounded-lg border border-dashed border-foreground/10 py-12 text-center">
           <p className="text-sm text-fg-3">No categories yet.</p>
           <p className="mt-1 text-xs text-fg-4">
@@ -1107,7 +1270,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
       )}
 
       {/* Main table */}
-      {(hasCategories || hasUncategorized) && (
+      {(hasCategories || hasUncategorized || hasDraftUncategorized) && (
         <div className="rounded-md border overflow-x-auto">
           <Table className="table-fixed">
             <colgroup>
@@ -1230,6 +1393,18 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                                 onRemove={() => removeMut.mutate(item.id)}
                               />
                             ))}
+                            {/* Draft sub-hire items targeted at this group */}
+                            {isExpanded && (draftPreview.byGroupId.get(group.id) ?? []).map((dItem) => (
+                              <DraftSubHireItemRow
+                                key={`draft-${dItem.id}`}
+                                item={dItem}
+                                indent="ml-12"
+                                onManage={() => {
+                                  const sh = projectSubHires.find((s: Record<string, unknown>) => s.orderNumber === dItem.orderNumber);
+                                  if (sh) { setManagingSubHireId(sh.id as string); setShowSubHireOrderDialog(true); }
+                                }}
+                              />
+                            ))}
                           </React.Fragment>
                         );
                       })}
@@ -1246,6 +1421,18 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                           onRemove={() => removeMut.mutate(item.id)}
                         />
                       ))}
+                      {/* Draft sub-hire items targeted at this category (no group) */}
+                      {(draftPreview.byCategoryId.get(cat.id) ?? []).map((dItem) => (
+                        <DraftSubHireItemRow
+                          key={`draft-${dItem.id}`}
+                          item={dItem}
+                          indent="ml-3"
+                          onManage={() => {
+                            const sh = projectSubHires.find((s: Record<string, unknown>) => s.orderNumber === dItem.orderNumber);
+                            if (sh) { setManagingSubHireId(sh.id as string); setShowSubHireOrderDialog(true); }
+                          }}
+                        />
+                      ))}
                     </React.Fragment>
                   );
                 })}
@@ -1260,6 +1447,18 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                     onEdit={() => openEditLineItem(item)}
                     onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
                     onRemove={() => removeMut.mutate(item.id)}
+                  />
+                ))}
+                {/* Draft sub-hire items with no placement */}
+                {draftPreview.uncategorized.map((dItem) => (
+                  <DraftSubHireItemRow
+                    key={`draft-${dItem.id}`}
+                    item={dItem}
+                    indent=""
+                    onManage={() => {
+                      const sh = projectSubHires.find((s: Record<string, unknown>) => s.orderNumber === dItem.orderNumber);
+                      if (sh) { setManagingSubHireId(sh.id as string); setShowSubHireOrderDialog(true); }
+                    }}
                   />
                 ))}
               </TableBody>

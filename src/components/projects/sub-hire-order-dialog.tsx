@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Pencil, Trash2, Loader2, ArrowLeft, MoreVertical, AlertTriangle, FolderPlus, ChevronDown, Eye, EyeOff, MapPin } from "lucide-react";
 import { toast } from "sonner";
@@ -1116,24 +1116,50 @@ function SubHireManageView({
                   <Table>
                     <TableBody>
                       {ungroupedItems.map((item) => (
-                        <SubHireItemRow
-                          key={item.id as string}
-                          item={item}
-                          groups={groups}
-                          isOrderTotal={isOrderTotal}
-                          onEdit={() => { setEditingItem(item); setShowItemForm(true); }}
-                          onRemove={() => {
-                            setConfirmAction({
-                              title: "Remove item",
-                              description: `Remove "${item.description}" from this sub-hire?`,
-                              confirmLabel: "Remove",
-                              variant: "destructive",
-                              onConfirm: () => removeItemMutation.mutate(item.id as string),
-                            });
-                          }}
-                          onMoveToGroup={(gId) => moveItemMutation.mutate({ itemId: item.id as string, groupId: gId })}
-                          onToggleShowOnDocs={() => handleToggleShowOnDocs(item)}
-                        />
+                        <Fragment key={item.id as string}>
+                          <SubHireItemRow
+                            item={item}
+                            groups={groups}
+                            isOrderTotal={isOrderTotal}
+                            onEdit={() => { setEditingItem(item); setShowItemForm(true); }}
+                            onRemove={() => {
+                              setConfirmAction({
+                                title: "Remove item",
+                                description: `Remove "${item.description}" from this sub-hire?`,
+                                confirmLabel: "Remove",
+                                variant: "destructive",
+                                onConfirm: () => removeItemMutation.mutate(item.id as string),
+                              });
+                            }}
+                            onMoveToGroup={(gId) => moveItemMutation.mutate({ itemId: item.id as string, groupId: gId })}
+                            onToggleShowOnDocs={() => handleToggleShowOnDocs(item)}
+                          />
+                          {/* Per-item placement picker */}
+                          <TableRow className="hover:bg-transparent">
+                            <TableCell colSpan={isOrderTotal ? 4 : 6} className="py-1 px-3">
+                              <div className="flex items-center gap-2">
+                                <MapPin className="h-3 w-3 text-fg-4 shrink-0" />
+                                <span className="text-[10px] text-fg-4 shrink-0">Placement:</span>
+                                <div className="flex-1 max-w-[200px]">
+                                  <PlacementPicker
+                                    projectId={projectId}
+                                    value={{
+                                      groupId: item.targetGroup?.id || item.targetGroupId,
+                                      categoryId: item.targetCategory?.id || item.targetCategoryId,
+                                    }}
+                                    onChange={(p) => placementMutation.mutate({
+                                      entityType: "item",
+                                      entityId: item.id as string,
+                                      targetGroupId: p.targetGroupId,
+                                      targetCategoryId: p.targetCategoryId,
+                                    })}
+                                    size="xs"
+                                  />
+                                </div>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        </Fragment>
                       ))}
                     </TableBody>
                   </Table>

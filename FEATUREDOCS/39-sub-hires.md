@@ -6,10 +6,11 @@ Sub-hires track gear rented from third-party suppliers with structured items, du
 
 ## Schema
 
-- **SubHire** — order-level entity: supplier, project, status, dates, totals, showOnDocs
-- **SubHireItem** — line-level: description, model, quantity, unitCost, unitCharge, pricingType, duration, discount
+- **SubHire** — order-level entity: supplier, project, status, dates, totals, showOnDocs, pricingMode (ITEMIZED or ORDER_TOTAL), orderTotalCost/orderTotalCharge
+- **SubHireGroup** — groups items within a sub-hire (e.g. "Shure ULXD Kit"). Has title and sortOrder. Items within a group become parent+child line items on the project (using the kit pattern: `isKitChild` + `parentLineItemId`).
+- **SubHireItem** — line-level: description, model, quantity, unitCost, unitCharge, pricingType, duration, discount, optional groupId
 - **SupplierModelRate** — caches last rate per supplier+model pair for pre-fill
-- **ProjectLineItem** — gains `subHireId` and `subHireItemId` FKs
+- **ProjectLineItem** — gains `subHireId`, `subHireItemId`, and `subHireGroupId` FKs
 
 ## Status Machine
 
@@ -41,11 +42,22 @@ Sub-hires are managed via a **dialog** on the project equipment tab:
 ### Line Item Generation
 When a sub-hire is confirmed, `ProjectLineItem` records are created for each `SubHireItem` with `isSubhire: true`, linked via `subHireId` and `subHireItemId` FKs. Project totals are recalculated after.
 
+**Grouped items** use the kit parent-child pattern: a parent `ProjectLineItem` is created for the group (with `subHireGroupId` set, description = group title) and each group item becomes a child line item with `isKitChild: true` and `parentLineItemId` pointing to the group parent. This means grouped sub-hire items render inside collapsible groups on the equipment tab with no new rendering infrastructure.
+
+**Ungrouped items** are created as standalone line items (no parent).
+
+### Pricing Modes
+- **ITEMIZED** (default) — each item has its own unitCost and unitCharge. Totals are summed from items.
+- **ORDER_TOTAL** — a flat orderTotalCost and optional orderTotalCharge set on the sub-hire itself. Item-level costs are for tracking only. Useful when suppliers don't provide itemized invoices.
+
 ### Line Item Sync
 Editing a sub-hire item when the sub-hire is CONFIRMED or ON_HIRE updates the corresponding `ProjectLineItem` and recalculates project totals.
 
 ### Deletion
 Deleting a sub-hire first deletes linked `ProjectLineItem` records (not orphan), recalculates project totals, then deletes the sub-hire (cascade deletes items).
+
+### Group Deletion
+Deleting a group ungroups its items (sets `groupId` to null). If the sub-hire is confirmed, the group's parent line item is deleted and ungrouped items are re-created as standalone line items.
 
 ### Project Change
 Moving a sub-hire to a different project deletes old line items, generates new ones, and recalculates totals on both projects in a single transaction.
@@ -65,8 +77,8 @@ Auto-generated via atomic counter in `Organization.metadata.subHireOrderCounter`
 
 | File | Role |
 |------|------|
-| `prisma/schema.prisma` | SubHire, SubHireItem, SupplierModelRate models |
-| `src/lib/validations/sub-hire.ts` | Zod schemas |
+| `prisma/schema.prisma` | SubHire, SubHireGroup, SubHireItem, SupplierModelRate models |
+| `src/lib/validations/sub-hire.ts` | Zod schemas (subHire, subHireItem, subHireGroup, subHireOrderPricing) |
 | `src/lib/permissions.ts` | subHire resource |
 | `src/server/sub-hires.ts` | All server actions |
 | `src/components/projects/sub-hire-order-dialog.tsx` | Dialog component (list/create/manage views + item form) |

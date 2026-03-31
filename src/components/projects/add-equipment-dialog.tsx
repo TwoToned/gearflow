@@ -44,6 +44,8 @@ interface AddEquipmentDialogProps {
   groupId?: string;
   /** Human-readable label like "Audio > PA System" when adding inside a group */
   targetLabel?: string;
+  /** Callback to open the sub-hire order dialog instead of navigating */
+  onOpenSubHire?: () => void;
 }
 
 export function AddEquipmentDialog({
@@ -55,6 +57,7 @@ export function AddEquipmentDialog({
   categoryId,
   groupId,
   targetLabel,
+  onOpenSubHire,
 }: AddEquipmentDialogProps) {
   const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
@@ -357,13 +360,17 @@ export function AddEquipmentDialog({
                         {isReducedOnly ? "I understand, add anyway" : "I understand, overbook anyway"}
                       </span>
                     </label>
-                    {!isReducedOnly && selectedModelId && (
-                      <a
-                        href={`/sub-hires/new?projectId=${projectId}&modelId=${selectedModelId}&quantity=${requestedQty - (availability?.available ?? 0)}`}
-                        className="block text-sm font-medium text-primary hover:underline"
+                    {!isReducedOnly && selectedModelId && onOpenSubHire && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpenChange(false);
+                          onOpenSubHire();
+                        }}
+                        className="block text-sm font-medium text-primary hover:underline cursor-pointer"
                       >
                         Sub-hire {requestedQty - (availability?.available ?? 0)} units instead
-                      </a>
+                      </button>
                     )}
                   </div>
                 );

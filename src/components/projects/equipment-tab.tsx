@@ -1833,6 +1833,10 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
           categoryId={addEquipmentTarget.categoryId}
           groupId={addEquipmentTarget.groupId}
           targetLabel={addEquipmentTarget.label}
+          onOpenSubHire={() => {
+            setManagingSubHireId(null);
+            setShowSubHireOrderDialog(true);
+          }}
         />
       )}
 

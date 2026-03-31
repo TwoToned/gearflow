@@ -357,6 +357,14 @@ export function AddEquipmentDialog({
                         {isReducedOnly ? "I understand, add anyway" : "I understand, overbook anyway"}
                       </span>
                     </label>
+                    {!isReducedOnly && selectedModelId && (
+                      <a
+                        href={`/sub-hires/new?projectId=${projectId}&modelId=${selectedModelId}&quantity=${requestedQty - (availability?.available ?? 0)}`}
+                        className="block text-sm font-medium text-primary hover:underline"
+                      >
+                        Sub-hire {requestedQty - (availability?.available ?? 0)} units instead
+                      </a>
+                    )}
                   </div>
                 );
               })()}

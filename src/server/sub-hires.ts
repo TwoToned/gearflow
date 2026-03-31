@@ -937,3 +937,40 @@ export async function getSubHireDashboardStats() {
     overdueReturns: overdueCount,
   });
 }
+
+// ─── Shortage Pre-Check ──────────────────────────────────────────────────────
+
+export async function checkSubHireOpportunity(
+  modelId: string,
+  quantity: number,
+  projectId: string,
+  rentalStartDate?: string | null,
+  rentalEndDate?: string | null,
+) {
+  const { organizationId } = await getOrgContext();
+
+  // Use the existing checkAvailability function
+  const { checkAvailability } = await import("@/server/line-items");
+  const availability = await checkAvailability(modelId, rentalStartDate, rentalEndDate, projectId);
+
+  const available = availability.available ?? 0;
+
+  if (quantity <= available) {
+    return serialize({ shortage: false as const });
+  }
+
+  // Get model name for the dialog
+  const model = await prisma.model.findUnique({
+    where: { id: modelId, organizationId },
+    select: { name: true },
+  });
+
+  return serialize({
+    shortage: true as const,
+    requested: quantity,
+    available,
+    shortfall: quantity - available,
+    modelId,
+    modelName: model?.name || "Unknown",
+  });
+}

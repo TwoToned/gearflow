@@ -20,15 +20,11 @@ import type { ServiceType, LineItemType, PricingType, ProjectPhase } from "@/gen
 
 function calculateServiceLineTotal(
   unitPrice: number | undefined,
-  quantity: number,
-  duration: number | undefined,
   discount: number | undefined,
 ): number | null {
-  if (unitPrice == null) return null;
-  const dur = duration ?? 1;
-  const gross = roundCurrency(unitPrice * quantity * dur);
+  if (unitPrice == null || unitPrice === 0) return null;
   const disc = discount ?? 0;
-  return Math.max(0, roundCurrency(gross - disc));
+  return Math.max(0, roundCurrency(unitPrice - disc));
 }
 
 function serviceTypeToLineItemType(type: ServiceType): LineItemType {
@@ -82,8 +78,6 @@ function buildServiceData(parsed: ReturnType<typeof projectServiceSchema.parse>)
   const serviceEndDate = parsed.endDate ? new Date(parsed.endDate as unknown as string) : serviceDate;
   const lineTotal = calculateServiceLineTotal(
     parsed.unitPrice,
-    parsed.quantity,
-    parsed.duration,
     parsed.discount,
   );
 
@@ -240,13 +234,13 @@ export async function createProjectService(
     return svc;
   });
 
-  // Sync line item if showOnDocuments (outside transaction — calls recalculate)
+  // Sync line item if showOnDocuments
   if (parsed.showOnDocuments) {
     await syncServiceLineItem(service.id);
-  } else if (parsed.costTotal) {
-    // Service has a cost but isn't on documents — still need to update project totals for margin
-    await recalculateProjectTotals(projectId);
   }
+
+  // Always recalculate project totals — service charge/cost affects financials
+  await recalculateProjectTotals(projectId);
 
   await logActivity({
     organizationId,
@@ -351,7 +345,7 @@ export async function updateProjectService(
   if (nowOnDocuments) {
     await syncServiceLineItem(service.id);
   } else if (wasOnDocuments && !nowOnDocuments) {
-    // Unlink line item (Arch fix #7 — always unlink, never delete the line item)
+    // Unlink line item — was on documents, now removed
     if (existing.lineItemId) {
       await prisma.projectLineItem.delete({
         where: { id: existing.lineItemId },
@@ -361,12 +355,10 @@ export async function updateProjectService(
         data: { lineItemId: null },
       });
     }
-    // Recalculate regardless — line item removed or costTotal may have changed
-    await recalculateProjectTotals(existing.projectId);
-  } else if (parsed.costTotal !== undefined) {
-    // Not on documents, costTotal may have changed — update project margin
-    await recalculateProjectTotals(existing.projectId);
   }
+
+  // Always recalculate project totals — service charge/cost affects financials
+  await recalculateProjectTotals(existing.projectId);
 
   await logActivity({
     organizationId,
@@ -880,7 +872,7 @@ async function _createServicesFromTemplateData(
     const created = [];
     for (const svc of toCreate) {
       const lineTotal = svc.unitPrice != null
-        ? calculateServiceLineTotal(svc.unitPrice, 1, 1, 0)
+        ? calculateServiceLineTotal(svc.unitPrice, 0)
         : null;
 
       const service = await tx.projectService.create({

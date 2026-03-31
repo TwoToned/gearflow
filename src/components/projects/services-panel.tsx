@@ -104,12 +104,6 @@ const SERVICE_TYPE_ICONS: Record<ServiceType, typeof Truck> = {
   MISC: Wrench,
 };
 
-const PRICING_TYPE_LABELS: Record<string, string> = {
-  FLAT: "Flat",
-  PER_HOUR: "/hr",
-  PER_DAY: "/day",
-};
-
 function formatDate(date: string | null | undefined): string {
   if (!date) return "";
   return new Date(date).toLocaleDateString("en-AU", {
@@ -161,9 +155,6 @@ interface ServiceRow {
   longitude: number | null;
   showOnDocuments: boolean;
   unitPrice: number | null;
-  quantity: number;
-  pricingType: string | null;
-  duration: number | null;
   lineTotal: number | null;
   costTotal: number | null;
   discount: number | null;
@@ -1073,9 +1064,6 @@ function ServiceDialog({
         longitude: editingService.longitude as number | null,
         showOnDocuments: (editingService.showOnDocuments as boolean) || false,
         unitPrice: (editingService.unitPrice as number) || undefined,
-        quantity: (editingService.quantity as number) || 1,
-        pricingType: (editingService.pricingType as "PER_DAY" | "PER_HOUR" | "FLAT" | "") || "",
-        duration: (editingService.duration as number) || undefined,
         discount: (editingService.discount as number) || undefined,
         costTotal: (editingService.costTotal as number) || undefined,
         taxable: editingService.taxable !== false,
@@ -1102,9 +1090,6 @@ function ServiceDialog({
         longitude: defaultLng,
         showOnDocuments: (matchingTemplate?.showOnDocuments as boolean) || false,
         unitPrice: (matchingTemplate?.defaultUnitPrice as number) || undefined,
-        quantity: 1,
-        pricingType: (matchingTemplate?.defaultPricingType as "PER_DAY" | "PER_HOUR" | "FLAT" | "") || "",
-        duration: undefined,
         discount: undefined,
         taxable: true,
         vehicleDescription: (matchingTemplate?.defaultVehicle as string) || "",
@@ -1461,53 +1446,14 @@ function ServiceDialog({
               <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-3">
                 Charge to Client
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label>Rate</Label>
+                  <Label>Rate ($)</Label>
                   <Input
                     type="number"
                     step="0.01"
                     {...form.register("unitPrice")}
                     placeholder="0.00"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Type</Label>
-                  <Select
-                    value={form.watch("pricingType") || ""}
-                    onValueChange={(v) => form.setValue("pricingType", v as "PER_DAY" | "PER_HOUR" | "FLAT" | "")}
-                  >
-                    <SelectTrigger>
-                      <SelectValue>
-                        {form.watch("pricingType")
-                          ? PRICING_TYPE_LABELS[form.watch("pricingType") as string] || form.watch("pricingType")
-                          : "Flat"}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="FLAT">Flat</SelectItem>
-                      <SelectItem value="PER_HOUR">Per Hour</SelectItem>
-                      <SelectItem value="PER_DAY">Per Day</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Duration</Label>
-                  <Input
-                    type="number"
-                    step="0.5"
-                    {...form.register("duration")}
-                    placeholder="1"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label>Qty</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    {...form.register("quantity")}
                   />
                 </div>
                 <div className="space-y-1.5">

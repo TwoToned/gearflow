@@ -17,8 +17,12 @@ import {
   removeSubHireItem,
   changeSubHireProject,
   duplicateSubHire,
+  getSupplierModelRate,
+  getSupplierRateHistory,
 } from "@/server/sub-hires";
+import { getModels } from "@/server/models";
 import { formatCurrency } from "@/lib/formatters";
+import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
@@ -470,6 +474,7 @@ function SubHireDetailContent({ params }: { params: Promise<{ id: string }> }) {
         open={showItemDialog}
         onOpenChange={(open) => { setShowItemDialog(open); if (!open) setEditingItem(null); }}
         subHireId={id}
+        supplierId={subHire.supplier?.id || ""}
         editingItem={editingItem}
         onSuccess={() => {
           queryClient.invalidateQueries({ queryKey: ["sub-hire", orgId, id] });
@@ -487,16 +492,19 @@ function SubHireItemDialog({
   open,
   onOpenChange,
   subHireId,
+  supplierId,
   editingItem,
   onSuccess,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   subHireId: string;
+  supplierId: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   editingItem: any;
   onSuccess: () => void;
 }) {
+  const [modelId, setModelId] = useState("");
   const [description, setDescription] = useState("");
   const [quantity, setQuantity] = useState(1);
   const [unitCost, setUnitCost] = useState(0);
@@ -505,9 +513,56 @@ function SubHireItemDialog({
   const [duration, setDuration] = useState(1);
   const [discount, setDiscount] = useState(0);
 
+  const { data: activeOrg } = useActiveOrganization();
+  const orgId = activeOrg?.id;
+
+  // Fetch models for picker
+  const { data: modelsData } = useQuery({
+    queryKey: ["models", orgId],
+    queryFn: () => getModels({ pageSize: 500 }),
+    enabled: open,
+  });
+  const modelOptions = ((modelsData as Record<string, unknown>)?.models as Array<Record<string, unknown>> || []).map((m) => ({
+    value: m.id as string,
+    label: m.name as string,
+  }));
+
+  // Fetch supplier rate for pre-fill when model selected
+  const { data: supplierRate } = useQuery({
+    queryKey: ["supplier-rate", supplierId, modelId],
+    queryFn: () => getSupplierModelRate(supplierId, modelId),
+    enabled: !!modelId && !!supplierId && open,
+  });
+
+  // Fetch all supplier rates for comparison panel
+  const { data: allRates } = useQuery({
+    queryKey: ["model-rates", modelId],
+    queryFn: () => getSupplierRateHistory(modelId),
+    enabled: !!modelId && open,
+  });
+
+  // Pre-fill when model selected
+  const handleModelChange = (newModelId: string) => {
+    setModelId(newModelId);
+    if (newModelId) {
+      const model = ((modelsData as Record<string, unknown>)?.models as Array<Record<string, unknown>> || []).find((m) => m.id === newModelId);
+      if (model && !description) {
+        setDescription(model.name as string);
+      }
+    }
+  };
+
+  // Pre-fill cost from supplier rate when it loads
+  const lastRateRef = useState<string | null>(null);
+  if (supplierRate && modelId && lastRateRef[0] !== modelId && !editingItem) {
+    lastRateRef[1](modelId);
+    setUnitCost(Number((supplierRate as Record<string, unknown>).lastUnitCost) || 0);
+  }
+
   // Reset form when dialog opens
   const handleOpenChange = (v: boolean) => {
     if (v && editingItem) {
+      setModelId((editingItem.model as Record<string, unknown>)?.id as string || editingItem.modelId || "");
       setDescription(editingItem.description || "");
       setQuantity(editingItem.quantity || 1);
       setUnitCost(Number(editingItem.unitCost) || 0);
@@ -516,6 +571,7 @@ function SubHireItemDialog({
       setDuration(editingItem.duration || 1);
       setDiscount(Number(editingItem.discount) || 0);
     } else if (v) {
+      setModelId("");
       setDescription("");
       setQuantity(1);
       setUnitCost(0);
@@ -523,6 +579,7 @@ function SubHireItemDialog({
       setPricingType("FLAT");
       setDuration(1);
       setDiscount(0);
+      lastRateRef[1](null);
     }
     onOpenChange(v);
   };
@@ -530,8 +587,8 @@ function SubHireItemDialog({
   const addMutation = useMutation({
     mutationFn: () =>
       editingItem
-        ? updateSubHireItem(editingItem.id, { description, quantity, unitCost, unitCharge, pricingType, duration, discount })
-        : addSubHireItem(subHireId, { description, quantity, unitCost, unitCharge, pricingType, duration, discount }),
+        ? updateSubHireItem(editingItem.id, { modelId: modelId || undefined, description, quantity, unitCost, unitCharge, pricingType, duration, discount })
+        : addSubHireItem(subHireId, { modelId: modelId || undefined, description, quantity, unitCost, unitCharge, pricingType, duration, discount }),
     onSuccess: () => {
       toast.success(editingItem ? "Item updated" : "Item added");
       onSuccess();
@@ -539,13 +596,30 @@ function SubHireItemDialog({
     onError: (e) => toast.error(e.message),
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rates = (allRates || []) as Array<Record<string, any>>;
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{editingItem ? "Edit Item" : "Add Item"}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3 py-2">
+          {/* Model picker */}
+          <div className="space-y-2">
+            <Label>Model (optional)</Label>
+            <ComboboxPicker
+              value={modelId}
+              onChange={handleModelChange}
+              options={modelOptions}
+              placeholder="Select model..."
+              searchPlaceholder="Search models..."
+              emptyMessage="No models found."
+              allowClear
+            />
+          </div>
+
           <div className="space-y-2">
             <Label>Description</Label>
             <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Item description" />
@@ -582,6 +656,39 @@ function SubHireItemDialog({
               <Input type="number" min={0} step={0.01} value={unitCharge} onChange={(e) => setUnitCharge(Number(e.target.value))} />
             </div>
           </div>
+
+          {/* Rate comparison panel */}
+          {modelId && (
+            <div className="rounded-md bg-bg-inset p-3 animate-in fade-in duration-150">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-primary mb-2">Supplier Rates</p>
+              {rates.length === 0 ? (
+                <div className="border-l-2 border-info px-3 py-2 text-xs text-fg-3">
+                  Rates are saved automatically as you create sub-hires. Comparison data will appear here after your first order.
+                </div>
+              ) : (
+                <div className="space-y-0.5">
+                  {rates.slice(0, 5).map((rate) => {
+                    const isCurrentSupplier = rate.supplierId === supplierId;
+                    const daysAgo = Math.floor((Date.now() - new Date(rate.lastUsedAt).getTime()) / (1000 * 60 * 60 * 24));
+                    const timeLabel = daysAgo === 0 ? "today" : daysAgo === 1 ? "1d ago" : `${daysAgo}d ago`;
+                    return (
+                      <button
+                        key={rate.id}
+                        type="button"
+                        onClick={() => setUnitCost(Number(rate.lastUnitCost))}
+                        className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-bg-elevated cursor-pointer ${isCurrentSupplier ? "border-l-2 border-primary" : ""}`}
+                      >
+                        <span className="flex-1 text-left truncate">{rate.supplier?.name}</span>
+                        <span className="tabular-nums font-medium">{formatCurrency(Number(rate.lastUnitCost))}</span>
+                        <span className="text-xs text-fg-3 w-12 text-right">{timeLabel}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label>Duration</Label>

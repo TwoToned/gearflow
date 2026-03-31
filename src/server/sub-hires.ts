@@ -365,6 +365,11 @@ export async function addSubHireItem(subHireId: string, input: unknown) {
 
   await recalculateSubHireTotals(subHireId);
 
+  // Upsert supplier rate if item has a model
+  if (data.modelId) {
+    await upsertSupplierModelRate(organizationId, subHire.supplierId, data.modelId, data.unitCost, data.pricingType as PricingType);
+  }
+
   // If confirmed/on-hire, sync line item to project
   if (subHire.status === "CONFIRMED" || subHire.status === "ON_HIRE") {
     await syncNewSubHireLineItem(subHire, item);
@@ -416,6 +421,11 @@ export async function updateSubHireItem(itemId: string, input: unknown) {
   });
 
   await recalculateSubHireTotals(existing.subHire.id);
+
+  // Upsert supplier rate if item has a model
+  if (data.modelId) {
+    await upsertSupplierModelRate(organizationId, existing.subHire.supplierId, data.modelId, data.unitCost, data.pricingType as PricingType);
+  }
 
   // If confirmed/on-hire, sync the linked project line item
   if (existing.subHire.status === "CONFIRMED" || existing.subHire.status === "ON_HIRE") {
@@ -756,4 +766,66 @@ export async function changeSubHireProject(subHireId: string, newProjectId: stri
       },
     }),
   );
+}
+
+// ─── Supplier Rate Memory ────────────────────────────────────────────────────
+
+async function upsertSupplierModelRate(
+  organizationId: string,
+  supplierId: string,
+  modelId: string,
+  unitCost: number,
+  pricingType: PricingType,
+) {
+  await prisma.supplierModelRate.upsert({
+    where: {
+      organizationId_supplierId_modelId: {
+        organizationId,
+        supplierId,
+        modelId,
+      },
+    },
+    create: {
+      organizationId,
+      supplierId,
+      modelId,
+      lastUnitCost: unitCost,
+      pricingType,
+    },
+    update: {
+      lastUnitCost: unitCost,
+      pricingType,
+      lastUsedAt: new Date(),
+    },
+  });
+}
+
+export async function getSupplierModelRate(supplierId: string, modelId: string) {
+  const { organizationId } = await getOrgContext();
+
+  const rate = await prisma.supplierModelRate.findUnique({
+    where: {
+      organizationId_supplierId_modelId: {
+        organizationId,
+        supplierId,
+        modelId,
+      },
+    },
+  });
+
+  return rate ? serialize(rate) : null;
+}
+
+export async function getSupplierRateHistory(modelId: string) {
+  const { organizationId } = await getOrgContext();
+
+  const rates = await prisma.supplierModelRate.findMany({
+    where: { organizationId, modelId },
+    include: {
+      supplier: { select: { id: true, name: true } },
+    },
+    orderBy: { lastUnitCost: "asc" },
+  });
+
+  return serialize(rates);
 }

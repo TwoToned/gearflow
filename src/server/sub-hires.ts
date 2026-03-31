@@ -6,7 +6,7 @@ import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { roundCurrency } from "@/lib/formatters";
 import { subHireSchema, subHireItemSchema } from "@/lib/validations/sub-hire";
-import type { SubHireStatus, Prisma } from "@/generated/prisma/client";
+import type { SubHireStatus, PricingType, Prisma } from "@/generated/prisma/client";
 
 // ─── Status Machine ──────────────────────────────────────────────────────────
 
@@ -326,4 +326,220 @@ export async function updateSubHireStatus(id: string, newStatus: SubHireStatus) 
       },
     }),
   );
+}
+
+// ─── Item CRUD ───────────────────────────────────────────────────────────────
+
+export async function addSubHireItem(subHireId: string, input: unknown) {
+  const { organizationId, userId, userName } = await requirePermission("subHire", "update");
+  const data = subHireItemSchema.parse(input);
+
+  const subHire = await prisma.subHire.findUnique({
+    where: { id: subHireId, organizationId },
+    select: { id: true, orderNumber: true, status: true, supplierId: true, projectId: true },
+  });
+  if (!subHire) throw new Error("Sub-hire not found");
+
+  // Get next sort order
+  const maxSort = await prisma.subHireItem.aggregate({
+    where: { subHireId },
+    _max: { sortOrder: true },
+  });
+  const nextSort = (maxSort._max.sortOrder ?? -1) + 1;
+
+  const item = await prisma.subHireItem.create({
+    data: {
+      subHireId,
+      modelId: data.modelId || null,
+      description: data.description,
+      quantity: data.quantity,
+      unitCost: data.unitCost,
+      unitCharge: data.unitCharge,
+      pricingType: data.pricingType as PricingType,
+      duration: data.duration,
+      discount: data.discount,
+      sortOrder: nextSort,
+    },
+    include: { model: { select: { id: true, name: true } } },
+  });
+
+  await recalculateSubHireTotals(subHireId);
+
+  // If confirmed/on-hire, sync line item to project
+  if (subHire.status === "CONFIRMED" || subHire.status === "ON_HIRE") {
+    await syncNewSubHireLineItem(subHire, item);
+  }
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "CREATE",
+    entityType: "subHire",
+    entityId: subHireId,
+    entityName: subHire.orderNumber,
+    summary: `Added item "${data.description}" to ${subHire.orderNumber}`,
+  });
+
+  return serialize(item);
+}
+
+export async function updateSubHireItem(itemId: string, input: unknown) {
+  const { organizationId, userId, userName } = await requirePermission("subHire", "update");
+  const data = subHireItemSchema.parse(input);
+
+  const existing = await prisma.subHireItem.findUnique({
+    where: { id: itemId },
+    include: {
+      subHire: {
+        select: { id: true, organizationId: true, orderNumber: true, status: true, supplierId: true, projectId: true },
+      },
+    },
+  });
+  if (!existing || existing.subHire.organizationId !== organizationId) {
+    throw new Error("Sub-hire item not found");
+  }
+
+  const item = await prisma.subHireItem.update({
+    where: { id: itemId },
+    data: {
+      modelId: data.modelId || null,
+      description: data.description,
+      quantity: data.quantity,
+      unitCost: data.unitCost,
+      unitCharge: data.unitCharge,
+      pricingType: data.pricingType as PricingType,
+      duration: data.duration,
+      discount: data.discount,
+    },
+    include: { model: { select: { id: true, name: true } } },
+  });
+
+  await recalculateSubHireTotals(existing.subHire.id);
+
+  // If confirmed/on-hire, sync the linked project line item
+  if (existing.subHire.status === "CONFIRMED" || existing.subHire.status === "ON_HIRE") {
+    await syncSubHireLineItem(itemId, existing.subHire.projectId);
+  }
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "subHire",
+    entityId: existing.subHire.id,
+    entityName: existing.subHire.orderNumber,
+    summary: `Updated item "${data.description}" on ${existing.subHire.orderNumber}`,
+  });
+
+  return serialize(item);
+}
+
+export async function removeSubHireItem(itemId: string) {
+  const { organizationId, userId, userName } = await requirePermission("subHire", "update");
+
+  const existing = await prisma.subHireItem.findUnique({
+    where: { id: itemId },
+    include: {
+      subHire: {
+        select: { id: true, organizationId: true, orderNumber: true, projectId: true },
+      },
+      lineItems: { select: { id: true, status: true } },
+    },
+  });
+  if (!existing || existing.subHire.organizationId !== organizationId) {
+    throw new Error("Sub-hire item not found");
+  }
+
+  // Reject if linked line items are checked out
+  const checkedOut = existing.lineItems.filter((li) => li.status === "CHECKED_OUT");
+  if (checkedOut.length > 0) {
+    throw new Error("Cannot remove item with checked-out line items");
+  }
+
+  // Delete linked project line items, then the item itself
+  await prisma.$transaction(async (tx) => {
+    if (existing.lineItems.length > 0) {
+      await tx.projectLineItem.deleteMany({
+        where: { subHireItemId: itemId },
+      });
+    }
+    await tx.subHireItem.delete({ where: { id: itemId } });
+  });
+
+  await recalculateSubHireTotals(existing.subHire.id);
+
+  if (existing.subHire.projectId) {
+    const { recalculateProjectTotals } = await import("@/server/line-items");
+    await recalculateProjectTotals(existing.subHire.projectId);
+  }
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "DELETE",
+    entityType: "subHire",
+    entityId: existing.subHire.id,
+    entityName: existing.subHire.orderNumber,
+    summary: `Removed item from ${existing.subHire.orderNumber}`,
+  });
+}
+
+export async function reorderSubHireItems(subHireId: string, itemIds: string[]) {
+  const { organizationId } = await requirePermission("subHire", "update");
+
+  const subHire = await prisma.subHire.findUnique({
+    where: { id: subHireId, organizationId },
+    select: { id: true },
+  });
+  if (!subHire) throw new Error("Sub-hire not found");
+
+  await prisma.$transaction(
+    itemIds.map((id, index) =>
+      prisma.subHireItem.update({
+        where: { id },
+        data: { sortOrder: index },
+      }),
+    ),
+  );
+}
+
+// ─── Totals ──────────────────────────────────────────────────────────────────
+
+async function recalculateSubHireTotals(subHireId: string) {
+  const items = await prisma.subHireItem.findMany({
+    where: { subHireId },
+    select: {
+      quantity: true,
+      unitCost: true,
+      unitCharge: true,
+      pricingType: true,
+      duration: true,
+      discount: true,
+    },
+  });
+
+  let totalCost = 0;
+  let totalCharge = 0;
+
+  for (const item of items) {
+    const qty = item.quantity;
+    const dur = item.duration;
+    const cost = Number(item.unitCost);
+    const charge = Number(item.unitCharge);
+    const disc = Number(item.discount);
+
+    totalCost += cost * qty * dur;
+    totalCharge += charge * qty * dur * (1 - disc / 100);
+  }
+
+  await prisma.subHire.update({
+    where: { id: subHireId },
+    data: {
+      totalCost: roundCurrency(totalCost),
+      totalCharge: roundCurrency(totalCharge),
+    },
+  });
 }

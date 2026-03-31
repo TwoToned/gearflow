@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Loader2, ArrowLeft, MoreVertical, AlertTriangle, FolderPlus, ChevronDown } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, ArrowLeft, MoreVertical, AlertTriangle, FolderPlus, ChevronDown, Eye, EyeOff, MapPin } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -22,7 +22,9 @@ import {
   deleteSubHireGroup,
   setItemGroup,
   updateSubHireOrderPricing,
+  updateSubHirePlacement,
 } from "@/server/sub-hires";
+import { getProjectCategories } from "@/server/project-categories";
 import { getSuppliers } from "@/server/suppliers";
 import { getModels } from "@/server/models";
 import { formatCurrency } from "@/lib/formatters";
@@ -121,6 +123,91 @@ function ConfirmDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── Placement Picker ───────────────────────────────────────────────────────
+
+function PlacementPicker({
+  projectId,
+  value,
+  onChange,
+  size = "sm",
+}: {
+  projectId: string;
+  value: { groupId?: string | null; categoryId?: string | null };
+  onChange: (placement: { targetGroupId: string | null; targetCategoryId: string | null }) => void;
+  size?: "sm" | "xs";
+}) {
+  const { data: activeOrg } = useActiveOrganization();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: categories } = useQuery<any[]>({
+    queryKey: ["project-categories", activeOrg?.id, projectId],
+    queryFn: () => getProjectCategories(projectId),
+    enabled: !!activeOrg?.id && !!projectId,
+  });
+
+  // Build a flat encoded value: "uncategorized", "cat:ID", or "grp:ID"
+  const encoded = value.groupId
+    ? `grp:${value.groupId}`
+    : value.categoryId
+      ? `cat:${value.categoryId}`
+      : "uncategorized";
+
+  const handleChange = (v: string | null) => {
+    if (!v || v === "uncategorized") {
+      onChange({ targetGroupId: null, targetCategoryId: null });
+    } else if (v.startsWith("cat:")) {
+      onChange({ targetGroupId: null, targetCategoryId: v.slice(4) });
+    } else if (v.startsWith("grp:")) {
+      onChange({ targetGroupId: v.slice(4), targetCategoryId: null });
+    }
+  };
+
+  // Resolve display label
+  let displayLabel = "Uncategorized";
+  if (categories && value.groupId) {
+    for (const cat of categories) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const grp = (cat.groups || []).find((g: any) => g.id === value.groupId);
+      if (grp) { displayLabel = `${cat.name} › ${grp.title}`; break; }
+    }
+  } else if (categories && value.categoryId) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cat = categories.find((c: any) => c.id === value.categoryId);
+    if (cat) displayLabel = cat.name;
+  }
+
+  const cls = size === "xs" ? "h-7 text-[11px]" : "h-8 text-xs";
+
+  return (
+    <Select value={encoded} onValueChange={handleChange}>
+      <SelectTrigger className={`${cls} w-full`}>
+        <div className="flex items-center gap-1 min-w-0">
+          <MapPin className="h-3 w-3 shrink-0 text-fg-4" />
+          <SelectValue>{displayLabel}</SelectValue>
+        </div>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="uncategorized">Uncategorized</SelectItem>
+        {(categories || []).map((cat: Record<string, unknown>) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const groups = (cat.groups || []) as Array<Record<string, any>>;
+          return (
+            <div key={cat.id as string}>
+              <SelectItem value={`cat:${cat.id}`}>
+                {cat.name as string}
+              </SelectItem>
+              {groups.map((grp) => (
+                <SelectItem key={grp.id} value={`grp:${grp.id}`}>
+                  <span className="pl-3 text-fg-2">{grp.title}</span>
+                </SelectItem>
+              ))}
+            </div>
+          );
+        })}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -541,6 +628,16 @@ function SubHireManageView({
     onError: (e) => toast.error(e.message),
   });
 
+  const placementMutation = useMutation({
+    mutationFn: (args: { entityType: "order" | "group" | "item"; entityId: string; targetGroupId: string | null; targetCategoryId: string | null }) =>
+      updateSubHirePlacement(args.entityType, args.entityId, {
+        targetGroupId: args.targetGroupId,
+        targetCategoryId: args.targetCategoryId,
+      }),
+    onSuccess: () => invalidate(),
+    onError: (e) => toast.error(e.message),
+  });
+
   const pricingMutation = useMutation({
     mutationFn: (data: { pricingMode: string; orderTotalCost?: number | null; orderTotalCharge?: number | null }) =>
       updateSubHireOrderPricing(subHireId, data),
@@ -618,6 +715,20 @@ function SubHireManageView({
   const allItems = (subHire.items || []) as Array<Record<string, any>>;
   const ungroupedItems = allItems.filter((item) => !item.groupId);
   const isOrderTotal = subHire.pricingMode === "ORDER_TOTAL";
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function handleToggleShowOnDocs(item: Record<string, any>) {
+    updateSubHireItem(item.id, {
+      description: item.description,
+      quantity: item.quantity,
+      unitCost: Number(item.unitCost),
+      unitCharge: Number(item.unitCharge),
+      pricingType: item.pricingType || "FLAT",
+      duration: item.duration,
+      discount: Number(item.discount),
+      showOnDocs: !item.showOnDocs,
+    }).then(() => invalidate()).catch((e) => toast.error(e.message));
+  }
 
   return (
     <>
@@ -740,6 +851,25 @@ function SubHireManageView({
           )}
         </div>
 
+        {/* Default placement */}
+        <div className="rounded-md bg-bg-inset p-3">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-fg-3 mb-2">Default placement on project</div>
+          <PlacementPicker
+            projectId={projectId}
+            value={{
+              groupId: subHire.defaultTargetGroupId || subHire.defaultTargetGroup?.id,
+              categoryId: subHire.defaultTargetCategoryId || subHire.defaultTargetCategory?.id,
+            }}
+            onChange={(p) => placementMutation.mutate({
+              entityType: "order",
+              entityId: subHireId,
+              targetGroupId: p.targetGroupId,
+              targetCategoryId: p.targetCategoryId,
+            })}
+          />
+          <p className="text-[11px] text-fg-4 mt-1.5">Items and groups can override this individually</p>
+        </div>
+
         {/* Items + Groups */}
         <div>
           <div className="flex items-center justify-between mb-2">
@@ -854,6 +984,12 @@ function SubHireManageView({
                       </button>
                       <FolderPlus className="h-3.5 w-3.5 text-primary/70" />
                       <span className="text-sm font-medium flex-1">{group.title}</span>
+                      {(group.targetGroup || group.targetCategory) && (
+                        <span className="text-[10px] text-fg-4 flex items-center gap-0.5" title="Placement override">
+                          <MapPin className="h-2.5 w-2.5" />
+                          {group.targetGroup?.title || group.targetCategory?.name}
+                        </span>
+                      )}
                       <span className="text-xs text-fg-4">{groupItems.length} item{groupItems.length !== 1 ? "s" : ""}</span>
                       <CanDo resource="subHire" action="update">
                         <DropdownMenu>
@@ -931,11 +1067,34 @@ function SubHireManageView({
                                     });
                                   }}
                                   onMoveToGroup={(gId) => moveItemMutation.mutate({ itemId: item.id as string, groupId: gId })}
+                                  onToggleShowOnDocs={() => handleToggleShowOnDocs(item)}
                                 />
                               ))}
                             </TableBody>
                           </Table>
                         )}
+                        {/* Group placement */}
+                        <div className="px-3 py-2 border-t border-border/50">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-fg-4 font-medium shrink-0">Placement:</span>
+                            <div className="flex-1 max-w-[200px]">
+                              <PlacementPicker
+                                projectId={projectId}
+                                value={{
+                                  groupId: group.targetGroup?.id || group.targetGroupId,
+                                  categoryId: group.targetCategory?.id || group.targetCategoryId,
+                                }}
+                                onChange={(p) => placementMutation.mutate({
+                                  entityType: "group",
+                                  entityId: group.id,
+                                  targetGroupId: p.targetGroupId,
+                                  targetCategoryId: p.targetCategoryId,
+                                })}
+                                size="xs"
+                              />
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -969,6 +1128,7 @@ function SubHireManageView({
                             });
                           }}
                           onMoveToGroup={(gId) => moveItemMutation.mutate({ itemId: item.id as string, groupId: gId })}
+                          onToggleShowOnDocs={() => handleToggleShowOnDocs(item)}
                         />
                       ))}
                     </TableBody>
@@ -1099,6 +1259,7 @@ function SubHireItemRow({
   onEdit,
   onRemove,
   onMoveToGroup,
+  onToggleShowOnDocs,
 }: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   item: Record<string, any>;
@@ -1108,6 +1269,7 @@ function SubHireItemRow({
   onEdit: () => void;
   onRemove: () => void;
   onMoveToGroup: (groupId: string | null) => void;
+  onToggleShowOnDocs: () => void;
 }) {
   const cost = Number(item.unitCost) * Number(item.quantity) * Number(item.duration);
   const charge = Number(item.unitCharge) * Number(item.quantity) * Number(item.duration) * (1 - Number(item.discount) / 100);
@@ -1116,7 +1278,14 @@ function SubHireItemRow({
   return (
     <TableRow className="group">
       <TableCell className="py-2">
-        <div className="text-sm">{item.description}</div>
+        <div className="flex items-center gap-1.5">
+          <div className="text-sm">{item.description}</div>
+          {item.showOnDocs && (
+            <span title="Shown as sub-hired on client docs">
+              <Eye className="h-3 w-3 text-primary/60" />
+            </span>
+          )}
+        </div>
         {item.model && (
           <div className="text-xs text-fg-4">{String((item.model as Record<string, unknown>)?.name ?? "")}</div>
         )}
@@ -1149,6 +1318,13 @@ function SubHireItemRow({
                 <DropdownMenuItem onClick={onEdit}>
                   <Pencil className="mr-2 h-4 w-4" />
                   Edit
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onToggleShowOnDocs}>
+                  {item.showOnDocs ? (
+                    <><EyeOff className="mr-2 h-4 w-4" />Hide on client docs</>
+                  ) : (
+                    <><Eye className="mr-2 h-4 w-4" />Show on client docs</>
+                  )}
                 </DropdownMenuItem>
                 {/* Move to group options */}
                 {groups.length > 0 && (
@@ -1210,6 +1386,7 @@ function SubHireItemForm({
   const [pricingType, setPricingType] = useState("FLAT");
   const [duration, setDuration] = useState(1);
   const [discount, setDiscount] = useState(0);
+  const [showOnDocs, setShowOnDocs] = useState(false);
 
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
@@ -1264,6 +1441,7 @@ function SubHireItemForm({
       setPricingType(editingItem.pricingType || "FLAT");
       setDuration(editingItem.duration || 1);
       setDiscount(Number(editingItem.discount) || 0);
+      setShowOnDocs(editingItem.showOnDocs ?? false);
     } else if (open) {
       setModelId("");
       setDescription("");
@@ -1273,6 +1451,7 @@ function SubHireItemForm({
       setPricingType("FLAT");
       setDuration(1);
       setDiscount(0);
+      setShowOnDocs(false);
       lastRateRef[1](null);
     }
   }, [open, editingItem]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1280,8 +1459,8 @@ function SubHireItemForm({
   const addMutation = useMutation({
     mutationFn: () =>
       editingItem
-        ? updateSubHireItem(editingItem.id, { modelId: modelId || undefined, description, quantity, unitCost, unitCharge, pricingType, duration, discount, groupId: editingItem.groupId || groupId || undefined })
-        : addSubHireItem(subHireId, { modelId: modelId || undefined, description, quantity, unitCost, unitCharge, pricingType, duration, discount, groupId: groupId || undefined }),
+        ? updateSubHireItem(editingItem.id, { modelId: modelId || undefined, description, quantity, unitCost, unitCharge, pricingType, duration, discount, showOnDocs, groupId: editingItem.groupId || groupId || undefined })
+        : addSubHireItem(subHireId, { modelId: modelId || undefined, description, quantity, unitCost, unitCharge, pricingType, duration, discount, showOnDocs, groupId: groupId || undefined }),
     onSuccess: () => {
       toast.success(editingItem ? "Item updated" : "Item added");
       onSuccess();
@@ -1393,6 +1572,14 @@ function SubHireItemForm({
               <Label>Discount (%)</Label>
               <Input type="number" min={0} max={100} step={0.01} value={discount} onChange={(e) => setDiscount(Number(e.target.value))} />
             </div>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium">Show on client documents</div>
+              <div className="text-xs text-fg-3">Mark this item as sub-hired on quotes, invoices, etc.</div>
+            </div>
+            <Switch checked={showOnDocs} onCheckedChange={setShowOnDocs} />
           </div>
         </div>
         <DialogFooter>

@@ -76,8 +76,14 @@ import {
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { formatCurrency } from "@/lib/formatters";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { CanDo } from "@/components/auth/permission-gate";
 import { AddEquipmentDialog } from "./add-equipment-dialog";
 import { AddSubhireDialog } from "./add-subhire-dialog";
+import { SubHireOrderDialog } from "./sub-hire-order-dialog";
+import { getSubHires } from "@/server/sub-hires";
+import { subHireStatusLabels, formatLabel } from "@/lib/status-labels";
+import { StatusIndicator } from "@/components/ui/status-indicator";
+import { ArrowLeftRight, ChevronDown } from "lucide-react";
 
 interface EquipmentTabProps {
   projectId: string;
@@ -556,6 +562,11 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
   const [kitPricingMode, setKitPricingMode] = useState<"KIT_PRICE" | "ITEMIZED">("KIT_PRICE");
   const [kitUnitPrice, setKitUnitPrice] = useState("");
 
+  // Sub-hire order dialog state
+  const [showSubHireOrderDialog, setShowSubHireOrderDialog] = useState(false);
+  const [managingSubHireId, setManagingSubHireId] = useState<string | null>(null);
+  const [expandedSubHires, setExpandedSubHires] = useState<Set<string>>(new Set());
+
   // Subhire dialog state
   const [showSubhireDialog, setShowSubhireDialog] = useState(false);
   const [subhireTarget, setSubhireTarget] = useState<{
@@ -666,6 +677,12 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
     queryKey: ["project-overbooked", projectId],
     queryFn: () => getProjectOverbookedStatus(projectId),
     staleTime: 30_000,
+  });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: projectSubHires = [] } = useQuery<any[]>({
+    queryKey: ["project-sub-hires", orgId, projectId],
+    queryFn: () => getSubHires({ projectId }),
   });
 
   const templateOptions = (templates as { id: string; name: string; description: string | null; items: unknown[] }[]).map(
@@ -1049,10 +1066,13 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
         <Button
           size="sm"
           className="gap-1.5"
-          render={<a href={`/sub-hires/new?projectId=${projectId}`} />}
+          onClick={() => {
+            setManagingSubHireId(null);
+            setShowSubHireOrderDialog(true);
+          }}
         >
-          <ArrowUpRight className="h-3.5 w-3.5" />
-          Add Sub-Hire Order
+          <ArrowLeftRight className="h-3.5 w-3.5" />
+          Sub-Hire Orders
         </Button>
         <Button
           variant="outline"
@@ -1245,6 +1265,102 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
             </SortableContext>
           </DndContext>
           </Table>
+        </div>
+      )}
+
+      {/* ─── Sub-Hire Orders ──────────────────────────────────────────────── */}
+      {projectSubHires.length > 0 && (
+        <div className="mt-6 rounded-lg border border-border/50 bg-card">
+          <div className="flex items-center justify-between border-b border-border/50 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <ArrowLeftRight className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-medium text-fg-2">Sub-Hire Orders</h3>
+              <span className="text-xs text-fg-4">({projectSubHires.length})</span>
+            </div>
+            <CanDo resource="subHire" action="create">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setManagingSubHireId(null);
+                  setShowSubHireOrderDialog(true);
+                }}
+              >
+                <Plus className="mr-1 h-3 w-3" />
+                New
+              </Button>
+            </CanDo>
+          </div>
+          <div className="divide-y divide-border/30">
+            {projectSubHires.map((sh: Record<string, unknown>) => {
+              const shId = sh.id as string;
+              const isExpanded = expandedSubHires.has(shId);
+              const margin = Number(sh.totalCharge) - Number(sh.totalCost);
+              const isOverdue = sh.status === "ON_HIRE" && sh.hireEnd && new Date(sh.hireEnd as string) < new Date();
+              const itemCount = (sh._count as Record<string, number>)?.items || 0;
+              return (
+                <div key={shId}>
+                  <div className="flex items-center gap-3 px-4 py-2.5 hover:bg-bg-elevated/50 transition-colors">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExpandedSubHires((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(shId)) next.delete(shId);
+                          else next.add(shId);
+                          return next;
+                        })
+                      }
+                      className="text-fg-3 hover:text-fg transition-colors"
+                    >
+                      <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? "" : "-rotate-90"}`} />
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm font-medium">{sh.orderNumber as string}</span>
+                        <span className="text-sm text-fg-3">{(sh.supplier as Record<string, unknown>)?.name as string}</span>
+                        {isOverdue ? (
+                          <StatusIndicator category="subHire" intent="error" label="Overdue" value="OVERDUE" />
+                        ) : (
+                          <StatusIndicator
+                            category="subHire"
+                            value={sh.status as string}
+                            label={subHireStatusLabels[sh.status as string] || formatLabel(sh.status as string)}
+                          />
+                        )}
+                        <span className="text-xs text-fg-4">{itemCount} item{itemCount !== 1 ? "s" : ""}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <div className="text-right">
+                        <div className="text-sm tabular-nums">{formatCurrency(Number(sh.totalCharge))}</div>
+                        <div className={`text-xs tabular-nums ${margin > 0 ? "text-success" : margin < 0 ? "text-error" : "text-fg-4"}`}>
+                          {margin > 0 ? "+" : ""}{formatCurrency(margin)}
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setManagingSubHireId(shId);
+                          setShowSubHireOrderDialog(true);
+                        }}
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                  {/* Expanded items */}
+                  {isExpanded && (
+                    <SubHireExpandedItems
+                      subHireId={shId}
+                      orgId={orgId}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -1733,6 +1849,17 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
         targetLabel={subhireTarget.label}
       />
 
+      {/* Sub-hire order dialog */}
+      <SubHireOrderDialog
+        projectId={projectId}
+        open={showSubHireOrderDialog}
+        onOpenChange={(open) => {
+          setShowSubHireOrderDialog(open);
+          if (!open) setManagingSubHireId(null);
+        }}
+        subHireId={managingSubHireId}
+      />
+
       {/* Add kit dialog */}
       <Dialog
         open={showKitDialog}
@@ -1971,6 +2098,58 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ─── Sub-Hire Expanded Items ──────────────────────────────────────────────────
+
+function SubHireExpandedItems({ subHireId, orgId }: { subHireId: string; orgId?: string }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: subHire } = useQuery<any>({
+    queryKey: ["sub-hire", orgId, subHireId],
+    queryFn: async () => {
+      const { getSubHire } = await import("@/server/sub-hires");
+      return getSubHire(subHireId);
+    },
+    enabled: !!orgId,
+  });
+
+  const items = (subHire?.items || []) as Array<Record<string, unknown>>;
+
+  if (items.length === 0) {
+    return (
+      <div className="px-4 pb-3 pl-12 text-xs text-fg-4">
+        No items in this order yet.
+      </div>
+    );
+  }
+
+  return (
+    <div className="pb-2">
+      <table className="w-full">
+        <tbody>
+          {items.map((item) => {
+            const itemMargin = Number(item.unitCharge) - Number(item.unitCost);
+            return (
+              <tr key={item.id as string} className="text-sm">
+                <td className="pl-12 py-1 text-fg-2">
+                  {item.description as string}
+                  {(item.model as Record<string, string>)?.name && (
+                    <span className="ml-1.5 text-xs text-fg-4">({(item.model as Record<string, string>).name})</span>
+                  )}
+                </td>
+                <td className="px-3 py-1 text-right tabular-nums text-fg-3 w-12">&times;{item.quantity as number}</td>
+                <td className="px-3 py-1 text-right tabular-nums text-fg-3 w-24">{formatCurrency(Number(item.unitCost))} cost</td>
+                <td className="px-3 py-1 text-right tabular-nums w-24">{formatCurrency(Number(item.unitCharge))}</td>
+                <td className={`px-3 py-1 text-right tabular-nums w-20 ${itemMargin > 0 ? "text-success" : itemMargin < 0 ? "text-error" : "text-fg-4"}`}>
+                  {formatCurrency(itemMargin)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

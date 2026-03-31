@@ -239,9 +239,9 @@ function SubHireListView({
                       )}
                     </div>
                     <p className="text-sm text-fg-3 truncate mt-0.5">
-                      {(sh.supplier as Record<string, unknown>)?.name as string}
-                      {sh.hireStart && <> &middot; {formatDate(sh.hireStart as string)}</>}
-                      {sh.hireEnd && <> &ndash; {formatDate(sh.hireEnd as string)}</>}
+                      {String((sh.supplier as Record<string, string>)?.name || "")}
+                      {sh.hireStart ? ` · ${formatDate(sh.hireStart as string)}` : ""}
+                      {sh.hireEnd ? ` – ${formatDate(sh.hireEnd as string)}` : ""}
                     </p>
                   </div>
                   <div className="text-right shrink-0">
@@ -565,8 +565,8 @@ function SubHireManageView({
                       <TableRow key={item.id as string}>
                         <TableCell>
                           <div className="text-sm font-medium">{item.description as string}</div>
-                          {(item.model as Record<string, unknown>)?.name && (
-                            <div className="text-xs text-fg-4">{(item.model as Record<string, unknown>).name as string}</div>
+                          {(item.model as Record<string, string>)?.name && (
+                            <div className="text-xs text-fg-4">{(item.model as Record<string, string>).name}</div>
                           )}
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-sm">{item.quantity as number}</TableCell>

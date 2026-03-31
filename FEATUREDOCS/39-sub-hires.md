@@ -20,7 +20,7 @@ DRAFT → CONFIRMED → ON_HIRE → RETURNED
 CANCELLED CANCELLED  CANCELLED
 ```
 
-- **DRAFT → CONFIRMED**: requires `projectId` (server-validated). Atomic transaction: status change + `generateSubHireLineItems` in single `$transaction`
+- **DRAFT → CONFIRMED**: requires `projectId` (server-validated). Line items already exist (generated on add). Confirmation regenerates for consistency and recalculates project totals.
 - **CONFIRMED → ON_HIRE**: manual, marks gear dispatched from supplier
 - **ON_HIRE → RETURNED**: manual, whole-unit return (no partial returns in v1)
 - **Any active → CANCELLED**: allowed from DRAFT/CONFIRMED/ON_HIRE
@@ -42,7 +42,7 @@ Each sub-hire item has its own `showOnDocs` boolean controlling whether it appea
 
 ## Placement System
 
-Sub-hire items and groups can be placed into specific project categories and groups when confirmed. This controls where the generated `ProjectLineItem` records land on the equipment tab.
+Sub-hire items and groups can be placed into specific project categories and groups. Line items are generated immediately (even for DRAFT sub-hires), so items appear on the equipment tab right away with an "Unconfirmed" badge. This controls where the `ProjectLineItem` records land on the equipment tab.
 
 ### Placement targets
 
@@ -71,9 +71,18 @@ When `targetGroupId` is set, `categoryId` is resolved from the `ProjectGroup.cat
 
 - **Order-level default**: PlacementPicker below pricing mode in manage view
 - **Per-group override**: PlacementPicker in expanded group section footer
-- **Per-ungrouped-item**: available via `updateSubHirePlacement` server action
+- **Per-ungrouped-item**: inline PlacementPicker on each ungrouped item row in manage view
 
-After placement changes on confirmed orders, line items are moved or regenerated and `suggestedPrice` is recalculated on affected project groups.
+All mutations (add, update, remove, regroup, placement change) trigger `syncSubHireToProject` which regenerates all line items from scratch. This ensures consistency regardless of sub-hire status.
+
+## Line Item Lifecycle
+
+Sub-hire items become real `ProjectLineItem` records immediately when added — not on confirm. This means:
+
+1. **DRAFT items visible**: Items appear on the equipment tab with an amber "Unconfirmed" badge (tooltip: "This sub-hire order hasn't been confirmed yet")
+2. **Real line items**: They're full ProjectLineItems, sortable, editable in placement, included in group suggested prices
+3. **Confirm = status change**: Confirming a sub-hire changes status and regenerates for consistency, but items were already visible
+4. **Badge logic**: Equipment tab builds a `draftSubHireIds` set from sub-hires with status DRAFT, then checks `item.subHireId` against it
 
 ## Margin Tracking (Two-Ledger Model)
 

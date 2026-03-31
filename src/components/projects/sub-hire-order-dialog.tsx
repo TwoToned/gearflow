@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Loader2, ArrowLeft, MoreVertical } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, ArrowLeft, MoreVertical, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -62,8 +62,62 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useActiveOrganization } from "@/lib/auth-client";
 import type { SubHireStatus } from "@/generated/prisma/client";
+
+// ─── Confirm Dialog ─────────────────────────────────────────────────────────
+
+interface ConfirmAction {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  variant: "default" | "destructive";
+  onConfirm: () => void;
+}
+
+function ConfirmDialog({
+  action,
+  onClose,
+}: {
+  action: ConfirmAction | null;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog open={!!action} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <div className="flex items-center gap-2">
+            {action?.variant === "destructive" && (
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-destructive/10">
+                <AlertTriangle className="h-4 w-4 text-destructive" />
+              </div>
+            )}
+            <div>
+              <DialogTitle>{action?.title}</DialogTitle>
+              <DialogDescription>{action?.description}</DialogDescription>
+            </div>
+          </div>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            variant={action?.variant === "destructive" ? "destructive" : "default"}
+            onClick={() => {
+              action?.onConfirm();
+              onClose();
+            }}
+          >
+            {action?.confirmLabel}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 // ─── Status transitions ──────────────────────────────────────────────────────
 
@@ -408,6 +462,7 @@ function SubHireManageView({
   const [showItemForm, setShowItemForm] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [editingItem, setEditingItem] = useState<any>(null);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: subHire, isLoading } = useQuery<any>({
@@ -458,9 +513,41 @@ function SubHireManageView({
   if (isLoading) {
     return (
       <>
-        <DialogHeader><DialogTitle>Loading...</DialogTitle></DialogHeader>
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-5 w-5 animate-spin text-fg-3" />
+        <DialogHeader>
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-7 w-7 rounded" />
+            <div className="space-y-1.5 flex-1">
+              <Skeleton className="h-5 w-48 rounded" />
+              <Skeleton className="h-3.5 w-32 rounded" />
+            </div>
+          </div>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          {/* Summary strip skeleton */}
+          <div className="grid grid-cols-3 gap-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="rounded-md bg-bg-inset p-3 text-center space-y-1.5">
+                <Skeleton className="h-3 w-10 mx-auto rounded" />
+                <Skeleton className="h-4 w-16 mx-auto rounded" />
+              </div>
+            ))}
+          </div>
+          {/* Items heading skeleton */}
+          <div className="flex items-center justify-between">
+            <Skeleton className="h-4 w-12 rounded" />
+            <Skeleton className="h-8 w-20 rounded-md" />
+          </div>
+          {/* Items table skeleton */}
+          <div className="rounded-md border p-3 space-y-2.5">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="flex items-center gap-3">
+                <Skeleton className="h-3.5 flex-1 rounded" />
+                <Skeleton className="h-3.5 w-8 rounded" />
+                <Skeleton className="h-3.5 w-16 rounded" />
+                <Skeleton className="h-3.5 w-16 rounded" />
+              </div>
+            ))}
+          </div>
         </div>
       </>
     );
@@ -602,7 +689,13 @@ function SubHireManageView({
                                   <DropdownMenuItem
                                     className="text-destructive"
                                     onClick={() => {
-                                      if (confirm("Remove this item?")) removeItemMutation.mutate(item.id as string);
+                                      setConfirmAction({
+                                        title: "Remove item",
+                                        description: `Remove "${item.description}" from this sub-hire?`,
+                                        confirmLabel: "Remove",
+                                        variant: "destructive",
+                                        onConfirm: () => removeItemMutation.mutate(item.id as string),
+                                      });
                                     }}
                                   >
                                     <Trash2 className="mr-2 h-4 w-4" />
@@ -670,7 +763,13 @@ function SubHireManageView({
                 size="sm"
                 variant="ghost"
                 onClick={() => {
-                  if (confirm("Cancel this sub-hire?")) statusMutation.mutate("CANCELLED");
+                  setConfirmAction({
+                    title: "Cancel order",
+                    description: "Cancel this sub-hire order? This will update the status to cancelled.",
+                    confirmLabel: "Cancel Order",
+                    variant: "destructive",
+                    onConfirm: () => statusMutation.mutate("CANCELLED"),
+                  });
                 }}
                 disabled={statusMutation.isPending}
               >
@@ -684,9 +783,13 @@ function SubHireManageView({
               variant="ghost"
               className="text-destructive hover:text-destructive"
               onClick={() => {
-                if (confirm("Delete this sub-hire? This cannot be undone.")) {
-                  deleteMutation.mutate();
-                }
+                setConfirmAction({
+                  title: "Delete sub-hire",
+                  description: "Permanently delete this sub-hire order and all its items? This cannot be undone.",
+                  confirmLabel: "Delete",
+                  variant: "destructive",
+                  onConfirm: () => deleteMutation.mutate(),
+                });
               }}
               disabled={deleteMutation.isPending}
             >
@@ -710,6 +813,12 @@ function SubHireManageView({
           setShowItemForm(false);
           setEditingItem(null);
         }}
+      />
+
+      {/* Confirmation dialog */}
+      <ConfirmDialog
+        action={confirmAction}
+        onClose={() => setConfirmAction(null)}
       />
     </>
   );

@@ -166,7 +166,6 @@ interface ServiceRow {
   duration: number | null;
   lineTotal: number | null;
   costTotal: number | null;
-  billableToClient: boolean;
   discount: number | null;
   vehicleDescription: string | null;
   crewCountRequired: number | null;
@@ -1073,7 +1072,6 @@ function ServiceDialog({
         latitude: editingService.latitude as number | null,
         longitude: editingService.longitude as number | null,
         showOnDocuments: (editingService.showOnDocuments as boolean) || false,
-        billableToClient: (editingService.billableToClient as boolean) || false,
         unitPrice: (editingService.unitPrice as number) || undefined,
         quantity: (editingService.quantity as number) || 1,
         pricingType: (editingService.pricingType as "PER_DAY" | "PER_HOUR" | "FLAT" | "") || "",

@@ -230,23 +230,6 @@ describe("projectServiceSchema", () => {
     }
   });
 
-  // billableToClient
-  it("defaults billableToClient to false", () => {
-    const result = projectServiceSchema.safeParse(minimal);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.billableToClient).toBe(false);
-    }
-  });
-
-  it("accepts billableToClient as true", () => {
-    const result = projectServiceSchema.safeParse({ ...minimal, billableToClient: true });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.billableToClient).toBe(true);
-    }
-  });
-
   // costTotal
   it("accepts costTotal as positive number", () => {
     const result = projectServiceSchema.safeParse({ ...minimal, costTotal: 500 });

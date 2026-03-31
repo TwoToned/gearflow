@@ -353,6 +353,12 @@ export async function updateSubHireStatus(id: string, newStatus: SubHireStatus) 
       where: { id, organizationId },
       data: { status: newStatus },
     });
+
+    // Recalculate project totals — status changes affect which sub-hires count as costs
+    if (subHire.projectId) {
+      const { recalculateProjectTotals } = await import("@/server/line-items");
+      await recalculateProjectTotals(subHire.projectId);
+    }
   }
 
   await logActivity({
@@ -1259,7 +1265,7 @@ export async function updateSubHireOrderPricing(subHireId: string, input: unknow
 
   const subHire = await prisma.subHire.findUnique({
     where: { id: subHireId, organizationId },
-    select: { id: true, orderNumber: true },
+    select: { id: true, orderNumber: true, projectId: true },
   });
   if (!subHire) throw new Error("Sub-hire not found");
 
@@ -1273,6 +1279,12 @@ export async function updateSubHireOrderPricing(subHireId: string, input: unknow
   });
 
   await recalculateSubHireTotals(subHireId);
+
+  // Recalculate project totals so sub-hire costs flow into margin
+  if (subHire.projectId) {
+    const { recalculateProjectTotals } = await import("@/server/line-items");
+    await recalculateProjectTotals(subHire.projectId);
+  }
 
   await logActivity({
     organizationId,

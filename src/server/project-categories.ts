@@ -5,21 +5,35 @@ import { requirePermission } from "@/lib/org-context";
 import { projectCategorySchema, type ProjectCategoryFormValues } from "@/lib/validations/project-category";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import { computeOverbookedStatus } from "@/lib/availability";
 
 export async function getProjectCategories(projectId: string) {
   const { organizationId } = await requirePermission("project", "read");
+  const lineItemInclude = {
+    model: true,
+    asset: true,
+    bulkAsset: true,
+    kit: true,
+    supplier: { select: { name: true } },
+    childLineItems: {
+      include: {
+        model: true,
+        asset: true,
+        bulkAsset: true,
+        kit: true,
+        supplier: { select: { name: true } },
+      },
+      orderBy: { sortOrder: "asc" as const },
+    },
+  };
+
   const categories = await prisma.projectCategory.findMany({
     where: { projectId, organizationId },
     include: {
       groups: {
         include: {
           lineItems: {
-            include: {
-              model: true,
-              asset: true,
-              bulkAsset: true,
-              kit: true,
-            },
+            include: lineItemInclude,
             orderBy: { sortOrder: "asc" },
           },
         },
@@ -27,12 +41,7 @@ export async function getProjectCategories(projectId: string) {
       },
       lineItems: {
         where: { groupId: null },
-        include: {
-          model: true,
-          asset: true,
-          bulkAsset: true,
-          kit: true,
-        },
+        include: lineItemInclude,
         orderBy: { sortOrder: "asc" },
       },
     },
@@ -170,6 +179,17 @@ export async function getUncategorizedLineItems(projectId: string) {
       asset: true,
       bulkAsset: true,
       kit: true,
+      supplier: { select: { name: true } },
+      childLineItems: {
+        include: {
+          model: true,
+          asset: true,
+          bulkAsset: true,
+          kit: true,
+          supplier: { select: { name: true } },
+        },
+        orderBy: { sortOrder: "asc" },
+      },
     },
     orderBy: { sortOrder: "asc" },
   });
@@ -192,4 +212,62 @@ export async function reorderProjectCategories(
   );
 
   return serialize({ success: true });
+}
+
+/**
+ * Returns a map of lineItemId → overbookedInfo for all line items in a project.
+ * Used by the equipment tab to show overbooked/reduced stock badges.
+ */
+export async function getProjectOverbookedStatus(projectId: string) {
+  const { organizationId } = await requirePermission("project", "read");
+
+  const project = await prisma.project.findUnique({
+    where: { id: projectId, organizationId },
+    select: {
+      id: true,
+      rentalStartDate: true,
+      rentalEndDate: true,
+      lineItems: {
+        where: { status: { not: "CANCELLED" } },
+        select: {
+          id: true,
+          modelId: true,
+          kitId: true,
+          quantity: true,
+          isKitChild: true,
+          parentLineItemId: true,
+          status: true,
+        },
+      },
+    },
+  });
+
+  if (!project) return serialize({});
+
+  const overbookedMap = await computeOverbookedStatus(
+    organizationId,
+    project.lineItems,
+    project.rentalStartDate,
+    project.rentalEndDate,
+    project.id,
+  );
+
+  // Convert Map to plain object for serialization
+  const result: Record<string, {
+    overBy: number;
+    totalStock: number;
+    effectiveStock?: number;
+    totalBooked: number;
+    inherited?: boolean;
+    unavailableAssets?: number;
+    reducedOnly?: boolean;
+    hasOverbookedChildren?: boolean;
+    hasReducedChildren?: boolean;
+  }> = {};
+
+  for (const [id, info] of overbookedMap) {
+    result[id] = info;
+  }
+
+  return serialize(result);
 }

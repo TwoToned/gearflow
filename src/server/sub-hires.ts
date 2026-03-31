@@ -706,10 +706,10 @@ async function generateSubHireLineItemsTx(
     // Determine showSubhireOnDocs from first item (parent inherits)
     const anyShowOnDocs = group.items.some((i) => i.showOnDocs);
 
-    // Group pricing: if price is set, parent uses KIT_PRICE mode (like project groups)
-    const hasGroupPrice = group.price != null;
-    const groupPrice = hasGroupPrice ? Number(group.price) : 0;
-    const groupLineTotal = hasGroupPrice ? roundCurrency(groupPrice * group.quantity) : 0;
+    // Group pricing: if charge is set, parent uses KIT_PRICE mode (like project groups)
+    const hasGroupCharge = group.charge != null;
+    const groupCharge = hasGroupCharge ? Number(group.charge) : 0;
+    const groupLineTotal = hasGroupCharge ? roundCurrency(groupCharge * group.quantity) : 0;
 
     // Create parent line item for the group
     const parent = await tx.projectLineItem.create({
@@ -719,9 +719,9 @@ async function generateSubHireLineItemsTx(
         type: "EQUIPMENT",
         description: group.title,
         quantity: group.quantity,
-        unitPrice: hasGroupPrice ? groupPrice : 0,
+        unitPrice: hasGroupCharge ? groupCharge : 0,
         lineTotal: groupLineTotal,
-        pricingMode: hasGroupPrice ? "KIT_PRICE" : "ITEMIZED",
+        pricingMode: hasGroupCharge ? "KIT_PRICE" : "ITEMIZED",
         isSubhire: true,
         subHireId: subHire.id,
         subHireGroupId: group.id,
@@ -1050,7 +1050,8 @@ export async function createSubHireGroup(subHireId: string, input: unknown) {
       subHireId,
       title: data.title,
       quantity: data.quantity ?? 1,
-      price: data.price != null ? data.price : null,
+      cost: data.cost != null ? data.cost : null,
+      charge: data.charge != null ? data.charge : null,
       sortOrder: data.sortOrder ?? ((maxSort._max.sortOrder ?? -1) + 1),
       targetCategoryId: data.targetCategoryId || null,
       targetGroupId: data.targetGroupId || null,
@@ -1099,7 +1100,8 @@ export async function updateSubHireGroup(groupId: string, input: unknown) {
     data: {
       title: data.title,
       quantity: data.quantity ?? undefined,
-      price: data.price !== undefined ? (data.price != null ? data.price : null) : undefined,
+      cost: data.cost !== undefined ? (data.cost != null ? data.cost : null) : undefined,
+      charge: data.charge !== undefined ? (data.charge != null ? data.charge : null) : undefined,
       sortOrder: data.sortOrder,
       targetCategoryId: data.targetCategoryId !== undefined ? (data.targetCategoryId || null) : undefined,
       targetGroupId: data.targetGroupId !== undefined ? (data.targetGroupId || null) : undefined,
@@ -1431,7 +1433,8 @@ export async function duplicateSubHire(sourceId: string) {
           subHireId: newSubHire.id,
           title: group.title,
           quantity: group.quantity,
-          price: group.price,
+          cost: group.cost,
+          charge: group.charge,
           sortOrder: group.sortOrder,
           // Placement targets are NOT copied (new DRAFT starts uncategorized)
         },

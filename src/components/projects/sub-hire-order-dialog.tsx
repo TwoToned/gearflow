@@ -981,13 +981,20 @@ function SubHireManageView({
               {groups.map((group) => {
                 const groupItems = (group.items || []) as Array<Record<string, unknown>>;
                 const isGroupExpanded = expandedGroups.has(group.id);
-                const groupPrice = group.price != null ? Number(group.price) : null;
+                const groupCost = group.cost != null ? Number(group.cost) : null;
+                const groupCharge = group.charge != null ? Number(group.charge) : null;
                 const groupQty = Number(group.quantity) || 1;
-                // Calculate suggested price from item charges
-                const suggestedPrice = groupItems.reduce((sum, item) => {
+                // Calculate suggested cost/charge from items
+                const suggestedCost = groupItems.reduce((sum, item) => {
+                  return sum + Number(item.unitCost) * Number(item.quantity) * Number(item.duration);
+                }, 0);
+                const suggestedCharge = groupItems.reduce((sum, item) => {
                   const charge = Number(item.unitCharge) * Number(item.quantity) * Number(item.duration) * (1 - Number(item.discount) / 100);
                   return sum + charge;
                 }, 0);
+                const effectiveCost = (groupCost ?? suggestedCost) * groupQty;
+                const effectiveCharge = (groupCharge ?? suggestedCharge) * groupQty;
+                const groupMargin = effectiveCharge - effectiveCost;
                 return (
                   <div key={group.id} className="rounded-md border">
                     {/* Group header */}
@@ -1022,15 +1029,21 @@ function SubHireManageView({
                         </span>
                       )}
                       {/* Pricing display */}
-                      {groupPrice != null ? (
-                        <span className="text-sm tabular-nums font-medium text-fg-2" title={`Group price: ${formatCurrency(groupPrice)} × ${groupQty}`}>
-                          {formatCurrency(groupPrice * groupQty)}
+                      <div className="flex items-center gap-2 shrink-0">
+                        {!isOrderTotal && (
+                          <span className="text-xs tabular-nums text-fg-4" title={groupCost != null ? "Group cost (flat)" : "Cost (from items)"}>
+                            {groupCost != null ? formatCurrency(effectiveCost) : suggestedCost > 0 ? `~${formatCurrency(suggestedCost * groupQty)}` : null}
+                          </span>
+                        )}
+                        <span className={`text-sm tabular-nums font-medium ${groupCharge != null ? "text-fg-2" : "text-fg-4"}`} title={groupCharge != null ? "Group charge (flat)" : "Charge (from items)"}>
+                          {groupCharge != null ? formatCurrency(effectiveCharge) : suggestedCharge > 0 ? `~${formatCurrency(suggestedCharge * groupQty)}` : null}
                         </span>
-                      ) : suggestedPrice > 0 ? (
-                        <span className="text-sm tabular-nums text-fg-4" title="Suggested (from items)">
-                          ~{formatCurrency(suggestedPrice * groupQty)}
-                        </span>
-                      ) : null}
+                        {!isOrderTotal && (effectiveCost > 0 || effectiveCharge > 0) && (
+                          <span className={`text-xs tabular-nums ${groupMargin > 0 ? "text-success" : groupMargin < 0 ? "text-error" : "text-fg-4"}`}>
+                            {groupMargin > 0 ? "+" : ""}{formatCurrency(groupMargin)}
+                          </span>
+                        )}
+                      </div>
                       <span className="text-xs text-fg-4">{groupItems.length} item{groupItems.length !== 1 ? "s" : ""}</span>
                       <CanDo resource="subHire" action="update">
                         <DropdownMenu>
@@ -1351,24 +1364,33 @@ function SubHireGroupEditDialog({
 }) {
   const [title, setTitle] = useState("");
   const [quantity, setQuantity] = useState(1);
-  const [price, setPrice] = useState("");
+  const [cost, setCost] = useState("");
+  const [charge, setCharge] = useState("");
 
   useEffect(() => {
     if (group) {
       setTitle(group.title || "");
       setQuantity(Number(group.quantity) || 1);
-      setPrice(group.price != null ? String(Number(group.price)) : "");
+      setCost(group.cost != null ? String(Number(group.cost)) : "");
+      setCharge(group.charge != null ? String(Number(group.charge)) : "");
     }
   }, [group]);
 
   if (!group) return null;
 
-  // Calculate suggested price from items
+  // Calculate suggested cost/charge from items
   const items = (group.items || []) as Array<Record<string, unknown>>;
-  const suggestedPrice = items.reduce((sum, item) => {
-    const charge = Number(item.unitCharge) * Number(item.quantity) * Number(item.duration) * (1 - Number(item.discount) / 100);
-    return sum + charge;
+  const suggestedCost = items.reduce((sum, item) => {
+    return sum + Number(item.unitCost) * Number(item.quantity) * Number(item.duration);
   }, 0);
+  const suggestedCharge = items.reduce((sum, item) => {
+    const ch = Number(item.unitCharge) * Number(item.quantity) * Number(item.duration) * (1 - Number(item.discount) / 100);
+    return sum + ch;
+  }, 0);
+
+  const effectiveCost = cost ? Number(cost) : suggestedCost;
+  const effectiveCharge = charge ? Number(charge) : suggestedCharge;
+  const margin = effectiveCharge - effectiveCost;
 
   return (
     <Dialog open={!!group} onOpenChange={(v) => { if (!v) onClose(); }}>
@@ -1382,43 +1404,93 @@ function SubHireGroupEditDialog({
             <Label>Title</Label>
             <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Group title" />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label>Quantity</Label>
-              <Input type="number" min={1} value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} />
-            </div>
-            <div className="space-y-2">
-              <Label>
-                Price ($)
-                <span className="text-fg-4 font-normal ml-1">(charge)</span>
-              </Label>
-              <div className="flex gap-1">
-                <Input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                  placeholder="Itemized"
-                />
-                {suggestedPrice > 0 && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="shrink-0 text-xs h-9 px-2"
-                    title={`Use suggested price: ${formatCurrency(suggestedPrice)}`}
-                    onClick={() => setPrice(String(Math.round(suggestedPrice * 100) / 100))}
-                  >
-                    ~{formatCurrency(suggestedPrice)}
-                  </Button>
-                )}
-              </div>
-              <p className="text-[11px] text-fg-4">
-                {price ? "Group charged as a flat price to client" : "Itemized — each item's charge contributes individually"}
-              </p>
-            </div>
+          <div className="space-y-2">
+            <Label>Quantity</Label>
+            <Input type="number" min={1} value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} className="w-24" />
           </div>
+
+          {/* Cost — what we pay the supplier for this group */}
+          <div className="space-y-2">
+            <Label>
+              Group Cost ($)
+              <span className="text-fg-4 font-normal ml-1">— what we pay</span>
+            </Label>
+            <div className="flex gap-1">
+              <Input
+                type="number"
+                min={0}
+                step={0.01}
+                value={cost}
+                onChange={(e) => setCost(e.target.value)}
+                placeholder={suggestedCost > 0 ? `Itemized (~${suggestedCost.toFixed(2)})` : "Itemized"}
+              />
+              {suggestedCost > 0 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 text-xs h-9 px-2"
+                  title={`Use suggested: ${formatCurrency(suggestedCost)}`}
+                  onClick={() => setCost(String(Math.round(suggestedCost * 100) / 100))}
+                >
+                  ~{formatCurrency(suggestedCost)}
+                </Button>
+              )}
+            </div>
+            <p className="text-[11px] text-fg-4">
+              {cost ? "Flat supplier cost for this group (e.g. package deal)" : "Calculated from individual item costs"}
+            </p>
+          </div>
+
+          {/* Charge — what the client pays */}
+          <div className="space-y-2">
+            <Label>
+              Group Charge ($)
+              <span className="text-fg-4 font-normal ml-1">— what client pays</span>
+            </Label>
+            <div className="flex gap-1">
+              <Input
+                type="number"
+                min={0}
+                step={0.01}
+                value={charge}
+                onChange={(e) => setCharge(e.target.value)}
+                placeholder={suggestedCharge > 0 ? `Itemized (~${suggestedCharge.toFixed(2)})` : "Itemized"}
+              />
+              {suggestedCharge > 0 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 text-xs h-9 px-2"
+                  title={`Use suggested: ${formatCurrency(suggestedCharge)}`}
+                  onClick={() => setCharge(String(Math.round(suggestedCharge * 100) / 100))}
+                >
+                  ~{formatCurrency(suggestedCharge)}
+                </Button>
+              )}
+            </div>
+            <p className="text-[11px] text-fg-4">
+              {charge ? "Flat charge to client for this group" : "Calculated from individual item charges"}
+            </p>
+          </div>
+
+          {/* Margin preview */}
+          {(effectiveCost > 0 || effectiveCharge > 0) && (
+            <div className="rounded-md bg-bg-inset p-3">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-fg-3">Group margin</span>
+                <span className={`tabular-nums font-medium ${margin > 0 ? "text-success" : margin < 0 ? "text-error" : "text-fg-4"}`}>
+                  {margin > 0 ? "+" : ""}{formatCurrency(margin)}
+                  {effectiveCharge > 0 && (
+                    <span className="text-fg-4 font-normal ml-1.5 text-xs">
+                      ({Math.round((margin / effectiveCharge) * 100)}%)
+                    </span>
+                  )}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
@@ -1426,7 +1498,8 @@ function SubHireGroupEditDialog({
             onClick={() => onSave({
               title,
               quantity,
-              price: price ? Number(price) : null,
+              cost: cost ? Number(cost) : null,
+              charge: charge ? Number(charge) : null,
             })}
             disabled={!title.trim() || isPending}
           >

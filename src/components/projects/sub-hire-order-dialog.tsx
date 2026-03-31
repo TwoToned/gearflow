@@ -23,6 +23,9 @@ import {
   setItemGroup,
   updateSubHireOrderPricing,
   updateSubHirePlacement,
+  updateSubHirePaymentStatus,
+  addSubHireMedia,
+  removeSubHireMedia,
 } from "@/server/sub-hires";
 import { getProjectCategories } from "@/server/project-categories";
 import { getSuppliers } from "@/server/suppliers";
@@ -71,7 +74,14 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useActiveOrganization } from "@/lib/auth-client";
-import type { SubHireStatus } from "@/generated/prisma/client";
+import { MediaUploader, type MediaItem } from "@/components/media/media-uploader";
+import type { SubHireStatus, SubHirePaymentStatus } from "@/generated/prisma/client";
+
+const paymentStatusLabels: Record<SubHirePaymentStatus, string> = {
+  UNPAID: "Unpaid",
+  PARTIALLY_PAID: "Partially Paid",
+  PAID: "Paid",
+};
 
 // ─── Confirm Dialog ─────────────────────────────────────────────────────────
 
@@ -583,6 +593,15 @@ function SubHireManageView({
   const updateMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => updateSubHire(subHireId, data),
     onSuccess: () => invalidate(),
+    onError: (e) => toast.error(e.message),
+  });
+
+  const paymentStatusMutation = useMutation({
+    mutationFn: (status: SubHirePaymentStatus) => updateSubHirePaymentStatus(subHireId, status),
+    onSuccess: () => {
+      toast.success("Payment status updated");
+      invalidate();
+    },
     onError: (e) => toast.error(e.message),
   });
 
@@ -1202,14 +1221,64 @@ function SubHireManageView({
           )}
         </div>
 
-        {/* Order details */}
+        {/* Payment & Order Details */}
         <div className="rounded-md bg-bg-inset p-3 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-fg-3 mb-0.5">Payment Status</div>
+            </div>
+            <CanDo
+              resource="subHire"
+              action="update"
+              fallback={<span className="text-sm text-fg-2">{paymentStatusLabels[subHire.paymentStatus as SubHirePaymentStatus] || subHire.paymentStatus}</span>}
+            >
+              <Select
+                value={subHire.paymentStatus}
+                onValueChange={(v) => paymentStatusMutation.mutate(v as SubHirePaymentStatus)}
+              >
+                <SelectTrigger className="w-[160px] h-8 text-sm">
+                  <SelectValue>{paymentStatusLabels[subHire.paymentStatus as SubHirePaymentStatus] || subHire.paymentStatus}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="UNPAID">Unpaid</SelectItem>
+                  <SelectItem value="PARTIALLY_PAID">Partially Paid</SelectItem>
+                  <SelectItem value="PAID">Paid</SelectItem>
+                </SelectContent>
+              </Select>
+            </CanDo>
+          </div>
+
           {subHire.notes && (
             <div className="border-t border-border/50 pt-3">
               <div className="text-[10px] font-bold uppercase tracking-wider text-fg-3 mb-1">Notes</div>
               <p className="text-sm text-fg-2">{subHire.notes}</p>
             </div>
           )}
+        </div>
+
+        {/* Attachments */}
+        <div className="space-y-2">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-fg-3">Attachments</div>
+          <MediaUploader
+            entityType="subHire"
+            entityId={subHire.id}
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.webp"
+            existingMedia={(subHire.media || []) as MediaItem[]}
+            mediaType="DOCUMENT"
+            onUploadComplete={async (fileUpload) => {
+              await addSubHireMedia({
+                subHireId: subHire.id,
+                fileId: fileUpload.id,
+                type: "DOCUMENT",
+              });
+              invalidate();
+            }}
+            onRemove={async (mediaId) => {
+              await removeSubHireMedia(mediaId);
+              invalidate();
+            }}
+            queryKey={["sub-hire", subHire.id]}
+          />
         </div>
       </div>
 

@@ -6,7 +6,8 @@ import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { roundCurrency } from "@/lib/formatters";
 import { subHireSchema, subHireItemSchema, subHireGroupSchema, subHireOrderPricingSchema, subHirePlacementSchema } from "@/lib/validations/sub-hire";
-import type { SubHireStatus, SubHirePricingMode, PricingType, Prisma } from "@/generated/prisma/client";
+import type { SubHireStatus, SubHirePricingMode, SubHirePaymentStatus, PricingType, Prisma, MediaType } from "@/generated/prisma/client";
+import { deleteFromS3 } from "@/lib/storage";
 
 // ─── Status Machine ──────────────────────────────────────────────────────────
 
@@ -159,6 +160,10 @@ export async function getSubHire(id: string) {
           targetCategory: { select: { id: true, name: true } },
           targetGroup: { select: { id: true, title: true, categoryId: true } },
         },
+        orderBy: { sortOrder: "asc" },
+      },
+      media: {
+        include: { file: true },
         orderBy: { sortOrder: "asc" },
       },
     },
@@ -1611,4 +1616,125 @@ export async function checkSubHireOpportunity(
     modelId,
     modelName: model?.name || "Unknown",
   });
+}
+
+// ─── Payment Status ─────────────────────────────────────────────────────────
+
+export async function updateSubHirePaymentStatus(id: string, paymentStatus: SubHirePaymentStatus) {
+  const { organizationId, userId, userName } = await requirePermission("subHire", "update");
+
+  const subHire = await prisma.subHire.findUnique({
+    where: { id, organizationId },
+    include: { supplier: { select: { name: true } } },
+  });
+  if (!subHire) throw new Error("Sub-hire not found");
+
+  await prisma.subHire.update({
+    where: { id, organizationId },
+    data: { paymentStatus },
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "subHire",
+    entityId: id,
+    entityName: `${subHire.orderNumber} (${subHire.supplier.name})`,
+    summary: `Updated payment status to ${paymentStatus.replace(/_/g, " ").toLowerCase()} on ${subHire.orderNumber}`,
+  });
+
+  return serialize({ success: true });
+}
+
+// ─── Media / Attachments ────────────────────────────────────────────────────
+
+export async function getSubHireMedia(subHireId: string) {
+  const { organizationId } = await getOrgContext();
+
+  const media = await prisma.subHireMedia.findMany({
+    where: { subHireId, organizationId },
+    include: { file: true },
+    orderBy: { sortOrder: "asc" },
+  });
+
+  return serialize(media);
+}
+
+export async function addSubHireMedia(data: {
+  subHireId: string;
+  fileId: string;
+  type?: MediaType;
+  displayName?: string;
+}) {
+  const { organizationId } = await requirePermission("subHire", "update");
+
+  const subHire = await prisma.subHire.findFirst({
+    where: { id: data.subHireId, organizationId },
+  });
+  if (!subHire) throw new Error("Sub-hire not found");
+
+  const file = await prisma.fileUpload.findFirst({
+    where: { id: data.fileId, organizationId },
+  });
+  if (!file) throw new Error("File not found");
+
+  const maxSort = await prisma.subHireMedia.aggregate({
+    where: { subHireId: data.subHireId },
+    _max: { sortOrder: true },
+  });
+
+  const media = await prisma.subHireMedia.create({
+    data: {
+      organizationId,
+      subHireId: data.subHireId,
+      fileId: data.fileId,
+      type: data.type || "DOCUMENT",
+      displayName: data.displayName,
+      sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
+    },
+    include: { file: true },
+  });
+
+  return serialize(media);
+}
+
+export async function removeSubHireMedia(mediaId: string) {
+  const { organizationId } = await requirePermission("subHire", "update");
+
+  const media = await prisma.subHireMedia.findFirst({
+    where: { id: mediaId, organizationId },
+    include: { file: true },
+  });
+  if (!media) throw new Error("Media not found");
+
+  await prisma.subHireMedia.delete({ where: { id: mediaId } });
+
+  try {
+    await deleteFromS3(media.file.storageKey);
+    if (media.file.thumbnailUrl) {
+      const thumbKey = media.file.thumbnailUrl.split("/").slice(-2).join("/");
+      await deleteFromS3(thumbKey);
+    }
+  } catch {
+    // S3 deletion is best-effort
+  }
+
+  // Clean up the file upload record
+  const otherUsages = await prisma.$queryRaw`
+    SELECT 1 FROM model_media WHERE "fileId" = ${media.fileId}
+    UNION ALL SELECT 1 FROM asset_media WHERE "fileId" = ${media.fileId}
+    UNION ALL SELECT 1 FROM kit_media WHERE "fileId" = ${media.fileId}
+    UNION ALL SELECT 1 FROM project_media WHERE "fileId" = ${media.fileId}
+    UNION ALL SELECT 1 FROM client_media WHERE "fileId" = ${media.fileId}
+    UNION ALL SELECT 1 FROM location_media WHERE "fileId" = ${media.fileId}
+    LIMIT 1
+  ` as unknown[];
+
+  if (otherUsages.length === 0) {
+    await prisma.fileUpload.delete({ where: { id: media.fileId } });
+  }
+
+  return serialize({ success: true });
 }

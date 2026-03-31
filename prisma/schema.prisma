@@ -147,6 +147,7 @@ model Organization {
   projectMedia       ProjectMedia[]
   clientMedia        ClientMedia[]
   locationMedia      LocationMedia[]
+  subHireMedia       SubHireMedia[]
   testProfiles       TestProfile[]
   testTagAssets      TestTagAsset[]
   testTagRecords     TestTagRecord[]
@@ -561,6 +562,12 @@ enum SubHireStatus {
   CANCELLED
 }
 
+enum SubHirePaymentStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+}
+
 enum ProjectMediaType {
   FLOOR_PLAN
   QUOTE
@@ -767,6 +774,7 @@ model SubHire {
   orderTotalCost  Decimal?      @db.Decimal(10, 2)
   orderTotalCharge Decimal?     @db.Decimal(10, 2)
   showOnDocs      Boolean       @default(false) // Default for new items
+  paymentStatus   SubHirePaymentStatus @default(UNPAID)
   notes           String?
   // Default placement for items that don't override
   defaultTargetCategoryId  String?
@@ -776,6 +784,7 @@ model SubHire {
   groups          SubHireGroup[]
   items           SubHireItem[]
   lineItems       ProjectLineItem[]
+  media           SubHireMedia[]
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -1495,12 +1504,13 @@ model FileUpload {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  modelMedia   ModelMedia[]
-  assetMedia   AssetMedia[]
-  kitMedia     KitMedia[]
-  projectMedia ProjectMedia[]
+  modelMedia     ModelMedia[]
+  assetMedia     AssetMedia[]
+  kitMedia       KitMedia[]
+  projectMedia   ProjectMedia[]
   clientMedia    ClientMedia[]
   locationMedia  LocationMedia[]
+  subHireMedia   SubHireMedia[]
 
   @@index([organizationId])
   @@map("file_upload")
@@ -1621,6 +1631,25 @@ model LocationMedia {
   @@index([organizationId])
   @@index([locationId])
   @@map("location_media")
+}
+
+model SubHireMedia {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  subHireId      String
+  subHire        SubHire      @relation(fields: [subHireId], references: [id], onDelete: Cascade)
+  fileId         String
+  file           FileUpload   @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  type           MediaType    @default(DOCUMENT)
+  displayName    String?
+  sortOrder      Int          @default(0)
+  createdAt      DateTime     @default(now())
+
+  @@unique([subHireId, fileId])
+  @@index([organizationId])
+  @@index([subHireId])
+  @@map("sub_hire_media")
 }
 
 // ─── Test Profile ─────────────────────────────────────────────────────────

@@ -18,7 +18,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, FolderPlus, Package, ArrowUpRight, MoreHorizontal, Trash2, Pencil, Loader2, ChevronRight, GripVertical, RefreshCw } from "lucide-react";
+import { Plus, FolderPlus, Package, ArrowUpRight, MoreHorizontal, Trash2, Pencil, Loader2, ChevronRight, GripVertical, RefreshCw, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
 import { getProjectCategories } from "@/server/project-categories";
@@ -511,12 +511,12 @@ function SortableLineItemRow({
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger render={
-                  <Badge variant="outline" className="ml-1.5 text-xs bg-amber-500/10 text-amber-600 border-amber-500/20">
-                    Unconfirmed
-                  </Badge>
+                  <span className="ml-1.5 inline-flex items-center justify-center w-5 h-5 rounded bg-amber-500/15">
+                    <AlertTriangle className="h-3 w-3 text-amber-500" />
+                  </span>
                 } />
                 <TooltipContent>
-                  <p className="text-xs">This sub-hire order hasn&apos;t been confirmed yet</p>
+                  <p className="text-xs">Sub-hire order not yet confirmed — costs and items may change</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>

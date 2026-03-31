@@ -652,6 +652,10 @@ function SubHireManageView({
     queryClient.invalidateQueries({ queryKey: ["sub-hire", orgId, subHireId] });
     queryClient.invalidateQueries({ queryKey: ["project-sub-hires"] });
     queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] });
+    // Refresh equipment tab data when line items are generated/modified
+    queryClient.invalidateQueries({ queryKey: ["project-categories", projectId] });
+    queryClient.invalidateQueries({ queryKey: ["uncategorized-items", projectId] });
+    queryClient.invalidateQueries({ queryKey: ["project-line-items"] });
   }
 
   if (isLoading) {
@@ -1233,6 +1237,7 @@ function SubHireManageView({
         supplierId={subHire.supplier?.id || ""}
         editingItem={editingItem}
         groupId={addToGroupId}
+        isOrderTotal={isOrderTotal}
         onSuccess={() => {
           invalidate();
           setShowItemForm(false);
@@ -1293,7 +1298,11 @@ function SubHireItemRow({
       <TableCell className="py-2 text-right tabular-nums text-sm w-[50px]">
         {item.quantity}
       </TableCell>
-      {!isOrderTotal && (
+      {isOrderTotal ? (
+        <TableCell className="py-2 text-right tabular-nums text-sm text-fg-2 w-[80px]">
+          {formatCurrency(Number(item.unitCharge))}
+        </TableCell>
+      ) : (
         <>
           <TableCell className="py-2 text-right tabular-nums text-sm text-fg-2 w-[80px]">
             {formatCurrency(Number(item.unitCost))}
@@ -1309,7 +1318,7 @@ function SubHireItemRow({
       <TableCell className="py-2 w-[40px]">
         <CanDo resource="subHire" action="update">
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="opacity-0 group-hover:opacity-100 transition-opacity" />}>
+            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" />}>
               <MoreVertical className="h-3 w-3" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -1367,6 +1376,7 @@ function SubHireItemForm({
   supplierId,
   editingItem,
   groupId,
+  isOrderTotal,
   onSuccess,
 }: {
   open: boolean;
@@ -1376,6 +1386,7 @@ function SubHireItemForm({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   editingItem: any;
   groupId?: string | null;
+  isOrderTotal?: boolean;
   onSuccess: () => void;
 }) {
   const [modelId, setModelId] = useState("");
@@ -1520,16 +1531,24 @@ function SubHireItemForm({
               </Select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label>Unit Cost ($)</Label>
-              <Input type="number" min={0} step={0.01} value={unitCost} onChange={(e) => setUnitCost(Number(e.target.value))} />
-            </div>
+          {isOrderTotal ? (
             <div className="space-y-2">
               <Label>Unit Charge ($)</Label>
               <Input type="number" min={0} step={0.01} value={unitCharge} onChange={(e) => setUnitCharge(Number(e.target.value))} />
+              <p className="text-xs text-fg-4">Cost is set at the order level. This is what the client sees per item.</p>
             </div>
-          </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Unit Cost ($)</Label>
+                <Input type="number" min={0} step={0.01} value={unitCost} onChange={(e) => setUnitCost(Number(e.target.value))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Unit Charge ($)</Label>
+                <Input type="number" min={0} step={0.01} value={unitCharge} onChange={(e) => setUnitCharge(Number(e.target.value))} />
+              </div>
+            </div>
+          )}
 
           {/* Rate comparison */}
           {modelId && (

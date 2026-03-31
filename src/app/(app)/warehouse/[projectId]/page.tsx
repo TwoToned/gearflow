@@ -81,6 +81,7 @@ import {
   isBulkItem,
   modelDisplayName,
   isKitParent,
+  isGroupParent,
   collectAllVerifiableIds,
   bulkUnitKey,
 } from "@/components/warehouse/warehouse-types";
@@ -136,8 +137,8 @@ function groupItems(items: LineItem[], mode: "prep" | "deploy" = "prep"): GroupE
   const result: GroupEntry[] = [];
 
   for (const item of items) {
-    if (isKitParent(item)) {
-      // Deploy tab: show children that aren't checked out, or nested kits with undeployed grandchildren
+    if (isKitParent(item) || isGroupParent(item)) {
+      // Kit or sub-hire group parent: show children that aren't checked out
       const allChildren = (item.childLineItems || []) as LineItem[];
       const deployChildren = allChildren.filter((c) => {
         if (c.status === "CANCELLED") return false;
@@ -201,8 +202,8 @@ function groupCheckinItems(items: LineItem[]): GroupEntry[] {
   const result: GroupEntry[] = [];
 
   for (const item of items) {
-    if (isKitParent(item)) {
-      // Return tab: show children that are checked out, or nested kits with deployed grandchildren
+    if (isKitParent(item) || isGroupParent(item)) {
+      // Kit or sub-hire group parent: show children that are checked out
       const allChildren = (item.childLineItems || []) as LineItem[];
       const returnChildren = allChildren.filter((c) => {
         if (c.status === "CHECKED_OUT") return true;
@@ -1166,8 +1167,8 @@ function WarehouseProjectPage({
   const pickPrepItems = equipmentItems.filter((item) => {
     if (item.status === "CANCELLED") return false;
     if (item.status === "CHECKED_OUT") return false;
-    // Kit parents: show if any children still need prepping
-    if (isKitParent(item)) {
+    // Kit/sub-hire group parents: show if any children still need prepping
+    if (isKitParent(item) || isGroupParent(item)) {
       const children = (item.childLineItems || []) as LineItem[];
       return children.some((c) => {
         if (c.status === "CHECKED_OUT" || c.status === "CANCELLED") return false;
@@ -1192,8 +1193,8 @@ function WarehouseProjectPage({
   const preppedItems = equipmentItems.filter((item) => {
     if (item.status === "CANCELLED") return false;
     if (item.status === "CHECKED_OUT") return false;
-    // Kit parents: show if any children are prepped but not deployed
-    if (isKitParent(item)) {
+    // Kit/sub-hire group parents: show if any children are prepped but not deployed
+    if (isKitParent(item) || isGroupParent(item)) {
       const children = (item.childLineItems || []) as LineItem[];
       return children.some((c) => {
         if (c.status === "CHECKED_OUT" || c.status === "CANCELLED") return false;
@@ -1214,8 +1215,8 @@ function WarehouseProjectPage({
   const checkOutItemsList = preppedItems;
 
   const checkedOutItems = equipmentItems.filter((item) => {
-    // Kit parents: show in return tab if any children/grandchildren are deployed
-    if (isKitParent(item)) {
+    // Kit/sub-hire group parents: show in return tab if any children/grandchildren are deployed
+    if (isKitParent(item) || isGroupParent(item)) {
       const children = (item.childLineItems || []) as LineItem[];
       return children.some((c) => {
         if (c.status === "CHECKED_OUT") return true;

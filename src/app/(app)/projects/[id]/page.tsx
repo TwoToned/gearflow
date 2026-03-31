@@ -740,6 +740,7 @@ export default function ProjectDetailPage({
                         }
                         serviceCostTotal={project.serviceCostTotal as number | null}
                         labourCostTotal={project.labourCostTotal as number | null}
+                        subHireCostTotal={project.subHireCostTotal as number | null}
                         subtotal={project.subtotal as number | null}
                         discountPercent={project.discountPercent as number | null}
                         discountAmount={project.discountAmount as number | null}

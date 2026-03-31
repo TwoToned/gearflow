@@ -105,22 +105,25 @@ Sub-hire items become real `ProjectLineItem` records immediately when added — 
 3. **Confirm = status change**: Confirming a sub-hire changes status and regenerates for consistency, but items were already visible
 4. **Badge logic**: Equipment tab builds a `draftSubHireIds` set from sub-hires with status DRAFT, then checks `item.subHireId` against it
 
-## Margin Tracking (Two-Ledger Model)
+## Margin Tracking (Integrated Cost Model)
 
-Sub-hire costs and project revenue are tracked on **separate ledgers**:
+Sub-hire costs are integrated into the project financial calculations:
 
-| Ledger | Tracks | Source of truth |
-|--------|--------|----------------|
-| **Sub-hire order** | What we pay the supplier vs what we intend to charge | `SubHire.totalCost` / `SubHire.totalCharge` |
-| **Project** | What the client actually pays | Group prices + standalone line item totals |
+| Field | Formula | Source |
+|-------|---------|--------|
+| `subHireCostTotal` | SUM(subHire.totalCost) for CONFIRMED/ON_HIRE/RETURNED | `recalculateProjectTotals` |
+| `margin` | total - (serviceCostTotal + labourCostTotal + **subHireCostTotal**) | `recalculateProjectTotals` |
 
-These can diverge intentionally:
-- **Markup**: sub-hire cost $400, charge client $600
-- **Absorption**: sub-hire cost $400, charge client $0 (we eat the cost)
-- **Blended group**: sub-hire items mixed with internal stock in a group — group price is the blended client price
-- **Cross-subsidy**: sub-hire cost exceeds its charge, but overall project is profitable
+Sub-hire costs appear in the **Costs** section of the project financial summary alongside service costs and labour costs. DRAFT and CANCELLED sub-hires are excluded from the cost calculation.
 
-The sub-hire item's `unitCharge` flows to the `ProjectLineItem.unitPrice`, which feeds into `suggestedPrice` for project groups. If the user overrides the group price, that's their business decision. The sub-hire margin analysis still shows the true supplier cost vs charge.
+The sub-hire item's `unitCharge` flows to the `ProjectLineItem.unitPrice`, which feeds into `suggestedPrice` for project groups. If the user overrides the group price, that's their business decision. The sub-hire order still tracks the full cost vs charge breakdown for per-order margin analysis.
+
+## Warehouse Integration
+
+Sub-hire group parents (line items with `subHireGroupId`) are treated like kit parents in the warehouse:
+- Their child items appear in prep, deploy, and return tabs
+- Pull sheets show group parent with indented children
+- The `isGroupParent()` helper in `warehouse-types.ts` detects these (items with children but no kitId)
 
 ## Key Behaviors
 

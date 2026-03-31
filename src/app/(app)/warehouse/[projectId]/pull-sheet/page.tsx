@@ -229,7 +229,8 @@ export default function PullSheetPage({
                     const assetTag = asset?.assetTag || bulkAsset?.assetTag || null;
                     const overbookedInfo = item.overbookedInfo as { overBy: number; totalStock: number; totalBooked: number; inherited?: boolean } | null;
                     const isKit = !!(item.kitId) && !(item.isKitChild);
-                    const isGroupParent = isKit;
+                    const hasChildren = ((item.childLineItems || []) as Array<Record<string, unknown>>).length > 0;
+                    const isGroupParent = isKit || (!item.isKitChild && !item.kitId && hasChildren);
                     const children = isGroupParent ? ((item.childLineItems || []) as Array<Record<string, unknown>>) : [];
                     const qty = item.quantity as number;
                     const itemName = isGroupParent
@@ -248,7 +249,7 @@ export default function PullSheetPage({
                           </TableCell>
                           <TableCell>
                             <span className={isGroupParent ? "font-bold" : "font-medium"}>
-                              {isGroupParent ? `[Kit] ${itemName}` : itemName}
+                              {isGroupParent ? (isKit ? `[Kit] ${itemName}` : `[Group] ${itemName}`) : itemName}
                             </span>
                             {overbookedInfo && <PullSheetOverbookedBadge info={overbookedInfo} />}
                           </TableCell>

@@ -18,7 +18,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, FolderPlus, Package, ArrowUpRight, MoreHorizontal, Trash2, Pencil, Loader2, ChevronRight, GripVertical, RefreshCw, AlertTriangle } from "lucide-react";
+import { Plus, FolderPlus, Package, MoreHorizontal, Trash2, Pencil, Loader2, ChevronRight, GripVertical, RefreshCw, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
 import { getProjectCategories } from "@/server/project-categories";
@@ -78,7 +78,6 @@ import { formatCurrency } from "@/lib/formatters";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
 import { AddEquipmentDialog } from "./add-equipment-dialog";
-import { AddSubhireDialog } from "./add-subhire-dialog";
 import { SubHireOrderDialog } from "./sub-hire-order-dialog";
 import { getSubHires } from "@/server/sub-hires";
 import { subHireStatusLabels, formatLabel } from "@/lib/status-labels";
@@ -246,7 +245,6 @@ function SortableGroupRow({
   onEdit,
   onAddEquipment,
   onAddKit,
-  onAddSubhire,
   onRecalculate,
 }: {
   group: GroupData;
@@ -257,7 +255,6 @@ function SortableGroupRow({
   onEdit: () => void;
   onAddEquipment: () => void;
   onAddKit: () => void;
-  onAddSubhire: () => void;
   onRecalculate?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -330,10 +327,6 @@ function SortableGroupRow({
                 <DropdownMenuItem onClick={onAddKit}>
                   <Package className="mr-2 h-3.5 w-3.5" />
                   Add Kit
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={onAddSubhire}>
-                  <ArrowUpRight className="mr-2 h-3.5 w-3.5" />
-                  Add Subhire
                 </DropdownMenuItem>
                 {onRecalculate && (
                   <DropdownMenuItem onClick={onRecalculate}>
@@ -631,13 +624,6 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
     });
   }, []);
 
-  // Subhire dialog state
-  const [showSubhireDialog, setShowSubhireDialog] = useState(false);
-  const [subhireTarget, setSubhireTarget] = useState<{
-    categoryId?: string;
-    groupId?: string;
-    label?: string;
-  }>({});
 
   // Kit target state (for adding kits to specific groups)
   const [kitTarget, setKitTarget] = useState<{
@@ -1126,18 +1112,6 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
           size="sm"
           className="gap-1.5"
           onClick={() => {
-            setSubhireTarget({});
-            setShowSubhireDialog(true);
-          }}
-        >
-          <ArrowUpRight className="h-3.5 w-3.5" />
-          Add Subhire
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          onClick={() => {
             setManagingSubHireId(null);
             setShowSubHireOrderDialog(true);
           }}
@@ -1261,10 +1235,6 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                               onAddKit={() => {
                                 setKitTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
                                 setShowKitDialog(true);
-                              }}
-                              onAddSubhire={() => {
-                                setSubhireTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
-                                setShowSubhireDialog(true);
                               }}
                               onRecalculate={async () => {
                                 try {
@@ -1920,18 +1890,6 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
         />
       )}
 
-      {/* Add subhire dialog */}
-      <AddSubhireDialog
-        projectId={projectId}
-        open={showSubhireDialog}
-        onOpenChange={(open) => {
-          setShowSubhireDialog(open);
-          if (!open) setSubhireTarget({});
-        }}
-        categoryId={subhireTarget.categoryId}
-        groupId={subhireTarget.groupId}
-        targetLabel={subhireTarget.label}
-      />
 
       {/* Sub-hire order dialog */}
       <SubHireOrderDialog

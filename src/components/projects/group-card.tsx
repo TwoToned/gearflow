@@ -32,7 +32,6 @@ interface GroupCardProps {
   onSaveAsTemplate?: () => void;
   onAddEquipment?: () => void;
   onAddKit?: () => void;
-  onAddSubhire?: () => void;
   dragHandleProps?: Record<string, unknown>;
   defaultExpanded?: boolean;
 }
@@ -53,7 +52,6 @@ export function GroupCard({
   onSaveAsTemplate,
   onAddEquipment,
   onAddKit,
-  onAddSubhire,
   dragHandleProps,
   defaultExpanded = false,
 }: GroupCardProps) {
@@ -180,18 +178,7 @@ export function GroupCard({
                     Kit
                   </button>
                 )}
-                {onAddSubhire && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onAddSubhire();
-                    }}
-                    className="flex items-center gap-1 text-xs text-fg-4 hover:text-fg-3 transition-colors"
-                  >
-                    <Plus className="h-3 w-3" />
-                    Subhire
-                  </button>
-                )}
+
               </div>
               {onSaveAsTemplate && lineItemCount > 0 && (
                 <button

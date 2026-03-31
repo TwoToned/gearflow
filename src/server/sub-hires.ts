@@ -187,6 +187,7 @@ export async function createSubHire(input: unknown) {
         projectId: data.projectId || null,
         createdById: userId,
         orderNumber,
+        supplierReference: data.supplierReference || null,
         status: "DRAFT",
         hireStart: data.hireStart || null,
         hireEnd: data.hireEnd || null,
@@ -232,6 +233,7 @@ export async function updateSubHire(id: string, input: unknown) {
     data: {
       supplierId: data.supplierId,
       projectId: data.projectId || null,
+      supplierReference: data.supplierReference !== undefined ? (data.supplierReference || null) : undefined,
       hireStart: data.hireStart || null,
       hireEnd: data.hireEnd || null,
       showOnDocs: data.showOnDocs,

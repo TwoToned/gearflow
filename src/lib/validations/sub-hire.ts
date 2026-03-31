@@ -3,6 +3,7 @@ import { z } from "zod";
 export const subHireSchema = z.object({
   supplierId: z.string().min(1, "Supplier is required"),
   projectId: z.string().optional(),
+  supplierReference: z.string().max(200).optional(),
   status: z.enum(["DRAFT", "CONFIRMED", "ON_HIRE", "RETURNED", "CANCELLED"]).default("DRAFT"),
   hireStart: z.union([z.literal(""), z.coerce.date()]).optional().transform(v => v === "" ? undefined : v),
   hireEnd: z.union([z.literal(""), z.coerce.date()]).optional().transform(v => v === "" ? undefined : v),

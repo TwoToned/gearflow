@@ -447,6 +447,7 @@ function SubHireCreateView({
   onCreated: (id: string) => void;
 }) {
   const [supplierId, setSupplierId] = useState("");
+  const [supplierReference, setSupplierReference] = useState("");
   const [hireStart, setHireStart] = useState("");
   const [hireEnd, setHireEnd] = useState("");
   const [showOnDocs, setShowOnDocs] = useState(false);
@@ -467,6 +468,7 @@ function SubHireCreateView({
       createSubHire({
         supplierId,
         projectId,
+        supplierReference: supplierReference || undefined,
         hireStart: hireStart || undefined,
         hireEnd: hireEnd || undefined,
         showOnDocs,
@@ -502,6 +504,14 @@ function SubHireCreateView({
             placeholder="Select supplier..."
             searchPlaceholder="Search suppliers..."
             emptyMessage="No suppliers found."
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Supplier Reference</Label>
+          <Input
+            value={supplierReference}
+            onChange={(e) => setSupplierReference(e.target.value)}
+            placeholder="Invoice #, PO #, quote ref, etc."
           />
         </div>
         <div className="grid grid-cols-2 gap-4">
@@ -767,6 +777,7 @@ function SubHireManageView({
             </div>
             <DialogDescription>
               {formatDate(subHire.hireStart)} &ndash; {formatDate(subHire.hireEnd)}
+              {subHire.supplierReference && <> &middot; Ref: {subHire.supplierReference}</>}
             </DialogDescription>
           </div>
           {/* Actions dropdown */}
@@ -1273,7 +1284,26 @@ function SubHireManageView({
 
         {/* Payment & Order Details */}
         <div className="rounded-md bg-bg-inset p-3 space-y-3">
-          <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-fg-3 mb-1">Supplier Reference</div>
+            <Input
+              placeholder="Invoice #, PO #, etc."
+              className="h-8 text-sm bg-bg-surface"
+              defaultValue={subHire.supplierReference || ""}
+              onBlur={(e) => {
+                const val = e.target.value.trim();
+                if (val !== (subHire.supplierReference || "")) {
+                  updateMutation.mutate({
+                    supplierId: subHire.supplierId,
+                    supplierReference: val || undefined,
+                    showOnDocs: subHire.showOnDocs,
+                  });
+                }
+              }}
+            />
+          </div>
+
+          <div className="border-t border-border/50 pt-3 flex items-center justify-between">
             <div>
               <div className="text-[10px] font-bold uppercase tracking-wider text-fg-3 mb-0.5">Payment Status</div>
             </div>

@@ -33,6 +33,7 @@ import {
   ensureContainerOnProject,
   syncContainerStatus,
 } from "@/server/warehouse";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Label } from "@/components/ui/label";
@@ -1808,6 +1809,9 @@ function WarehouseProjectPage({
     const someChecked = childKeys.some((k) => selection.has(k));
     const name = entry.kind === "serialized-group" ? entry.modelName : modelDisplayName(entry.item);
     const count = entry.kind === "serialized-group" ? entry.items.length : entry.unitCount;
+    const hasSubhire = entry.kind === "serialized-group"
+      ? entry.items.some((i) => i.isSubhire)
+      : entry.item.isSubhire;
 
     return (
       <TableRow
@@ -1825,6 +1829,9 @@ function WarehouseProjectPage({
           <div className="flex items-center gap-1.5">
             <ChevronRight className={`h-4 w-4 text-fg-3 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
             <span className="font-medium">{name}</span>
+            {hasSubhire && (
+              <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0 bg-cyan-500/10 text-cyan-600 border-cyan-500/20">Subhire</Badge>
+            )}
                       </div>
         </TableCell>
         <TableCell className="font-mono text-sm text-fg-3">

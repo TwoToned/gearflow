@@ -2,7 +2,7 @@
 
 ## Overview
 
-Sub-hires track gear rented from third-party suppliers with structured items, dual pricing (cost vs charge), and margin analysis. Replaces the legacy free-text `isSubhire` line items with a first-class `SubHire` entity.
+Sub-hires track gear rented from third-party suppliers with structured items, dual pricing (cost vs charge), and margin analysis. Replaces the legacy free-text `isSubhire` line items with a first-class `SubHire` entity. Managed entirely via a dialog on the project page — no standalone pages.
 
 ## Schema
 
@@ -23,6 +23,18 @@ CANCELLED CANCELLED  CANCELLED
 - **CONFIRMED → ON_HIRE**: manual, marks gear dispatched from supplier
 - **ON_HIRE → RETURNED**: manual, whole-unit return (no partial returns in v1)
 - **Any active → CANCELLED**: allowed from DRAFT/CONFIRMED/ON_HIRE
+
+## UI: Project Equipment Tab Integration
+
+Sub-hires are managed via a **dialog** on the project equipment tab:
+
+1. **Sub-Hire Orders section** — expandable rows below the equipment table showing all sub-hire orders for the project. Each row shows order number, supplier, status, item count, charge and margin. Clicking the chevron expands to show individual items.
+2. **"Sub-Hire Orders" toolbar button** — opens the dialog which has three views:
+   - **List view** — shows all sub-hires for the project with create button
+   - **Create view** — supplier picker, dates, showOnDocs toggle, notes
+   - **Manage view** — full sub-hire detail with items table, add/edit/remove items, status transitions, delete
+3. **Overbook shortcut** — the "Sub-hire N units instead" link in the add-equipment dialog opens the sub-hire dialog instead of navigating away
+4. **showOnDocs** toggle — controls whether the sub-hire's line items appear on client-facing documents (quotes, invoices, packing lists)
 
 ## Key Behaviors
 
@@ -57,15 +69,13 @@ Auto-generated via atomic counter in `Organization.metadata.subHireOrderCounter`
 | `src/lib/validations/sub-hire.ts` | Zod schemas |
 | `src/lib/permissions.ts` | subHire resource |
 | `src/server/sub-hires.ts` | All server actions |
-| `src/app/(app)/sub-hires/page.tsx` | List page |
-| `src/app/(app)/sub-hires/[id]/page.tsx` | Detail page |
-| `src/app/(app)/sub-hires/new/page.tsx` | Create page |
-| `src/components/sub-hires/sub-hire-form.tsx` | Create/edit form |
-| `src/components/projects/equipment-tab.tsx` | Project integration button |
+| `src/components/projects/sub-hire-order-dialog.tsx` | Dialog component (list/create/manage views + item form) |
+| `src/components/projects/equipment-tab.tsx` | Sub-hire orders section + dialog wiring |
+| `src/components/projects/add-equipment-dialog.tsx` | Overbook shortcut callback |
 
 ## Migration Strategy
 
-Leave-and-layer. Legacy `isSubhire` line items remain as-is. New sub-hires use the `SubHire` entity. Both "Add Subhire" (legacy) and "Add Sub-Hire Order" (new) appear in the equipment tab during parallel rollout.
+Leave-and-layer. Legacy `isSubhire` line items remain as-is. New sub-hires use the `SubHire` entity. Both "Add Subhire" (legacy line item) and "Sub-Hire Orders" (new dialog) appear in the equipment tab.
 
 ## Not in Scope (v1)
 

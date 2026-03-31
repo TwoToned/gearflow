@@ -1047,6 +1047,14 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
           Add Subhire
         </Button>
         <Button
+          size="sm"
+          className="gap-1.5"
+          render={<a href={`/sub-hires/new?projectId=${projectId}`} />}
+        >
+          <ArrowUpRight className="h-3.5 w-3.5" />
+          Add Sub-Hire Order
+        </Button>
+        <Button
           variant="outline"
           size="sm"
           className="gap-1.5"

@@ -82,6 +82,14 @@ export const supplierOrderStatusLabels: Record<string, string> = {
   CANCELLED: "Cancelled",
 };
 
+export const subHireStatusLabels: Record<string, string> = {
+  DRAFT: "Draft",
+  CONFIRMED: "Confirmed",
+  ON_HIRE: "On Hire",
+  RETURNED: "Returned",
+  CANCELLED: "Cancelled",
+};
+
 // --- Media Type ---
 export const mediaTypeLabels: Record<string, string> = {
   PHOTO: "Photo",

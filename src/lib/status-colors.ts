@@ -125,6 +125,14 @@ const supplierOrderStatusIntent: Record<string, ColorIntent> = {
   CANCELLED: "error",
 };
 
+const subHireStatusIntent: Record<string, ColorIntent> = {
+  DRAFT: "neutral",
+  CONFIRMED: "warning",
+  ON_HIRE: "info",
+  RETURNED: "success",
+  CANCELLED: "subtle",
+};
+
 const conditionIntent: Record<string, ColorIntent> = {
   NEW: "success",
   GOOD: "info",
@@ -230,7 +238,8 @@ export type StatusCategory =
   | "locationType"
   | "memberRole"
   | "activity"
-  | "notification";
+  | "notification"
+  | "subHire";
 
 const categoryMap: Record<StatusCategory, Record<string, ColorIntent>> = {
   asset: assetStatusIntent,
@@ -250,6 +259,7 @@ const categoryMap: Record<StatusCategory, Record<string, ColorIntent>> = {
   memberRole: memberRoleIntent,
   activity: activityActionIntent,
   notification: notificationSeverityIntent,
+  subHire: subHireStatusIntent,
 };
 
 /**

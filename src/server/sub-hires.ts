@@ -423,10 +423,8 @@ export async function addSubHireItem(subHireId: string, input: unknown) {
     await upsertSupplierModelRate(organizationId, subHire.supplierId, data.modelId, data.unitCost, data.pricingType as PricingType);
   }
 
-  // If confirmed/on-hire, sync line item to project
-  if (subHire.status === "CONFIRMED" || subHire.status === "ON_HIRE") {
-    await syncNewSubHireLineItem(subHire, item);
-  }
+  // Sync line items to project (works for any status including DRAFT)
+  await syncSubHireToProject(subHireId, organizationId, subHire.projectId);
 
   await logActivity({
     organizationId,
@@ -484,10 +482,8 @@ export async function updateSubHireItem(itemId: string, input: unknown) {
     await upsertSupplierModelRate(organizationId, existing.subHire.supplierId, data.modelId, data.unitCost, data.pricingType as PricingType);
   }
 
-  // If confirmed/on-hire, sync the linked project line item
-  if (existing.subHire.status === "CONFIRMED" || existing.subHire.status === "ON_HIRE") {
-    await syncSubHireLineItem(itemId, existing.subHire.projectId);
-  }
+  // Sync line items to project
+  await syncSubHireToProject(existing.subHire.id, organizationId, existing.subHire.projectId);
 
   await logActivity({
     organizationId,
@@ -525,22 +521,13 @@ export async function removeSubHireItem(itemId: string) {
     throw new Error("Cannot remove item with checked-out line items");
   }
 
-  // Delete linked project line items, then the item itself
-  await prisma.$transaction(async (tx) => {
-    if (existing.lineItems.length > 0) {
-      await tx.projectLineItem.deleteMany({
-        where: { subHireItemId: itemId },
-      });
-    }
-    await tx.subHireItem.delete({ where: { id: itemId } });
-  });
+  // Delete the item (linked line items are cleaned up by regenerate)
+  await prisma.subHireItem.delete({ where: { id: itemId } });
 
   await recalculateSubHireTotals(existing.subHire.id);
 
-  if (existing.subHire.projectId) {
-    const { recalculateProjectTotals } = await import("@/server/line-items");
-    await recalculateProjectTotals(existing.subHire.projectId);
-  }
+  // Regenerate project line items (removes orphaned items, recalculates totals)
+  await syncSubHireToProject(existing.subHire.id, organizationId, existing.subHire.projectId);
 
   await logActivity({
     organizationId,
@@ -1044,7 +1031,7 @@ export async function createSubHireGroup(subHireId: string, input: unknown) {
 
   const subHire = await prisma.subHire.findUnique({
     where: { id: subHireId, organizationId },
-    select: { id: true, orderNumber: true },
+    select: { id: true, orderNumber: true, projectId: true },
   });
   if (!subHire) throw new Error("Sub-hire not found");
 
@@ -1068,6 +1055,9 @@ export async function createSubHireGroup(subHireId: string, input: unknown) {
       },
     },
   });
+
+  // Sync line items to project (group structure may have changed)
+  await syncSubHireToProject(subHireId, organizationId, subHire.projectId);
 
   await logActivity({
     organizationId,
@@ -1113,13 +1103,8 @@ export async function updateSubHireGroup(groupId: string, input: unknown) {
     },
   });
 
-  // If confirmed/on-hire, update the parent line item description
-  if (existing.subHire.status === "CONFIRMED" || existing.subHire.status === "ON_HIRE") {
-    await prisma.projectLineItem.updateMany({
-      where: { subHireGroupId: groupId },
-      data: { description: data.title },
-    });
-  }
+  // Sync line items to project (title, placement may have changed)
+  await syncSubHireToProject(existing.subHire.id, organizationId, existing.subHire.projectId);
 
   await logActivity({
     organizationId,
@@ -1155,71 +1140,12 @@ export async function deleteSubHireGroup(groupId: string) {
       where: { groupId },
       data: { groupId: null },
     });
-
-    // If confirmed/on-hire, delete the parent line item (cascades to children)
-    if (existing.subHire.status === "CONFIRMED" || existing.subHire.status === "ON_HIRE") {
-      // Find the parent line item for this group
-      const parentLineItem = await tx.projectLineItem.findFirst({
-        where: { subHireGroupId: groupId },
-      });
-      if (parentLineItem) {
-        // Delete parent — children cascade via onDelete: Cascade on parentLineItemId
-        await tx.projectLineItem.delete({
-          where: { id: parentLineItem.id },
-        });
-      }
-      // Re-create ungrouped items as standalone line items
-      const items = await tx.subHireItem.findMany({
-        where: { subHireId: existing.subHire.id, groupId: null },
-        orderBy: { sortOrder: "asc" },
-      });
-      // Only re-create for items that were in this group (matched by ID)
-      const groupItemIds = new Set(existing.items.map((i) => i.id));
-      const maxSort = await tx.projectLineItem.aggregate({
-        where: { projectId: existing.subHire.projectId!, organizationId },
-        _max: { sortOrder: true },
-      });
-      let nextSort = (maxSort._max.sortOrder ?? -1) + 1;
-      for (const item of items) {
-        if (!groupItemIds.has(item.id)) continue;
-        // Check if a standalone line item already exists
-        const existingLI = await tx.projectLineItem.findFirst({
-          where: { subHireItemId: item.id },
-        });
-        if (existingLI) continue;
-        const chargeAfterDiscount = Number(item.unitCharge) * (1 - Number(item.discount) / 100);
-        const lineTotal = roundCurrency(chargeAfterDiscount * item.quantity * item.duration);
-        await tx.projectLineItem.create({
-          data: {
-            organizationId,
-            projectId: existing.subHire.projectId!,
-            type: "EQUIPMENT",
-            description: item.description,
-            quantity: item.quantity,
-            unitPrice: item.unitCharge,
-            pricingType: item.pricingType,
-            duration: item.duration,
-            discount: item.discount,
-            lineTotal,
-            isSubhire: true,
-            subHireId: existing.subHire.id,
-            subHireItemId: item.id,
-            supplierId: (await tx.subHire.findUnique({ where: { id: existing.subHire.id }, select: { supplierId: true } }))!.supplierId,
-            sortOrder: nextSort++,
-          },
-        });
-      }
-    }
-
     // Delete the group
     await tx.subHireGroup.delete({ where: { id: groupId } });
   });
 
-  // Recalculate project totals
-  if (existing.subHire.projectId) {
-    const { recalculateProjectTotals } = await import("@/server/line-items");
-    await recalculateProjectTotals(existing.subHire.projectId);
-  }
+  // Regenerate line items (handles parent cleanup + ungrouped restructure)
+  await syncSubHireToProject(existing.subHire.id, organizationId, existing.subHire.projectId);
 
   await logActivity({
     organizationId,
@@ -1239,14 +1165,12 @@ export async function setItemGroup(itemId: string, groupId: string | null) {
   const existing = await prisma.subHireItem.findUnique({
     where: { id: itemId },
     include: {
-      subHire: { select: { id: true, organizationId: true, status: true, projectId: true, supplierId: true, orderNumber: true } },
+      subHire: { select: { id: true, organizationId: true, projectId: true } },
     },
   });
   if (!existing || existing.subHire.organizationId !== organizationId) {
     throw new Error("Sub-hire item not found");
   }
-
-  const oldGroupId = existing.groupId;
 
   // Update the item's group
   await prisma.subHireItem.update({
@@ -1254,53 +1178,8 @@ export async function setItemGroup(itemId: string, groupId: string | null) {
     data: { groupId },
   });
 
-  // If confirmed/on-hire, we need to re-sync the line item
-  if (existing.subHire.status === "CONFIRMED" || existing.subHire.status === "ON_HIRE") {
-    const linkedLineItem = await prisma.projectLineItem.findFirst({
-      where: { subHireItemId: itemId },
-    });
-
-    if (groupId) {
-      // Moving into a group — make it a child of the group's parent line item
-      const parentLineItem = await prisma.projectLineItem.findFirst({
-        where: { subHireGroupId: groupId },
-      });
-      if (parentLineItem && linkedLineItem) {
-        await prisma.projectLineItem.update({
-          where: { id: linkedLineItem.id },
-          data: {
-            parentLineItemId: parentLineItem.id,
-            isKitChild: true,
-          },
-        });
-      }
-    } else if (linkedLineItem) {
-      // Moving out of a group — make it standalone
-      await prisma.projectLineItem.update({
-        where: { id: linkedLineItem.id },
-        data: {
-          parentLineItemId: null,
-          isKitChild: false,
-        },
-      });
-    }
-
-    // Clean up old group parent if it now has no children
-    if (oldGroupId && oldGroupId !== groupId) {
-      const oldParent = await prisma.projectLineItem.findFirst({
-        where: { subHireGroupId: oldGroupId },
-        include: { childLineItems: { select: { id: true } } },
-      });
-      if (oldParent && oldParent.childLineItems.length === 0) {
-        await prisma.projectLineItem.delete({ where: { id: oldParent.id } });
-      }
-    }
-
-    if (existing.subHire.projectId) {
-      const { recalculateProjectTotals } = await import("@/server/line-items");
-      await recalculateProjectTotals(existing.subHire.projectId);
-    }
-  }
+  // Regenerate line items (handles parent-child restructuring)
+  await syncSubHireToProject(existing.subHire.id, organizationId, existing.subHire.projectId);
 
   return serialize({ success: true });
 }
@@ -1350,12 +1229,17 @@ export async function updateSubHirePlacement(
   const { organizationId } = await requirePermission("subHire", "update");
   const data = subHirePlacementSchema.parse(input);
 
+  let subHireId: string;
+  let projectId: string | null;
+
   if (entityType === "order") {
     const subHire = await prisma.subHire.findUnique({
       where: { id: entityId, organizationId },
-      select: { id: true, status: true, projectId: true },
+      select: { id: true, projectId: true },
     });
     if (!subHire) throw new Error("Sub-hire not found");
+    subHireId = subHire.id;
+    projectId = subHire.projectId;
 
     await prisma.subHire.update({
       where: { id: entityId },
@@ -1364,19 +1248,16 @@ export async function updateSubHirePlacement(
         defaultTargetGroupId: data.targetGroupId || null,
       },
     });
-
-    // If confirmed, re-generate line items to apply new placements
-    if ((subHire.status === "CONFIRMED" || subHire.status === "ON_HIRE") && subHire.projectId) {
-      await regenerateSubHireLineItems(entityId, organizationId, subHire.projectId);
-    }
   } else if (entityType === "group") {
     const group = await prisma.subHireGroup.findUnique({
       where: { id: entityId },
-      include: { subHire: { select: { id: true, organizationId: true, status: true, projectId: true } } },
+      include: { subHire: { select: { id: true, organizationId: true, projectId: true } } },
     });
     if (!group || group.subHire.organizationId !== organizationId) {
       throw new Error("Sub-hire group not found");
     }
+    subHireId = group.subHire.id;
+    projectId = group.subHire.projectId;
 
     await prisma.subHireGroup.update({
       where: { id: entityId },
@@ -1385,18 +1266,16 @@ export async function updateSubHirePlacement(
         targetGroupId: data.targetGroupId || null,
       },
     });
-
-    if ((group.subHire.status === "CONFIRMED" || group.subHire.status === "ON_HIRE") && group.subHire.projectId) {
-      await regenerateSubHireLineItems(group.subHire.id, organizationId, group.subHire.projectId);
-    }
-  } else if (entityType === "item") {
+  } else {
     const item = await prisma.subHireItem.findUnique({
       where: { id: entityId },
-      include: { subHire: { select: { id: true, organizationId: true, status: true, projectId: true } } },
+      include: { subHire: { select: { id: true, organizationId: true, projectId: true } } },
     });
     if (!item || item.subHire.organizationId !== organizationId) {
       throw new Error("Sub-hire item not found");
     }
+    subHireId = item.subHire.id;
+    projectId = item.subHire.projectId;
 
     await prisma.subHireItem.update({
       where: { id: entityId },
@@ -1405,57 +1284,24 @@ export async function updateSubHirePlacement(
         targetGroupId: data.targetGroupId || null,
       },
     });
-
-    // For confirmed orders, move the linked line item
-    if ((item.subHire.status === "CONFIRMED" || item.subHire.status === "ON_HIRE") && item.subHire.projectId) {
-      const linkedLI = await prisma.projectLineItem.findFirst({
-        where: { subHireItemId: entityId },
-      });
-      if (linkedLI && !linkedLI.isKitChild) {
-        // Only move standalone items (grouped items follow their parent)
-        const groupCategoryMap = new Map<string, string>();
-        const gId = data.targetGroupId;
-        if (gId) {
-          const pg = await prisma.projectGroup.findUnique({
-            where: { id: gId },
-            select: { categoryId: true },
-          });
-          if (pg) groupCategoryMap.set(gId, pg.categoryId);
-        }
-        const subHireDefaults = await prisma.subHire.findUnique({
-          where: { id: item.subHire.id },
-          select: { defaultTargetGroupId: true, defaultTargetCategoryId: true },
-        });
-        const placement = resolvePlacement(
-          { targetGroupId: data.targetGroupId, targetCategoryId: data.targetCategoryId },
-          { defaultTargetGroupId: subHireDefaults?.defaultTargetGroupId, defaultTargetCategoryId: subHireDefaults?.defaultTargetCategoryId },
-          groupCategoryMap,
-        );
-
-        const oldGroupId = linkedLI.groupId;
-        await prisma.projectLineItem.update({
-          where: { id: linkedLI.id },
-          data: {
-            groupId: placement.groupId,
-            categoryId: placement.categoryId,
-          },
-        });
-
-        // Recalculate suggestedPrice on old and new project groups
-        const { calculateSuggestedPrice } = await import("@/server/project-groups");
-        if (oldGroupId) await calculateSuggestedPrice(oldGroupId);
-        if (placement.groupId) await calculateSuggestedPrice(placement.groupId);
-
-        const { recalculateProjectTotals } = await import("@/server/line-items");
-        await recalculateProjectTotals(item.subHire.projectId);
-      }
-    }
   }
+
+  // Regenerate line items with new placements
+  await syncSubHireToProject(subHireId, organizationId, projectId);
 
   return serialize({ success: true });
 }
 
 // Helper: delete all line items for a sub-hire and regenerate from scratch
+/**
+ * Sync all sub-hire line items to the project. Works for any status (including DRAFT).
+ * If the sub-hire has no projectId, this is a no-op.
+ */
+async function syncSubHireToProject(subHireId: string, organizationId: string, projectId: string | null) {
+  if (!projectId) return;
+  await regenerateSubHireLineItems(subHireId, organizationId, projectId);
+}
+
 async function regenerateSubHireLineItems(subHireId: string, organizationId: string, projectId: string) {
   await prisma.$transaction(async (tx) => {
     await tx.projectLineItem.deleteMany({

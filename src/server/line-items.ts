@@ -776,7 +776,7 @@ function calculateLineTotal(
  *
  *   equipmentRevenue = SUM(group.price × group.quantity)  [groups]
  *                    + SUM(standalone.lineTotal)           [ungrouped items]
- *   serviceCostTotal = SUM(service.costTotal) WHERE NOT billableToClient
+ *   serviceCostTotal = SUM(service.costTotal) WHERE status != CANCELLED
  *   labourCostTotal  = SUM(assignment.estimatedCost)
  *   subtotal         = equipmentRevenue
  *   discountAmount   = subtotal × discountPercent / 100

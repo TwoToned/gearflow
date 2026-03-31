@@ -103,7 +103,6 @@ function buildServiceData(parsed: ReturnType<typeof projectServiceSchema.parse>)
       latitude: parsed.latitude ?? null,
       longitude: parsed.longitude ?? null,
       showOnDocuments: parsed.showOnDocuments,
-      billableToClient: parsed.billableToClient,
       unitPrice: parsed.unitPrice ?? null,
       quantity: parsed.quantity,
       pricingType: (parsed.pricingType && String(parsed.pricingType) !== ""
@@ -244,6 +243,9 @@ export async function createProjectService(
   // Sync line item if showOnDocuments (outside transaction — calls recalculate)
   if (parsed.showOnDocuments) {
     await syncServiceLineItem(service.id);
+  } else if (parsed.costTotal) {
+    // Service has a cost but isn't on documents — still need to update project totals for margin
+    await recalculateProjectTotals(projectId);
   }
 
   await logActivity({
@@ -358,8 +360,12 @@ export async function updateProjectService(
         where: { id },
         data: { lineItemId: null },
       });
-      await recalculateProjectTotals(existing.projectId);
     }
+    // Recalculate regardless — line item removed or costTotal may have changed
+    await recalculateProjectTotals(existing.projectId);
+  } else if (parsed.costTotal !== undefined) {
+    // Not on documents, costTotal may have changed — update project margin
+    await recalculateProjectTotals(existing.projectId);
   }
 
   await logActivity({
@@ -410,9 +416,7 @@ export async function deleteProjectService(id: string) {
     await tx.projectService.delete({ where: { id } });
   });
 
-  if (service.lineItemId) {
-    await recalculateProjectTotals(service.projectId);
-  }
+  await recalculateProjectTotals(service.projectId);
 
   await logActivity({
     organizationId,
@@ -446,6 +450,8 @@ export async function updateServiceStatus(
     data: { status },
   });
 
+  await recalculateProjectTotals(service.projectId);
+
   await logActivity({
     organizationId,
     userId,
@@ -470,10 +476,19 @@ export async function bulkUpdateServiceStatus(
     "update",
   );
 
+  const firstService = await prisma.projectService.findFirst({
+    where: { id: ids[0], organizationId },
+    select: { projectId: true },
+  });
+
   await prisma.projectService.updateMany({
     where: { id: { in: ids }, organizationId },
     data: { status },
   });
+
+  if (firstService) {
+    await recalculateProjectTotals(firstService.projectId);
+  }
 
   await logActivity({
     organizationId,
@@ -484,6 +499,7 @@ export async function bulkUpdateServiceStatus(
     entityId: ids[0],
     entityName: `${ids.length} services`,
     summary: `Changed ${ids.length} services to ${status}`,
+    projectId: firstService?.projectId,
   });
 }
 
@@ -953,6 +969,19 @@ export async function cloneServicesFromProject(
 
   const sourceServices = await prisma.projectService.findMany({
     where: { projectId: sourceProjectId, status: { not: "CANCELLED" } },
+    include: {
+      crewAssignments: {
+        select: {
+          crewMemberId: true,
+          crewRoleId: true,
+          phase: true,
+          startDate: true,
+          startTime: true,
+          endDate: true,
+          endTime: true,
+        },
+      },
+    },
     orderBy: { sortOrder: "asc" },
   });
 
@@ -1001,7 +1030,6 @@ export async function cloneServicesFromProject(
           latitude: svc.latitude,
           longitude: svc.longitude,
           showOnDocuments: svc.showOnDocuments,
-          billableToClient: svc.billableToClient,
           unitPrice: svc.unitPrice,
           quantity: svc.quantity,
           pricingType: svc.pricingType,
@@ -1018,6 +1046,26 @@ export async function cloneServicesFromProject(
           sortOrder: sortOrder++,
         },
       });
+
+      // Copy crew assignments from source service
+      for (const a of svc.crewAssignments) {
+        await tx.crewAssignment.create({
+          data: {
+            organizationId,
+            projectId: targetProjectId,
+            crewMemberId: a.crewMemberId,
+            crewRoleId: a.crewRoleId,
+            serviceId: service.id,
+            phase: a.phase,
+            status: "PENDING",
+            startDate: offsetDate(a.startDate),
+            startTime: a.startTime,
+            endDate: offsetDate(a.endDate),
+            endTime: a.endTime,
+          },
+        });
+      }
+
       results.push(service);
     }
     return results;

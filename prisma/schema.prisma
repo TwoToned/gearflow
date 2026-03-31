@@ -766,8 +766,13 @@ model SubHire {
   pricingMode     SubHirePricingMode @default(ITEMIZED)
   orderTotalCost  Decimal?      @db.Decimal(10, 2)
   orderTotalCharge Decimal?     @db.Decimal(10, 2)
-  showOnDocs      Boolean       @default(false)
+  showOnDocs      Boolean       @default(false) // Default for new items
   notes           String?
+  // Default placement for items that don't override
+  defaultTargetCategoryId  String?
+  defaultTargetCategory    ProjectCategory? @relation(fields: [defaultTargetCategoryId], references: [id], onDelete: SetNull)
+  defaultTargetGroupId     String?
+  defaultTargetGroup       ProjectGroup?    @relation("SubHireDefaultTargetGroup", fields: [defaultTargetGroupId], references: [id], onDelete: SetNull)
   groups          SubHireGroup[]
   items           SubHireItem[]
   lineItems       ProjectLineItem[]
@@ -797,7 +802,13 @@ model SubHireItem {
   pricingType  PricingType    @default(FLAT)
   duration     Int            @default(1)
   discount     Decimal        @default(0) @db.Decimal(5, 2)
+  showOnDocs   Boolean        @default(false) // Per-item: show as sub-hired on client docs
   sortOrder    Int            @default(0)
+  // Placement on project (ungrouped items only; grouped items use their group's target)
+  targetCategoryId  String?
+  targetCategory    ProjectCategory? @relation(fields: [targetCategoryId], references: [id], onDelete: SetNull)
+  targetGroupId     String?
+  targetGroup       ProjectGroup?    @relation("SubHireItemTargetGroup", fields: [targetGroupId], references: [id], onDelete: SetNull)
   lineItems    ProjectLineItem[]
 
   @@index([subHireId])
@@ -812,6 +823,11 @@ model SubHireGroup {
   subHire     SubHire         @relation(fields: [subHireId], references: [id], onDelete: Cascade)
   title       String
   sortOrder   Int             @default(0)
+  // Placement on project (where the group's parent line item lands)
+  targetCategoryId  String?
+  targetCategory    ProjectCategory? @relation(fields: [targetCategoryId], references: [id], onDelete: SetNull)
+  targetGroupId     String?
+  targetGroup       ProjectGroup?    @relation("SubHireGroupTargetGroup", fields: [targetGroupId], references: [id], onDelete: SetNull)
   items       SubHireItem[]
   lineItems   ProjectLineItem[]
 
@@ -1324,6 +1340,10 @@ model ProjectCategory {
 
   groups          ProjectGroup[]
   lineItems       ProjectLineItem[]
+  // Sub-hire placement targets
+  subHireDefaults      SubHire[]
+  subHireGroupTargets  SubHireGroup[]
+  subHireItemTargets   SubHireItem[]
 
   @@index([projectId])
   @@index([organizationId])
@@ -1355,6 +1375,10 @@ model ProjectGroup {
   updatedAt       DateTime      @updatedAt
 
   lineItems       ProjectLineItem[]
+  // Sub-hire placement targets
+  subHireDefaults      SubHire[]           @relation("SubHireDefaultTargetGroup")
+  subHireGroupTargets  SubHireGroup[]      @relation("SubHireGroupTargetGroup")
+  subHireItemTargets   SubHireItem[]       @relation("SubHireItemTargetGroup")
 
   @@index([projectId])
   @@index([categoryId])

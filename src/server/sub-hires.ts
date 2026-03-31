@@ -5,7 +5,7 @@ import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { roundCurrency } from "@/lib/formatters";
-import { subHireSchema, subHireItemSchema, subHireGroupSchema, subHireOrderPricingSchema } from "@/lib/validations/sub-hire";
+import { subHireSchema, subHireItemSchema, subHireGroupSchema, subHireOrderPricingSchema, subHirePlacementSchema } from "@/lib/validations/sub-hire";
 import type { SubHireStatus, SubHirePricingMode, PricingType, Prisma } from "@/generated/prisma/client";
 
 // ─── Status Machine ──────────────────────────────────────────────────────────
@@ -114,8 +114,12 @@ export async function getSubHire(id: string) {
       supplier: { select: { id: true, name: true, email: true, phone: true } },
       project: { select: { id: true, name: true, projectNumber: true } },
       createdBy: { select: { id: true, name: true } },
+      defaultTargetCategory: { select: { id: true, name: true } },
+      defaultTargetGroup: { select: { id: true, title: true, categoryId: true } },
       groups: {
         include: {
+          targetCategory: { select: { id: true, name: true } },
+          targetGroup: { select: { id: true, title: true, categoryId: true } },
           items: {
             include: { model: { select: { id: true, name: true } } },
             orderBy: { sortOrder: "asc" },
@@ -126,6 +130,8 @@ export async function getSubHire(id: string) {
       items: {
         include: {
           model: { select: { id: true, name: true } },
+          targetCategory: { select: { id: true, name: true } },
+          targetGroup: { select: { id: true, title: true, categoryId: true } },
         },
         orderBy: { sortOrder: "asc" },
       },
@@ -155,6 +161,8 @@ export async function createSubHire(input: unknown) {
         hireEnd: data.hireEnd || null,
         showOnDocs: data.showOnDocs,
         notes: data.notes || null,
+        defaultTargetCategoryId: data.defaultTargetCategoryId || null,
+        defaultTargetGroupId: data.defaultTargetGroupId || null,
       },
       include: {
         supplier: { select: { name: true } },
@@ -197,6 +205,8 @@ export async function updateSubHire(id: string, input: unknown) {
       hireEnd: data.hireEnd || null,
       showOnDocs: data.showOnDocs,
       notes: data.notes || null,
+      defaultTargetCategoryId: data.defaultTargetCategoryId !== undefined ? (data.defaultTargetCategoryId || null) : undefined,
+      defaultTargetGroupId: data.defaultTargetGroupId !== undefined ? (data.defaultTargetGroupId || null) : undefined,
     },
     include: {
       supplier: { select: { name: true } },
@@ -349,7 +359,7 @@ export async function addSubHireItem(subHireId: string, input: unknown) {
 
   const subHire = await prisma.subHire.findUnique({
     where: { id: subHireId, organizationId },
-    select: { id: true, orderNumber: true, status: true, supplierId: true, projectId: true },
+    select: { id: true, orderNumber: true, status: true, supplierId: true, projectId: true, showOnDocs: true, defaultTargetGroupId: true, defaultTargetCategoryId: true },
   });
   if (!subHire) throw new Error("Sub-hire not found");
 
@@ -372,6 +382,9 @@ export async function addSubHireItem(subHireId: string, input: unknown) {
       pricingType: data.pricingType as PricingType,
       duration: data.duration,
       discount: data.discount,
+      showOnDocs: data.showOnDocs ?? subHire.showOnDocs ?? false,
+      targetCategoryId: data.targetCategoryId || null,
+      targetGroupId: data.targetGroupId || null,
       sortOrder: nextSort,
     },
     include: { model: { select: { id: true, name: true } } },
@@ -431,6 +444,9 @@ export async function updateSubHireItem(itemId: string, input: unknown) {
       pricingType: data.pricingType as PricingType,
       duration: data.duration,
       discount: data.discount,
+      showOnDocs: data.showOnDocs,
+      targetCategoryId: data.targetCategoryId !== undefined ? (data.targetCategoryId || null) : undefined,
+      targetGroupId: data.targetGroupId !== undefined ? (data.targetGroupId || null) : undefined,
     },
     include: { model: { select: { id: true, name: true } } },
   });
@@ -594,6 +610,22 @@ async function recalculateSubHireTotals(subHireId: string) {
 
 // ─── Line Item Generation + Sync ─────────────────────────────────────────────
 
+// Resolve where a line item should be placed on the project.
+// Priority: entity-level target > order-level default > uncategorized.
+// When targetGroupId is set, categoryId is resolved from the group.
+function resolvePlacement(
+  entity: { targetGroupId?: string | null; targetCategoryId?: string | null },
+  orderDefaults: { defaultTargetGroupId?: string | null; defaultTargetCategoryId?: string | null },
+  groupCategoryMap: Map<string, string>, // projectGroupId → categoryId
+): { groupId: string | null; categoryId: string | null } {
+  const gId = entity.targetGroupId ?? orderDefaults.defaultTargetGroupId ?? null;
+  if (gId) {
+    return { groupId: gId, categoryId: groupCategoryMap.get(gId) ?? null };
+  }
+  const cId = entity.targetCategoryId ?? orderDefaults.defaultTargetCategoryId ?? null;
+  return { groupId: null, categoryId: cId };
+}
+
 async function generateSubHireLineItemsTx(
   tx: Prisma.TransactionClient,
   subHireId: string,
@@ -614,6 +646,31 @@ async function generateSubHireLineItemsTx(
     throw new Error("Cannot generate line items without a project");
   }
 
+  // Build a map of projectGroupId → categoryId for placement resolution
+  const targetGroupIds = new Set<string>();
+  if (subHire.defaultTargetGroupId) targetGroupIds.add(subHire.defaultTargetGroupId);
+  for (const g of subHire.groups) {
+    if (g.targetGroupId) targetGroupIds.add(g.targetGroupId);
+  }
+  for (const i of subHire.items) {
+    if (i.targetGroupId) targetGroupIds.add(i.targetGroupId);
+  }
+  const groupCategoryMap = new Map<string, string>();
+  if (targetGroupIds.size > 0) {
+    const projectGroups = await tx.projectGroup.findMany({
+      where: { id: { in: [...targetGroupIds] } },
+      select: { id: true, categoryId: true },
+    });
+    for (const pg of projectGroups) {
+      groupCategoryMap.set(pg.id, pg.categoryId);
+    }
+  }
+
+  const orderDefaults = {
+    defaultTargetGroupId: subHire.defaultTargetGroupId,
+    defaultTargetCategoryId: subHire.defaultTargetCategoryId,
+  };
+
   // Get next sort order on the project
   const maxSort = await tx.projectLineItem.aggregate({
     where: { projectId: subHire.projectId, organizationId },
@@ -621,11 +678,20 @@ async function generateSubHireLineItemsTx(
   });
   let nextSort = (maxSort._max.sortOrder ?? -1) + 1;
 
+  // Track project groups that received items (for suggestedPrice recalc)
+  const affectedProjectGroupIds = new Set<string>();
+
   const groupedItemIds = new Set<string>();
 
-  // 1. Generate grouped items — each group becomes a parent with children
+  // 1. Generate grouped items — each sub-hire group becomes a parent with children
   for (const group of subHire.groups) {
     if (group.items.length === 0) continue;
+
+    const placement = resolvePlacement(group, orderDefaults, groupCategoryMap);
+    if (placement.groupId) affectedProjectGroupIds.add(placement.groupId);
+
+    // Determine showSubhireOnDocs from first item (parent inherits)
+    const anyShowOnDocs = group.items.some((i) => i.showOnDocs);
 
     // Create parent line item for the group
     const parent = await tx.projectLineItem.create({
@@ -642,8 +708,10 @@ async function generateSubHireLineItemsTx(
         subHireId: subHire.id,
         subHireGroupId: group.id,
         supplierId: subHire.supplierId,
-        showSubhireOnDocs: subHire.showOnDocs,
+        showSubhireOnDocs: anyShowOnDocs,
         subhireOrderNumber: subHire.orderNumber,
+        categoryId: placement.categoryId,
+        groupId: placement.groupId,
         sortOrder: nextSort++,
       },
     });
@@ -673,7 +741,7 @@ async function generateSubHireLineItemsTx(
           subHireId: subHire.id,
           subHireItemId: item.id,
           supplierId: subHire.supplierId,
-          showSubhireOnDocs: subHire.showOnDocs,
+          showSubhireOnDocs: item.showOnDocs,
           subhireOrderNumber: subHire.orderNumber,
           modelId: item.modelId,
           sortOrder: nextSort++,
@@ -682,10 +750,13 @@ async function generateSubHireLineItemsTx(
     }
   }
 
-  // 2. Generate ungrouped items as standalone line items (current behavior)
+  // 2. Generate ungrouped items as standalone line items
   for (const item of subHire.items) {
     if (groupedItemIds.has(item.id)) continue;
     if (item.groupId) continue; // double-check: skip items with groupId
+
+    const placement = resolvePlacement(item, orderDefaults, groupCategoryMap);
+    if (placement.groupId) affectedProjectGroupIds.add(placement.groupId);
 
     const chargeAfterDiscount =
       Number(item.unitCharge) * (1 - Number(item.discount) / 100);
@@ -707,18 +778,28 @@ async function generateSubHireLineItemsTx(
         subHireId: subHire.id,
         subHireItemId: item.id,
         supplierId: subHire.supplierId,
-        showSubhireOnDocs: subHire.showOnDocs,
+        showSubhireOnDocs: item.showOnDocs,
         subhireOrderNumber: subHire.orderNumber,
         modelId: item.modelId,
+        categoryId: placement.categoryId,
+        groupId: placement.groupId,
         sortOrder: nextSort++,
       },
     });
   }
+
+  // Recalculate suggestedPrice on any project groups that received items
+  if (affectedProjectGroupIds.size > 0) {
+    const { calculateSuggestedPrice } = await import("@/server/project-groups");
+    for (const pgId of affectedProjectGroupIds) {
+      await calculateSuggestedPrice(pgId);
+    }
+  }
 }
 
 async function syncNewSubHireLineItem(
-  subHire: { id: string; projectId: string | null; supplierId: string; orderNumber: string; status: string },
-  item: { id: string; groupId: string | null; description: string; quantity: number; unitCharge: Prisma.Decimal; pricingType: PricingType; duration: number; discount: Prisma.Decimal; modelId: string | null },
+  subHire: { id: string; projectId: string | null; supplierId: string; orderNumber: string; status: string; defaultTargetGroupId?: string | null; defaultTargetCategoryId?: string | null },
+  item: { id: string; groupId: string | null; description: string; quantity: number; unitCharge: Prisma.Decimal; pricingType: PricingType; duration: number; discount: Prisma.Decimal; modelId: string | null; showOnDocs: boolean; targetGroupId?: string | null; targetCategoryId?: string | null },
 ) {
   if (!subHire.projectId) return;
 
@@ -728,9 +809,11 @@ async function syncNewSubHireLineItem(
     Number(item.unitCharge) * (1 - Number(item.discount) / 100);
   const lineTotal = roundCurrency(chargeAfterDiscount * item.quantity * item.duration);
 
-  // If item belongs to a group, find the parent line item and create as child
+  // If item belongs to a sub-hire group, find the parent line item and create as child
   let parentLineItemId: string | null = null;
   let isKitChild = false;
+  let placementGroupId: string | null = null;
+  let placementCategoryId: string | null = null;
 
   if (item.groupId) {
     const parentLineItem = await prisma.projectLineItem.findFirst({
@@ -739,7 +822,33 @@ async function syncNewSubHireLineItem(
     if (parentLineItem) {
       parentLineItemId = parentLineItem.id;
       isKitChild = true;
+      // Children inherit placement from parent (no independent placement)
     }
+  } else {
+    // Ungrouped item — resolve placement
+    const orderDefaults = {
+      defaultTargetGroupId: subHire.defaultTargetGroupId ?? null,
+      defaultTargetCategoryId: subHire.defaultTargetCategoryId ?? null,
+    };
+
+    // Build group→category map for any referenced project groups
+    const groupCategoryMap = new Map<string, string>();
+    const gId = item.targetGroupId ?? orderDefaults.defaultTargetGroupId;
+    if (gId) {
+      const pg = await prisma.projectGroup.findUnique({
+        where: { id: gId },
+        select: { categoryId: true },
+      });
+      if (pg) groupCategoryMap.set(gId, pg.categoryId);
+    }
+
+    const placement = resolvePlacement(
+      { targetGroupId: item.targetGroupId, targetCategoryId: item.targetCategoryId },
+      orderDefaults,
+      groupCategoryMap,
+    );
+    placementGroupId = placement.groupId;
+    placementCategoryId = placement.categoryId;
   }
 
   const maxSort = await prisma.projectLineItem.aggregate({
@@ -765,12 +874,20 @@ async function syncNewSubHireLineItem(
       subHireId: subHire.id,
       subHireItemId: item.id,
       supplierId: subHire.supplierId,
-      showSubhireOnDocs: subHire.status === "CONFIRMED" || subHire.status === "ON_HIRE",
+      showSubhireOnDocs: item.showOnDocs,
       subhireOrderNumber: subHire.orderNumber,
       modelId: item.modelId,
+      categoryId: placementCategoryId,
+      groupId: placementGroupId,
       sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
     },
   });
+
+  // Recalculate affected project group's suggestedPrice
+  if (placementGroupId) {
+    const { calculateSuggestedPrice } = await import("@/server/project-groups");
+    await calculateSuggestedPrice(placementGroupId);
+  }
 
   const { recalculateProjectTotals } = await import("@/server/line-items");
   await recalculateProjectTotals(subHire.projectId);
@@ -789,6 +906,7 @@ async function syncSubHireLineItem(subHireItemId: string, projectId: string | nu
       duration: true,
       discount: true,
       modelId: true,
+      showOnDocs: true,
     },
   });
   if (!item) return;
@@ -813,6 +931,7 @@ async function syncSubHireLineItem(subHireItemId: string, projectId: string | nu
       discount: item.discount,
       lineTotal,
       modelId: item.modelId,
+      showSubhireOnDocs: item.showOnDocs,
     },
   });
 
@@ -913,6 +1032,8 @@ export async function createSubHireGroup(subHireId: string, input: unknown) {
       subHireId,
       title: data.title,
       sortOrder: data.sortOrder ?? ((maxSort._max.sortOrder ?? -1) + 1),
+      targetCategoryId: data.targetCategoryId || null,
+      targetGroupId: data.targetGroupId || null,
     },
     include: {
       items: {
@@ -955,6 +1076,8 @@ export async function updateSubHireGroup(groupId: string, input: unknown) {
     data: {
       title: data.title,
       sortOrder: data.sortOrder,
+      targetCategoryId: data.targetCategoryId !== undefined ? (data.targetCategoryId || null) : undefined,
+      targetGroupId: data.targetGroupId !== undefined ? (data.targetGroupId || null) : undefined,
     },
     include: {
       items: {
@@ -1191,6 +1314,134 @@ export async function updateSubHireOrderPricing(subHireId: string, input: unknow
   return serialize({ success: true });
 }
 
+// ─── Placement ──────────────────────────────────────────────────────────────
+
+export async function updateSubHirePlacement(
+  entityType: "order" | "group" | "item",
+  entityId: string,
+  input: unknown,
+) {
+  const { organizationId } = await requirePermission("subHire", "update");
+  const data = subHirePlacementSchema.parse(input);
+
+  if (entityType === "order") {
+    const subHire = await prisma.subHire.findUnique({
+      where: { id: entityId, organizationId },
+      select: { id: true, status: true, projectId: true },
+    });
+    if (!subHire) throw new Error("Sub-hire not found");
+
+    await prisma.subHire.update({
+      where: { id: entityId },
+      data: {
+        defaultTargetCategoryId: data.targetCategoryId || null,
+        defaultTargetGroupId: data.targetGroupId || null,
+      },
+    });
+
+    // If confirmed, re-generate line items to apply new placements
+    if ((subHire.status === "CONFIRMED" || subHire.status === "ON_HIRE") && subHire.projectId) {
+      await regenerateSubHireLineItems(entityId, organizationId, subHire.projectId);
+    }
+  } else if (entityType === "group") {
+    const group = await prisma.subHireGroup.findUnique({
+      where: { id: entityId },
+      include: { subHire: { select: { id: true, organizationId: true, status: true, projectId: true } } },
+    });
+    if (!group || group.subHire.organizationId !== organizationId) {
+      throw new Error("Sub-hire group not found");
+    }
+
+    await prisma.subHireGroup.update({
+      where: { id: entityId },
+      data: {
+        targetCategoryId: data.targetCategoryId || null,
+        targetGroupId: data.targetGroupId || null,
+      },
+    });
+
+    if ((group.subHire.status === "CONFIRMED" || group.subHire.status === "ON_HIRE") && group.subHire.projectId) {
+      await regenerateSubHireLineItems(group.subHire.id, organizationId, group.subHire.projectId);
+    }
+  } else if (entityType === "item") {
+    const item = await prisma.subHireItem.findUnique({
+      where: { id: entityId },
+      include: { subHire: { select: { id: true, organizationId: true, status: true, projectId: true } } },
+    });
+    if (!item || item.subHire.organizationId !== organizationId) {
+      throw new Error("Sub-hire item not found");
+    }
+
+    await prisma.subHireItem.update({
+      where: { id: entityId },
+      data: {
+        targetCategoryId: data.targetCategoryId || null,
+        targetGroupId: data.targetGroupId || null,
+      },
+    });
+
+    // For confirmed orders, move the linked line item
+    if ((item.subHire.status === "CONFIRMED" || item.subHire.status === "ON_HIRE") && item.subHire.projectId) {
+      const linkedLI = await prisma.projectLineItem.findFirst({
+        where: { subHireItemId: entityId },
+      });
+      if (linkedLI && !linkedLI.isKitChild) {
+        // Only move standalone items (grouped items follow their parent)
+        const groupCategoryMap = new Map<string, string>();
+        const gId = data.targetGroupId;
+        if (gId) {
+          const pg = await prisma.projectGroup.findUnique({
+            where: { id: gId },
+            select: { categoryId: true },
+          });
+          if (pg) groupCategoryMap.set(gId, pg.categoryId);
+        }
+        const subHireDefaults = await prisma.subHire.findUnique({
+          where: { id: item.subHire.id },
+          select: { defaultTargetGroupId: true, defaultTargetCategoryId: true },
+        });
+        const placement = resolvePlacement(
+          { targetGroupId: data.targetGroupId, targetCategoryId: data.targetCategoryId },
+          { defaultTargetGroupId: subHireDefaults?.defaultTargetGroupId, defaultTargetCategoryId: subHireDefaults?.defaultTargetCategoryId },
+          groupCategoryMap,
+        );
+
+        const oldGroupId = linkedLI.groupId;
+        await prisma.projectLineItem.update({
+          where: { id: linkedLI.id },
+          data: {
+            groupId: placement.groupId,
+            categoryId: placement.categoryId,
+          },
+        });
+
+        // Recalculate suggestedPrice on old and new project groups
+        const { calculateSuggestedPrice } = await import("@/server/project-groups");
+        if (oldGroupId) await calculateSuggestedPrice(oldGroupId);
+        if (placement.groupId) await calculateSuggestedPrice(placement.groupId);
+
+        const { recalculateProjectTotals } = await import("@/server/line-items");
+        await recalculateProjectTotals(item.subHire.projectId);
+      }
+    }
+  }
+
+  return serialize({ success: true });
+}
+
+// Helper: delete all line items for a sub-hire and regenerate from scratch
+async function regenerateSubHireLineItems(subHireId: string, organizationId: string, projectId: string) {
+  await prisma.$transaction(async (tx) => {
+    await tx.projectLineItem.deleteMany({
+      where: { subHireId },
+    });
+    await generateSubHireLineItemsTx(tx, subHireId, organizationId);
+  });
+
+  const { recalculateProjectTotals } = await import("@/server/line-items");
+  await recalculateProjectTotals(projectId);
+}
+
 // ─── Supplier Rate Memory ────────────────────────────────────────────────────
 
 async function upsertSupplierModelRate(
@@ -1299,6 +1550,7 @@ export async function duplicateSubHire(sourceId: string) {
           subHireId: newSubHire.id,
           title: group.title,
           sortOrder: group.sortOrder,
+          // Placement targets are NOT copied (new DRAFT starts uncategorized)
         },
       });
       groupIdMap.set(group.id, newGroup.id);
@@ -1318,7 +1570,9 @@ export async function duplicateSubHire(sourceId: string) {
           pricingType: item.pricingType,
           duration: item.duration,
           discount: item.discount,
+          showOnDocs: item.showOnDocs,
           sortOrder: item.sortOrder,
+          // Placement targets are NOT copied (new DRAFT starts uncategorized)
         },
       });
     }

@@ -81,7 +81,6 @@ import {
   isBulkItem,
   modelDisplayName,
   isKitParent,
-  isGroupParent,
   collectAllVerifiableIds,
   bulkUnitKey,
 } from "@/components/warehouse/warehouse-types";
@@ -137,8 +136,8 @@ function groupItems(items: LineItem[], mode: "prep" | "deploy" = "prep"): GroupE
   const result: GroupEntry[] = [];
 
   for (const item of items) {
-    if (isKitParent(item) || isGroupParent(item)) {
-      // Kit or sub-hire group parent: show children that aren't checked out
+    if (isKitParent(item)) {
+      // Deploy tab: show children that aren't checked out, or nested kits with undeployed grandchildren
       const allChildren = (item.childLineItems || []) as LineItem[];
       const deployChildren = allChildren.filter((c) => {
         if (c.status === "CANCELLED") return false;
@@ -202,8 +201,8 @@ function groupCheckinItems(items: LineItem[]): GroupEntry[] {
   const result: GroupEntry[] = [];
 
   for (const item of items) {
-    if (isKitParent(item) || isGroupParent(item)) {
-      // Kit or sub-hire group parent: show children that are checked out
+    if (isKitParent(item)) {
+      // Return tab: show children that are checked out, or nested kits with deployed grandchildren
       const allChildren = (item.childLineItems || []) as LineItem[];
       const returnChildren = allChildren.filter((c) => {
         if (c.status === "CHECKED_OUT") return true;
@@ -1160,15 +1159,23 @@ function WarehouseProjectPage({
   const selectedContainerRef = useRef(selectedContainer);
   selectedContainerRef.current = selectedContainer;
 
-  // Filter out kit children and container line items — they show under their parent row / auto-managed
-  const equipmentItems = lineItems.filter((item) => item.type === "EQUIPMENT" && !item.isKitChild && !item.isContainerLineItem);
+  // Filter out kit children and container line items — they show under their parent row / auto-managed.
+  // Sub-hire children (isKitChild + isSubhire) pass through as regular individual items.
+  const equipmentItems = lineItems.filter((item) => {
+    if (item.type !== "EQUIPMENT") return false;
+    if (item.isContainerLineItem) return false;
+    if (item.isKitChild && !item.isSubhire) return false; // real kit children stay hidden
+    // Hide sub-hire group parent wrappers — children show individually
+    if (item.isSubhire && !item.isKitChild && !item.kitId && (item.childLineItems?.length ?? 0) > 0) return false;
+    return true;
+  });
 
   // Pick/Prep: items that need to be picked and prepped (not yet PACKED)
   const pickPrepItems = equipmentItems.filter((item) => {
     if (item.status === "CANCELLED") return false;
     if (item.status === "CHECKED_OUT") return false;
-    // Kit/sub-hire group parents: show if any children still need prepping
-    if (isKitParent(item) || isGroupParent(item)) {
+    // Kit parents: show if any children still need prepping
+    if (isKitParent(item)) {
       const children = (item.childLineItems || []) as LineItem[];
       return children.some((c) => {
         if (c.status === "CHECKED_OUT" || c.status === "CANCELLED") return false;
@@ -1193,8 +1200,8 @@ function WarehouseProjectPage({
   const preppedItems = equipmentItems.filter((item) => {
     if (item.status === "CANCELLED") return false;
     if (item.status === "CHECKED_OUT") return false;
-    // Kit/sub-hire group parents: show if any children are prepped but not deployed
-    if (isKitParent(item) || isGroupParent(item)) {
+    // Kit parents: show if any children are prepped but not deployed
+    if (isKitParent(item)) {
       const children = (item.childLineItems || []) as LineItem[];
       return children.some((c) => {
         if (c.status === "CHECKED_OUT" || c.status === "CANCELLED") return false;
@@ -1215,8 +1222,8 @@ function WarehouseProjectPage({
   const checkOutItemsList = preppedItems;
 
   const checkedOutItems = equipmentItems.filter((item) => {
-    // Kit/sub-hire group parents: show in return tab if any children/grandchildren are deployed
-    if (isKitParent(item) || isGroupParent(item)) {
+    // Kit parents: show in return tab if any children/grandchildren are deployed
+    if (isKitParent(item)) {
       const children = (item.childLineItems || []) as LineItem[];
       return children.some((c) => {
         if (c.status === "CHECKED_OUT") return true;

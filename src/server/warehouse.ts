@@ -1208,7 +1208,13 @@ export async function getProjectPullSheet(projectId: string) {
   );
 
   const enrichedLineItems = project.lineItems
-    .filter((li) => !li.isKitChild) // Kit children render under their parent
+    .filter((li) => {
+      // Kit children render under their parent
+      if (li.isKitChild && !li.isSubhire) return false;
+      // Sub-hire group parents are wrappers — their children show individually
+      if (li.isSubhire && !li.isKitChild && !li.kitId && (li.childLineItems?.length ?? 0) > 0) return false;
+      return true;
+    })
     .map((li) => {
       const info = overbookedMap.get(li.id);
       return {

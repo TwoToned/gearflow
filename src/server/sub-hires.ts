@@ -107,7 +107,7 @@ export async function getSubHire(id: string) {
   const subHire = await prisma.subHire.findUnique({
     where: { id, organizationId },
     include: {
-      supplier: { select: { id: true, name: true, contactEmail: true, contactPhone: true } },
+      supplier: { select: { id: true, name: true, email: true, phone: true } },
       project: { select: { id: true, name: true, projectNumber: true } },
       createdBy: { select: { id: true, name: true } },
       items: {

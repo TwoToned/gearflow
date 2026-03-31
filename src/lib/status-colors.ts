@@ -130,7 +130,7 @@ const subHireStatusIntent: Record<string, ColorIntent> = {
   CONFIRMED: "warning",
   ON_HIRE: "info",
   RETURNED: "success",
-  CANCELLED: "subtle",
+  CANCELLED: "neutral",
 };
 
 const conditionIntent: Record<string, ColorIntent> = {

@@ -99,7 +99,8 @@ function SubHireDetailContent({ params }: { params: Promise<{ id: string }> }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [editingItem, setEditingItem] = useState<any>(null);
 
-  const { data: subHire, isLoading } = useQuery({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: subHire, isLoading } = useQuery<any>({
     queryKey: ["sub-hire", orgId, id],
     queryFn: () => getSubHire(id),
   });
@@ -368,10 +369,10 @@ function SubHireDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       {subHire.supplier?.name}
                     </Link>
                     {subHire.supplier?.contactEmail && (
-                      <p className="text-fg-3">{subHire.supplier.contactEmail}</p>
+                      <p className="text-fg-3">{subHire.supplier.email}</p>
                     )}
                     {subHire.supplier?.contactPhone && (
-                      <p className="text-fg-3">{subHire.supplier.contactPhone}</p>
+                      <p className="text-fg-3">{subHire.supplier.phone}</p>
                     )}
                   </div>
                 </div>
@@ -631,7 +632,7 @@ function SubHireItemDialog({
             </div>
             <div className="space-y-2">
               <Label>Pricing Type</Label>
-              <Select value={pricingType} onValueChange={setPricingType}>
+              <Select value={pricingType} onValueChange={(v) => { if (v) setPricingType(v); }}>
                 <SelectTrigger>
                   <SelectValue>
                     {pricingType === "FLAT" ? "Flat" : pricingType === "PER_DAY" ? "Per Day" : pricingType === "PER_WEEK" ? "Per Week" : "Per Hour"}

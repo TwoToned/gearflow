@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 
 import { getSubHires } from "@/server/sub-hires";
+import type { SubHireStatus } from "@/generated/prisma/client";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { formatCurrency } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
@@ -183,7 +184,7 @@ export default function SubHiresPage() {
       const statusFilter = filters?.status;
       return getSubHires({
         search: search || undefined,
-        status: statusFilter ? (Array.isArray(statusFilter) ? statusFilter : [statusFilter]) : undefined,
+        status: statusFilter ? (Array.isArray(statusFilter) ? statusFilter : [statusFilter]) as SubHireStatus[] : undefined,
         supplierId: filters?.supplierId as string | undefined,
       });
     },

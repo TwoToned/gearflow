@@ -60,6 +60,7 @@ async function reserveSubHireOrderNumber(
 export async function getSubHires(filters?: {
   status?: SubHireStatus[];
   supplierId?: string;
+  projectId?: string;
   search?: string;
   dateFrom?: string;
   dateTo?: string;
@@ -73,6 +74,9 @@ export async function getSubHires(filters?: {
   }
   if (filters?.supplierId) {
     where.supplierId = filters.supplierId;
+  }
+  if (filters?.projectId) {
+    where.projectId = filters.projectId;
   }
   if (filters?.dateFrom || filters?.dateTo) {
     where.hireStart = {};

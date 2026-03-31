@@ -6,9 +6,10 @@ Sub-hires track gear rented from third-party suppliers with structured items, du
 
 ## Schema
 
-- **SubHire** — order-level entity: supplier, project, status, dates, totals, pricingMode (ITEMIZED or ORDER_TOTAL), orderTotalCost/orderTotalCharge, showOnDocs (default for new items), defaultTargetCategoryId/defaultTargetGroupId (order-level placement default)
-- **SubHireGroup** — groups items within a sub-hire (e.g. "Shure ULXD Kit"). Has title, sortOrder, and placement targets (targetCategoryId/targetGroupId). Items within a group become parent+child line items on the project (using the kit pattern: `isKitChild` + `parentLineItemId`).
-- **SubHireItem** — line-level: description, model, quantity, unitCost, unitCharge, pricingType, duration, discount, showOnDocs (per-item), optional groupId, placement targets (targetCategoryId/targetGroupId for ungrouped items)
+- **SubHire** — order-level entity: supplier, project, status, dates, totals, pricingMode (ITEMIZED or ORDER_TOTAL), orderTotalCost/orderTotalCharge, paymentStatus (UNPAID/PARTIALLY_PAID/PAID), showOnDocs, defaultTargetCategoryId/defaultTargetGroupId (order-level placement default)
+- **SubHireGroup** — groups items within a sub-hire (e.g. "Shure ULXD Kit"). Has title, sortOrder, quantity, cost/charge overrides, showOnQuote, showOnDocs, and placement targets (targetCategoryId/targetGroupId). Items within a group become parent+child line items on the project (using the kit pattern: `isKitChild` + `parentLineItemId`). Children inherit placement from parent.
+- **SubHireItem** — line-level: description, model, quantity, unitCost, unitCharge, pricingType, duration, discount, showOnQuote (include on client quote), showOnDocs (show sub-hire indicator), optional groupId, placement targets (targetCategoryId/targetGroupId for ungrouped items)
+- **SubHireMedia** — file attachments (quotes, invoices, documents) linked to sub-hire orders via FileUpload join table
 - **SupplierModelRate** — caches last rate per supplier+model pair for pre-fill
 - **ProjectLineItem** — gains `subHireId`, `subHireItemId`, and `subHireGroupId` FKs
 
@@ -36,9 +37,27 @@ Sub-hires are managed via a **dialog** on the project equipment tab:
    - **Manage view** — full sub-hire detail with groups, items table, pricing mode, placement pickers, status transitions, delete
 3. **Overbook shortcut** — the "Sub-hire N units instead" link in the add-equipment dialog opens the sub-hire dialog instead of navigating away
 
-## Per-Item showOnDocs
+## Display Toggles (Two-Toggle System)
 
-Each sub-hire item has its own `showOnDocs` boolean controlling whether it appears as sub-hired on client-facing documents (quotes, invoices, packing lists). The order-level `showOnDocs` is the default for new items. Items can be toggled individually via the item dropdown menu (Eye/EyeOff icon) or in the item add/edit form. The per-item value flows to `ProjectLineItem.showSubhireOnDocs` during line item generation.
+Each sub-hire item and group has exactly two display toggles:
+
+1. **Show on quote** (`showOnQuote`, default: true) — Whether the item/group appears on the client's quote and invoice. When false, no ProjectLineItem is generated for that item/group.
+2. **Show as sub-hired** (`showOnDocs`, default: false) — Whether a "sub-hired" indicator appears on client documents. Flows to `ProjectLineItem.showSubhireOnDocs`.
+
+These replace the previous order-level showOnDocs toggle and per-item eye/eyeoff controls. Toggles are available in the item add/edit dialog and the group edit dialog.
+
+## Payment Status
+
+Sub-hire orders track payment to the supplier via `paymentStatus`:
+- **UNPAID** (default) — Invoice not yet paid
+- **PARTIALLY_PAID** — Partial payment made
+- **PAID** — Fully paid
+
+Updated via dropdown in the manage view sidebar. Logged in activity trail.
+
+## File Attachments
+
+Sub-hire orders support file attachments (supplier quotes, invoices, POs) via the `SubHireMedia` join table. Uses the existing `MediaUploader` component and `FileUpload` storage system. Files are displayed in the manage view sidebar with upload, preview, and delete capabilities.
 
 ## Placement System
 
@@ -104,15 +123,20 @@ The sub-hire item's `unitCharge` flows to the `ProjectLineItem.unitPrice`, which
 ## Key Behaviors
 
 ### Line Item Generation
-When a sub-hire is confirmed, `ProjectLineItem` records are created for each `SubHireItem` with `isSubhire: true`, linked via `subHireId` and `subHireItemId` FKs. Placement targets are resolved and line items are placed into the correct project categories/groups. `suggestedPrice` is recalculated on affected project groups. Project totals are recalculated after.
+Line items are generated immediately (even for DRAFT sub-hires) via `syncSubHireToProject`. Items with `showOnQuote: false` are skipped — they exist in the sub-hire order for cost tracking but don't appear on the project. All items are `isSubhire: true`, linked via `subHireId` and `subHireItemId` FKs.
 
-**Grouped items** use the kit parent-child pattern: a parent `ProjectLineItem` is created for the group (with `subHireGroupId` set, description = group title) and each group item becomes a child line item with `isKitChild: true` and `parentLineItemId` pointing to the group parent. Per-item `showOnDocs` determines each line item's `showSubhireOnDocs`.
+**Grouped items** use the kit parent-child pattern: a parent `ProjectLineItem` is created for the group (with `subHireGroupId` set, description = group title) and each group item becomes a child line item with `isKitChild: true` and `parentLineItemId` pointing to the group parent. **Children inherit the same `categoryId`/`groupId` as the parent** so they appear in the correct project group. When a group has a `charge` set, the parent uses `KIT_PRICE` pricing mode; otherwise `ITEMIZED`. The `showOnDocs` values from items and groups determine `ProjectLineItem.showSubhireOnDocs`.
 
 **Ungrouped items** are created as standalone line items with their own placement.
 
+**Equipment tab rendering**: `isKitChild` items are filtered from the flat list — they only appear as expandable children under their parent item (chevron toggle). Groups with `showOnQuote: false` generate no line items at all.
+
 ### Pricing Modes
-- **ITEMIZED** (default) — each item has its own unitCost and unitCharge. Totals are summed from items.
+- **ITEMIZED** (default) — each item has its own unitCost and unitCharge. Totals are summed from items. When a group has `cost` or `charge` set, those flat values **replace** the sum of that group's items in the order totals (e.g. supplier package deals).
 - **ORDER_TOTAL** — a flat orderTotalCost and optional orderTotalCharge set on the sub-hire itself. Item-level costs are for tracking only. Useful when suppliers don't provide itemized invoices.
+
+### Group Pricing
+Groups have optional `quantity`, `cost`, and `charge` fields. When `cost` is set, it overrides the sum of items' costs for that group in `recalculateSubHireTotals`. Same for `charge`. The group edit dialog shows suggested values from items and a live margin preview. Group `charge` flows to the parent line item's `unitPrice` using `KIT_PRICE` mode.
 
 ### Line Item Sync
 Editing a sub-hire item when the sub-hire is CONFIRMED or ON_HIRE updates the corresponding `ProjectLineItem` (including `showSubhireOnDocs`) and recalculates project totals.

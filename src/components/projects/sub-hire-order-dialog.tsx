@@ -769,6 +769,56 @@ function SubHireManageView({
               {formatDate(subHire.hireStart)} &ndash; {formatDate(subHire.hireEnd)}
             </DialogDescription>
           </div>
+          {/* Actions dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" />}>
+              <MoreVertical className="h-4 w-4" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                {transitions.forward && (
+                  <DropdownMenuItem
+                    onClick={() => statusMutation.mutate(transitions.forward!.status)}
+                    disabled={statusMutation.isPending}
+                  >
+                    {transitions.forward!.label}
+                  </DropdownMenuItem>
+                )}
+                {transitions.cancel && (
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setConfirmAction({
+                        title: "Cancel order",
+                        description: "Cancel this sub-hire order? This will update the status to cancelled.",
+                        confirmLabel: "Cancel Order",
+                        variant: "destructive",
+                        onConfirm: () => statusMutation.mutate("CANCELLED"),
+                      });
+                    }}
+                    className="text-destructive"
+                  >
+                    Cancel Order
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem
+                  onClick={() => {
+                    setConfirmAction({
+                      title: "Delete sub-hire",
+                      description: "Permanently delete this sub-hire order and all its items? This cannot be undone.",
+                      confirmLabel: "Delete",
+                      variant: "destructive",
+                      onConfirm: () => deleteMutation.mutate(),
+                    });
+                  }}
+                  className="text-destructive"
+                >
+                  <Trash2 className="mr-2 h-3.5 w-3.5" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </DialogHeader>
 
@@ -1282,60 +1332,7 @@ function SubHireManageView({
         </div>
       </div>
 
-      {/* Footer with status actions */}
-      <DialogFooter className="flex-col sm:flex-row gap-2">
-        <div className="flex items-center gap-2 flex-1">
-          <CanDo resource="subHire" action="update">
-            {transitions.forward && (
-              <Button
-                size="sm"
-                onClick={() => statusMutation.mutate(transitions.forward!.status)}
-                disabled={statusMutation.isPending}
-              >
-                {statusMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {transitions.forward!.label}
-              </Button>
-            )}
-            {transitions.cancel && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setConfirmAction({
-                    title: "Cancel order",
-                    description: "Cancel this sub-hire order? This will update the status to cancelled.",
-                    confirmLabel: "Cancel Order",
-                    variant: "destructive",
-                    onConfirm: () => statusMutation.mutate("CANCELLED"),
-                  });
-                }}
-                disabled={statusMutation.isPending}
-              >
-                Cancel Order
-              </Button>
-            )}
-          </CanDo>
-          <CanDo resource="subHire" action="delete">
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => {
-                setConfirmAction({
-                  title: "Delete sub-hire",
-                  description: "Permanently delete this sub-hire order and all its items? This cannot be undone.",
-                  confirmLabel: "Delete",
-                  variant: "destructive",
-                  onConfirm: () => deleteMutation.mutate(),
-                });
-              }}
-              disabled={deleteMutation.isPending}
-            >
-              <Trash2 className="mr-1 h-3 w-3" />
-              Delete
-            </Button>
-          </CanDo>
-        </div>
+      <DialogFooter>
         <Button variant="outline" onClick={onBack}>Done</Button>
       </DialogFooter>
 

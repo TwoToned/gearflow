@@ -424,6 +424,8 @@ function SortableLineItemRow({
   indent,
   overbookedInfo,
   isUnconfirmed,
+  isExpanded,
+  onToggle,
   onEdit,
   onMove,
   onRemove,
@@ -432,10 +434,13 @@ function SortableLineItemRow({
   indent: string;
   overbookedInfo?: OverbookedInfo | null;
   isUnconfirmed?: boolean;
+  isExpanded?: boolean;
+  onToggle?: () => void;
   onEdit: () => void;
   onMove: () => void;
   onRemove: () => void;
 }) {
+  const hasChildren = (item.childLineItems?.length ?? 0) > 0;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: `li-${item.id}` });
 
@@ -448,7 +453,11 @@ function SortableLineItemRow({
   // Map content indent to grip indent (margin-based to avoid affecting column width)
   const gripIndent = indent === "ml-12" ? "ml-8" : indent === "ml-3" ? "ml-1" : "";
 
+  // Deeper indent for child rows
+  const childIndent = indent === "ml-12" ? "ml-16" : indent === "ml-3" ? "ml-8" : "ml-6";
+
   return (
+    <>
     <TableRow ref={setNodeRef} style={style} className={isDragging ? "opacity-30" : ""}>
       <TableCell className="px-0">
         <div className={`flex justify-end ${gripIndent || "px-1"}`}>
@@ -464,9 +473,17 @@ function SortableLineItemRow({
       </TableCell>
       <TableCell>
         <div className={`flex items-center gap-2 ${indent}`}>
+          {hasChildren && (
+            <button type="button" onClick={onToggle} className="shrink-0 text-fg-3 hover:text-fg transition-transform" style={{ transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}>
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          )}
           <span className="font-medium">
             {item.model?.name ?? item.description ?? "—"}
           </span>
+          {hasChildren && (
+            <span className="text-xs text-fg-3">{item.childLineItems!.length} item{item.childLineItems!.length !== 1 ? "s" : ""}</span>
+          )}
           {item.asset?.assetTag && (
             <span className="text-xs text-fg-3">({item.asset.assetTag})</span>
           )}
@@ -554,6 +571,26 @@ function SortableLineItemRow({
         </div>
       </TableCell>
     </TableRow>
+    {/* Expanded child items (kit children / sub-hire group children) */}
+    {isExpanded && hasChildren && item.childLineItems!.map((child) => (
+      <TableRow key={child.id} className="bg-muted/30">
+        <TableCell className="px-0" />
+        <TableCell>
+          <div className={`flex items-center gap-2 ${childIndent}`}>
+            <span className="text-sm text-fg-2">{child.model?.name ?? child.description ?? "—"}</span>
+          </div>
+        </TableCell>
+        <TableCell className="text-center t-data text-fg-2">{child.quantity}</TableCell>
+        <TableCell className="text-right hidden md:table-cell t-data text-fg-2">
+          {formatCurrency(child.unitPrice != null ? Number(child.unitPrice) : null)}
+        </TableCell>
+        <TableCell className="text-right hidden sm:table-cell t-data text-fg-2">
+          {formatCurrency(child.lineTotal != null ? Number(child.lineTotal) : null)}
+        </TableCell>
+        <TableCell />
+      </TableRow>
+    ))}
+    </>
   );
 }
 
@@ -583,6 +620,16 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
   const [showSubHireOrderDialog, setShowSubHireOrderDialog] = useState(false);
   const [managingSubHireId, setManagingSubHireId] = useState<string | null>(null);
   const [expandedSubHires, setExpandedSubHires] = useState<Set<string>>(new Set());
+
+  // Kit/group parent expand state (for items with childLineItems)
+  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
+  const toggleParent = useCallback((id: string) => {
+    setExpandedParents((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
 
   // Subhire dialog state
   const [showSubhireDialog, setShowSubhireDialog] = useState(false);
@@ -1035,16 +1082,16 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
       allSortableIds.push(`grp-${group.id}`);
       if (expandedGroups.has(group.id)) {
         for (const item of group.lineItems ?? []) {
-          allSortableIds.push(`li-${item.id}`);
+          if (!(item as LineItemData).isKitChild) allSortableIds.push(`li-${item.id}`);
         }
       }
     }
     for (const item of cat.lineItems ?? []) {
-      allSortableIds.push(`li-${item.id}`);
+      if (!(item as LineItemData).isKitChild) allSortableIds.push(`li-${item.id}`);
     }
   }
   for (const item of uncategorizedItems as LineItemData[]) {
-    allSortableIds.push(`li-${item.id}`);
+    if (!item.isKitChild) allSortableIds.push(`li-${item.id}`);
   }
 
   return (
@@ -1163,7 +1210,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
             >
               <TableBody>
                 {typedCategories.map((cat) => {
-                  const standaloneItems = cat.lineItems ?? [];
+                  const standaloneItems = (cat.lineItems ?? []).filter((i: LineItemData) => !i.isKitChild);
 
                   return (
                     <React.Fragment key={cat.id}>
@@ -1181,7 +1228,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                       {cat.groups.map((group) => {
                         const isExpanded = expandedGroups.has(group.id);
                         const priceVal = group.price != null ? Number(group.price) : null;
-                        const groupItems = group.lineItems ?? [];
+                        const groupItems = (group.lineItems ?? []).filter((i: LineItemData) => !i.isKitChild);
                         return (
                           <React.Fragment key={group.id}>
                             <SortableGroupRow
@@ -1249,6 +1296,8 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                                 indent="ml-12"
                                 overbookedInfo={(overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                                 isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
+                                isExpanded={expandedParents.has(item.id)}
+                                onToggle={() => toggleParent(item.id)}
                                 onEdit={() => openEditLineItem(item)}
                                 onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId(group.id); }}
                                 onRemove={() => removeMut.mutate(item.id)}
@@ -1266,6 +1315,8 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                           indent="ml-3"
                           overbookedInfo={(overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                           isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
+                          isExpanded={expandedParents.has(item.id)}
+                          onToggle={() => toggleParent(item.id)}
                           onEdit={() => openEditLineItem(item)}
                           onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
                           onRemove={() => removeMut.mutate(item.id)}
@@ -1276,13 +1327,15 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                 })}
 
                 {/* Uncategorized items */}
-                {(uncategorizedItems as LineItemData[]).map((item) => (
+                {(uncategorizedItems as LineItemData[]).filter((i) => !i.isKitChild).map((item) => (
                   <SortableLineItemRow
                     key={item.id}
                     item={item}
                     indent=""
                     overbookedInfo={(overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                     isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
+                    isExpanded={expandedParents.has(item.id)}
+                    onToggle={() => toggleParent(item.id)}
                     onEdit={() => openEditLineItem(item)}
                     onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
                     onRemove={() => removeMut.mutate(item.id)}

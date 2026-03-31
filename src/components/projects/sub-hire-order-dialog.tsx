@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Loader2, ArrowLeft, MoreVertical, AlertTriangle, FolderPlus, ChevronDown, Eye, EyeOff, MapPin } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, ArrowLeft, MoreVertical, AlertTriangle, FolderPlus, ChevronDown, MapPin } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -504,13 +504,6 @@ function SubHireCreateView({
             <Input type="date" value={hireEnd} onChange={(e) => setHireEnd(e.target.value)} />
           </div>
         </div>
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-sm font-medium">Show on client documents</div>
-            <div className="text-xs text-fg-3">Sub-hired items appear on quotes, invoices, and packing lists</div>
-          </div>
-          <Switch checked={showOnDocs} onCheckedChange={setShowOnDocs} />
-        </div>
         <div className="space-y-2">
           <Label>Notes</Label>
           <Textarea
@@ -732,20 +725,6 @@ function SubHireManageView({
   const allItems = (subHire.items || []) as Array<Record<string, any>>;
   const ungroupedItems = allItems.filter((item) => !item.groupId);
   const isOrderTotal = subHire.pricingMode === "ORDER_TOTAL";
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function handleToggleShowOnDocs(item: Record<string, any>) {
-    updateSubHireItem(item.id, {
-      description: item.description,
-      quantity: item.quantity,
-      unitCost: Number(item.unitCost),
-      unitCharge: Number(item.unitCharge),
-      pricingType: item.pricingType || "FLAT",
-      duration: item.duration,
-      discount: Number(item.discount),
-      showOnDocs: !item.showOnDocs,
-    }).then(() => invalidate()).catch((e) => toast.error(e.message));
-  }
 
   return (
     <>
@@ -1127,7 +1106,6 @@ function SubHireManageView({
                                     });
                                   }}
                                   onMoveToGroup={(gId) => moveItemMutation.mutate({ itemId: item.id as string, groupId: gId })}
-                                  onToggleShowOnDocs={() => handleToggleShowOnDocs(item)}
                                 />
                               ))}
                             </TableBody>
@@ -1188,7 +1166,6 @@ function SubHireManageView({
                               });
                             }}
                             onMoveToGroup={(gId) => moveItemMutation.mutate({ itemId: item.id as string, groupId: gId })}
-                            onToggleShowOnDocs={() => handleToggleShowOnDocs(item)}
                           />
                           {/* Per-item placement picker */}
                           <TableRow className="hover:bg-transparent">
@@ -1227,24 +1204,6 @@ function SubHireManageView({
 
         {/* Order details */}
         <div className="rounded-md bg-bg-inset p-3 space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium">Show on client documents</div>
-              <div className="text-xs text-fg-4">Items appear on quotes, invoices, and packing lists</div>
-            </div>
-            <CanDo
-              resource="subHire"
-              action="update"
-              fallback={<span className="text-sm text-fg-3">{subHire.showOnDocs ? "Yes" : "No"}</span>}
-            >
-              <Switch
-                checked={subHire.showOnDocs}
-                onCheckedChange={(checked) =>
-                  updateMutation.mutate({ supplierId: subHire.supplier?.id, showOnDocs: checked })
-                }
-              />
-            </CanDo>
-          </div>
           {subHire.notes && (
             <div className="border-t border-border/50 pt-3">
               <div className="text-[10px] font-bold uppercase tracking-wider text-fg-3 mb-1">Notes</div>
@@ -1366,6 +1325,8 @@ function SubHireGroupEditDialog({
   const [quantity, setQuantity] = useState(1);
   const [cost, setCost] = useState("");
   const [charge, setCharge] = useState("");
+  const [showOnQuote, setShowOnQuote] = useState(true);
+  const [showOnDocs, setShowOnDocs] = useState(false);
 
   useEffect(() => {
     if (group) {
@@ -1373,6 +1334,8 @@ function SubHireGroupEditDialog({
       setQuantity(Number(group.quantity) || 1);
       setCost(group.cost != null ? String(Number(group.cost)) : "");
       setCharge(group.charge != null ? String(Number(group.charge)) : "");
+      setShowOnQuote(group.showOnQuote ?? true);
+      setShowOnDocs(group.showOnDocs ?? false);
     }
   }, [group]);
 
@@ -1491,6 +1454,24 @@ function SubHireGroupEditDialog({
               </div>
             </div>
           )}
+
+          {/* Display toggles */}
+          <div className="space-y-3 pt-2 border-t border-border">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-medium">Show on quote</div>
+                <div className="text-xs text-fg-3">Include this group on the client&apos;s quote and invoice</div>
+              </div>
+              <Switch checked={showOnQuote} onCheckedChange={setShowOnQuote} />
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-medium">Show as sub-hired</div>
+                <div className="text-xs text-fg-3">Display a sub-hire indicator on client documents</div>
+              </div>
+              <Switch checked={showOnDocs} onCheckedChange={setShowOnDocs} />
+            </div>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
@@ -1500,6 +1481,8 @@ function SubHireGroupEditDialog({
               quantity,
               cost: cost ? Number(cost) : null,
               charge: charge ? Number(charge) : null,
+              showOnQuote,
+              showOnDocs,
             })}
             disabled={!title.trim() || isPending}
           >
@@ -1521,7 +1504,6 @@ function SubHireItemRow({
   onEdit,
   onRemove,
   onMoveToGroup,
-  onToggleShowOnDocs,
 }: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   item: Record<string, any>;
@@ -1531,7 +1513,6 @@ function SubHireItemRow({
   onEdit: () => void;
   onRemove: () => void;
   onMoveToGroup: (groupId: string | null) => void;
-  onToggleShowOnDocs: () => void;
 }) {
   const cost = Number(item.unitCost) * Number(item.quantity) * Number(item.duration);
   const charge = Number(item.unitCharge) * Number(item.quantity) * Number(item.duration) * (1 - Number(item.discount) / 100);
@@ -1542,10 +1523,8 @@ function SubHireItemRow({
       <TableCell className="py-2">
         <div className="flex items-center gap-1.5">
           <div className="text-sm">{item.description}</div>
-          {item.showOnDocs && (
-            <span title="Shown as sub-hired on client docs">
-              <Eye className="h-3 w-3 text-primary/60" />
-            </span>
+          {!item.showOnQuote && (
+            <span className="text-[10px] text-fg-4 bg-surface-2 px-1.5 py-0.5 rounded">Hidden</span>
           )}
         </div>
         {item.model && (
@@ -1584,13 +1563,6 @@ function SubHireItemRow({
                 <DropdownMenuItem onClick={onEdit}>
                   <Pencil className="mr-2 h-4 w-4" />
                   Edit
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={onToggleShowOnDocs}>
-                  {item.showOnDocs ? (
-                    <><EyeOff className="mr-2 h-4 w-4" />Hide on client docs</>
-                  ) : (
-                    <><Eye className="mr-2 h-4 w-4" />Show on client docs</>
-                  )}
                 </DropdownMenuItem>
                 {/* Move to group options */}
                 {groups.length > 0 && (
@@ -1654,6 +1626,7 @@ function SubHireItemForm({
   const [pricingType, setPricingType] = useState("FLAT");
   const [duration, setDuration] = useState(1);
   const [discount, setDiscount] = useState(0);
+  const [showOnQuote, setShowOnQuote] = useState(true);
   const [showOnDocs, setShowOnDocs] = useState(false);
 
   const { data: activeOrg } = useActiveOrganization();
@@ -1709,6 +1682,7 @@ function SubHireItemForm({
       setPricingType(editingItem.pricingType || "FLAT");
       setDuration(editingItem.duration || 1);
       setDiscount(Number(editingItem.discount) || 0);
+      setShowOnQuote(editingItem.showOnQuote ?? true);
       setShowOnDocs(editingItem.showOnDocs ?? false);
     } else if (open) {
       setModelId("");
@@ -1719,6 +1693,7 @@ function SubHireItemForm({
       setPricingType("FLAT");
       setDuration(1);
       setDiscount(0);
+      setShowOnQuote(true);
       setShowOnDocs(false);
       lastRateRef[1](null);
     }
@@ -1727,8 +1702,8 @@ function SubHireItemForm({
   const addMutation = useMutation({
     mutationFn: () =>
       editingItem
-        ? updateSubHireItem(editingItem.id, { modelId: modelId || undefined, description, quantity, unitCost, unitCharge, pricingType, duration, discount, showOnDocs, groupId: editingItem.groupId || groupId || undefined })
-        : addSubHireItem(subHireId, { modelId: modelId || undefined, description, quantity, unitCost, unitCharge, pricingType, duration, discount, showOnDocs, groupId: groupId || undefined }),
+        ? updateSubHireItem(editingItem.id, { modelId: modelId || undefined, description, quantity, unitCost, unitCharge, pricingType, duration, discount, showOnQuote, showOnDocs, groupId: editingItem.groupId || groupId || undefined })
+        : addSubHireItem(subHireId, { modelId: modelId || undefined, description, quantity, unitCost, unitCharge, pricingType, duration, discount, showOnQuote, showOnDocs, groupId: groupId || undefined }),
     onSuccess: () => {
       toast.success(editingItem ? "Item updated" : "Item added");
       onSuccess();
@@ -1850,12 +1825,21 @@ function SubHireItemForm({
             </div>
           </div>
 
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium">Show on client documents</div>
-              <div className="text-xs text-fg-3">Mark this item as sub-hired on quotes, invoices, etc.</div>
+          <div className="space-y-3 pt-1 border-t border-border">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-medium">Show on quote</div>
+                <div className="text-xs text-fg-3">Include this item on the client&apos;s quote and invoice</div>
+              </div>
+              <Switch checked={showOnQuote} onCheckedChange={setShowOnQuote} />
             </div>
-            <Switch checked={showOnDocs} onCheckedChange={setShowOnDocs} />
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-medium">Show as sub-hired</div>
+                <div className="text-xs text-fg-3">Display a sub-hire indicator on client documents</div>
+              </div>
+              <Switch checked={showOnDocs} onCheckedChange={setShowOnDocs} />
+            </div>
           </div>
         </div>
         <DialogFooter>

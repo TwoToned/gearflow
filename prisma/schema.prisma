@@ -802,7 +802,8 @@ model SubHireItem {
   pricingType  PricingType    @default(FLAT)
   duration     Int            @default(1)
   discount     Decimal        @default(0) @db.Decimal(5, 2)
-  showOnDocs   Boolean        @default(false) // Per-item: show as sub-hired on client docs
+  showOnQuote  Boolean        @default(true)  // Whether item appears on client quote/invoice
+  showOnDocs   Boolean        @default(false) // Whether to show "sub-hired" label on client docs
   sortOrder    Int            @default(0)
   // Placement on project (ungrouped items only; grouped items use their group's target)
   targetCategoryId  String?
@@ -827,6 +828,8 @@ model SubHireGroup {
   quantity    Int             @default(1)
   cost        Decimal?        @db.Decimal(12, 2)
   charge      Decimal?        @db.Decimal(12, 2)
+  showOnQuote Boolean         @default(true)  // Whether group items appear on client quote/invoice
+  showOnDocs  Boolean         @default(false) // Whether to show "sub-hired" label on client docs
   // Placement on project (where the group's parent line item lands)
   targetCategoryId  String?
   targetCategory    ProjectCategory? @relation(fields: [targetCategoryId], references: [id], onDelete: SetNull)

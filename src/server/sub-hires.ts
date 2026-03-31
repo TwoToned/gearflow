@@ -408,6 +408,7 @@ export async function addSubHireItem(subHireId: string, input: unknown) {
       pricingType: data.pricingType as PricingType,
       duration: data.duration,
       discount: data.discount,
+      showOnQuote: data.showOnQuote ?? true,
       showOnDocs: data.showOnDocs ?? subHire.showOnDocs ?? false,
       targetCategoryId: data.targetCategoryId || null,
       targetGroupId: data.targetGroupId || null,
@@ -468,6 +469,7 @@ export async function updateSubHireItem(itemId: string, input: unknown) {
       pricingType: data.pricingType as PricingType,
       duration: data.duration,
       discount: data.discount,
+      showOnQuote: data.showOnQuote,
       showOnDocs: data.showOnDocs,
       targetCategoryId: data.targetCategoryId !== undefined ? (data.targetCategoryId || null) : undefined,
       targetGroupId: data.targetGroupId !== undefined ? (data.targetGroupId || null) : undefined,
@@ -569,9 +571,17 @@ async function recalculateSubHireTotals(subHireId: string) {
   });
   if (!subHire) return;
 
+  // Fetch groups with their pricing overrides
+  const groups = await prisma.subHireGroup.findMany({
+    where: { subHireId },
+    select: { id: true, quantity: true, cost: true, charge: true },
+  });
+  const groupMap = new Map(groups.map((g) => [g.id, g]));
+
   const items = await prisma.subHireItem.findMany({
     where: { subHireId },
     select: {
+      groupId: true,
       quantity: true,
       unitCost: true,
       unitCharge: true,
@@ -587,28 +597,54 @@ async function recalculateSubHireTotals(subHireId: string) {
   if (subHire.pricingMode === "ORDER_TOTAL") {
     // In ORDER_TOTAL mode, cost comes from the flat order amount
     totalCost = Number(subHire.orderTotalCost ?? 0);
-    // Charge can still be itemized or flat
+    // Charge: use group charges where set, then item charges for the rest
     if (subHire.orderTotalCharge != null) {
       totalCharge = Number(subHire.orderTotalCharge);
     } else {
-      // Fall back to summing per-item charges
+      const groupChargeHandled = new Set<string>();
+      for (const group of groups) {
+        if (group.charge != null) {
+          totalCharge += Number(group.charge) * group.quantity;
+          groupChargeHandled.add(group.id);
+        }
+      }
       for (const item of items) {
+        if (item.groupId && groupChargeHandled.has(item.groupId)) continue;
         const charge = Number(item.unitCharge);
         const disc = Number(item.discount);
         totalCharge += charge * item.quantity * item.duration * (1 - disc / 100);
       }
     }
   } else {
-    // ITEMIZED mode — current behavior
+    // ITEMIZED mode — respect group-level cost/charge overrides
+    const groupCostHandled = new Set<string>();
+    const groupChargeHandled = new Set<string>();
+
+    for (const group of groups) {
+      if (group.cost != null) {
+        totalCost += Number(group.cost) * group.quantity;
+        groupCostHandled.add(group.id);
+      }
+      if (group.charge != null) {
+        totalCharge += Number(group.charge) * group.quantity;
+        groupChargeHandled.add(group.id);
+      }
+    }
+
     for (const item of items) {
       const qty = item.quantity;
       const dur = item.duration;
-      const cost = Number(item.unitCost);
-      const charge = Number(item.unitCharge);
-      const disc = Number(item.discount);
 
-      totalCost += cost * qty * dur;
-      totalCharge += charge * qty * dur * (1 - disc / 100);
+      // Cost: skip items in groups with flat cost
+      if (!(item.groupId && groupCostHandled.has(item.groupId))) {
+        totalCost += Number(item.unitCost) * qty * dur;
+      }
+
+      // Charge: skip items in groups with flat charge
+      if (!(item.groupId && groupChargeHandled.has(item.groupId))) {
+        const disc = Number(item.discount);
+        totalCharge += Number(item.unitCharge) * qty * dur * (1 - disc / 100);
+      }
     }
   }
 
@@ -699,12 +735,17 @@ async function generateSubHireLineItemsTx(
   // 1. Generate grouped items — each sub-hire group becomes a parent with children
   for (const group of subHire.groups) {
     if (group.items.length === 0) continue;
+    // Skip groups that shouldn't appear on quotes
+    if (!group.showOnQuote) {
+      for (const item of group.items) groupedItemIds.add(item.id);
+      continue;
+    }
 
     const placement = resolvePlacement(group, orderDefaults, groupCategoryMap);
     if (placement.groupId) affectedProjectGroupIds.add(placement.groupId);
 
-    // Determine showSubhireOnDocs from first item (parent inherits)
-    const anyShowOnDocs = group.items.some((i) => i.showOnDocs);
+    // showSubhireOnDocs: use group-level toggle, falling back to any item's showOnDocs
+    const showAsSubhired = group.showOnDocs || group.items.some((i) => i.showOnDocs);
 
     // Group pricing: if charge is set, parent uses KIT_PRICE mode (like project groups)
     const hasGroupCharge = group.charge != null;
@@ -726,7 +767,7 @@ async function generateSubHireLineItemsTx(
         subHireId: subHire.id,
         subHireGroupId: group.id,
         supplierId: subHire.supplierId,
-        showSubhireOnDocs: anyShowOnDocs,
+        showSubhireOnDocs: showAsSubhired,
         subhireOrderNumber: subHire.orderNumber,
         categoryId: placement.categoryId,
         groupId: placement.groupId,
@@ -735,6 +776,8 @@ async function generateSubHireLineItemsTx(
     });
 
     // Create child line items for each item in the group
+    // Children inherit the same categoryId/groupId as the parent so they appear
+    // in the correct project group on the equipment tab.
     for (const item of group.items) {
       groupedItemIds.add(item.id);
       const chargeAfterDiscount =
@@ -762,6 +805,8 @@ async function generateSubHireLineItemsTx(
           showSubhireOnDocs: item.showOnDocs,
           subhireOrderNumber: subHire.orderNumber,
           modelId: item.modelId,
+          categoryId: placement.categoryId,
+          groupId: placement.groupId,
           sortOrder: nextSort++,
         },
       });
@@ -772,6 +817,7 @@ async function generateSubHireLineItemsTx(
   for (const item of subHire.items) {
     if (groupedItemIds.has(item.id)) continue;
     if (item.groupId) continue; // double-check: skip items with groupId
+    if (!item.showOnQuote) continue; // Skip items that shouldn't appear on quotes
 
     const placement = resolvePlacement(item, orderDefaults, groupCategoryMap);
     if (placement.groupId) affectedProjectGroupIds.add(placement.groupId);
@@ -1052,6 +1098,8 @@ export async function createSubHireGroup(subHireId: string, input: unknown) {
       quantity: data.quantity ?? 1,
       cost: data.cost != null ? data.cost : null,
       charge: data.charge != null ? data.charge : null,
+      showOnQuote: data.showOnQuote ?? true,
+      showOnDocs: data.showOnDocs ?? false,
       sortOrder: data.sortOrder ?? ((maxSort._max.sortOrder ?? -1) + 1),
       targetCategoryId: data.targetCategoryId || null,
       targetGroupId: data.targetGroupId || null,
@@ -1102,6 +1150,8 @@ export async function updateSubHireGroup(groupId: string, input: unknown) {
       quantity: data.quantity ?? undefined,
       cost: data.cost !== undefined ? (data.cost != null ? data.cost : null) : undefined,
       charge: data.charge !== undefined ? (data.charge != null ? data.charge : null) : undefined,
+      showOnQuote: data.showOnQuote,
+      showOnDocs: data.showOnDocs,
       sortOrder: data.sortOrder,
       targetCategoryId: data.targetCategoryId !== undefined ? (data.targetCategoryId || null) : undefined,
       targetGroupId: data.targetGroupId !== undefined ? (data.targetGroupId || null) : undefined,
@@ -1114,7 +1164,10 @@ export async function updateSubHireGroup(groupId: string, input: unknown) {
     },
   });
 
-  // Sync line items to project (title, placement may have changed)
+  // Recalculate sub-hire totals (group cost/charge may have changed)
+  await recalculateSubHireTotals(existing.subHire.id);
+
+  // Sync line items to project (title, placement, pricing may have changed)
   await syncSubHireToProject(existing.subHire.id, organizationId, existing.subHire.projectId);
 
   await logActivity({
@@ -1435,6 +1488,8 @@ export async function duplicateSubHire(sourceId: string) {
           quantity: group.quantity,
           cost: group.cost,
           charge: group.charge,
+          showOnQuote: group.showOnQuote,
+          showOnDocs: group.showOnDocs,
           sortOrder: group.sortOrder,
           // Placement targets are NOT copied (new DRAFT starts uncategorized)
         },
@@ -1456,6 +1511,7 @@ export async function duplicateSubHire(sourceId: string) {
           pricingType: item.pricingType,
           duration: item.duration,
           discount: item.discount,
+          showOnQuote: item.showOnQuote,
           showOnDocs: item.showOnDocs,
           sortOrder: item.sortOrder,
           // Placement targets are NOT copied (new DRAFT starts uncategorized)

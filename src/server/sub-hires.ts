@@ -708,6 +708,11 @@ async function generateSubHireLineItemsTx(
     throw new Error("Cannot generate line items without a project");
   }
 
+  // Always clean up existing line items first to prevent duplicates
+  await tx.projectLineItem.deleteMany({
+    where: { subHireId },
+  });
+
   // Build a map of projectGroupId → categoryId for placement resolution
   const targetGroupIds = new Set<string>();
   if (subHire.defaultTargetGroupId) targetGroupIds.add(subHire.defaultTargetGroupId);
@@ -1387,9 +1392,7 @@ async function syncSubHireToProject(subHireId: string, organizationId: string, p
 
 async function regenerateSubHireLineItems(subHireId: string, organizationId: string, projectId: string) {
   await prisma.$transaction(async (tx) => {
-    await tx.projectLineItem.deleteMany({
-      where: { subHireId },
-    });
+    // generateSubHireLineItemsTx handles cleanup internally
     await generateSubHireLineItemsTx(tx, subHireId, organizationId);
   });
 

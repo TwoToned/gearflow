@@ -67,6 +67,7 @@ export interface DocumentLineItem {
   // Subhire
   isSubhire?: boolean;
   showSubhireOnDocs?: boolean;
+  supplierName?: string | null;
   // Container
   prepContainer?: string | null;
   isContainerLineItem?: boolean;

@@ -38,6 +38,7 @@ import {
   deleteProjectCategory,
   reorderProjectCategories,
   getUncategorizedLineItems,
+  getProjectOverbookedStatus,
 } from "@/server/project-categories";
 import { getGroupTemplates, applyGroupTemplate } from "@/server/group-templates";
 import { removeLineItem, updateLineItem, addKitLineItem, checkKitAvailability, reorderLineItems } from "@/server/line-items";
@@ -55,6 +56,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -97,8 +99,17 @@ interface LineItemData {
   type?: string;
   priceBreakdown?: string | null;
   priceOverridden?: boolean;
+  isSubhire?: boolean;
+  isKitChild?: boolean;
+  kitId?: string | null;
+  pricingMode?: string | null;
+  status?: string;
+  prepStatus?: string | null;
+  supplier?: { name: string } | null;
   model?: { name: string; dailyRate?: unknown; weeklyRate?: unknown; monthlyRate?: unknown } | null;
   asset?: { assetTag?: string | null } | null;
+  kit?: { name?: string } | null;
+  childLineItems?: LineItemData[];
 }
 
 interface GroupData {
@@ -126,6 +137,96 @@ interface CategoryData {
 }
 
 const COL_COUNT = 6;
+
+// ─── Overbooked info type ───────────────────────────────────────────────────
+
+type OverbookedInfo = {
+  overBy: number;
+  totalStock: number;
+  effectiveStock?: number;
+  totalBooked: number;
+  inherited?: boolean;
+  unavailableAssets?: number;
+  reducedOnly?: boolean;
+  hasOverbookedChildren?: boolean;
+  hasReducedChildren?: boolean;
+};
+
+function OverbookedBadge({ info }: { info?: OverbookedInfo | null }) {
+  if (!info) return null;
+
+  const effective = info.effectiveStock ?? info.totalStock;
+  const unavail = info.unavailableAssets || 0;
+
+  // Kit parents with BOTH overbooked and reduced children show two badges
+  if (info.inherited && info.hasOverbookedChildren && info.hasReducedChildren) {
+    return (
+      <>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Badge variant="outline" className="ml-1.5 cursor-help text-xs bg-red-500/10 text-red-600 border-red-500/20">
+                  Overbooked
+                </Badge>
+              }
+            />
+            <TooltipContent>Contains items that are over capacity</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Badge variant="outline" className="ml-1.5 cursor-help text-xs bg-purple-500/10 text-purple-600 border-purple-500/20">
+                  Reduced Stock
+                </Badge>
+              }
+            />
+            <TooltipContent>
+              Contains items with {unavail} asset{unavail !== 1 ? "s" : ""} in maintenance or lost
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </>
+    );
+  }
+
+  const isReduced = info.reducedOnly;
+  const colorClass = isReduced
+    ? "bg-purple-500/10 text-purple-600 border-purple-500/20"
+    : info.inherited
+      ? "bg-amber-500/10 text-amber-600 border-amber-500/20"
+      : "bg-red-500/10 text-red-600 border-red-500/20";
+  const label = isReduced ? "Reduced Stock" : "Overbooked";
+
+  function getTooltip() {
+    if (info!.inherited) {
+      return isReduced
+        ? `Contains items with ${unavail} asset${unavail !== 1 ? "s" : ""} in maintenance or lost`
+        : `Contains items that are ${info!.overBy} over capacity`;
+    }
+    if (isReduced) {
+      return `${info!.overBy} over usable stock — ${unavail} of ${info!.totalStock} in maintenance or lost (${effective} usable, ${info!.totalBooked} booked)`;
+    }
+    return `${info!.overBy} over capacity (${info!.totalBooked} booked / ${effective} usable${unavail > 0 ? `, ${unavail} unavailable` : ""})`;
+  }
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Badge variant="outline" className={`ml-1.5 cursor-help text-xs ${colorClass}`}>
+              {label}
+            </Badge>
+          }
+        />
+        <TooltipContent>{getTooltip()}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 // ─── Sortable group row ─────────────────────────────────────────────────────
 
@@ -314,12 +415,14 @@ function SortableCategoryRow({
 function SortableLineItemRow({
   item,
   indent,
+  overbookedInfo,
   onEdit,
   onMove,
   onRemove,
 }: {
   item: LineItemData;
   indent: string;
+  overbookedInfo?: OverbookedInfo | null;
   onEdit: () => void;
   onMove: () => void;
   onRemove: () => void;
@@ -358,17 +461,41 @@ function SortableLineItemRow({
           {item.asset?.assetTag && (
             <span className="text-xs text-fg-3">({item.asset.assetTag})</span>
           )}
+          {item.kitId && !item.isKitChild && (
+            <Badge variant="outline" className="ml-1.5 text-xs bg-indigo-500/10 text-indigo-600 border-indigo-500/20">
+              Kit
+            </Badge>
+          )}
+          {item.kitId && !item.isKitChild && item.pricingMode === "ITEMIZED" && (
+            <Badge variant="outline" className="ml-1 text-xs">
+              Itemized
+            </Badge>
+          )}
           {item.isOptional && (
-            <Badge variant="outline" className="ml-2 text-xs bg-amber-500/10 text-amber-600 border-amber-500/20">
+            <Badge variant="outline" className="ml-1.5 text-xs bg-amber-500/10 text-amber-600 border-amber-500/20">
               Optional
             </Badge>
           )}
-          {item.type === "SUBHIRE" && (
-            <Badge variant="outline" className="ml-2 text-xs bg-cyan-500/10 text-cyan-600 border-cyan-500/20">
+          {(item.isSubhire || item.type === "SUBHIRE") && (
+            <Badge variant="outline" className="ml-1.5 text-xs bg-cyan-500/10 text-cyan-600 border-cyan-500/20">
               Subhire
             </Badge>
           )}
+          {item.status === "CANCELLED" && (
+            <Badge variant="outline" className="ml-1.5 text-xs bg-red-500/10 text-red-600 border-red-500/20">
+              Cancelled
+            </Badge>
+          )}
+          {item.prepStatus === "PREPPED" && (
+            <Badge variant="outline" className="ml-1.5 text-xs bg-green-500/10 text-green-600 border-green-500/20">
+              Prepped
+            </Badge>
+          )}
+          <OverbookedBadge info={overbookedInfo} />
         </div>
+        {(item.isSubhire || item.type === "SUBHIRE") && item.supplier && (
+          <p className={`text-xs text-fg-3 mt-0.5 ${indent}`}>via {item.supplier.name}</p>
+        )}
       </TableCell>
       <TableCell className="text-center t-data">{item.quantity}</TableCell>
       <TableCell className="text-right hidden md:table-cell t-data">
@@ -533,6 +660,12 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
     queryKey: ["project-services", projectId],
     queryFn: () => getProjectServices(projectId),
     staleTime: 60_000,
+  });
+
+  const { data: overbookedMap = {} } = useQuery({
+    queryKey: ["project-overbooked", projectId],
+    queryFn: () => getProjectOverbookedStatus(projectId),
+    staleTime: 30_000,
   });
 
   const templateOptions = (templates as { id: string; name: string; description: string | null; items: unknown[] }[]).map(
@@ -1062,6 +1195,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                                 key={item.id}
                                 item={item}
                                 indent="ml-12"
+                                overbookedInfo={(overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                                 onEdit={() => openEditLineItem(item)}
                                 onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId(group.id); }}
                                 onRemove={() => removeMut.mutate(item.id)}
@@ -1077,6 +1211,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                           key={item.id}
                           item={item}
                           indent="ml-3"
+                          overbookedInfo={(overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                           onEdit={() => openEditLineItem(item)}
                           onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
                           onRemove={() => removeMut.mutate(item.id)}
@@ -1092,6 +1227,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                     key={item.id}
                     item={item}
                     indent=""
+                    overbookedInfo={(overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                     onEdit={() => openEditLineItem(item)}
                     onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
                     onRemove={() => removeMut.mutate(item.id)}

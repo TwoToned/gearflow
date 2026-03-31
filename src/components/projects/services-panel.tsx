@@ -23,6 +23,10 @@ import {
   Users,
   Send,
   UserCheck,
+  RefreshCw,
+  Copy,
+  ArrowRightLeft,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -35,6 +39,10 @@ import {
   getProjectServicesSummary,
   getServiceTemplates,
   updateServiceCrewStatus,
+  generateProjectServices,
+  cloneServicesFromProject,
+  convertLineItemToService,
+  generateCrewMessage,
 } from "@/server/project-services";
 import { getCrewRoleOptions, createCrewRole } from "@/server/crew";
 import { getCrewMembersForAssignment } from "@/server/crew-assignments";
@@ -42,14 +50,16 @@ import {
   projectServiceSchema,
   type ProjectServiceFormValues,
 } from "@/lib/validations/project-service";
+import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS } from "@/lib/constants/services";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
+import { StatusIndicator } from "@/components/ui/status-indicator";
+import { EmptyState } from "@/components/ui/empty-state";
+import { FadeIn, StaggerList, StaggerItem } from "@/components/ui/motion";
 import { ComboboxPicker, MultiComboboxPicker } from "@/components/ui/combobox-picker";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-
-
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -94,31 +104,6 @@ const SERVICE_TYPE_ICONS: Record<ServiceType, typeof Truck> = {
   MISC: Wrench,
 };
 
-const SERVICE_TYPE_LABELS: Record<ServiceType, string> = {
-  DELIVERY: "Delivery",
-  PICKUP: "Pickup",
-  BUMP_IN: "Bump In",
-  BUMP_OUT: "Bump Out",
-  LABOUR: "Labour",
-  MISC: "Misc",
-};
-
-const SERVICE_STATUS_LABELS: Record<ServiceStatus, string> = {
-  PLANNED: "Planned",
-  CONFIRMED: "Confirmed",
-  IN_PROGRESS: "In Progress",
-  COMPLETED: "Completed",
-  CANCELLED: "Cancelled",
-};
-
-const SERVICE_STATUS_COLORS: Record<ServiceStatus, string> = {
-  PLANNED: "bg-gray-500/10 text-gray-500 border-gray-500/20",
-  CONFIRMED: "bg-green-500/10 text-green-500 border-green-500/20",
-  IN_PROGRESS: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  COMPLETED: "bg-teal-500/10 text-teal-500 border-teal-500/20",
-  CANCELLED: "bg-red-500/10 text-red-500 border-red-500/20",
-};
-
 const PRICING_TYPE_LABELS: Record<string, string> = {
   FLAT: "Flat",
   PER_HOUR: "/hr",
@@ -134,12 +119,20 @@ function formatDate(date: string | null | undefined): string {
   });
 }
 
+function formatDateLong(date: string): string {
+  return new Date(date).toLocaleDateString("en-AU", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+}
+
 function formatCurrency(value: number | null | undefined): string {
   if (value == null) return "—";
   return `$${Number(value).toLocaleString("en-AU", { minimumFractionDigits: 2 })}`;
 }
 
-// ─── Services Panel ───────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ServicesPanelProps {
   projectId: string;
@@ -151,225 +144,6 @@ interface ServicesPanelProps {
   projectEventStartDate?: string;
   projectEventEndDate?: string;
 }
-
-export function ServicesPanel({
-  projectId,
-  projectAddress,
-  projectLatitude,
-  projectLongitude,
-  projectLoadInDate,
-  projectLoadOutDate,
-  projectEventStartDate,
-  projectEventEndDate,
-}: ServicesPanelProps) {
-  const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
-
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingService, setEditingService] = useState<Record<string, unknown> | null>(null);
-  const [preselectedType, setPreselectedType] = useState<ServiceType | null>(null);
-
-  const { data: services = [], isLoading } = useQuery({
-    queryKey: ["project-services", orgId, projectId],
-    queryFn: () => getProjectServices(projectId),
-  });
-
-  const { data: summary } = useQuery({
-    queryKey: ["project-services-summary", orgId, projectId],
-    queryFn: () => getProjectServicesSummary(projectId),
-  });
-
-  const { data: templates = [] } = useQuery({
-    queryKey: ["service-templates", orgId],
-    queryFn: () => getServiceTemplates(),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => deleteProjectService(id),
-    onSuccess: () => {
-      toast.success("Service deleted");
-      queryClient.invalidateQueries({ queryKey: ["project-services", orgId, projectId] });
-      queryClient.invalidateQueries({ queryKey: ["project-services-summary", orgId, projectId] });
-      queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] });
-      queryClient.invalidateQueries({ queryKey: ["project-crew", orgId, projectId] });
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const statusMutation = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: ServiceStatus }) =>
-      updateServiceStatus(id, status),
-    onSuccess: () => {
-      toast.success("Status updated");
-      queryClient.invalidateQueries({ queryKey: ["project-services", orgId, projectId] });
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  function openCreate(type?: ServiceType) {
-    setEditingService(null);
-    setPreselectedType(type ?? null);
-    setDialogOpen(true);
-  }
-
-  function openEdit(service: Record<string, unknown>) {
-    setEditingService(service);
-    setPreselectedType(null);
-    setDialogOpen(true);
-  }
-
-  function openCreateFromTemplate(template: Record<string, unknown>) {
-    setEditingService(null);
-    setPreselectedType(template.type as ServiceType);
-    setDialogOpen(true);
-    // The dialog will pick up the template defaults via preselectedType
-  }
-
-  // Group services by date
-  const grouped = groupByDate(services as ServiceRow[]);
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12 text-fg-3">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        Loading services...
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <CanDo resource="project" action="update">
-          <DropdownMenu>
-            <DropdownMenuTrigger render={<Button size="sm" />}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Service
-              <ChevronDown className="ml-1 h-3 w-3" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>Service Type</DropdownMenuLabel>
-              </DropdownMenuGroup>
-              {(Object.keys(SERVICE_TYPE_LABELS) as ServiceType[]).map((type) => {
-                const Icon = SERVICE_TYPE_ICONS[type];
-                return (
-                  <DropdownMenuItem key={type} onClick={() => openCreate(type)}>
-                    <Icon className="mr-2 h-4 w-4" />
-                    {SERVICE_TYPE_LABELS[type]}
-                  </DropdownMenuItem>
-                );
-              })}
-              {templates.length > 0 && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuGroup>
-                    <DropdownMenuLabel>Templates</DropdownMenuLabel>
-                  </DropdownMenuGroup>
-                  {(templates as Record<string, unknown>[]).filter((t) => t.isActive).map((t) => {
-                    const Icon = SERVICE_TYPE_ICONS[t.type as ServiceType];
-                    return (
-                      <DropdownMenuItem
-                        key={t.id as string}
-                        onClick={() => openCreateFromTemplate(t)}
-                      >
-                        <Icon className="mr-2 h-4 w-4" />
-                        {t.title as string}
-                      </DropdownMenuItem>
-                    );
-                  })}
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </CanDo>
-      </div>
-
-      {/* Services list grouped by date */}
-      {grouped.length === 0 ? (
-        <div className="rounded-lg bg-bg-surface p-4 surface-ring">
-          <div className="flex flex-col items-center justify-center py-12 text-fg-3">
-            <Truck className="mb-2 h-8 w-8 opacity-50" />
-            <p>No services yet</p>
-            <p className="text-xs mt-1">
-              Add deliveries, bump in/out, labour, and other services
-            </p>
-          </div>
-        </div>
-      ) : (
-        grouped.map(({ dateLabel, items }) => (
-          <div key={dateLabel}>
-            <h3 className="text-sm font-medium text-fg-3 mb-2 px-1">
-              {dateLabel}
-            </h3>
-            <div className="space-y-2">
-              {items.map((service) => (
-                <ServiceCard
-                  key={service.id}
-                  service={service}
-                  onEdit={() => openEdit(service as unknown as Record<string, unknown>)}
-                  onDelete={() => {
-                    if (confirm(`Delete "${service.title}"?`)) {
-                      deleteMutation.mutate(service.id);
-                    }
-                  }}
-                  onStatusChange={(status) =>
-                    statusMutation.mutate({ id: service.id, status })
-                  }
-                />
-              ))}
-            </div>
-          </div>
-        ))
-      )}
-
-      {/* Financial Summary */}
-      {summary && summary.serviceCount > 0 && (
-        <div className="rounded-lg bg-bg-surface p-4 surface-ring">
-            <h4 className="text-sm font-medium text-fg-3 mb-2 flex items-center gap-1">
-              <DollarSign className="h-3.5 w-3.5" />
-              Services Financial Summary
-            </h4>
-            <div className="grid gap-4 sm:grid-cols-3 text-sm">
-              <div>
-                <span className="text-fg-3">On Documents</span>
-                <p className="font-medium">{formatCurrency(summary.onDocumentsTotal)}</p>
-              </div>
-              <div>
-                <span className="text-fg-3">Internal</span>
-                <p className="font-medium">{formatCurrency(summary.internalTotal)}</p>
-              </div>
-              <div>
-                <span className="text-fg-3">Total</span>
-                <p className="font-semibold">{formatCurrency(summary.totalCost)}</p>
-              </div>
-            </div>
-        </div>
-      )}
-
-      {/* Create/Edit Dialog */}
-      <ServiceDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        projectId={projectId}
-        editingService={editingService}
-        preselectedType={preselectedType}
-        templates={templates as Record<string, unknown>[]}
-        projectAddress={projectAddress}
-        projectLatitude={projectLatitude}
-        projectLongitude={projectLongitude}
-        projectLoadInDate={projectLoadInDate}
-        projectLoadOutDate={projectLoadOutDate}
-        projectEventStartDate={projectEventStartDate}
-        projectEventEndDate={projectEventEndDate}
-      />
-    </div>
-  );
-}
-
-// ─── Service Card ─────────────────────────────────────────────────────────────
 
 interface ServiceRow {
   id: string;
@@ -391,6 +165,8 @@ interface ServiceRow {
   pricingType: string | null;
   duration: number | null;
   lineTotal: number | null;
+  costTotal: number | null;
+  discount: number | null;
   vehicleDescription: string | null;
   crewCountRequired: number | null;
   crewRoleId: string | null;
@@ -398,181 +174,572 @@ interface ServiceRow {
   crewAssignments: {
     id: string;
     status: string;
+    estimatedCost: number | null;
     crewMember: { id: string; firstName: string; lastName: string; image: string | null };
   }[];
 }
+
+// ─── Services Panel (Timeline View) ──────────────────────────────────────────
+
+export function ServicesPanel({
+  projectId,
+  projectAddress,
+  projectLatitude,
+  projectLongitude,
+  projectLoadInDate,
+  projectLoadOutDate,
+  projectEventStartDate,
+  projectEventEndDate,
+}: ServicesPanelProps) {
+  const { data: activeOrg } = useActiveOrganization();
+  const orgId = activeOrg?.id;
+  const queryClient = useQueryClient();
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingService, setEditingService] = useState<Record<string, unknown> | null>(null);
+  const [preselectedType, setPreselectedType] = useState<ServiceType | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
+  const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
+  const [messageTarget, setMessageTarget] = useState<{ crewMemberId: string; name: string } | null>(null);
+
+  const { data: services = [], isLoading } = useQuery({
+    queryKey: ["project-services", orgId, projectId],
+    queryFn: () => getProjectServices(projectId),
+  });
+
+  const { data: summary } = useQuery({
+    queryKey: ["project-services-summary", orgId, projectId],
+    queryFn: () => getProjectServicesSummary(projectId),
+  });
+
+  const { data: templates = [] } = useQuery({
+    queryKey: ["service-templates", orgId],
+    queryFn: () => getServiceTemplates(),
+  });
+
+  const invalidateAll = () => {
+    queryClient.invalidateQueries({ queryKey: ["project-services", orgId, projectId] });
+    queryClient.invalidateQueries({ queryKey: ["project-services-summary", orgId, projectId] });
+    queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] });
+    queryClient.invalidateQueries({ queryKey: ["project-crew", orgId, projectId] });
+  };
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteProjectService(id),
+    onSuccess: () => {
+      toast.success("Service deleted");
+      setDeleteTarget(null);
+      invalidateAll();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: ServiceStatus }) =>
+      updateServiceStatus(id, status),
+    onSuccess: () => {
+      toast.success("Status updated");
+      invalidateAll();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const generateMutation = useMutation({
+    mutationFn: () => generateProjectServices(projectId),
+    onSuccess: (result) => {
+      const r = result as { created: number; lineItemsCreated: number };
+      if (r.created === 0) {
+        toast.info("All services already exist — nothing new to add");
+      } else {
+        toast.success(
+          `Generated ${r.created} services${r.lineItemsCreated > 0 ? `. ${r.lineItemsCreated} added as line items on your quote.` : ""}`,
+        );
+      }
+      invalidateAll();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  function openCreate(type?: ServiceType) {
+    setEditingService(null);
+    setPreselectedType(type ?? null);
+    setDialogOpen(true);
+  }
+
+  function openEdit(service: Record<string, unknown>) {
+    setEditingService(service);
+    setPreselectedType(null);
+    setDialogOpen(true);
+  }
+
+  const grouped = groupByDate(services as ServiceRow[]);
+  const hasProjectDates = !!(projectLoadInDate || projectLoadOutDate || projectEventStartDate);
+  const hasServices = grouped.length > 0;
+
+  if (isLoading) {
+    return (
+      <FadeIn>
+        <div className="space-y-4">
+          {/* Skeleton date groups */}
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-20 rounded bg-bg-elevated animate-pulse" />
+                <div className="h-px flex-1 bg-border" />
+              </div>
+              <div className="h-16 rounded-lg bg-bg-elevated animate-pulse" />
+            </div>
+          ))}
+        </div>
+      </FadeIn>
+    );
+  }
+
+  return (
+    <FadeIn>
+      <div className="space-y-4">
+        {/* Timeline Header */}
+        <div className="flex items-center justify-between gap-2">
+          <CanDo resource="project" action="update">
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Quick Add */}
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<Button size="sm" />}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Service
+                  <ChevronDown className="ml-1 h-3 w-3" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel>Service Type</DropdownMenuLabel>
+                  </DropdownMenuGroup>
+                  {(Object.keys(SERVICE_TYPE_LABELS) as ServiceType[]).map((type) => {
+                    const Icon = SERVICE_TYPE_ICONS[type];
+                    return (
+                      <DropdownMenuItem key={type} onClick={() => openCreate(type)}>
+                        <Icon className="mr-2 h-4 w-4" />
+                        {SERVICE_TYPE_LABELS[type]}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                  {(templates as Record<string, unknown>[]).filter((t) => t.isActive).length > 0 && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuGroup>
+                        <DropdownMenuLabel>Templates</DropdownMenuLabel>
+                      </DropdownMenuGroup>
+                      {(templates as Record<string, unknown>[]).filter((t) => t.isActive).map((t) => {
+                        const Icon = SERVICE_TYPE_ICONS[t.type as ServiceType];
+                        return (
+                          <DropdownMenuItem
+                            key={t.id as string}
+                            onClick={() => {
+                              setEditingService(null);
+                              setPreselectedType(t.type as ServiceType);
+                              setDialogOpen(true);
+                            }}
+                          >
+                            <Icon className="mr-2 h-4 w-4" />
+                            {t.title as string}
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Generate / Regenerate */}
+              {hasProjectDates && (
+                <Button
+                  size="sm"
+                  variant={hasServices ? "outline" : "default"}
+                  onClick={() => generateMutation.mutate()}
+                  disabled={generateMutation.isPending}
+                >
+                  {generateMutation.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : hasServices ? (
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                  ) : (
+                    <Sparkles className="mr-2 h-4 w-4" />
+                  )}
+                  {hasServices ? "Regenerate" : "Generate Services"}
+                </Button>
+              )}
+
+              {/* Import from another project */}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setCloneDialogOpen(true)}
+              >
+                <Copy className="mr-2 h-4 w-4" />
+                Import Services
+              </Button>
+            </div>
+          </CanDo>
+        </div>
+
+        {/* Empty State */}
+        {!hasServices && (
+          <EmptyState
+            preset="calendar"
+            heading="No services yet"
+            description={
+              hasProjectDates
+                ? "Generate services from your project dates, or add them manually."
+                : "Set project dates first, then generate services automatically."
+            }
+            action={
+              hasProjectDates
+                ? {
+                    label: "Generate Services",
+                    onClick: () => generateMutation.mutate(),
+                  }
+                : undefined
+            }
+          />
+        )}
+
+        {/* Timeline — Date Groups */}
+        {hasServices && (
+          <StaggerList>
+            {grouped.map(({ dateLabel, dateKey, dateLong, items }) => (
+              <StaggerItem key={dateKey}>
+                <div className="space-y-2">
+                  {/* Date header — teal overline chip + extending line (D3) */}
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center rounded bg-primary/8 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-primary">
+                      {dateLabel}
+                    </span>
+                    <div className="h-px flex-1 bg-border" />
+                    {dateLong && (
+                      <span className="text-[10px] text-fg-4">{dateLong}</span>
+                    )}
+                  </div>
+
+                  {/* Service cards within this date */}
+                  <div className="space-y-2">
+                    {items.map((service) => (
+                      <ServiceCard
+                        key={service.id}
+                        service={service}
+                        onEdit={() => openEdit(service as unknown as Record<string, unknown>)}
+                        onDelete={() => setDeleteTarget({ id: service.id, title: service.title })}
+                        onStatusChange={(status) =>
+                          statusMutation.mutate({ id: service.id, status })
+                        }
+                        onCrewMessage={(crewMemberId, name) =>
+                          setMessageTarget({ crewMemberId, name })
+                        }
+                      />
+                    ))}
+                  </div>
+                </div>
+              </StaggerItem>
+            ))}
+          </StaggerList>
+        )}
+
+        {/* Financial Summary */}
+        {summary && summary.serviceCount > 0 && (
+          <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+            <h4 className="text-sm font-medium text-fg-3 mb-2 flex items-center gap-1">
+              <DollarSign className="h-3.5 w-3.5" />
+              Services Financial Summary
+            </h4>
+            <div className="grid gap-4 sm:grid-cols-3 text-sm">
+              <div>
+                <span className="text-fg-3">On Documents</span>
+                <p className="font-medium">{formatCurrency(summary.onDocumentsTotal)}</p>
+              </div>
+              <div>
+                <span className="text-fg-3">Internal</span>
+                <p className="font-medium">{formatCurrency(summary.internalTotal)}</p>
+              </div>
+              <div>
+                <span className="text-fg-3">Total</span>
+                <p className="font-semibold">{formatCurrency(summary.totalCost)}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Delete Service</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-fg-2">
+              Are you sure you want to delete &ldquo;{deleteTarget?.title}&rdquo;? This will also
+              remove any linked crew assignments.
+            </p>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Delete
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Clone Services Dialog */}
+        <CloneServicesDialog
+          open={cloneDialogOpen}
+          onOpenChange={setCloneDialogOpen}
+          targetProjectId={projectId}
+          onSuccess={invalidateAll}
+        />
+
+        {/* Crew Message Dialog */}
+        <CrewMessageDialog
+          open={!!messageTarget}
+          onOpenChange={() => setMessageTarget(null)}
+          projectId={projectId}
+          crewMemberId={messageTarget?.crewMemberId || ""}
+          crewMemberName={messageTarget?.name || ""}
+        />
+
+        {/* Create/Edit Dialog */}
+        <ServiceDialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          projectId={projectId}
+          editingService={editingService}
+          preselectedType={preselectedType}
+          templates={templates as Record<string, unknown>[]}
+          projectAddress={projectAddress}
+          projectLatitude={projectLatitude}
+          projectLongitude={projectLongitude}
+          projectLoadInDate={projectLoadInDate}
+          projectLoadOutDate={projectLoadOutDate}
+          projectEventStartDate={projectEventStartDate}
+          projectEventEndDate={projectEventEndDate}
+        />
+      </div>
+    </FadeIn>
+  );
+}
+
+// ─── Service Card ─────────────────────────────────────────────────────────────
 
 function ServiceCard({
   service,
   onEdit,
   onDelete,
   onStatusChange,
+  onCrewMessage,
 }: {
   service: ServiceRow;
   onEdit: () => void;
   onDelete: () => void;
   onStatusChange: (status: ServiceStatus) => void;
+  onCrewMessage: (crewMemberId: string, name: string) => void;
 }) {
   const Icon = SERVICE_TYPE_ICONS[service.type];
   const isCancelled = service.status === "CANCELLED";
   const isMultiDay = service.date && service.endDate &&
     new Date(service.date).toISOString().slice(0, 10) !== new Date(service.endDate).toISOString().slice(0, 10);
 
+  // Crew cost subtotal (D12)
+  const crewCostTotal = service.crewAssignments?.reduce(
+    (sum, a) => sum + (a.estimatedCost ? Number(a.estimatedCost) : 0),
+    0,
+  ) ?? 0;
+
   return (
     <div className={`rounded-lg bg-bg-surface p-4 surface-ring ${isCancelled ? "opacity-50" : ""}`}>
-      <div>
-        <div className="flex items-start justify-between gap-2">
-          {/* Left side */}
-          <div className="flex-1 min-w-0 space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Icon className="h-4 w-4 text-fg-3 shrink-0" />
-              <span className={`font-medium ${isCancelled ? "line-through" : ""}`}>
-                {service.title}
-              </span>
-              <Badge
-                variant="outline"
-                className={SERVICE_STATUS_COLORS[service.status]}
-              >
-                {SERVICE_STATUS_LABELS[service.status]}
-              </Badge>
+      <div className="flex items-start justify-between gap-2">
+        {/* Left side */}
+        <div className="flex-1 min-w-0 space-y-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Icon className="h-4 w-4 text-fg-3 shrink-0" />
+            <span className={`font-medium ${isCancelled ? "line-through" : ""}`}>
+              {service.title}
+            </span>
+            {/* Status pill using StatusIndicator (D2) */}
+            <StatusIndicator
+              category="assignment"
+              value={service.status.toLowerCase()}
+              label={SERVICE_STATUS_LABELS[service.status]}
+              variant="pill"
+            />
+          </div>
+
+          {/* Time info */}
+          {isMultiDay && (
+            <div className="flex items-center gap-1 text-sm text-fg-3">
+              <Clock className="h-3 w-3" />
+              <span>{formatDate(service.date)} – {formatDate(service.endDate)}</span>
             </div>
+          )}
+          {!isMultiDay && (service.startTime || service.endTime) && (
+            <div className="flex items-center gap-1 text-sm text-fg-3">
+              <Clock className="h-3 w-3" />
+              <span>
+                {service.startTime}
+                {service.endTime && ` – ${service.endTime}`}
+              </span>
+            </div>
+          )}
+          {service.scheduledTime && (service.type === "DELIVERY" || service.type === "PICKUP") && (
+            <div className="flex items-center gap-1 text-sm text-fg-3">
+              <Truck className="h-3 w-3" />
+              <span>
+                {service.type === "DELIVERY" ? "Delivery" : "Pickup"} at {service.scheduledTime}
+              </span>
+            </div>
+          )}
 
-            {/* Date range for multi-day */}
-            {isMultiDay && (
-              <div className="flex items-center gap-1 text-sm text-fg-3">
-                <Clock className="h-3 w-3" />
-                <span>{formatDate(service.date)} – {formatDate(service.endDate)}</span>
-              </div>
-            )}
+          {/* Address */}
+          {service.address && (
+            <div className="flex items-center gap-1 text-sm text-fg-3">
+              <MapPin className="h-3 w-3 shrink-0" />
+              <span className="truncate">{service.address}</span>
+              {service.latitude != null && service.longitude != null && (
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${service.latitude},${service.longitude}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80 shrink-0"
+                >
+                  <Navigation className="h-3 w-3" />
+                </a>
+              )}
+            </div>
+          )}
 
-            {/* Time (single-day only) */}
-            {!isMultiDay && (service.startTime || service.endTime) && (
-              <div className="flex items-center gap-1 text-sm text-fg-3">
-                <Clock className="h-3 w-3" />
-                <span>
-                  {service.startTime}
-                  {service.endTime && ` – ${service.endTime}`}
+          {/* Vehicle */}
+          {service.vehicleDescription && (
+            <div className="text-sm text-fg-3">
+              Vehicle: {service.vehicleDescription}
+            </div>
+          )}
+
+          {/* Crew — avatar stack with 3 max + overflow (D14) */}
+          {(service.crewRole || service.crewAssignments?.length > 0 || (service.crewCountRequired != null && service.crewCountRequired > 0)) && (
+            <div className="flex items-center gap-1.5 text-sm text-fg-3 flex-wrap">
+              <Users className="h-3 w-3 shrink-0" />
+              {service.crewRole && (
+                <Badge variant="outline" className="text-xs py-0" style={service.crewRole.color ? { borderColor: service.crewRole.color, color: service.crewRole.color } : undefined}>
+                  {service.crewRole.name}
+                </Badge>
+              )}
+              {service.crewAssignments?.length > 0 ? (
+                <div className="flex items-center gap-1">
+                  {/* Avatar stack — max 3 */}
+                  <div className="flex -space-x-1">
+                    {service.crewAssignments.slice(0, 3).map((a) => (
+                      <button
+                        key={a.id}
+                        onClick={() => onCrewMessage(a.crewMember.id, `${a.crewMember.firstName} ${a.crewMember.lastName}`)}
+                        className="relative h-6 w-6 rounded-full border-2 border-bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
+                        title={`${a.crewMember.firstName} ${a.crewMember.lastName} — click to generate message`}
+                      >
+                        {a.crewMember.image ? (
+                          <img src={a.crewMember.image} alt="" className="h-full w-full rounded-full object-cover" />
+                        ) : (
+                          <span className="flex h-full w-full items-center justify-center rounded-full bg-bg-inset text-[9px] font-medium">
+                            {a.crewMember.firstName[0]}{a.crewMember.lastName[0]}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                    {service.crewAssignments.length > 3 && (
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-bg-surface bg-bg-inset text-[9px] font-medium">
+                        +{service.crewAssignments.length - 3}
+                      </span>
+                    )}
+                  </div>
+                  {/* Crew cost subtotal (D12) */}
+                  {crewCostTotal > 0 && (
+                    <span className="text-xs text-fg-3 ml-1">
+                      {service.crewAssignments.length} crew · {formatCurrency(crewCostTotal)}
+                    </span>
+                  )}
+                </div>
+              ) : service.crewCountRequired != null && service.crewCountRequired > 0 ? (
+                <span className="text-amber-500">
+                  {service.crewCountRequired} needed — none assigned
                 </span>
-              </div>
-            )}
-
-            {/* Scheduled delivery/pickup time */}
-            {service.scheduledTime && (service.type === "DELIVERY" || service.type === "PICKUP") && (
-              <div className="flex items-center gap-1 text-sm text-fg-3">
-                <Truck className="h-3 w-3" />
-                <span>
-                  {service.type === "DELIVERY" ? "Delivery" : "Pickup"} at {service.scheduledTime}
+              ) : null}
+              {service.crewCountRequired != null && service.crewCountRequired > 0 && service.crewAssignments?.length > 0 && service.crewAssignments.length < service.crewCountRequired && (
+                <span className="text-amber-500 text-xs">
+                  ({service.crewAssignments.length}/{service.crewCountRequired})
                 </span>
-              </div>
-            )}
+              )}
+            </div>
+          )}
 
-            {/* Address */}
-            {service.address && (
-              <div className="flex items-center gap-1 text-sm text-fg-3">
-                <MapPin className="h-3 w-3 shrink-0" />
-                <span className="truncate">{service.address}</span>
-                {service.latitude != null && service.longitude != null && (
-                  <a
-                    href={`https://www.google.com/maps/dir/?api=1&destination=${service.latitude},${service.longitude}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-teal-500 hover:text-teal-400 shrink-0"
+          {/* Financial */}
+          {(service.lineTotal != null || service.costTotal != null) && (
+            <div className="flex items-center gap-3 text-sm">
+              {service.lineTotal != null && (
+                <div className="flex items-center gap-1">
+                  <DollarSign className="h-3 w-3 text-fg-3" />
+                  <span className="font-medium t-data">{formatCurrency(service.lineTotal)}</span>
+                  <span className="text-fg-3 text-xs">charge</span>
+                </div>
+              )}
+              {service.costTotal != null && Number(service.costTotal) > 0 && (
+                <div className="flex items-center gap-1">
+                  <span className="t-data text-fg-3">{formatCurrency(service.costTotal)}</span>
+                  <span className="text-fg-3 text-xs">cost</span>
+                </div>
+              )}
+              {service.showOnDocuments && (
+                <span className="text-fg-3 text-xs">· On quote</span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Right side — actions */}
+        <div className="flex items-center gap-1 shrink-0">
+          <CanDo resource="project" action="update">
+            <DropdownMenu>
+              <DropdownMenuTrigger render={<Button variant="ghost" size="sm" />}>
+                <ChevronDown className="h-3.5 w-3.5" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Change Status</DropdownMenuLabel>
+                </DropdownMenuGroup>
+                {(
+                  ["PLANNED", "CONFIRMED", "IN_PROGRESS", "COMPLETED", "CANCELLED"] as ServiceStatus[]
+                ).map((s) => (
+                  <DropdownMenuItem
+                    key={s}
+                    onClick={() => onStatusChange(s)}
+                    disabled={s === service.status}
                   >
-                    <Navigation className="h-3 w-3" />
-                  </a>
-                )}
-              </div>
-            )}
+                    {SERVICE_STATUS_LABELS[s]}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-            {/* Vehicle */}
-            {service.vehicleDescription && (
-              <div className="text-sm text-fg-3">
-                Vehicle: {service.vehicleDescription}
-              </div>
-            )}
-
-            {/* Crew */}
-            {(service.crewRole || service.crewAssignments?.length > 0 || (service.crewCountRequired != null && service.crewCountRequired > 0)) && (
-              <div className="flex items-center gap-1.5 text-sm text-fg-3 flex-wrap">
-                <Users className="h-3 w-3 shrink-0" />
-                {service.crewRole && (
-                  <Badge variant="outline" className="text-xs py-0" style={service.crewRole.color ? { borderColor: service.crewRole.color, color: service.crewRole.color } : undefined}>
-                    {service.crewRole.name}
-                  </Badge>
-                )}
-                {service.crewAssignments?.length > 0 ? (
-                  <span>
-                    {service.crewAssignments.map((a) => `${a.crewMember.firstName} ${a.crewMember.lastName}`).join(", ")}
-                  </span>
-                ) : service.crewCountRequired != null && service.crewCountRequired > 0 ? (
-                  <span className="text-amber-500">
-                    {service.crewCountRequired} needed — none assigned
-                  </span>
-                ) : null}
-                {service.crewCountRequired != null && service.crewCountRequired > 0 && service.crewAssignments?.length > 0 && service.crewAssignments.length < service.crewCountRequired && (
-                  <span className="text-amber-500 text-xs">
-                    ({service.crewAssignments.length}/{service.crewCountRequired})
-                  </span>
-                )}
-              </div>
-            )}
-
-            {/* Financial */}
-            {service.lineTotal != null && (
-              <div className="flex items-center gap-1 text-sm">
-                <DollarSign className="h-3 w-3 text-fg-3" />
-                <span className="font-medium t-data">{formatCurrency(service.lineTotal)}</span>
-                {service.pricingType && (
-                  <span className="text-fg-3">
-                    {PRICING_TYPE_LABELS[service.pricingType] || ""}
-                  </span>
-                )}
-                <span className="text-fg-3">
-                  {service.showOnDocuments ? "— On quote" : "— Internal"}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Right side — actions */}
-          <div className="flex items-center gap-1 shrink-0">
-            <CanDo resource="project" action="update">
-              {/* Status dropdown */}
-              <DropdownMenu>
-                <DropdownMenuTrigger render={<Button variant="ghost" size="sm" />}>
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuGroup>
-                    <DropdownMenuLabel>Change Status</DropdownMenuLabel>
-                  </DropdownMenuGroup>
-                  {(
-                    ["PLANNED", "CONFIRMED", "IN_PROGRESS", "COMPLETED", "CANCELLED"] as ServiceStatus[]
-                  ).map((s) => (
-                    <DropdownMenuItem
-                      key={s}
-                      onClick={() => onStatusChange(s)}
-                      disabled={s === service.status}
-                    >
-                      {SERVICE_STATUS_LABELS[s]}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              <Button variant="ghost" size="sm" onClick={onEdit}>
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-destructive"
-                onClick={onDelete}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            </CanDo>
-          </div>
+            <Button variant="ghost" size="sm" onClick={onEdit}>
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive"
+              onClick={onDelete}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </CanDo>
         </div>
       </div>
     </div>
@@ -582,7 +749,7 @@ function ServiceCard({
 // ─── Date Grouping ────────────────────────────────────────────────────────────
 
 function groupByDate(services: ServiceRow[]) {
-  const groups: { dateLabel: string; dateKey: string; items: ServiceRow[] }[] = [];
+  const groups: { dateLabel: string; dateKey: string; dateLong: string; items: ServiceRow[] }[] = [];
   const map = new Map<string, ServiceRow[]>();
 
   for (const s of services) {
@@ -592,14 +759,18 @@ function groupByDate(services: ServiceRow[]) {
   }
 
   for (const [key, items] of map) {
-    const dateLabel =
-      key === "no-date"
-        ? "Unscheduled"
-        : formatDate(items[0].date);
-    groups.push({ dateLabel, dateKey: key, items });
+    if (key === "no-date") {
+      groups.push({ dateLabel: "Unscheduled", dateKey: key, dateLong: "", items });
+    } else {
+      groups.push({
+        dateLabel: formatDate(items[0].date),
+        dateKey: key,
+        dateLong: formatDateLong(key),
+        items,
+      });
+    }
   }
 
-  // Sort: dated groups first (ascending), then "no-date"
   groups.sort((a, b) => {
     if (a.dateKey === "no-date") return 1;
     if (b.dateKey === "no-date") return -1;
@@ -608,6 +779,172 @@ function groupByDate(services: ServiceRow[]) {
 
   return groups;
 }
+
+// ─── Clone Services Dialog ────────────────────────────────────────────────────
+
+function CloneServicesDialog({
+  open,
+  onOpenChange,
+  targetProjectId,
+  onSuccess,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  targetProjectId: string;
+  onSuccess: () => void;
+}) {
+  const { data: activeOrg } = useActiveOrganization();
+  const orgId = activeOrg?.id;
+  const [sourceProjectId, setSourceProjectId] = useState("");
+
+  // Fetch recent projects to pick from
+  const { data: projects = [] } = useQuery({
+    queryKey: ["projects-list", orgId],
+    queryFn: async () => {
+      const { getProjects } = await import("@/server/projects");
+      return getProjects();
+    },
+    enabled: open,
+  });
+
+  const projectOptions = (projects as { id: string; projectNumber: string; name: string }[])
+    .filter((p) => p.id !== targetProjectId)
+    .map((p) => ({
+      value: p.id,
+      label: `${p.projectNumber} — ${p.name}`,
+    }));
+
+  const cloneMutation = useMutation({
+    mutationFn: () => cloneServicesFromProject(targetProjectId, sourceProjectId),
+    onSuccess: (result) => {
+      const r = result as { cloned: number };
+      toast.success(`Cloned ${r.cloned} services`);
+      onOpenChange(false);
+      setSourceProjectId("");
+      onSuccess();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Import Services</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-fg-2">
+          Clone services from a previous project. Dates will be automatically adjusted to match this project.
+        </p>
+        <div className="space-y-1.5">
+          <Label>Source Project</Label>
+          <ComboboxPicker
+            value={sourceProjectId}
+            onChange={setSourceProjectId}
+            options={projectOptions}
+            placeholder="Search projects..."
+            searchPlaceholder="Search by name or number..."
+            emptyMessage="No projects found"
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => cloneMutation.mutate()}
+            disabled={!sourceProjectId || cloneMutation.isPending}
+          >
+            {cloneMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <ArrowRightLeft className="mr-2 h-4 w-4" />
+            Clone Services
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Crew Message Dialog ──────────────────────────────────────────────────────
+
+function CrewMessageDialog({
+  open,
+  onOpenChange,
+  projectId,
+  crewMemberId,
+  crewMemberName,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  projectId: string;
+  crewMemberId: string;
+  crewMemberName: string;
+}) {
+  const { data: messageData, isLoading } = useQuery({
+    queryKey: ["crew-message", projectId, crewMemberId],
+    queryFn: () => generateCrewMessage(projectId, crewMemberId),
+    enabled: open && !!crewMemberId,
+  });
+
+  const msg = messageData as {
+    message: string;
+    crewMemberName: string;
+    crewMemberPhone: string | null;
+    crewMemberEmail: string | null;
+  } | undefined;
+
+  function copyToClipboard() {
+    if (msg?.message) {
+      navigator.clipboard.writeText(msg.message);
+      toast.success("Message copied to clipboard");
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Message for {crewMemberName}</DialogTitle>
+        </DialogHeader>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-5 w-5 animate-spin text-fg-3" />
+          </div>
+        ) : msg ? (
+          <div className="space-y-3">
+            {(msg.crewMemberPhone || msg.crewMemberEmail) && (
+              <div className="flex items-center gap-3 text-sm text-fg-3">
+                {msg.crewMemberPhone && (
+                  <a href={`tel:${msg.crewMemberPhone}`} className="text-primary hover:underline">
+                    {msg.crewMemberPhone}
+                  </a>
+                )}
+                {msg.crewMemberEmail && (
+                  <a href={`mailto:${msg.crewMemberEmail}`} className="text-primary hover:underline">
+                    {msg.crewMemberEmail}
+                  </a>
+                )}
+              </div>
+            )}
+            <pre className="whitespace-pre-wrap rounded-lg bg-bg-inset p-3 text-sm font-sans">
+              {msg.message}
+            </pre>
+          </div>
+        ) : null}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
+          <Button onClick={copyToClipboard} disabled={!msg?.message}>
+            <Copy className="mr-2 h-4 w-4" />
+            Copy Message
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Crew Helpers ─────────────────────────────────────────────────────────────
 
 function CrewMemberSelect({
   needed,
@@ -690,12 +1027,10 @@ function ServiceDialog({
   const queryClient = useQueryClient();
   const isEditing = !!editingService;
 
-  // Find matching template for defaults
   const matchingTemplate = preselectedType
     ? templates.find((t) => t.type === preselectedType && t.isActive)
     : null;
 
-  // Pick the best default date based on service type
   function getDefaultDate(type: ServiceType | null): string {
     if (!type) return projectEventStartDate || projectLoadInDate || "";
     switch (type) {
@@ -711,7 +1046,6 @@ function ServiceDialog({
     }
   }
 
-  // Address defaults from project for delivery/pickup types
   const defaultAddress = projectAddress || "";
   const defaultLat = projectLatitude ?? null;
   const defaultLng = projectLongitude ?? null;
@@ -743,6 +1077,7 @@ function ServiceDialog({
         pricingType: (editingService.pricingType as "PER_DAY" | "PER_HOUR" | "FLAT" | "") || "",
         duration: (editingService.duration as number) || undefined,
         discount: (editingService.discount as number) || undefined,
+        costTotal: (editingService.costTotal as number) || undefined,
         taxable: editingService.taxable !== false,
         vehicleDescription: (editingService.vehicleDescription as string) || "",
         numberOfTrips: (editingService.numberOfTrips as number) || undefined,
@@ -793,7 +1128,6 @@ function ServiceDialog({
   const watchEndDate = form.watch("endDate") as string;
   const isCurrentlyMultiDay = canBeMultiDay && watchDate && watchEndDate && watchDate !== watchEndDate;
 
-  // Crew role options
   const { data: crewRoles = [] } = useQuery({
     queryKey: ["crew-roles", orgId],
     queryFn: () => getCrewRoleOptions(),
@@ -805,7 +1139,6 @@ function ServiceDialog({
     label: r.name,
   }));
 
-  // Crew member options
   const { data: crewMembers = [] } = useQuery({
     queryKey: ["crew-members-for-assignment", orgId, projectId],
     queryFn: () => getCrewMembersForAssignment(projectId),
@@ -829,15 +1162,19 @@ function ServiceDialog({
   const watchCrewNeeded = Number(form.watch("crewCountRequired") || 0);
   const setCrewMemberIds = (ids: string[]) => { form.setValue("crewMemberIds", ids); };
 
+  const invalidateAll = () => {
+    queryClient.invalidateQueries({ queryKey: ["project-services", orgId, projectId] });
+    queryClient.invalidateQueries({ queryKey: ["project-services-summary", orgId, projectId] });
+    queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] });
+    queryClient.invalidateQueries({ queryKey: ["project-crew", orgId, projectId] });
+  };
+
   const createMutation = useMutation({
     mutationFn: (data: ProjectServiceFormValues) =>
       createProjectService(projectId, data),
     onSuccess: () => {
       toast.success("Service added");
-      queryClient.invalidateQueries({ queryKey: ["project-services", orgId, projectId] });
-      queryClient.invalidateQueries({ queryKey: ["project-services-summary", orgId, projectId] });
-      queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] });
-      queryClient.invalidateQueries({ queryKey: ["project-crew", orgId, projectId] });
+      invalidateAll();
       onOpenChange(false);
     },
     onError: (e) => toast.error(e.message),
@@ -848,10 +1185,7 @@ function ServiceDialog({
       updateProjectService(editingService!.id as string, data),
     onSuccess: () => {
       toast.success("Service updated");
-      queryClient.invalidateQueries({ queryKey: ["project-services", orgId, projectId] });
-      queryClient.invalidateQueries({ queryKey: ["project-services-summary", orgId, projectId] });
-      queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] });
-      queryClient.invalidateQueries({ queryKey: ["project-crew", orgId, projectId] });
+      invalidateAll();
       onOpenChange(false);
     },
     onError: (e) => toast.error(e.message),
@@ -867,8 +1201,7 @@ function ServiceDialog({
         CANCELLED: "Crew cancelled",
       };
       toast.success(`${labels[status]} (${(result as { updated: number }).updated} updated)`);
-      queryClient.invalidateQueries({ queryKey: ["project-services", orgId, projectId] });
-      queryClient.invalidateQueries({ queryKey: ["project-crew", orgId, projectId] });
+      invalidateAll();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -926,7 +1259,6 @@ function ServiceDialog({
                   {...form.register("date")}
                   onChange={(e) => {
                     form.setValue("date", e.target.value);
-                    // Default end date to start date if empty or before start
                     const currentEnd = form.getValues("endDate") as string;
                     if (!currentEnd || currentEnd < e.target.value) {
                       form.setValue("endDate", e.target.value);
@@ -960,7 +1292,6 @@ function ServiceDialog({
             </div>
           )}
 
-          {/* Times (single-day multi-day types only) */}
           {canBeMultiDay && !isCurrentlyMultiDay && (
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -974,7 +1305,6 @@ function ServiceDialog({
             </div>
           )}
 
-          {/* Scheduled Delivery/Pickup Time */}
           {(watchType === "DELIVERY" || watchType === "PICKUP") && (
             <div className="space-y-1.5">
               <Label>{watchType === "DELIVERY" ? "Delivery Time" : "Pickup Time"}</Label>
@@ -1081,7 +1411,6 @@ function ServiceDialog({
               </div>
             </div>
 
-            {/* Crew Member Multi-Select */}
             <CrewMemberSelect
               needed={watchCrewNeeded}
               values={watchCrewMemberIds}
@@ -1089,7 +1418,6 @@ function ServiceDialog({
               options={crewMemberOptions}
             />
 
-            {/* Crew bulk actions — show when crew are selected */}
             {watchCrewMemberIds.length > 0 && (
               <div className="flex items-center gap-2">
                 <Button
@@ -1125,82 +1453,104 @@ function ServiceDialog({
           </div>
 
           {/* Financial Section */}
-          <div className="border-t pt-4 space-y-3">
+          <div className="border-t pt-4 space-y-4">
             <h4 className="text-sm font-medium">Pricing</h4>
 
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1.5">
-                <Label>Unit Price</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  {...form.register("unitPrice")}
-                  placeholder="0.00"
-                />
+            {/* Charge to Client */}
+            <div className="space-y-3 rounded-md border border-border p-3">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-3">
+                Charge to Client
               </div>
-              <div className="space-y-1.5">
-                <Label>Pricing Type</Label>
-                <Select
-                  value={form.watch("pricingType") || ""}
-                  onValueChange={(v) => form.setValue("pricingType", v as "PER_DAY" | "PER_HOUR" | "FLAT" | "")}
-                >
-                  <SelectTrigger>
-                    <SelectValue>
-                      {form.watch("pricingType")
-                        ? PRICING_TYPE_LABELS[form.watch("pricingType") as string] || form.watch("pricingType")
-                        : "Select..."}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="FLAT">Flat</SelectItem>
-                    <SelectItem value="PER_HOUR">Per Hour</SelectItem>
-                    <SelectItem value="PER_DAY">Per Day</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Rate</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    {...form.register("unitPrice")}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Type</Label>
+                  <Select
+                    value={form.watch("pricingType") || ""}
+                    onValueChange={(v) => form.setValue("pricingType", v as "PER_DAY" | "PER_HOUR" | "FLAT" | "")}
+                  >
+                    <SelectTrigger>
+                      <SelectValue>
+                        {form.watch("pricingType")
+                          ? PRICING_TYPE_LABELS[form.watch("pricingType") as string] || form.watch("pricingType")
+                          : "Flat"}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="FLAT">Flat</SelectItem>
+                      <SelectItem value="PER_HOUR">Per Hour</SelectItem>
+                      <SelectItem value="PER_DAY">Per Day</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Duration</Label>
+                  <Input
+                    type="number"
+                    step="0.5"
+                    {...form.register("duration")}
+                    placeholder="1"
+                  />
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <Label>Duration</Label>
-                <Input
-                  type="number"
-                  step="0.5"
-                  {...form.register("duration")}
-                  placeholder="1"
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Qty</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    {...form.register("quantity")}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Discount ($)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    {...form.register("discount")}
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="showOnDocuments"
+                  checked={form.watch("showOnDocuments")}
+                  onCheckedChange={(checked) =>
+                    form.setValue("showOnDocuments", !!checked)
+                  }
                 />
+                <Label htmlFor="showOnDocuments" className="text-sm font-normal cursor-pointer">
+                  Show on quote / invoice
+                </Label>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Quantity</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  {...form.register("quantity")}
-                />
+            {/* Cost to Business */}
+            <div className="space-y-3 rounded-md border border-border p-3">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-3">
+                Cost to Business
               </div>
               <div className="space-y-1.5">
-                <Label>Discount ($)</Label>
+                <Label>Total Cost</Label>
                 <Input
                   type="number"
                   step="0.01"
-                  {...form.register("discount")}
+                  {...form.register("costTotal")}
                   placeholder="0.00"
                 />
+                <p className="text-[11px] text-fg-4">
+                  What this service costs you (crew, transport, etc). Used for margin calculation.
+                </p>
               </div>
-            </div>
-
-            {/* Show on documents toggle */}
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="showOnDocuments"
-                checked={form.watch("showOnDocuments")}
-                onCheckedChange={(checked) =>
-                  form.setValue("showOnDocuments", !!checked)
-                }
-              />
-              <Label htmlFor="showOnDocuments" className="text-sm font-normal cursor-pointer">
-                Show on client documents (quote/invoice)
-              </Label>
             </div>
           </div>
 

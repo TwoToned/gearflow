@@ -2,6 +2,38 @@
 
 Deferred work items tracked from engineering reviews and planning sessions.
 
+## Pricing System
+
+### Margin-Aware Quoting
+**What:** Add a margin view column/tooltip showing cost basis vs. suggested price with margin percentage. Transform the optimizer from a pure calculator into a business decision tool.
+**Why:** The optimizer always picks the cheapest option for the customer. Rental companies sometimes want simpler billing even if slightly more expensive, or need to hit margin targets.
+**Pros:** Transforms pricing from calculator to business tool, helps staff make margin-aware decisions.
+**Cons:** Requires cost basis data (not currently tracked per model). May need a "cost rate" field on Model.
+**Context:** Deferred during /autoplan CEO review. Override tracking (priceOverridden + overrideReason) enables margin decisions but doesn't surface the data.
+**Depends on:** Pricing optimization feature.
+**Estimate:** human ~1 week / CC ~30 min
+**Priority:** P2
+
+### CSV Rate Import
+**What:** Add CSV import for model rates. Upload a spreadsheet with model name/ID, daily rate, weekly rate, monthly rate. Bulk populate rates without clicking through forms.
+**Why:** The optimizer is only useful when models have rates populated. For existing inventories with hundreds of models, the model form and inline editing are too slow. CSV import solves the cold-start data entry problem.
+**Pros:** Fastest path to full rate coverage, familiar workflow for AV rental operators who manage rates in spreadsheets.
+**Cons:** Requires file upload handling, CSV parsing, error reporting for bad rows. Need to handle model matching (by name? by asset tag? by ID?).
+**Context:** Deferred during /autoplan CEO review. The bulk rate update dialog (formula-based) is in scope; CSV import is the next step for operators with existing rate spreadsheets.
+**Depends on:** Pricing optimization feature (rate fields must exist on Model).
+**Estimate:** human ~3 days / CC ~30 min
+**Priority:** P2
+
+### Configurable Days-Per-Month
+**What:** Make the "1 month = X days" constant configurable at the org level (stored in Organization.metadata). Default 28.
+**Why:** Rental companies use 28, 30, or calendar-month billing depending on market norms. Currently hardcoded as `DAYS_PER_BILLING_MONTH = 28`.
+**Pros:** Supports different industry conventions without code changes.
+**Cons:** Adds a setting most orgs won't change.
+**Context:** Deferred during /autoplan eng review. Named constant in src/lib/pricing.ts.
+**Depends on:** Pricing optimization feature.
+**Estimate:** human ~2 hours / CC ~10 min
+**Priority:** P3
+
 ## Testing Expansion
 
 ### Server Action Integration Tests
@@ -101,3 +133,25 @@ Deferred work items tracked from engineering reviews and planning sessions.
 **Context:** Focus on complex stateful components first: warehouse scanner (barcode input → API call → state update), availability calendar (date range selection → conflict display), kit builder (drag-and-drop → item management), and data tables (filtering/sorting/pagination). Skip simple presentational components.
 **Depends on:** Test infrastructure (completed in v0.2.0). Needs happy-dom devDependency.
 **Estimate:** human ~2 weeks / CC ~2 hours
+
+## Services & Crewing
+
+### Crew Travel Distance to Venue
+**What:** Show crew member travel distance/time to the venue in the crew assignment combobox. When assigning crew to a service, display "Alex: 25 min drive" next to each crew member based on their address and the project location.
+**Why:** Helps make smarter crew assignment decisions, especially for gigs across different cities or suburbs. Reduces no-shows from crew who didn't realize how far the venue was.
+**Pros:** Better crew scheduling decisions, reduces travel cost surprises.
+**Cons:** Requires Google Distance Matrix API integration (new external dependency, per-query cost). Crew member addresses must be populated (currently optional field). Project must have a location set.
+**Context:** Deferred during CEO review of services/crewing rework. CrewMember already has `address`, `addressLatitude`, `addressLongitude` fields. Project has location relation with lat/lng. The data model supports this, just needs the API integration and UI.
+**Depends on:** Services/crewing rework (timeline view with inline crew assignment). Google Maps API key (already in env as NEXT_PUBLIC_GOOGLE_MAPS_API_KEY).
+**Estimate:** human ~2 days / CC ~20 min
+**Priority:** P3
+
+### Crew Availability Composite Index
+**What:** Add a composite index on `CrewAssignment(crewMemberId, startDate, endDate)` to optimize the cross-project availability overlap query.
+**Why:** The inline crew assignment feature queries all assignments for a set of crew members across all projects, filtering by date range overlap. Without a composite index, this becomes a sequential scan as the assignment table grows.
+**Pros:** Prevents slow availability lookups when crew assignment count exceeds ~10K rows.
+**Cons:** Adds a write-time index maintenance cost. Negligible for this table's write volume.
+**Context:** Identified during eng review of services/crewing rework. The availability query uses `WHERE crewMemberId IN (...) AND startDate <= :endDate AND endDate >= :startDate`. Prisma auto-creates an index on `crewMemberId` (foreign key) but not the composite with date fields.
+**Depends on:** Services/crewing rework (cross-project availability check).
+**Estimate:** human ~15 min / CC ~2 min
+**Priority:** P3

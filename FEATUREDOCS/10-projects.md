@@ -144,10 +144,20 @@ HEADER (full width):
 - Pricing progress indicator ("3/8 groups priced" in amber)
 - Expandable audit trail breakdown (per-group pricing)
 
+### Project Summary Strip
+- Inline metrics strip between header and tabs (not stat cards per DESIGN.md)
+- 4 metrics: Equipment revenue, Services (cost + count), Crew (cost + count), Total
+- Responsive: 4-column on desktop, 2x2 grid on mobile
+- Uses existing financial data + `getProjectServicesSummary()` + `getProjectLabourCost()`
+
 ### Labour & Logistics Tab
 - Unified tab for services and crew (replaces separate Services/Crew tabs)
-- Services grouped by date with crew avatars inline
-- `billableToClient` indicator on services
+- Timeline view: services grouped by date with SectionHeader overline pattern
+- Service cards show StatusIndicator pills, crew avatar stack (3 max + overflow), inline crew cost
+- "Generate Services" button auto-creates services from project dates + service templates
+- "Import Services" button clones services from another project with date offset
+- Empty state with calendar preset and contextual CTA
+- FadeIn/StaggerList motion animations
 
 ## Project Types
 `DRY_HIRE, WET_HIRE, INSTALLATION, TOUR, CORPORATE, THEATRE, FESTIVAL, CONFERENCE, OTHER`
@@ -189,16 +199,64 @@ Structured operational tasks attached to a project (deliveries, pickups, bump in
 - New services inherit the project location address/coordinates
 - Date auto-fills based on service type
 
+### Service Auto-Generation
+- `generateProjectServices(projectId)` creates services from project dates + service templates
+- Idempotent: checks existing services by type+date key to avoid duplicates on re-run
+- Uses `isAutoAdded` templates; falls back to all active templates if none marked
+- Default set if no templates: DELIVERY, BUMP_IN, BUMP_OUT, PICKUP (+ LABOUR show days if event dates)
+- Multi-day events create one LABOUR service per day
+- All wrapped in `prisma.$transaction()` for atomicity
+
+### Service Cloning
+- `cloneServicesFromProject(targetProjectId, sourceProjectId)` copies services between projects
+- Calculates date offset from first service date difference
+- Resets status to PLANNED, preserves crew preferences but not assignments
+
+### Crew Auto-Suggest
+- `getCrewSuggestionsForProject(projectId)` matches crew roles to equipment categories
+- Uses `Category.suggestedCrewRoles` (string array of role IDs) for tag-based matching
+- Returns matched crew roles + their members for assignment UI
+
+### Crew Notifications
+- `generateCrewMessage(projectId, crewMemberId)` builds copy-to-clipboard schedule message
+- Includes venue, site contact, per-assignment schedule with dates/times/roles
+
+### Service Cost History
+- `getServiceCostHistory(organizationId, serviceType, limit)` returns historical pricing data
+
 ### Service Templates
 - Managed in Settings → Services (`/settings/services`)
 - `isAutoAdded` flag for templates that should be added to every new project
+
+### Architecture
+- All service mutations wrapped in `prisma.$transaction()` (atomicity)
+- `buildServiceData()` DRY helper extracts ~20 shared fields between create and update
+- `syncServiceLineItem()` auto-syncs line items with kit child guard + deleted item guard
+- Cascade delete: always unlink line items, never delete them
+- Shared constants in `src/lib/constants/services.ts`
+- Partial unique index on `CrewAssignment(projectId, crewMemberId, serviceId) WHERE serviceId IS NOT NULL`
 
 ### Server Actions
 - File: `src/server/project-services.ts`
 - CRUD: `createProjectService`, `updateProjectService`, `deleteProjectService`, `getProjectServices`
 - Status: `updateServiceStatus`, `bulkUpdateServiceStatus`
+- Generation: `generateProjectServices`, `cloneServicesFromProject`, `convertLineItemToService`
+- Crew: `getCrewSuggestionsForProject`, `generateCrewMessage`
 - Templates: `createServiceTemplate`, `updateServiceTemplate`, `deleteServiceTemplate`, `getServiceTemplates`
-- Financial: `getProjectServicesSummary`
+- Financial: `getProjectServicesSummary`, `getServiceCostHistory`
+
+### Day-of Runsheet
+- Dedicated route: `/projects/[id]/runsheet`
+- Mobile-first layout: no sidebar/tabs, compact header with venue directions
+- Services grouped by date with crew lists per service
+- Tappable phone numbers (tel: links) for site contact
+- Link from project detail page "Runsheet" button
+
+### Timeline PDF
+- API route: `/api/documents/timeline/[projectId]`
+- Portrait A4, date-grouped service rows with type/title/time/crew/cost
+- Uses existing pdfme infrastructure (gearflowPageHeader/Footer plugins)
+- Available via Documents dropdown on project detail page
 
 ## Duplicate Model Handling
 Adding a model that already exists as a line item on the project **merges** into the existing line item (increments quantity) rather than creating a new row.

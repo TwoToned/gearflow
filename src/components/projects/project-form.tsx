@@ -390,7 +390,17 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp, initialMa
                 />
               </div>
 
-              {/* Billing time inline with rental dates */}
+              {/* Billing period: months + weeks + days */}
+              <div className="space-y-2">
+                <Label htmlFor="billingMonths">Billing Months</Label>
+                <Input
+                  id="billingMonths"
+                  type="number"
+                  min="0"
+                  {...form.register("billingMonths")}
+                  placeholder="0"
+                />
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="billingWeeks">Billing Weeks</Label>
                 <Input
@@ -422,11 +432,18 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp, initialMa
                         return;
                       }
                       const totalDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-                      const weeks = Math.floor(totalDays / 7);
-                      const days = totalDays % 7;
+                      const months = Math.floor(totalDays / 28);
+                      const afterMonths = totalDays - months * 28;
+                      const weeks = Math.floor(afterMonths / 7);
+                      const days = afterMonths % 7;
+                      form.setValue("billingMonths", months);
                       form.setValue("billingWeeks", weeks);
                       form.setValue("billingDays", days);
-                      toast.success(`Set to ${weeks}w ${days}d`);
+                      const parts = [];
+                      if (months > 0) parts.push(`${months}m`);
+                      if (weeks > 0) parts.push(`${weeks}w`);
+                      if (days > 0) parts.push(`${days}d`);
+                      toast.success(`Set to ${parts.join(" ") || "0d"}`);
                     }}
                   >
                     Auto from rental dates

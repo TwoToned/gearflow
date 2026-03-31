@@ -61,6 +61,7 @@ export function AddEquipmentDialog({
   const [selectedModelId, setSelectedModelId] = useState("");
   const [assetTagInput, setAssetTagInput] = useState("");
   const [lookupTag, setLookupTag] = useState("");
+  const [discountMode, setDiscountMode] = useState<"$" | "%">("$");
 
   const form = useForm<LineItemFormValues>({
     resolver: zodResolver(lineItemSchema),
@@ -125,13 +126,11 @@ export function AddEquipmentDialog({
   });
 
   // When a model is selected, update form fields
+  // Don't set unitPrice here — server-side optimizer will auto-price if billing period + rates exist
   useEffect(() => {
     if (selectedModel) {
       form.setValue("modelId", selectedModel.id);
       form.setValue("assetId", undefined);
-      if (selectedModel.defaultRentalPrice != null) {
-        form.setValue("unitPrice", Number(selectedModel.defaultRentalPrice));
-      }
     }
   }, [selectedModel, form]);
 
@@ -142,16 +141,19 @@ export function AddEquipmentDialog({
       form.setValue("modelId", asset.modelId);
       form.setValue("assetId", asset.id);
       form.setValue("quantity", 1);
-      if (asset.model.defaultRentalPrice != null) {
-        form.setValue("unitPrice", Number(asset.model.defaultRentalPrice));
-      }
       form.setValue("description", `${asset.model.name}${asset.customName ? ` (${asset.customName})` : ""} [${asset.assetTag}]`);
     }
   }, [assetLookup, form]);
 
   const mutation = useMutation({
-    mutationFn: (data: LineItemFormValues) =>
-      addLineItem(projectId, { ...data, categoryId, groupId }, overbookConfirmed),
+    mutationFn: (data: LineItemFormValues) => {
+      let disc = data.discount;
+      if (discountMode === "%" && disc && data.unitPrice) {
+        const gross = Number(data.unitPrice) * Number(data.quantity ?? 1) * Number(data.duration ?? 1);
+        disc = Math.round(gross * Number(disc) / 100 * 100) / 100;
+      }
+      return addLineItem(projectId, { ...data, discount: disc, categoryId, groupId }, overbookConfirmed);
+    },
     onSuccess: (result) => {
       const data = result as Record<string, unknown> | null;
       if (data?._merged) {
@@ -181,6 +183,7 @@ export function AddEquipmentDialog({
     setAssetTagInput("");
     setLookupTag("");
     setMode("model");
+    setDiscountMode("$");
     setOverbookConfirmed(false);
   }
 
@@ -410,17 +413,18 @@ export function AddEquipmentDialog({
             </>
           )}
 
+          <div className="space-y-2">
+            <Label htmlFor="eq-quantity">Quantity</Label>
+            <Input
+              id="eq-quantity"
+              type="number"
+              min={1}
+              {...form.register("quantity")}
+              disabled={mode === "asset-tag"}
+            />
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label htmlFor="eq-quantity">Quantity</Label>
-              <Input
-                id="eq-quantity"
-                type="number"
-                min={1}
-                {...form.register("quantity")}
-                disabled={mode === "asset-tag"}
-              />
-            </div>
             <div className="space-y-2">
               <Label htmlFor="eq-unitPrice">Unit Price ($)</Label>
               <Input
@@ -428,33 +432,33 @@ export function AddEquipmentDialog({
                 type="number"
                 step="0.01"
                 min={0}
+                placeholder="Auto"
                 {...form.register("unitPrice")}
               />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label htmlFor="eq-pricingType">Pricing Type</Label>
-              <select
-                id="eq-pricingType"
-                {...form.register("pricingType")}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                <option value="PER_DAY">Per Day</option>
-                <option value="PER_WEEK">Per Week</option>
-                <option value="FLAT">Flat</option>
-                <option value="PER_HOUR">Per Hour</option>
-              </select>
+              {Number(form.watch("unitPrice")) > 0 && (
+                <p className="text-xs text-amber-500">Overrides auto-pricing</p>
+              )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="eq-duration">Duration</Label>
-              <Input
-                id="eq-duration"
-                type="number"
-                min={1}
-                {...form.register("duration")}
-              />
+              <Label htmlFor="eq-discount">Discount</Label>
+              <div className="flex gap-1">
+                <Input
+                  id="eq-discount"
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  placeholder="0"
+                  {...form.register("discount")}
+                  className="flex-1"
+                />
+                <button
+                  type="button"
+                  onClick={() => setDiscountMode(discountMode === "$" ? "%" : "$")}
+                  className="shrink-0 w-9 h-9 rounded-md border border-input text-sm font-medium hover:bg-accent transition-colors"
+                >
+                  {discountMode}
+                </button>
+              </div>
             </div>
           </div>
 

@@ -18,7 +18,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, FolderPlus, Package, ArrowUpRight, MoreHorizontal, Trash2, Pencil, Loader2, ChevronRight, GripVertical } from "lucide-react";
+import { Plus, FolderPlus, Package, ArrowUpRight, MoreHorizontal, Trash2, Pencil, Loader2, ChevronRight, GripVertical, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 import { getProjectCategories } from "@/server/project-categories";
@@ -29,6 +29,7 @@ import {
   deleteProjectGroup,
   reorderProjectGroups,
   moveLineItemToGroup,
+  recalculateGroupPrices,
 } from "@/server/project-groups";
 import {
   createProjectCategory,
@@ -89,10 +90,13 @@ interface LineItemData {
   lineTotal: unknown;
   pricingType?: string;
   duration?: number;
+  discount?: unknown;
   notes?: string | null;
   isOptional?: boolean;
   type?: string;
-  model?: { name: string; dailyRate?: unknown; weeklyRate?: unknown } | null;
+  priceBreakdown?: string | null;
+  priceOverridden?: boolean;
+  model?: { name: string; dailyRate?: unknown; weeklyRate?: unknown; monthlyRate?: unknown } | null;
   asset?: { assetTag?: string | null } | null;
 }
 
@@ -105,6 +109,7 @@ interface GroupData {
   suggestedPrice: unknown;
   rentalPeriod: string | null;
   rentalQuantity: number | null;
+  billingMonths: number | null;
   billingWeeks: number | null;
   billingDays: number | null;
   sortOrder: number;
@@ -119,14 +124,7 @@ interface CategoryData {
   lineItems?: LineItemData[];
 }
 
-const pricingLabels: Record<string, string> = {
-  PER_DAY: "/day",
-  PER_WEEK: "/week",
-  FLAT: "flat",
-  PER_HOUR: "/hr",
-};
-
-const COL_COUNT = 7;
+const COL_COUNT = 6;
 
 // ─── Sortable group row ─────────────────────────────────────────────────────
 
@@ -140,6 +138,7 @@ function SortableGroupRow({
   onAddEquipment,
   onAddKit,
   onAddSubhire,
+  onRecalculate,
 }: {
   group: GroupData;
   isExpanded: boolean;
@@ -150,6 +149,7 @@ function SortableGroupRow({
   onAddEquipment: () => void;
   onAddKit: () => void;
   onAddSubhire: () => void;
+  onRecalculate?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: `grp-${group.id}` });
@@ -226,6 +226,12 @@ function SortableGroupRow({
                   <ArrowUpRight className="mr-2 h-3.5 w-3.5" />
                   Add Subhire
                 </DropdownMenuItem>
+                {onRecalculate && (
+                  <DropdownMenuItem onClick={onRecalculate}>
+                    <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                    Recalculate Prices
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   onClick={onDelete}
                   className="text-[oklch(0.58_0.22_27)]"
@@ -365,15 +371,23 @@ function SortableLineItemRow({
       </TableCell>
       <TableCell className="text-center t-data">{item.quantity}</TableCell>
       <TableCell className="text-right hidden md:table-cell t-data">
-        {formatCurrency(item.unitPrice != null ? Number(item.unitPrice) : null)}
-        {item.unitPrice != null && item.pricingType && (
-          <span className="text-xs text-fg-3 ml-0.5">
-            {pricingLabels[item.pricingType] ?? ""}
-          </span>
+        <div className="flex items-center justify-end gap-1">
+          {formatCurrency(item.unitPrice != null ? Number(item.unitPrice) : null)}
+          {item.pricingType === "OPTIMIZED" && !item.priceOverridden && (
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0" title="Auto-priced from rates" />
+          )}
+          {item.priceOverridden && (
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" title="Manually set price" />
+          )}
+        </div>
+        {item.priceBreakdown && !item.priceOverridden && (
+          <p className="text-[11px] text-fg-3 truncate max-w-[140px]" title={item.priceBreakdown}>
+            {item.priceBreakdown}
+          </p>
         )}
-      </TableCell>
-      <TableCell className="text-center hidden lg:table-cell t-data">
-        {item.duration ?? "--"}
+        {item.discount != null && Number(item.discount) > 0 && (
+          <p className="text-[11px] text-green-500">-{formatCurrency(Number(item.discount))} disc.</p>
+        )}
       </TableCell>
       <TableCell className="text-right font-medium hidden sm:table-cell t-data">
         {formatCurrency(item.lineTotal != null ? Number(item.lineTotal) : null)}
@@ -455,8 +469,9 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
   const [editQuantity, setEditQuantity] = useState("1");
   const [editUnitPrice, setEditUnitPrice] = useState("");
   const [editDescription, setEditDescription] = useState("");
-  const [editPricingType, setEditPricingType] = useState("PER_DAY");
-  const [editDuration, setEditDuration] = useState("1");
+  const [editDiscount, setEditDiscount] = useState("");
+  const [editDiscountMode, setEditDiscountMode] = useState<"$" | "%">("$");
+  const [editPriceMode, setEditPriceMode] = useState<"auto" | "manual">("auto");
   const [editNotes, setEditNotes] = useState("");
 
   // Group edit dialog state
@@ -464,6 +479,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
   const [editGroupTitle, setEditGroupTitle] = useState("");
   const [editGroupDescription, setEditGroupDescription] = useState("");
   const [editGroupQuantity, setEditGroupQuantity] = useState("1");
+  const [editGroupBillingMonths, setEditGroupBillingMonths] = useState("");
   const [editGroupBillingWeeks, setEditGroupBillingWeeks] = useState("");
   const [editGroupBillingDays, setEditGroupBillingDays] = useState("");
   const [editGroupPrice, setEditGroupPrice] = useState("");
@@ -593,22 +609,38 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
     setEditQuantity(String(item.quantity));
     setEditUnitPrice(item.unitPrice != null ? String(Number(item.unitPrice)) : "");
     setEditDescription(item.description ?? item.model?.name ?? "");
-    setEditPricingType(item.pricingType ?? "PER_DAY");
-    setEditDuration(String(item.duration ?? 1));
+    setEditDiscount(item.discount != null && Number(item.discount) > 0 ? String(Number(item.discount)) : "");
+    setEditDiscountMode("$");
+    setEditPriceMode(item.pricingType === "OPTIMIZED" && !item.priceOverridden ? "auto" : "manual");
     setEditNotes(item.notes ?? "");
   }
 
   function handleSaveEditLineItem() {
     if (!editLineItem) return;
+    const qty = Number(editQuantity) || 1;
+    const isAuto = editPriceMode === "auto";
+    const price = isAuto
+      ? (editLineItem.unitPrice != null ? Number(editLineItem.unitPrice) : undefined)
+      : (editUnitPrice ? Number(editUnitPrice) : undefined);
+    const dur = editLineItem.duration ?? 1;
+    let disc: number | undefined;
+    if (editDiscount && Number(editDiscount) > 0) {
+      if (editDiscountMode === "%" && price != null) {
+        disc = Math.round((price * qty * dur * Number(editDiscount)) / 100 * 100) / 100;
+      } else {
+        disc = Number(editDiscount);
+      }
+    }
     updateLineItemMut.mutate({
       id: editLineItem.id,
       data: {
         type: editLineItem.type ?? "EQUIPMENT",
-        quantity: Number(editQuantity) || 1,
-        unitPrice: editUnitPrice ? Number(editUnitPrice) : undefined,
+        quantity: qty,
+        unitPrice: price,
         description: editDescription,
-        pricingType: editPricingType,
-        duration: Number(editDuration) || 1,
+        pricingType: editLineItem.pricingType ?? "PER_DAY",
+        duration: dur,
+        discount: disc,
         notes: editNotes || undefined,
       },
     });
@@ -651,7 +683,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
   });
 
   const updateGroupMut = useMutation({
-    mutationFn: ({ groupId, data }: { groupId: string; data: Partial<{ title: string; description: string; quantity: number; billingWeeks: number; billingDays: number }> }) =>
+    mutationFn: ({ groupId, data }: { groupId: string; data: Partial<{ title: string; description: string; quantity: number; billingMonths: number; billingWeeks: number; billingDays: number }> }) =>
       updateProjectGroup(groupId, data),
     onSuccess: () => {
       invalidate();
@@ -924,7 +956,6 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
               <TableHead>Item</TableHead>
               <TableHead className="text-center">Qty</TableHead>
               <TableHead className="text-right hidden md:table-cell">Unit Price</TableHead>
-              <TableHead className="text-center hidden lg:table-cell">Duration</TableHead>
               <TableHead className="text-right hidden sm:table-cell">Total</TableHead>
               <TableHead />
             </TableRow>
@@ -979,6 +1010,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                                 setEditGroupTitle(group.title);
                                 setEditGroupDescription(group.description ?? "");
                                 setEditGroupQuantity(String(group.quantity));
+                                setEditGroupBillingMonths(group.billingMonths != null ? String(group.billingMonths) : "");
                                 setEditGroupBillingWeeks(group.billingWeeks != null ? String(group.billingWeeks) : "");
                                 setEditGroupBillingDays(group.billingDays != null ? String(group.billingDays) : "");
                                 setEditGroupPrice(priceVal != null ? String(priceVal) : "");
@@ -994,6 +1026,20 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                               onAddSubhire={() => {
                                 setSubhireTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
                                 setShowSubhireDialog(true);
+                              }}
+                              onRecalculate={async () => {
+                                try {
+                                  const count = await recalculateGroupPrices(group.id);
+                                  if (count === 0) {
+                                    toast.info("No items to recalculate");
+                                  } else {
+                                    toast.success(`Prices updated for ${count} item${count !== 1 ? "s" : ""}`);
+                                  }
+                                  queryClient.invalidateQueries({ queryKey: ["project-categories"] });
+                                  queryClient.invalidateQueries({ queryKey: ["project-line-items"] });
+                                } catch (e) {
+                                  toast.error(e instanceof Error ? e.message : "Failed to recalculate");
+                                }
                               }}
                             />
                             {/* Expanded line items */}
@@ -1318,54 +1364,91 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="edit-quantity">Quantity</Label>
-                <Input
-                  id="edit-quantity"
-                  type="number"
-                  min={1}
-                  value={editQuantity}
-                  onChange={(e) => setEditQuantity(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-unitPrice">Unit Price ($)</Label>
-                <Input
-                  id="edit-unitPrice"
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  value={editUnitPrice}
-                  onChange={(e) => setEditUnitPrice(e.target.value)}
-                />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-quantity">Quantity</Label>
+              <Input
+                id="edit-quantity"
+                type="number"
+                min={1}
+                value={editQuantity}
+                onChange={(e) => setEditQuantity(e.target.value)}
+              />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="edit-pricingType">Pricing Type</Label>
-                <select
-                  id="edit-pricingType"
-                  value={editPricingType}
-                  onChange={(e) => setEditPricingType(e.target.value)}
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                >
-                  <option value="PER_DAY">Per Day</option>
-                  <option value="PER_WEEK">Per Week</option>
-                  <option value="FLAT">Flat</option>
-                  <option value="PER_HOUR">Per Hour</option>
-                </select>
+            {/* Pricing section */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label>Pricing</Label>
+                {editLineItem?.pricingType === "OPTIMIZED" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (editPriceMode === "auto") {
+                        setEditPriceMode("manual");
+                        setEditUnitPrice(editLineItem.unitPrice != null ? String(Number(editLineItem.unitPrice)) : "");
+                      } else {
+                        setEditPriceMode("auto");
+                        setEditUnitPrice("");
+                      }
+                    }}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    {editPriceMode === "auto" ? "Set manual price" : "Revert to auto"}
+                  </button>
+                )}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-duration">Duration</Label>
-                <Input
-                  id="edit-duration"
-                  type="number"
-                  min={1}
-                  value={editDuration}
-                  onChange={(e) => setEditDuration(e.target.value)}
-                />
+
+              {editPriceMode === "auto" && editLineItem?.pricingType === "OPTIMIZED" ? (
+                <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-primary">Auto-priced</span>
+                    <span className="text-sm font-semibold">
+                      {formatCurrency(editLineItem.unitPrice != null ? Number(editLineItem.unitPrice) : null)}
+                    </span>
+                  </div>
+                  {editLineItem.priceBreakdown && (
+                    <p className="text-xs text-fg-3 mt-0.5">{editLineItem.priceBreakdown}</p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Input
+                    id="edit-unitPrice"
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    value={editUnitPrice}
+                    onChange={(e) => setEditUnitPrice(e.target.value)}
+                    placeholder="Enter price"
+                  />
+                  {editLineItem?.pricingType === "OPTIMIZED" && (
+                    <p className="text-xs text-amber-500">This will override the auto-calculated price</p>
+                  )}
+                </div>
+              )}
+
+              {/* Discount row */}
+              <div className="flex items-center gap-2">
+                <Label htmlFor="edit-discount" className="shrink-0 text-sm">Discount</Label>
+                <div className="flex gap-1 flex-1">
+                  <Input
+                    id="edit-discount"
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    placeholder="0"
+                    value={editDiscount}
+                    onChange={(e) => setEditDiscount(e.target.value)}
+                    className="flex-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setEditDiscountMode(editDiscountMode === "$" ? "%" : "$")}
+                    className="shrink-0 w-9 h-9 rounded-md border border-input text-sm font-medium hover:bg-accent transition-colors"
+                  >
+                    {editDiscountMode}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1635,7 +1718,17 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
             </div>
             <div className="space-y-2">
               <Label className="text-muted-foreground text-xs">Billing Override (leave blank to use project defaults)</Label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label>Months</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={editGroupBillingMonths}
+                    onChange={(e) => setEditGroupBillingMonths(e.target.value)}
+                    placeholder="—"
+                  />
+                </div>
                 <div className="space-y-1">
                   <Label>Weeks</Label>
                   <Input
@@ -1672,6 +1765,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                       title: editGroupTitle.trim(),
                       description: editGroupDescription.trim() || undefined,
                       quantity: parseInt(editGroupQuantity) || 1,
+                      billingMonths: editGroupBillingMonths !== "" ? parseInt(editGroupBillingMonths) : undefined,
                       billingWeeks: editGroupBillingWeeks !== "" ? parseInt(editGroupBillingWeeks) : undefined,
                       billingDays: editGroupBillingDays !== "" ? parseInt(editGroupBillingDays) : undefined,
                     },

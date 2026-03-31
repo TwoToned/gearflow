@@ -128,6 +128,21 @@ describe("lineItemSchema", () => {
       expect(result.success).toBe(true);
       if (result.success) expect(result.data.unitPrice).toBe(75.5);
     });
+
+    // Regression: empty unitPrice coerces to 0 via z.coerce.number().
+    // Server-side optimizer gate uses !parsed.unitPrice to catch 0/null/undefined.
+    // Found by /qa on 2026-03-28
+    it("coerces empty string to 0 (server handles this case)", () => {
+      const result = lineItemSchema.safeParse({ unitPrice: "" });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.unitPrice).toBe(0);
+    });
+
+    it("treats undefined as undefined", () => {
+      const result = lineItemSchema.safeParse({});
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.unitPrice).toBeUndefined();
+    });
   });
 
   describe("pricingType enum", () => {

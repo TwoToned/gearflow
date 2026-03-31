@@ -183,13 +183,69 @@ export function ModelForm({ initialData }: ModelFormProps) {
         </div>
       </FormSection>
 
-      {/* Pricing */}
-      <FormSection title="Pricing">
-        <div className="grid gap-4 sm:grid-cols-3">
+      {/* Rate Card */}
+      <FormSection title="Rate Card">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
           <div className="space-y-2">
-            <Label htmlFor="defaultRentalPrice">Rental Price ($/day)</Label>
-            <Input id="defaultRentalPrice" type="number" step="0.01" {...form.register("defaultRentalPrice")} />
+            <Label htmlFor="dailyRate" aria-label="Daily rate">Daily Rate ($)</Label>
+            <Input id="dailyRate" type="number" step="0.01" min="0" {...form.register("dailyRate")} />
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="weeklyRate" aria-label="Weekly rate">Weekly Rate ($)</Label>
+            <Input
+              id="weeklyRate"
+              type="number"
+              step="0.01"
+              min="0"
+              {...form.register("weeklyRate")}
+              placeholder={
+                form.watch("dailyRate") && !form.watch("weeklyRate")
+                  ? `Suggested: $${(Number(form.watch("dailyRate")) * 4).toFixed(2)}`
+                  : undefined
+              }
+            />
+            {Number(form.watch("dailyRate")) > 0 && !form.watch("weeklyRate") && (
+              <button
+                type="button"
+                className="text-xs text-primary hover:underline"
+                aria-describedby="weeklyRate"
+                onClick={() => form.setValue("weeklyRate", Number(form.watch("dailyRate")) * 4)}
+              >
+                Apply 4× daily
+              </button>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="monthlyRate" aria-label="Monthly rate">Monthly Rate ($)</Label>
+            <Input
+              id="monthlyRate"
+              type="number"
+              step="0.01"
+              min="0"
+              {...form.register("monthlyRate")}
+              placeholder={
+                form.watch("dailyRate") && !form.watch("monthlyRate")
+                  ? `Suggested: $${(Number(form.watch("dailyRate")) * 12).toFixed(2)}`
+                  : undefined
+              }
+            />
+            {Number(form.watch("dailyRate")) > 0 && !form.watch("monthlyRate") && (
+              <button
+                type="button"
+                className="text-xs text-primary hover:underline"
+                aria-describedby="monthlyRate"
+                onClick={() => form.setValue("monthlyRate", Number(form.watch("dailyRate")) * 12)}
+              >
+                Apply 12× daily
+              </button>
+            )}
+          </div>
+        </div>
+      </FormSection>
+
+      {/* Cost & Valuation */}
+      <FormSection title="Cost & Valuation">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="defaultPurchasePrice">Purchase Price ($)</Label>
             <Input id="defaultPurchasePrice" type="number" step="0.01" {...form.register("defaultPurchasePrice")} />

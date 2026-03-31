@@ -385,6 +385,7 @@ enum PricingType {
   PER_WEEK
   FLAT
   PER_HOUR
+  OPTIMIZED
 }
 
 enum RentalPeriod {
@@ -570,9 +571,10 @@ model Category {
   description    String?
   icon           String?
   sortOrder      Int          @default(0)
-  tags           String[]     @default([])
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  tags               String[]     @default([])
+  suggestedCrewRoles String[]     @default([])
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
 
   models Model[]
   kits   Kit[]
@@ -603,6 +605,7 @@ model Model {
   defaultRentalPrice      Decimal?     @db.Decimal(10, 2)
   dailyRate               Decimal?     @db.Decimal(10, 2)
   weeklyRate              Decimal?     @db.Decimal(10, 2)
+  monthlyRate             Decimal?     @db.Decimal(10, 2)
   defaultPurchasePrice    Decimal?     @db.Decimal(10, 2)
   replacementCost         Decimal?     @db.Decimal(10, 2)
   weight                  Decimal?     @db.Decimal(8, 2)
@@ -1056,6 +1059,7 @@ model Project {
   projectManager       User?         @relation("ProjectManager", fields: [projectManagerId], references: [id])
   defaultRentalPeriod  RentalPeriod?
   defaultRentalQuantity Int?
+  billingMonths        Int?
   billingWeeks         Int?
   billingDays          Int?
   taxRate              Decimal?      @db.Decimal(5, 2)
@@ -1130,6 +1134,9 @@ model ProjectLineItem {
   duration        Int            @default(1)
   discount        Decimal?       @db.Decimal(10, 2)
   lineTotal       Decimal?       @db.Decimal(12, 2)
+  priceBreakdown  String?
+  priceOverridden Boolean        @default(false)
+  overrideReason  String?
   sortOrder       Int            @default(0)
   groupName       String?
   categoryId      String?
@@ -1217,6 +1224,7 @@ model ProjectGroup {
   suggestedPrice  Decimal?      @db.Decimal(12, 2)
   rentalPeriod    RentalPeriod?
   rentalQuantity  Int?
+  billingMonths   Int?
   billingWeeks    Int?
   billingDays     Int?
   sortOrder       Int           @default(0)
@@ -1935,7 +1943,8 @@ model CrewAssignment {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  @@unique([projectId, crewMemberId, phase])
+  // Partial unique index created via raw SQL migration:
+  // UNIQUE(projectId, crewMemberId, serviceId) WHERE serviceId IS NOT NULL
   @@index([organizationId])
   @@index([projectId])
   @@index([crewMemberId])

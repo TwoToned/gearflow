@@ -43,6 +43,8 @@ export interface DocumentLineItem {
   duration: number;
   discount: number | null;
   lineTotal: number | null;
+  priceBreakdown?: string | null;
+  priceOverridden?: boolean;
   groupName: string | null;
   categoryName: string | null;
   groupTitle: string | null;

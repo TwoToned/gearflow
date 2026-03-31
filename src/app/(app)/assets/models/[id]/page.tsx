@@ -231,14 +231,31 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 <BookingCalendar entityType="model" entityId={id} initialDate={initialDate} />
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   <div className="rounded-lg bg-bg-surface p-4 surface-ring">
-                    <p className="text-[13px] font-medium text-fg-3 mb-3">Pricing</p>
+                    <p className="text-[13px] font-medium text-fg-3 mb-3">Rate Card</p>
                     <div className="space-y-1 text-sm">
                       <div className="flex justify-between">
-                        <span>Rental (per day)</span>
+                        <span>Daily</span>
                         <span className="font-medium t-data">
-                          {model.defaultRentalPrice ? `$${Number(model.defaultRentalPrice).toFixed(2)}` : "—"}
+                          {model.dailyRate ? `$${Number(model.dailyRate).toFixed(2)}` : "—"}
                         </span>
                       </div>
+                      <div className="flex justify-between">
+                        <span>Weekly</span>
+                        <span className="font-medium t-data">
+                          {model.weeklyRate ? `$${Number(model.weeklyRate).toFixed(2)}` : "—"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Monthly</span>
+                        <span className="font-medium t-data">
+                          {model.monthlyRate ? `$${Number(model.monthlyRate).toFixed(2)}` : "—"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+                    <p className="text-[13px] font-medium text-fg-3 mb-3">Cost & Valuation</p>
+                    <div className="space-y-1 text-sm">
                       <div className="flex justify-between">
                         <span>Purchase price</span>
                         <span className="font-medium t-data">

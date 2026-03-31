@@ -12,17 +12,50 @@ import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { roundCurrency } from "@/lib/formatters";
 import { recalculateProjectTotals } from "./line-items";
+import { optimizePrice, computeTotalDays } from "@/lib/pricing";
+
+/**
+ * Get the billing period for a group, falling back to project-level settings.
+ * Returns {months, weeks, days} if any billing fields are set, or null for legacy mode.
+ */
+export async function getGroupBillingPeriod(groupId: string): Promise<{
+  months: number;
+  weeks: number;
+  days: number;
+  totalDays: number;
+} | null> {
+  const group = await prisma.projectGroup.findUniqueOrThrow({
+    where: { id: groupId },
+    include: {
+      project: {
+        select: {
+          billingMonths: true,
+          billingWeeks: true,
+          billingDays: true,
+        },
+      },
+    },
+  });
+
+  const months = group.billingMonths ?? group.project.billingMonths ?? 0;
+  const weeks = group.billingWeeks ?? group.project.billingWeeks ?? 0;
+  const days = group.billingDays ?? group.project.billingDays ?? 0;
+
+  // Check if any billing fields are set at group or project level
+  const hasGroupBilling = group.billingMonths != null || group.billingWeeks != null || group.billingDays != null;
+  const hasProjectBilling = group.project.billingMonths != null || group.project.billingWeeks != null || group.project.billingDays != null;
+
+  if (!hasGroupBilling && !hasProjectBilling) return null;
+
+  const totalDays = computeTotalDays(months, weeks, days);
+  return { months, weeks, days, totalDays };
+}
 
 /**
  * Calculate the suggested price for a group based on its line items' rates.
  *
- * Billing model: the project (or group override) specifies how many weeks and
- * days the gig spans for billing purposes. The suggested price is:
- *
- *   SUM( (weeklyRate × weeks) + (dailyRate × days) ) × item.quantity
- *
- * Falls back to the old rentalPeriod/rentalQuantity model if billingWeeks/billingDays
- * are not set.
+ * Uses the pricing optimizer when months/weeks/days billing fields are set.
+ * Falls back to the old rentalPeriod/rentalQuantity model otherwise.
  */
 export async function calculateSuggestedPrice(groupId: string): Promise<number> {
   const group = await prisma.projectGroup.findUniqueOrThrow({
@@ -32,31 +65,38 @@ export async function calculateSuggestedPrice(groupId: string): Promise<number> 
         select: {
           defaultRentalPeriod: true,
           defaultRentalQuantity: true,
+          billingMonths: true,
           billingWeeks: true,
           billingDays: true,
         },
       },
       lineItems: {
-        include: { model: true },
+        include: { model: { select: { dailyRate: true, weeklyRate: true, monthlyRate: true } } },
         where: { isKitChild: false },
       },
     },
   });
 
-  // Prefer weeks+days billing model, fall back to legacy rentalPeriod/rentalQuantity
-  const weeks = group.billingWeeks ?? group.project.billingWeeks;
-  const days = group.billingDays ?? group.project.billingDays;
-  const useWeeksDays = weeks != null || days != null;
+  const months = group.billingMonths ?? group.project.billingMonths ?? 0;
+  const weeks = group.billingWeeks ?? group.project.billingWeeks ?? 0;
+  const days = group.billingDays ?? group.project.billingDays ?? 0;
+  const hasNewBilling = (group.billingMonths ?? group.project.billingMonths) != null
+    || (group.billingWeeks ?? group.project.billingWeeks) != null
+    || (group.billingDays ?? group.project.billingDays) != null;
 
   let total = 0;
 
-  if (useWeeksDays) {
-    const w = weeks ?? 0;
-    const d = days ?? 0;
+  if (hasNewBilling) {
+    const totalDays = computeTotalDays(months, weeks, days);
     for (const item of group.lineItems) {
-      const weeklyRate = Number(item.model?.weeklyRate ?? 0);
-      const dailyRate = Number(item.model?.dailyRate ?? item.unitPrice ?? 0);
-      total += ((weeklyRate * w) + (dailyRate * d)) * item.quantity;
+      const dailyRate = item.model?.dailyRate != null ? Number(item.model.dailyRate) : null;
+      const weeklyRate = item.model?.weeklyRate != null ? Number(item.model.weeklyRate) : null;
+      const monthlyRate = item.model?.monthlyRate != null ? Number(item.model.monthlyRate) : null;
+
+      const result = optimizePrice(dailyRate, weeklyRate, monthlyRate, totalDays);
+      if (result) {
+        total += result.grandTotal * item.quantity;
+      }
     }
   } else {
     // Legacy fallback
@@ -72,6 +112,87 @@ export async function calculateSuggestedPrice(groupId: string): Promise<number> 
   }
 
   return roundCurrency(total);
+}
+
+/**
+ * Recalculate optimized prices for all non-overridden line items in a group.
+ * Kit-aware: skips kit children in KIT_PRICE mode, includes them in ITEMIZED mode.
+ * Returns the count of items updated.
+ */
+export async function recalculateGroupPrices(groupId: string): Promise<number> {
+  const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
+
+  const billingPeriod = await getGroupBillingPeriod(groupId);
+  if (!billingPeriod) return 0;
+
+  const group = await prisma.projectGroup.findUniqueOrThrow({
+    where: { id: groupId, organizationId },
+    include: {
+      lineItems: {
+        where: { priceOverridden: false },
+        include: {
+          model: { select: { dailyRate: true, weeklyRate: true, monthlyRate: true } },
+          parentLineItem: { select: { pricingMode: true } },
+        },
+      },
+    },
+  });
+
+  const updates: Array<ReturnType<typeof prisma.projectLineItem.update>> = [];
+
+  for (const item of group.lineItems) {
+    // Skip kit children when parent uses KIT_PRICE mode
+    if (item.isKitChild && item.parentLineItem?.pricingMode === "KIT_PRICE") continue;
+
+    if (!item.model) continue;
+
+    const dailyRate = item.model.dailyRate != null ? Number(item.model.dailyRate) : null;
+    const weeklyRate = item.model.weeklyRate != null ? Number(item.model.weeklyRate) : null;
+    const monthlyRate = item.model.monthlyRate != null ? Number(item.model.monthlyRate) : null;
+
+    const result = optimizePrice(dailyRate, weeklyRate, monthlyRate, billingPeriod.totalDays);
+    if (!result) continue;
+
+    updates.push(
+      prisma.projectLineItem.update({
+        where: { id: item.id },
+        data: {
+          unitPrice: result.grandTotal,
+          pricingType: "OPTIMIZED",
+          duration: 1,
+          priceBreakdown: result.breakdown,
+          priceOverridden: false,
+          lineTotal: roundCurrency(result.grandTotal * item.quantity),
+        },
+      })
+    );
+  }
+
+  if (updates.length === 0) return 0;
+
+  await prisma.$transaction(updates);
+
+  // Recalculate suggested price and project totals
+  const suggested = await calculateSuggestedPrice(groupId);
+  await prisma.projectGroup.update({
+    where: { id: groupId },
+    data: { suggestedPrice: suggested },
+  });
+
+  await recalculateProjectTotals(group.projectId);
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "updated",
+    entityType: "project",
+    entityId: group.projectId,
+    entityName: group.title,
+    summary: `Recalculated prices for ${updates.length} item(s) in group "${group.title}"`,
+  });
+
+  return updates.length;
 }
 
 export async function createProjectGroup(
@@ -98,6 +219,7 @@ export async function createProjectGroup(
       price: parsed.price != null ? parsed.price : null,
       rentalPeriod: parsed.rentalPeriod || null,
       rentalQuantity: parsed.rentalQuantity || null,
+      billingMonths: parsed.billingMonths ?? null,
       billingWeeks: parsed.billingWeeks ?? null,
       billingDays: parsed.billingDays ?? null,
       sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
@@ -133,6 +255,7 @@ export async function updateProjectGroup(
       ...(data.quantity !== undefined && { quantity: Number(data.quantity) }),
       ...(data.rentalPeriod !== undefined && { rentalPeriod: data.rentalPeriod || null }),
       ...(data.rentalQuantity !== undefined && { rentalQuantity: data.rentalQuantity ? Number(data.rentalQuantity) : null }),
+      ...(data.billingMonths !== undefined && { billingMonths: data.billingMonths != null ? Number(data.billingMonths) : null }),
       ...(data.billingWeeks !== undefined && { billingWeeks: data.billingWeeks != null ? Number(data.billingWeeks) : null }),
       ...(data.billingDays !== undefined && { billingDays: data.billingDays != null ? Number(data.billingDays) : null }),
       ...(data.sortOrder !== undefined && { sortOrder: Number(data.sortOrder) }),
@@ -140,7 +263,7 @@ export async function updateProjectGroup(
   });
 
   // Recalculate suggestion if billing/rental settings changed
-  if (data.rentalPeriod !== undefined || data.rentalQuantity !== undefined || data.billingWeeks !== undefined || data.billingDays !== undefined) {
+  if (data.rentalPeriod !== undefined || data.rentalQuantity !== undefined || data.billingMonths !== undefined || data.billingWeeks !== undefined || data.billingDays !== undefined) {
     const suggested = await calculateSuggestedPrice(groupId);
     await prisma.projectGroup.update({
       where: { id: groupId },

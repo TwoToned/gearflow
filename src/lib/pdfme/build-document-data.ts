@@ -286,6 +286,44 @@ export async function buildDocumentData(
     lineItems = rawLineItems;
   }
 
+  // ─── Append billable services as virtual line items ─────────────────────────
+  // Services with showOnDocuments appear on quotes/invoices as their own section
+  const billableServices = await prisma.projectService.findMany({
+    where: {
+      projectId,
+      organizationId,
+      showOnDocuments: true,
+      status: { not: "CANCELLED" },
+    },
+    orderBy: { sortOrder: "asc" },
+  });
+
+  if (billableServices.length > 0) {
+    for (const svc of billableServices) {
+      lineItems.push({
+        id: `svc-${svc.id}`,
+        description: svc.title,
+        quantity: 1,
+        checkedOutQuantity: 0,
+        unitPrice: svc.unitPrice ? Number(svc.unitPrice) : null,
+        pricingType: "FLAT",
+        duration: 1,
+        discount: svc.discount ? Number(svc.discount) : null,
+        lineTotal: svc.lineTotal ? Number(svc.lineTotal) : null,
+        groupName: "Services",
+        categoryName: "Services",
+        groupTitle: null,
+        isGroupRow: false,
+        isOptional: false,
+        notes: svc.description || null,
+        status: "CONFIRMED",
+        model: null,
+        asset: null,
+        bulkAsset: null,
+      } as DocumentLineItem);
+    }
+  }
+
   // Compute totals for packing list / delivery docket
   const topLevelItems = lineItems.filter((i) => !i.isKitChild && !i.isContainerLineItem);
   const totalItems = topLevelItems.reduce((sum, i) => {

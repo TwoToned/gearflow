@@ -28,18 +28,21 @@ export async function getProjectForWarehouse(projectId: string) {
           asset: true,
           bulkAsset: true,
           kit: { include: { _count: { select: { kitCheckItems: true } } } },
+          supplier: { select: { name: true } },
           childLineItems: {
             orderBy: { sortOrder: "asc" },
             include: {
               model: { include: { _count: { select: { modelCheckItems: true } } } },
               asset: true, bulkAsset: true,
               kit: { include: { _count: { select: { kitCheckItems: true } } } },
+              supplier: { select: { name: true } },
               childLineItems: {
                 orderBy: { sortOrder: "asc" },
                 include: {
                   model: { include: { _count: { select: { modelCheckItems: true } } } },
                   asset: true, bulkAsset: true,
                   kit: { include: { _count: { select: { kitCheckItems: true } } } },
+                  supplier: { select: { name: true } },
                 },
               },
             },

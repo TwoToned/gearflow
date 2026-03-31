@@ -1812,6 +1812,9 @@ function WarehouseProjectPage({
     const hasSubhire = entry.kind === "serialized-group"
       ? entry.items.some((i) => i.isSubhire)
       : entry.item.isSubhire;
+    const supplierName = entry.kind === "serialized-group"
+      ? entry.items.find((i) => i.isSubhire && i.supplier)?.supplier?.name
+      : entry.item.supplier?.name;
 
     return (
       <TableRow
@@ -1832,7 +1835,10 @@ function WarehouseProjectPage({
             {hasSubhire && (
               <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0 bg-cyan-500/10 text-cyan-600 border-cyan-500/20">Subhire</Badge>
             )}
-                      </div>
+            {hasSubhire && supplierName && (
+              <span className="text-xs text-fg-3 ml-1">via {supplierName}</span>
+            )}
+          </div>
         </TableCell>
         <TableCell className="font-mono text-sm text-fg-3">
           {entry.kind === "bulk-group" ? (entry.item.bulkAsset?.assetTag || "—") : ""}

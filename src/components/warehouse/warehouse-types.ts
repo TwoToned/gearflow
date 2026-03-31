@@ -22,6 +22,7 @@ export interface LineItem {
   prepContainer: string | null;
   isContainerLineItem: boolean;
   isSubhire: boolean;
+  supplier: { name: string } | null;
   childLineItems?: LineItem[];
 }
 

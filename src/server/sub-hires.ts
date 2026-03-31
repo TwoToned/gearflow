@@ -5,8 +5,8 @@ import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { roundCurrency } from "@/lib/formatters";
-import { subHireSchema, subHireItemSchema } from "@/lib/validations/sub-hire";
-import type { SubHireStatus, PricingType, Prisma } from "@/generated/prisma/client";
+import { subHireSchema, subHireItemSchema, subHireGroupSchema, subHireOrderPricingSchema } from "@/lib/validations/sub-hire";
+import type { SubHireStatus, SubHirePricingMode, PricingType, Prisma } from "@/generated/prisma/client";
 
 // ─── Status Machine ──────────────────────────────────────────────────────────
 
@@ -114,6 +114,15 @@ export async function getSubHire(id: string) {
       supplier: { select: { id: true, name: true, email: true, phone: true } },
       project: { select: { id: true, name: true, projectNumber: true } },
       createdBy: { select: { id: true, name: true } },
+      groups: {
+        include: {
+          items: {
+            include: { model: { select: { id: true, name: true } } },
+            orderBy: { sortOrder: "asc" },
+          },
+        },
+        orderBy: { sortOrder: "asc" },
+      },
       items: {
         include: {
           model: { select: { id: true, name: true } },
@@ -354,6 +363,7 @@ export async function addSubHireItem(subHireId: string, input: unknown) {
   const item = await prisma.subHireItem.create({
     data: {
       subHireId,
+      groupId: data.groupId || null,
       modelId: data.modelId || null,
       description: data.description,
       quantity: data.quantity,
@@ -412,6 +422,7 @@ export async function updateSubHireItem(itemId: string, input: unknown) {
   const item = await prisma.subHireItem.update({
     where: { id: itemId },
     data: {
+      groupId: data.groupId !== undefined ? (data.groupId || null) : undefined,
       modelId: data.modelId || null,
       description: data.description,
       quantity: data.quantity,
@@ -523,6 +534,12 @@ export async function reorderSubHireItems(subHireId: string, itemIds: string[]) 
 // ─── Totals ──────────────────────────────────────────────────────────────────
 
 async function recalculateSubHireTotals(subHireId: string) {
+  const subHire = await prisma.subHire.findUnique({
+    where: { id: subHireId },
+    select: { pricingMode: true, orderTotalCost: true, orderTotalCharge: true },
+  });
+  if (!subHire) return;
+
   const items = await prisma.subHireItem.findMany({
     where: { subHireId },
     select: {
@@ -538,15 +555,32 @@ async function recalculateSubHireTotals(subHireId: string) {
   let totalCost = 0;
   let totalCharge = 0;
 
-  for (const item of items) {
-    const qty = item.quantity;
-    const dur = item.duration;
-    const cost = Number(item.unitCost);
-    const charge = Number(item.unitCharge);
-    const disc = Number(item.discount);
+  if (subHire.pricingMode === "ORDER_TOTAL") {
+    // In ORDER_TOTAL mode, cost comes from the flat order amount
+    totalCost = Number(subHire.orderTotalCost ?? 0);
+    // Charge can still be itemized or flat
+    if (subHire.orderTotalCharge != null) {
+      totalCharge = Number(subHire.orderTotalCharge);
+    } else {
+      // Fall back to summing per-item charges
+      for (const item of items) {
+        const charge = Number(item.unitCharge);
+        const disc = Number(item.discount);
+        totalCharge += charge * item.quantity * item.duration * (1 - disc / 100);
+      }
+    }
+  } else {
+    // ITEMIZED mode — current behavior
+    for (const item of items) {
+      const qty = item.quantity;
+      const dur = item.duration;
+      const cost = Number(item.unitCost);
+      const charge = Number(item.unitCharge);
+      const disc = Number(item.discount);
 
-    totalCost += cost * qty * dur;
-    totalCharge += charge * qty * dur * (1 - disc / 100);
+      totalCost += cost * qty * dur;
+      totalCharge += charge * qty * dur * (1 - disc / 100);
+    }
   }
 
   await prisma.subHire.update({
@@ -568,6 +602,10 @@ async function generateSubHireLineItemsTx(
   const subHire = await tx.subHire.findUniqueOrThrow({
     where: { id: subHireId },
     include: {
+      groups: {
+        include: { items: { orderBy: { sortOrder: "asc" } } },
+        orderBy: { sortOrder: "asc" },
+      },
       items: { orderBy: { sortOrder: "asc" } },
     },
   });
@@ -583,7 +621,72 @@ async function generateSubHireLineItemsTx(
   });
   let nextSort = (maxSort._max.sortOrder ?? -1) + 1;
 
+  const groupedItemIds = new Set<string>();
+
+  // 1. Generate grouped items — each group becomes a parent with children
+  for (const group of subHire.groups) {
+    if (group.items.length === 0) continue;
+
+    // Create parent line item for the group
+    const parent = await tx.projectLineItem.create({
+      data: {
+        organizationId,
+        projectId: subHire.projectId,
+        type: "EQUIPMENT",
+        description: group.title,
+        quantity: 1,
+        unitPrice: 0,
+        lineTotal: 0,
+        pricingMode: "ITEMIZED",
+        isSubhire: true,
+        subHireId: subHire.id,
+        subHireGroupId: group.id,
+        supplierId: subHire.supplierId,
+        showSubhireOnDocs: subHire.showOnDocs,
+        subhireOrderNumber: subHire.orderNumber,
+        sortOrder: nextSort++,
+      },
+    });
+
+    // Create child line items for each item in the group
+    for (const item of group.items) {
+      groupedItemIds.add(item.id);
+      const chargeAfterDiscount =
+        Number(item.unitCharge) * (1 - Number(item.discount) / 100);
+      const lineTotal = roundCurrency(chargeAfterDiscount * item.quantity * item.duration);
+
+      await tx.projectLineItem.create({
+        data: {
+          organizationId,
+          projectId: subHire.projectId,
+          type: "EQUIPMENT",
+          description: item.description,
+          quantity: item.quantity,
+          unitPrice: item.unitCharge,
+          pricingType: item.pricingType,
+          duration: item.duration,
+          discount: item.discount,
+          lineTotal,
+          isSubhire: true,
+          isKitChild: true,
+          parentLineItemId: parent.id,
+          subHireId: subHire.id,
+          subHireItemId: item.id,
+          supplierId: subHire.supplierId,
+          showSubhireOnDocs: subHire.showOnDocs,
+          subhireOrderNumber: subHire.orderNumber,
+          modelId: item.modelId,
+          sortOrder: nextSort++,
+        },
+      });
+    }
+  }
+
+  // 2. Generate ungrouped items as standalone line items (current behavior)
   for (const item of subHire.items) {
+    if (groupedItemIds.has(item.id)) continue;
+    if (item.groupId) continue; // double-check: skip items with groupId
+
     const chargeAfterDiscount =
       Number(item.unitCharge) * (1 - Number(item.discount) / 100);
     const lineTotal = roundCurrency(chargeAfterDiscount * item.quantity * item.duration);
@@ -615,20 +718,34 @@ async function generateSubHireLineItemsTx(
 
 async function syncNewSubHireLineItem(
   subHire: { id: string; projectId: string | null; supplierId: string; orderNumber: string; status: string },
-  item: { id: string; description: string; quantity: number; unitCharge: Prisma.Decimal; pricingType: PricingType; duration: number; discount: Prisma.Decimal; modelId: string | null },
+  item: { id: string; groupId: string | null; description: string; quantity: number; unitCharge: Prisma.Decimal; pricingType: PricingType; duration: number; discount: Prisma.Decimal; modelId: string | null },
 ) {
   if (!subHire.projectId) return;
 
   const { organizationId } = await getOrgContext();
 
+  const chargeAfterDiscount =
+    Number(item.unitCharge) * (1 - Number(item.discount) / 100);
+  const lineTotal = roundCurrency(chargeAfterDiscount * item.quantity * item.duration);
+
+  // If item belongs to a group, find the parent line item and create as child
+  let parentLineItemId: string | null = null;
+  let isKitChild = false;
+
+  if (item.groupId) {
+    const parentLineItem = await prisma.projectLineItem.findFirst({
+      where: { subHireGroupId: item.groupId },
+    });
+    if (parentLineItem) {
+      parentLineItemId = parentLineItem.id;
+      isKitChild = true;
+    }
+  }
+
   const maxSort = await prisma.projectLineItem.aggregate({
     where: { projectId: subHire.projectId, organizationId },
     _max: { sortOrder: true },
   });
-
-  const chargeAfterDiscount =
-    Number(item.unitCharge) * (1 - Number(item.discount) / 100);
-  const lineTotal = roundCurrency(chargeAfterDiscount * item.quantity * item.duration);
 
   await prisma.projectLineItem.create({
     data: {
@@ -643,6 +760,8 @@ async function syncNewSubHireLineItem(
       discount: item.discount,
       lineTotal,
       isSubhire: true,
+      isKitChild,
+      parentLineItemId,
       subHireId: subHire.id,
       subHireItemId: item.id,
       supplierId: subHire.supplierId,
@@ -772,6 +891,306 @@ export async function changeSubHireProject(subHireId: string, newProjectId: stri
   );
 }
 
+// ─── Group CRUD ─────────────────────────────────────────────────────────────
+
+export async function createSubHireGroup(subHireId: string, input: unknown) {
+  const { organizationId, userId, userName } = await requirePermission("subHire", "update");
+  const data = subHireGroupSchema.parse(input);
+
+  const subHire = await prisma.subHire.findUnique({
+    where: { id: subHireId, organizationId },
+    select: { id: true, orderNumber: true },
+  });
+  if (!subHire) throw new Error("Sub-hire not found");
+
+  const maxSort = await prisma.subHireGroup.aggregate({
+    where: { subHireId },
+    _max: { sortOrder: true },
+  });
+
+  const group = await prisma.subHireGroup.create({
+    data: {
+      subHireId,
+      title: data.title,
+      sortOrder: data.sortOrder ?? ((maxSort._max.sortOrder ?? -1) + 1),
+    },
+    include: {
+      items: {
+        include: { model: { select: { id: true, name: true } } },
+        orderBy: { sortOrder: "asc" },
+      },
+    },
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "CREATE",
+    entityType: "subHire",
+    entityId: subHireId,
+    entityName: subHire.orderNumber,
+    summary: `Created group "${data.title}" on ${subHire.orderNumber}`,
+  });
+
+  return serialize(group);
+}
+
+export async function updateSubHireGroup(groupId: string, input: unknown) {
+  const { organizationId, userId, userName } = await requirePermission("subHire", "update");
+  const data = subHireGroupSchema.parse(input);
+
+  const existing = await prisma.subHireGroup.findUnique({
+    where: { id: groupId },
+    include: {
+      subHire: { select: { id: true, organizationId: true, orderNumber: true, status: true, projectId: true } },
+    },
+  });
+  if (!existing || existing.subHire.organizationId !== organizationId) {
+    throw new Error("Sub-hire group not found");
+  }
+
+  const group = await prisma.subHireGroup.update({
+    where: { id: groupId },
+    data: {
+      title: data.title,
+      sortOrder: data.sortOrder,
+    },
+    include: {
+      items: {
+        include: { model: { select: { id: true, name: true } } },
+        orderBy: { sortOrder: "asc" },
+      },
+    },
+  });
+
+  // If confirmed/on-hire, update the parent line item description
+  if (existing.subHire.status === "CONFIRMED" || existing.subHire.status === "ON_HIRE") {
+    await prisma.projectLineItem.updateMany({
+      where: { subHireGroupId: groupId },
+      data: { description: data.title },
+    });
+  }
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "subHire",
+    entityId: existing.subHire.id,
+    entityName: existing.subHire.orderNumber,
+    summary: `Updated group "${data.title}" on ${existing.subHire.orderNumber}`,
+  });
+
+  return serialize(group);
+}
+
+export async function deleteSubHireGroup(groupId: string) {
+  const { organizationId, userId, userName } = await requirePermission("subHire", "update");
+
+  const existing = await prisma.subHireGroup.findUnique({
+    where: { id: groupId },
+    include: {
+      subHire: { select: { id: true, organizationId: true, orderNumber: true, status: true, projectId: true } },
+      items: { select: { id: true } },
+    },
+  });
+  if (!existing || existing.subHire.organizationId !== organizationId) {
+    throw new Error("Sub-hire group not found");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    // Ungroup all items (they become ungrouped within the sub-hire)
+    await tx.subHireItem.updateMany({
+      where: { groupId },
+      data: { groupId: null },
+    });
+
+    // If confirmed/on-hire, delete the parent line item (cascades to children)
+    if (existing.subHire.status === "CONFIRMED" || existing.subHire.status === "ON_HIRE") {
+      // Find the parent line item for this group
+      const parentLineItem = await tx.projectLineItem.findFirst({
+        where: { subHireGroupId: groupId },
+      });
+      if (parentLineItem) {
+        // Delete parent — children cascade via onDelete: Cascade on parentLineItemId
+        await tx.projectLineItem.delete({
+          where: { id: parentLineItem.id },
+        });
+      }
+      // Re-create ungrouped items as standalone line items
+      const items = await tx.subHireItem.findMany({
+        where: { subHireId: existing.subHire.id, groupId: null },
+        orderBy: { sortOrder: "asc" },
+      });
+      // Only re-create for items that were in this group (matched by ID)
+      const groupItemIds = new Set(existing.items.map((i) => i.id));
+      const maxSort = await tx.projectLineItem.aggregate({
+        where: { projectId: existing.subHire.projectId!, organizationId },
+        _max: { sortOrder: true },
+      });
+      let nextSort = (maxSort._max.sortOrder ?? -1) + 1;
+      for (const item of items) {
+        if (!groupItemIds.has(item.id)) continue;
+        // Check if a standalone line item already exists
+        const existingLI = await tx.projectLineItem.findFirst({
+          where: { subHireItemId: item.id },
+        });
+        if (existingLI) continue;
+        const chargeAfterDiscount = Number(item.unitCharge) * (1 - Number(item.discount) / 100);
+        const lineTotal = roundCurrency(chargeAfterDiscount * item.quantity * item.duration);
+        await tx.projectLineItem.create({
+          data: {
+            organizationId,
+            projectId: existing.subHire.projectId!,
+            type: "EQUIPMENT",
+            description: item.description,
+            quantity: item.quantity,
+            unitPrice: item.unitCharge,
+            pricingType: item.pricingType,
+            duration: item.duration,
+            discount: item.discount,
+            lineTotal,
+            isSubhire: true,
+            subHireId: existing.subHire.id,
+            subHireItemId: item.id,
+            supplierId: (await tx.subHire.findUnique({ where: { id: existing.subHire.id }, select: { supplierId: true } }))!.supplierId,
+            sortOrder: nextSort++,
+          },
+        });
+      }
+    }
+
+    // Delete the group
+    await tx.subHireGroup.delete({ where: { id: groupId } });
+  });
+
+  // Recalculate project totals
+  if (existing.subHire.projectId) {
+    const { recalculateProjectTotals } = await import("@/server/line-items");
+    await recalculateProjectTotals(existing.subHire.projectId);
+  }
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "DELETE",
+    entityType: "subHire",
+    entityId: existing.subHire.id,
+    entityName: existing.subHire.orderNumber,
+    summary: `Deleted group from ${existing.subHire.orderNumber}`,
+  });
+}
+
+export async function setItemGroup(itemId: string, groupId: string | null) {
+  const { organizationId } = await requirePermission("subHire", "update");
+
+  const existing = await prisma.subHireItem.findUnique({
+    where: { id: itemId },
+    include: {
+      subHire: { select: { id: true, organizationId: true, status: true, projectId: true, supplierId: true, orderNumber: true } },
+    },
+  });
+  if (!existing || existing.subHire.organizationId !== organizationId) {
+    throw new Error("Sub-hire item not found");
+  }
+
+  const oldGroupId = existing.groupId;
+
+  // Update the item's group
+  await prisma.subHireItem.update({
+    where: { id: itemId },
+    data: { groupId },
+  });
+
+  // If confirmed/on-hire, we need to re-sync the line item
+  if (existing.subHire.status === "CONFIRMED" || existing.subHire.status === "ON_HIRE") {
+    const linkedLineItem = await prisma.projectLineItem.findFirst({
+      where: { subHireItemId: itemId },
+    });
+
+    if (groupId) {
+      // Moving into a group — make it a child of the group's parent line item
+      const parentLineItem = await prisma.projectLineItem.findFirst({
+        where: { subHireGroupId: groupId },
+      });
+      if (parentLineItem && linkedLineItem) {
+        await prisma.projectLineItem.update({
+          where: { id: linkedLineItem.id },
+          data: {
+            parentLineItemId: parentLineItem.id,
+            isKitChild: true,
+          },
+        });
+      }
+    } else if (linkedLineItem) {
+      // Moving out of a group — make it standalone
+      await prisma.projectLineItem.update({
+        where: { id: linkedLineItem.id },
+        data: {
+          parentLineItemId: null,
+          isKitChild: false,
+        },
+      });
+    }
+
+    // Clean up old group parent if it now has no children
+    if (oldGroupId && oldGroupId !== groupId) {
+      const oldParent = await prisma.projectLineItem.findFirst({
+        where: { subHireGroupId: oldGroupId },
+        include: { childLineItems: { select: { id: true } } },
+      });
+      if (oldParent && oldParent.childLineItems.length === 0) {
+        await prisma.projectLineItem.delete({ where: { id: oldParent.id } });
+      }
+    }
+
+    if (existing.subHire.projectId) {
+      const { recalculateProjectTotals } = await import("@/server/line-items");
+      await recalculateProjectTotals(existing.subHire.projectId);
+    }
+  }
+
+  return serialize({ success: true });
+}
+
+export async function updateSubHireOrderPricing(subHireId: string, input: unknown) {
+  const { organizationId, userId, userName } = await requirePermission("subHire", "update");
+  const data = subHireOrderPricingSchema.parse(input);
+
+  const subHire = await prisma.subHire.findUnique({
+    where: { id: subHireId, organizationId },
+    select: { id: true, orderNumber: true },
+  });
+  if (!subHire) throw new Error("Sub-hire not found");
+
+  await prisma.subHire.update({
+    where: { id: subHireId },
+    data: {
+      pricingMode: data.pricingMode as SubHirePricingMode,
+      orderTotalCost: data.orderTotalCost != null ? data.orderTotalCost : null,
+      orderTotalCharge: data.orderTotalCharge != null ? data.orderTotalCharge : null,
+    },
+  });
+
+  await recalculateSubHireTotals(subHireId);
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "subHire",
+    entityId: subHireId,
+    entityName: subHire.orderNumber,
+    summary: `Changed pricing mode to ${data.pricingMode} on ${subHire.orderNumber}`,
+  });
+
+  return serialize({ success: true });
+}
+
 // ─── Supplier Rate Memory ────────────────────────────────────────────────────
 
 async function upsertSupplierModelRate(
@@ -843,6 +1262,7 @@ export async function duplicateSubHire(sourceId: string) {
     where: { id: sourceId, organizationId },
     include: {
       supplier: { select: { name: true } },
+      groups: { orderBy: { sortOrder: "asc" } },
       items: { orderBy: { sortOrder: "asc" } },
     },
   });
@@ -861,6 +1281,9 @@ export async function duplicateSubHire(sourceId: string) {
         status: "DRAFT",
         hireStart: null,
         hireEnd: null,
+        pricingMode: source.pricingMode,
+        orderTotalCost: source.orderTotalCost,
+        orderTotalCharge: source.orderTotalCharge,
         showOnDocs: source.showOnDocs,
         notes: source.notes,
         totalCost: source.totalCost,
@@ -868,10 +1291,25 @@ export async function duplicateSubHire(sourceId: string) {
       },
     });
 
+    // Copy groups and build old→new ID mapping
+    const groupIdMap = new Map<string, string>();
+    for (const group of source.groups) {
+      const newGroup = await tx.subHireGroup.create({
+        data: {
+          subHireId: newSubHire.id,
+          title: group.title,
+          sortOrder: group.sortOrder,
+        },
+      });
+      groupIdMap.set(group.id, newGroup.id);
+    }
+
+    // Copy items with mapped groupIds
     for (const item of source.items) {
       await tx.subHireItem.create({
         data: {
           subHireId: newSubHire.id,
+          groupId: item.groupId ? groupIdMap.get(item.groupId) || null : null,
           modelId: item.modelId,
           description: item.description,
           quantity: item.quantity,

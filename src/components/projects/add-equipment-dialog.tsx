@@ -13,6 +13,7 @@ import {
 } from "@/lib/validations/line-item";
 import { addLineItem, checkAvailability, lookupAssetByTag } from "@/server/line-items";
 import { getModels } from "@/server/models";
+import { getProjectCategories } from "@/server/project-categories";
 import {
   Dialog,
   DialogContent,
@@ -26,6 +27,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useActiveOrganization } from "@/lib/auth-client";
 
 type AddMode = "model" | "asset-tag";
@@ -62,6 +64,7 @@ export function AddEquipmentDialog({
   const [assetTagInput, setAssetTagInput] = useState("");
   const [lookupTag, setLookupTag] = useState("");
   const [discountMode, setDiscountMode] = useState<"$" | "%">("$");
+  const [selectedCategoryId, setSelectedCategoryId] = useState(categoryId ?? "");
 
   const form = useForm<LineItemFormValues>({
     resolver: zodResolver(lineItemSchema),
@@ -79,6 +82,18 @@ export function AddEquipmentDialog({
     queryFn: () => getModels({ pageSize: 200 }),
     enabled: open,
   });
+
+  // Categories for the optional category picker (only when not pre-set)
+  const { data: categoriesData } = useQuery({
+    queryKey: ["project-categories", projectId],
+    queryFn: () => getProjectCategories(projectId),
+    enabled: open && !categoryId, // only load if no pre-set category
+  });
+
+  const categoryOptions = (categoriesData ?? []).map((c: { id: string; name: string }) => ({
+    value: c.id,
+    label: c.name,
+  }));
 
   const modelOptions = (modelsData?.models || []).map((m) => ({
     value: m.id,
@@ -152,7 +167,8 @@ export function AddEquipmentDialog({
         const gross = Number(data.unitPrice) * Number(data.quantity ?? 1) * Number(data.duration ?? 1);
         disc = Math.round(gross * Number(disc) / 100 * 100) / 100;
       }
-      return addLineItem(projectId, { ...data, discount: disc, categoryId, groupId }, overbookConfirmed);
+      const effectiveCategoryId = categoryId || selectedCategoryId || undefined;
+      return addLineItem(projectId, { ...data, discount: disc, categoryId: effectiveCategoryId, groupId }, overbookConfirmed);
     },
     onSuccess: (result) => {
       const data = result as Record<string, unknown> | null;
@@ -180,6 +196,7 @@ export function AddEquipmentDialog({
       isOptional: false,
     });
     setSelectedModelId("");
+    setSelectedCategoryId(categoryId ?? "");
     setAssetTagInput("");
     setLookupTag("");
     setMode("model");
@@ -462,11 +479,30 @@ export function AddEquipmentDialog({
             </div>
           </div>
 
-          {targetLabel && (
+          {targetLabel ? (
             <div className="rounded-md bg-accent/50 px-3 py-2 text-xs text-fg-3">
               Adding to <span className="font-medium text-fg">{targetLabel}</span>
             </div>
-          )}
+          ) : categoryOptions.length > 0 ? (
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Select value={selectedCategoryId} onValueChange={(v) => setSelectedCategoryId(v ?? "")}>
+                <SelectTrigger>
+                  <SelectValue placeholder="No category">
+                    {selectedCategoryId
+                      ? categoryOptions.find((c: { value: string; label: string }) => c.value === selectedCategoryId)?.label ?? "No category"
+                      : "No category"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">No category</SelectItem>
+                  {categoryOptions.map((c: { value: string; label: string }) => (
+                    <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
 
           <div className="space-y-2">
             <Label htmlFor="eq-notes">Notes</Label>

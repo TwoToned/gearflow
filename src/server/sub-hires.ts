@@ -829,3 +829,111 @@ export async function getSupplierRateHistory(modelId: string) {
 
   return serialize(rates);
 }
+
+// ─── Quick Duplicate ─────────────────────────────────────────────────────────
+
+export async function duplicateSubHire(sourceId: string) {
+  const { organizationId, userId, userName } = await requirePermission("subHire", "create");
+
+  const source = await prisma.subHire.findUnique({
+    where: { id: sourceId, organizationId },
+    include: {
+      supplier: { select: { name: true } },
+      items: { orderBy: { sortOrder: "asc" } },
+    },
+  });
+  if (!source) throw new Error("Sub-hire not found");
+
+  const result = await prisma.$transaction(async (tx) => {
+    const orderNumber = await reserveSubHireOrderNumber(tx, organizationId);
+
+    const newSubHire = await tx.subHire.create({
+      data: {
+        organizationId,
+        supplierId: source.supplierId,
+        projectId: null,
+        createdById: userId,
+        orderNumber,
+        status: "DRAFT",
+        hireStart: null,
+        hireEnd: null,
+        showOnDocs: source.showOnDocs,
+        notes: source.notes,
+        totalCost: source.totalCost,
+        totalCharge: source.totalCharge,
+      },
+    });
+
+    for (const item of source.items) {
+      await tx.subHireItem.create({
+        data: {
+          subHireId: newSubHire.id,
+          modelId: item.modelId,
+          description: item.description,
+          quantity: item.quantity,
+          unitCost: item.unitCost,
+          unitCharge: item.unitCharge,
+          pricingType: item.pricingType,
+          duration: item.duration,
+          discount: item.discount,
+          sortOrder: item.sortOrder,
+        },
+      });
+    }
+
+    return newSubHire;
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "CREATE",
+    entityType: "subHire",
+    entityId: result.id,
+    entityName: result.orderNumber,
+    summary: `Duplicated sub-hire from ${source.orderNumber} to ${result.orderNumber}`,
+    details: { sourceId: source.id },
+  });
+
+  return serialize(result);
+}
+
+// ─── Dashboard Stats ─────────────────────────────────────────────────────────
+
+export async function getSubHireDashboardStats() {
+  const { organizationId } = await getOrgContext();
+
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const [activeCount, monthlyAgg, overdueCount] = await Promise.all([
+    prisma.subHire.count({
+      where: {
+        organizationId,
+        status: { in: ["CONFIRMED", "ON_HIRE"] },
+      },
+    }),
+    prisma.subHire.aggregate({
+      where: {
+        organizationId,
+        hireStart: { gte: monthStart },
+        status: { not: "CANCELLED" },
+      },
+      _sum: { totalCost: true },
+    }),
+    prisma.subHire.count({
+      where: {
+        organizationId,
+        status: "ON_HIRE",
+        hireEnd: { lt: now },
+      },
+    }),
+  ]);
+
+  return serialize({
+    activeSubHires: activeCount,
+    monthlySubHireCost: monthlyAgg._sum.totalCost ? Number(monthlyAgg._sum.totalCost) : 0,
+    overdueReturns: overdueCount,
+  });
+}

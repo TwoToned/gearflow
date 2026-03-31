@@ -16,6 +16,7 @@ import {
   updateSubHireItem,
   removeSubHireItem,
   changeSubHireProject,
+  duplicateSubHire,
 } from "@/server/sub-hires";
 import { formatCurrency } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
@@ -105,6 +106,15 @@ function SubHireDetailContent({ params }: { params: Promise<{ id: string }> }) {
       toast.success("Status updated");
       queryClient.invalidateQueries({ queryKey: ["sub-hire", orgId, id] });
       queryClient.invalidateQueries({ queryKey: ["sub-hires"] });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const duplicateMutation = useMutation({
+    mutationFn: () => duplicateSubHire(id),
+    onSuccess: (result: Record<string, unknown>) => {
+      toast.success("Sub-hire duplicated");
+      router.push(`/sub-hires/${result.id}`);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -211,9 +221,12 @@ function SubHireDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     <DropdownMenuContent align="end">
                       <DropdownMenuGroup>
                         <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                        <DropdownMenuItem disabled>
+                        <DropdownMenuItem
+                          onClick={() => duplicateMutation.mutate()}
+                          disabled={duplicateMutation.isPending}
+                        >
                           <Copy className="mr-2 h-4 w-4" />
-                          Duplicate
+                          {duplicateMutation.isPending ? "Duplicating..." : "Duplicate"}
                         </DropdownMenuItem>
                         <CanDo resource="subHire" action="delete">
                           <DropdownMenuItem

@@ -3,16 +3,21 @@ import { generate } from "@pdfme/generator";
 import { requireOrganization } from "@/lib/auth-server";
 import { prisma } from "@/lib/prisma";
 import { buildDocumentData } from "@/lib/pdfme/build-document-data";
-import { buildTimelineTemplate, buildTimelineInputs } from "@/lib/pdfme/templates/timeline";
+import {
+  buildTimelineTemplate,
+  buildTimelineInputs,
+  DEFAULT_TIMELINE_SETTINGS,
+} from "@/lib/pdfme/templates/timeline";
 import { gearflowPlugins } from "@/lib/pdfme/plugins";
 import { getPdfmeFonts } from "@/lib/pdfme/fonts";
-import type { TimelineService } from "@/lib/pdfme/templates/timeline";
+import type { TimelineService, TimelineSettings } from "@/lib/pdfme/templates/timeline";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   const { projectId } = await params;
+  const url = new URL(request.url);
 
   let session;
   try {
@@ -22,6 +27,22 @@ export async function GET(
   }
 
   const { organizationId } = session;
+
+  // Parse settings from query params (all default to DEFAULT_TIMELINE_SETTINGS)
+  const parseBool = (key: keyof TimelineSettings): boolean => {
+    const val = url.searchParams.get(key);
+    if (val === null) return DEFAULT_TIMELINE_SETTINGS[key];
+    return val === "true";
+  };
+
+  const settings: TimelineSettings = {
+    showCrew: parseBool("showCrew"),
+    showLocation: parseBool("showLocation"),
+    showNotes: parseBool("showNotes"),
+    showCharge: parseBool("showCharge"),
+    showCost: parseBool("showCost"),
+    showStatus: parseBool("showStatus"),
+  };
 
   try {
     // Build standard document data (project, org, branding, etc.)
@@ -57,14 +78,15 @@ export async function GET(
       notes: s.notes,
       crewAssignments: s.crewAssignments,
       lineTotal: s.lineTotal ? Number(s.lineTotal) : null,
+      costTotal: s.costTotal ? Number(s.costTotal) : null,
     }));
 
-    const template = buildTimelineTemplate();
-    const inputs = buildTimelineInputs(data, timelineServices);
+    const inputs = buildTimelineInputs(data, timelineServices, settings);
+    const template = buildTimelineTemplate(inputs.length);
 
     const pdf = await generate({
       template,
-      inputs: [inputs],
+      inputs,
       plugins: gearflowPlugins,
       options: { font: getPdfmeFonts() },
     });

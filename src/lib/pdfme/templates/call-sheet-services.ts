@@ -262,7 +262,8 @@ export async function buildCallSheetFromServices(
     const serviceLabel = s.title || SERVICE_TYPE_LABELS[s.type] || s.type;
 
     if (s.crewAssignments.length === 0) {
-      // Service with no crew assigned
+      // Skip services with no matching crew when filtering by person/role
+      if (options.crewMemberId || options.crewRoleId) continue;
       group.rows.push({
         crewName: "-",
         service: serviceLabel,
@@ -299,9 +300,9 @@ export async function buildCallSheetFromServices(
     }
   }
 
-  // 4. Build sections sorted by date
+  // 4. Build sections sorted by date (skip empty groups)
   const sortedKeys = Array.from(groups.keys()).sort();
-  const sections: DataTableSection[] = sortedKeys.map(key => {
+  const sections: DataTableSection[] = sortedKeys.filter(key => groups.get(key)!.rows.length > 0).map(key => {
     const group = groups.get(key)!;
     // For per-person view, only show the crew name on the first row per person
     const seenNames = new Set<string>();

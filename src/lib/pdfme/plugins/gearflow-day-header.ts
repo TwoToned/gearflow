@@ -102,7 +102,7 @@ const gearflowDayHeader: Plugin<Schema> = {
     }
 
     if (rightParts.length > 0) {
-      const rightText = rightParts.join("  \u2022  ");
+      const rightText = rightParts.join("   |   ");
       const rightWidth = fonts.regular.widthOfTextAtSize(rightText, badgeSize);
       page.drawText(rightText, {
         x: x + width - rightWidth - 4,

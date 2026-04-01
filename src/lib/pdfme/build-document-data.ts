@@ -495,7 +495,7 @@ export async function buildDocumentData(
             if (existingIdx !== undefined) {
               // Same person, different assignment/role — merge role and phase info
               const existing = dayCrew[existingIdx];
-              if (a.crewRole?.name && existing.role && !existing.role.includes(a.crewRole.name)) {
+              if (a.crewRole?.name && existing.role && !existing.role.split(", ").includes(a.crewRole.name)) {
                 existing.role = `${existing.role}, ${a.crewRole.name}`;
               } else if (a.crewRole?.name && !existing.role) {
                 existing.role = a.crewRole.name;
@@ -539,11 +539,21 @@ export async function buildDocumentData(
 
       // Add "Unscheduled" group for crew with no shifts on any target date
       const unscheduledCrew: CrewEntry[] = [];
-      const seenUnscheduled = new Set<string>();
+      const seenUnscheduledMap = new Map<string, number>();
       for (const a of crewAssignments) {
-        if (!assignedCrewIds.has(a.crewMember.id) && !seenUnscheduled.has(a.crewMember.id)) {
-          seenUnscheduled.add(a.crewMember.id);
-          unscheduledCrew.push(buildCrewEntry(a));
+        if (!assignedCrewIds.has(a.crewMember.id)) {
+          const existingIdx = seenUnscheduledMap.get(a.crewMember.id);
+          if (existingIdx !== undefined) {
+            const existing = unscheduledCrew[existingIdx];
+            if (a.crewRole?.name && existing.role && !existing.role.split(", ").includes(a.crewRole.name)) {
+              existing.role = `${existing.role}, ${a.crewRole.name}`;
+            } else if (a.crewRole?.name && !existing.role) {
+              existing.role = a.crewRole.name;
+            }
+          } else {
+            seenUnscheduledMap.set(a.crewMember.id, unscheduledCrew.length);
+            unscheduledCrew.push(buildCrewEntry(a));
+          }
         }
       }
       if (unscheduledCrew.length > 0) {

@@ -46,7 +46,7 @@ export async function GET(
 
   try {
     // Build standard document data (project, org, branding, etc.)
-    const data = await buildDocumentData(projectId, organizationId, "call-sheet");
+    const data = await buildDocumentData(projectId, organizationId, "timeline");
 
     // Fetch services with crew assignments
     const services = await prisma.projectService.findMany({

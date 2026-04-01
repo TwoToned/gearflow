@@ -162,18 +162,6 @@ function buildSections(
 }
 
 /**
- * Estimate the height in mm for a set of sections.
- */
-function estimateSectionsHeight(sections: DataTableSection[]): number {
-  let height = TABLE_HEADER_HEIGHT_MM; // column header
-  for (const section of sections) {
-    height += SECTION_HEADER_HEIGHT_MM; // section title row
-    height += section.rows.length * TABLE_ROW_HEIGHT_MM;
-  }
-  return height;
-}
-
-/**
  * Split sections across pages. Each page gets a subset of sections/rows
  * that fit within the available height.
  */
@@ -225,7 +213,7 @@ function paginateSections(
     while (remainingRows.length > 0) {
       const contMaxH = CONT_TABLE_CONTENT_HEIGHT;
       const contAvailable = contMaxH - TABLE_HEADER_HEIGHT_MM - SECTION_HEADER_HEIGHT_MM;
-      const contRowsFit = Math.floor(contAvailable / TABLE_ROW_HEIGHT_MM);
+      const contRowsFit = Math.max(1, Math.floor(contAvailable / TABLE_ROW_HEIGHT_MM));
       const batch = remainingRows.slice(0, contRowsFit);
       remainingRows = remainingRows.slice(contRowsFit);
 

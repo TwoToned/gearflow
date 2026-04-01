@@ -247,7 +247,7 @@ export async function generateCallSheetPdf(
  * For each date, clones crew-table sections with date-specific crew data,
  * inserting a day-header before each group.
  */
-function expandSectionsForDates(
+export function expandSectionsForDates(
   sections: TemplateSection[],
   crewByDay: import("./types").CallSheetDayData[],
   data: DocumentData,

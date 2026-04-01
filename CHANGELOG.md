@@ -5,6 +5,19 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-04-01
+
+### Added
+- Timeline PDF multi-page pagination: services that overflow one page now automatically split across multiple pages with continuation headers
+- Timeline PDF column settings: configurable columns (crew, location, notes, charge, cost, status) via query params with sensible defaults
+
+### Fixed
+- Crew members with multiple roles on the same project no longer appear as duplicate rows on call sheets, roles are merged into a single entry
+- Day-header separators between dates on multi-day call sheets now have stronger visual separation with background fill and thicker borders
+- Unicode bullet character in day-header replaced with ASCII pipe for Helvetica font compatibility
+- Timeline route no longer loads unnecessary crew assignment data from the database
+- Crew role deduplication now uses exact match instead of substring match, preventing silent role drops
+
 ## [0.3.1] - 2026-04-01
 
 ### Added

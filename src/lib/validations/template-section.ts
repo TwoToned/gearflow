@@ -17,6 +17,8 @@ export const SECTION_TYPE_VALUES = [
   "signature",
   "custom-text",
   "crew-table",
+  "call-sheet-info",
+  "day-header",
   "spacer",
   "page-break",
 ] as const;
@@ -145,6 +147,19 @@ export const crewTableSectionSettingsSchema = z.object({
   showNotes: z.boolean(),
 });
 
+export const callSheetInfoSectionSettingsSchema = z.object({
+  showPmContact: z.boolean(),
+  showClientContact: z.boolean(),
+  showVenueDetails: z.boolean(),
+  showScheduleTimes: z.boolean(),
+  showEquipmentSummary: z.boolean(),
+});
+
+export const dayHeaderSectionSettingsSchema = z.object({
+  showPhases: z.boolean(),
+  showCrewCount: z.boolean(),
+});
+
 export const spacerSectionSettingsSchema = z.object({
   height: z.number().min(2).max(100),
 });
@@ -162,6 +177,8 @@ export const SETTINGS_SCHEMA_MAP = {
   signature: signatureSectionSettingsSchema,
   "custom-text": customTextSectionSettingsSchema,
   "crew-table": crewTableSectionSettingsSchema,
+  "call-sheet-info": callSheetInfoSectionSettingsSchema,
+  "day-header": dayHeaderSectionSettingsSchema,
   spacer: spacerSectionSettingsSchema,
   "page-break": z.object({}),
 } as const;

@@ -32,6 +32,8 @@ import type {
   SignatureSectionSettings,
   CustomTextSectionSettings,
   CrewTableSectionSettings,
+  CallSheetInfoSectionSettings,
+  DayHeaderSectionSettings,
   SpacerSectionSettings,
 } from "./section-types";
 import {
@@ -340,9 +342,26 @@ export function estimateSectionHeight(
     }
 
     case "crew-table": {
-      const crewCount = (data.crew || []).length;
+      // Check for per-day crew data override
+      let crewCount = (data.crew || []).length;
+      if (section.content) {
+        try {
+          const override = JSON.parse(section.content);
+          if (override.dayCrew) {
+            crewCount = override.dayCrew.length;
+          }
+        } catch {
+          // ignore
+        }
+      }
       return 8 + crewCount * CREW_ROW_HEIGHT_MM + 4;
     }
+
+    case "call-sheet-info":
+      return SECTION_HEIGHT_ESTIMATES["call-sheet-info"];
+
+    case "day-header":
+      return SECTION_HEIGHT_ESTIMATES["day-header"];
 
     case "spacer": {
       const s = section.settings as SpacerSectionSettings;
@@ -967,6 +986,12 @@ function buildSectionSchema(
     case "crew-table":
       return { ...base, type: "gearflowCrewTable" };
 
+    case "call-sheet-info":
+      return { ...base, type: "gearflowCallSheetInfo" };
+
+    case "day-header":
+      return { ...base, type: "gearflowDayHeader" };
+
     case "spacer":
       return { ...base, type: "text", fontSize: 1, fontColor: "#ffffff" };
 
@@ -1148,14 +1173,57 @@ function buildSectionInput(
     }
 
     case "crew-table": {
+      // Check for per-day crew data override (set during section expansion)
+      let crewData = data.crew || [];
+      if (section.content) {
+        try {
+          const override = JSON.parse(section.content);
+          if (override.dayCrew) {
+            crewData = override.dayCrew;
+          }
+        } catch {
+          // Not a JSON override, ignore
+        }
+      }
       const crewConfig: { crew: typeof data.crew; documentColor: string; startIndex?: number } = {
-        crew: data.crew || [],
+        crew: crewData,
         documentColor: docColor,
       };
       if (tableStartIndex) {
         crewConfig.startIndex = tableStartIndex;
       }
       return JSON.stringify(crewConfig);
+    }
+
+    case "call-sheet-info": {
+      const csi = section.settings as CallSheetInfoSectionSettings;
+      const infoConfig = {
+        pmName: data.pm_name || "",
+        pmPhone: data.pm_phone || "",
+        pmEmail: data.pm_email || "",
+        clientName: data.client_name || "",
+        clientContact: data.client_contact || "",
+        venueName: data.venue_name || "",
+        venueAddress: data.venue_address || "",
+        loadInDate: data.load_in_date || "-",
+        loadOutDate: data.load_out_date || "-",
+        eventStart: data.event_start || "-",
+        eventEnd: data.event_end || "-",
+        equipmentSummary: data.equipment_summary || "No equipment assigned",
+        documentColor: docColor,
+        showPmContact: csi.showPmContact,
+        showClientContact: csi.showClientContact,
+        showVenueDetails: csi.showVenueDetails,
+        showScheduleTimes: csi.showScheduleTimes,
+        showEquipmentSummary: csi.showEquipmentSummary,
+      };
+      return JSON.stringify(infoConfig);
+    }
+
+    case "day-header": {
+      // day-header sections get their data injected during section expansion
+      // The content field holds JSON with dayLabel, phases, crewCount
+      return section.content || "";
     }
 
     case "spacer":

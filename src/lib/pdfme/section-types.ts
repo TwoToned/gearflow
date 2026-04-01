@@ -488,7 +488,7 @@ export const SECTION_HEIGHT_ESTIMATES: Record<SectionType, number> = {
   "custom-text": 15,
   "crew-table": 0, // Dynamic — depends on crew count
   "call-sheet-info": 35,
-  "day-header": 14,
+  "day-header": 18,
   spacer: 10, // default, actual from settings
   "page-break": 0,
 };

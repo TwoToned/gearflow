@@ -68,13 +68,29 @@ function buildColumns(): DataTableColumn[] {
   ];
 }
 
+interface PaginatedPage {
+  sections: DataTableSection[];
+  contentHeight: number; // actual content height in mm (for sizing the table schema)
+}
+
+/**
+ * Calculate actual content height for a set of sections (including table header).
+ */
+function calcContentHeight(sections: DataTableSection[]): number {
+  let h = TABLE_HEADER_HEIGHT_MM;
+  for (const s of sections) {
+    h += SECTION_HEADER_HEIGHT_MM + s.rows.length * TABLE_ROW_HEIGHT_MM;
+  }
+  return h;
+}
+
 /**
  * Paginate sections across pages.
  */
 function paginateSections(
   sections: DataTableSection[],
-): DataTableSection[][] {
-  const pages: DataTableSection[][] = [];
+): PaginatedPage[] {
+  const pages: PaginatedPage[] = [];
   let currentPageSections: DataTableSection[] = [];
   let currentHeight = TABLE_HEADER_HEIGHT_MM;
   let isFirstPage = true;
@@ -105,7 +121,7 @@ function paginateSections(
     let remainingRows = section.rows.slice(rowsThatFit);
 
     if (currentPageSections.length > 0) {
-      pages.push(currentPageSections);
+      pages.push({ sections: currentPageSections, contentHeight: calcContentHeight(currentPageSections) });
       currentPageSections = [];
       currentHeight = TABLE_HEADER_HEIGHT_MM;
       isFirstPage = false;
@@ -126,7 +142,7 @@ function paginateSections(
       currentHeight = TABLE_HEADER_HEIGHT_MM + SECTION_HEADER_HEIGHT_MM + batch.length * TABLE_ROW_HEIGHT_MM;
 
       if (remainingRows.length > 0) {
-        pages.push(currentPageSections);
+        pages.push({ sections: currentPageSections, contentHeight: calcContentHeight(currentPageSections) });
         currentPageSections = [];
         currentHeight = TABLE_HEADER_HEIGHT_MM;
       }
@@ -134,19 +150,19 @@ function paginateSections(
   }
 
   if (currentPageSections.length > 0) {
-    pages.push(currentPageSections);
+    pages.push({ sections: currentPageSections, contentHeight: calcContentHeight(currentPageSections) });
   }
 
-  return pages.length > 0 ? pages : [[]];
+  return pages.length > 0 ? pages : [{ sections: [], contentHeight: TABLE_HEADER_HEIGHT_MM }];
 }
 
-function buildTemplate(pageCount: number): Template {
+function buildTemplate(paginatedPages: PaginatedPage[]): Template {
   const schemas: Template["schemas"] = [];
 
-  for (let i = 0; i < pageCount; i++) {
+  for (let i = 0; i < paginatedPages.length; i++) {
     const isFirstPage = i === 0;
     const tableY = isFirstPage ? TABLE_START_Y : CONT_TABLE_START_Y;
-    const tableH = isFirstPage ? TABLE_CONTENT_HEIGHT : CONT_TABLE_CONTENT_HEIGHT;
+    const tableH = paginatedPages[i].contentHeight;
 
     const pageSchemas: Template["schemas"][number] = [
       {
@@ -314,16 +330,25 @@ export async function buildCallSheetFromServices(
   const sortedKeys = Array.from(groups.keys()).sort();
   const sections: DataTableSection[] = sortedKeys.map(key => {
     const group = groups.get(key)!;
+    // For per-person view, only show the crew name on the first row per person
+    const seenNames = new Set<string>();
     return {
       title: group.dateLabel,
-      rows: group.rows.map(r => ({
-        crewName: r.crewName,
-        service: r.service,
-        role: r.role,
-        call: r.call,
-        wrap: r.wrap,
-        notes: r.notes,
-      })),
+      rows: group.rows.map(r => {
+        let displayName = r.crewName;
+        if (options.crewMemberId && seenNames.has(r.crewName)) {
+          displayName = "";
+        }
+        seenNames.add(r.crewName);
+        return {
+          crewName: displayName,
+          service: r.service,
+          role: r.role,
+          call: r.call,
+          wrap: r.wrap,
+          notes: r.notes,
+        };
+      }),
     };
   });
 
@@ -341,9 +366,9 @@ export async function buildCallSheetFromServices(
 
   // 6. Paginate and build template
   const columns = buildColumns();
-  const paginatedSections = paginateSections(sections);
-  const pageCount = paginatedSections.length;
-  const template = buildTemplate(pageCount);
+  const paginatedPages = paginateSections(sections);
+  const pageCount = paginatedPages.length;
+  const template = buildTemplate(paginatedPages);
 
   // 7. Build header config
   const headerConfig: PageHeaderConfig = {
@@ -387,7 +412,7 @@ export async function buildCallSheetFromServices(
 
     pageInput[`table_${i}`] = JSON.stringify({
       columns,
-      sections: paginatedSections[i],
+      sections: paginatedPages[i].sections,
       documentColor: docColor,
     });
 

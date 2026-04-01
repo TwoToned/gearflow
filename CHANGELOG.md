@@ -5,6 +5,23 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-04-01
+
+### Added
+- Multi-day call sheets: generate one PDF with separate pages per day, each with day header showing date, phase badges, and crew count
+- Per-person call sheets: filter to a single crew member's schedule across all days
+- Crew role filtering: filter call sheet output to a specific crew role
+- Call sheet info section: dense 2-column block showing PM contact, client, venue, schedule times, and equipment summary on call sheets
+- Call sheet generation dialog: date picker with crew count badges, role filter, and individual crew member selector
+- PM contact extraction from ProjectManager join table for call sheet info
+- Equipment summary computation for call sheet context
+- Day header pdfme plugin with accent bar, bold date label, and phase badges
+- Call sheet info pdfme plugin with configurable visibility toggles
+- 17 new tests covering section expansion logic, height estimation, and Zod validation
+
+### Fixed
+- Cap dates query parameter at 31 before parsing to prevent unbounded allocation
+
 ## [0.3.0] - 2026-04-01
 
 ### Added

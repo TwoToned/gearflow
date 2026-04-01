@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { computeOverbookedStatus } from "@/lib/availability";
 import { getFileAsDataUri } from "@/lib/storage";
 import { formatCurrency, formatDate } from "./plugins/helpers";
-import type { DocumentData, DocumentLineItem, CrewEntry, DocumentType } from "./types";
+import type { DocumentData, DocumentLineItem, CrewEntry, CallSheetDayData, DocumentType } from "./types";
 
 const DEFAULT_DOC_COLOR = "#0d4f4f";
 
@@ -62,7 +62,13 @@ export async function buildDocumentData(
   projectId: string,
   organizationId: string,
   docType: DocumentType,
-  callSheetDate?: Date
+  callSheetDate?: Date,
+  options?: {
+    callSheetDates?: Date[];
+    allDates?: boolean;
+    crewMemberId?: string;
+    crewRoleId?: string;
+  }
 ): Promise<DocumentData> {
   // Load org
   const org = await prisma.organization.findUnique({
@@ -119,14 +125,18 @@ export async function buildDocumentData(
               where: {
                 organizationId,
                 status: { notIn: ["CANCELLED", "DECLINED"] },
+                ...(options?.crewMemberId ? { crewMemberId: options.crewMemberId } : {}),
+                ...(options?.crewRoleId ? { crewRoleId: options.crewRoleId } : {}),
               },
               include: {
                 crewMember: {
                   select: {
+                    id: true,
                     firstName: true,
                     lastName: true,
                     phone: true,
                     email: true,
+                    department: true,
                   },
                 },
                 crewRole: { select: { name: true } },
@@ -352,30 +362,69 @@ export async function buildDocumentData(
     return sum + w * i.quantity;
   }, 0);
 
-  // Build crew entries for call sheet
-  let crew: CrewEntry[] = [];
+  // ─── PM extraction ───────────────────────────────────────────────────────
+  let pmName = "";
+  let pmPhone = "";
+  let pmEmail = "";
+
   if (docType === "call-sheet") {
-    const crewAssignments = (serialized as unknown as {
-      crewAssignments?: Array<{
-        crewMember: { firstName: string; lastName: string; phone: string | null; email: string | null };
-        crewRole: { name: string } | null;
-        phase: string | null;
-        startTime: string | null;
-        endTime: string | null;
-        notes: string | null;
-        status: string;
-        shifts: Array<{ date: string | Date; callTime: string | null; endTime: string | null }>;
-      }>;
-    }).crewAssignments || [];
+    // Primary source: ProjectManager join table
+    const projectManagers = await prisma.projectManager.findMany({
+      where: { projectId, organizationId },
+      include: { user: { select: { name: true, email: true } } },
+      orderBy: { addedAt: "asc" },
+      take: 1,
+    });
 
-    const callDate = callSheetDate || project.loadInDate || project.eventStartDate || project.rentalStartDate || new Date();
-    const dateStr = new Date(callDate).toISOString().split("T")[0];
+    if (projectManagers.length > 0) {
+      const pm = projectManagers[0];
+      pmName = pm.user.name || "";
+      pmEmail = pm.user.email || "";
+      pmPhone = (orgSettings.phone as string) || ""; // User has no phone field
+    }
+  }
 
-    crew = crewAssignments.map((a) => {
-      const shift = a.shifts.find((s) => {
-        const shiftDate = new Date(s.date).toISOString().split("T")[0];
-        return shiftDate === dateStr;
-      });
+  // ─── Equipment summary ─────────────────────────────────────────────────
+  const equipmentSummary = (() => {
+    const topLevel = lineItems.filter(i => !i.isKitChild && !i.isContainerLineItem);
+    if (topLevel.length === 0) return "No equipment assigned";
+    const categories = new Set(topLevel.map(i => i.categoryName).filter(Boolean));
+    const count = topLevel.reduce((sum, i) => sum + i.quantity, 0);
+    if (categories.size > 0) {
+      return `${count} item${count !== 1 ? "s" : ""} across ${categories.size} categor${categories.size !== 1 ? "ies" : "y"}`;
+    }
+    return `${count} item${count !== 1 ? "s" : ""}`;
+  })();
+
+  // ─── Build crew entries for call sheet ──────────────────────────────────
+  type CrewAssignmentRow = {
+    crewMember: { id: string; firstName: string; lastName: string; phone: string | null; email: string | null; department: string | null };
+    crewRole: { name: string } | null;
+    phase: string | null;
+    isProjectManager: boolean;
+    startTime: string | null;
+    endTime: string | null;
+    notes: string | null;
+    status: string;
+    shifts: Array<{
+      date: string | Date;
+      callTime: string | null;
+      endTime: string | null;
+      breakMinutes: number | null;
+      location: string | null;
+      notes: string | null;
+    }>;
+  };
+
+  let crew: CrewEntry[] = [];
+  let crewByDay: CallSheetDayData[] = [];
+
+  if (docType === "call-sheet") {
+    const crewAssignments: CrewAssignmentRow[] =
+      (serialized as unknown as { crewAssignments?: CrewAssignmentRow[] }).crewAssignments || [];
+
+    /** Build a CrewEntry from an assignment, optionally matched to a specific shift */
+    function buildCrewEntry(a: CrewAssignmentRow, shift?: CrewAssignmentRow["shifts"][number]): CrewEntry {
       return {
         name: `${a.crewMember.firstName} ${a.crewMember.lastName}`,
         role: a.crewRole?.name || null,
@@ -386,8 +435,115 @@ export async function buildDocumentData(
         email: a.crewMember.email || null,
         notes: a.notes || null,
         status: a.status,
+        department: a.crewMember.department || null,
+        breakMinutes: shift?.breakMinutes ?? null,
+        shiftLocation: shift?.location || null,
+        shiftNotes: shift?.notes || null,
+        isProjectManager: a.isProjectManager,
       };
-    });
+    }
+
+    const isMultiDay = !!(options?.allDates || options?.callSheetDates?.length);
+
+    if (isMultiDay) {
+      // ─── Multi-day mode: group crew by date ──────────────────────────
+      let targetDates: string[];
+
+      if (options?.callSheetDates?.length) {
+        targetDates = options.callSheetDates.map(d => new Date(d).toISOString().split("T")[0]);
+      } else {
+        // allDates: collect unique shift dates
+        const shiftDateSet = new Set<string>();
+        for (const a of crewAssignments) {
+          for (const s of a.shifts) {
+            shiftDateSet.add(new Date(s.date).toISOString().split("T")[0]);
+          }
+        }
+        // Fall back to project dates if no shifts exist
+        if (shiftDateSet.size === 0) {
+          const projectDates = [
+            project.loadInDate,
+            project.eventStartDate,
+            project.eventEndDate,
+            project.loadOutDate,
+          ].filter(Boolean);
+          for (const d of projectDates) {
+            shiftDateSet.add(new Date(d as Date).toISOString().split("T")[0]);
+          }
+        }
+        targetDates = Array.from(shiftDateSet).sort();
+      }
+
+      // Cap at 31 days
+      if (targetDates.length > 31) {
+        targetDates = targetDates.slice(0, 31);
+      }
+
+      // Track which crew members have been assigned to at least one day
+      const assignedCrewIds = new Set<string>();
+
+      for (const dateStr of targetDates) {
+        const dayCrew: CrewEntry[] = [];
+        const dayPhases = new Set<string>();
+
+        for (const a of crewAssignments) {
+          const shift = a.shifts.find(s => new Date(s.date).toISOString().split("T")[0] === dateStr);
+          if (shift) {
+            dayCrew.push(buildCrewEntry(a, shift));
+            assignedCrewIds.add(a.crewMember.id);
+            if (a.phase) dayPhases.add(a.phase);
+          }
+        }
+
+        // Format day label: "Monday, 7 April 2026"
+        const dateObj = new Date(dateStr + "T12:00:00Z");
+        const dayLabel = dateObj.toLocaleDateString("en-AU", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+          timeZone: "UTC",
+        });
+
+        crewByDay.push({
+          date: dateStr,
+          dayLabel,
+          phases: Array.from(dayPhases),
+          crew: dayCrew,
+        });
+      }
+
+      // Add "Unscheduled" group for crew with no shifts on any target date
+      const unscheduledCrew: CrewEntry[] = [];
+      for (const a of crewAssignments) {
+        if (!assignedCrewIds.has(a.crewMember.id)) {
+          unscheduledCrew.push(buildCrewEntry(a));
+        }
+      }
+      if (unscheduledCrew.length > 0) {
+        crewByDay.push({
+          date: "",
+          dayLabel: "Unscheduled",
+          phases: [],
+          crew: unscheduledCrew,
+        });
+      }
+
+      // Keep data.crew populated for backward compat (all crew, flat)
+      crew = crewAssignments.map(a => buildCrewEntry(a));
+    } else {
+      // ─── Single-date mode (backward compat) ─────────────────────────
+      const callDate = callSheetDate || project.loadInDate || project.eventStartDate || project.rentalStartDate || new Date();
+      const dateStr = new Date(callDate).toISOString().split("T")[0];
+
+      crew = crewAssignments.map((a) => {
+        const shift = a.shifts.find((s) => {
+          const shiftDate = new Date(s.date).toISOString().split("T")[0];
+          return shiftDate === dateStr;
+        });
+        return buildCrewEntry(a, shift);
+      });
+    }
   }
 
   const totalNum = Number(serialized.total) || 0;
@@ -455,9 +611,20 @@ export async function buildDocumentData(
     // Metadata
     document_date: formatDate(new Date().toISOString()),
 
+    // PM
+    pm_name: pmName,
+    pm_phone: pmPhone,
+    pm_email: pmEmail,
+
+    // Schedule
+    load_in_time: serialized.loadInDate ? formatDate(serialized.loadInDate) : "-",
+    load_out_time: serialized.loadOutDate ? formatDate(serialized.loadOutDate) : "-",
+
     // Complex data
     line_items: lineItems,
     crew,
+    crew_by_day: crewByDay,
+    equipment_summary: equipmentSummary,
 
     // Computed
     total_items: totalItems,

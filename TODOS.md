@@ -101,6 +101,18 @@ Deferred work items tracked from engineering reviews and planning sessions.
 **Estimate:** human ~1 week / CC ~30 min
 **Priority:** P2
 
+## Call Sheet
+
+### Template Editor Settings for New Section Types
+**What:** Add settings panels in the template builder for `call-sheet-info` and `day-header` section types. Currently these sections work with default settings but can't be customized through the template editor UI.
+**Why:** Users should be able to toggle visibility of PM contact, venue details, schedule times, equipment summary, phases, and crew count in the template builder.
+**Pros:** Full customizability of call sheet layouts.
+**Cons:** Sections already work with sensible defaults.
+**Context:** Deferred from call sheet enhancement plan (Phase 6). Section types are registered, plugins work, Zod schemas exist. Just needs the SectionSettingsPanel cases and editor sidebar entries.
+**Depends on:** Nothing (infrastructure is complete).
+**Estimate:** human ~2 hours / CC ~15 min
+**Priority:** P3
+
 ## PDF Template System
 
 ### T&T Report Template Builder

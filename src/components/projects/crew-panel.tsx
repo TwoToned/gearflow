@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { CallSheetDialog } from "@/components/projects/call-sheet-dialog";
 import {
   getProjectCrew,
   createAssignment,
@@ -129,6 +130,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
   const [addOpen, setAddOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [messageOpen, setMessageOpen] = useState(false);
+  const [callSheetOpen, setCallSheetOpen] = useState(false);
 
   const { data: assignments, isLoading } = useQuery({
     queryKey: ["project-crew", orgId, projectId],
@@ -256,13 +258,16 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
           <Button
             variant="outline"
             size="sm"
-            onClick={() =>
-              window.open(`/api/documents/call-sheet/${projectId}`, "_blank")
-            }
+            onClick={() => setCallSheetOpen(true)}
           >
             <FileText className="mr-2 h-4 w-4" />
             Call Sheet
           </Button>
+          <CallSheetDialog
+            projectId={projectId}
+            open={callSheetOpen}
+            onOpenChange={setCallSheetOpen}
+          />
           <CanDo resource="crew" action="create">
             <Button size="sm" onClick={() => setAddOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />

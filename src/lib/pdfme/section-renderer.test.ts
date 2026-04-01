@@ -53,6 +53,11 @@ function makeCrewEntry(overrides: Partial<CrewEntry> = {}): CrewEntry {
     email: null,
     notes: null,
     status: "CONFIRMED",
+    department: null,
+    breakMinutes: null,
+    shiftLocation: null,
+    shiftNotes: null,
+    isProjectManager: false,
     ...overrides,
   };
 }
@@ -105,7 +110,14 @@ function makeData(overrides: Partial<DocumentData> = {}): DocumentData {
     internal_notes: "",
     document_date: "2026-03-19",
     line_items: [],
+    pm_name: "",
+    pm_phone: "",
+    pm_email: "",
+    load_in_time: "-",
+    load_out_time: "-",
     crew: [],
+    crew_by_day: [],
+    equipment_summary: "No equipment assigned",
     total_items: 0,
     total_weight: 0,
     ...overrides,
@@ -1086,5 +1098,58 @@ describe("docType integration", () => {
 
     // Quote: 20 items, docket: 5 items
     expect(quoteHeight).toBeGreaterThan(docketHeight);
+  });
+
+  describe("call-sheet-info", () => {
+    it("returns the static height estimate", () => {
+      const section = makeSection("call-sheet-info", {
+        showPmContact: true,
+        showClientContact: true,
+        showVenueDetails: true,
+        showScheduleTimes: true,
+        showEquipmentSummary: true,
+      });
+      expect(estimateSectionHeight(section, makeData())).toBe(
+        SECTION_HEIGHT_ESTIMATES["call-sheet-info"]
+      );
+    });
+  });
+
+  describe("day-header", () => {
+    it("returns the static height estimate", () => {
+      const section = makeSection("day-header", {
+        showPhases: true,
+        showCrewCount: true,
+      });
+      expect(estimateSectionHeight(section, makeData())).toBe(
+        SECTION_HEIGHT_ESTIMATES["day-header"]
+      );
+    });
+  });
+
+  describe("crew-table with dayCrew content override", () => {
+    it("uses dayCrew length from content when present", () => {
+      const dayCrew = [makeCrewEntry(), makeCrewEntry(), makeCrewEntry()];
+      const section = makeSection(
+        "crew-table",
+        { showPhone: true, showEmail: false, showNotes: true },
+        { content: JSON.stringify({ dayCrew }) },
+      );
+      const height = estimateSectionHeight(section, makeData());
+      // Formula: 8 + crewCount * CREW_ROW_HEIGHT_MM + 4
+      expect(height).toBe(8 + 3 * CREW_ROW_HEIGHT_MM + 4);
+    });
+
+    it("falls back to data.crew when content is invalid JSON", () => {
+      const data = makeData({ crew: [makeCrewEntry(), makeCrewEntry()] });
+      const section = makeSection(
+        "crew-table",
+        { showPhone: true, showEmail: false, showNotes: true },
+        { content: "invalid-json" },
+      );
+      const height = estimateSectionHeight(section, data);
+      // Formula: 8 + crewCount * CREW_ROW_HEIGHT_MM + 4
+      expect(height).toBe(8 + 2 * CREW_ROW_HEIGHT_MM + 4);
+    });
   });
 });

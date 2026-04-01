@@ -26,6 +26,7 @@ import {
 import { LineItemsPanel } from "@/components/projects/line-items-panel";
 import { EquipmentTab } from "@/components/projects/equipment-tab";
 import { CrewPanel } from "@/components/projects/crew-panel";
+import { CallSheetDialog } from "@/components/projects/call-sheet-dialog";
 import { ServicesPanel } from "@/components/projects/services-panel";
 import { FinancialSummary } from "@/components/projects/financial-summary";
 import { ProjectManagersPanel } from "@/components/projects/project-managers-panel";
@@ -147,6 +148,7 @@ export default function ProjectDetailPage({
   const orgId = activeOrg?.id;
 
   const [dupMode, setDupMode] = useState<"duplicate" | "template" | null>(null);
+  const [callSheetOpen, setCallSheetOpen] = useState(false);
 
   const { data: project, isLoading } = useQuery({
     queryKey: ["project", orgId, id],
@@ -350,9 +352,7 @@ export default function ProjectDetailPage({
                           </DropdownMenuSub>
                         );
                       })}
-                      <DropdownMenuItem
-                        onClick={() => window.open(`/api/documents/call-sheet/${id}`, "_blank")}
-                      >
+                      <DropdownMenuItem onClick={() => setCallSheetOpen(true)}>
                         Call Sheet
                       </DropdownMenuItem>
                       <DropdownMenuItem
@@ -830,6 +830,11 @@ export default function ProjectDetailPage({
           mode={dupMode}
         />
       )}
+      <CallSheetDialog
+        projectId={id}
+        open={callSheetOpen}
+        onOpenChange={setCallSheetOpen}
+      />
     </RequirePermission>
   );
 }

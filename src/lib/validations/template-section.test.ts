@@ -416,10 +416,49 @@ describe("validateSectionSettings", () => {
     expect(result.success).toBe(true);
   });
 
+  it("validates call-sheet-info settings", () => {
+    const result = validateSectionSettings("call-sheet-info", {
+      showPmContact: true,
+      showClientContact: true,
+      showVenueDetails: true,
+      showScheduleTimes: true,
+      showEquipmentSummary: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects call-sheet-info with non-boolean field", () => {
+    const result = validateSectionSettings("call-sheet-info", {
+      showPmContact: "yes",
+      showClientContact: true,
+      showVenueDetails: true,
+      showScheduleTimes: true,
+      showEquipmentSummary: true,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("validates day-header settings", () => {
+    const result = validateSectionSettings("day-header", {
+      showPhases: true,
+      showCrewCount: false,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects day-header with non-boolean field", () => {
+    const result = validateSectionSettings("day-header", {
+      showPhases: 1,
+      showCrewCount: true,
+    });
+    expect(result.success).toBe(false);
+  });
+
   it("validates every section type has a schema entry", () => {
     const types = [
       "header", "client-details", "project-details", "table", "totals",
       "notes", "signature", "custom-text", "crew-table", "spacer", "page-break",
+      "call-sheet-info", "day-header",
     ];
     for (const type of types) {
       expect(SETTINGS_SCHEMA_MAP).toHaveProperty(type);

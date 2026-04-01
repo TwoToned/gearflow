@@ -925,3 +925,19 @@ export async function deleteProject(id: string) {
     },
   });
 }
+
+/** Get project milestone dates for call sheet dialog */
+export async function getCallSheetDates(projectId: string) {
+  const { organizationId } = await getOrgContext();
+  const project = await prisma.project.findUnique({
+    where: { id: projectId, organizationId },
+    select: {
+      loadInDate: true,
+      eventStartDate: true,
+      eventEndDate: true,
+      loadOutDate: true,
+    },
+  });
+  if (!project) throw new Error("Project not found");
+  return serialize(project);
+}

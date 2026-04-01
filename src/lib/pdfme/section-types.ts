@@ -17,6 +17,8 @@ export const SECTION_TYPES = [
   "signature",
   "custom-text",
   "crew-table",
+  "call-sheet-info",
+  "day-header",
   "spacer",
   "page-break",
 ] as const;
@@ -34,6 +36,8 @@ export const SECTION_TYPE_LABELS: Record<SectionType, string> = {
   signature: "Signature Block",
   "custom-text": "Custom Text",
   "crew-table": "Crew Table",
+  "call-sheet-info": "Call Sheet Info",
+  "day-header": "Day Header",
   spacer: "Spacer",
   "page-break": "Page Break",
 };
@@ -49,6 +53,8 @@ export const SECTION_TYPE_DESCRIPTIONS: Record<SectionType, string> = {
   signature: "Signature lines with configurable columns",
   "custom-text": "Free text block with {token} support",
   "crew-table": "Crew assignments sorted by call time",
+  "call-sheet-info": "PM contact, venue, schedule, and equipment summary",
+  "day-header": "Day separator with date, phases, and crew count",
   spacer: "Vertical spacing between sections",
   "page-break": "Force a page break at this point",
 };
@@ -170,6 +176,19 @@ export interface CrewTableSectionSettings {
   showNotes: boolean;
 }
 
+export interface CallSheetInfoSectionSettings {
+  showPmContact: boolean;
+  showClientContact: boolean;
+  showVenueDetails: boolean;
+  showScheduleTimes: boolean;
+  showEquipmentSummary: boolean;
+}
+
+export interface DayHeaderSectionSettings {
+  showPhases: boolean;
+  showCrewCount: boolean;
+}
+
 export interface SpacerSectionSettings {
   height: number; // mm
 }
@@ -185,6 +204,8 @@ export type SectionSettings =
   | SignatureSectionSettings
   | CustomTextSectionSettings
   | CrewTableSectionSettings
+  | CallSheetInfoSectionSettings
+  | DayHeaderSectionSettings
   | SpacerSectionSettings
   | Record<string, never>; // for page-break (no settings)
 
@@ -312,6 +333,25 @@ export function getDefaultCrewTableSettings(): CrewTableSectionSettings {
   };
 }
 
+/** Get default call sheet info settings */
+export function getDefaultCallSheetInfoSettings(): CallSheetInfoSectionSettings {
+  return {
+    showPmContact: true,
+    showClientContact: true,
+    showVenueDetails: true,
+    showScheduleTimes: true,
+    showEquipmentSummary: true,
+  };
+}
+
+/** Get default day header settings */
+export function getDefaultDayHeaderSettings(): DayHeaderSectionSettings {
+  return {
+    showPhases: true,
+    showCrewCount: true,
+  };
+}
+
 /**
  * Get default section list for a document type.
  * Maps to the same layout the current hardcoded templates produce.
@@ -415,8 +455,7 @@ export function getDefaultSections(docType: DocumentType): TemplateSection[] {
     case "call-sheet":
       sections = [
         s("header", { ...getDefaultHeaderSettings(), documentTitle: "CALL SHEET" }),
-        s("client-details", getDefaultClientDetailsSettings()),
-        s("project-details", getDefaultProjectDetailsSettings()),
+        s("call-sheet-info", getDefaultCallSheetInfoSettings()),
         s("crew-table", getDefaultCrewTableSettings()),
         s("notes", { showClientNotes: false, showCrewNotes: true }),
       ];
@@ -448,6 +487,8 @@ export const SECTION_HEIGHT_ESTIMATES: Record<SectionType, number> = {
   signature: 20,
   "custom-text": 15,
   "crew-table": 0, // Dynamic — depends on crew count
+  "call-sheet-info": 35,
+  "day-header": 14,
   spacer: 10, // default, actual from settings
   "page-break": 0,
 };

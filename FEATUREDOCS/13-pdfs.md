@@ -59,6 +59,8 @@ All PDF generation uses **pdfme** (`@pdfme/generator` + `@pdfme/common` + custom
 | `gearflowCheckbox` | Empty/checked checkbox square |
 | `gearflowSignatureLine` | Signature blocks with configurable columns |
 | `gearflowCrewTable` | Crew table for call sheets — sorted by call time then role |
+| `gearflowCallSheetInfo` | 2-column info block: PM/client/equipment (left), venue/schedule (right) |
+| `gearflowDayHeader` | Day separator with accent bar, date label, phase badges, crew count |
 
 **Report Plugins:**
 | Plugin | Purpose |
@@ -88,6 +90,8 @@ All PDF generation uses **pdfme** (`@pdfme/generator` + `@pdfme/common` + custom
 | `signature` | Signature lines | 1-6 columns with custom labels |
 | `custom-text` | Free text with tokens | font size, weight, alignment + `{token}` support |
 | `crew-table` | Crew assignments | show phone/email/notes |
+| `call-sheet-info` | PM, venue, schedule, equipment | show PM/client/venue/schedule/equipment |
+| `day-header` | Day separator for multi-day sheets | show phases, show crew count |
 | `spacer` | Vertical spacing | height in mm (2-100) |
 | `page-break` | Force page break | no settings |
 
@@ -187,7 +191,7 @@ The block editor provides a Notion-like editing experience with a 2-level block 
 | `packing-list` | header, client-details, project-details, table (checkboxes, per-unit, asset tags), custom-text (total items) |
 | `return-sheet` | header, client-details, project-details, table (checkboxes, conditions, asset tags), signature (3 cols) |
 | `delivery-docket` | header, client-details, project-details (+ site contact), table (checkboxes, row numbers), signature (3 cols) |
-| `call-sheet` | header, client-details, project-details, crew-table, notes (crew only) |
+| `call-sheet` | header, call-sheet-info, crew-table, notes (crew only) |
 
 ### Template Picker
 - Project detail page documents dropdown queries for published custom templates
@@ -239,7 +243,7 @@ All document templates use a unified line item hierarchy with up to 3 levels:
 |-------|--------|---------|
 | `/api/documents/template-preview` | POST | Generate template preview PDF. Body: `{ docType, sections }` or `{ docType, settings }`. Returns binary PDF |
 | `/api/documents/[projectId]` | GET | Generate project document. Params: `type` (quote/invoice/pull-slip/delivery-docket/return-sheet), `templateId` (optional) |
-| `/api/documents/call-sheet/[projectId]` | GET | Generate call sheet. Params: `date` (optional), `templateId` (optional) |
+| `/api/documents/call-sheet/[projectId]` | GET | Generate call sheet. Params: `date`, `dates` (comma-separated), `allDates=true`, `crewMemberId`, `templateId` (all optional). Multi-day/per-person params trigger `generateCallSheetPdf()` with section expansion. |
 | `/api/test-tag-reports/[reportType]` | GET | Generate T&T report. Params: `format` (pdf/csv), filters (dateFrom, dateTo, status, equipmentClass, etc.) |
 
 ## Constraints

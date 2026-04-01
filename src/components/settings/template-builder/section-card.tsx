@@ -18,6 +18,8 @@ import {
   SeparatorHorizontal,
   Minus,
   LayoutTemplate,
+  Info,
+  CalendarDays,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +39,8 @@ const SECTION_ICONS: Record<SectionType, React.ElementType> = {
   signature: PenLine,
   "custom-text": Type,
   "crew-table": Users,
+  "call-sheet-info": Info,
+  "day-header": CalendarDays,
   spacer: SeparatorHorizontal,
   "page-break": Minus,
 };

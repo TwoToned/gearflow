@@ -93,6 +93,8 @@ import type { SectionType } from "./section-types";
 export const SECTION_MIN_WIDTHS: Record<SectionType, number> = {
   table: 100,
   "crew-table": 100,
+  "call-sheet-info": 100,
+  "day-header": 100,
   "page-break": 100,
   totals: 50,
   header: 50,
@@ -118,6 +120,8 @@ export const SECTION_HEIGHT_ESTIMATES: Record<SectionType, number> = {
   signature: 20,
   "custom-text": 10,
   "crew-table": 60,
+  "call-sheet-info": 35,
+  "day-header": 14,
   spacer: 5,
   "page-break": 0,
 };

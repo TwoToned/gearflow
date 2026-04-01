@@ -3,7 +3,7 @@
  * Shows date label, phase badges, and crew count.
  * Left accent bar in document color.
  */
-import type { Plugin, Schema } from "@pdfme/common";
+import type { Plugin, Schema, PDFRenderProps } from "@pdfme/common";
 import { getLayoutProps, hexToRgb, getHelveticaFonts, stubUiRender, stubPropPanel } from "./helpers";
 
 export interface DayHeaderConfig {
@@ -25,13 +25,7 @@ const defaultSchema: Schema = {
 const gearflowDayHeader: Plugin<Schema> = {
   ui: stubUiRender(),
   pdf: async (arg) => {
-    const pdfLib = await import("@pdfme/pdf-lib");
-    const { page, schema, value, options } = arg as unknown as {
-      page: import("@pdfme/pdf-lib").PDFPage;
-      schema: Schema;
-      value: string;
-      options: { font?: unknown; _cache: Map<string | number, unknown> };
-    };
+    const { schema, page, pdfLib, pdfDoc, _cache, value } = arg as PDFRenderProps<Schema>;
 
     if (!value) return;
 
@@ -42,9 +36,9 @@ const gearflowDayHeader: Plugin<Schema> = {
       return;
     }
 
-    const { height: pageHeight } = page.getSize();
+    const pageHeight = page.getHeight();
     const { x, y, width, height } = getLayoutProps(schema, pageHeight);
-    const fonts = await getHelveticaFonts(page.doc, pdfLib, options._cache);
+    const fonts = await getHelveticaFonts(pdfDoc, pdfLib, _cache);
 
     const accentColor = hexToRgb(config.documentColor || "#0d4f4f", pdfLib);
     const textColor = hexToRgb("#1a1a1a", pdfLib);

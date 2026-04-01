@@ -3,7 +3,7 @@
  * Left column: PM, Client, Equipment summary.
  * Right column: Venue, Schedule times.
  */
-import type { Plugin, Schema } from "@pdfme/common";
+import type { Plugin, Schema, PDFRenderProps } from "@pdfme/common";
 import { getLayoutProps, hexToRgb, getHelveticaFonts, truncateText, stubUiRender, stubPropPanel } from "./helpers";
 
 export interface CallSheetInfoConfig {
@@ -39,13 +39,7 @@ const defaultSchema: Schema = {
 const gearflowCallSheetInfo: Plugin<Schema> = {
   ui: stubUiRender(),
   pdf: async (arg) => {
-    const pdfLib = await import("@pdfme/pdf-lib");
-    const { page, schema, value, options } = arg as unknown as {
-      page: import("@pdfme/pdf-lib").PDFPage;
-      schema: Schema;
-      value: string;
-      options: { font?: unknown; _cache: Map<string | number, unknown> };
-    };
+    const { schema, page, pdfLib, pdfDoc, _cache, value } = arg as PDFRenderProps<Schema>;
 
     if (!value) return;
 
@@ -56,13 +50,9 @@ const gearflowCallSheetInfo: Plugin<Schema> = {
       return;
     }
 
-    const { height: pageHeight } = page.getSize();
+    const pageHeight = page.getHeight();
     const { x, y, width, height } = getLayoutProps(schema, pageHeight);
-    const fonts = await getHelveticaFonts(
-      page.doc,
-      pdfLib,
-      options._cache
-    );
+    const fonts = await getHelveticaFonts(pdfDoc, pdfLib, _cache);
 
     const labelSize = 7;
     const valueSize = 9;

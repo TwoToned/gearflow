@@ -24,7 +24,9 @@ import {
   getUpcomingProjects,
   getRecentActivity,
 } from "@/server/dashboard";
+import { getSubHireDashboardStats } from "@/server/sub-hires";
 import { formatDistanceToNow, format } from "date-fns";
+import { formatCurrency } from "@/lib/formatters";
 
 // Color mapping from status intent to a left-border CSS class
 const intentBorderColor: Record<string, string> = {
@@ -53,6 +55,11 @@ export default function DashboardPage() {
   const { data: activity } = useQuery({
     queryKey: ["dashboard-activity", orgId],
     queryFn: getRecentActivity,
+  });
+
+  const { data: subHireStats } = useQuery({
+    queryKey: ["dashboard-sub-hire-stats", orgId],
+    queryFn: getSubHireDashboardStats,
   });
 
   // Greeting logic
@@ -139,6 +146,25 @@ export default function DashboardPage() {
               className="border-l border-border max-sm:border-t"
             />
           </div>
+          {(subHireStats?.activeSubHires || subHireStats?.overdueReturns) ? (
+            <div className="grid grid-cols-3 border-t border-border">
+              <MetricCell
+                label="Active Sub-Hires"
+                value={subHireStats?.activeSubHires}
+              />
+              <MetricCell
+                label="Monthly Sub-Hire Cost"
+                value={subHireStats?.monthlySubHireCost}
+                className="border-l border-border"
+                format="currency"
+              />
+              <MetricCell
+                label="Overdue Returns"
+                value={subHireStats?.overdueReturns}
+                className={`border-l border-border ${subHireStats?.overdueReturns ? "text-error" : ""}`}
+              />
+            </div>
+          ) : null}
         </div>
       </FadeIn>
 
@@ -264,26 +290,46 @@ function MetricCell({
   value,
   href,
   className,
+  format: fmt,
 }: {
   label: string;
   value: number | undefined;
-  href: string;
+  href?: string;
   className?: string;
+  format?: "currency";
 }) {
-  return (
-    <Link
-      href={href}
-      className={`group block px-5 py-4 transition-colors hover:bg-bg-elevated ${className ?? ""}`}
-    >
+  const content = (
+    <>
       <p className="text-xs text-fg-3">{label}</p>
       <div className="mt-1 text-2xl font-bold t-data">
         {typeof value === "number" ? (
-          <AnimatedNumber value={value} />
+          fmt === "currency" ? (
+            <span className="tabular-nums">{formatCurrency(value)}</span>
+          ) : (
+            <AnimatedNumber value={value} />
+          )
         ) : (
           <span className="text-fg-3">&mdash;</span>
         )}
       </div>
-    </Link>
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className={`group block px-5 py-4 transition-colors hover:bg-bg-elevated ${className ?? ""}`}
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  return (
+    <div className={`block px-5 py-4 ${className ?? ""}`}>
+      {content}
+    </div>
   );
 }
 

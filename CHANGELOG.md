@@ -5,6 +5,41 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-04-01
+
+### Added
+- Sub-hire order system: first-class entities for tracking gear rented from third-party suppliers
+- Dual cost/charge pricing with gross margin analysis on every sub-hire order
+- Sub-hire groups: organize items into logical sections with group-level pricing overrides
+- Two pricing modes: itemized (per-item costs) or order total (single lump sum)
+- Supplier rate memory: last-used rates saved per model+supplier pair, auto-filled on next order
+- Cost comparison panel: see rates from all suppliers when adding items to a sub-hire
+- Sub-hire lifecycle: Draft → Confirmed → On Hire → Returned, with automatic line item generation on confirm
+- Per-item placement targeting: assign sub-hire items to specific project categories/groups
+- Per-item document visibility: control which items appear on quotes, invoices, and packing lists
+- Sub-hire items integrate into project financial totals (subtotal, tax, total)
+- Dashboard metrics: active sub-hires count, monthly sub-hire cost, overdue returns
+- Shortage-triggered sub-hire: when adding equipment exceeds stock, prompt to sub-hire the shortfall
+- Quick duplicate: clone a sub-hire order to a new draft with same items
+- "via Supplier" display on sub-hire items across warehouse tabs and pull sheets
+- Subhire badge on pull sheet (HTML and PDF) for internal warehouse documents
+- Supplier name rendering on PDF packing lists and delivery dockets
+- Payment status tracking and file attachments on sub-hire orders
+- 94 new validation schema tests for sub-hire system
+
+### Changed
+- Legacy free-text "Add Subhire" dialog removed in favor of structured sub-hire orders
+- Sub-hire status actions moved to header dropdown menu on project detail
+- Equipment tab shows sub-hire items as kit-style groups with children
+- Financial summary now includes sub-hire charges in project totals
+
+### Fixed
+- Duplicate line item generation when re-confirming sub-hire orders
+- Sub-hire items appearing as regular flat line items instead of grouped display
+- Sub-hire costs not flowing through to project financial calculations
+- Cross-tenant write vulnerability in sub-hire item reorder (org scoping added)
+- Missing org scoping on sub-hire status return path and line item sync queries
+
 ## [0.2.6] - 2026-03-28
 
 ### Added

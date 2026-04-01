@@ -22,6 +22,7 @@ export interface LineItem {
   prepContainer: string | null;
   isContainerLineItem: boolean;
   isSubhire: boolean;
+  supplier: { name: string } | null;
   childLineItems?: LineItem[];
 }
 
@@ -53,6 +54,11 @@ export function modelDisplayName(item: LineItem) {
 
 export function isKitParent(item: LineItem) {
   return !!item.kitId && !item.isKitChild;
+}
+
+// Sub-hire group parents have childLineItems but no kitId
+export function isGroupParent(item: LineItem) {
+  return !item.isKitChild && !item.kitId && (item.childLineItems?.length ?? 0) > 0;
 }
 
 export function collectAllVerifiableIds(children: LineItem[], mode: "deploy" | "return"): string[] {

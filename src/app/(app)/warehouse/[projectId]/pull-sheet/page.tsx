@@ -228,6 +228,8 @@ export default function PullSheetPage({
                     const kit = item.kit as { assetTag: string; name: string } | null;
                     const assetTag = asset?.assetTag || bulkAsset?.assetTag || null;
                     const overbookedInfo = item.overbookedInfo as { overBy: number; totalStock: number; totalBooked: number; inherited?: boolean } | null;
+                    const supplier = item.supplier as { name: string } | null;
+                    const isSubhire = !!(item.isSubhire);
                     const isKit = !!(item.kitId) && !(item.isKitChild);
                     const isGroupParent = isKit;
                     const children = isGroupParent ? ((item.childLineItems || []) as Array<Record<string, unknown>>) : [];
@@ -250,7 +252,13 @@ export default function PullSheetPage({
                             <span className={isGroupParent ? "font-bold" : "font-medium"}>
                               {isGroupParent ? `[Kit] ${itemName}` : itemName}
                             </span>
+                            {isSubhire && (
+                              <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0 bg-cyan-500/10 text-cyan-600 border-cyan-500/20 print:bg-transparent print:text-cyan-700 print:border-cyan-400">Subhire</Badge>
+                            )}
                             {overbookedInfo && <PullSheetOverbookedBadge info={overbookedInfo} />}
+                            {isSubhire && supplier && (
+                              <p className="text-xs text-fg-3 mt-0.5">via {supplier.name}</p>
+                            )}
                           </TableCell>
                           <TableCell className="text-center">
                             {isGroupParent ? children.length : qty}

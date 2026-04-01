@@ -20,13 +20,13 @@ describe("RESOURCES", () => {
     const expected = [
       "asset", "bulkAsset", "model", "kit", "project", "client",
       "warehouse", "testTag", "maintenance", "location", "document",
-      "orgSettings", "orgMembers", "supplier", "crew", "reports", "checkItem",
+      "orgSettings", "orgMembers", "supplier", "subHire", "crew", "reports", "checkItem",
     ];
     expect(RESOURCES).toEqual(expected);
   });
 
-  it("has 17 resources", () => {
-    expect(RESOURCES).toHaveLength(17);
+  it("has 18 resources", () => {
+    expect(RESOURCES).toHaveLength(18);
   });
 });
 

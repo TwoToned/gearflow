@@ -14,7 +14,6 @@ import {
   Container,
   ChevronRight,
   GripVertical,
-  ArrowUpRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -73,7 +72,6 @@ import {
   TooltipProvider,
 } from "@/components/ui/tooltip";
 import { AddEquipmentDialog } from "./add-equipment-dialog";
-import { AddSubhireDialog } from "./add-subhire-dialog";
 import { EditLineItemDialog } from "./edit-line-item-dialog";
 import { useActiveOrganization } from "@/lib/auth-client";
 
@@ -705,7 +703,6 @@ export function LineItemsPanel({
   const queryClient = useQueryClient();
   const [equipmentDialogOpen, setEquipmentDialogOpen] = useState(false);
   const [kitDialogOpen, setKitDialogOpen] = useState(false);
-  const [subhireDialogOpen, setSubhireDialogOpen] = useState(false);
   const [selectedKitId, setSelectedKitId] = useState("");
   const [kitPricingMode, setKitPricingMode] = useState<
     "KIT_PRICE" | "ITEMIZED"
@@ -1074,14 +1071,6 @@ export function LineItemsPanel({
           <Container className="mr-1.5 h-4 w-4" />
           <span className="hidden sm:inline">Add </span>Kit
         </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => setSubhireDialogOpen(true)}
-        >
-          <ArrowUpRight className="mr-1.5 h-4 w-4" />
-          <span className="hidden sm:inline">Add </span>Subhire
-        </Button>
       </div>
 
       {topLevelItems.length === 0 ? (
@@ -1245,12 +1234,6 @@ export function LineItemsPanel({
         rentalEndDate={rentalEndDate}
         open={equipmentDialogOpen}
         onOpenChange={setEquipmentDialogOpen}
-      />
-
-      <AddSubhireDialog
-        projectId={projectId}
-        open={subhireDialogOpen}
-        onOpenChange={setSubhireDialogOpen}
       />
 
       <EditLineItemDialog

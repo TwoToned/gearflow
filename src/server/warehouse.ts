@@ -28,18 +28,21 @@ export async function getProjectForWarehouse(projectId: string) {
           asset: true,
           bulkAsset: true,
           kit: { include: { _count: { select: { kitCheckItems: true } } } },
+          supplier: { select: { name: true } },
           childLineItems: {
             orderBy: { sortOrder: "asc" },
             include: {
               model: { include: { _count: { select: { modelCheckItems: true } } } },
               asset: true, bulkAsset: true,
               kit: { include: { _count: { select: { kitCheckItems: true } } } },
+              supplier: { select: { name: true } },
               childLineItems: {
                 orderBy: { sortOrder: "asc" },
                 include: {
                   model: { include: { _count: { select: { modelCheckItems: true } } } },
                   asset: true, bulkAsset: true,
                   kit: { include: { _count: { select: { kitCheckItems: true } } } },
+                  supplier: { select: { name: true } },
                 },
               },
             },
@@ -1170,6 +1173,7 @@ export async function getProjectPullSheet(projectId: string) {
           asset: { include: { location: true } },
           bulkAsset: true,
           kit: true,
+          supplier: { select: { name: true } },
           childLineItems: {
             where: { status: { not: "CANCELLED" } },
             orderBy: { sortOrder: "asc" },
@@ -1178,6 +1182,7 @@ export async function getProjectPullSheet(projectId: string) {
               asset: { include: { location: true } },
               bulkAsset: true,
               kit: true,
+              supplier: { select: { name: true } },
               childLineItems: {
                 where: { status: { not: "CANCELLED" } },
                 orderBy: { sortOrder: "asc" },
@@ -1185,6 +1190,7 @@ export async function getProjectPullSheet(projectId: string) {
                   model: { include: { category: true, _count: { select: { modelCheckItems: true } } } },
                   asset: { include: { location: true } },
                   bulkAsset: true,
+                  supplier: { select: { name: true } },
                 },
               },
             },
@@ -1208,7 +1214,13 @@ export async function getProjectPullSheet(projectId: string) {
   );
 
   const enrichedLineItems = project.lineItems
-    .filter((li) => !li.isKitChild) // Kit children render under their parent
+    .filter((li) => {
+      // Kit children render under their parent
+      if (li.isKitChild && !li.isSubhire) return false;
+      // Sub-hire group parents are wrappers — their children show individually
+      if (li.isSubhire && !li.isKitChild && !li.kitId && (li.childLineItems?.length ?? 0) > 0) return false;
+      return true;
+    })
     .map((li) => {
       const info = overbookedMap.get(li.id);
       return {

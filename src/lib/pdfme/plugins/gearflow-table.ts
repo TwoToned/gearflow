@@ -280,6 +280,9 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
         // Calculate row content height
         const noteLineHeight = noteFontSize + 2;
         let rowContentHeight = fontSize + rowPadding * 2;
+        if (item.isSubhire && item.supplierName) {
+          rowContentHeight += fontSize + 1; // "via Supplier" line
+        }
         if (item.notes && config.showNotes) {
           rowContentHeight += measureRichTextHeight(item.notes, noteLineHeight);
         }
@@ -356,17 +359,31 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
             // Badges
             if (config.showBadges) {
               let badgeX = descX + font.widthOfTextAtSize(displayName, fontSize) + 4;
-              const badges = getBadges(item);
+              const badges = getBadges(item, config.documentType);
               for (const badge of badges) {
                 badgeX = drawBadge(page, fonts, pdfLib, badge, badgeX, textY, badgeFontSize);
               }
+            }
+
+            // "via Supplier" for sub-hire items on internal docs
+            let supplierLineOffset = 0;
+            if (item.isSubhire && item.supplierName) {
+              const viaText = `via ${item.supplierName}`;
+              supplierLineOffset = fontSize + 1;
+              page.drawText(viaText, {
+                x: descX,
+                y: textY - supplierLineOffset,
+                size: noteFontSize,
+                font: fonts.regular,
+                color: noteTextColor,
+              });
             }
 
             // Notes (with markdown support)
             if (item.notes && config.showNotes) {
               drawRichText(page, item.notes, {
                 x: descX,
-                y: textY - fontSize - 1,
+                y: textY - fontSize - 1 - supplierLineOffset,
                 fontSize: noteFontSize,
                 lineHeight: noteFontSize + 2,
                 color: noteTextColor,
@@ -1001,7 +1018,7 @@ function drawCheckbox(
   }
 }
 
-function getBadges(item: DocumentLineItem): typeof BADGE_STYLES[keyof typeof BADGE_STYLES][] {
+function getBadges(item: DocumentLineItem, documentType?: string): typeof BADGE_STYLES[keyof typeof BADGE_STYLES][] {
   const badges: typeof BADGE_STYLES[keyof typeof BADGE_STYLES][] = [];
 
   if (item.isOptional) {
@@ -1021,7 +1038,10 @@ function getBadges(item: DocumentLineItem): typeof BADGE_STYLES[keyof typeof BAD
     }
   }
 
-  if (item.isSubhire && item.showSubhireOnDocs) {
+  // Internal docs (packing-list, return-sheet, delivery-docket) always show subhire badge
+  // Client-facing docs (quote, invoice) only show when showSubhireOnDocs is true
+  const isInternalDoc = documentType === "packing-list" || documentType === "return-sheet" || documentType === "delivery-docket";
+  if (item.isSubhire && (isInternalDoc || item.showSubhireOnDocs)) {
     badges.push(BADGE_STYLES.subhire);
   }
 

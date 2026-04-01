@@ -16,6 +16,7 @@ interface FinancialSummaryProps {
   serviceChargeTotal?: number | null;
   serviceCostTotal: number | null;
   labourCostTotal: number | null;
+  subHireCostTotal?: number | null;
   subtotal: number | null;
   discountPercent: number | null;
   discountAmount: number | null;
@@ -86,6 +87,7 @@ export function FinancialSummary({
   serviceChargeTotal,
   serviceCostTotal,
   labourCostTotal,
+  subHireCostTotal,
   subtotal,
   discountPercent,
   discountAmount,
@@ -106,7 +108,8 @@ export function FinancialSummary({
   const serviceChargeVal = serviceChargeTotal != null ? Number(serviceChargeTotal) : 0;
   const serviceCostVal = serviceCostTotal != null ? Number(serviceCostTotal) : 0;
   const labourCostVal = labourCostTotal != null ? Number(labourCostTotal) : 0;
-  const costs = serviceCostVal + labourCostVal;
+  const subHireCostVal = subHireCostTotal != null ? Number(subHireCostTotal) : 0;
+  const costs = serviceCostVal + labourCostVal + subHireCostVal;
 
   const allGroupsPriced =
     totalGroupCount != null && pricedGroupCount != null && pricedGroupCount >= totalGroupCount;
@@ -183,6 +186,9 @@ export function FinancialSummary({
         )}
         {labourCostVal > 0 && (
           <Row label="Labour" value={formatCurrency(labourCostVal)} />
+        )}
+        {subHireCostVal > 0 && (
+          <Row label="Sub-Hires" value={formatCurrency(subHireCostVal)} />
         )}
         {costs > 0 ? (
           <Row label="Total costs" value={formatCurrency(costs)} bold />

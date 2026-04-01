@@ -69,6 +69,7 @@ Detailed docs for each system are in the [`FEATUREDOCS/`](./FEATUREDOCS/) folder
 | 36 | [Testing](./FEATUREDOCS/36-testing.md) | Vitest unit tests, Playwright E2E scaffold, coverage config |
 | 37 | [Check Items](./FEATUREDOCS/37-check-items.md) | Quality checks, check item library, warehouse integration, close-out |
 | 38 | [Pricing Optimization](./FEATUREDOCS/38-pricing-optimization.md) | Auto min-cost pricing from daily/weekly/monthly rates + billing periods |
+| 39 | [Sub-Hires](./FEATUREDOCS/39-sub-hires.md) | First-class sub-hire orders with dual pricing, margin analysis, and supplier rate memory |
 
 **When making changes**: Read the relevant feature doc(s) first, follow documented patterns, and update the relevant doc(s) after. If no doc exists for the feature you're working on, create a new numbered file in `FEATUREDOCS/` and add it to the table above.
 

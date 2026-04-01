@@ -378,7 +378,9 @@ export function ReturnTab({
                         {item.isSubhire && (
                           <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0 bg-cyan-500/10 text-cyan-600 border-cyan-500/20">Subhire</Badge>
                         )}
-
+                        {item.isSubhire && item.supplier && (
+                          <p className="text-xs text-fg-3 mt-0.5">via {item.supplier.name}</p>
+                        )}
                       </TableCell>
                       <TableCell className="font-mono text-sm text-fg-3">
                         {assetTag || "—"}

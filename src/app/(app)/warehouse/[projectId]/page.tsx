@@ -33,6 +33,7 @@ import {
   ensureContainerOnProject,
   syncContainerStatus,
 } from "@/server/warehouse";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Label } from "@/components/ui/label";
@@ -1159,8 +1160,16 @@ function WarehouseProjectPage({
   const selectedContainerRef = useRef(selectedContainer);
   selectedContainerRef.current = selectedContainer;
 
-  // Filter out kit children and container line items — they show under their parent row / auto-managed
-  const equipmentItems = lineItems.filter((item) => item.type === "EQUIPMENT" && !item.isKitChild && !item.isContainerLineItem);
+  // Filter out kit children and container line items — they show under their parent row / auto-managed.
+  // Sub-hire children (isKitChild + isSubhire) pass through as regular individual items.
+  const equipmentItems = lineItems.filter((item) => {
+    if (item.type !== "EQUIPMENT") return false;
+    if (item.isContainerLineItem) return false;
+    if (item.isKitChild && !item.isSubhire) return false; // real kit children stay hidden
+    // Hide sub-hire group parent wrappers — children show individually
+    if (item.isSubhire && !item.isKitChild && !item.kitId && (item.childLineItems?.length ?? 0) > 0) return false;
+    return true;
+  });
 
   // Pick/Prep: items that need to be picked and prepped (not yet PACKED)
   const pickPrepItems = equipmentItems.filter((item) => {
@@ -1800,6 +1809,12 @@ function WarehouseProjectPage({
     const someChecked = childKeys.some((k) => selection.has(k));
     const name = entry.kind === "serialized-group" ? entry.modelName : modelDisplayName(entry.item);
     const count = entry.kind === "serialized-group" ? entry.items.length : entry.unitCount;
+    const hasSubhire = entry.kind === "serialized-group"
+      ? entry.items.some((i) => i.isSubhire)
+      : entry.item.isSubhire;
+    const supplierName = entry.kind === "serialized-group"
+      ? entry.items.find((i) => i.isSubhire && i.supplier)?.supplier?.name
+      : entry.item.supplier?.name;
 
     return (
       <TableRow
@@ -1817,7 +1832,13 @@ function WarehouseProjectPage({
           <div className="flex items-center gap-1.5">
             <ChevronRight className={`h-4 w-4 text-fg-3 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
             <span className="font-medium">{name}</span>
-                      </div>
+            {hasSubhire && (
+              <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0 bg-cyan-500/10 text-cyan-600 border-cyan-500/20">Subhire</Badge>
+            )}
+            {hasSubhire && supplierName && (
+              <span className="text-xs text-fg-3 ml-1">via {supplierName}</span>
+            )}
+          </div>
         </TableCell>
         <TableCell className="font-mono text-sm text-fg-3">
           {entry.kind === "bulk-group" ? (entry.item.bulkAsset?.assetTag || "—") : ""}

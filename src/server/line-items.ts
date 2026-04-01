@@ -784,7 +784,8 @@ function calculateLineTotal(
  *   taxRate          = project.taxRate ?? org.defaultTaxRate ?? 10
  *   taxAmount        = taxableAmount × taxRate / 100
  *   total            = taxableAmount + taxAmount
- *   margin           = total - (serviceCostTotal + labourCostTotal)
+ *   subHireCostTotal = SUM(subHire.totalCost) WHERE status NOT IN (CANCELLED, DRAFT)
+ *   margin           = total - (serviceCostTotal + labourCostTotal + subHireCostTotal)
  */
 export async function recalculateProjectTotals(projectId: string) {
   const project = await prisma.project.findUniqueOrThrow({
@@ -854,7 +855,20 @@ export async function recalculateProjectTotals(projectId: string) {
     assignments.reduce((sum, a) => sum + (a.estimatedCost != null ? Number(a.estimatedCost) : 0), 0)
   );
 
-  // 5. Calculate totals (equipment + billable services)
+  // 5. Sub-hire costs (what we pay suppliers)
+  const subHires = await prisma.subHire.findMany({
+    where: {
+      projectId,
+      status: { notIn: ["CANCELLED", "DRAFT"] },
+    },
+    select: { totalCost: true },
+  });
+
+  const subHireCostTotal = roundCurrency(
+    subHires.reduce((sum, sh) => sum + (sh.totalCost != null ? Number(sh.totalCost) : 0), 0)
+  );
+
+  // 6. Calculate totals (equipment + billable services)
   const subtotal = roundCurrency(equipmentRevenue + serviceRevenue);
   const discountPercent = project.discountPercent != null ? Number(project.discountPercent) : 0;
   const discountAmount = roundCurrency(subtotal * (discountPercent / 100));
@@ -876,7 +890,7 @@ export async function recalculateProjectTotals(projectId: string) {
 
   const taxAmount = roundCurrency(taxableAmount * (taxRate / 100));
   const total = roundCurrency(taxableAmount + taxAmount);
-  const margin = roundCurrency(total - (serviceCostTotal + labourCostTotal));
+  const margin = roundCurrency(total - (serviceCostTotal + labourCostTotal + subHireCostTotal));
 
   await prisma.project.update({
     where: { id: projectId },
@@ -884,6 +898,7 @@ export async function recalculateProjectTotals(projectId: string) {
       equipmentRevenue,
       serviceCostTotal,
       labourCostTotal,
+      subHireCostTotal,
       subtotal,
       discountAmount,
       taxAmount,

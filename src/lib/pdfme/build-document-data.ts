@@ -17,6 +17,7 @@ const lineItemInclude = {
   asset: true,
   bulkAsset: true,
   kit: true,
+  supplier: { select: { name: true } },
   category: { select: { id: true, name: true, sortOrder: true } },
   group: { select: { id: true, title: true, sortOrder: true, categoryId: true } },
   childLineItems: {
@@ -26,6 +27,7 @@ const lineItemInclude = {
       asset: true,
       bulkAsset: true,
       kit: true,
+      supplier: { select: { name: true } },
       category: { select: { id: true, name: true, sortOrder: true } },
       group: { select: { id: true, title: true, sortOrder: true, categoryId: true } },
       childLineItems: {
@@ -34,6 +36,7 @@ const lineItemInclude = {
           model: { include: { category: true } },
           asset: true,
           bulkAsset: true,
+          supplier: { select: { name: true } },
         },
       },
     },
@@ -166,6 +169,7 @@ export async function buildDocumentData(
       ...li,
       categoryName,
       groupTitle,
+      supplierName: liAny.supplier?.name ?? null,
       isOverbooked: !!info,
       overbookedInherited: info?.inherited ?? false,
       overbookedReducedOnly: info?.reducedOnly ?? false,
@@ -179,6 +183,7 @@ export async function buildDocumentData(
           ...child,
           categoryName: childAny.category?.name ?? null,
           groupTitle: childAny.group?.title ?? null,
+          supplierName: childAny.supplier?.name ?? null,
           isOverbooked: !!childInfo,
           overbookedReducedOnly: childInfo?.reducedOnly ?? false,
         };

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { Fragment, useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   DndContext,
@@ -18,7 +18,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, FolderPlus, Package, ArrowUpRight, MoreHorizontal, Trash2, Pencil, Loader2, ChevronRight, GripVertical, RefreshCw } from "lucide-react";
+import { Plus, FolderPlus, Package, MoreHorizontal, Trash2, Pencil, Loader2, ChevronRight, GripVertical, RefreshCw, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
 import { getProjectCategories } from "@/server/project-categories";
@@ -76,8 +76,13 @@ import {
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { formatCurrency } from "@/lib/formatters";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { CanDo } from "@/components/auth/permission-gate";
 import { AddEquipmentDialog } from "./add-equipment-dialog";
-import { AddSubhireDialog } from "./add-subhire-dialog";
+import { SubHireOrderDialog } from "./sub-hire-order-dialog";
+import { getSubHires } from "@/server/sub-hires";
+import { subHireStatusLabels, formatLabel } from "@/lib/status-labels";
+import { StatusIndicator } from "@/components/ui/status-indicator";
+import { ArrowLeftRight, ChevronDown } from "lucide-react";
 
 interface EquipmentTabProps {
   projectId: string;
@@ -101,6 +106,7 @@ interface LineItemData {
   priceOverridden?: boolean;
   isSubhire?: boolean;
   isKitChild?: boolean;
+  subHireId?: string | null;
   kitId?: string | null;
   pricingMode?: string | null;
   status?: string;
@@ -137,6 +143,17 @@ interface CategoryData {
 }
 
 const COL_COUNT = 6;
+
+// Sub-hire group children have isKitChild=true but should render as normal line items.
+// Only actual kit children (with a kit parent) should be filtered from flat rendering.
+function isRealKitChild(item: LineItemData) {
+  return item.isKitChild && !item.isSubhire;
+}
+
+// Sub-hire group parents are just wrappers — hide them since children render individually.
+function isSubhireGroupParent(item: LineItemData) {
+  return item.isSubhire && !item.isKitChild && !item.kitId && (item.childLineItems?.length ?? 0) > 0;
+}
 
 // ─── Overbooked info type ───────────────────────────────────────────────────
 
@@ -239,7 +256,6 @@ function SortableGroupRow({
   onEdit,
   onAddEquipment,
   onAddKit,
-  onAddSubhire,
   onRecalculate,
 }: {
   group: GroupData;
@@ -250,7 +266,6 @@ function SortableGroupRow({
   onEdit: () => void;
   onAddEquipment: () => void;
   onAddKit: () => void;
-  onAddSubhire: () => void;
   onRecalculate?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -323,10 +338,6 @@ function SortableGroupRow({
                 <DropdownMenuItem onClick={onAddKit}>
                   <Package className="mr-2 h-3.5 w-3.5" />
                   Add Kit
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={onAddSubhire}>
-                  <ArrowUpRight className="mr-2 h-3.5 w-3.5" />
-                  Add Subhire
                 </DropdownMenuItem>
                 {onRecalculate && (
                   <DropdownMenuItem onClick={onRecalculate}>
@@ -416,6 +427,9 @@ function SortableLineItemRow({
   item,
   indent,
   overbookedInfo,
+  isUnconfirmed,
+  isExpanded,
+  onToggle,
   onEdit,
   onMove,
   onRemove,
@@ -423,10 +437,15 @@ function SortableLineItemRow({
   item: LineItemData;
   indent: string;
   overbookedInfo?: OverbookedInfo | null;
+  isUnconfirmed?: boolean;
+  isExpanded?: boolean;
+  onToggle?: () => void;
   onEdit: () => void;
   onMove: () => void;
   onRemove: () => void;
 }) {
+  // Only show expand/collapse for actual kits, not sub-hire group parents
+  const hasChildren = (item.childLineItems?.length ?? 0) > 0 && !!item.kitId;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: `li-${item.id}` });
 
@@ -439,7 +458,11 @@ function SortableLineItemRow({
   // Map content indent to grip indent (margin-based to avoid affecting column width)
   const gripIndent = indent === "ml-12" ? "ml-8" : indent === "ml-3" ? "ml-1" : "";
 
+  // Deeper indent for child rows
+  const childIndent = indent === "ml-12" ? "ml-16" : indent === "ml-3" ? "ml-8" : "ml-6";
+
   return (
+    <>
     <TableRow ref={setNodeRef} style={style} className={isDragging ? "opacity-30" : ""}>
       <TableCell className="px-0">
         <div className={`flex justify-end ${gripIndent || "px-1"}`}>
@@ -455,9 +478,17 @@ function SortableLineItemRow({
       </TableCell>
       <TableCell>
         <div className={`flex items-center gap-2 ${indent}`}>
+          {hasChildren && (
+            <button type="button" onClick={onToggle} className="shrink-0 text-fg-3 hover:text-fg transition-transform" style={{ transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}>
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          )}
           <span className="font-medium">
             {item.model?.name ?? item.description ?? "—"}
           </span>
+          {hasChildren && (
+            <span className="text-xs text-fg-3">{item.childLineItems!.length} item{item.childLineItems!.length !== 1 ? "s" : ""}</span>
+          )}
           {item.asset?.assetTag && (
             <span className="text-xs text-fg-3">({item.asset.assetTag})</span>
           )}
@@ -480,6 +511,20 @@ function SortableLineItemRow({
             <Badge variant="outline" className="ml-1.5 text-xs bg-cyan-500/10 text-cyan-600 border-cyan-500/20">
               Subhire
             </Badge>
+          )}
+          {isUnconfirmed && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger render={
+                  <span className="ml-1.5 inline-flex items-center justify-center w-5 h-5 rounded bg-amber-500/15">
+                    <AlertTriangle className="h-3 w-3 text-amber-500" />
+                  </span>
+                } />
+                <TooltipContent>
+                  <p className="text-xs">Sub-hire order not yet confirmed — costs and items may change</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
           {item.status === "CANCELLED" && (
             <Badge variant="outline" className="ml-1.5 text-xs bg-red-500/10 text-red-600 border-red-500/20">
@@ -531,6 +576,26 @@ function SortableLineItemRow({
         </div>
       </TableCell>
     </TableRow>
+    {/* Expanded child items (kit children / sub-hire group children) */}
+    {isExpanded && hasChildren && item.childLineItems!.map((child) => (
+      <TableRow key={child.id} className="bg-muted/30">
+        <TableCell className="px-0" />
+        <TableCell>
+          <div className={`flex items-center gap-2 ${childIndent}`}>
+            <span className="text-sm text-fg-2">{child.model?.name ?? child.description ?? "—"}</span>
+          </div>
+        </TableCell>
+        <TableCell className="text-center t-data text-fg-2">{child.quantity}</TableCell>
+        <TableCell className="text-right hidden md:table-cell t-data text-fg-2">
+          {formatCurrency(child.unitPrice != null ? Number(child.unitPrice) : null)}
+        </TableCell>
+        <TableCell className="text-right hidden sm:table-cell t-data text-fg-2">
+          {formatCurrency(child.lineTotal != null ? Number(child.lineTotal) : null)}
+        </TableCell>
+        <TableCell />
+      </TableRow>
+    ))}
+    </>
   );
 }
 
@@ -556,13 +621,21 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
   const [kitPricingMode, setKitPricingMode] = useState<"KIT_PRICE" | "ITEMIZED">("KIT_PRICE");
   const [kitUnitPrice, setKitUnitPrice] = useState("");
 
-  // Subhire dialog state
-  const [showSubhireDialog, setShowSubhireDialog] = useState(false);
-  const [subhireTarget, setSubhireTarget] = useState<{
-    categoryId?: string;
-    groupId?: string;
-    label?: string;
-  }>({});
+  // Sub-hire order dialog state
+  const [showSubHireOrderDialog, setShowSubHireOrderDialog] = useState(false);
+  const [managingSubHireId, setManagingSubHireId] = useState<string | null>(null);
+  const [expandedSubHires, setExpandedSubHires] = useState<Set<string>>(new Set());
+
+  // Kit/group parent expand state (for items with childLineItems)
+  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
+  const toggleParent = useCallback((id: string) => {
+    setExpandedParents((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
 
   // Kit target state (for adding kits to specific groups)
   const [kitTarget, setKitTarget] = useState<{
@@ -666,6 +739,12 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
     queryKey: ["project-overbooked", projectId],
     queryFn: () => getProjectOverbookedStatus(projectId),
     staleTime: 30_000,
+  });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: projectSubHires = [] } = useQuery<any[]>({
+    queryKey: ["project-sub-hires", orgId, projectId],
+    queryFn: () => getSubHires({ projectId }),
   });
 
   const templateOptions = (templates as { id: string; name: string; description: string | null; items: unknown[] }[]).map(
@@ -987,6 +1066,12 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
   const hasCategories = typedCategories.length > 0;
   const hasUncategorized = (uncategorizedItems as LineItemData[]).length > 0;
 
+  // Build a set of draft sub-hire IDs so we can badge unconfirmed items
+  const draftSubHireIds = new Set<string>();
+  for (const sh of projectSubHires) {
+    if (sh.status === "DRAFT") draftSubHireIds.add(sh.id as string);
+  }
+
   // Build flat list of all sortable IDs for the single DndContext
   const allSortableIds: string[] = [];
   for (const cat of typedCategories) {
@@ -995,16 +1080,16 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
       allSortableIds.push(`grp-${group.id}`);
       if (expandedGroups.has(group.id)) {
         for (const item of group.lineItems ?? []) {
-          allSortableIds.push(`li-${item.id}`);
+          if (!isRealKitChild(item as LineItemData) && !isSubhireGroupParent(item as LineItemData)) allSortableIds.push(`li-${item.id}`);
         }
       }
     }
     for (const item of cat.lineItems ?? []) {
-      allSortableIds.push(`li-${item.id}`);
+      if (!(item as LineItemData).isKitChild) allSortableIds.push(`li-${item.id}`);
     }
   }
   for (const item of uncategorizedItems as LineItemData[]) {
-    allSortableIds.push(`li-${item.id}`);
+    if (!isRealKitChild(item) && !isSubhireGroupParent(item)) allSortableIds.push(`li-${item.id}`);
   }
 
   return (
@@ -1039,12 +1124,12 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
           size="sm"
           className="gap-1.5"
           onClick={() => {
-            setSubhireTarget({});
-            setShowSubhireDialog(true);
+            setManagingSubHireId(null);
+            setShowSubHireOrderDialog(true);
           }}
         >
-          <ArrowUpRight className="h-3.5 w-3.5" />
-          Add Subhire
+          <ArrowLeftRight className="h-3.5 w-3.5" />
+          Sub-Hire Orders
         </Button>
         <Button
           variant="outline"
@@ -1111,7 +1196,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
             >
               <TableBody>
                 {typedCategories.map((cat) => {
-                  const standaloneItems = cat.lineItems ?? [];
+                  const standaloneItems = (cat.lineItems ?? []).filter((i: LineItemData) => !isRealKitChild(i) && !isSubhireGroupParent(i));
 
                   return (
                     <React.Fragment key={cat.id}>
@@ -1129,7 +1214,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                       {cat.groups.map((group) => {
                         const isExpanded = expandedGroups.has(group.id);
                         const priceVal = group.price != null ? Number(group.price) : null;
-                        const groupItems = group.lineItems ?? [];
+                        const groupItems = (group.lineItems ?? []).filter((i: LineItemData) => !isRealKitChild(i) && !isSubhireGroupParent(i));
                         return (
                           <React.Fragment key={group.id}>
                             <SortableGroupRow
@@ -1163,10 +1248,6 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                                 setKitTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
                                 setShowKitDialog(true);
                               }}
-                              onAddSubhire={() => {
-                                setSubhireTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
-                                setShowSubhireDialog(true);
-                              }}
                               onRecalculate={async () => {
                                 try {
                                   const count = await recalculateGroupPrices(group.id);
@@ -1196,6 +1277,9 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                                 item={item}
                                 indent="ml-12"
                                 overbookedInfo={(overbookedMap as Record<string, OverbookedInfo>)[item.id]}
+                                isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
+                                isExpanded={expandedParents.has(item.id)}
+                                onToggle={() => toggleParent(item.id)}
                                 onEdit={() => openEditLineItem(item)}
                                 onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId(group.id); }}
                                 onRemove={() => removeMut.mutate(item.id)}
@@ -1212,6 +1296,9 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                           item={item}
                           indent="ml-3"
                           overbookedInfo={(overbookedMap as Record<string, OverbookedInfo>)[item.id]}
+                          isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
+                          isExpanded={expandedParents.has(item.id)}
+                          onToggle={() => toggleParent(item.id)}
                           onEdit={() => openEditLineItem(item)}
                           onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
                           onRemove={() => removeMut.mutate(item.id)}
@@ -1222,12 +1309,15 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                 })}
 
                 {/* Uncategorized items */}
-                {(uncategorizedItems as LineItemData[]).map((item) => (
+                {(uncategorizedItems as LineItemData[]).filter((i) => !isRealKitChild(i) && !isSubhireGroupParent(i)).map((item) => (
                   <SortableLineItemRow
                     key={item.id}
                     item={item}
                     indent=""
                     overbookedInfo={(overbookedMap as Record<string, OverbookedInfo>)[item.id]}
+                    isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
+                    isExpanded={expandedParents.has(item.id)}
+                    onToggle={() => toggleParent(item.id)}
                     onEdit={() => openEditLineItem(item)}
                     onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
                     onRemove={() => removeMut.mutate(item.id)}
@@ -1237,6 +1327,102 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
             </SortableContext>
           </DndContext>
           </Table>
+        </div>
+      )}
+
+      {/* ─── Sub-Hire Orders ──────────────────────────────────────────────── */}
+      {projectSubHires.length > 0 && (
+        <div className="mt-6 rounded-lg border border-border/50 bg-card">
+          <div className="flex items-center justify-between border-b border-border/50 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <ArrowLeftRight className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-medium text-fg-2">Sub-Hire Orders</h3>
+              <span className="text-xs text-fg-4">({projectSubHires.length})</span>
+            </div>
+            <CanDo resource="subHire" action="create">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setManagingSubHireId(null);
+                  setShowSubHireOrderDialog(true);
+                }}
+              >
+                <Plus className="mr-1 h-3 w-3" />
+                New
+              </Button>
+            </CanDo>
+          </div>
+          <div className="divide-y divide-border/30">
+            {projectSubHires.map((sh: Record<string, unknown>) => {
+              const shId = sh.id as string;
+              const isExpanded = expandedSubHires.has(shId);
+              const margin = Number(sh.totalCharge) - Number(sh.totalCost);
+              const isOverdue = sh.status === "ON_HIRE" && sh.hireEnd && new Date(sh.hireEnd as string) < new Date();
+              const itemCount = (sh._count as Record<string, number>)?.items || 0;
+              return (
+                <div key={shId}>
+                  <div className="flex items-center gap-3 px-4 py-2.5 hover:bg-bg-elevated/50 transition-colors">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExpandedSubHires((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(shId)) next.delete(shId);
+                          else next.add(shId);
+                          return next;
+                        })
+                      }
+                      className="text-fg-3 hover:text-fg transition-colors"
+                    >
+                      <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? "" : "-rotate-90"}`} />
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm font-medium">{sh.orderNumber as string}</span>
+                        <span className="text-sm text-fg-3">{(sh.supplier as Record<string, unknown>)?.name as string}</span>
+                        {isOverdue ? (
+                          <StatusIndicator category="subHire" intent="error" label="Overdue" value="OVERDUE" />
+                        ) : (
+                          <StatusIndicator
+                            category="subHire"
+                            value={sh.status as string}
+                            label={subHireStatusLabels[sh.status as string] || formatLabel(sh.status as string)}
+                          />
+                        )}
+                        <span className="text-xs text-fg-4">{itemCount} item{itemCount !== 1 ? "s" : ""}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <div className="text-right">
+                        <div className="text-sm tabular-nums">{formatCurrency(Number(sh.totalCharge))}</div>
+                        <div className={`text-xs tabular-nums ${margin > 0 ? "text-success" : margin < 0 ? "text-error" : "text-fg-4"}`}>
+                          {margin > 0 ? "+" : ""}{formatCurrency(margin)}
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setManagingSubHireId(shId);
+                          setShowSubHireOrderDialog(true);
+                        }}
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                  {/* Expanded items */}
+                  {isExpanded && (
+                    <SubHireExpandedItems
+                      subHireId={shId}
+                      orgId={orgId}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -1709,20 +1895,23 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
           categoryId={addEquipmentTarget.categoryId}
           groupId={addEquipmentTarget.groupId}
           targetLabel={addEquipmentTarget.label}
+          onOpenSubHire={() => {
+            setManagingSubHireId(null);
+            setShowSubHireOrderDialog(true);
+          }}
         />
       )}
 
-      {/* Add subhire dialog */}
-      <AddSubhireDialog
+
+      {/* Sub-hire order dialog */}
+      <SubHireOrderDialog
         projectId={projectId}
-        open={showSubhireDialog}
+        open={showSubHireOrderDialog}
         onOpenChange={(open) => {
-          setShowSubhireDialog(open);
-          if (!open) setSubhireTarget({});
+          setShowSubHireOrderDialog(open);
+          if (!open) setManagingSubHireId(null);
         }}
-        categoryId={subhireTarget.categoryId}
-        groupId={subhireTarget.groupId}
-        targetLabel={subhireTarget.label}
+        subHireId={managingSubHireId}
       />
 
       {/* Add kit dialog */}
@@ -1963,6 +2152,79 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ─── Sub-Hire Expanded Items ──────────────────────────────────────────────────
+
+function SubHireExpandedItems({ subHireId, orgId }: { subHireId: string; orgId?: string }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: subHire } = useQuery<any>({
+    queryKey: ["sub-hire", orgId, subHireId],
+    queryFn: async () => {
+      const { getSubHire } = await import("@/server/sub-hires");
+      return getSubHire(subHireId);
+    },
+    enabled: !!orgId,
+  });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const items = (subHire?.items || []) as Array<Record<string, any>>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const groups = (subHire?.groups || []) as Array<Record<string, any>>;
+  const ungroupedItems = items.filter((item) => !item.groupId);
+
+  if (items.length === 0 && groups.length === 0) {
+    return (
+      <div className="pb-3 ml-4 border-l-2 border-primary/20 pl-8 text-xs text-fg-4 py-2">
+        No items in this order yet.
+      </div>
+    );
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function renderItemRow(item: Record<string, any>, indent: string) {
+    const itemMargin = Number(item.unitCharge) - Number(item.unitCost);
+    return (
+      <tr key={item.id as string} className="text-sm">
+        <td className={`${indent} py-1.5 text-fg-2`}>
+          {item.description as string}
+          {(item.model as Record<string, string>)?.name && (
+            <span className="ml-1.5 text-xs text-fg-4">({(item.model as Record<string, string>).name})</span>
+          )}
+        </td>
+        <td className="px-3 py-1.5 text-right tabular-nums text-fg-3 w-12">&times;{item.quantity as number}</td>
+        <td className="px-3 py-1.5 text-right tabular-nums text-fg-3 w-24">{formatCurrency(Number(item.unitCost))} cost</td>
+        <td className="px-3 py-1.5 text-right tabular-nums w-24">{formatCurrency(Number(item.unitCharge))}</td>
+        <td className={`px-3 py-1.5 text-right tabular-nums w-20 ${itemMargin > 0 ? "text-success" : itemMargin < 0 ? "text-error" : "text-fg-4"}`}>
+          {formatCurrency(itemMargin)}
+        </td>
+      </tr>
+    );
+  }
+
+  return (
+    <div className="pb-2 ml-4 border-l-2 border-primary/20">
+      <table className="w-full">
+        <tbody>
+          {groups.map((group) => {
+            const groupItems = (group.items || []) as Array<Record<string, unknown>>;
+            return (
+              <Fragment key={group.id}>
+                <tr className="text-xs">
+                  <td colSpan={5} className="pl-8 py-1.5 font-medium text-fg-3">
+                    <span className="text-primary/70">▸</span> {group.title}
+                    <span className="ml-1.5 text-fg-4 font-normal">({groupItems.length} item{groupItems.length !== 1 ? "s" : ""})</span>
+                  </td>
+                </tr>
+                {groupItems.map((item) => renderItemRow(item, "pl-12"))}
+              </Fragment>
+            );
+          })}
+          {ungroupedItems.map((item) => renderItemRow(item, "pl-8"))}
+        </tbody>
+      </table>
     </div>
   );
 }

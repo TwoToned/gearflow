@@ -485,11 +485,35 @@ export async function buildDocumentData(
       for (const dateStr of targetDates) {
         const dayCrew: CrewEntry[] = [];
         const dayPhases = new Set<string>();
+        // Track seen crew members to deduplicate (same person with multiple assignments/roles)
+        const seenCrewMembers = new Map<string, number>(); // crewMemberId → index in dayCrew
 
         for (const a of crewAssignments) {
           const shift = a.shifts.find(s => new Date(s.date).toISOString().split("T")[0] === dateStr);
           if (shift) {
-            dayCrew.push(buildCrewEntry(a, shift));
+            const existingIdx = seenCrewMembers.get(a.crewMember.id);
+            if (existingIdx !== undefined) {
+              // Same person, different assignment/role — merge role and phase info
+              const existing = dayCrew[existingIdx];
+              if (a.crewRole?.name && existing.role && !existing.role.includes(a.crewRole.name)) {
+                existing.role = `${existing.role}, ${a.crewRole.name}`;
+              } else if (a.crewRole?.name && !existing.role) {
+                existing.role = a.crewRole.name;
+              }
+              if (a.phase && existing.phase && a.phase !== existing.phase) {
+                existing.phase = null; // Multiple phases, show none rather than misleading single
+              }
+              // Use earliest call time and latest end time
+              if (shift.callTime && (!existing.callTime || shift.callTime < existing.callTime)) {
+                existing.callTime = shift.callTime;
+              }
+              if (shift.endTime && (!existing.endTime || shift.endTime > existing.endTime)) {
+                existing.endTime = shift.endTime;
+              }
+            } else {
+              seenCrewMembers.set(a.crewMember.id, dayCrew.length);
+              dayCrew.push(buildCrewEntry(a, shift));
+            }
             assignedCrewIds.add(a.crewMember.id);
             if (a.phase) dayPhases.add(a.phase);
           }
@@ -515,8 +539,10 @@ export async function buildDocumentData(
 
       // Add "Unscheduled" group for crew with no shifts on any target date
       const unscheduledCrew: CrewEntry[] = [];
+      const seenUnscheduled = new Set<string>();
       for (const a of crewAssignments) {
-        if (!assignedCrewIds.has(a.crewMember.id)) {
+        if (!assignedCrewIds.has(a.crewMember.id) && !seenUnscheduled.has(a.crewMember.id)) {
+          seenUnscheduled.add(a.crewMember.id);
           unscheduledCrew.push(buildCrewEntry(a));
         }
       }
@@ -529,8 +555,15 @@ export async function buildDocumentData(
         });
       }
 
-      // Keep data.crew populated for backward compat (all crew, flat)
-      crew = crewAssignments.map(a => buildCrewEntry(a));
+      // Keep data.crew populated for backward compat (all crew, flat, deduplicated)
+      const seenFlat = new Set<string>();
+      crew = [];
+      for (const a of crewAssignments) {
+        if (!seenFlat.has(a.crewMember.id)) {
+          seenFlat.add(a.crewMember.id);
+          crew.push(buildCrewEntry(a));
+        }
+      }
     } else {
       // ─── Single-date mode (backward compat) ─────────────────────────
       const callDate = callSheetDate || project.loadInDate || project.eventStartDate || project.rentalStartDate || new Date();

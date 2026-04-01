@@ -19,7 +19,7 @@ const defaultSchema: Schema = {
   content: "",
   position: { x: 0, y: 0 },
   width: 269,
-  height: 14,
+  height: 18,
 };
 
 const gearflowDayHeader: Plugin<Schema> = {
@@ -43,10 +43,29 @@ const gearflowDayHeader: Plugin<Schema> = {
     const accentColor = hexToRgb(config.documentColor || "#0d4f4f", pdfLib);
     const textColor = hexToRgb("#1a1a1a", pdfLib);
     const dimColor = hexToRgb("#888888", pdfLib);
-    const borderColor = hexToRgb("#dddddd", pdfLib);
+    const borderColor = hexToRgb("#cccccc", pdfLib);
+    const bgColor = hexToRgb("#f8f8f8", pdfLib);
 
-    // Left accent bar (3mm wide, full height)
-    const barWidth = 8; // ~3mm in pt
+    // Top separator line (clear visual break between days)
+    const topLineY = y + height;
+    page.drawLine({
+      start: { x, y: topLineY },
+      end: { x: x + width, y: topLineY },
+      thickness: 1,
+      color: borderColor,
+    });
+
+    // Background fill for the header block
+    page.drawRectangle({
+      x,
+      y,
+      width,
+      height,
+      color: bgColor,
+    });
+
+    // Left accent bar (4mm wide, full height)
+    const barWidth = 10; // ~4mm in pt
     page.drawRectangle({
       x,
       y,
@@ -57,8 +76,8 @@ const gearflowDayHeader: Plugin<Schema> = {
 
     // Day label — bold, 14pt
     const labelSize = 14;
-    const labelX = x + barWidth + 6;
-    const labelY = y + height - 14;
+    const labelX = x + barWidth + 8;
+    const labelY = y + height / 2 - labelSize / 2;
     page.drawText(config.dayLabel, {
       x: labelX,
       y: labelY,
@@ -86,7 +105,7 @@ const gearflowDayHeader: Plugin<Schema> = {
       const rightText = rightParts.join("  \u2022  ");
       const rightWidth = fonts.regular.widthOfTextAtSize(rightText, badgeSize);
       page.drawText(rightText, {
-        x: x + width - rightWidth,
+        x: x + width - rightWidth - 4,
         y: labelY + 2,
         size: badgeSize,
         font: fonts.regular,
@@ -98,7 +117,7 @@ const gearflowDayHeader: Plugin<Schema> = {
     page.drawLine({
       start: { x, y },
       end: { x: x + width, y },
-      thickness: 0.5,
+      thickness: 1,
       color: borderColor,
     });
   },

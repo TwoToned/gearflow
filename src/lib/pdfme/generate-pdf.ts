@@ -171,8 +171,10 @@ export async function generatePdf(
 }
 
 /**
- * Generate a multi-day or per-person call sheet PDF.
- * Expands crew-table sections per date, inserting day-header sections.
+ * Generate a call sheet PDF.
+ * Queries project services directly, groups by date, shows crew per service.
+ * Each date gets a section header. Each row: crew member, service, role, call, wrap, notes.
+ * Automatically paginates across multiple pages.
  */
 export async function generateCallSheetPdf(
   projectId: string,
@@ -185,60 +187,11 @@ export async function generateCallSheetPdf(
     templateId?: string;
   },
 ): Promise<Uint8Array> {
-  // 1. Build data with multi-date/per-person options
-  const data = await buildDocumentData(projectId, organizationId, "call-sheet", undefined, {
-    callSheetDates: options.callSheetDates,
-    allDates: options.allDates,
-    crewMemberId: options.crewMemberId,
-    crewRoleId: options.crewRoleId,
-  });
+  const {
+    buildCallSheetFromServices,
+  } = await import("./templates/call-sheet-services");
 
-  // 2. Load template
-  const loaded = await loadTemplate(organizationId, "call-sheet", options.templateId);
-
-  // 3. Get sections (section-based template or system default)
-  let sections: TemplateSection[];
-  if (loaded.sections) {
-    sections = loaded.sections;
-  } else {
-    sections = getDefaultSections("call-sheet");
-  }
-
-  // 4. Per-person title override
-  if (options.crewMemberId && data.crew.length > 0) {
-    const personName = data.crew[0].name;
-    const headerIdx = sections.findIndex(s => s.type === "header");
-    if (headerIdx >= 0) {
-      const headerSettings = { ...sections[headerIdx].settings } as import("./section-types").HeaderSectionSettings;
-      headerSettings.documentTitle = `CALL SHEET \u2014 ${personName}`;
-      sections = sections.map((s, i) => i === headerIdx ? { ...s, settings: headerSettings } : s);
-    }
-  }
-
-  // 5. Expand sections for multi-day
-  const crewByDay = data.crew_by_day || [];
-  if (crewByDay.length > 0) {
-    sections = expandSectionsForDates(sections, crewByDay, data);
-  }
-
-  // 6. Render and generate
-  const docColor = loaded.brandAccentColor || data.org_document_color;
-  const { template, inputs } = renderSections(
-    sections,
-    data,
-    "call-sheet",
-    docColor,
-    loaded.brandFooterText || undefined,
-    loaded.brandFooterSecondLine || undefined,
-  );
-
-  const pdf = await generate({
-    template,
-    inputs,
-    plugins: gearflowPlugins,
-    options: { font: getPdfmeFonts() },
-  });
-
+  const pdf = await buildCallSheetFromServices(projectId, organizationId, options);
   return pdf;
 }
 

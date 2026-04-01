@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireOrganization } from "@/lib/auth-server";
-import { generatePdf, generateCallSheetPdf } from "@/lib/pdfme/generate-pdf";
+import { generateCallSheetPdf } from "@/lib/pdfme/generate-pdf";
 
 export async function GET(
   request: NextRequest,
@@ -8,7 +8,6 @@ export async function GET(
 ) {
   const { projectId } = await params;
   const url = new URL(request.url);
-  const dateParam = url.searchParams.get("date");
   const datesParam = url.searchParams.get("dates");
   const allDates = url.searchParams.get("allDates") === "true";
   const crewMemberId = url.searchParams.get("crewMemberId") || undefined;
@@ -63,27 +62,14 @@ export async function GET(
   }
 
   try {
-    const isMultiDay = allDates || !!callSheetDates?.length || !!crewMemberId || !!crewRoleId;
-
-    let pdf: Uint8Array;
-    if (isMultiDay) {
-      pdf = await generateCallSheetPdf(projectId, organizationId, {
-        callSheetDates,
-        allDates,
-        crewMemberId,
-        crewRoleId,
-        templateId,
-      });
-    } else {
-      const callSheetDate = dateParam ? new Date(dateParam) : undefined;
-      if (dateParam && isNaN(callSheetDate!.getTime())) {
-        return NextResponse.json(
-          { error: `Invalid date: ${dateParam}` },
-          { status: 400 }
-        );
-      }
-      pdf = await generatePdf(projectId, organizationId, "call-sheet", callSheetDate, templateId);
-    }
+    // Always use service-based call sheet generator
+    const pdf = await generateCallSheetPdf(projectId, organizationId, {
+      callSheetDates,
+      allDates,
+      crewMemberId,
+      crewRoleId,
+      templateId,
+    });
 
     const filename = `CallSheet-${projectId}.pdf`;
     return new NextResponse(Buffer.from(pdf), {

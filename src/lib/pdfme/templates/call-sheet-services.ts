@@ -11,16 +11,15 @@ import { prisma } from "@/lib/prisma";
 import { gearflowPlugins } from "../plugins";
 import { getPdfmeFonts } from "../fonts";
 import { buildDocumentData } from "../build-document-data";
-import type { DocumentData, PageHeaderConfig, FooterConfig } from "../types";
+import type { PageHeaderConfig, FooterConfig } from "../types";
 import type { DataTableColumn, DataTableSection } from "../plugins/gearflow-data-table";
-import { formatDate } from "../plugins/helpers";
 
 const PAGE_WIDTH = 297; // landscape A4
 const PAGE_HEIGHT = 210;
 const MARGIN = 14;
 const CONTENT_W = PAGE_WIDTH - MARGIN * 2; // 269mm
 
-// Row heights in mm (match gearflow-data-table.ts)
+// Row heights in mm (must match gearflow-data-table.ts pt constants / 2.835)
 const TABLE_ROW_HEIGHT_MM = 5;
 const TABLE_HEADER_HEIGHT_MM = 5.6;
 const SECTION_HEADER_HEIGHT_MM = 6.3;
@@ -28,14 +27,14 @@ const SECTION_HEADER_HEIGHT_MM = 6.3;
 // Layout
 const HEADER_Y = MARGIN;
 const HEADER_H = 25;
-const TABLE_START_Y = HEADER_Y + HEADER_H + 3; // small gap after header
+const TABLE_START_Y = HEADER_Y + HEADER_H + 3; // 42mm
 const FOOTER_H = 10;
-const TABLE_END_Y = PAGE_HEIGHT - MARGIN - FOOTER_H - 2;
-const TABLE_CONTENT_HEIGHT = TABLE_END_Y - TABLE_START_Y;
+const TABLE_END_Y = PAGE_HEIGHT - MARGIN - FOOTER_H - 2; // 184mm
+const TABLE_AVAIL_HEIGHT = TABLE_END_Y - TABLE_START_Y; // 142mm
 
-// Continuation pages
-const CONT_TABLE_START_Y = HEADER_Y + HEADER_H + 3;
-const CONT_TABLE_CONTENT_HEIGHT = TABLE_END_Y - CONT_TABLE_START_Y;
+// Continuation pages (no info block, same layout)
+const CONT_TABLE_START_Y = TABLE_START_Y;
+const CONT_TABLE_AVAIL_HEIGHT = TABLE_AVAIL_HEIGHT;
 
 const SERVICE_TYPE_LABELS: Record<string, string> = {
   DELIVERY: "Delivery",
@@ -66,33 +65,18 @@ function buildColumns(): DataTableColumn[] {
   ];
 }
 
-interface PaginatedPage {
-  sections: DataTableSection[];
-  contentHeight: number; // actual content height in mm (for sizing the table schema)
-}
-
-/**
- * Calculate actual content height for a set of sections (including table header).
- */
-function calcContentHeight(sections: DataTableSection[]): number {
-  let h = TABLE_HEADER_HEIGHT_MM;
-  for (const s of sections) {
-    h += SECTION_HEADER_HEIGHT_MM + s.rows.length * TABLE_ROW_HEIGHT_MM;
-  }
-  return h;
-}
-
 /**
  * Paginate sections across pages.
+ * Returns an array of section groups, one per page.
  */
 function paginateSections(
   sections: DataTableSection[],
-): PaginatedPage[] {
-  const pages: PaginatedPage[] = [];
+): DataTableSection[][] {
+  const pages: DataTableSection[][] = [];
   let currentPageSections: DataTableSection[] = [];
   let currentHeight = TABLE_HEADER_HEIGHT_MM;
   let isFirstPage = true;
-  const maxHeight = () => isFirstPage ? TABLE_CONTENT_HEIGHT : CONT_TABLE_CONTENT_HEIGHT;
+  const maxHeight = () => isFirstPage ? TABLE_AVAIL_HEIGHT : CONT_TABLE_AVAIL_HEIGHT;
 
   for (const section of sections) {
     const sectionHeaderH = SECTION_HEADER_HEIGHT_MM;
@@ -119,14 +103,14 @@ function paginateSections(
     let remainingRows = section.rows.slice(rowsThatFit);
 
     if (currentPageSections.length > 0) {
-      pages.push({ sections: currentPageSections, contentHeight: calcContentHeight(currentPageSections) });
+      pages.push(currentPageSections);
       currentPageSections = [];
       currentHeight = TABLE_HEADER_HEIGHT_MM;
       isFirstPage = false;
     }
 
     while (remainingRows.length > 0) {
-      const contAvailable = CONT_TABLE_CONTENT_HEIGHT - TABLE_HEADER_HEIGHT_MM - SECTION_HEADER_HEIGHT_MM;
+      const contAvailable = CONT_TABLE_AVAIL_HEIGHT - TABLE_HEADER_HEIGHT_MM - SECTION_HEADER_HEIGHT_MM;
       const contRowsFit = Math.max(1, Math.floor(contAvailable / TABLE_ROW_HEIGHT_MM));
       const batch = remainingRows.slice(0, contRowsFit);
       remainingRows = remainingRows.slice(contRowsFit);
@@ -140,7 +124,7 @@ function paginateSections(
       currentHeight = TABLE_HEADER_HEIGHT_MM + SECTION_HEADER_HEIGHT_MM + batch.length * TABLE_ROW_HEIGHT_MM;
 
       if (remainingRows.length > 0) {
-        pages.push({ sections: currentPageSections, contentHeight: calcContentHeight(currentPageSections) });
+        pages.push(currentPageSections);
         currentPageSections = [];
         currentHeight = TABLE_HEADER_HEIGHT_MM;
       }
@@ -148,19 +132,18 @@ function paginateSections(
   }
 
   if (currentPageSections.length > 0) {
-    pages.push({ sections: currentPageSections, contentHeight: calcContentHeight(currentPageSections) });
+    pages.push(currentPageSections);
   }
 
-  return pages.length > 0 ? pages : [{ sections: [], contentHeight: TABLE_HEADER_HEIGHT_MM }];
+  return pages.length > 0 ? pages : [[]];
 }
 
-function buildTemplate(paginatedPages: PaginatedPage[]): Template {
+function buildTemplate(pageCount: number): Template {
   const schemas: Template["schemas"] = [];
 
-  for (let i = 0; i < paginatedPages.length; i++) {
+  for (let i = 0; i < pageCount; i++) {
     const isFirstPage = i === 0;
     const tableY = isFirstPage ? TABLE_START_Y : CONT_TABLE_START_Y;
-    const tableH = paginatedPages[i].contentHeight;
 
     const pageSchemas: Template["schemas"][number] = [
       {
@@ -179,7 +162,7 @@ function buildTemplate(paginatedPages: PaginatedPage[]): Template {
       content: "",
       position: { x: MARGIN, y: tableY },
       width: CONTENT_W,
-      height: tableH,
+      height: 1, // minimal — plugin draws downward from y, ignores height
     });
 
     pageSchemas.push({
@@ -340,9 +323,9 @@ export async function buildCallSheetFromServices(
 
   // 6. Paginate and build template
   const columns = buildColumns();
-  const paginatedPages = paginateSections(sections);
-  const pageCount = paginatedPages.length;
-  const template = buildTemplate(paginatedPages);
+  const paginatedSections = paginateSections(sections);
+  const pageCount = paginatedSections.length;
+  const template = buildTemplate(pageCount);
 
   // 7. Build header config
   const headerConfig: PageHeaderConfig = {
@@ -367,7 +350,7 @@ export async function buildCallSheetFromServices(
 
     pageInput[`table_${i}`] = JSON.stringify({
       columns,
-      sections: paginatedPages[i].sections,
+      sections: paginatedSections[i],
       documentColor: docColor,
     });
 
@@ -380,7 +363,7 @@ export async function buildCallSheetFromServices(
     inputs.push(pageInput);
   }
 
-  // 10. Generate PDF
+  // 9. Generate PDF
   const pdf = await generate({
     template,
     inputs,

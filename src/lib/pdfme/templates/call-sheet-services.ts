@@ -27,14 +27,16 @@ const SECTION_HEADER_HEIGHT_MM = 6.3;
 // Layout
 const HEADER_Y = MARGIN;
 const HEADER_H = 25;
-const TABLE_START_Y = HEADER_Y + HEADER_H + 3; // 42mm
+const INFO_Y = HEADER_Y + HEADER_H + 1; // 40mm
+const INFO_H = 14;
+const TABLE_START_Y = INFO_Y + INFO_H + 1; // 55mm (first page, after info)
 const FOOTER_H = 10;
 const TABLE_END_Y = PAGE_HEIGHT - MARGIN - FOOTER_H - 2; // 184mm
-const TABLE_AVAIL_HEIGHT = TABLE_END_Y - TABLE_START_Y; // 142mm
+const TABLE_AVAIL_HEIGHT = TABLE_END_Y - TABLE_START_Y; // 129mm
 
-// Continuation pages (no info block, same layout)
-const CONT_TABLE_START_Y = TABLE_START_Y;
-const CONT_TABLE_AVAIL_HEIGHT = TABLE_AVAIL_HEIGHT;
+// Continuation pages (no info block)
+const CONT_TABLE_START_Y = HEADER_Y + HEADER_H + 3; // 42mm
+const CONT_TABLE_AVAIL_HEIGHT = TABLE_END_Y - CONT_TABLE_START_Y; // 142mm
 
 const SERVICE_TYPE_LABELS: Record<string, string> = {
   DELIVERY: "Delivery",
@@ -155,6 +157,33 @@ function buildTemplate(pageCount: number): Template {
         height: HEADER_H,
       },
     ];
+
+    if (isFirstPage) {
+      pageSchemas.push(
+        {
+          name: "projectInfo",
+          type: "text",
+          content: "",
+          position: { x: MARGIN, y: INFO_Y },
+          width: CONTENT_W / 2 - 4,
+          height: INFO_H,
+          fontSize: 8,
+          fontColor: "#333333",
+          lineHeight: 1.4,
+        },
+        {
+          name: "venueInfo",
+          type: "text",
+          content: "",
+          position: { x: MARGIN + CONTENT_W / 2, y: INFO_Y },
+          width: CONTENT_W / 2 - 4,
+          height: INFO_H,
+          fontSize: 8,
+          fontColor: "#333333",
+          lineHeight: 1.4,
+        },
+      );
+    }
 
     pageSchemas.push({
       name: `table_${i}`,
@@ -340,13 +369,37 @@ export async function buildCallSheetFromServices(
     documentColor: docColor,
   };
 
-  // 8. Build inputs per page
+  // 8. Build project info lines
+  const projectLines = [data.project_name];
+  if (data.client_name) projectLines.push(`Client: ${data.client_name}`);
+  if (data.rental_start !== "-") {
+    projectLines.push(`${data.rental_start} - ${data.rental_end}`);
+  }
+  if (data.event_start !== "-") {
+    projectLines.push(`Event: ${data.event_start} - ${data.event_end}`);
+  }
+
+  const venueLines: string[] = [];
+  if (data.venue_name) venueLines.push(data.venue_name);
+  if (data.venue_address) venueLines.push(data.venue_address);
+  if (data.site_contact_name) {
+    let contactLine = `Contact: ${data.site_contact_name}`;
+    if (data.site_contact_phone) contactLine += ` (${data.site_contact_phone})`;
+    venueLines.push(contactLine);
+  }
+
+  // 9. Build inputs per page
   const inputs: Record<string, string>[] = [];
 
   for (let i = 0; i < pageCount; i++) {
     const pageInput: Record<string, string> = {};
 
     pageInput[`header_${i}`] = JSON.stringify(headerConfig);
+
+    if (i === 0) {
+      pageInput.projectInfo = projectLines.join("\n");
+      pageInput.venueInfo = venueLines.join("\n") || "-";
+    }
 
     pageInput[`table_${i}`] = JSON.stringify({
       columns,

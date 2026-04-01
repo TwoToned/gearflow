@@ -28,6 +28,12 @@ export async function GET(
   let callSheetDates: Date[] | undefined;
   if (datesParam) {
     const dateStrings = datesParam.split(",").map(s => s.trim());
+    if (dateStrings.length > 31) {
+      return NextResponse.json(
+        { error: "Too many dates (max 31)" },
+        { status: 400 }
+      );
+    }
     callSheetDates = [];
     for (const ds of dateStrings) {
       const d = new Date(ds);

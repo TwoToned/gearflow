@@ -165,23 +165,10 @@ function buildSections(
  * Split sections across pages. Each page gets a subset of sections/rows
  * that fit within the available height.
  */
-interface PaginatedPage {
-  sections: DataTableSection[];
-  contentHeight: number;
-}
-
-function calcContentHeight(sections: DataTableSection[]): number {
-  let h = TABLE_HEADER_HEIGHT_MM;
-  for (const s of sections) {
-    h += SECTION_HEADER_HEIGHT_MM + s.rows.length * TABLE_ROW_HEIGHT_MM;
-  }
-  return h;
-}
-
 function paginateSections(
   sections: DataTableSection[],
-): PaginatedPage[] {
-  const pages: PaginatedPage[] = [];
+): DataTableSection[][] {
+  const pages: DataTableSection[][] = [];
   let currentPageSections: DataTableSection[] = [];
   let currentHeight = TABLE_HEADER_HEIGHT_MM;
   let isFirstPage = true;
@@ -212,7 +199,7 @@ function paginateSections(
     let remainingRows = section.rows.slice(rowsThatFit);
 
     if (currentPageSections.length > 0) {
-      pages.push({ sections: currentPageSections, contentHeight: calcContentHeight(currentPageSections) });
+      pages.push(currentPageSections);
       currentPageSections = [];
       currentHeight = TABLE_HEADER_HEIGHT_MM;
       isFirstPage = false;
@@ -231,7 +218,7 @@ function paginateSections(
       currentHeight = TABLE_HEADER_HEIGHT_MM + SECTION_HEADER_HEIGHT_MM + batch.length * TABLE_ROW_HEIGHT_MM;
 
       if (remainingRows.length > 0) {
-        pages.push({ sections: currentPageSections, contentHeight: calcContentHeight(currentPageSections) });
+        pages.push(currentPageSections);
         currentPageSections = [];
         currentHeight = TABLE_HEADER_HEIGHT_MM;
       }
@@ -239,19 +226,18 @@ function paginateSections(
   }
 
   if (currentPageSections.length > 0) {
-    pages.push({ sections: currentPageSections, contentHeight: calcContentHeight(currentPageSections) });
+    pages.push(currentPageSections);
   }
 
-  return pages.length > 0 ? pages : [{ sections: [], contentHeight: TABLE_HEADER_HEIGHT_MM }];
+  return pages.length > 0 ? pages : [[]];
 }
 
-export function buildTimelineTemplate(paginatedPages: PaginatedPage[]): Template {
+export function buildTimelineTemplate(pageCount: number): Template {
   const schemas: Template["schemas"] = [];
 
-  for (let i = 0; i < paginatedPages.length; i++) {
+  for (let i = 0; i < pageCount; i++) {
     const isFirstPage = i === 0;
     const tableY = isFirstPage ? TABLE_START_Y : CONT_TABLE_START_Y;
-    const tableH = paginatedPages[i].contentHeight;
 
     const pageSchemas: Template["schemas"][number] = [
       {
@@ -297,7 +283,7 @@ export function buildTimelineTemplate(paginatedPages: PaginatedPage[]): Template
       content: "",
       position: { x: MARGIN, y: tableY },
       width: CONTENT_W,
-      height: tableH,
+      height: 1, // minimal — plugin draws downward from y, ignores height
     });
 
     // Footer
@@ -331,9 +317,9 @@ export function buildTimelineInputs(
   const docColor = data.org_document_color;
   const columns = buildColumns(settings);
   const sections = buildSections(services, settings);
-  const paginatedPages = paginateSections(sections);
-  const pageCount = paginatedPages.length;
-  const template = buildTimelineTemplate(paginatedPages);
+  const paginatedSections = paginateSections(sections);
+  const pageCount = paginatedSections.length;
+  const template = buildTimelineTemplate(pageCount);
 
   // Header config
   const headerConfig: PageHeaderConfig = {
@@ -383,7 +369,7 @@ export function buildTimelineInputs(
     // Data table for this page
     const tableConfig = {
       columns,
-      sections: paginatedPages[i].sections,
+      sections: paginatedSections[i],
       documentColor: docColor,
     };
     pageInput[`table_${i}`] = JSON.stringify(tableConfig);

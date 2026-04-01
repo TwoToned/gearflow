@@ -120,13 +120,18 @@ export function CallSheetDialog({
     return counts;
   }, [crewQuery.data]);
 
-  // Crew member options for select
+  // Crew member options for select (deduplicated)
   const crewOptions = useMemo(() => {
     if (!crewQuery.data) return [];
-    return crewQuery.data.map((a) => ({
-      id: a.crewMember.id,
-      label: `${a.crewMember.firstName} ${a.crewMember.lastName}`,
-    }));
+    const seen = new Map<string, string>();
+    for (const a of crewQuery.data) {
+      if (!seen.has(a.crewMember.id)) {
+        seen.set(a.crewMember.id, `${a.crewMember.firstName} ${a.crewMember.lastName}`);
+      }
+    }
+    return Array.from(seen, ([id, label]) => ({ id, label })).sort((a, b) =>
+      a.label.localeCompare(b.label)
+    );
   }, [crewQuery.data]);
 
   // Role options for select

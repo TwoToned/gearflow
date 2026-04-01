@@ -12,6 +12,7 @@ export async function GET(
   const datesParam = url.searchParams.get("dates");
   const allDates = url.searchParams.get("allDates") === "true";
   const crewMemberId = url.searchParams.get("crewMemberId") || undefined;
+  const crewRoleId = url.searchParams.get("crewRoleId") || undefined;
   const templateId = url.searchParams.get("templateId") || undefined;
 
   let session;
@@ -56,7 +57,7 @@ export async function GET(
   }
 
   try {
-    const isMultiDay = allDates || !!callSheetDates?.length || !!crewMemberId;
+    const isMultiDay = allDates || !!callSheetDates?.length || !!crewMemberId || !!crewRoleId;
 
     let pdf: Uint8Array;
     if (isMultiDay) {
@@ -64,6 +65,7 @@ export async function GET(
         callSheetDates,
         allDates,
         crewMemberId,
+        crewRoleId,
         templateId,
       });
     } else {

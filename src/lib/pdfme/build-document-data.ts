@@ -67,6 +67,7 @@ export async function buildDocumentData(
     callSheetDates?: Date[];
     allDates?: boolean;
     crewMemberId?: string;
+    crewRoleId?: string;
   }
 ): Promise<DocumentData> {
   // Load org
@@ -125,6 +126,7 @@ export async function buildDocumentData(
                 organizationId,
                 status: { notIn: ["CANCELLED", "DECLINED"] },
                 ...(options?.crewMemberId ? { crewMemberId: options.crewMemberId } : {}),
+                ...(options?.crewRoleId ? { crewRoleId: options.crewRoleId } : {}),
               },
               include: {
                 crewMember: {

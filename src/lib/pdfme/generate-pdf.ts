@@ -181,6 +181,7 @@ export async function generateCallSheetPdf(
     callSheetDates?: Date[];
     allDates?: boolean;
     crewMemberId?: string;
+    crewRoleId?: string;
     templateId?: string;
   },
 ): Promise<Uint8Array> {
@@ -189,6 +190,7 @@ export async function generateCallSheetPdf(
     callSheetDates: options.callSheetDates,
     allDates: options.allDates,
     crewMemberId: options.crewMemberId,
+    crewRoleId: options.crewRoleId,
   });
 
   // 2. Load template

@@ -58,6 +58,7 @@ export function CallSheetDialog({
   const [selectAllDays, setSelectAllDays] = useState(true);
   const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set());
   const [selectedCrewMemberId, setSelectedCrewMemberId] = useState<string>("all");
+  const [selectedRoleId, setSelectedRoleId] = useState<string>("all");
   const [generating, setGenerating] = useState(false);
 
   const crewQuery = useQuery({
@@ -128,6 +129,26 @@ export function CallSheetDialog({
     }));
   }, [crewQuery.data]);
 
+  // Role options for select
+  const roleOptions = useMemo(() => {
+    if (!crewQuery.data) return [];
+    const roles = new Map<string, string>();
+    for (const a of crewQuery.data) {
+      if (a.crewRole?.id && a.crewRole?.name) {
+        roles.set(a.crewRole.id, a.crewRole.name);
+      }
+    }
+    return Array.from(roles, ([id, label]) => ({ id, label })).sort((a, b) =>
+      a.label.localeCompare(b.label)
+    );
+  }, [crewQuery.data]);
+
+  const selectedRoleLabel = useMemo(() => {
+    if (selectedRoleId === "all") return "All Roles";
+    const match = roleOptions.find((r) => r.id === selectedRoleId);
+    return match?.label ?? selectedRoleId;
+  }, [selectedRoleId, roleOptions]);
+
   const selectedCrewLabel = useMemo(() => {
     if (selectedCrewMemberId === "all") return "All Crew";
     const match = crewOptions.find((c) => c.id === selectedCrewMemberId);
@@ -170,19 +191,31 @@ export function CallSheetDialog({
       params.set("crewMemberId", crewParam);
     }
 
+    if (selectedRoleId !== "all") {
+      params.set("crewRoleId", selectedRoleId);
+    }
+
     return `${base}?${params.toString()}`;
   }
 
   function buildButtonLabel(): string {
     const hasCrewFilter =
       selectedCrewMemberId !== "all" && selectedCrewLabel !== "All Crew";
+    const hasRoleFilter =
+      selectedRoleId !== "all" && selectedRoleLabel !== "All Roles";
 
     if (hasCrewFilter) {
       return `Generate Call Sheet for ${selectedCrewLabel}`;
     }
 
+    const parts: string[] = [];
+    if (hasRoleFilter) parts.push(selectedRoleLabel);
     if (!selectAllDays && selectedDates.size > 0) {
-      return `Generate Call Sheet (${selectedDates.size} ${selectedDates.size === 1 ? "day" : "days"})`;
+      parts.push(`${selectedDates.size} ${selectedDates.size === 1 ? "day" : "days"}`);
+    }
+
+    if (parts.length > 0) {
+      return `Generate Call Sheet (${parts.join(", ")})`;
     }
 
     return "Generate Call Sheet";
@@ -292,6 +325,31 @@ export function CallSheetDialog({
               </div>
             )}
           </div>
+
+          {/* Role filter */}
+          {roleOptions.length > 0 && (
+            <div className="space-y-2">
+              <span className="text-sm font-medium">Filter by role</span>
+              <Select
+                value={selectedRoleId}
+                onValueChange={(v) => setSelectedRoleId(v ?? "all")}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue>
+                    {selectedRoleLabel}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Roles</SelectItem>
+                  {roleOptions.map((r) => (
+                    <SelectItem key={r.id} value={r.id}>
+                      {r.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {/* Person selection */}
           <div className="space-y-2">

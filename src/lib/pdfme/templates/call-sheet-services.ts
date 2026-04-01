@@ -28,15 +28,15 @@ const SECTION_HEADER_HEIGHT_MM = 6.3;
 // Layout
 const HEADER_Y = MARGIN;
 const HEADER_H = 25;
-const INFO_Y = 42;
-const INFO_H = 18;
-const TABLE_START_Y = 63;
+const INFO_Y = HEADER_Y + HEADER_H + 1; // 40mm
+const INFO_H = 12;
+const TABLE_START_Y = INFO_Y + INFO_H + 1; // 53mm
 const FOOTER_H = 10;
 const TABLE_END_Y = PAGE_HEIGHT - MARGIN - FOOTER_H - 2;
 const TABLE_CONTENT_HEIGHT = TABLE_END_Y - TABLE_START_Y;
 
 // Continuation pages (no info block)
-const CONT_TABLE_START_Y = HEADER_Y + HEADER_H + 4;
+const CONT_TABLE_START_Y = HEADER_Y + HEADER_H + 2;
 const CONT_TABLE_CONTENT_HEIGHT = TABLE_END_Y - CONT_TABLE_START_Y;
 
 const SERVICE_TYPE_LABELS: Record<string, string> = {

@@ -144,15 +144,10 @@ interface CategoryData {
 
 const COL_COUNT = 6;
 
-// Sub-hire group children have isKitChild=true but should render as normal line items.
-// Only actual kit children (with a kit parent) should be filtered from flat rendering.
+// Kit children and sub-hire group children both have isKitChild=true —
+// filter them from flat rendering so they only appear nested under their parent.
 function isRealKitChild(item: LineItemData) {
-  return item.isKitChild && !item.isSubhire;
-}
-
-// Sub-hire group parents are just wrappers — hide them since children render individually.
-function isSubhireGroupParent(item: LineItemData) {
-  return item.isSubhire && !item.isKitChild && !item.kitId && (item.childLineItems?.length ?? 0) > 0;
+  return item.isKitChild === true;
 }
 
 // ─── Overbooked info type ───────────────────────────────────────────────────
@@ -444,8 +439,8 @@ function SortableLineItemRow({
   onMove: () => void;
   onRemove: () => void;
 }) {
-  // Only show expand/collapse for actual kits, not sub-hire group parents
-  const hasChildren = (item.childLineItems?.length ?? 0) > 0 && !!item.kitId;
+  // Show expand/collapse for kits and sub-hire group parents
+  const hasChildren = (item.childLineItems?.length ?? 0) > 0 && (!!item.kitId || (item.isSubhire && !item.isKitChild));
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: `li-${item.id}` });
 
@@ -1080,7 +1075,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
       allSortableIds.push(`grp-${group.id}`);
       if (expandedGroups.has(group.id)) {
         for (const item of group.lineItems ?? []) {
-          if (!isRealKitChild(item as LineItemData) && !isSubhireGroupParent(item as LineItemData)) allSortableIds.push(`li-${item.id}`);
+          if (!isRealKitChild(item as LineItemData)) allSortableIds.push(`li-${item.id}`);
         }
       }
     }
@@ -1089,7 +1084,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
     }
   }
   for (const item of uncategorizedItems as LineItemData[]) {
-    if (!isRealKitChild(item) && !isSubhireGroupParent(item)) allSortableIds.push(`li-${item.id}`);
+    if (!isRealKitChild(item)) allSortableIds.push(`li-${item.id}`);
   }
 
   return (
@@ -1196,7 +1191,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
             >
               <TableBody>
                 {typedCategories.map((cat) => {
-                  const standaloneItems = (cat.lineItems ?? []).filter((i: LineItemData) => !isRealKitChild(i) && !isSubhireGroupParent(i));
+                  const standaloneItems = (cat.lineItems ?? []).filter((i: LineItemData) => !isRealKitChild(i));
 
                   return (
                     <React.Fragment key={cat.id}>
@@ -1214,7 +1209,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                       {cat.groups.map((group) => {
                         const isExpanded = expandedGroups.has(group.id);
                         const priceVal = group.price != null ? Number(group.price) : null;
-                        const groupItems = (group.lineItems ?? []).filter((i: LineItemData) => !isRealKitChild(i) && !isSubhireGroupParent(i));
+                        const groupItems = (group.lineItems ?? []).filter((i: LineItemData) => !isRealKitChild(i));
                         return (
                           <React.Fragment key={group.id}>
                             <SortableGroupRow
@@ -1276,7 +1271,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                                 key={item.id}
                                 item={item}
                                 indent="ml-12"
-                                overbookedInfo={(overbookedMap as Record<string, OverbookedInfo>)[item.id]}
+                                overbookedInfo={item.isSubhire ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                                 isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
                                 isExpanded={expandedParents.has(item.id)}
                                 onToggle={() => toggleParent(item.id)}
@@ -1295,7 +1290,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                           key={item.id}
                           item={item}
                           indent="ml-3"
-                          overbookedInfo={(overbookedMap as Record<string, OverbookedInfo>)[item.id]}
+                          overbookedInfo={item.isSubhire ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                           isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
                           isExpanded={expandedParents.has(item.id)}
                           onToggle={() => toggleParent(item.id)}
@@ -1309,12 +1304,12 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
                 })}
 
                 {/* Uncategorized items */}
-                {(uncategorizedItems as LineItemData[]).filter((i) => !isRealKitChild(i) && !isSubhireGroupParent(i)).map((item) => (
+                {(uncategorizedItems as LineItemData[]).filter((i) => !isRealKitChild(i)).map((item) => (
                   <SortableLineItemRow
                     key={item.id}
                     item={item}
                     indent=""
-                    overbookedInfo={(overbookedMap as Record<string, OverbookedInfo>)[item.id]}
+                    overbookedInfo={item.isSubhire ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                     isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
                     isExpanded={expandedParents.has(item.id)}
                     onToggle={() => toggleParent(item.id)}

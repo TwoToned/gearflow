@@ -377,7 +377,7 @@ export async function updateSubHireStatus(id: string, newStatus: SubHireStatus) 
 
   return serialize(
     await prisma.subHire.findUnique({
-      where: { id },
+      where: { id, organizationId },
       include: {
         supplier: { select: { id: true, name: true } },
         project: { select: { id: true, name: true, projectNumber: true } },
@@ -568,7 +568,7 @@ export async function reorderSubHireItems(subHireId: string, itemIds: string[]) 
   await prisma.$transaction(
     itemIds.map((id, index) =>
       prisma.subHireItem.update({
-        where: { id },
+        where: { id, subHireId: subHire.id },
         data: { sortOrder: index },
       }),
     ),
@@ -994,7 +994,7 @@ async function syncSubHireLineItem(subHireItemId: string, projectId: string | nu
   if (!item) return;
 
   const linkedLineItem = await prisma.projectLineItem.findFirst({
-    where: { subHireItemId },
+    where: { subHireItemId, projectId },
   });
   if (!linkedLineItem) return;
 

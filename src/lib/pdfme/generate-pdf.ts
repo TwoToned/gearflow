@@ -171,6 +171,152 @@ export async function generatePdf(
 }
 
 /**
+ * Generate a multi-day or per-person call sheet PDF.
+ * Expands crew-table sections per date, inserting day-header sections.
+ */
+export async function generateCallSheetPdf(
+  projectId: string,
+  organizationId: string,
+  options: {
+    callSheetDates?: Date[];
+    allDates?: boolean;
+    crewMemberId?: string;
+    templateId?: string;
+  },
+): Promise<Uint8Array> {
+  // 1. Build data with multi-date/per-person options
+  const data = await buildDocumentData(projectId, organizationId, "call-sheet", undefined, {
+    callSheetDates: options.callSheetDates,
+    allDates: options.allDates,
+    crewMemberId: options.crewMemberId,
+  });
+
+  // 2. Load template
+  const loaded = await loadTemplate(organizationId, "call-sheet", options.templateId);
+
+  // 3. Get sections (section-based template or system default)
+  let sections: TemplateSection[];
+  if (loaded.sections) {
+    sections = loaded.sections;
+  } else {
+    sections = getDefaultSections("call-sheet");
+  }
+
+  // 4. Per-person title override
+  if (options.crewMemberId && data.crew.length > 0) {
+    const personName = data.crew[0].name;
+    const headerIdx = sections.findIndex(s => s.type === "header");
+    if (headerIdx >= 0) {
+      const headerSettings = { ...sections[headerIdx].settings } as import("./section-types").HeaderSectionSettings;
+      headerSettings.documentTitle = `CALL SHEET \u2014 ${personName}`;
+      sections = sections.map((s, i) => i === headerIdx ? { ...s, settings: headerSettings } : s);
+    }
+  }
+
+  // 5. Expand sections for multi-day
+  const crewByDay = data.crew_by_day || [];
+  if (crewByDay.length > 0) {
+    sections = expandSectionsForDates(sections, crewByDay, data);
+  }
+
+  // 6. Render and generate
+  const docColor = loaded.brandAccentColor || data.org_document_color;
+  const { template, inputs } = renderSections(
+    sections,
+    data,
+    "call-sheet",
+    docColor,
+    loaded.brandFooterText || undefined,
+    loaded.brandFooterSecondLine || undefined,
+  );
+
+  const pdf = await generate({
+    template,
+    inputs,
+    plugins: gearflowPlugins,
+    options: { font: getPdfmeFonts() },
+  });
+
+  return pdf;
+}
+
+/**
+ * Expand crew-table sections across multiple dates.
+ * For each date, clones crew-table sections with date-specific crew data,
+ * inserting a day-header before each group.
+ */
+function expandSectionsForDates(
+  sections: TemplateSection[],
+  crewByDay: import("./types").CallSheetDayData[],
+  data: DocumentData,
+): TemplateSection[] {
+  // Find crew-table section indices
+  const crewTableIndices: number[] = [];
+  for (let i = 0; i < sections.length; i++) {
+    if (sections[i].type === "crew-table") {
+      crewTableIndices.push(i);
+    }
+  }
+
+  // If no crew-table sections, nothing to expand
+  if (crewTableIndices.length === 0) return sections;
+
+  const expanded: TemplateSection[] = [];
+  let skipUntilAfterLastCrewTable = false;
+
+  for (let i = 0; i < sections.length; i++) {
+    if (crewTableIndices.includes(i)) {
+      // On first crew-table, insert all day expansions
+      if (!skipUntilAfterLastCrewTable) {
+        skipUntilAfterLastCrewTable = true;
+
+        for (const day of crewByDay) {
+          // Skip days with no crew (unless it's "Unscheduled")
+          if (day.crew.length === 0 && day.date !== "") continue;
+
+          // Insert day-header (skip for single date)
+          if (crewByDay.length > 1 || day.date === "") {
+            const dayHeaderConfig = JSON.stringify({
+              dayLabel: day.dayLabel,
+              phases: day.phases,
+              crewCount: day.crew.length,
+              documentColor: data.org_document_color,
+            });
+
+            expanded.push({
+              id: `day-header-${day.date || "unscheduled"}`,
+              type: "day-header",
+              settings: { showPhases: true, showCrewCount: true },
+              visibility: {},
+              content: dayHeaderConfig,
+              order: expanded.length,
+            });
+          }
+
+          // Clone all crew-table sections for this day
+          for (const ctIdx of crewTableIndices) {
+            const original = sections[ctIdx];
+            expanded.push({
+              ...original,
+              id: `${original.id}-${day.date || "unscheduled"}`,
+              order: expanded.length,
+              // Override crew data via content field — section renderer will check this
+              content: JSON.stringify({ dayCrew: day.crew }),
+            });
+          }
+        }
+      }
+      // Skip all crew-table sections (already expanded above)
+      continue;
+    }
+
+    expanded.push({ ...sections[i], order: expanded.length });
+  }
+
+  return expanded;
+}
+
+/**
  * Generate a PDF from sections + data (for section-based template preview).
  * Used by the template builder live preview.
  */

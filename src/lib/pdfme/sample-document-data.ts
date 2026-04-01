@@ -168,11 +168,20 @@ export async function buildSampleDocumentData(
     document_date: fmt(today),
 
     line_items: sampleItems,
+    pm_name: "Sarah Mitchell",
+    pm_phone: (meta.phone as string) || "",
+    pm_email: "sarah@example.com",
+
+    load_in_time: fmt(startDate),
+    load_out_time: fmt(endDate),
+
     crew: [
-      { name: "Alex Turner", role: "Sound Engineer", phase: "Setup", callTime: "06:00", endTime: "23:00", phone: "0411 222 333", email: "alex@crew.com", notes: "", status: "CONFIRMED" },
-      { name: "Maya Johnson", role: "Lighting Designer", phase: "Setup", callTime: "06:00", endTime: "23:00", phone: "0422 333 444", email: "maya@crew.com", notes: "", status: "CONFIRMED" },
-      { name: "Tom Walsh", role: "Vision Tech", phase: "Show", callTime: "14:00", endTime: "23:00", phone: "0433 444 555", email: "tom@crew.com", notes: "Operating ATEM", status: "CONFIRMED" },
+      { name: "Alex Turner", role: "Sound Engineer", phase: "Setup", callTime: "06:00", endTime: "23:00", phone: "0411 222 333", email: "alex@crew.com", notes: "", status: "CONFIRMED", department: "Audio", breakMinutes: 30, shiftLocation: null, shiftNotes: null, isProjectManager: false },
+      { name: "Maya Johnson", role: "Lighting Designer", phase: "Setup", callTime: "06:00", endTime: "23:00", phone: "0422 333 444", email: "maya@crew.com", notes: "", status: "CONFIRMED", department: "Lighting", breakMinutes: 30, shiftLocation: null, shiftNotes: null, isProjectManager: false },
+      { name: "Tom Walsh", role: "Vision Tech", phase: "Show", callTime: "14:00", endTime: "23:00", phone: "0433 444 555", email: "tom@crew.com", notes: "Operating ATEM", status: "CONFIRMED", department: "Vision", breakMinutes: null, shiftLocation: null, shiftNotes: null, isProjectManager: false },
     ],
+    crew_by_day: [],
+    equipment_summary: `${sampleItems.reduce((s, i) => s + i.quantity, 0)} items across 3 categories`,
 
     total_items: sampleItems.reduce((s, i) => s + i.quantity, 0),
     total_weight: 285,

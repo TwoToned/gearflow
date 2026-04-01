@@ -94,6 +94,19 @@ export interface CrewEntry {
   email: string | null;
   notes: string | null;
   status: string;
+  department: string | null;
+  breakMinutes: number | null;
+  shiftLocation: string | null;
+  shiftNotes: string | null;
+  isProjectManager: boolean;
+}
+
+/** Data for a single day in a multi-day call sheet */
+export interface CallSheetDayData {
+  date: string;
+  dayLabel: string;
+  phases: string[];
+  crew: CrewEntry[];
 }
 
 /** The full data contract assembled for document generation */
@@ -159,9 +172,20 @@ export interface DocumentData {
   // Metadata
   document_date: string;
 
+  // PM
+  pm_name: string;
+  pm_phone: string;
+  pm_email: string;
+
+  // Schedule
+  load_in_time: string;
+  load_out_time: string;
+
   // Complex data (JSON-stringified for plugins)
   line_items: DocumentLineItem[];
   crew: CrewEntry[];
+  crew_by_day: CallSheetDayData[];
+  equipment_summary: string;
 
   // Computed
   total_items: number;

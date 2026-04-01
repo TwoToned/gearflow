@@ -73,25 +73,21 @@ export function CallSheetDialog({
     enabled: open,
   });
 
-  // Derive all available dates: shift dates + project milestone dates
+  // Derive available dates from service dates
   const availableDates = useMemo(() => {
     const dateSet = new Set<string>();
 
-    // Collect shift dates from crew assignments
-    if (crewQuery.data) {
-      for (const assignment of crewQuery.data) {
-        if (assignment.shifts) {
-          for (const shift of assignment.shifts) {
-            if (shift.date) {
-              dateSet.add(formatDateKey(new Date(shift.date)));
-            }
-          }
+    // Collect service dates (matches what the PDF actually generates)
+    if (datesQuery.data?.serviceDates) {
+      for (const sd of datesQuery.data.serviceDates) {
+        if (sd.date) {
+          dateSet.add(formatDateKey(new Date(sd.date)));
         }
       }
     }
 
-    // Collect project milestone dates
-    if (datesQuery.data) {
+    // Fall back to project milestone dates if no service dates
+    if (dateSet.size === 0 && datesQuery.data) {
       const { loadInDate, eventStartDate, eventEndDate, loadOutDate } = datesQuery.data;
       if (loadInDate) dateSet.add(formatDateKey(new Date(loadInDate)));
       if (eventStartDate) dateSet.add(formatDateKey(new Date(eventStartDate)));
@@ -100,33 +96,34 @@ export function CallSheetDialog({
     }
 
     return Array.from(dateSet).sort();
-  }, [crewQuery.data, datesQuery.data]);
+  }, [datesQuery.data]);
 
-  // Count crew per date
+  // Count crew per date (from service crew assignments)
   const crewCountByDate = useMemo(() => {
     const counts: Record<string, number> = {};
-    if (!crewQuery.data) return counts;
+    if (!datesQuery.data?.serviceDates) return counts;
 
-    for (const assignment of crewQuery.data) {
-      if (assignment.shifts) {
-        for (const shift of assignment.shifts) {
-          if (shift.date) {
-            const key = formatDateKey(new Date(shift.date));
-            counts[key] = (counts[key] ?? 0) + 1;
-          }
-        }
+    for (const sd of datesQuery.data.serviceDates) {
+      if (sd.date) {
+        const key = formatDateKey(new Date(sd.date));
+        counts[key] = (counts[key] ?? 0) + sd.crewCount;
       }
     }
     return counts;
-  }, [crewQuery.data]);
+  }, [datesQuery.data]);
 
-  // Crew member options for select
+  // Crew member options for select (deduplicated)
   const crewOptions = useMemo(() => {
     if (!crewQuery.data) return [];
-    return crewQuery.data.map((a) => ({
-      id: a.crewMember.id,
-      label: `${a.crewMember.firstName} ${a.crewMember.lastName}`,
-    }));
+    const seen = new Map<string, string>();
+    for (const a of crewQuery.data) {
+      if (!seen.has(a.crewMember.id)) {
+        seen.set(a.crewMember.id, `${a.crewMember.firstName} ${a.crewMember.lastName}`);
+      }
+    }
+    return Array.from(seen, ([id, label]) => ({ id, label })).sort((a, b) =>
+      a.label.localeCompare(b.label)
+    );
   }, [crewQuery.data]);
 
   // Role options for select

@@ -4,7 +4,6 @@ import { requireOrganization } from "@/lib/auth-server";
 import { prisma } from "@/lib/prisma";
 import { buildDocumentData } from "@/lib/pdfme/build-document-data";
 import {
-  buildTimelineTemplate,
   buildTimelineInputs,
   DEFAULT_TIMELINE_SETTINGS,
 } from "@/lib/pdfme/templates/timeline";
@@ -81,8 +80,7 @@ export async function GET(
       costTotal: s.costTotal ? Number(s.costTotal) : null,
     }));
 
-    const inputs = buildTimelineInputs(data, timelineServices, settings);
-    const template = buildTimelineTemplate(inputs.length);
+    const { inputs, template } = buildTimelineInputs(data, timelineServices, settings);
 
     const pdf = await generate({
       template,

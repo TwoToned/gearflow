@@ -153,6 +153,7 @@ export function EditLineItemDialog({
       toast.success("Line item updated");
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
       queryClient.invalidateQueries({ queryKey: ["availability"] });
+      queryClient.invalidateQueries({ queryKey: ["project-overbooked", projectId] });
       onOpenChange(false);
       setOverbookConfirmed(false);
     },

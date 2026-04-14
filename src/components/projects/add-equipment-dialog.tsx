@@ -184,6 +184,7 @@ export function AddEquipmentDialog({
       queryClient.invalidateQueries({ queryKey: ["availability"] });
       queryClient.invalidateQueries({ queryKey: ["project-categories", projectId] });
       queryClient.invalidateQueries({ queryKey: ["uncategorized-items", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project-overbooked", projectId] });
       onOpenChange(false);
       resetState();
     },

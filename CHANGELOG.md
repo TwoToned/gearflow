@@ -5,6 +5,13 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] - 2026-04-14
+
+### Fixed
+- Overbooking badges and availability conflict detection now work when adding equipment to projects (dates were not being passed through to the availability checker)
+- Overbooking badges now refresh immediately after adding, editing, or removing line items instead of staying stale for up to 30 seconds
+- Kit additions and line item deletions via the line items panel now also refresh overbooking status
+
 ## [0.3.2] - 2026-04-01
 
 ### Added

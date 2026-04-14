@@ -456,7 +456,7 @@ export default function ProjectDetailPage({
                 {/* Equipment Tab — new category/group hierarchy */}
                 <TabsContent value="equipment">
                   <div className="pt-4">
-                    <EquipmentTab projectId={id} />
+                    <EquipmentTab projectId={id} rentalStartDate={rentalStart} rentalEndDate={rentalEnd} />
                   </div>
                 </TabsContent>
 

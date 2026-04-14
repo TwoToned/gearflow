@@ -762,6 +762,7 @@ export function LineItemsPanel({
     onSuccess: () => {
       toast.success("Line item removed");
       queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project-overbooked", projectId] });
     },
     onError: (e) => toast.error(e.message),
   });
@@ -781,6 +782,7 @@ export function LineItemsPanel({
       if (kitGroupName) addExtraGroup(kitGroupName);
       toast.success("Kit added to project");
       queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project-overbooked", projectId] });
       setKitDialogOpen(false);
       setSelectedKitId("");
       setKitPricingMode("KIT_PRICE");

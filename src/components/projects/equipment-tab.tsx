@@ -86,6 +86,8 @@ import { ArrowLeftRight, ChevronDown } from "lucide-react";
 
 interface EquipmentTabProps {
   projectId: string;
+  rentalStartDate?: Date | null;
+  rentalEndDate?: Date | null;
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -596,7 +598,7 @@ function SortableLineItemRow({
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
-export function EquipmentTab({ projectId }: EquipmentTabProps) {
+export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: EquipmentTabProps) {
   const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
@@ -750,6 +752,7 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
     queryClient.invalidateQueries({ queryKey });
     queryClient.invalidateQueries({ queryKey: ["uncategorized-items", projectId] });
     queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+    queryClient.invalidateQueries({ queryKey: ["project-overbooked", projectId] });
   }, [queryClient, queryKey, projectId]);
 
   // ─── Mutations ───────────────────────────────────────────────────────────
@@ -1885,6 +1888,8 @@ export function EquipmentTab({ projectId }: EquipmentTabProps) {
       {showAddEquipment && (
         <AddEquipmentDialog
           projectId={projectId}
+          rentalStartDate={rentalStartDate ?? undefined}
+          rentalEndDate={rentalEndDate ?? undefined}
           open={showAddEquipment}
           onOpenChange={setShowAddEquipment}
           categoryId={addEquipmentTarget.categoryId}

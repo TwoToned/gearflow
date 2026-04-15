@@ -95,6 +95,7 @@ import {
   completeCheckAndFlag,
   unpackItem,
   completeCheckAndStore,
+  completeCheckAndDeprep,
   saveKitLevelChecks,
   saveChildItemChecks,
 } from "@/server/check-records";
@@ -360,6 +361,8 @@ function WarehouseProjectPage({
     /** When true, this is a kit queue — on complete, deploy/return the kit atomically */
     kitQueueKitId?: string;
     kitQueueReturnCondition?: "GOOD" | "DAMAGED" | "MISSING";
+    /** When true, this RETURN check was triggered by a deprep action from the deploy tab. */
+    fromDeprep?: boolean;
   } | null>(null);
   const [checkFormSubmitting, setCheckFormSubmitting] = useState(false);
 
@@ -376,6 +379,10 @@ function WarehouseProjectPage({
     /** When set, this queue item is part of a kit PER_ITEM flow */
     kitQueueKitId?: string;
     kitQueueReturnCondition?: "GOOD" | "DAMAGED" | "MISSING";
+    /** When true, this RETURN check was triggered by a deprep action from the deploy tab.
+     *  Used to route focus back to the deploy scan input on completion, and to route
+     *  submission through completeCheckAndStore (which transitions the item back to inventory). */
+    fromDeprep?: boolean;
   };
   const [checkQueue, setCheckQueue] = useState<CheckQueueItem[]>([]);
   const [checkQueueIndex, setCheckQueueIndex] = useState(0);
@@ -393,8 +400,10 @@ function WarehouseProjectPage({
     const first = queue[0];
     setCheckFormData(first);
     setCheckFormOpen(true);
-    // Call pullItem/unpackItem for non-kit items (kit items are deployed atomically at the end)
-    if (!first.kitId && !first.kitQueueKitId) {
+    // Call pullItem/unpackItem for non-kit items (kit items are deployed atomically at the end).
+    // Skip for fromDeprep queues — the item is already returned; we just need to run the check
+    // and then reset prepStatus in completeCheckAndDeprep.
+    if (!first.kitId && !first.kitQueueKitId && !first.fromDeprep) {
       if (first.context === "PREP") {
         pullItem(projectId, first.lineItemId).catch(() => {});
       } else {
@@ -411,8 +420,9 @@ function WarehouseProjectPage({
       setCheckQueueIndex(nextIndex);
       const next = checkQueue[nextIndex];
       setCheckFormData(next);
-      // Pull/unpack non-kit items (kit items are deployed atomically at the end)
-      if (!next.kitId && !next.kitQueueKitId) {
+      // Pull/unpack non-kit items (kit items are deployed atomically at the end).
+      // Skip for fromDeprep — item is already returned.
+      if (!next.kitId && !next.kitQueueKitId && !next.fromDeprep) {
         if (next.context === "PREP") {
           pullItem(projectId, next.lineItemId).catch(() => {});
         } else {
@@ -431,11 +441,25 @@ function WarehouseProjectPage({
     const kitQueueKitId = checkQueue[0]?.kitQueueKitId;
     const kitQueueContext = checkQueue[0]?.context;
     const kitQueueReturnCondition = checkQueue[0]?.kitQueueReturnCondition;
+    const finishedContext = checkQueue[0]?.context;
+    const finishedFromDeprep = checkQueue[0]?.fromDeprep === true;
 
     setCheckFormOpen(false);
     setCheckFormData(null);
     setCheckQueue([]);
     setCheckQueueIndex(0);
+
+    // Return focus to the appropriate scan input so barcode scanners flow uninterrupted.
+    // Wait a frame for the Sheet to release its focus trap before we steal it back.
+    requestAnimationFrame(() => {
+      if (finishedFromDeprep) {
+        deployScanInputRef.current?.focus();
+      } else if (finishedContext === "PREP") {
+        scanInputRef.current?.focus();
+      } else if (finishedContext === "RETURN") {
+        returnScanInputRef.current?.focus();
+      }
+    });
 
     if (kitQueueKitId) {
       if (kitQueueContext === "PREP") {
@@ -451,6 +475,17 @@ function WarehouseProjectPage({
         } else {
           toast.success("Kit prepped — ready to deploy");
           invalidate();
+        }
+      } else if (finishedFromDeprep) {
+        // Kit deprep: checks are already saved, now deprep the kit back to inventory
+        const kitLi = lineItems.find((l) => l.kitId === kitQueueKitId && !l.isKitChild);
+        if (kitLi) {
+          deprepKit(projectId, kitLi.id)
+            .then(() => {
+              toast.success("Kit deprep checked — returned to inventory");
+              invalidate();
+            })
+            .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to deprep kit"));
         }
       } else {
         kitCheckInMutation.mutate(
@@ -491,7 +526,8 @@ function WarehouseProjectPage({
     kitId: string,
     kitLi: LineItem,
     context: "PREP" | "RETURN",
-    kitReturnCondition?: "GOOD" | "DAMAGED" | "MISSING"
+    kitReturnCondition?: "GOOD" | "DAMAGED" | "MISSING",
+    fromDeprep: boolean = false
   ): boolean {
     const kit = kitLi.kit;
     if (!kit) return false;
@@ -513,15 +549,19 @@ function WarehouseProjectPage({
         assetId: "",
         kitQueueKitId: kit.id,
         kitQueueReturnCondition: kitReturnCondition,
+        fromDeprep,
       }];
       return startCheckQueue(queue);
     } else {
       // PER_ITEM: queue each child with model check items
       const queue: CheckQueueItem[] = [];
       for (const child of children) {
-        // Skip children not relevant to current flow
+        // Skip children not relevant to current flow.
+        // Deprep runs on already-returned kits so the children are not CHECKED_OUT anymore —
+        // use the RETURN-with-fromDeprep branch to include them regardless.
         if (context === "PREP" && (child.status === "CHECKED_OUT" || child.status === "CANCELLED")) continue;
-        if (context === "RETURN" && child.status !== "CHECKED_OUT") continue;
+        if (context === "RETURN" && !fromDeprep && child.status !== "CHECKED_OUT") continue;
+        if (context === "RETURN" && fromDeprep && child.status === "CANCELLED") continue;
 
         const hasModelChecks = child.model?._count?.modelCheckItems && child.model._count.modelCheckItems > 0;
         if (!hasModelChecks || !child.modelId) continue;
@@ -541,6 +581,7 @@ function WarehouseProjectPage({
             bulkAssetId: child.bulkAssetId || undefined,
             kitQueueKitId: kit.id,
             kitQueueReturnCondition: kitReturnCondition,
+            fromDeprep,
           });
         }
       }
@@ -2018,22 +2059,92 @@ function WarehouseProjectPage({
                 directIds.push(id);
               }
             });
+
+            // Build a RETURN check queue for returned items that have check items on their model.
+            // Items that were never deployed (outbound deprep) or have no check items bypass this
+            // entirely. Damaged items (prepStatus FLAGGED_FAULTY) also skip the second check.
+            const checkQueueBuild: CheckQueueItem[] = [];
+            const directDeprep: Array<{ lineItemId: string; quantity?: number; isKit?: boolean }> = [];
+
             for (const [lineItemId, count] of bulkDeprepMap) {
-              deprepMutation.mutate({ lineItemId, quantity: count });
+              const li = lineItems.find((l) => l.id === lineItemId);
+              const needsCheck =
+                li?.status === "RETURNED" &&
+                li.prepStatus === "PACKED" &&
+                !!li.model?._count?.modelCheckItems &&
+                li.model._count.modelCheckItems > 0 &&
+                !!li.modelId;
+              if (needsCheck && li) {
+                for (let i = 0; i < count; i++) {
+                  checkQueueBuild.push({
+                    context: "RETURN",
+                    modelId: li.modelId!,
+                    assetTag: li.asset?.assetTag || li.bulkAsset?.assetTag || "",
+                    assetName: `${modelDisplayName(li)}${count > 1 ? ` #${i + 1}` : ""}`,
+                    lineItemId,
+                    assetId: li.assetId || "",
+                    bulkAssetId: li.bulkAssetId || undefined,
+                    fromDeprep: true,
+                  });
+                }
+              } else {
+                directDeprep.push({ lineItemId, quantity: count });
+              }
             }
-            directIds.forEach((id) => {
+
+            for (const id of directIds) {
               const li = lineItems.find((l) => l.id === id);
               if (li && isKitParent(li)) {
-                deprepKit(projectId, id)
+                // Kit deprep with checks: respects KIT_LEVEL / PER_ITEM via startKitCheckFlow
+                if (li.status === "RETURNED" && startKitCheckFlow(li.kitId!, li, "RETURN", "GOOD", true)) {
+                  continue;
+                }
+                directDeprep.push({ lineItemId: id, isKit: true });
+              } else {
+                const needsCheck =
+                  li?.status === "RETURNED" &&
+                  li.prepStatus === "PACKED" &&
+                  !!li.model?._count?.modelCheckItems &&
+                  li.model._count.modelCheckItems > 0 &&
+                  !!li.modelId;
+                if (needsCheck && li) {
+                  checkQueueBuild.push({
+                    context: "RETURN",
+                    modelId: li.modelId!,
+                    assetTag: li.asset?.assetTag || li.bulkAsset?.assetTag || "",
+                    assetName: modelDisplayName(li),
+                    lineItemId: id,
+                    assetId: li.assetId || "",
+                    bulkAssetId: li.bulkAssetId || undefined,
+                    fromDeprep: true,
+                  });
+                } else {
+                  directDeprep.push({ lineItemId: id });
+                }
+              }
+            }
+
+            // Fire direct deprep for items without checks
+            for (const d of directDeprep) {
+              if (d.isKit) {
+                deprepKit(projectId, d.lineItemId)
                   .then(() => {
                     toast.success("Kit removed from prep");
                     invalidate();
                   })
                   .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to deprep kit"));
+              } else if (d.quantity) {
+                deprepMutation.mutate({ lineItemId: d.lineItemId, quantity: d.quantity });
               } else {
-                deprepMutation.mutate(id);
+                deprepMutation.mutate(d.lineItemId);
               }
-            });
+            }
+
+            // Start check queue for items that need it
+            if (checkQueueBuild.length > 0) {
+              startCheckQueue(checkQueueBuild);
+            }
+
             setSelectedOut(new Set());
           }}
           deprepIsPending={deprepMutation.isPending}
@@ -2340,6 +2451,14 @@ function WarehouseProjectPage({
                     prepContainer: selectedContainer || null,
                     checks,
                   });
+                } else if (item.fromDeprep) {
+                  await completeCheckAndDeprep({
+                    projectId,
+                    lineItemId: item.lineItemId,
+                    assetId: item.assetId,
+                    bulkAssetId: item.bulkAssetId,
+                    checks,
+                  });
                 } else {
                   await unpackItem(projectId, item.lineItemId).catch(() => {});
                   await completeCheckAndStore({
@@ -2405,6 +2524,16 @@ function WarehouseProjectPage({
                   });
                   toast.success("Item checked and packed");
                 }
+              } else if (checkFormData.fromDeprep) {
+                // RETURN deprep — item is already returned, just record checks and reset prepStatus
+                await completeCheckAndDeprep({
+                  projectId,
+                  lineItemId: checkFormData.lineItemId,
+                  assetId: checkFormData.assetId,
+                  bulkAssetId: checkFormData.bulkAssetId,
+                  checks,
+                });
+                toast.success("Item checked and returned to inventory");
               } else {
                 // RETURN — condition comes from the check form
                 const condition = returnInfo?.condition || "GOOD";

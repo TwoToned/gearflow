@@ -437,8 +437,15 @@ export async function completeCheckAndDeprep(data: {
     if (!lineItem) {
       throw new Error("Line item not found in project");
     }
-    if (lineItem.status === "CHECKED_OUT") {
-      throw new Error("Item is still deployed — return it first");
+    if (lineItem.status !== "RETURNED") {
+      throw new Error(
+        `Deprep return check requires RETURNED status (got ${lineItem.status})`
+      );
+    }
+    if (lineItem.prepStatus !== "PACKED") {
+      throw new Error(
+        `Deprep return check requires prepStatus=PACKED (got ${lineItem.prepStatus ?? "null"})`
+      );
     }
 
     // Write RETURN-context check records.

@@ -494,8 +494,9 @@ function WarehouseProjectPage({
         );
       }
     } else if (checkQueueDirectItems.length > 0) {
-      const context = checkQueue[0]?.context;
-      if (context === "PREP") {
+      // Reuse the snapshot we captured above — avoid re-reading checkQueue[0]
+      // after setCheckQueue([]) was called.
+      if (finishedContext === "PREP") {
         // Prep remaining items that had no checks (set prepStatus=PACKED)
         // Sequential to avoid race conditions when items share the same lineItemId
         (async () => {

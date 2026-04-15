@@ -148,6 +148,19 @@ export function ItemCheckForm({
     isLoading: false,
   });
 
+  // Clear any pending pass-all undo timer on unmount or when the form closes,
+  // so a stale timeout doesn't fire setState after the component is gone.
+  useEffect(() => {
+    if (!open && passAllUndo) {
+      clearTimeout(passAllUndo);
+      setPassAllUndo(null);
+      passAllUndoRef.current = null;
+    }
+    return () => {
+      if (passAllUndo) clearTimeout(passAllUndo);
+    };
+  }, [open, passAllUndo]);
+
   // Reset states when form opens with new items
   useEffect(() => {
     if (open && items.length > 0) {

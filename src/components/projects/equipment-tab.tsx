@@ -18,7 +18,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, FolderPlus, Package, MoreHorizontal, Trash2, Pencil, Loader2, ChevronRight, GripVertical, RefreshCw, AlertTriangle } from "lucide-react";
+import { Plus, FolderPlus, Package, MoreHorizontal, Trash2, Pencil, Loader2, ChevronRight, GripVertical, RefreshCw, AlertTriangle, BookmarkPlus } from "lucide-react";
 import { toast } from "sonner";
 
 import { getProjectCategories } from "@/server/project-categories";
@@ -40,7 +40,7 @@ import {
   getUncategorizedLineItems,
   getProjectOverbookedStatus,
 } from "@/server/project-categories";
-import { getGroupTemplates, applyGroupTemplate } from "@/server/group-templates";
+import { getGroupTemplates, applyGroupTemplate, saveGroupAsTemplate } from "@/server/group-templates";
 import { removeLineItem, updateLineItem, addKitLineItem, checkKitAvailability, reorderLineItems, checkAvailability } from "@/server/line-items";
 import { getKits } from "@/server/kits";
 import {
@@ -255,6 +255,7 @@ function SortableGroupRow({
   onAddEquipment,
   onAddKit,
   onRecalculate,
+  onSaveAsTemplate,
 }: {
   group: GroupData;
   isExpanded: boolean;
@@ -265,6 +266,7 @@ function SortableGroupRow({
   onAddEquipment: () => void;
   onAddKit: () => void;
   onRecalculate?: () => void;
+  onSaveAsTemplate?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: `grp-${group.id}` });
@@ -341,6 +343,12 @@ function SortableGroupRow({
                   <DropdownMenuItem onClick={onRecalculate}>
                     <RefreshCw className="mr-2 h-3.5 w-3.5" />
                     Recalculate Prices
+                  </DropdownMenuItem>
+                )}
+                {onSaveAsTemplate && (
+                  <DropdownMenuItem onClick={onSaveAsTemplate}>
+                    <BookmarkPlus className="mr-2 h-3.5 w-3.5" />
+                    Save as Template
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem
@@ -660,6 +668,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   const [toolbarGroupCategoryId, setToolbarGroupCategoryId] = useState("");
   const [toolbarGroupTemplateId, setToolbarGroupTemplateId] = useState("");
 
+  // Save group as template dialog state
+  const [saveAsTemplateGroup, setSaveAsTemplateGroup] = useState<{ id: string; title: string } | null>(null);
+  const [saveAsTemplateName, setSaveAsTemplateName] = useState("");
+  const [saveAsTemplateDescription, setSaveAsTemplateDescription] = useState("");
+
   // Move line item dialog state
   const [moveLineItemId, setMoveLineItemId] = useState<string | null>(null);
   const [moveTargetGroupId, setMoveTargetGroupId] = useState<string>("__uncategorized__");
@@ -896,6 +909,20 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
       allowOverbook: editOverbookConfirmed,
     });
   }
+
+  const saveAsTemplateMut = useMutation({
+    mutationFn: ({ groupId, name, description }: { groupId: string; name: string; description?: string }) =>
+      saveGroupAsTemplate(groupId, name, description),
+    onSuccess: (t: unknown) => {
+      const name = (t as { name?: string })?.name ?? "Template";
+      toast.success(`Saved as template "${name}"`);
+      queryClient.invalidateQueries({ queryKey: ["group-templates"] });
+      setSaveAsTemplateGroup(null);
+      setSaveAsTemplateName("");
+      setSaveAsTemplateDescription("");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const createGroupMut = useMutation({
     mutationFn: ({ categoryId, title, templateId }: { categoryId: string; title: string; templateId?: string }) => {
@@ -1294,6 +1321,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                   toast.error(e instanceof Error ? e.message : "Failed to recalculate");
                                 }
                               }}
+                              onSaveAsTemplate={() => {
+                                setSaveAsTemplateGroup({ id: group.id, title: group.title });
+                                setSaveAsTemplateName(group.title);
+                                setSaveAsTemplateDescription(group.description ?? "");
+                              }}
                             />
                             {/* Expanded line items */}
                             {isExpanded && groupItems.length === 0 && (
@@ -1565,6 +1597,72 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
               disabled={!renameCategoryValue.trim() || renameCategoryMut.isPending}
             >
               Rename
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Save group as template dialog */}
+      <Dialog
+        open={saveAsTemplateGroup != null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSaveAsTemplateGroup(null);
+            setSaveAsTemplateName("");
+            setSaveAsTemplateDescription("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Save as Template</DialogTitle>
+            <DialogDescription>
+              Save &quot;{saveAsTemplateGroup?.title}&quot; as a reusable template. Only model- and kit-backed items are captured; free-text lines are skipped.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-2">
+              <Label>Template name</Label>
+              <Input
+                value={saveAsTemplateName}
+                onChange={(e) => setSaveAsTemplateName(e.target.value)}
+                placeholder="e.g. Drum Mic Pack"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Description (optional)</Label>
+              <Input
+                value={saveAsTemplateDescription}
+                onChange={(e) => setSaveAsTemplateDescription(e.target.value)}
+                placeholder="When to use this template..."
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSaveAsTemplateGroup(null);
+                setSaveAsTemplateName("");
+                setSaveAsTemplateDescription("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (saveAsTemplateGroup && saveAsTemplateName.trim()) {
+                  saveAsTemplateMut.mutate({
+                    groupId: saveAsTemplateGroup.id,
+                    name: saveAsTemplateName.trim(),
+                    description: saveAsTemplateDescription.trim() || undefined,
+                  });
+                }
+              }}
+              disabled={!saveAsTemplateName.trim() || saveAsTemplateMut.isPending}
+            >
+              {saveAsTemplateMut.isPending ? "Saving..." : "Save Template"}
             </Button>
           </DialogFooter>
         </DialogContent>

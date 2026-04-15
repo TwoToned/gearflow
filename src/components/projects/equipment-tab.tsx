@@ -41,7 +41,7 @@ import {
   getProjectOverbookedStatus,
 } from "@/server/project-categories";
 import { getGroupTemplates, applyGroupTemplate } from "@/server/group-templates";
-import { removeLineItem, updateLineItem, addKitLineItem, checkKitAvailability, reorderLineItems } from "@/server/line-items";
+import { removeLineItem, updateLineItem, addKitLineItem, checkKitAvailability, reorderLineItems, checkAvailability } from "@/server/line-items";
 import { getKits } from "@/server/kits";
 import {
   DropdownMenu,
@@ -94,6 +94,7 @@ interface EquipmentTabProps {
 
 interface LineItemData {
   id: string;
+  modelId?: string | null;
   description: string | null;
   quantity: number;
   unitPrice: unknown;
@@ -474,13 +475,13 @@ function SortableLineItemRow({
         </div>
       </TableCell>
       <TableCell>
-        <div className={`flex items-center gap-2 ${indent}`}>
+        <div className={`flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 ${indent}`}>
           {hasChildren && (
             <button type="button" onClick={onToggle} className="shrink-0 text-fg-3 hover:text-fg transition-transform" style={{ transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}>
               <ChevronRight className="h-3.5 w-3.5" />
             </button>
           )}
-          <span className="font-medium">
+          <span className="font-medium break-words">
             {item.model?.name ?? item.description ?? "—"}
           </span>
           {hasChildren && (
@@ -671,6 +672,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   const [editDiscountMode, setEditDiscountMode] = useState<"$" | "%">("$");
   const [editPriceMode, setEditPriceMode] = useState<"auto" | "manual">("auto");
   const [editNotes, setEditNotes] = useState("");
+  const [editOverbookConfirmed, setEditOverbookConfirmed] = useState(false);
 
   // Group edit dialog state
   const [editGroupData, setEditGroupData] = useState<GroupData | null>(null);
@@ -737,6 +739,35 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     queryFn: () => getProjectOverbookedStatus(projectId),
     staleTime: 30_000,
   });
+
+  // Availability check for the currently-edited line item (equipment w/ modelId only)
+  const { data: editAvailability } = useQuery({
+    queryKey: [
+      "availability",
+      orgId,
+      editLineItem?.modelId ?? null,
+      rentalStartDate?.toISOString() ?? null,
+      rentalEndDate?.toISOString() ?? null,
+      projectId,
+    ],
+    queryFn: () =>
+      checkAvailability(
+        editLineItem!.modelId!,
+        rentalStartDate ?? null,
+        rentalEndDate ?? null,
+        projectId,
+      ),
+    enabled: !!editLineItem && !!editLineItem.modelId,
+  });
+
+  // "Available for this edit" excludes the current item's existing qty
+  const editAvailableForEdit =
+    editAvailability && editLineItem
+      ? editAvailability.totalStock - (editAvailability.booked - editLineItem.quantity)
+      : null;
+  const editRequestedQty = Number(editQuantity) || 1;
+  const editIsOverbooked =
+    editAvailableForEdit != null && editRequestedQty > editAvailableForEdit;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: projectSubHires = [] } = useQuery<any[]>({
@@ -830,6 +861,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     setEditDiscountMode("$");
     setEditPriceMode(item.pricingType === "OPTIMIZED" && !item.priceOverridden ? "auto" : "manual");
     setEditNotes(item.notes ?? "");
+    setEditOverbookConfirmed(false);
   }
 
   function handleSaveEditLineItem() {
@@ -1823,12 +1855,40 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                 rows={2}
               />
             </div>
+
+            {editIsOverbooked && (
+              <div className="rounded-md border border-red-500/50 bg-red-500/10 p-3 space-y-2">
+                <p className="text-sm font-medium text-red-600 dark:text-red-400">
+                  <AlertTriangle className="inline-block mr-1.5 h-3.5 w-3.5" />
+                  {rentalStartDate && rentalEndDate
+                    ? `This will overbook ${editRequestedQty} units with only ${editAvailableForEdit ?? 0} available across overlapping projects`
+                    : `Only ${editAvailableForEdit ?? 0} in stock — requesting ${editRequestedQty}`}
+                </p>
+                {editAvailability?.conflicts && editAvailability.conflicts.length > 0 && (
+                  <p className="text-xs text-red-600/80 dark:text-red-400/80">
+                    Conflicts with: {editAvailability.conflicts.join(", ")}
+                  </p>
+                )}
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editOverbookConfirmed}
+                    onChange={(e) => setEditOverbookConfirmed(e.target.checked)}
+                    className="accent-red-500"
+                  />
+                  <span className="text-red-600 dark:text-red-400">I understand, overbook anyway</span>
+                </label>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditLineItem(null)}>
               Cancel
             </Button>
-            <Button onClick={handleSaveEditLineItem} disabled={updateLineItemMut.isPending}>
+            <Button
+              onClick={handleSaveEditLineItem}
+              disabled={updateLineItemMut.isPending || (editIsOverbooked && !editOverbookConfirmed)}
+            >
               {updateLineItemMut.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Save
             </Button>

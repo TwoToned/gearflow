@@ -5,6 +5,12 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.4] - 2026-04-15
+
+### Fixed
+- Edit line item dialog (equipment tab) now shows overbooking warnings and requires confirmation to save an overbooked quantity — previously the warning only existed when adding items
+- Overbooked badge in the equipment table now wraps onto a second line on narrow viewports instead of overflowing outside the table column, so the badge is visible on mobile
+
 ## [0.3.3] - 2026-04-14
 
 ### Fixed

@@ -46,6 +46,7 @@ import { FadeIn } from "@/components/ui/motion";
 import { SectionHeader } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { KitChecksTab } from "@/components/kits/kit-checks-tab";
+import { DeleteKitDialog } from "@/components/kits/delete-kit-dialog";
 import {
   Dialog,
   DialogContent,
@@ -100,6 +101,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
   // Dialog states – must be declared before any early returns
   const [showAddItem, setShowAddItem] = useState(false);
   const [showAddBulkItem, setShowAddBulkItem] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [stagedItems, setStagedItems] = useState<Array<{ assetId: string; assetTag: string; modelName: string }>>([]);
   const [addBulkAssetId, setAddBulkAssetId] = useState("");
   const [addBulkQuantity, setAddBulkQuantity] = useState(1);
@@ -281,6 +283,16 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 <Pencil className="mr-2 h-4 w-4" />
                 Edit
               </Button>
+              <CanDo resource="kit" action="delete">
+                <Button
+                  variant="outline"
+                  className="text-destructive"
+                  onClick={() => setShowDeleteDialog(true)}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete
+                </Button>
+              </CanDo>
             </div>
           </CanDo>
         </div>
@@ -782,6 +794,17 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <DeleteKitDialog
+      kitId={id}
+      kitLabel={kit.name || kit.assetTag}
+      open={showDeleteDialog}
+      onOpenChange={setShowDeleteDialog}
+      onDeleted={() => {
+        queryClient.invalidateQueries({ queryKey: ["kits"] });
+        router.push("/kits");
+      }}
+    />
     </RequirePermission>
   );
 }

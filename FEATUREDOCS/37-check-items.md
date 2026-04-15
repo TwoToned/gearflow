@@ -66,6 +66,7 @@ Quality check system integrated into the warehouse prep/return flow. Warehouse o
 | `completeCheckAndPack(data)` | warehouse.scan | Save records + checkout + PACKED |
 | `completeCheckAndFlag(data)` | warehouse.scan | Save records + flag (FAULTY/TT_OVERDUE) |
 | `completeCheckAndStore(data)` | warehouse.scan | Save records + checkin + condition |
+| `completeCheckAndDeprep(data)` | warehouse.check_out | Save RETURN records + reset prepStatus (deprep-gate check) |
 | `saveAdHocCheck(data)` | warehouse.scan | Standalone check (AD_HOC context) |
 | `lookupAssetForAdHocCheck(tag)` | read | Asset lookup for ad-hoc page |
 | `getCheckHistory(assetId, context?)` | read | All records for an asset |
@@ -92,7 +93,7 @@ Quality check system integrated into the warehouse prep/return flow. Warehouse o
 
 ### Warehouse
 
-- **Item Check Form** (`item-check-form.tsx`): Sheet slide-over with check items. Pass/Fail buttons (Fail LEFT red, Pass RIGHT green), measurement with auto-pass/fail, dropdown with isFail, "Pass All" with 3-second undo toast. Supports embedded mode for ad-hoc page.
+- **Item Check Form** (`item-check-form.tsx`): Sheet slide-over with check items. Pass/Fail buttons (Fail LEFT red, Pass RIGHT green), measurement with auto-pass/fail, dropdown with isFail, "Pass All" with 3-second undo toast. Supports embedded mode for ad-hoc page. **Keyboard shortcuts:** `P` pass focused PASS_FAIL row, `F` fail, `A` pass all remaining, `↑`/`↓` move focused-row cursor (skips non-PASS_FAIL rows), `Enter` submit when all answered. Shortcuts are suppressed when focus is on a text input / textarea / number input, while submitting, or with a modifier key held. The focused row gets a `ring-2 ring-primary` highlight. A desktop-only hint bar shows the available keys in the footer.
 - **Close-Out Tab** (`close-out-tab.tsx`): Summary stats, exceptions table, two-step close confirmation.
 - **Batch Close-Out**: Multi-select on warehouse dashboard for returned projects.
 
@@ -107,6 +108,23 @@ Quality check system integrated into the warehouse prep/return flow. Warehouse o
 ## Check Queue
 
 The warehouse page builds a **check queue** when prepping or returning multiple items. Items with check items assigned go through the `ItemCheckForm` sheet one at a time; items without checks are prepped/returned directly via `prepItemDirect` or `deprepItem`.
+
+### Scan Input Auto-Refocus
+
+When a check queue completes (single item or multi-item), `finishCheckQueue` returns focus to the correct scan input via `requestAnimationFrame` (PREP → main scan input, RETURN → return-tab scan input, RETURN-with-fromDeprep → deploy-tab scan input). This lets barcode scanners flow scan-to-scan without a mouse click between checks. The `requestAnimationFrame` delay lets the Sheet focus trap release before the refocus runs, avoiding a race.
+
+### Deprep Check Gate (inbound symmetry)
+
+Outbound flow: `pick/prep → CHECK → deploy (staging) → on truck`.
+Inbound flow: `truck → return → deploy (staging) → CHECK → pick/prep (inventory)`.
+
+The Deploy tab is the staging ground on both sides of the truck. The check always happens at the inventory↔staging boundary. On the inbound side, that means a second RETURN-context check runs at **deprep time** in addition to the existing return-scan check (additive, dual-check). Implementation:
+
+- `handleDeprep` in `src/app/(app)/warehouse/[projectId]/page.tsx` intercepts deprep clicks for returned items (`status === "RETURNED"`, `prepStatus === "PACKED"`) whose model has check items, and builds a check queue with `fromDeprep: true, context: "RETURN"`.
+- On submit, the queue dispatches to `completeCheckAndDeprep` (not `completeCheckAndStore`) which writes RETURN-context `CheckRecord` rows and resets `prepStatus=PENDING` in one transaction — without changing `status` (already RETURNED).
+- Items that were never deployed (outbound deprep) or whose model has no check items bypass the form and call `deprepItem` directly.
+- Flagged/damaged items (`prepStatus !== "PACKED"`) also bypass the form and deprep directly — the return-scan check already captured the fault, and a second pass would be duplicate noise.
+- Kit deprep respects `KitCheckMode` via `startKitCheckFlow(..., fromDeprep=true)`. `KIT_LEVEL` kits get one kit-level check; `PER_ITEM` kits get a queue entry per child. When the queue finishes, `finishCheckQueue` calls `deprepKit` instead of `kitCheckInMutation`.
 
 ### Bulk Items in Check Queue
 - Each selected bulk unit generates a separate `CheckQueueItem` entry

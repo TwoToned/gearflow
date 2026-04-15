@@ -5,6 +5,16 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-04-15
+
+### Added
+- Group template picker in the project equipment tab's Add Group dialog. Selecting a template auto-fills the group title and flips the create action to apply the template's items; leaving it blank creates an empty group as before.
+- "Save as Template" action on each project group dropdown, with a dialog pre-filled from the group title. Captures the group's model- and kit-backed line items via `saveGroupAsTemplate` and invalidates the templates query so newly saved templates appear immediately in the picker.
+- Group Templates management page at `/settings/group-templates` (nav entry gated by `project:manage_line_items`). Lists all templates sorted by name with expandable item previews (kit vs. model icons, quantity badges), rename/description edit dialog, and a delete dialog that clarifies existing projects keep their line items.
+
+### Fixed
+- `updateGroupTemplate` item-replace path no longer drops `kitId` and `sortOrder` when rebuilding template items.
+
 ## [0.4.0] - 2026-04-15
 
 ### Added

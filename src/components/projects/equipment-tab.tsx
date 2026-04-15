@@ -833,8 +833,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   });
 
   const updateLineItemMut = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) =>
-      updateLineItem(id, data as Parameters<typeof updateLineItem>[1]),
+    mutationFn: ({ id, data, allowOverbook }: { id: string; data: Record<string, unknown>; allowOverbook?: boolean }) =>
+      updateLineItem(id, data as Parameters<typeof updateLineItem>[1], allowOverbook ?? false),
     onSuccess: () => {
       invalidate();
       setEditLineItem(null);
@@ -892,6 +892,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
         discount: disc,
         notes: editNotes || undefined,
       },
+      allowOverbook: editOverbookConfirmed,
     });
   }
 
@@ -1864,6 +1865,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                     ? `This will overbook ${editRequestedQty} units with only ${editAvailableForEdit ?? 0} available across overlapping projects`
                     : `Only ${editAvailableForEdit ?? 0} in stock — requesting ${editRequestedQty}`}
                 </p>
+                {editAvailability?.dateless && (
+                  <p className="text-xs text-red-600/80 dark:text-red-400/80">
+                    No dates set — checking stock only (not cross-project conflicts)
+                  </p>
+                )}
                 {editAvailability?.conflicts && editAvailability.conflicts.length > 0 && (
                   <p className="text-xs text-red-600/80 dark:text-red-400/80">
                     Conflicts with: {editAvailability.conflicts.join(", ")}

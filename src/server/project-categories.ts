@@ -237,6 +237,7 @@ export async function getProjectOverbookedStatus(projectId: string) {
           isKitChild: true,
           parentLineItemId: true,
           status: true,
+          isSubhire: true,
         },
       },
     },

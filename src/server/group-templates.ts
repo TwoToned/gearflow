@@ -344,11 +344,13 @@ export async function updateGroupTemplate(
       });
 
       await tx.groupTemplateItem.createMany({
-        data: parsed.map((item) => ({
+        data: parsed.map((item, idx) => ({
           organizationId,
           templateId,
-          modelId: item.modelId,
+          modelId: item.modelId ?? null,
+          kitId: item.kitId ?? null,
           quantity: item.quantity,
+          sortOrder: item.sortOrder ?? idx,
         })),
       });
     }

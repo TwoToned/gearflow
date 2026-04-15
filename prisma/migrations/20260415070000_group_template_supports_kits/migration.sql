@@ -18,13 +18,16 @@ DROP TABLE IF EXISTS "kit_preset";
 -- rigid kit. modelId becomes nullable; kitId is added. When a template is
 -- applied, kit items call addKitLineItem and expand to the kit's children.
 
--- AlterTable
+-- AlterTable (idempotent — some envs pre-created these columns via `prisma db push`)
 ALTER TABLE "group_template_item" ALTER COLUMN "modelId" DROP NOT NULL;
-ALTER TABLE "group_template_item" ADD COLUMN "kitId" TEXT;
-ALTER TABLE "group_template_item" ADD COLUMN "sortOrder" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "group_template_item" ADD COLUMN IF NOT EXISTS "kitId" TEXT;
+ALTER TABLE "group_template_item" ADD COLUMN IF NOT EXISTS "sortOrder" INTEGER NOT NULL DEFAULT 0;
 
 -- CreateIndex
-CREATE INDEX "group_template_item_kitId_idx" ON "group_template_item"("kitId");
+CREATE INDEX IF NOT EXISTS "group_template_item_kitId_idx" ON "group_template_item"("kitId");
 
 -- AddForeignKey
-ALTER TABLE "group_template_item" ADD CONSTRAINT "group_template_item_kitId_fkey" FOREIGN KEY ("kitId") REFERENCES "kit"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "group_template_item" ADD CONSTRAINT "group_template_item_kitId_fkey" FOREIGN KEY ("kitId") REFERENCES "kit"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;

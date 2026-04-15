@@ -658,6 +658,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   const [showAddGroupFromToolbar, setShowAddGroupFromToolbar] = useState(false);
   const [toolbarGroupTitle, setToolbarGroupTitle] = useState("");
   const [toolbarGroupCategoryId, setToolbarGroupCategoryId] = useState("");
+  const [toolbarGroupTemplateId, setToolbarGroupTemplateId] = useState("");
 
   // Move line item dialog state
   const [moveLineItemId, setMoveLineItemId] = useState<string | null>(null);
@@ -1572,13 +1573,13 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
       {/* Add group from toolbar dialog */}
       <Dialog open={showAddGroupFromToolbar} onOpenChange={(open) => {
         setShowAddGroupFromToolbar(open);
-        if (!open) { setToolbarGroupTitle(""); setToolbarGroupCategoryId(""); }
+        if (!open) { setToolbarGroupTitle(""); setToolbarGroupCategoryId(""); setToolbarGroupTemplateId(""); }
       }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Add Group</DialogTitle>
             <DialogDescription>
-              Choose a category and name for the new group.
+              Choose a category and name for the new group. Optionally start from a template.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
@@ -1595,6 +1596,30 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                 ))}
               </select>
             </div>
+            {templateOptions.length > 0 && (
+              <div className="space-y-2">
+                <Label>Template (optional)</Label>
+                <select
+                  value={toolbarGroupTemplateId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setToolbarGroupTemplateId(id);
+                    if (id && !toolbarGroupTitle.trim()) {
+                      const t = templateOptions.find((o) => o.id === id);
+                      if (t) setToolbarGroupTitle(t.name);
+                    }
+                  }}
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <option value="">None (empty group)</option>
+                  {templateOptions.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t.itemCount} {t.itemCount === 1 ? "item" : "items"})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Group Title</Label>
               <Input
@@ -1603,10 +1628,15 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                 placeholder="e.g. PA System, Lighting Rig"
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && toolbarGroupTitle.trim() && toolbarGroupCategoryId) {
-                    createGroupMut.mutate({ categoryId: toolbarGroupCategoryId, title: toolbarGroupTitle.trim() });
+                    createGroupMut.mutate({
+                      categoryId: toolbarGroupCategoryId,
+                      title: toolbarGroupTitle.trim(),
+                      templateId: toolbarGroupTemplateId || undefined,
+                    });
                     setShowAddGroupFromToolbar(false);
                     setToolbarGroupTitle("");
                     setToolbarGroupCategoryId("");
+                    setToolbarGroupTemplateId("");
                   }
                 }}
                 autoFocus
@@ -1618,21 +1648,27 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
               setShowAddGroupFromToolbar(false);
               setToolbarGroupTitle("");
               setToolbarGroupCategoryId("");
+              setToolbarGroupTemplateId("");
             }}>
               Cancel
             </Button>
             <Button
               onClick={() => {
                 if (toolbarGroupTitle.trim() && toolbarGroupCategoryId) {
-                  createGroupMut.mutate({ categoryId: toolbarGroupCategoryId, title: toolbarGroupTitle.trim() });
+                  createGroupMut.mutate({
+                    categoryId: toolbarGroupCategoryId,
+                    title: toolbarGroupTitle.trim(),
+                    templateId: toolbarGroupTemplateId || undefined,
+                  });
                   setShowAddGroupFromToolbar(false);
                   setToolbarGroupTitle("");
                   setToolbarGroupCategoryId("");
+                  setToolbarGroupTemplateId("");
                 }
               }}
               disabled={!toolbarGroupTitle.trim() || !toolbarGroupCategoryId || createGroupMut.isPending}
             >
-              Create
+              {toolbarGroupTemplateId ? "Create from Template" : "Create"}
             </Button>
           </DialogFooter>
         </DialogContent>

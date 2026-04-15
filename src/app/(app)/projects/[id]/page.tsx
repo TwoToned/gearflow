@@ -23,7 +23,6 @@ import {
   ChevronRight,
   ClipboardList,
 } from "lucide-react";
-import { LineItemsPanel } from "@/components/projects/line-items-panel";
 import { EquipmentTab } from "@/components/projects/equipment-tab";
 import { CrewPanel } from "@/components/projects/crew-panel";
 import { CallSheetDialog } from "@/components/projects/call-sheet-dialog";
@@ -171,6 +170,10 @@ export default function ProjectDetailPage({
       toast.success("Status updated");
       queryClient.invalidateQueries({ queryKey: ["project", orgId, id] });
       queryClient.invalidateQueries({ queryKey: ["projects"] });
+      // A status transition into CANCELLED/RETURNED/COMPLETED/INVOICED releases
+      // stock; any other open project's overbook/availability caches are now stale.
+      queryClient.invalidateQueries({ queryKey: ["project-overbooked"] });
+      queryClient.invalidateQueries({ queryKey: ["availability"] });
     },
     onError: (e) => toast.error(e.message),
   });
@@ -181,6 +184,8 @@ export default function ProjectDetailPage({
       toast.success("Project cancelled");
       queryClient.invalidateQueries({ queryKey: ["projects"] });
       queryClient.invalidateQueries({ queryKey: ["project", orgId, id] });
+      queryClient.invalidateQueries({ queryKey: ["project-overbooked"] });
+      queryClient.invalidateQueries({ queryKey: ["availability"] });
     },
     onError: (e) => toast.error(e.message),
   });

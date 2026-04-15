@@ -41,6 +41,7 @@ export async function computeOverbookedStatus(
     parentLineItemId: string | null;
     kitId: string | null;
     status: string;
+    isSubhire?: boolean;
   }>,
   rentalStartDate: Date | null,
   rentalEndDate: Date | null,
@@ -48,9 +49,10 @@ export async function computeOverbookedStatus(
 ): Promise<Map<string, OverbookedInfo>> {
   const overbookedMap = new Map<string, OverbookedInfo>();
 
-  // Collect ALL equipment line items with a modelId (including kit children)
+  // Collect ALL equipment line items with a modelId (including kit children).
+  // Sub-hire items represent third-party stock and never consume our inventory.
   const relevantItems = lineItems.filter(
-    (li) => li.modelId && li.status !== "CANCELLED",
+    (li) => li.modelId && li.status !== "CANCELLED" && !li.isSubhire,
   );
   if (relevantItems.length === 0) return overbookedMap;
 
@@ -58,7 +60,8 @@ export async function computeOverbookedStatus(
   const hasDates = !!rentalStartDate && !!rentalEndDate;
 
   // Batch query: all overlapping bookings for these models across all projects
-  // Include BOTH regular items AND kit children — they all consume stock
+  // Include BOTH regular items AND kit children — they all consume stock.
+  // Sub-hire items are third-party stock and are excluded.
   // When no dates: only count THIS project's bookings (no date overlap possible)
   const overlappingBookings = hasDates
     ? await prisma.projectLineItem.findMany({
@@ -66,6 +69,7 @@ export async function computeOverbookedStatus(
           organizationId,
           modelId: { in: modelIds },
           status: { not: "CANCELLED" },
+          isSubhire: false,
           project: {
             isTemplate: false,
             status: {
@@ -82,6 +86,7 @@ export async function computeOverbookedStatus(
           organizationId,
           modelId: { in: modelIds },
           status: { not: "CANCELLED" },
+          isSubhire: false,
           projectId,
         },
         select: { modelId: true, quantity: true, projectId: true },

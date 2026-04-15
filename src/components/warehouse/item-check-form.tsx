@@ -127,6 +127,40 @@ export function ItemCheckForm({
   const [returnCondition, setReturnCondition] = useState<"GOOD" | "DAMAGED" | "MISSING">("GOOD");
   const [returnNotes, setReturnNotes] = useState("");
 
+  // Keyboard-shortcut cursor: which row is "active" for P/F keystrokes.
+  // Points at an index within the full items[] array — arrow keys skip non-PASS_FAIL rows.
+  const [focusedRowIndex, setFocusedRowIndex] = useState(0);
+
+  // Refs used by the keyboard handler so it reads the latest props/state without re-binding.
+  const handleSubmitRef = useRef<() => void>(() => {});
+  const handlePassAllRef = useRef<() => void>(() => {});
+  const stateRef = useRef<{
+    items: CheckItemData[];
+    checkStates: Record<string, CheckState>;
+    focusedRowIndex: number;
+    isSubmitting: boolean;
+    isLoading: boolean;
+  }>({
+    items: [],
+    checkStates: {},
+    focusedRowIndex: 0,
+    isSubmitting: false,
+    isLoading: false,
+  });
+
+  // Clear any pending pass-all undo timer on unmount or when the form closes,
+  // so a stale timeout doesn't fire setState after the component is gone.
+  useEffect(() => {
+    if (!open && passAllUndo) {
+      clearTimeout(passAllUndo);
+      setPassAllUndo(null);
+      passAllUndoRef.current = null;
+    }
+    return () => {
+      if (passAllUndo) clearTimeout(passAllUndo);
+    };
+  }, [open, passAllUndo]);
+
   // Reset states when form opens with new items
   useEffect(() => {
     if (open && items.length > 0) {
@@ -144,6 +178,9 @@ export function ItemCheckForm({
       passAllUndoRef.current = null;
       setReturnCondition("GOOD");
       setReturnNotes("");
+      // Land the keyboard cursor on the first PASS_FAIL row if there is one, else row 0
+      const firstPassFail = items.findIndex((mci) => mci.checkItem.type === "PASS_FAIL");
+      setFocusedRowIndex(firstPassFail >= 0 ? firstPassFail : 0);
     }
   }, [open, items.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -217,6 +254,7 @@ export function ItemCheckForm({
   });
 
   function handleSubmit() {
+    if (!allComplete || isSubmitting) return;
     const checks: CheckRecordFormValues[] = items.map((mci) => {
       const state = checkStates[mci.checkItem.id];
       return {
@@ -241,6 +279,92 @@ export function ItemCheckForm({
   }
 
   const failCount = Object.values(checkStates).filter((s) => s.result === "FAIL").length;
+
+  // ─── Keyboard shortcuts ─────────────────────────────────────────────────
+  // P / F         — pass or fail the focused PASS_FAIL row
+  // A             — pass all remaining PASS_FAIL rows (same as the existing button)
+  // ArrowUp/Down  — move the focused row cursor, skipping non-PASS_FAIL rows
+  // Enter         — submit if all complete
+  // Guards: ignore when any text input/textarea/select/contenteditable has focus,
+  //         and when the form is submitting or loading.
+  // Latest-value refs avoid re-binding the listener on every state tick.
+  // Wire the refs to the latest handlers — both are defined above in render scope.
+  handleSubmitRef.current = handleSubmit;
+  handlePassAllRef.current = handlePassAll;
+  stateRef.current = { items, checkStates, focusedRowIndex, isSubmitting, isLoading };
+
+  useEffect(() => {
+    if (!open || embedded) return;
+
+    function isTypingTarget(el: EventTarget | null): boolean {
+      if (!(el instanceof HTMLElement)) return false;
+      const tag = el.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+      if (el.isContentEditable) return true;
+      return false;
+    }
+
+    function onKey(e: KeyboardEvent) {
+      const s = stateRef.current;
+      if (s.isSubmitting || s.isLoading) return;
+      // Modifier keys → let the browser handle (e.g. Cmd+R)
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // Don't hijack while the user is typing in a notes/measurement/dropdown field
+      if (isTypingTarget(e.target)) return;
+
+      const key = e.key;
+      const passFailIndices = s.items
+        .map((mci, i) => (mci.checkItem.type === "PASS_FAIL" ? i : -1))
+        .filter((i) => i >= 0);
+
+      if (key === "p" || key === "P" || key === "f" || key === "F") {
+        const focusedItem = s.items[s.focusedRowIndex];
+        if (!focusedItem || focusedItem.checkItem.type !== "PASS_FAIL") return;
+        const result = key === "p" || key === "P" ? "PASS" : "FAIL";
+        e.preventDefault();
+        setCheckStates((prev) => ({
+          ...prev,
+          [focusedItem.checkItem.id]: { ...prev[focusedItem.checkItem.id], result },
+        }));
+        // Auto-advance to next PASS_FAIL row
+        const currentPos = passFailIndices.indexOf(s.focusedRowIndex);
+        if (currentPos >= 0 && currentPos + 1 < passFailIndices.length) {
+          setFocusedRowIndex(passFailIndices[currentPos + 1]);
+        }
+        return;
+      }
+
+      if (key === "a" || key === "A") {
+        if (passFailIndices.length === 0) return;
+        e.preventDefault();
+        handlePassAllRef.current();
+        return;
+      }
+
+      if (key === "ArrowDown" || key === "ArrowUp") {
+        if (passFailIndices.length === 0) return;
+        e.preventDefault();
+        const currentPos = passFailIndices.indexOf(s.focusedRowIndex);
+        if (key === "ArrowDown") {
+          const next = currentPos < 0 ? 0 : Math.min(currentPos + 1, passFailIndices.length - 1);
+          setFocusedRowIndex(passFailIndices[next]);
+        } else {
+          const next = currentPos < 0 ? passFailIndices.length - 1 : Math.max(currentPos - 1, 0);
+          setFocusedRowIndex(passFailIndices[next]);
+        }
+        return;
+      }
+
+      if (key === "Enter") {
+        e.preventDefault();
+        handleSubmitRef.current();
+        return;
+      }
+    }
+
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, embedded]);
 
   const contextLabel = context === "PREP" ? "Prep Check" : context === "RETURN" ? "Return Check" : "Ad-Hoc Check";
   const submitLabel = context === "PREP"
@@ -280,6 +404,8 @@ export function ItemCheckForm({
               item={mci}
               state={checkStates[mci.checkItem.id]}
               index={index}
+              isFocused={!embedded && index === focusedRowIndex && mci.checkItem.type === "PASS_FAIL"}
+              onFocus={() => setFocusedRowIndex(index)}
               onUpdate={(updates) => updateCheck(mci.checkItem.id, updates)}
               getMeasurementAutoResult={getMeasurementAutoResult}
             />
@@ -356,6 +482,17 @@ export function ItemCheckForm({
             {submitLabel}
           </Button>
         </div>
+
+        {/* Keyboard-shortcut hint bar — desktop only, non-embedded */}
+        {!embedded && items.some((mci) => mci.checkItem.type === "PASS_FAIL") && (
+          <div className="hidden sm:flex items-center justify-center gap-3 pt-1 text-[10px] text-fg-3 tabular-nums">
+            <span><kbd className="rounded bg-bg-elevated px-1 py-0.5 font-mono">P</kbd> pass</span>
+            <span><kbd className="rounded bg-bg-elevated px-1 py-0.5 font-mono">F</kbd> fail</span>
+            <span><kbd className="rounded bg-bg-elevated px-1 py-0.5 font-mono">A</kbd> pass all</span>
+            <span><kbd className="rounded bg-bg-elevated px-1 py-0.5 font-mono">↑↓</kbd> move</span>
+            <span><kbd className="rounded bg-bg-elevated px-1 py-0.5 font-mono">↵</kbd> submit</span>
+          </div>
+        )}
       </div>
     </>
   );
@@ -411,12 +548,16 @@ function CheckItemRow({
   item,
   state,
   index,
+  isFocused = false,
+  onFocus,
   onUpdate,
   getMeasurementAutoResult,
 }: {
   item: CheckItemData;
   state: CheckState | undefined;
   index: number;
+  isFocused?: boolean;
+  onFocus?: () => void;
   onUpdate: (updates: Partial<CheckState>) => void;
   getMeasurementAutoResult: (
     value: string,
@@ -430,7 +571,10 @@ function CheckItemRow({
 
   return (
     <div
+      onClick={onFocus}
       className={`rounded-lg border p-3 transition-colors ${
+        isFocused ? "ring-2 ring-primary ring-offset-1 ring-offset-bg" : ""
+      } ${
         result === "PASS"
           ? "border-green-500/30 bg-green-500/5"
           : result === "FAIL"

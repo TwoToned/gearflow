@@ -5,6 +5,19 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.5] - 2026-04-15
+
+### Added
+- Keyboard shortcuts in the warehouse item check form: `P`/`F` to pass/fail the focused PASS_FAIL row with auto-advance, `A` to pass all remaining, `↑`/`↓` to move the focused-row cursor (skips non-PASS_FAIL rows), `Enter` to submit. Shortcuts are suppressed while typing in a text input, while submitting, or with a modifier key held. Desktop-only hint bar in the sheet footer shows the available keys.
+- Deprep check gate: deprepping a returned item whose model has check items now runs a second RETURN-context check at deprep time (the inventory↔staging boundary), in addition to the existing return-scan check. Matches the mental model where Deploy is a staging ground on both sides of the truck. Damaged/flagged items bypass the second check. Kits respect `KitCheckMode` (KIT_LEVEL runs one kit-level check, PER_ITEM runs a queue entry per child).
+- New `completeCheckAndDeprep` server action that writes RETURN-context check records and resets `prepStatus=PENDING` in one transaction.
+- React component test infrastructure (`@testing-library/react` + jsdom) with 11 keyboard-handler tests for `ItemCheckForm`. Existing 1656 node-env validation tests are unaffected.
+
+### Fixed
+- Scan input auto-refocus after check completion: `finishCheckQueue` now returns focus to the correct scan input via `requestAnimationFrame` (PREP → main scan input, RETURN → return-tab scan input, deprep → deploy-tab scan input), letting barcode scanners flow scan-to-scan without a mouse click between checks.
+- Timer leak in `ItemCheckForm` pass-all undo window — the 3-second setTimeout is now cleared on form close and component unmount.
+- `completeCheckAndDeprep` pre-condition guard now strictly enforces `status=RETURNED` and `prepStatus=PACKED`, rejecting CONFIRMED/PREPPING items that could previously have been written against by a race or UI bug.
+
 ## [0.3.4] - 2026-04-15
 
 ### Fixed

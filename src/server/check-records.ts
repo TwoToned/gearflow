@@ -404,6 +404,97 @@ export async function deprepItem(
 }
 
 /**
+ * Write RETURN-context check records for an already-returned item and deprep it
+ * (reset prepStatus=PENDING, removing it from the deploy staging area).
+ *
+ * Used by the deploy tab's deprep action when staff are putting returned items back
+ * into inventory — the "post-truck" half of the check symmetry. The item is already
+ * in status=RETURNED (the return-tab scan handled that); this call just records an
+ * additional set of checks at the moment the item physically re-enters inventory,
+ * then transitions prepStatus back to PENDING.
+ *
+ * Pre-condition: line item must have status=RETURNED. Items that never shipped
+ * (status=CONFIRMED) should use the plain deprepItem() path — no return check applies.
+ */
+export async function completeCheckAndDeprep(data: {
+  projectId: string;
+  lineItemId: string;
+  assetId?: string;
+  bulkAssetId?: string | null;
+  checks: CheckRecordFormValues[];
+}) {
+  const { organizationId, userId, userName } = await requirePermission(
+    "warehouse",
+    "check_out"
+  );
+
+  const result = await prisma.$transaction(async (tx) => {
+    const lineItem = await tx.projectLineItem.findFirst({
+      where: { id: data.lineItemId, projectId: data.projectId, organizationId },
+      include: { model: true, asset: true, bulkAsset: true },
+    });
+
+    if (!lineItem) {
+      throw new Error("Line item not found in project");
+    }
+    if (lineItem.status !== "RETURNED") {
+      throw new Error(
+        `Deprep return check requires RETURNED status (got ${lineItem.status})`
+      );
+    }
+    if (lineItem.prepStatus !== "PACKED") {
+      throw new Error(
+        `Deprep return check requires prepStatus=PACKED (got ${lineItem.prepStatus ?? "null"})`
+      );
+    }
+
+    // Write RETURN-context check records.
+    // assetId may be empty if the return-tab scan already disconnected it — that's OK,
+    // saveCheckRecords skips the asset connect when assetId is falsy.
+    const resolvedAssetId = data.assetId || lineItem.assetId || "";
+    await saveCheckRecords(
+      tx,
+      organizationId,
+      userId,
+      resolvedAssetId,
+      data.lineItemId,
+      data.bulkAssetId || lineItem.bulkAssetId,
+      "RETURN",
+      data.checks
+    );
+
+    // Reset prepStatus to remove from deploy staging. Do not touch status/returnStatus —
+    // the return-tab flow already set those.
+    const updated = await tx.projectLineItem.update({
+      where: { id: data.lineItemId },
+      data: {
+        prepStatus: "PENDING",
+        ...(!lineItem.isKitChild && lineItem.assetId
+          ? { asset: { disconnect: true } }
+          : {}),
+      },
+      include: { model: true, asset: true, bulkAsset: true },
+    });
+    return updated;
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "asset",
+    entityId: data.lineItemId,
+    entityName: result.model?.name || "Line item",
+    summary: "Deprep return check complete — item returned to inventory",
+    projectId: data.projectId,
+    assetId: result.assetId || undefined,
+  });
+
+  return serialize(result);
+}
+
+/**
  * Reverse prep for a kit: set parent + all children/grandchildren back to PENDING.
  */
 export async function deprepKit(

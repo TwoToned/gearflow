@@ -5,6 +5,25 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-04-15
+
+### Added
+- Group template picker in the project equipment tab's Add Group dialog. Selecting a template auto-fills the group title and flips the create action to apply the template's items; leaving it blank creates an empty group as before.
+- "Save as Template" action on each project group dropdown, with a dialog pre-filled from the group title. Captures the group's model- and kit-backed line items via `saveGroupAsTemplate` and invalidates the templates query so newly saved templates appear immediately in the picker.
+- Group Templates management page at `/settings/group-templates` (nav entry gated by `project:manage_line_items`). Lists all templates sorted by name with expandable item previews (kit vs. model icons, quantity badges), rename/description edit dialog, and a delete dialog that clarifies existing projects keep their line items.
+
+### Fixed
+- `updateGroupTemplate` item-replace path no longer drops `kitId` and `sortOrder` when rebuilding template items.
+
+## [0.4.0] - 2026-04-15
+
+### Added
+- Kit delete flow: the kit detail page now exposes a `DeleteKitDialog` with two tiers. Archive (soft delete) is always available while the kit is AVAILABLE + active, and is the default; hard delete is an opt-in second option that is blocked whenever any `ProjectLineItem` references the kit, so historical project data is preserved. The dialog surfaces a human-readable reason when hard delete is unavailable. New server actions `canDeleteKit(id)` and `deleteKit(id)` back the UI, gated by the existing `kit:delete` permission.
+- Group templates now support kit items in addition to model items. `GroupTemplateItem` got a nullable `kitId` column and a Zod XOR refine so each row references exactly one of `modelId`/`kitId`. A template can mix both: "FOH Package" = 2x SM57 (model) + 1x rack kit (rigid). `saveGroupAsTemplate` captures both kinds from the source group; `applyGroupTemplate` creates the model lines inside the same transaction as the new group, then delegates kit items to `addKitLineItem` per unit of quantity (so "2x rack kit" becomes two independent parent rows with their full child expansions). Kit expansion failures (conflicts, availability) are collected as warnings rather than aborting the apply, matching warehouse-staff expectations.
+
+### Removed
+- The unused `KitPreset` / `KitPresetItem` tables (introduced in an earlier WIP migration) have been dropped in favor of extending the existing `GroupTemplate` system. The `group_template_supports_kits` migration atomically drops the orphan tables and adds `kitId` + `sortOrder` to `group_template_item`.
+
 ## [0.3.5] - 2026-04-15
 
 ### Added

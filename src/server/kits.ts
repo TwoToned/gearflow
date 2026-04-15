@@ -327,6 +327,119 @@ export async function archiveKit(id: string) {
 }
 
 // ---------------------------------------------------------------------------
+// canDeleteKit – predicate for UI to decide which delete options are available
+// ---------------------------------------------------------------------------
+export async function canDeleteKit(id: string) {
+  const { organizationId } = await requirePermission("kit", "delete");
+
+  const kit = await prisma.kit.findUnique({
+    where: { id, organizationId },
+    select: { id: true, status: true, isActive: true },
+  });
+  if (!kit) throw new Error("Kit not found");
+
+  // Archive is allowed whenever the kit is AVAILABLE (matches archiveKit guard).
+  const canArchive = kit.status === "AVAILABLE" && kit.isActive;
+
+  // Hard delete adds two extra constraints: (a) no ProjectLineItem references,
+  // (b) AVAILABLE status. This prevents losing historical project data.
+  const referencingLineItems = await prisma.projectLineItem.count({
+    where: { kitId: id, organizationId },
+  });
+
+  const canHardDelete = kit.status === "AVAILABLE" && kit.isActive && referencingLineItems === 0;
+  let reason: string | undefined;
+
+  if (!canArchive) {
+    reason = kit.status !== "AVAILABLE"
+      ? `Kit status is ${kit.status} — only AVAILABLE kits can be archived or deleted.`
+      : "Kit is already archived.";
+  } else if (!canHardDelete) {
+    reason = `Kit is referenced by ${referencingLineItems} project line item${referencingLineItems === 1 ? "" : "s"}. Archive it instead, or remove it from those projects first.`;
+  }
+
+  return serialize({ canArchive, canHardDelete, referencingLineItems, reason });
+}
+
+// ---------------------------------------------------------------------------
+// deleteKit – hard delete. Releases contents then removes the kit row entirely.
+// Blocked if the kit is referenced by any ProjectLineItem, regardless of status,
+// to preserve historical project data. Use archiveKit for the reversible path.
+// ---------------------------------------------------------------------------
+export async function deleteKit(id: string) {
+  const { organizationId, userId, userName } = await requirePermission("kit", "delete");
+
+  const kit = await prisma.kit.findUnique({
+    where: { id, organizationId },
+    include: {
+      serializedItems: true,
+      bulkItems: true,
+    },
+  });
+  if (!kit) throw new Error("Kit not found");
+  if (kit.status !== "AVAILABLE") {
+    throw new Error("Only AVAILABLE kits can be deleted");
+  }
+
+  const referencingLineItems = await prisma.projectLineItem.count({
+    where: { kitId: id, organizationId },
+  });
+  if (referencingLineItems > 0) {
+    throw new Error(
+      `This kit is referenced by ${referencingLineItems} project line item${
+        referencingLineItems === 1 ? "" : "s"
+      }. Archive it instead, or remove it from those projects first.`,
+    );
+  }
+
+  const tagForLog = kit.assetTag;
+  const nameForLog = kit.name;
+
+  await prisma.$transaction(async (tx) => {
+    // Release serialized assets back to inventory.
+    for (const item of kit.serializedItems) {
+      await tx.asset.update({
+        where: { id: item.assetId },
+        data: { kitId: null, status: "AVAILABLE" },
+      });
+    }
+    await tx.kitSerializedItem.deleteMany({ where: { kitId: id } });
+
+    // Return bulk quantities to their source bulk assets.
+    for (const item of kit.bulkItems) {
+      await tx.bulkAsset.update({
+        where: { id: item.bulkAssetId },
+        data: { availableQuantity: { increment: item.quantity } },
+      });
+    }
+    await tx.kitBulkItem.deleteMany({ where: { kitId: id } });
+
+    // Clean up kit-scoped metadata. KitMedia rows reference S3 files — we drop
+    // the DB rows here and rely on the nightly orphan sweep (or leave the S3
+    // files). Full media cleanup can be layered on later if it becomes a
+    // concern; hard delete is a rarely-used path.
+    await tx.kitCheckItem.deleteMany({ where: { kitId: id } });
+    await tx.kitMedia.deleteMany({ where: { kitId: id } });
+
+    // Finally, remove the kit row. Cascades handle the remaining child relations.
+    await tx.kit.delete({ where: { id, organizationId } });
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "DELETE",
+    entityType: "kit",
+    entityId: id,
+    entityName: tagForLog,
+    summary: `Permanently deleted kit ${tagForLog} - ${nameForLog}`,
+  });
+
+  return serialize({ id, hardDeleted: true });
+}
+
+// ---------------------------------------------------------------------------
 // addSerializedItemToKit
 // ---------------------------------------------------------------------------
 export async function addSerializedItemToKit(

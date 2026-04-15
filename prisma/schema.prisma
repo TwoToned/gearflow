@@ -599,8 +599,8 @@ model Category {
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
-  models Model[]
-  kits   Kit[]
+  models     Model[]
+  kits       Kit[]
 
   @@index([organizationId])
   @@index([parentId])
@@ -913,6 +913,7 @@ model Kit {
   media            KitMedia[]
   kitCheckItems    KitCheckItem[]
   checkRecords     CheckRecord[]
+  groupTemplateItems GroupTemplateItem[]
 
   @@unique([organizationId, assetTag])
   @@index([organizationId])
@@ -1442,18 +1443,26 @@ model GroupTemplate {
 
 // ─── Group Template Item ────────────────────────────────────────────────────
 
+// Each template item references EITHER a model (soft line — pick any SM57 at
+// checkout) OR a rigid Kit (hard reference to a pre-built rack/case). Exactly
+// one of modelId / kitId is set. Kit items expand via addKitLineItem when the
+// template is applied, pulling in the kit's children as usual.
 model GroupTemplateItem {
   id              String   @id @default(cuid())
   organizationId  String
   organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   templateId      String
   template        GroupTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  modelId         String
-  model           Model    @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  modelId         String?
+  model           Model?   @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  kitId           String?
+  kit             Kit?     @relation(fields: [kitId], references: [id], onDelete: Cascade)
   quantity        Int      @default(1)
+  sortOrder       Int      @default(0)
 
   @@index([templateId])
   @@index([modelId])
+  @@index([kitId])
   @@index([organizationId])
   @@map("group_template_item")
 }

@@ -10,6 +10,7 @@ import {
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { calculateSuggestedPrice } from "./project-groups";
+import { addKitLineItem, recalculateProjectTotals } from "./line-items";
 
 export async function getGroupTemplates() {
   const { organizationId } = await requirePermission("project", "read");
@@ -27,8 +28,15 @@ export async function getGroupTemplates() {
               weeklyRate: true,
             },
           },
+          kit: {
+            select: {
+              id: true,
+              name: true,
+              assetTag: true,
+            },
+          },
         },
-        orderBy: { model: { name: "asc" } },
+        orderBy: { sortOrder: "asc" },
       },
     },
     orderBy: { name: "asc" },
@@ -50,10 +58,12 @@ export async function createGroupTemplate(data: GroupTemplateFormValues) {
       name: parsed.name,
       description: parsed.description || null,
       items: {
-        create: parsed.items.map((item) => ({
+        create: parsed.items.map((item, idx) => ({
           organizationId,
-          modelId: item.modelId,
+          modelId: item.modelId ?? null,
+          kitId: item.kitId ?? null,
           quantity: item.quantity,
+          sortOrder: item.sortOrder ?? idx,
         })),
       },
     },
@@ -63,7 +73,9 @@ export async function createGroupTemplate(data: GroupTemplateFormValues) {
           model: {
             select: { id: true, name: true, dailyRate: true, weeklyRate: true },
           },
+          kit: { select: { id: true, name: true, assetTag: true } },
         },
+        orderBy: { sortOrder: "asc" },
       },
     },
   });
@@ -96,16 +108,27 @@ export async function saveGroupAsTemplate(
     where: { id: groupId, organizationId },
     include: {
       lineItems: {
+        // Only parent rows — kit children get auto-expanded on apply via
+        // addKitLineItem, so templating them again would double-count.
         where: { isKitChild: false },
-        select: { modelId: true, quantity: true },
+        select: {
+          modelId: true,
+          kitId: true,
+          quantity: true,
+          sortOrder: true,
+        },
+        orderBy: { sortOrder: "asc" },
       },
     },
   });
 
-  // Only items with a model can be templated
-  const itemsWithModel = group.lineItems.filter((li) => li.modelId != null);
-  if (itemsWithModel.length === 0) {
-    throw new Error("Group has no model-backed items to template");
+  // Only items that reference either a model or a kit can be templated.
+  // Free-text/service lines (no modelId AND no kitId) are skipped.
+  const templatable = group.lineItems.filter(
+    (li) => li.modelId != null || li.kitId != null,
+  );
+  if (templatable.length === 0) {
+    throw new Error("Group has no model- or kit-backed items to template");
   }
 
   const template = await prisma.groupTemplate.create({
@@ -114,10 +137,12 @@ export async function saveGroupAsTemplate(
       name,
       description: description || null,
       items: {
-        create: itemsWithModel.map((li) => ({
+        create: templatable.map((li, idx) => ({
           organizationId,
-          modelId: li.modelId!,
+          modelId: li.modelId ?? null,
+          kitId: li.kitId ?? null,
           quantity: li.quantity,
+          sortOrder: idx,
         })),
       },
     },
@@ -127,7 +152,9 @@ export async function saveGroupAsTemplate(
           model: {
             select: { id: true, name: true, dailyRate: true, weeklyRate: true },
           },
+          kit: { select: { id: true, name: true, assetTag: true } },
         },
+        orderBy: { sortOrder: "asc" },
       },
     },
   });
@@ -160,7 +187,8 @@ export async function applyGroupTemplate(
     where: { id: parsed.templateId, organizationId },
     include: {
       items: {
-        include: { model: true },
+        include: { model: true, kit: true },
+        orderBy: { sortOrder: "asc" },
       },
     },
   });
@@ -177,7 +205,12 @@ export async function applyGroupTemplate(
     select: { defaultRentalPeriod: true, defaultRentalQuantity: true },
   });
 
-  // Create group + line items in a transaction
+  // Split items by type — model items go in the same tx as the group create,
+  // kit items get delegated to addKitLineItem *after* the tx commits so it can
+  // run its own transaction for the parent + children expansion.
+  const modelItems = template.items.filter((i) => i.modelId && i.model);
+  const kitItems = template.items.filter((i) => i.kitId && i.kit);
+
   const group = await prisma.$transaction(async (tx) => {
     const newGroup = await tx.projectGroup.create({
       data: {
@@ -194,15 +227,10 @@ export async function applyGroupTemplate(
       },
     });
 
-    // Get next sort order for line items
-    const maxItemSort = await tx.projectLineItem.aggregate({
-      where: { groupId: newGroup.id },
-      _max: { sortOrder: true },
-    });
+    // Start line-item sortOrder at 0 for a freshly-created group
+    let sortOrder = 0;
 
-    let sortOrder = (maxItemSort._max.sortOrder ?? -1) + 1;
-
-    for (const item of template.items) {
+    for (const item of modelItems) {
       const rentalPeriod =
         newGroup.rentalPeriod ?? project.defaultRentalPeriod ?? "DAILY";
       const rate =
@@ -216,8 +244,8 @@ export async function applyGroupTemplate(
           projectId,
           categoryId: parsed.categoryId,
           groupId: newGroup.id,
-          modelId: item.modelId,
-          description: item.model.name,
+          modelId: item.modelId!,
+          description: item.model!.name,
           quantity: item.quantity,
           unitPrice: rate,
           lineTotal: rate * item.quantity,
@@ -229,12 +257,49 @@ export async function applyGroupTemplate(
     return newGroup;
   });
 
+  // Expand kit items outside the tx. Each call creates parent + children and
+  // runs its own availability check. We skip kits that conflict (already on an
+  // overlapping project) rather than aborting the whole apply, so warehouse
+  // staff still get the model items they can use.
+  const kitWarnings: string[] = [];
+  for (const item of kitItems) {
+    try {
+      // Call addKitLineItem per unit of quantity — a template line of "2x rack
+      // kit" means two independent parent rows, matching how a warehouse would
+      // physically pull two racks.
+      for (let i = 0; i < item.quantity; i++) {
+        await addKitLineItem(
+          projectId,
+          item.kitId!,
+          "ITEMIZED",
+          undefined,
+          undefined,
+          parsed.categoryId,
+          group.id,
+        );
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      kitWarnings.push(`${item.kit?.assetTag ?? item.kitId}: ${msg}`);
+    }
+  }
+
   // Calculate suggested price after items are created
   const suggested = await calculateSuggestedPrice(group.id);
   await prisma.projectGroup.update({
     where: { id: group.id },
     data: { suggestedPrice: suggested },
   });
+
+  // Kit expansion touched line items — refresh project totals.
+  if (kitItems.length > 0) {
+    await recalculateProjectTotals(projectId);
+  }
+
+  const summary =
+    kitWarnings.length > 0
+      ? `Applied template "${template.name}" as group "${parsed.title}" with ${template.items.length} item(s); skipped ${kitWarnings.length} kit item(s): ${kitWarnings.join("; ")}`
+      : `Applied template "${template.name}" as group "${parsed.title}" with ${template.items.length} item(s)`;
 
   await logActivity({
     organizationId,
@@ -244,10 +309,10 @@ export async function applyGroupTemplate(
     entityType: "project",
     entityId: projectId,
     entityName: parsed.title,
-    summary: `Applied template "${template.name}" as group "${parsed.title}" with ${template.items.length} item(s)`,
+    summary,
   });
 
-  return serialize(group);
+  return serialize({ ...group, warnings: kitWarnings });
 }
 
 export async function updateGroupTemplate(
@@ -279,11 +344,13 @@ export async function updateGroupTemplate(
       });
 
       await tx.groupTemplateItem.createMany({
-        data: parsed.map((item) => ({
+        data: parsed.map((item, idx) => ({
           organizationId,
           templateId,
-          modelId: item.modelId,
+          modelId: item.modelId ?? null,
+          kitId: item.kitId ?? null,
           quantity: item.quantity,
+          sortOrder: item.sortOrder ?? idx,
         })),
       });
     }

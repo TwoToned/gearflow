@@ -104,13 +104,53 @@ describe("groupTemplateSchema", () => {
     });
   });
 
-  describe("items[].modelId (required)", () => {
-    it("rejects empty modelId", () => {
+  describe("items[] model/kit XOR refine", () => {
+    it("rejects empty modelId with no kitId", () => {
       const result = groupTemplateSchema.safeParse({
         name: "Test",
         items: [{ modelId: "", quantity: 1 }],
       });
       expect(result.success).toBe(false);
+    });
+
+    it("rejects item with neither modelId nor kitId", () => {
+      const result = groupTemplateSchema.safeParse({
+        name: "Test",
+        items: [{ quantity: 1 }],
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects item with both modelId and kitId", () => {
+      const result = groupTemplateSchema.safeParse({
+        name: "Test",
+        items: [{ modelId: "m-1", kitId: "k-1", quantity: 1 }],
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("accepts a kit-only item", () => {
+      const result = groupTemplateSchema.safeParse({
+        name: "Test",
+        items: [{ kitId: "kit-1", quantity: 1 }],
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.items[0].kitId).toBe("kit-1");
+        expect(result.data.items[0].modelId).toBeUndefined();
+      }
+    });
+
+    it("accepts a mixed array of model and kit items", () => {
+      const result = groupTemplateSchema.safeParse({
+        name: "FOH Package",
+        items: [
+          { modelId: "m-1", quantity: 2 },
+          { kitId: "kit-rack-1", quantity: 1 },
+        ],
+      });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.items).toHaveLength(2);
     });
   });
 

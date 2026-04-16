@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sub-hire items always create separate line items and never merge with own-stock items of the same model.
 - `forceSeparate` parameter on `addLineItem` server action to bypass auto-merge.
 
+### Fixed
+- Combine/separate choice no longer resets when adjusting quantity. Previously, changing the quantity spinner silently reverted the selection back to "combine".
+
 ## [0.4.2] - 2026-04-16
 
 ### Fixed

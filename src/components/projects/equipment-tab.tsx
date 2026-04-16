@@ -547,6 +547,9 @@ function SortableLineItemRow({
         {(item.isSubhire || item.type === "SUBHIRE") && item.supplier && (
           <p className={`text-xs text-fg-3 mt-0.5 ${indent}`}>via {item.supplier.name}</p>
         )}
+        {item.notes && (
+          <p className={`text-xs text-fg-3 mt-0.5 truncate max-w-[300px] ${indent}`} title={item.notes}>{item.notes}</p>
+        )}
       </TableCell>
       <TableCell className="text-center t-data">{item.quantity}</TableCell>
       <TableCell className="text-right hidden md:table-cell t-data">
@@ -587,8 +590,13 @@ function SortableLineItemRow({
       <TableRow key={child.id} className="bg-muted/30">
         <TableCell className="px-0" />
         <TableCell>
-          <div className={`flex items-center gap-2 ${childIndent}`}>
-            <span className="text-sm text-fg-2">{child.model?.name ?? child.description ?? "—"}</span>
+          <div className={`${childIndent}`}>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-fg-2">{child.model?.name ?? child.description ?? "—"}</span>
+            </div>
+            {child.notes && (
+              <p className="text-xs text-fg-3 mt-0.5 truncate max-w-[300px]">{child.notes}</p>
+            )}
           </div>
         </TableCell>
         <TableCell className="text-center t-data text-fg-2">{child.quantity}</TableCell>

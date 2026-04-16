@@ -24,3 +24,15 @@ When a project has **no rental dates**, availability is still calculated:
 - **Red badge**: "OVERBOOKED" — shown on project list (AlertTriangle), project detail, all 5 PDFs
 - **Purple badge**: "REDUCED STOCK" — shown when overbooking is caused only by unavailable assets
 - Overbooking allowed with explicit checkbox confirmation in add/edit dialogs
+
+## Invariants (don't break these)
+
+1. **`effectiveStock` is the only enforcement baseline.** Both client and server availability checks compare `quantity` against `effectiveStock - booked`, never raw `totalStock`. In-maintenance / lost / retired assets must not be counted as bookable. The single source of truth is `computeStockBreakdown` in `src/lib/availability.ts` — `checkAvailability`, `computeOverbookedStatus`, `addLineItem`, and `updateLineItem` all go through it.
+
+2. **Edit-dialog "available" formula.** The edit dialog in `equipment-tab.tsx` computes the pool the user can edit into as:
+   ```
+   editAvailableForEdit = availability.available + editingItem.quantity
+   ```
+   This adds back the item's own quantity (since `availability.available` already subtracts all overlapping bookings, including this one). It matches both the add dialog and the overbook badge semantics.
+
+3. **Cache invalidation.** Any mutation that changes line item quantity or presence (add, update, remove, move) MUST invalidate `["availability"]` in addition to `["project-overbooked", projectId]`. The `invalidate()` helper in `equipment-tab.tsx` does this once for every tab mutation; the add dialog does it in its own `onSuccess`. Without this, subsequent add/edit dialogs read stale booked counts and over-permit or over-block wrongly.

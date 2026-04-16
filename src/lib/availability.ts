@@ -1,5 +1,36 @@
 import { prisma } from "@/lib/prisma";
 
+/**
+ * Canonical stock breakdown for a model.
+ *
+ * `effectiveStock` is the only value that should be used for availability
+ * enforcement — both server-side (addLineItem, updateLineItem, checkAvailability)
+ * and client-side (computeOverbookedStatus, edit dialog). Raw `totalStock`
+ * includes assets that are in maintenance / lost / retired and will overstate
+ * what can actually be booked.
+ */
+export function computeStockBreakdown(model: {
+  assetType: "SERIALIZED" | "BULK";
+  assets: { status: string }[];
+  bulkAssets: { totalQuantity: number }[];
+}): { totalStock: number; effectiveStock: number; unavailable: number } {
+  if (model.assetType === "SERIALIZED") {
+    const totalStock = model.assets.length;
+    const unavailable = model.assets.filter(
+      (a) =>
+        a.status === "IN_MAINTENANCE" ||
+        a.status === "LOST" ||
+        a.status === "RETIRED",
+    ).length;
+    return { totalStock, effectiveStock: totalStock - unavailable, unavailable };
+  }
+  const totalStock = model.bulkAssets.reduce(
+    (sum, ba) => sum + ba.totalQuantity,
+    0,
+  );
+  return { totalStock, effectiveStock: totalStock, unavailable: 0 };
+}
+
 export interface OverbookedInfo {
   /** How many units over capacity */
   overBy: number;
@@ -117,20 +148,10 @@ export async function computeOverbookedStatus(
   const unavailableByModel = new Map<string, number>();
 
   for (const model of models) {
-    if (model.assetType === "SERIALIZED") {
-      const total = model.assets.length;
-      const unavailable = model.assets.filter(
-        (a) => a.status === "IN_MAINTENANCE" || a.status === "LOST" || a.status === "RETIRED"
-      ).length;
-      stockByModel.set(model.id, total);
-      effectiveStockByModel.set(model.id, total - unavailable);
-      unavailableByModel.set(model.id, unavailable);
-    } else {
-      const total = model.bulkAssets.reduce((sum, ba) => sum + ba.totalQuantity, 0);
-      stockByModel.set(model.id, total);
-      effectiveStockByModel.set(model.id, total);
-      unavailableByModel.set(model.id, 0);
-    }
+    const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(model);
+    stockByModel.set(model.id, totalStock);
+    effectiveStockByModel.set(model.id, effectiveStock);
+    unavailableByModel.set(model.id, unavailable);
   }
 
   // For each model, check if this project's total booking exceeds available

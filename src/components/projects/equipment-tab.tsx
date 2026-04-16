@@ -774,10 +774,13 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     enabled: !!editLineItem && !!editLineItem.modelId,
   });
 
-  // "Available for this edit" excludes the current item's existing qty
+  // "Available for this edit" = the server-computed usable pool (effectiveStock
+  // minus all overlapping bookings, including this item) plus the current
+  // item's own quantity added back. This matches the add dialog's semantics
+  // and agrees with the overbook badge.
   const editAvailableForEdit =
     editAvailability && editLineItem
-      ? editAvailability.totalStock - (editAvailability.booked - editLineItem.quantity)
+      ? editAvailability.available + editLineItem.quantity
       : null;
   const editRequestedQty = Number(editQuantity) || 1;
   const editIsOverbooked =
@@ -798,6 +801,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     queryClient.invalidateQueries({ queryKey: ["uncategorized-items", projectId] });
     queryClient.invalidateQueries({ queryKey: ["project", projectId] });
     queryClient.invalidateQueries({ queryKey: ["project-overbooked", projectId] });
+    // Any mutation that changes line item quantity/presence must refresh
+    // availability so the next add/edit dialog sees fresh booked counts.
+    queryClient.invalidateQueries({ queryKey: ["availability"] });
+    queryClient.invalidateQueries({ queryKey: ["asset-lookup"] });
   }, [queryClient, queryKey, projectId]);
 
   // ─── Mutations ───────────────────────────────────────────────────────────

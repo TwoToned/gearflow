@@ -5,6 +5,16 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-04-16
+
+### Fixed
+- Edit dialog now correctly warns when a line item is overbooked due to in-maintenance, lost, or retired assets. Previously, the edit dialog compared against raw stock (including unavailable assets), so overbooked items appeared editable without warnings.
+- Adding a second line item for the same model on a project now shows accurate availability. The add dialog previously displayed stale stock counts because cache wasn't refreshed after edits, removes, or moves.
+- Server-side availability enforcement in both add and update paths now uses effective stock (excluding unavailable assets), matching the overbook badge logic.
+
+### Added
+- `computeStockBreakdown` helper centralizes stock calculations across all availability checks, preventing client/server divergence.
+
 ## [0.4.1] - 2026-04-15
 
 ### Added

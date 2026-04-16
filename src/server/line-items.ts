@@ -11,6 +11,7 @@ import { logActivity } from "@/lib/activity-log";
 import { roundCurrency } from "@/lib/formatters";
 import { calculateSuggestedPrice, getGroupBillingPeriod } from "./project-groups";
 import { optimizePrice, computeTotalDays } from "@/lib/pricing";
+import { computeStockBreakdown } from "@/lib/availability";
 
 export async function addLineItem(projectId: string, data: LineItemFormValues, allowOverbook = false) {
   const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
@@ -98,13 +99,16 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
             });
 
         const booked = overlapping.reduce((sum, li) => sum + li.quantity, 0);
-        const totalStock = model.assetType === "SERIALIZED"
-          ? model.assets.length
-          : model.bulkAssets.reduce((sum, ba) => sum + ba.totalQuantity, 0);
-        const available = Math.max(0, totalStock - booked);
+        // Enforce against effectiveStock — in-maintenance/lost/retired assets
+        // cannot be booked even though they still exist in the model.
+        const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(model);
+        const available = Math.max(0, effectiveStock - booked);
 
         if (parsed.quantity > available) {
-          throw new Error(`Only ${available} available (${booked} already booked out of ${totalStock} total)`);
+          const detail = unavailable > 0
+            ? `${booked} booked, ${unavailable} unavailable, ${totalStock} total`
+            : `${booked} already booked out of ${totalStock} total`;
+          throw new Error(`Only ${available} available (${detail})`);
         }
       }
     }
@@ -315,7 +319,9 @@ export async function updateLineItem(id: string, data: LineItemFormValues, allow
   });
 
   // Server-side availability enforcement for equipment (mirrors addLineItem).
-  // Only checks when quantity actually increases and the item isn't sub-hire.
+  // Only re-validate on quantity increase. Editing other fields on an
+  // already-overbooked item does not re-block — the badge surfaces the
+  // existing overbook and the client-side check prevents new increases.
   if (
     existing &&
     parsed.type === "EQUIPMENT" &&
@@ -366,13 +372,15 @@ export async function updateLineItem(id: string, data: LineItemFormValues, allow
           });
 
       const booked = overlapping.reduce((sum, li) => sum + li.quantity, 0);
-      const totalStock = model.assetType === "SERIALIZED"
-        ? model.assets.length
-        : model.bulkAssets.reduce((sum, ba) => sum + ba.totalQuantity, 0);
-      const available = Math.max(0, totalStock - booked);
+      // Enforce against effectiveStock — matches checkAvailability and the badge.
+      const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(model);
+      const available = Math.max(0, effectiveStock - booked);
 
       if (parsed.quantity > available) {
-        throw new Error(`Only ${available} available (${booked} already booked out of ${totalStock} total)`);
+        const detail = unavailable > 0
+          ? `${booked} booked, ${unavailable} unavailable, ${totalStock} total`
+          : `${booked} already booked out of ${totalStock} total`;
+        throw new Error(`Only ${available} available (${detail})`);
       }
     }
   }
@@ -691,12 +699,9 @@ export async function checkAvailability(
   );
 
   if (model.assetType === "SERIALIZED") {
-    const totalStock = model.assets.length;
+    const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(model);
     const inMaintenance = model.assets.filter((a) => a.status === "IN_MAINTENANCE").length;
     const lost = model.assets.filter((a) => a.status === "LOST").length;
-    const retired = model.assets.filter((a) => a.status === "RETIRED").length;
-    const unavailable = inMaintenance + lost + retired;
-    const effectiveStock = totalStock - unavailable;
     const available = Math.max(0, effectiveStock - booked);
 
     return serialize({

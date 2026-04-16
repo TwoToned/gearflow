@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Duplicate model detection in add equipment dialog. When adding a model that already exists on the project, users can choose to combine (merge quantity) or add as a separate line item.
 - Sub-hire items always create separate line items and never merge with own-stock items of the same model.
 - `forceSeparate` parameter on `addLineItem` server action to bypass auto-merge.
+- Line item notes now display in the equipment list view (truncated with full text on hover) for both regular items and kit children.
 
 ### Fixed
 - Combine/separate choice no longer resets when adjusting quantity. Previously, changing the quantity spinner silently reverted the selection back to "combine".

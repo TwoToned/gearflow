@@ -234,11 +234,15 @@ export function AddEquipmentDialog({
   const isOverbooked = mode === "model" && !!availability && requestedQty > availability.available;
   const hasDuplicate = mode === "model" && !!availability && availability.bookedOnThisProject > 0;
 
-  // Reset overbook confirmation and duplicate action when model changes
+  // Reset overbook confirmation when model or quantity changes
   useEffect(() => {
     setOverbookConfirmed(false);
-    setDuplicateAction("combine");
   }, [selectedModelId, requestedQty]);
+
+  // Reset duplicate action only when model changes (not quantity)
+  useEffect(() => {
+    setDuplicateAction("combine");
+  }, [selectedModelId]);
   const canSubmitModel = mode === "model" && !!selectedModelId && (!isOverbooked || overbookConfirmed);
   const canSubmitAsset = mode === "asset-tag" && assetLookup?.found && assetLookup.available;
 

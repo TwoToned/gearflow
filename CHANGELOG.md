@@ -5,6 +5,13 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-04-16
+
+### Added
+- Duplicate model detection in add equipment dialog. When adding a model that already exists on the project, users can choose to combine (merge quantity) or add as a separate line item.
+- Sub-hire items always create separate line items and never merge with own-stock items of the same model.
+- `forceSeparate` parameter on `addLineItem` server action to bypass auto-merge.
+
 ## [0.4.2] - 2026-04-16
 
 ### Fixed

@@ -13,7 +13,7 @@ import { calculateSuggestedPrice, getGroupBillingPeriod } from "./project-groups
 import { optimizePrice, computeTotalDays } from "@/lib/pricing";
 import { computeStockBreakdown } from "@/lib/availability";
 
-export async function addLineItem(projectId: string, data: LineItemFormValues, allowOverbook = false) {
+export async function addLineItem(projectId: string, data: LineItemFormValues, allowOverbook = false, forceSeparate = false) {
   const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
   const parsed = lineItemSchema.parse(data);
 
@@ -114,8 +114,10 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
     }
   }
 
-  // If adding by model (no specific asset), merge into existing line item within the same group/category
-  if (parsed.type === "EQUIPMENT" && parsed.modelId && !parsed.assetId) {
+  // If adding by model (no specific asset), merge into existing line item within the same group/category.
+  // Never merge across sub-hire boundaries (own stock vs third-party stock).
+  // When forceSeparate is true, always create a new line item.
+  if (parsed.type === "EQUIPMENT" && parsed.modelId && !parsed.assetId && !forceSeparate) {
     const existing = await prisma.projectLineItem.findFirst({
       where: {
         projectId,
@@ -125,6 +127,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         groupId: parsed.groupId ?? null,
         categoryId: parsed.categoryId ?? null,
         isKitChild: false,
+        isSubhire: parsed.isSubhire ?? false,
         status: { not: "CANCELLED" },
       },
     });

@@ -1909,6 +1909,43 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                 value={editQuantity}
                 onChange={(e) => setEditQuantity(e.target.value)}
               />
+              {editAvailability && editLineItem?.modelId && (
+                <div className="space-y-1 pt-1">
+                  <p className={editIsOverbooked ? "text-sm text-red-600 dark:text-red-400" : "text-sm text-fg-3"}>
+                    <span className="font-semibold">{editAvailableForEdit ?? 0}</span>{" "}
+                    available out of{" "}
+                    <span className="font-semibold">{editAvailability.effectiveStock ?? editAvailability.totalStock}</span>{" "}
+                    {editAvailability.dateless ? "in stock" : "usable"}
+                    {editAvailability.dateless && (
+                      <span className="text-fg-3 font-normal">
+                        {" "}(no dates set — showing stock only)
+                      </span>
+                    )}
+                  </p>
+                  {(editAvailability.unavailable ?? 0) > 0 && (
+                    <p className="text-purple-600 dark:text-purple-400 text-xs">
+                      {editAvailability.unavailable} of {editAvailability.totalStock} total not usable
+                      {" "}({[
+                        editAvailability.inMaintenance ? `${editAvailability.inMaintenance} in maintenance` : "",
+                        editAvailability.lost ? `${editAvailability.lost} lost` : "",
+                      ].filter(Boolean).join(", ")})
+                    </p>
+                  )}
+                  {editAvailability.conflicts && editAvailability.conflicts.length > 0 && (
+                    <div className="flex items-start gap-2 text-amber-600 dark:text-amber-400">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      <div>
+                        <p className="text-xs font-medium">Conflicts:</p>
+                        <ul className="list-disc pl-4 text-xs">
+                          {editAvailability.conflicts.map((c: string) => (
+                            <li key={c}>{c}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Pricing section */}

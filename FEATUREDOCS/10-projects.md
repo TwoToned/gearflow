@@ -259,7 +259,11 @@ Structured operational tasks attached to a project (deliveries, pickups, bump in
 - Available via Documents dropdown on project detail page
 
 ## Duplicate Model Handling
-Adding a model that already exists as a line item on the project **merges** into the existing line item (increments quantity) rather than creating a new row.
+Adding a model that already exists as a line item on the project **auto-merges** into the existing line item (increments quantity) by default. When a duplicate is detected, the add dialog presents a choice:
+- **Combine with existing** (default) — merges quantity into the existing line item
+- **Add as separate line item** — creates a new row via `forceSeparate` parameter
+
+Sub-hire items (`isSubhire: true`) always create separate line items and never merge with own-stock items of the same model. The merge query matches on `modelId`, `groupId`, `categoryId`, and `isSubhire` to prevent cross-type merging.
 
 ## Project Templates
 - `Project.isTemplate = true`. Templates use the same `Project` table but are completely isolated.

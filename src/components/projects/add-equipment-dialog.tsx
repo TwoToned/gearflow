@@ -171,12 +171,12 @@ export function AddEquipmentDialog({
         disc = Math.round(gross * Number(disc) / 100 * 100) / 100;
       }
       const effectiveCategoryId = categoryId || selectedCategoryId || undefined;
-      return addLineItem(projectId, { ...data, discount: disc, categoryId: effectiveCategoryId, groupId }, overbookConfirmed);
+      return addLineItem(projectId, { ...data, discount: disc, categoryId: effectiveCategoryId, groupId }, overbookConfirmed, duplicateAction === "separate");
     },
     onSuccess: (result) => {
       const data = result as Record<string, unknown> | null;
       if (data?._merged) {
-        toast.success(`Merged with existing — quantity updated to ${data._newQuantity}`);
+        toast.success(`Combined with existing — quantity updated to ${data._newQuantity}`);
       } else {
         toast.success("Equipment added");
       }
@@ -206,6 +206,7 @@ export function AddEquipmentDialog({
     setMode("model");
     setDiscountMode("$");
     setOverbookConfirmed(false);
+    setDuplicateAction("combine");
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -228,13 +229,20 @@ export function AddEquipmentDialog({
   }
 
   const [overbookConfirmed, setOverbookConfirmed] = useState(false);
+  const [duplicateAction, setDuplicateAction] = useState<"combine" | "separate">("combine");
   const requestedQty = Number(form.watch("quantity")) || 1;
   const isOverbooked = mode === "model" && !!availability && requestedQty > availability.available;
+  const hasDuplicate = mode === "model" && !!availability && availability.bookedOnThisProject > 0;
 
   // Reset overbook confirmation when model or quantity changes
   useEffect(() => {
     setOverbookConfirmed(false);
   }, [selectedModelId, requestedQty]);
+
+  // Reset duplicate action only when model changes (not quantity)
+  useEffect(() => {
+    setDuplicateAction("combine");
+  }, [selectedModelId]);
   const canSubmitModel = mode === "model" && !!selectedModelId && (!isOverbooked || overbookConfirmed);
   const canSubmitAsset = mode === "asset-tag" && assetLookup?.found && assetLookup.available;
 
@@ -333,6 +341,38 @@ export function AddEquipmentDialog({
                       )}
                     </div>
                   ) : null}
+                </div>
+              )}
+
+              {hasDuplicate && (
+                <div className="rounded-md border border-amber-500/50 bg-amber-500/10 p-3 space-y-2">
+                  <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
+                    {availability!.bookedOnThisProject} already on this project
+                  </p>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="radio"
+                        name="duplicate-action"
+                        checked={duplicateAction === "combine"}
+                        onChange={() => setDuplicateAction("combine")}
+                        className="accent-amber-500"
+                      />
+                      <span className="text-fg">
+                        Combine with existing (qty → {availability!.bookedOnThisProject + requestedQty})
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="radio"
+                        name="duplicate-action"
+                        checked={duplicateAction === "separate"}
+                        onChange={() => setDuplicateAction("separate")}
+                        className="accent-amber-500"
+                      />
+                      <span className="text-fg">Add as separate line item</span>
+                    </label>
+                  </div>
                 </div>
               )}
 

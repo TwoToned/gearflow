@@ -400,9 +400,12 @@ export async function updateLineItem(id: string, data: LineItemFormValues, allow
     where: { id, organizationId },
     data: {
       type: parsed.type,
-      modelId: parsed.modelId || null,
-      assetId: parsed.assetId || null,
-      bulkAssetId: parsed.bulkAssetId || null,
+      // Only update association fields when explicitly provided — the edit
+      // dialog doesn't send modelId/assetId/bulkAssetId, so undefined here
+      // means "keep the existing value", not "clear it".
+      ...(parsed.modelId !== undefined && { modelId: parsed.modelId || null }),
+      ...(parsed.assetId !== undefined && { assetId: parsed.assetId || null }),
+      ...(parsed.bulkAssetId !== undefined && { bulkAssetId: parsed.bulkAssetId || null }),
       description: parsed.description || null,
       quantity: parsed.quantity,
       unitPrice: parsed.unitPrice ?? null,
@@ -415,7 +418,7 @@ export async function updateLineItem(id: string, data: LineItemFormValues, allow
       isOptional: parsed.isOptional,
       isSubhire: parsed.isSubhire,
       showSubhireOnDocs: parsed.showSubhireOnDocs,
-      supplierId: parsed.supplierId || null,
+      ...(parsed.supplierId !== undefined && { supplierId: parsed.supplierId || null }),
       subhireOrderNumber: parsed.subhireOrderNumber || null,
       // Override detection
       ...(isPriceChanged && {

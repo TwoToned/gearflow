@@ -107,6 +107,22 @@ For each line item in group (excluding kit children):
 ### Line Item Types
 - **EQUIPMENT**: Links to `modelId`, optionally `assetId`, `bulkAssetId`, or `kitId`
 - **SERVICE / LABOUR / TRANSPORT / MISC**: No asset link, just description + pricing
+- **Custom Items** (`isCustomItem: true`, type stays `EQUIPMENT`): Free-text items with no inventory reference. Set via "Custom Item" button in equipment tab. The `description` field serves as the display name. Shown with a muted "Custom" badge. Skips all availability checks and merge logic. Appears on all documents and in warehouse views.
+
+### Custom Items
+Custom items are ad-hoc line items for gear not in the system — borrowed equipment, client-supplied items, one-off rentals tracked informally. They live as regular `ProjectLineItem` records with `isCustomItem: true` and no `modelId`/`assetId`/`bulkAssetId` link.
+
+**Behavior:**
+- Created via `addCustomLineItem()` in `src/server/line-items.ts`
+- Validated by `customLineItemSchema` in `src/lib/validations/line-item.ts`
+- Display name: `description` field (already used as fallback across all rendering paths)
+- `computeOverbookedStatus` skips custom items (filters on `li.modelId !== null`)
+- Never merged with other items (merge logic requires `modelId`)
+- Appear in warehouse (pick/prep, deploy, return tabs) — checked out/in via button, no scan
+- Appear on all PDFs (`getProjectForDocument` fetches all non-cancelled items regardless of type)
+- Appear on pull sheet (`getProjectPullSheet` filters `type: "EQUIPMENT"`)
+
+**Distinction from sub-hires:** Sub-hires represent formally ordered gear from a supplier with a structured order workflow. Custom items are anonymous ad-hoc entries with no supplier and no order tracking.
 
 ## Project Detail Page Layout
 ```

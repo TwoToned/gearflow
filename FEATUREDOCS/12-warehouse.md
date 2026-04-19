@@ -106,6 +106,20 @@ When adding assets/kits to projects:
 - **Warehouse → Project**: "View Project" button in warehouse header links to `/projects/[id]`
 - **Project → Warehouse**: "Warehouse" button in project header links to `/warehouse/[id]`
 
+## Custom Items in Warehouse
+
+Custom line items (`isCustomItem: true`) appear in all three warehouse tabs with a muted "Custom" badge. They have no asset tag and cannot be scanned — operators check them out/in via the existing button/checkbox mechanism.
+
+**Pick/Prep:** Custom items appear in the pick/prep list. They can be manually marked as Packed (same checkbox as bulk items). No scanning required.
+
+**Deploy:** Custom items appear in the deploy list. Since `isBulk` check (`!lineItem.assetId && lineItem.quantity > 1`) routes them to the bulk checkout path, all units deploy at once via button press.
+
+**Return:** Custom items appear in the return list. They are returned via the return button; no asset tag scan possible.
+
+**Checkout server path:** `checkOutItems()` handles custom items without changes — null `assetId` + qty=1 takes the serialized path (skips asset status checks), qty>1 takes the bulk path (deploys full quantity).
+
+**Scan conflict:** Custom items have no barcode. If an operator scans a barcode that doesn't match any asset, the existing "not found" error is returned — no conflict with custom items.
+
 ## Force Return
 When assets or kits are stuck in `CHECKED_OUT` status (e.g., project deleted while items deployed, data inconsistency), "Force Return" buttons allow resetting them to `AVAILABLE`:
 

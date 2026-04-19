@@ -565,6 +565,11 @@ export async function addCustomLineItem(projectId: string, data: CustomLineItemF
     groupName = group?.title ?? undefined;
   }
 
+  // Compute lineTotal and sortOrder so revenue and ordering are correct
+  const lineTotal = calculateLineTotal(parsed.unitPrice, parsed.quantity, parsed.duration, parsed.discount);
+  const maxSort = await prisma.projectLineItem.aggregate({ where: { projectId, organizationId }, _max: { sortOrder: true } });
+  const sortOrder = (maxSort._max.sortOrder ?? -1) + 1;
+
   const result = await prisma.projectLineItem.create({
     data: {
       organizationId,
@@ -581,6 +586,8 @@ export async function addCustomLineItem(projectId: string, data: CustomLineItemF
       isOptional: parsed.isOptional,
       groupId: parsed.groupId ?? null,
       groupName: groupName ?? null,
+      lineTotal,
+      sortOrder,
     },
   });
 

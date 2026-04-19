@@ -4,7 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import {
   lineItemSchema,
+  customLineItemSchema,
   type LineItemFormValues,
+  type CustomLineItemFormValues,
 } from "@/lib/validations/line-item";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
@@ -547,6 +549,56 @@ export async function addKitLineItem(
 
   await recalculateProjectTotals(projectId);
   return serialize(result.parentItem);
+}
+
+export async function addCustomLineItem(projectId: string, data: CustomLineItemFormValues) {
+  const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
+  const parsed = customLineItemSchema.parse(data);
+
+  // Resolve groupName from groupId if provided
+  let groupName: string | undefined;
+  if (parsed.groupId) {
+    const group = await prisma.projectGroup.findFirst({
+      where: { id: parsed.groupId, projectId, organizationId },
+      select: { title: true },
+    });
+    groupName = group?.title ?? undefined;
+  }
+
+  const result = await prisma.projectLineItem.create({
+    data: {
+      organizationId,
+      projectId,
+      type: "EQUIPMENT",
+      isCustomItem: true,
+      description: parsed.description,
+      quantity: parsed.quantity,
+      unitPrice: parsed.unitPrice ?? null,
+      pricingType: parsed.pricingType,
+      duration: parsed.duration,
+      discount: parsed.discount ?? null,
+      notes: parsed.notes ?? null,
+      isOptional: parsed.isOptional,
+      groupId: parsed.groupId ?? null,
+      groupName: groupName ?? null,
+    },
+  });
+
+  await recalculateProjectTotals(projectId);
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "CREATE",
+    entityType: "lineItem",
+    entityId: result.id,
+    entityName: parsed.description,
+    summary: `Added custom item "${parsed.description}" to project`,
+    projectId,
+  });
+
+  return serialize(result);
 }
 
 export async function removeLineItem(id: string) {

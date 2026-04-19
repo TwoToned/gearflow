@@ -36,6 +36,7 @@ export const customLineItemSchema = z.object({
   pricingType: z.enum(["PER_DAY", "PER_WEEK", "FLAT", "PER_HOUR"]).default("FLAT"),
   duration: z.coerce.number().int().min(1).max(3650).default(1),
   discount: z.coerce.number().min(0).max(999999.99).optional(),
+  categoryId: z.string().optional(),
   groupId: z.string().optional(),
   notes: z.string().max(500).optional(),
   isOptional: z.boolean().default(false),

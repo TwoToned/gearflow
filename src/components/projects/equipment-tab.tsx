@@ -649,6 +649,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   const [customItemPricingType, setCustomItemPricingType] = useState<"PER_DAY" | "PER_WEEK" | "FLAT" | "PER_HOUR">("FLAT");
   const [customItemDuration, setCustomItemDuration] = useState("1");
   const [customItemNotes, setCustomItemNotes] = useState("");
+  const [customItemCategoryId, setCustomItemCategoryId] = useState("");
+  const [customItemGroupId, setCustomItemGroupId] = useState("");
 
   // Sub-hire order dialog state
   const [showSubHireOrderDialog, setShowSubHireOrderDialog] = useState(false);
@@ -843,6 +845,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
       setCustomItemPricingType("FLAT");
       setCustomItemDuration("1");
       setCustomItemNotes("");
+      setCustomItemCategoryId("");
+      setCustomItemGroupId("");
       toast.success("Custom item added");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -2188,6 +2192,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
             setCustomItemPricingType("FLAT");
             setCustomItemDuration("1");
             setCustomItemNotes("");
+            setCustomItemCategoryId("");
+            setCustomItemGroupId("");
           }
         }}
       >
@@ -2208,6 +2214,40 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                 onChange={(e) => setCustomItemName(e.target.value)}
                 maxLength={200}
               />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Category</Label>
+                <select
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={customItemCategoryId}
+                  onChange={(e) => {
+                    setCustomItemCategoryId(e.target.value);
+                    setCustomItemGroupId("");
+                  }}
+                >
+                  <option value="">Uncategorized</option>
+                  {(categories as CategoryData[]).map((cat) => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Group</Label>
+                <select
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={customItemGroupId}
+                  onChange={(e) => setCustomItemGroupId(e.target.value)}
+                  disabled={!customItemCategoryId}
+                >
+                  <option value="">No group</option>
+                  {customItemCategoryId && (categories as CategoryData[])
+                    .find((c) => c.id === customItemCategoryId)
+                    ?.groups.map((g) => (
+                      <option key={g.id} value={g.id}>{g.title}</option>
+                    ))}
+                </select>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -2285,6 +2325,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                   pricingType: customItemPricingType,
                   duration: customItemPricingType !== "FLAT" ? (parseInt(customItemDuration) || 1) : 1,
                   notes: customItemNotes.trim() || undefined,
+                  categoryId: customItemCategoryId || undefined,
+                  groupId: customItemGroupId || undefined,
                 });
               }}
             >

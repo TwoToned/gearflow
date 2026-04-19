@@ -588,6 +588,7 @@ export async function addCustomLineItem(projectId: string, data: CustomLineItemF
       discount: parsed.discount ?? null,
       notes: parsed.notes ?? null,
       isOptional: parsed.isOptional,
+      categoryId: parsed.categoryId ?? null,
       groupId: parsed.groupId ?? null,
       groupName: groupName ?? null,
       lineTotal,

@@ -555,6 +555,10 @@ export async function addCustomLineItem(projectId: string, data: CustomLineItemF
   const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
   const parsed = customLineItemSchema.parse(data);
 
+  // Validate project belongs to this org before writing
+  const project = await prisma.project.findFirst({ where: { id: projectId, organizationId } });
+  if (!project) throw new Error("Project not found");
+
   // Resolve groupName from groupId if provided
   let groupName: string | undefined;
   if (parsed.groupId) {

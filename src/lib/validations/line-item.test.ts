@@ -393,13 +393,13 @@ describe("customLineItemSchema", () => {
       if (result.success) expect(result.data.pricingType).toBe("FLAT");
     });
 
-    it("accepts OPTIMIZED pricingType", () => {
+    it("rejects OPTIMIZED pricingType (not valid for custom items)", () => {
       const result = customLineItemSchema.safeParse({ description: "Item", pricingType: "OPTIMIZED" });
-      expect(result.success).toBe(true);
+      expect(result.success).toBe(false);
     });
 
     it("accepts all valid pricingType values", () => {
-      for (const val of ["PER_DAY", "PER_WEEK", "FLAT", "PER_HOUR", "OPTIMIZED"]) {
+      for (const val of ["PER_DAY", "PER_WEEK", "FLAT", "PER_HOUR"]) {
         const result = customLineItemSchema.safeParse({ description: "Item", pricingType: val });
         expect(result.success).toBe(true);
       }

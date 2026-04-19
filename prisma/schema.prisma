@@ -1308,6 +1308,7 @@ model ProjectLineItem {
   prepStatus      PrepStatus?
   prepContainer        String?
   isContainerLineItem  Boolean        @default(false)
+  isCustomItem         Boolean        @default(false)
   returnStatus    ReturnStatus?
   isSubhire         Boolean        @default(false)
   showSubhireOnDocs Boolean        @default(false)

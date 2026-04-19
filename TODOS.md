@@ -167,3 +167,28 @@ Deferred work items tracked from engineering reviews and planning sessions.
 **Depends on:** Services/crewing rework (cross-project availability check).
 **Estimate:** human ~15 min / CC ~2 min
 **Priority:** P3
+
+## Equipment & Line Items
+
+### Promote Custom Item to Inventory
+**What:** Add a "Promote to Inventory" action on custom line items that converts the item into a real Model + Asset stub in the inventory system.
+**Why:** Operators sometimes add custom items for gear that later becomes permanently acquired. Currently they'd need to add the model/asset manually and re-add to the project.
+**Pros:** Bridges the gap between ad-hoc tracking and formal inventory, no data loss.
+**Cons:** Requires defining sensible defaults for the auto-created Model (name from description, no rates, no category).
+**Context:** Deferred from custom items autoplan. The `isCustomItem` flag makes it easy to identify items eligible for promotion.
+**Priority:** P3
+
+### Custom Items Library (Suggest from Past Projects)
+**What:** When adding a custom item, suggest names from previously added custom items across the org's project history.
+**Why:** Operators often reuse the same informal descriptions ("Borrowed SM58", "Client-supplied cable drum"). Suggestions reduce typos and improve consistency in reports.
+**Pros:** Better data quality, faster entry.
+**Cons:** Requires indexing all past `description` values for custom items — simple DB query but needs UI autocomplete.
+**Context:** Deferred from custom items autoplan.
+**Priority:** P3
+
+### Assign Asset Tag to Custom Item (Post-Hoc)
+**What:** Allow operators to optionally assign an existing asset tag to a custom item after it's added, converting it from a custom item to a tracked asset on the line item.
+**Why:** Sometimes gear starts as "custom" (borrowed, untracked) but gets formally added to inventory mid-project. Operators should be able to link the item without re-adding it.
+**Cons:** Edge case for most users. Requires matching the custom item line item to a real Asset.
+**Context:** Deferred from custom items autoplan (Barcode Scanning Phase 2).
+**Priority:** P3

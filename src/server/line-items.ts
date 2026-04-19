@@ -4,7 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import {
   lineItemSchema,
+  customLineItemSchema,
   type LineItemFormValues,
+  type CustomLineItemFormValues,
 } from "@/lib/validations/line-item";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
@@ -547,6 +549,67 @@ export async function addKitLineItem(
 
   await recalculateProjectTotals(projectId);
   return serialize(result.parentItem);
+}
+
+export async function addCustomLineItem(projectId: string, data: CustomLineItemFormValues) {
+  const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
+  const parsed = customLineItemSchema.parse(data);
+
+  // Validate project belongs to this org before writing
+  const project = await prisma.project.findFirst({ where: { id: projectId, organizationId } });
+  if (!project) throw new Error("Project not found");
+
+  // Resolve groupName from groupId if provided
+  let groupName: string | undefined;
+  if (parsed.groupId) {
+    const group = await prisma.projectGroup.findFirst({
+      where: { id: parsed.groupId, projectId, organizationId },
+      select: { title: true },
+    });
+    groupName = group?.title ?? undefined;
+  }
+
+  // Compute lineTotal and sortOrder so revenue and ordering are correct
+  const lineTotal = calculateLineTotal(parsed.unitPrice, parsed.quantity, parsed.duration, parsed.discount);
+  const maxSort = await prisma.projectLineItem.aggregate({ where: { projectId, organizationId }, _max: { sortOrder: true } });
+  const sortOrder = (maxSort._max.sortOrder ?? -1) + 1;
+
+  const result = await prisma.projectLineItem.create({
+    data: {
+      organizationId,
+      projectId,
+      type: "EQUIPMENT",
+      isCustomItem: true,
+      description: parsed.description,
+      quantity: parsed.quantity,
+      unitPrice: parsed.unitPrice ?? null,
+      pricingType: parsed.pricingType,
+      duration: parsed.duration,
+      discount: parsed.discount ?? null,
+      notes: parsed.notes ?? null,
+      isOptional: parsed.isOptional,
+      groupId: parsed.groupId ?? null,
+      groupName: groupName ?? null,
+      lineTotal,
+      sortOrder,
+    },
+  });
+
+  await recalculateProjectTotals(projectId);
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "CREATE",
+    entityType: "lineItem",
+    entityId: result.id,
+    entityName: parsed.description,
+    summary: `Added custom item "${parsed.description}" to project`,
+    projectId,
+  });
+
+  return serialize(result);
 }
 
 export async function removeLineItem(id: string) {

@@ -5,6 +5,15 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] - 2026-04-19
+
+### Added
+- **Custom line items**: Add free-text items to any project without needing inventory records. Use the new "Custom Item" button in the Equipment tab to add borrowed gear, client-supplied items, or one-off rentals that aren't in your asset library.
+- Custom items show a muted "Custom" badge in the equipment list and all three warehouse tabs (Pick/Prep, Deploy, Return).
+- Custom items appear on all project documents — quotes, invoices, packing lists, delivery dockets, and return sheets — using their entered name as the display label.
+- Custom items flow through the full warehouse pick/prep → deploy → return cycle via the existing button/checkbox mechanism (no barcode scan required).
+- `addCustomLineItem()` server action with validated input (`customLineItemSchema`) — requires a name, optional quantity, price, pricing type, duration, and notes.
+
 ## [0.4.3] - 2026-04-16
 
 ### Added

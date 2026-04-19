@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { lineItemSchema } from "./line-item";
+import { lineItemSchema, customLineItemSchema } from "./line-item";
 
 const validMinimal = {};
 
@@ -328,6 +328,155 @@ describe("lineItemSchema", () => {
         expect(result.data.categoryId).toBeUndefined();
         expect(result.data.groupId).toBeUndefined();
       }
+    });
+  });
+});
+
+describe("customLineItemSchema", () => {
+  describe("description (required, min 1, max 200)", () => {
+    it("rejects missing description", () => {
+      const result = customLineItemSchema.safeParse({});
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.some((i) => i.path.includes("description"))).toBe(true);
+      }
+    });
+
+    it("rejects empty string description", () => {
+      const result = customLineItemSchema.safeParse({ description: "" });
+      expect(result.success).toBe(false);
+    });
+
+    it("accepts a valid description", () => {
+      const result = customLineItemSchema.safeParse({ description: "Borrowed PA cabinet" });
+      expect(result.success).toBe(true);
+    });
+
+    it("accepts description at max length (200)", () => {
+      const result = customLineItemSchema.safeParse({ description: "d".repeat(200) });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects description exceeding max length (201)", () => {
+      const result = customLineItemSchema.safeParse({ description: "d".repeat(201) });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("quantity (coerce, int, min 1, max 99999, default 1)", () => {
+    it("defaults quantity to 1", () => {
+      const result = customLineItemSchema.safeParse({ description: "Item" });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.quantity).toBe(1);
+    });
+
+    it("rejects zero quantity", () => {
+      const result = customLineItemSchema.safeParse({ description: "Item", quantity: 0 });
+      expect(result.success).toBe(false);
+    });
+
+    it("accepts maximum quantity (99999)", () => {
+      const result = customLineItemSchema.safeParse({ description: "Item", quantity: 99999 });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects quantity exceeding max (100000)", () => {
+      const result = customLineItemSchema.safeParse({ description: "Item", quantity: 100000 });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("pricingType (enum, default FLAT)", () => {
+    it("defaults pricingType to FLAT", () => {
+      const result = customLineItemSchema.safeParse({ description: "Item" });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.pricingType).toBe("FLAT");
+    });
+
+    it("rejects OPTIMIZED pricingType (not valid for custom items)", () => {
+      const result = customLineItemSchema.safeParse({ description: "Item", pricingType: "OPTIMIZED" });
+      expect(result.success).toBe(false);
+    });
+
+    it("accepts all valid pricingType values", () => {
+      for (const val of ["PER_DAY", "PER_WEEK", "FLAT", "PER_HOUR"]) {
+        const result = customLineItemSchema.safeParse({ description: "Item", pricingType: val });
+        expect(result.success).toBe(true);
+      }
+    });
+
+    it("rejects invalid pricingType", () => {
+      const result = customLineItemSchema.safeParse({ description: "Item", pricingType: "PER_MONTH" });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("unitPrice (optional, coerce, min 0, max 999999.99)", () => {
+    it("accepts undefined unitPrice", () => {
+      const result = customLineItemSchema.safeParse({ description: "Item" });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.unitPrice).toBeUndefined();
+    });
+
+    it("accepts zero unitPrice", () => {
+      const result = customLineItemSchema.safeParse({ description: "Item", unitPrice: 0 });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects negative unitPrice", () => {
+      const result = customLineItemSchema.safeParse({ description: "Item", unitPrice: -1 });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects unitPrice exceeding max", () => {
+      const result = customLineItemSchema.safeParse({ description: "Item", unitPrice: 1000000 });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("notes (optional, max 500)", () => {
+    it("accepts undefined notes", () => {
+      const result = customLineItemSchema.safeParse({ description: "Item" });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.notes).toBeUndefined();
+    });
+
+    it("accepts notes at max length (500)", () => {
+      const result = customLineItemSchema.safeParse({ description: "Item", notes: "n".repeat(500) });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects notes exceeding max length (501)", () => {
+      const result = customLineItemSchema.safeParse({ description: "Item", notes: "n".repeat(501) });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("defaults", () => {
+    it("defaults isOptional to false", () => {
+      const result = customLineItemSchema.safeParse({ description: "Item" });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.isOptional).toBe(false);
+    });
+
+    it("defaults duration to 1", () => {
+      const result = customLineItemSchema.safeParse({ description: "Item" });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.duration).toBe(1);
+    });
+  });
+
+  describe("groupId (optional)", () => {
+    it("accepts groupId", () => {
+      const result = customLineItemSchema.safeParse({ description: "Item", groupId: "grp-1" });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.groupId).toBe("grp-1");
+    });
+
+    it("accepts undefined groupId", () => {
+      const result = customLineItemSchema.safeParse({ description: "Item" });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.groupId).toBeUndefined();
     });
   });
 });

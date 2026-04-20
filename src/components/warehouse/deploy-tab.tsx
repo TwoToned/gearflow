@@ -167,7 +167,7 @@ export function DeployTab({
               <TableBody>
                 {deployContainerGroups.map(({ container, entries }) => (
                   <Fragment key={container || "__ungrouped"}>
-                    {container && (
+                    {container ? (
                       <TableRow className="bg-bg-inset/50">
                         <TableCell colSpan={5} className="py-1.5">
                           <div className="flex items-center justify-between">
@@ -184,6 +184,15 @@ export function DeployTab({
                             >
                               <X className="h-3.5 w-3.5" />
                             </button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ) : deployContainerGroups.some((g) => g.container !== null) && (
+                      <TableRow className="bg-bg-inset/30">
+                        <TableCell colSpan={5} className="py-1.5">
+                          <div className="flex items-center gap-1.5 text-xs font-medium text-fg-4 uppercase tracking-wide">
+                            <Package className="h-3.5 w-3.5" />
+                            No Container
                           </div>
                         </TableCell>
                       </TableRow>

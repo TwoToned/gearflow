@@ -1432,6 +1432,16 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                 })}
 
                 {/* Uncategorized items */}
+                {hasCategories && hasUncategorized && (
+                  <TableRow className="bg-bg-inset/30">
+                    <TableCell colSpan={COL_COUNT} className="py-2 px-1">
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-6" />
+                        <h3 className="text-sm font-semibold text-fg-4">Uncategorized</h3>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )}
                 {(uncategorizedItems as LineItemData[]).filter((i) => !isRealKitChild(i)).map((item) => (
                   <SortableLineItemRow
                     key={item.id}

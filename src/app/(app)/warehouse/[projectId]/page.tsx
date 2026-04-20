@@ -1430,7 +1430,7 @@ function WarehouseProjectPage({
       const actualBulkItems: typeof bulkItems = [];
       for (const bi of bulkItems) {
         const li = lineItems.find((l) => l.id === bi.lineItemId);
-        if (li && !li.bulkAssetId && li.model?.assetType === "SERIALIZED" && li.modelId) {
+        if (li && !li.bulkAssetId && li.model?.assetType === "SERIALIZED" && li.modelId && !li.isSubhire) {
           // Multi-qty serialized item — needs asset picker
           items.push({ lineItemId: bi.lineItemId, quantity: bi.quantity });
         } else {
@@ -1446,7 +1446,7 @@ function WarehouseProjectPage({
       const readyItems: typeof items = [];
       for (const item of items) {
         const li = lineItems.find((l) => l.id === item.lineItemId);
-        if (li && !li.assetId && !li.bulkAssetId && li.model?.assetType === "SERIALIZED" && li.modelId) {
+        if (li && !li.assetId && !li.bulkAssetId && li.model?.assetType === "SERIALIZED" && li.modelId && !li.isSubhire) {
           needsAssetPicker.push(item);
         } else {
           readyItems.push(item);

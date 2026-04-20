@@ -23,6 +23,7 @@ The warehouse uses a Pick/Prep → Deploy → Return flow. Items are **prepped**
   - When original reaches qty=0, it's hidden from the prep tab
   - When original reaches qty=1, the last unit is prepped in-place (no split)
 - Items with no check items assigned are prepped directly; items with checks go through the check queue
+- **Sub-hire items skip the asset picker**: When `handlePrepSelected()` processes selected items, it checks `!li.isSubhire` before routing a serialized item (no `assetId`, no `bulkAssetId`, SERIALIZED model) to the asset picker. Sub-hire items are third-party gear with no internal asset record, so they are prepped directly without asset assignment.
 - Bulk items display as expandable groups with individual unit rows (Unit 1, Unit 2, etc.) — each unit gets its own check dialog
 - `deprepItem()` reverses prep: clears `prepStatus` to PENDING (split items stay as independent line items)
 

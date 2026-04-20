@@ -194,12 +194,21 @@ export function ReturnTab({
               <TableBody>
                 {returnContainerGroups.map(({ container, entries }) => (
                   <Fragment key={container || "__ungrouped"}>
-                    {container && (
+                    {container ? (
                       <TableRow className="bg-bg-inset/50">
                         <TableCell colSpan={5} className="py-1.5">
                           <div className="flex items-center gap-1.5 text-xs font-semibold text-fg-2 uppercase tracking-wide">
                             <Package className="h-3.5 w-3.5" />
                             {container}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ) : returnContainerGroups.some((g) => g.container !== null) && (
+                      <TableRow className="bg-bg-inset/30">
+                        <TableCell colSpan={5} className="py-1.5">
+                          <div className="flex items-center gap-1.5 text-xs font-medium text-fg-4 uppercase tracking-wide">
+                            <Package className="h-3.5 w-3.5" />
+                            No Container
                           </div>
                         </TableCell>
                       </TableRow>

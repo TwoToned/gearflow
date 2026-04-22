@@ -202,17 +202,47 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
     });
   }
 
-  // === Group items by category (via groupName) falling back to prepContainer ===
+  // === Group items ===
+  // Delivery docket: group by kit (case) name — kit becomes header, its CHECKED_OUT children become rows.
+  // Non-kit items go under "General" at the bottom.
+  // All other doc types: group by groupName / prepContainer.
   const ungroupedKey = config.documentType === "packing-list" ? "Ungrouped"
     : config.documentType === "delivery-docket" ? "General"
     : "_ungrouped";
 
   const groups = new Map<string, DocumentLineItem[]>();
-  for (const item of filteredItems) {
-    const key = item.groupName || item.prepContainer || ungroupedKey;
-    const arr = groups.get(key) || [];
-    arr.push(item);
-    groups.set(key, arr);
+
+  if (config.documentType === "delivery-docket") {
+    const kitOrder: string[] = [];
+    const generalItems: DocumentLineItem[] = [];
+
+    for (const item of filteredItems) {
+      const isKitParent = !!item.kitId && !item.isKitChild;
+      if (isKitParent) {
+        const kitName = item.kit?.name || item.description || "Kit";
+        const children = (item.childLineItems || []).filter(c => c.status === "CHECKED_OUT");
+        if (children.length > 0) {
+          if (!groups.has(kitName)) {
+            kitOrder.push(kitName);
+            groups.set(kitName, []);
+          }
+          groups.get(kitName)!.push(...children);
+        }
+      } else {
+        generalItems.push(item);
+      }
+    }
+
+    if (generalItems.length > 0) {
+      groups.set(ungroupedKey, generalItems);
+    }
+  } else {
+    for (const item of filteredItems) {
+      const key = item.groupName || item.prepContainer || ungroupedKey;
+      const arr = groups.get(key) || [];
+      arr.push(item);
+      groups.set(key, arr);
+    }
   }
 
   // === Draw table header ===

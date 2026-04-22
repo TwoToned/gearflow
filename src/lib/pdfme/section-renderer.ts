@@ -77,6 +77,46 @@ function getItemGroupKey(item: DocumentLineItem, ungrouped: string): string {
 }
 
 /**
+ * Build kit-based groups for delivery docket.
+ * Kit parents become group headers; their CHECKED_OUT children become the rows.
+ * Non-kit items go under "General" at the bottom.
+ */
+function buildDeliveryDocketGroups(
+  data: DocumentData,
+  docType: DocumentType,
+): { groupOrder: string[]; groups: Map<string, DocumentLineItem[]> } {
+  const parentItems = getFilteredParentItems(data, docType);
+  const groups = new Map<string, DocumentLineItem[]>();
+  const kitOrder: string[] = [];
+  const generalItems: DocumentLineItem[] = [];
+
+  for (const item of parentItems) {
+    const isKitParent = !!item.kitId && !item.isKitChild;
+    if (isKitParent) {
+      const kitName = item.kit?.name || item.description || "Kit";
+      const children = (item.childLineItems || []).filter(c => c.status === "CHECKED_OUT");
+      if (children.length > 0) {
+        if (!groups.has(kitName)) {
+          kitOrder.push(kitName);
+          groups.set(kitName, []);
+        }
+        groups.get(kitName)!.push(...children);
+      }
+    } else {
+      generalItems.push(item);
+    }
+  }
+
+  const groupOrder = [...kitOrder];
+  if (generalItems.length > 0) {
+    groups.set("General", generalItems);
+    groupOrder.push("General");
+  }
+
+  return { groupOrder, groups };
+}
+
+/**
  * Check if a parent item has splittable sub-items (per-unit checkboxes).
  * Returns the total sub-item count, or 0 if not splittable.
  */
@@ -238,9 +278,24 @@ function calculateTableItemHeights(
   settings: TableSectionSettings,
   docType: DocumentType,
 ): number[] {
-  const parentItems = getFilteredParentItems(data, docType);
   const ungrouped = getUngroupedKey(docType);
   const heights: number[] = [];
+
+  // Delivery docket uses kit-based groups (must mirror gearflow-table.ts plugin logic)
+  if (docType === "delivery-docket") {
+    const { groupOrder, groups } = buildDeliveryDocketGroups(data, docType);
+    for (const groupKey of groupOrder) {
+      if (groupKey !== ungrouped && settings.showGroupHeaders) {
+        heights.push(ptToMm(GROUP_HEADER_PT));
+      }
+      for (const item of groups.get(groupKey)!) {
+        heights.push(calculateItemHeight(item, settings));
+      }
+    }
+    return heights;
+  }
+
+  const parentItems = getFilteredParentItems(data, docType);
 
   // Group items by groupName (matching the plugin's rendering order)
   const groups = new Map<string, DocumentLineItem[]>();
@@ -568,14 +623,27 @@ export function computePageLayout(
           const itemHeights = calculateTableItemHeights(data, ts, docType);
 
           // Build mappings first — needed for partial fit calculations
-          const parentItems = getFilteredParentItems(data, docType);
           const ungrouped = getUngroupedKey(docType);
           const groups = new Map<string, DocumentLineItem[]>();
           const groupOrder: string[] = [];
-          for (const item of parentItems) {
-            const key = getItemGroupKey(item, ungrouped);
-            if (!groups.has(key)) { groups.set(key, []); groupOrder.push(key); }
-            groups.get(key)!.push(item);
+          // parentItems: flat array of items (used by getItemAt for partial-fit calculations)
+          let parentItems: DocumentLineItem[] = [];
+
+          if (docType === "delivery-docket") {
+            const docketGroups = buildDeliveryDocketGroups(data, docType);
+            for (const key of docketGroups.groupOrder) {
+              const items = docketGroups.groups.get(key)!;
+              groups.set(key, items);
+              groupOrder.push(key);
+              parentItems.push(...items);
+            }
+          } else {
+            parentItems = getFilteredParentItems(data, docType);
+            for (const item of parentItems) {
+              const key = getItemGroupKey(item, ungrouped);
+              if (!groups.has(key)) { groups.set(key, []); groupOrder.push(key); }
+              groups.get(key)!.push(item);
+            }
           }
 
           // Build mappings: itemHeights index → parentItemIndex (for startIndex)

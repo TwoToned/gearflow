@@ -33,19 +33,21 @@
  */
 
 import fs from "fs";
+import os from "os";
 import path from "path";
 import { spawn } from "child_process";
 
 export interface ServeOptions {
   html: string;
   port?: number;
+  hostname?: string; // default '127.0.0.1' — localhost only
   timeout?: number; // seconds, default 600 (10 min)
 }
 
 type ServerState = "serving" | "regenerating" | "done";
 
 export async function serve(options: ServeOptions): Promise<void> {
-  const { html, port = 0, timeout = 600 } = options;
+  const { html, port = 0, hostname = "127.0.0.1", timeout = 600 } = options;
 
   // Validate HTML file exists
   if (!fs.existsSync(html)) {
@@ -53,21 +55,29 @@ export async function serve(options: ServeOptions): Promise<void> {
     process.exit(1);
   }
 
+  // Security: anchor all file reads to the initial HTML's directory.
+  // Prevents /api/reload from reading arbitrary files via path traversal.
+  const allowedDir = fs.realpathSync(path.dirname(path.resolve(html)));
+
   let htmlContent = fs.readFileSync(html, "utf-8");
   let state: ServerState = "serving";
   let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
 
   const server = Bun.serve({
     port,
+    hostname,
     fetch(req) {
       const url = new URL(req.url);
 
       // Serve the comparison board HTML
-      if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
+      if (
+        req.method === "GET" &&
+        (url.pathname === "/" || url.pathname === "/index.html")
+      ) {
         // Inject the server URL so the board can POST feedback
         const injected = htmlContent.replace(
           "</head>",
-          `<script>window.__GSTACK_SERVER_URL = '${url.origin}';</script>\n</head>`
+          `<script>window.__GSTACK_SERVER_URL = ${JSON.stringify(url.origin)};</script>\n</head>`,
         );
         return new Response(injected, {
           headers: { "Content-Type": "text/html; charset=utf-8" },
@@ -123,7 +133,9 @@ export async function serve(options: ServeOptions): Promise<void> {
 
     const isSubmit = body.regenerated === false;
     const isRegenerate = body.regenerated === true;
-    const action = isSubmit ? "submitted" : (body.regenerateAction || "regenerate");
+    const action = isSubmit
+      ? "submitted"
+      : body.regenerateAction || "regenerate";
 
     console.error(`SERVE_FEEDBACK_RECEIVED: type=${action}`);
 
@@ -178,12 +190,26 @@ export async function serve(options: ServeOptions): Promise<void> {
     if (!newHtmlPath || !fs.existsSync(newHtmlPath)) {
       return Response.json(
         { error: `HTML file not found: ${newHtmlPath}` },
-        { status: 400 }
+        { status: 400 },
+      );
+    }
+
+    // Security: resolve symlinks and validate the reload path is within the
+    // allowed directory (anchored to the initial HTML file's parent).
+    // Prevents path traversal via /api/reload reading arbitrary files.
+    const resolvedReload = fs.realpathSync(path.resolve(newHtmlPath));
+    if (
+      !resolvedReload.startsWith(allowedDir + path.sep) &&
+      resolvedReload !== allowedDir
+    ) {
+      return Response.json(
+        { error: `Path must be within: ${allowedDir}` },
+        { status: 403 },
       );
     }
 
     // Swap the HTML content
-    htmlContent = fs.readFileSync(newHtmlPath, "utf-8");
+    htmlContent = fs.readFileSync(resolvedReload, "utf-8");
     state = "serving";
 
     console.error(`SERVE_RELOADED: html=${newHtmlPath}`);

@@ -6,6 +6,7 @@ import { serialize } from "@/lib/serialize";
 import { sendEmail } from "@/lib/email";
 import { getPlatformName } from "@/lib/platform";
 import { logActivity } from "@/lib/activity-log";
+import { env } from "@/env";
 import type { OrgSSOSettings } from "@/lib/sso-types";
 
 export interface OrgBranding {
@@ -351,7 +352,7 @@ export async function addMemberByEmail(email: string, role: string) {
     },
   });
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const baseUrl = env.NEXT_PUBLIC_APP_URL;
   const registerUrl = `${baseUrl}/register?invite=${invitation.id}`;
   const pName = await getPlatformName();
 

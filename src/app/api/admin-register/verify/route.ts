@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "crypto";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
+import { env } from "@/env";
 
 function safeTokenCompare(a: string, b: string): boolean {
   try {
@@ -29,8 +30,8 @@ export async function GET(request: NextRequest) {
 
   const token = request.nextUrl.searchParams.get("token");
 
-  const enabled = process.env.SITE_ADMIN_REGISTRATION_ENABLED === "true";
-  const secret = process.env.SITE_ADMIN_SECRET_TOKEN;
+  const enabled = env.SITE_ADMIN_REGISTRATION_ENABLED === "true";
+  const secret = env.SITE_ADMIN_SECRET_TOKEN;
 
   if (!enabled || !secret || !token || !safeTokenCompare(token, secret)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

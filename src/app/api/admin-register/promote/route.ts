@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { timingSafeEqual } from "crypto";
 import { z } from "zod";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
+import { env } from "@/env";
 
 function safeTokenCompare(a: string, b: string): boolean {
   try {
@@ -43,8 +44,8 @@ export async function POST(request: NextRequest) {
 
   const { token, email } = body;
 
-  const enabled = process.env.SITE_ADMIN_REGISTRATION_ENABLED === "true";
-  const secret = process.env.SITE_ADMIN_SECRET_TOKEN;
+  const enabled = env.SITE_ADMIN_REGISTRATION_ENABLED === "true";
+  const secret = env.SITE_ADMIN_SECRET_TOKEN;
 
   if (!enabled || !secret || !safeTokenCompare(token, secret)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

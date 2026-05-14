@@ -1,8 +1,7 @@
 import { Resend } from "resend";
+import { env } from "@/env";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
-const emailFrom = process.env.EMAIL_FROM || "GearFlow <noreply@gearflow.app>";
+const resend = new Resend(env.RESEND_API_KEY);
 
 export async function sendEmail({
   to,
@@ -13,14 +12,14 @@ export async function sendEmail({
   subject: string;
   html: string;
 }) {
-  if (!process.env.RESEND_API_KEY || process.env.RESEND_API_KEY === "re_xxxxxxxxxxxxxxxxxxxx") {
+  if (!env.RESEND_API_KEY || env.RESEND_API_KEY === "re_xxxxxxxxxxxxxxxxxxxx") {
     console.log(`[Email] Would send to ${to}: ${subject}`);
     console.log(`[Email] HTML: ${html.substring(0, 200)}...`);
     return { id: "dev-mock" };
   }
 
   const { data, error } = await resend.emails.send({
-    from: emailFrom,
+    from: env.EMAIL_FROM,
     to,
     subject,
     html,

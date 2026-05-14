@@ -6,6 +6,7 @@ import { requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { sendEmail } from "@/lib/email";
 import { logActivity } from "@/lib/activity-log";
+import { env } from "@/env";
 import {
   crewOfferEmail,
   crewConfirmationEmail,
@@ -100,7 +101,7 @@ export async function sendCrewOffer(assignmentId: string) {
   });
 
   // Build accept/decline URLs
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const baseUrl = env.NEXT_PUBLIC_APP_URL;
   const acceptUrl = `${baseUrl}/api/crew/respond/${token}?action=accept`;
   const declineUrl = `${baseUrl}/api/crew/respond/${token}?action=decline`;
 

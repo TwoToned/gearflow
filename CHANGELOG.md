@@ -5,6 +5,14 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-05-14
+
+### Fixed
+- **Sub-hire dialog supplier picker (and sibling queries) showed "No suppliers found" for up to 5 minutes after login.** Better Auth's session cookie cache (5-minute TTL) can briefly return `activeOrganizationId: null` even after a successful login. The supplier picker, project sub-hires list, and sub-hire detail queries were gated on `enabled: !!orgId` — when client-side `orgId` was null, the queries never ran and rendered empty state. Server actions already resolve org server-side via `getTheOrg()` (single-org pattern), so the client-side gate was unnecessary. Removed the gate from all three queries in `sub-hire-order-dialog.tsx`. Matches the existing pattern in `asset-form.tsx`. (`src/components/projects/sub-hire-order-dialog.tsx`)
+
+### Chore
+- Sync `VERSION` file to match `package.json` (0.4.5 → 0.5.1). The 0.5.0 release bumped `package.json` but left `VERSION` at 0.4.5.
+
 ## [0.5.0] - 2026-05-14
 
 App-wide cleanup, unification, and feature-completeness pass. Wave 1 fixed

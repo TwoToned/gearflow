@@ -347,7 +347,6 @@ function SubHireListView({
   const { data: subHires = [], isLoading } = useQuery<any[]>({
     queryKey: ["project-sub-hires", orgId, projectId],
     queryFn: () => getSubHires({ projectId }),
-    enabled: !!orgId,
   });
 
   return (
@@ -456,7 +455,6 @@ function SubHireCreateView({
   const { data: suppliersData } = useQuery({
     queryKey: ["suppliers", orgId],
     queryFn: () => getSuppliers(),
-    enabled: !!orgId,
   });
   const supplierOptions = ((suppliersData || []) as Array<Record<string, unknown>>).map((s) => ({
     value: s.id as string,
@@ -579,7 +577,6 @@ function SubHireManageView({
   const { data: subHire, isLoading } = useQuery<any>({
     queryKey: ["sub-hire", orgId, subHireId],
     queryFn: () => getSubHire(subHireId),
-    enabled: !!orgId,
   });
 
   const statusMutation = useMutation({

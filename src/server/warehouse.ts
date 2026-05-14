@@ -7,6 +7,40 @@ import { computeOverbookedStatus } from "@/lib/availability";
 import type { Prisma } from "@/generated/prisma/client";
 import { logActivity } from "@/lib/activity-log";
 import { splitLineItem } from "@/server/check-records";
+import {
+  adjustBulkAvailability,
+  coalesceAdjustments,
+  type BulkAdjustment,
+  type TxClient,
+} from "@/lib/inventory-mutations";
+
+// ---------------------------------------------------------------------------
+// Kit bulk-content traversal
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns bulk-quantity adjustments for one kit's permanent composition
+ * (KitBulkItem rows). Nested kits are NOT recursed here — the caller is
+ * already iterating the project line-item tree and calls this once per
+ * kit id encountered.
+ *
+ * @param sign -1 to consume (kit checkout), +1 to release (kit check-in)
+ */
+async function collectKitBulkAdjustments(
+  tx: TxClient,
+  kitId: string,
+  organizationId: string,
+  sign: -1 | 1,
+): Promise<BulkAdjustment[]> {
+  const bulks = await tx.kitBulkItem.findMany({
+    where: { kitId, organizationId },
+    select: { bulkAssetId: true, quantity: true },
+  });
+  return bulks.map((b) => ({
+    bulkAssetId: b.bulkAssetId,
+    delta: sign * b.quantity,
+  }));
+}
 
 // ---------------------------------------------------------------------------
 // 1. getProjectForWarehouse
@@ -711,6 +745,22 @@ export async function checkOutKit(projectId: string, kitId: string) {
       });
     }
 
+    // Decrement BulkAsset.availableQuantity for every KitBulkItem in this kit
+    // AND every nested kit. Concurrency-safe via the shared helper: if any
+    // bulk has insufficient stock under concurrent writes, throws and rolls
+    // back the entire transaction (no partial checkout).
+    const bulkAdjustments: BulkAdjustment[] = [
+      ...(await collectKitBulkAdjustments(tx, kitId, organizationId, -1)),
+    ];
+    for (const nestedChild of nestedKitChildren) {
+      bulkAdjustments.push(
+        ...(await collectKitBulkAdjustments(tx, nestedChild.kitId!, organizationId, -1)),
+      );
+    }
+    if (bulkAdjustments.length > 0) {
+      await adjustBulkAvailability(tx, organizationId, coalesceAdjustments(bulkAdjustments));
+    }
+
     // Create scan log for the kit
     await tx.assetScanLog.create({
       data: { organizationId, kitId, projectId, action: "CHECK_OUT", scannedById: userId, notes: "Kit deployed with all contents" },
@@ -839,6 +889,22 @@ export async function checkInKit(
         where: { id: { in: kitItems.map((ki) => ki.assetId) } },
         data: { status: assetStatus, locationId: defaultLocationId },
       });
+    }
+
+    // Restore BulkAsset.availableQuantity for every KitBulkItem in this kit
+    // AND every nested kit. Returns always release stock back to available
+    // regardless of condition — bulk damage/loss tracking is a Wave 3 concern
+    // (DamageEvent model). For now: stock returns, period.
+    const bulkAdjustments: BulkAdjustment[] = [
+      ...(await collectKitBulkAdjustments(tx, kitId, organizationId, +1)),
+    ];
+    for (const nestedChild of nestedKitChildren) {
+      bulkAdjustments.push(
+        ...(await collectKitBulkAdjustments(tx, nestedChild.kitId!, organizationId, +1)),
+      );
+    }
+    if (bulkAdjustments.length > 0) {
+      await adjustBulkAvailability(tx, organizationId, coalesceAdjustments(bulkAdjustments));
     }
 
     // Create scan log
@@ -1331,6 +1397,10 @@ export async function forceReturnKit(kitId: string) {
     const returnData = { status: "RETURNED" as const, returnedQuantity: 1, returnedAt: now, returnCondition: "GOOD" as const };
     const resetData = { status: "AVAILABLE" as const, locationId: defaultLocation?.id ?? null };
 
+    // Track every kit id that needs bulk restoration (this kit + every unique
+    // nested kit encountered across all parent line items).
+    const kitsToRestore = new Set<string>([kitId]);
+
     // Find all parent line items for this kit across all projects
     const kitParentItems = await tx.projectLineItem.findMany({
       where: { kitId, organizationId, isKitChild: false },
@@ -1370,6 +1440,7 @@ export async function forceReturnKit(kitId: string) {
 
       // Reset nested child kits to AVAILABLE + their serialized assets
       const childKitIds = nestedKitChildren.map((c) => c.kitId!);
+      for (const nestedKitId of childKitIds) kitsToRestore.add(nestedKitId);
       if (childKitIds.length > 0) {
         await tx.kit.updateMany({
           where: { id: { in: childKitIds }, organizationId },
@@ -1431,6 +1502,20 @@ export async function forceReturnKit(kitId: string) {
         where: { id: { in: kitItems.map((ki) => ki.assetId) } },
         data: resetData,
       });
+    }
+
+    // Restore BulkAsset.availableQuantity for the root kit and every unique
+    // nested kit that was encountered. Force-return assumes the kit was in
+    // a CHECKED_OUT-like state with bulk consumption, and that the right
+    // outcome is to release it all.
+    const bulkAdjustments: BulkAdjustment[] = [];
+    for (const kid of kitsToRestore) {
+      bulkAdjustments.push(
+        ...(await collectKitBulkAdjustments(tx, kid, organizationId, +1)),
+      );
+    }
+    if (bulkAdjustments.length > 0) {
+      await adjustBulkAvailability(tx, organizationId, coalesceAdjustments(bulkAdjustments));
     }
   });
 

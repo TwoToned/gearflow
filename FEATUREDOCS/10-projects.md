@@ -80,6 +80,17 @@ marginPercent = margin / total × 100
 - Apply a template when creating a new group (pre-fills line items from template)
 - Template picker integrated in the inline "Add Group" form
 - Server actions: `src/server/group-templates.ts`
+- Standalone management page at `/settings/group-templates` (linked from
+  the Settings sidebar and reachable via `@grouptemplates` in cmd+K)
+- Full integration-checklist coverage: `requirePermission(project, ...)` on
+  all server actions, `logActivity` on every write, global search,
+  page-commands entry, org export/import (`GroupTemplate` +
+  `GroupTemplateItem`).
+- Notifications: `// FEATUREDOCS/29: N/A — templates are static config
+  with no time-based triggers (no expiry, no scheduled state changes)`.
+- CSV: `// FEATUREDOCS/29: N/A — templates are hand-curated and small in
+  number; bulk CSV import/export would add complexity without a real
+  use case`.
 
 ### Suggested Price Calculation (`calculateSuggestedPrice()`)
 ```

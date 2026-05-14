@@ -14,6 +14,69 @@ export interface AppNotification {
   timestamp: string;
 }
 
+/**
+ * Return the set of notification keys (i.e. AppNotification.id values) the
+ * current user has dismissed. Used by the client to filter out dismissed
+ * items. Source of truth is the database — not localStorage — so dismissals
+ * survive browser changes / cache clears.
+ */
+export async function getDismissedKeys(): Promise<string[]> {
+  let ctx;
+  try {
+    ctx = await getOrgContext();
+  } catch {
+    return [];
+  }
+  const { userId } = ctx;
+
+  const rows = await prisma.notificationDismissal.findMany({
+    where: { userId },
+    select: { notificationKey: true },
+  });
+  return rows.map((r) => r.notificationKey);
+}
+
+/**
+ * Persist a notification dismissal for the current user. Idempotent — calling
+ * twice for the same key is a no-op.
+ */
+export async function dismissNotification(notificationKey: string): Promise<void> {
+  if (!notificationKey) return;
+  const { organizationId, userId } = await getOrgContext();
+
+  await prisma.notificationDismissal.upsert({
+    where: {
+      userId_notificationKey: { userId, notificationKey },
+    },
+    create: { organizationId, userId, notificationKey },
+    update: {}, // already dismissed — keep original dismissedAt
+  });
+}
+
+/**
+ * Garbage-collect dismissal rows whose underlying notification key is no
+ * longer in the active set. Keeps the table small and prevents stale keys
+ * from accumulating forever. Safe to call frequently; runs as a single
+ * deleteMany.
+ */
+export async function pruneStaleDismissals(activeKeys: string[]): Promise<number> {
+  let ctx;
+  try {
+    ctx = await getOrgContext();
+  } catch {
+    return 0;
+  }
+  const { userId } = ctx;
+
+  const result = await prisma.notificationDismissal.deleteMany({
+    where: {
+      userId,
+      notificationKey: { notIn: activeKeys.length > 0 ? activeKeys : [""] },
+    },
+  });
+  return result.count;
+}
+
 export async function getNotifications(): Promise<AppNotification[]> {
   let ctx;
   try {
@@ -107,23 +170,30 @@ export async function getNotifications(): Promise<AppNotification[]> {
     });
   }
 
-  // 4. Low stock bulk assets
-  const lowStock = await prisma.bulkAsset.findMany({
+  // 4. Low stock bulk assets — compute live from availableQuantity vs
+  // reorderThreshold rather than trusting BulkAsset.status (which is a
+  // cached enum that can drift out of sync with actual quantities). An
+  // asset is "low" iff it has a configured threshold AND current
+  // availability is at-or-below it. No threshold → no alert.
+  const lowStockCandidates = await prisma.bulkAsset.findMany({
     where: {
       organizationId,
       isActive: true,
-      status: "LOW_STOCK",
+      reorderThreshold: { not: null, gt: 0 },
     },
     include: { model: true },
-    take: 10,
+    take: 50,
   });
+  const lowStock = lowStockCandidates.filter(
+    (b) => b.reorderThreshold !== null && b.availableQuantity <= b.reorderThreshold,
+  );
 
   for (const b of lowStock) {
     notifications.push({
       id: `stock-${b.id}`,
       type: "low_stock",
       title: `Low stock: ${b.model.name}`,
-      description: `${b.assetTag} — ${b.availableQuantity} of ${b.totalQuantity} available`,
+      description: `${b.assetTag} — ${b.availableQuantity} of ${b.totalQuantity} available (threshold ${b.reorderThreshold})`,
       href: `/assets/registry/${b.id}`,
       severity: "warning",
       timestamp: b.updatedAt.toISOString(),

@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { ReportViewer } from "@/components/reports/report-viewer";
+import { ReportScheduleCard } from "@/components/reports/report-schedule-card";
 import { getSavedReportById } from "@/server/reports";
 import { DATA_SOURCE_LABELS, type ReportConfig, type DataSource } from "@/lib/report-types";
 
@@ -61,6 +62,8 @@ export default function SavedReportPage({ params }: { params: Promise<{ id: stri
         </div>
 
         <ReportViewer config={r.config} title={r.name} />
+
+        <ReportScheduleCard reportId={r.id} />
       </div>
     </RequirePermission>
   );

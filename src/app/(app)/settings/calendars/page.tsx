@@ -13,7 +13,9 @@ import {
   Users,
 } from "lucide-react";
 
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FormSection } from "@/components/layout/page-layouts";
@@ -112,6 +114,7 @@ export default function CalendarSettingsPage() {
   });
 
   const enabled = icalSettings?.icalEnabled && icalSettings?.icalToken;
+  const [regenerateOpen, setRegenerateOpen] = useState(false);
 
   return (
     <FadeIn>
@@ -148,14 +151,7 @@ export default function CalendarSettingsPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => {
-                      if (
-                        confirm(
-                          "Regenerate token? All existing feed URLs will stop working."
-                        )
-                      )
-                        regenerateMutation.mutate();
-                    }}
+                    onClick={() => setRegenerateOpen(true)}
                     disabled={regenerateMutation.isPending}
                   >
                     <RefreshCw className="mr-2 h-3.5 w-3.5" />
@@ -191,6 +187,18 @@ export default function CalendarSettingsPage() {
         </div>
       </FormSection>
     </div>
+    <DeleteDialog
+      open={regenerateOpen}
+      onOpenChange={setRegenerateOpen}
+      title="Regenerate calendar token?"
+      description="All existing iCal feed URLs (Google, Apple, Outlook, etc.) will stop working. You'll need to re-subscribe in each calendar app with the new URL."
+      confirmLabel="Regenerate token"
+      onConfirm={() => {
+        regenerateMutation.mutate();
+        setRegenerateOpen(false);
+      }}
+      pending={regenerateMutation.isPending}
+    />
     </FadeIn>
   );
 }

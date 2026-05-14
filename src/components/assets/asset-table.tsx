@@ -18,6 +18,7 @@ import { CSVImportDialog } from "@/components/assets/csv-import-dialog";
 import { CanDo } from "@/components/auth/permission-gate";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
@@ -330,6 +331,7 @@ export function AssetTable() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [bulkForceReturnOpen, setBulkForceReturnOpen] = useState(false);
 
   const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
@@ -466,10 +468,7 @@ export function AssetTable() {
               variant="outline"
               className="text-amber-500"
               disabled={forceReturnMutation.isPending}
-              onClick={() => {
-                if (confirm(`Force return ${selectedIds.size} selected assets to available? This will reset their status and location.`))
-                  forceReturnMutation.mutate();
-              }}
+              onClick={() => setBulkForceReturnOpen(true)}
             >
               {forceReturnMutation.isPending ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <RotateCcw className="mr-2 h-3 w-3" />}
               Force Return
@@ -575,6 +574,19 @@ export function AssetTable() {
       />
 
       <CSVImportDialog type="assets" open={importOpen} onOpenChange={setImportOpen} />
+
+      <DeleteDialog
+        open={bulkForceReturnOpen}
+        onOpenChange={setBulkForceReturnOpen}
+        title={`Force return ${selectedIds.size} asset${selectedIds.size === 1 ? "" : "s"}?`}
+        description="Project assignments are marked returned and statuses reset. Each asset returns to its home location. Use when scanning isn't possible."
+        confirmLabel={`Force return ${selectedIds.size}`}
+        onConfirm={() => {
+          forceReturnMutation.mutate();
+          setBulkForceReturnOpen(false);
+        }}
+        pending={forceReturnMutation.isPending}
+      />
     </div>
   );
 }

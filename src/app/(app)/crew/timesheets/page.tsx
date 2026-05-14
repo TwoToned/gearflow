@@ -42,6 +42,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ConfirmActionMenuItem } from "@/components/ui/confirm-action-menu-item";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/layout/page-header";
 import {
@@ -379,16 +380,12 @@ export default function TimesheetsPage() {
                     Dispute
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuItem
-                  className="text-destructive"
-                  onClick={() => {
-                    if (confirm("Delete this time entry?"))
-                      deleteMutation.mutate(row.id);
-                  }}
+                <ConfirmActionMenuItem
+                  icon={<Trash2 className="mr-2 h-4 w-4" />}
+                  onConfirm={() => deleteMutation.mutate(row.id)}
                 >
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete
-                </DropdownMenuItem>
+                  Delete entry
+                </ConfirmActionMenuItem>
               </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>

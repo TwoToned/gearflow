@@ -7,6 +7,7 @@ import { sendEmail } from "@/lib/email";
 import { getPlatformName } from "@/lib/platform";
 import { logActivity } from "@/lib/activity-log";
 import { DEFAULT_SSO_SETTINGS, type OrgSSOSettings, type SSOGroupMapping } from "@/lib/sso-types";
+import { env } from "@/env";
 import type { OrgSettings } from "./settings";
 
 // ─── Read helpers ────────────────────────────────────────────────────────────
@@ -359,7 +360,7 @@ export async function approveSSOUser(approvalId: string, role?: string) {
         <p>Your request to join <strong>${org?.name}</strong> on ${pName} has been approved.</p>
         <p>You've been assigned the role of <strong>${assignRole}</strong>.</p>
         <p>
-          <a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard" style="display: inline-block; padding: 12px 24px; background-color: #0d9488; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">
+          <a href="${env.NEXT_PUBLIC_APP_URL}/dashboard" style="display: inline-block; padding: 12px 24px; background-color: #0d9488; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">
             Go to Dashboard
           </a>
         </p>

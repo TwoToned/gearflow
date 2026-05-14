@@ -18,7 +18,7 @@ export default function NewModelPage() {
         </div>
         <div>
           <h1 className="t-title text-fg">New Equipment Model</h1>
-          <p className="text-[13px] text-fg-3">
+          <p className="t-body text-fg-3">
             Create a model template that assets will be based on.
           </p>
         </div>

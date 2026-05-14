@@ -285,7 +285,7 @@ export default function WarehousePage() {
               </span>
             )}
           </div>
-          <p className="text-[13px] text-fg-3">
+          <p className="t-body text-fg-3">
             {todayFormatted}
             {!isLoading && (
               <>

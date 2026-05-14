@@ -45,6 +45,7 @@ import { getProjectServicesSummary } from "@/server/project-services";
 import { DuplicateProjectDialog } from "@/components/projects/duplicate-project-dialog";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import {
@@ -148,6 +149,8 @@ export default function ProjectDetailPage({
 
   const [dupMode, setDupMode] = useState<"duplicate" | "template" | null>(null);
   const [callSheetOpen, setCallSheetOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
 
   const { data: project, isLoading } = useQuery({
     queryKey: ["project", orgId, id],
@@ -409,9 +412,7 @@ export default function ProjectDetailPage({
                         variant="outline"
                         size="sm"
                         className="text-destructive"
-                        onClick={() => {
-                          if (confirm("Permanently delete this project? This cannot be undone.")) deleteMutation.mutate();
-                        }}
+                        onClick={() => setDeleteOpen(true)}
                         disabled={deleteMutation.isPending}
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
@@ -422,9 +423,7 @@ export default function ProjectDetailPage({
                         variant="outline"
                         size="sm"
                         className="text-destructive"
-                        onClick={() => {
-                          if (confirm("Cancel this project?")) archiveMutation.mutate();
-                        }}
+                        onClick={() => setCancelOpen(true)}
                         disabled={archiveMutation.isPending}
                       >
                         <Archive className="mr-2 h-4 w-4" />
@@ -840,6 +839,31 @@ export default function ProjectDetailPage({
         open={callSheetOpen}
         onOpenChange={setCallSheetOpen}
       />
+      <DeleteDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Delete project?"
+        description="This permanently removes the project and its line items, crew assignments, and documents. This cannot be undone."
+        confirmLabel="Delete project"
+        onConfirm={() => {
+          deleteMutation.mutate();
+          setDeleteOpen(false);
+        }}
+        pending={deleteMutation.isPending}
+      />
+      <DeleteDialog
+        open={cancelOpen}
+        onOpenChange={setCancelOpen}
+        title="Cancel this project?"
+        description="The project will be marked CANCELLED. Reservations release and items return to inventory. You can permanently delete a cancelled project later."
+        confirmLabel="Cancel project"
+        cancelLabel="Keep project"
+        onConfirm={() => {
+          archiveMutation.mutate();
+          setCancelOpen(false);
+        }}
+        pending={archiveMutation.isPending}
+      />
     </RequirePermission>
   );
 }
@@ -911,7 +935,7 @@ function ProjectSummaryStrip({
           key={m.label}
           className="bg-bg-surface px-4 py-3 sm:first:rounded-l-md sm:last:rounded-r-md"
         >
-          <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-3">
+          <div className="t-overline text-fg-3">
             {m.label}
           </div>
           <div

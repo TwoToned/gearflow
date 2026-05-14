@@ -7,6 +7,118 @@ import { computeOverbookedStatus } from "@/lib/availability";
 import type { Prisma } from "@/generated/prisma/client";
 import { logActivity } from "@/lib/activity-log";
 import { splitLineItem } from "@/server/check-records";
+import {
+  adjustBulkAvailability,
+  coalesceAdjustments,
+  type BulkAdjustment,
+  type TxClient,
+} from "@/lib/inventory-mutations";
+import { TestTagBlockError } from "@/lib/errors/test-tag-block-error";
+
+// ---------------------------------------------------------------------------
+// Kit bulk-content traversal
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns bulk-quantity adjustments for one kit's permanent composition
+ * (KitBulkItem rows). Nested kits are NOT recursed here — the caller is
+ * already iterating the project line-item tree and calls this once per
+ * kit id encountered.
+ *
+ * @param sign -1 to consume (kit checkout), +1 to release (kit check-in)
+ */
+async function collectKitBulkAdjustments(
+  tx: TxClient,
+  kitId: string,
+  organizationId: string,
+  sign: -1 | 1,
+): Promise<BulkAdjustment[]> {
+  const bulks = await tx.kitBulkItem.findMany({
+    where: { kitId, organizationId },
+    select: { bulkAssetId: true, quantity: true },
+  });
+  return bulks.map((b) => ({
+    bulkAssetId: b.bulkAssetId,
+    delta: sign * b.quantity,
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Test & Tag (AS/NZS 3760:2022) compliance gate
+// ---------------------------------------------------------------------------
+
+// TestTagBlockError lives in src/lib/errors/test-tag-block-error.ts because
+// "use server" files can only export async functions.
+
+/**
+ * Asserts that none of the given assets are blocked by failed/overdue
+ * Test & Tag status. Throws TestTagBlockError on block. Logs a SCAN_VERIFY
+ * row for each blocked asset so the denied scan is auditable.
+ *
+ * Pass at least one of assetIds or bulkAssetIds. Empty input is a no-op.
+ */
+async function assertTestTagAllowsCheckout(
+  tx: TxClient,
+  organizationId: string,
+  options: {
+    assetIds?: string[];
+    bulkAssetIds?: string[];
+    projectId?: string | null;
+    scannedById: string;
+    kitId?: string | null;
+  },
+): Promise<void> {
+  const assetIds = options.assetIds?.filter(Boolean) ?? [];
+  const bulkAssetIds = options.bulkAssetIds?.filter(Boolean) ?? [];
+  if (assetIds.length === 0 && bulkAssetIds.length === 0) return;
+
+  const blocked = await tx.testTagAsset.findMany({
+    where: {
+      organizationId,
+      isActive: true,
+      status: { in: ["FAILED", "OVERDUE"] },
+      OR: [
+        ...(assetIds.length > 0 ? [{ assetId: { in: assetIds } }] : []),
+        ...(bulkAssetIds.length > 0 ? [{ bulkAssetId: { in: bulkAssetIds } }] : []),
+      ],
+    },
+    select: {
+      testTagId: true,
+      status: true,
+      nextDueDate: true,
+      assetId: true,
+      bulkAssetId: true,
+      asset: { select: { assetTag: true } },
+      bulkAsset: { select: { assetTag: true } },
+    },
+  });
+
+  if (blocked.length === 0) return;
+
+  // Log every blocked scan so the audit trail is complete
+  for (const b of blocked) {
+    await tx.assetScanLog.create({
+      data: {
+        organizationId,
+        assetId: b.assetId,
+        bulkAssetId: b.bulkAssetId,
+        kitId: options.kitId ?? null,
+        projectId: options.projectId ?? null,
+        action: "SCAN_VERIFY",
+        scannedById: options.scannedById,
+        notes: `Checkout blocked: T&T ${b.status} for ${b.asset?.assetTag ?? b.bulkAsset?.assetTag ?? b.testTagId}`,
+      },
+    });
+  }
+
+  throw new TestTagBlockError(
+    blocked.map((b) => ({
+      assetTag: b.asset?.assetTag ?? b.bulkAsset?.assetTag ?? b.testTagId,
+      status: b.status as "FAILED" | "OVERDUE",
+      nextDueDate: b.nextDueDate,
+    })),
+  );
+}
 
 // ---------------------------------------------------------------------------
 // 1. getProjectForWarehouse
@@ -135,6 +247,36 @@ export async function lookupAssetForScan(
       assetName, reason: "asset_unavailable" as const,
       assetStatus: asset.status,
     });
+  }
+
+  // Block checkout of T&T FAILED/OVERDUE assets (AS/NZS 3760:2022 compliance)
+  if (mode === "checkout") {
+    const blockingTt = await prisma.testTagAsset.findFirst({
+      where: {
+        organizationId,
+        isActive: true,
+        status: { in: ["FAILED", "OVERDUE"] },
+        OR: [
+          ...(asset ? [{ assetId: asset.id }] : []),
+          ...(bulkAsset ? [{ bulkAssetId: bulkAsset.id }] : []),
+        ],
+      },
+      select: { status: true, nextDueDate: true, lastTestDate: true, testTagId: true },
+    });
+    if (blockingTt) {
+      return serialize({
+        found: true as const,
+        type: null,
+        lineItemId: null,
+        assetId: asset?.id ?? null,
+        assetName,
+        reason: "tt_blocked" as const,
+        ttStatus: blockingTt.status,
+        ttNextDueDate: blockingTt.nextDueDate,
+        ttLastTestDate: blockingTt.lastTestDate,
+        ttTestTagId: blockingTt.testTagId,
+      });
+    }
   }
 
   // For serialized assets, first try to find a line item with this exact asset assigned
@@ -273,6 +415,28 @@ export async function checkOutItems(
       select: { locationId: true },
     });
     const projectLocationId = project?.locationId || null;
+
+    // Pre-flight T&T compliance block — fetch all line items first, gather
+    // every serialized and bulk asset id involved, and assert none have a
+    // failed/overdue Test & Tag record. Throws TestTagBlockError on block,
+    // rolling back the whole batch (no partial check-out across the items).
+    const preflightLineItems = await tx.projectLineItem.findMany({
+      where: { id: { in: items.map((i) => i.lineItemId) }, organizationId, projectId },
+      select: { id: true, assetId: true, bulkAssetId: true },
+    });
+    const preflightAssetIds = [
+      ...preflightLineItems.map((li) => li.assetId).filter(Boolean) as string[],
+      ...items.map((i) => i.assetId).filter(Boolean) as string[],
+    ];
+    const preflightBulkIds = preflightLineItems
+      .map((li) => li.bulkAssetId)
+      .filter(Boolean) as string[];
+    await assertTestTagAllowsCheckout(tx, organizationId, {
+      assetIds: preflightAssetIds,
+      bulkAssetIds: preflightBulkIds,
+      projectId,
+      scannedById: userId,
+    });
 
     for (const item of items) {
       // Verify line item belongs to this project and org
@@ -629,6 +793,53 @@ export async function checkOutKit(projectId: string, kitId: string) {
     });
     const projectLocationId = project?.locationId || null;
 
+    // Pre-flight T&T compliance block — gather every asset id reachable
+    // through the kit's permanent composition (KitSerializedItem and
+    // KitBulkItem) plus any nested kit's composition. If any asset has
+    // FAILED/OVERDUE T&T status, throw and roll back. Mirror of the
+    // bulk-availability gathering pattern from Wave 1.5.
+    const kitSerializedItems = await tx.kitSerializedItem.findMany({
+      where: { kitId },
+      select: { assetId: true },
+    });
+    const kitBulkItems = await tx.kitBulkItem.findMany({
+      where: { kitId, organizationId },
+      select: { bulkAssetId: true },
+    });
+    // Find nested kits via child line items so we can include their composition
+    const kitChildren = await tx.projectLineItem.findMany({
+      where: { parentLineItemId: kitLineItem.id, organizationId },
+      select: { kitId: true },
+    });
+    const nestedKitIds = kitChildren
+      .map((c) => c.kitId)
+      .filter(Boolean) as string[];
+    const nestedSerializedItems = nestedKitIds.length
+      ? await tx.kitSerializedItem.findMany({
+          where: { kitId: { in: nestedKitIds } },
+          select: { assetId: true },
+        })
+      : [];
+    const nestedBulkItems = nestedKitIds.length
+      ? await tx.kitBulkItem.findMany({
+          where: { kitId: { in: nestedKitIds }, organizationId },
+          select: { bulkAssetId: true },
+        })
+      : [];
+    await assertTestTagAllowsCheckout(tx, organizationId, {
+      assetIds: [
+        ...kitSerializedItems.map((k) => k.assetId),
+        ...nestedSerializedItems.map((k) => k.assetId),
+      ],
+      bulkAssetIds: [
+        ...kitBulkItems.map((k) => k.bulkAssetId),
+        ...nestedBulkItems.map((k) => k.bulkAssetId),
+      ],
+      projectId,
+      scannedById: userId,
+      kitId,
+    });
+
     // Update kit parent line item
     await tx.projectLineItem.update({
       where: { id: kitLineItem.id },
@@ -709,6 +920,22 @@ export async function checkOutKit(projectId: string, kitId: string) {
         where: { id: { in: kitItems.map((ki) => ki.assetId) } },
         data: { status: "CHECKED_OUT", ...(projectLocationId && { locationId: projectLocationId }) },
       });
+    }
+
+    // Decrement BulkAsset.availableQuantity for every KitBulkItem in this kit
+    // AND every nested kit. Concurrency-safe via the shared helper: if any
+    // bulk has insufficient stock under concurrent writes, throws and rolls
+    // back the entire transaction (no partial checkout).
+    const bulkAdjustments: BulkAdjustment[] = [
+      ...(await collectKitBulkAdjustments(tx, kitId, organizationId, -1)),
+    ];
+    for (const nestedChild of nestedKitChildren) {
+      bulkAdjustments.push(
+        ...(await collectKitBulkAdjustments(tx, nestedChild.kitId!, organizationId, -1)),
+      );
+    }
+    if (bulkAdjustments.length > 0) {
+      await adjustBulkAvailability(tx, organizationId, coalesceAdjustments(bulkAdjustments));
     }
 
     // Create scan log for the kit
@@ -841,6 +1068,22 @@ export async function checkInKit(
       });
     }
 
+    // Restore BulkAsset.availableQuantity for every KitBulkItem in this kit
+    // AND every nested kit. Returns always release stock back to available
+    // regardless of condition — bulk damage/loss tracking is a Wave 3 concern
+    // (DamageEvent model). For now: stock returns, period.
+    const bulkAdjustments: BulkAdjustment[] = [
+      ...(await collectKitBulkAdjustments(tx, kitId, organizationId, +1)),
+    ];
+    for (const nestedChild of nestedKitChildren) {
+      bulkAdjustments.push(
+        ...(await collectKitBulkAdjustments(tx, nestedChild.kitId!, organizationId, +1)),
+      );
+    }
+    if (bulkAdjustments.length > 0) {
+      await adjustBulkAvailability(tx, organizationId, coalesceAdjustments(bulkAdjustments));
+    }
+
     // Create scan log
     await tx.assetScanLog.create({
       data: { organizationId, kitId, projectId, action: "CHECK_IN", scannedById: userId, notes: `Kit returned — condition: ${returnCondition}` },
@@ -926,6 +1169,15 @@ export async function quickAddAndCheckOut(
   const { organizationId, userId } = await requirePermission("warehouse", "check_out");
 
   const result = await prisma.$transaction(async (tx) => {
+    // T&T compliance block — refuse to add an asset to a project if its
+    // electrical-safety test is failed or overdue.
+    await assertTestTagAllowsCheckout(tx, organizationId, {
+      assetIds: data.assetId ? [data.assetId] : [],
+      bulkAssetIds: data.bulkAssetId ? [data.bulkAssetId] : [],
+      projectId,
+      scannedById: userId,
+    });
+
     // Get next sort order
     const maxSort = await tx.projectLineItem.aggregate({
       where: { projectId, organizationId },
@@ -1215,10 +1467,11 @@ export async function getProjectPullSheet(projectId: string) {
 
   const enrichedLineItems = project.lineItems
     .filter((li) => {
+      const isSubhireItem = li.subHireId != null;
       // Kit children render under their parent
-      if (li.isKitChild && !li.isSubhire) return false;
+      if (li.isKitChild && !isSubhireItem) return false;
       // Sub-hire group parents are wrappers — their children show individually
-      if (li.isSubhire && !li.isKitChild && !li.kitId && (li.childLineItems?.length ?? 0) > 0) return false;
+      if (isSubhireItem && !li.isKitChild && !li.kitId && (li.childLineItems?.length ?? 0) > 0) return false;
       return true;
     })
     .map((li) => {
@@ -1331,6 +1584,10 @@ export async function forceReturnKit(kitId: string) {
     const returnData = { status: "RETURNED" as const, returnedQuantity: 1, returnedAt: now, returnCondition: "GOOD" as const };
     const resetData = { status: "AVAILABLE" as const, locationId: defaultLocation?.id ?? null };
 
+    // Track every kit id that needs bulk restoration (this kit + every unique
+    // nested kit encountered across all parent line items).
+    const kitsToRestore = new Set<string>([kitId]);
+
     // Find all parent line items for this kit across all projects
     const kitParentItems = await tx.projectLineItem.findMany({
       where: { kitId, organizationId, isKitChild: false },
@@ -1370,6 +1627,7 @@ export async function forceReturnKit(kitId: string) {
 
       // Reset nested child kits to AVAILABLE + their serialized assets
       const childKitIds = nestedKitChildren.map((c) => c.kitId!);
+      for (const nestedKitId of childKitIds) kitsToRestore.add(nestedKitId);
       if (childKitIds.length > 0) {
         await tx.kit.updateMany({
           where: { id: { in: childKitIds }, organizationId },
@@ -1431,6 +1689,20 @@ export async function forceReturnKit(kitId: string) {
         where: { id: { in: kitItems.map((ki) => ki.assetId) } },
         data: resetData,
       });
+    }
+
+    // Restore BulkAsset.availableQuantity for the root kit and every unique
+    // nested kit that was encountered. Force-return assumes the kit was in
+    // a CHECKED_OUT-like state with bulk consumption, and that the right
+    // outcome is to release it all.
+    const bulkAdjustments: BulkAdjustment[] = [];
+    for (const kid of kitsToRestore) {
+      bulkAdjustments.push(
+        ...(await collectKitBulkAdjustments(tx, kid, organizationId, +1)),
+      );
+    }
+    if (bulkAdjustments.length > 0) {
+      await adjustBulkAvailability(tx, organizationId, coalesceAdjustments(bulkAdjustments));
     }
   });
 

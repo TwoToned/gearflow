@@ -117,7 +117,7 @@ export function FinancialSummary({
   return (
     <div className="space-y-4">
       {/* Overline label per DESIGN.md SectionHeader */}
-      <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-3">
+      <div className="t-overline text-fg-3">
         Financials
       </div>
 
@@ -152,7 +152,7 @@ export function FinancialSummary({
 
       {/* Client revenue breakdown */}
       <div className="space-y-1.5">
-        <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-4">
+        <div className="t-overline text-fg-4">
           Revenue
         </div>
         <Row label="Equipment" value={formatCurrency(equipmentVal)} />
@@ -178,7 +178,7 @@ export function FinancialSummary({
 
       {/* Business costs */}
       <div className="space-y-1.5">
-        <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-4">
+        <div className="t-overline text-fg-4">
           Costs
         </div>
         {serviceCostVal > 0 && (

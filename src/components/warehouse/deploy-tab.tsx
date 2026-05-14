@@ -366,13 +366,13 @@ export function DeployTab({
                       </TableCell>
                       <TableCell>
                         <span className="font-medium">{modelDisplayName(item)}</span>
-                        {item.isSubhire && (
+                        {item.subHireId != null && (
                           <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0 bg-cyan-500/10 text-cyan-600 border-cyan-500/20">Subhire</Badge>
                         )}
                         {item.isCustomItem && (
                           <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0 bg-muted text-fg-3 border-border/60">Custom</Badge>
                         )}
-                        {item.isSubhire && item.supplier && (
+                        {item.subHireId != null && item.supplier && (
                           <p className="text-xs text-fg-3 mt-0.5">via {item.supplier.name}</p>
                         )}
                       </TableCell>

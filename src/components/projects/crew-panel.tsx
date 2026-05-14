@@ -55,6 +55,7 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
 
 import { Button } from "@/components/ui/button";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Input } from "@/components/ui/input";
@@ -131,6 +132,8 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
   const [editId, setEditId] = useState<string | null>(null);
   const [messageOpen, setMessageOpen] = useState(false);
   const [callSheetOpen, setCallSheetOpen] = useState(false);
+  const [offerAllOpen, setOfferAllOpen] = useState(false);
+  const [removeAssignmentId, setRemoveAssignmentId] = useState<string | null>(null);
 
   const { data: assignments, isLoading } = useQuery({
     queryKey: ["project-crew", orgId, projectId],
@@ -231,14 +234,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  if (
-                    confirm(
-                      `Send offers to ${pendingCount} pending crew member(s)?`
-                    )
-                  )
-                    offerAllMutation.mutate();
-                }}
+                onClick={() => setOfferAllOpen(true)}
                 disabled={offerAllMutation.isPending}
               >
                 <Send className="mr-2 h-4 w-4" />
@@ -320,10 +316,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
                     key={a.id as string}
                     assignment={a}
                     onEdit={() => setEditId(a.id as string)}
-                    onDelete={() => {
-                      if (confirm("Remove this crew member from the project?"))
-                        deleteMutation.mutate(a.id as string);
-                    }}
+                    onDelete={() => setRemoveAssignmentId(a.id as string)}
                     onStatusChange={(status) =>
                       statusMutation.mutate({ id: a.id as string, status })
                     }
@@ -339,10 +332,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
                     (a: Assignment) => !a.isProjectManager
                   )}
                   onEdit={(id) => setEditId(id)}
-                  onDelete={(id) => {
-                    if (confirm("Remove this crew member from the project?"))
-                      deleteMutation.mutate(id);
-                  }}
+                  onDelete={(id) => setRemoveAssignmentId(id)}
                   onStatusChange={(id, status) =>
                     statusMutation.mutate({ id, status })
                   }
@@ -357,10 +347,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
                     key={a.id as string}
                     assignment={a}
                     onEdit={() => setEditId(a.id as string)}
-                    onDelete={() => {
-                      if (confirm("Remove this crew member from the project?"))
-                        deleteMutation.mutate(a.id as string);
-                    }}
+                    onDelete={() => setRemoveAssignmentId(a.id as string)}
                     onStatusChange={(status) =>
                       statusMutation.mutate({ id: a.id as string, status })
                     }
@@ -396,6 +383,34 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
         projectId={projectId}
         open={messageOpen}
         onOpenChange={setMessageOpen}
+      />
+
+      <DeleteDialog
+        open={offerAllOpen}
+        onOpenChange={setOfferAllOpen}
+        title={`Send offers to ${pendingCount} crew member${pendingCount === 1 ? "" : "s"}?`}
+        description="Each pending crew member receives their offer email or SMS now. They'll be able to accept or decline through their self-service link."
+        confirmLabel="Send offers"
+        cancelLabel="Not yet"
+        onConfirm={() => {
+          offerAllMutation.mutate();
+          setOfferAllOpen(false);
+        }}
+        pending={offerAllMutation.isPending}
+      />
+      <DeleteDialog
+        open={!!removeAssignmentId}
+        onOpenChange={(open) => !open && setRemoveAssignmentId(null)}
+        title="Remove crew member from this project?"
+        description="The assignment is removed and the crew member is notified if they had accepted. Past timesheets and call sheets are preserved."
+        confirmLabel="Remove from project"
+        onConfirm={() => {
+          if (removeAssignmentId) {
+            deleteMutation.mutate(removeAssignmentId);
+            setRemoveAssignmentId(null);
+          }
+        }}
+        pending={deleteMutation.isPending}
       />
     </div>
   );

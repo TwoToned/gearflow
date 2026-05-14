@@ -7,6 +7,7 @@ import {
   CreateBucketCommand,
 } from "@aws-sdk/client-s3";
 import { randomUUID } from "crypto";
+import { env } from "@/env";
 
 let s3Client: S3Client | null = null;
 
@@ -14,15 +15,15 @@ function getS3Client(): S3Client {
   if (s3Client) return s3Client;
 
   const config: ConstructorParameters<typeof S3Client>[0] = {
-    region: process.env.S3_REGION || "ap-southeast-2",
+    region: env.S3_REGION,
     credentials: {
-      accessKeyId: process.env.S3_ACCESS_KEY_ID || "",
-      secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || "",
+      accessKeyId: env.S3_ACCESS_KEY_ID,
+      secretAccessKey: env.S3_SECRET_ACCESS_KEY,
     },
   };
 
-  if (process.env.S3_ENDPOINT) {
-    config.endpoint = process.env.S3_ENDPOINT;
+  if (env.S3_ENDPOINT) {
+    config.endpoint = env.S3_ENDPOINT;
     config.forcePathStyle = true; // Required for MinIO / R2
   }
 
@@ -31,7 +32,7 @@ function getS3Client(): S3Client {
 }
 
 function getBucket(): string {
-  return process.env.S3_BUCKET || "gearflow-uploads";
+  return env.S3_BUCKET;
 }
 
 export interface UploadResult {

@@ -168,7 +168,7 @@ export default function ReportsPage() {
                     <Package className="h-4 w-4 text-primary" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold t-data leading-tight">
+                    <div className="t-title t-data leading-tight">
                       <AnimatedNumber value={d.totalSerializedAssets as number} />
                     </div>
                     <p className="text-xs text-fg-3">Serialized Assets</p>
@@ -181,7 +181,7 @@ export default function ReportsPage() {
                     <Boxes className="h-4 w-4 text-primary" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold t-data leading-tight">
+                    <div className="t-title t-data leading-tight">
                       <AnimatedNumber value={d.totalBulkAssets as number} />
                     </div>
                     <p className="text-xs text-fg-3">Bulk Assets</p>
@@ -194,7 +194,7 @@ export default function ReportsPage() {
                     <Users className="h-4 w-4 text-primary" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold t-data leading-tight">
+                    <div className="t-title t-data leading-tight">
                       <AnimatedNumber value={d.totalClients as number} />
                     </div>
                     <p className="text-xs text-fg-3">Clients</p>
@@ -207,7 +207,7 @@ export default function ReportsPage() {
                     <DollarSign className="h-4 w-4 text-primary" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold t-data leading-tight">
+                    <div className="t-title t-data leading-tight">
                       ${((d.totalRevenue as number) || 0).toLocaleString("en-AU", {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,

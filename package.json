@@ -1,6 +1,6 @@
 {
   "name": "gearflow-init",
-  "version": "0.4.5",
+  "version": "0.5.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -11,7 +11,10 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "test:integration": "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/gearflow_test vitest run --config vitest.integration.config.ts",
+    "reconcile:bulk": "tsx --env-file=.env scripts/reconcile-bulk-availability.ts",
+    "lint:server-actions": "tsx scripts/audit-server-actions.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1006.0",
@@ -30,6 +33,7 @@
     "@pdfme/schemas": "^5.5.8",
     "@pdfme/ui": "^5.5.8",
     "@prisma/client": "^6.19.2",
+    "@sentry/nextjs": "^10.53.1",
     "@tanstack/react-query": "^5.90.21",
     "@tanstack/react-query-devtools": "^5.91.3",
     "@types/archiver": "^7.0.0",
@@ -80,6 +84,7 @@
     "jsdom": "^27.0.1",
     "prisma": "^6.19.2",
     "tailwindcss": "^4",
+    "tsx": "^4.21.0",
     "typescript": "^5",
     "vitest": "^3.2.4"
   }

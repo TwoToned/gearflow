@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { env } from "@/env";
 
 /**
  * Returns which social login providers are available.
@@ -11,10 +12,10 @@ export async function GET() {
   const settings = await prisma.siteSettings.findFirst();
 
   const providers: string[] = [];
-  if (process.env.GOOGLE_CLIENT_ID && settings?.socialLoginGoogle) {
+  if (env.GOOGLE_CLIENT_ID && settings?.socialLoginGoogle) {
     providers.push("google");
   }
-  if (process.env.MICROSOFT_CLIENT_ID && settings?.socialLoginMicrosoft) {
+  if (env.MICROSOFT_CLIENT_ID && settings?.socialLoginMicrosoft) {
     providers.push("microsoft");
   }
   return NextResponse.json({ providers });

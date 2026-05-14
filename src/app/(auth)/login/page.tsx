@@ -222,7 +222,7 @@ export default function LoginPage() {
           </div>
 
           <div className="mb-6">
-            <h1 className="text-xl font-semibold tracking-tight text-fg">
+            <h1 className="t-title text-fg">
               {orgName ? `Sign in to ${orgName}` : "Welcome back"}
             </h1>
             <p className="mt-1 text-sm text-fg-3">

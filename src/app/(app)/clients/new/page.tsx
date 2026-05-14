@@ -29,7 +29,7 @@ export default function NewClientPage() {
         </Breadcrumb>
         <div>
           <h1 className="t-title text-fg">New Client</h1>
-          <p className="text-[13px] text-fg-3">
+          <p className="t-body text-fg-3">
             Add a new client to your directory.
           </p>
         </div>

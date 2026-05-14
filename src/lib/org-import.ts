@@ -710,6 +710,241 @@ export async function importOrganization(
     }
   }
 
+  // ── 20a. Group templates (Track B) ──────────────────────────────
+  for (const r of (manifest.groupTemplates ?? []) as Rec[]) {
+    const id = newId("groupTemplate", r.id);
+    await prisma.groupTemplate.create({
+      data: {
+        ...stripRelations(r),
+        id,
+        organizationId: newOrgId,
+        createdAt: safeDate(r.createdAt),
+        updatedAt: safeDate(r.updatedAt),
+      } as any,
+    });
+  }
+  for (const r of (manifest.groupTemplateItems ?? []) as Rec[]) {
+    const templateId = remap("groupTemplate", r.templateId);
+    if (!templateId) continue;
+    await prisma.groupTemplateItem.create({
+      data: {
+        ...stripRelations(r),
+        id: createId(),
+        organizationId: newOrgId,
+        templateId,
+        modelId: remap("model", r.modelId),
+        kitId: remap("kit", r.kitId),
+      } as any,
+    });
+  }
+
+  // ── 20b. Crew (FEATUREDOCS/31, Track B) ─────────────────────────
+  // Roles + skills first (no dependencies), then members (which can reference
+  // a role and a linked platform user), then certifications, assignments,
+  // shifts, availability, and time entries.
+  for (const r of (manifest.crewRoles ?? []) as Rec[]) {
+    const id = newId("crewRole", r.id);
+    await prisma.crewRole.create({
+      data: {
+        ...stripRelations(r),
+        id,
+        organizationId: newOrgId,
+      } as any,
+    });
+  }
+  for (const r of (manifest.crewSkills ?? []) as Rec[]) {
+    const id = newId("crewSkill", r.id);
+    await prisma.crewSkill.create({
+      data: {
+        ...stripRelations(r),
+        id,
+        organizationId: newOrgId,
+      } as any,
+    });
+  }
+  for (const r of (manifest.crewMembers ?? []) as Rec[]) {
+    const id = newId("crewMember", r.id);
+    await prisma.crewMember.create({
+      data: {
+        ...stripRelations(r),
+        id,
+        organizationId: newOrgId,
+        crewRoleId: remap("crewRole", r.crewRoleId),
+        userId: remapUser(r.userId),
+        // Drop icalToken (unique field) so the new org can opt back in
+        icalEnabled: false,
+        icalToken: null,
+        dateOfBirth: safeDateOpt(r.dateOfBirth),
+        createdAt: safeDate(r.createdAt),
+        updatedAt: safeDate(r.updatedAt),
+      } as any,
+    });
+  }
+  // Re-link crew members <-> skills (implicit m:n join table)
+  for (const link of (manifest.crewMemberSkills ?? []) as Array<{
+    crewMemberId: string;
+    skillId: string;
+  }>) {
+    const memberId = remap("crewMember", link.crewMemberId);
+    const skillId = remap("crewSkill", link.skillId);
+    if (!memberId || !skillId) continue;
+    await prisma.crewMember.update({
+      where: { id: memberId },
+      data: { skills: { connect: { id: skillId } } },
+    });
+  }
+  for (const r of (manifest.crewCertifications ?? []) as Rec[]) {
+    const crewMemberId = remap("crewMember", r.crewMemberId);
+    if (!crewMemberId) continue;
+    await prisma.crewCertification.create({
+      data: {
+        ...stripRelations(r),
+        id: createId(),
+        crewMemberId,
+        issuedDate: safeDateOpt(r.issuedDate),
+        expiryDate: safeDateOpt(r.expiryDate),
+      } as any,
+    });
+  }
+  for (const r of (manifest.crewAssignments ?? []) as Rec[]) {
+    const projectId = remap("project", r.projectId);
+    const crewMemberId = remap("crewMember", r.crewMemberId);
+    if (!projectId || !crewMemberId) continue;
+    const id = newId("crewAssignment", r.id);
+    await prisma.crewAssignment.create({
+      data: {
+        ...stripRelations(r),
+        id,
+        organizationId: newOrgId,
+        projectId,
+        crewMemberId,
+        crewRoleId: remap("crewRole", r.crewRoleId),
+        confirmedById: remapUser(r.confirmedById),
+        // Drop responseToken (unique) so old links don't conflict
+        responseToken: null,
+        startDate: safeDateOpt(r.startDate),
+        endDate: safeDateOpt(r.endDate),
+        offeredAt: safeDateOpt(r.offeredAt),
+        respondedAt: safeDateOpt(r.respondedAt),
+        confirmedAt: safeDateOpt(r.confirmedAt),
+        createdAt: safeDate(r.createdAt),
+        updatedAt: safeDate(r.updatedAt),
+      } as any,
+    });
+  }
+  for (const r of (manifest.crewShifts ?? []) as Rec[]) {
+    const assignmentId = remap("crewAssignment", r.assignmentId);
+    if (!assignmentId) continue;
+    await prisma.crewShift.create({
+      data: {
+        ...stripRelations(r),
+        id: createId(),
+        assignmentId,
+        date: safeDate(r.date),
+      } as any,
+    });
+  }
+  for (const r of (manifest.crewAvailability ?? []) as Rec[]) {
+    const crewMemberId = remap("crewMember", r.crewMemberId);
+    if (!crewMemberId) continue;
+    await prisma.crewAvailability.create({
+      data: {
+        ...stripRelations(r),
+        id: createId(),
+        crewMemberId,
+        startDate: safeDate(r.startDate),
+        endDate: safeDate(r.endDate),
+        createdAt: safeDate(r.createdAt),
+        updatedAt: safeDate(r.updatedAt),
+      } as any,
+    });
+  }
+  for (const r of (manifest.crewTimeEntries ?? []) as Rec[]) {
+    const crewMemberId = remap("crewMember", r.crewMemberId);
+    if (!crewMemberId) continue;
+    await prisma.crewTimeEntry.create({
+      data: {
+        ...stripRelations(r),
+        id: createId(),
+        organizationId: newOrgId,
+        crewMemberId,
+        assignmentId: remap("crewAssignment", r.assignmentId),
+        approvedById: remapUser(r.approvedById),
+        date: safeDate(r.date),
+        approvedAt: safeDateOpt(r.approvedAt),
+        createdAt: safeDate(r.createdAt),
+        updatedAt: safeDate(r.updatedAt),
+      } as any,
+    });
+  }
+
+  // ── 20c. Check items (FEATUREDOCS/37, Track B) ──────────────────
+  for (const r of (manifest.checkItems ?? []) as Rec[]) {
+    const id = newId("checkItem", r.id);
+    await prisma.checkItem.create({
+      data: {
+        ...stripRelations(r),
+        id,
+        organizationId: newOrgId,
+        createdById: remapUser(r.createdById),
+        createdAt: safeDate(r.createdAt),
+        updatedAt: safeDate(r.updatedAt),
+      } as any,
+    });
+  }
+  for (const r of (manifest.modelCheckItems ?? []) as Rec[]) {
+    const modelId = remap("model", r.modelId);
+    const checkItemId = remap("checkItem", r.checkItemId);
+    if (!modelId || !checkItemId) continue;
+    await prisma.modelCheckItem.create({
+      data: {
+        ...stripRelations(r),
+        id: createId(),
+        organizationId: newOrgId,
+        modelId,
+        checkItemId,
+        createdAt: safeDate(r.createdAt),
+      } as any,
+    });
+  }
+  for (const r of (manifest.kitCheckItems ?? []) as Rec[]) {
+    const kitId = remap("kit", r.kitId);
+    const checkItemId = remap("checkItem", r.checkItemId);
+    if (!kitId || !checkItemId) continue;
+    await prisma.kitCheckItem.create({
+      data: {
+        ...stripRelations(r),
+        id: createId(),
+        organizationId: newOrgId,
+        kitId,
+        checkItemId,
+        createdAt: safeDate(r.createdAt),
+      } as any,
+    });
+  }
+  for (const r of (manifest.checkRecords ?? []) as Rec[]) {
+    const checkItemId = remap("checkItem", r.checkItemId);
+    const performedById = remapUser(r.performedById);
+    // performedById is required + cascade-deleted with user. Skip if we can't
+    // resolve the original user — preserving every check record is less
+    // important than keeping the import idempotent.
+    if (!checkItemId || !performedById) continue;
+    await prisma.checkRecord.create({
+      data: {
+        ...stripRelations(r),
+        id: createId(),
+        organizationId: newOrgId,
+        checkItemId,
+        performedById,
+        lineItemId: remap("projectLineItem", r.lineItemId),
+        assetId: remap("asset", r.assetId),
+        bulkAssetId: remap("bulkAsset", r.bulkAssetId),
+        kitId: remap("kit", r.kitId),
+        performedAt: safeDate(r.performedAt),
+      } as any,
+    });
+  }
+
   // ── 21. Add members ──────────────────────────────────────────────
   for (const m of manifest.members) {
     const user = await prisma.user.findUnique({
@@ -749,6 +984,13 @@ export async function importOrganization(
       files: manifest.fileUploads.length,
       members: manifest.members.length,
       savedReports: (manifest.savedReports ?? []).length,
+      crewMembers: (manifest.crewMembers ?? []).length,
+      crewRoles: (manifest.crewRoles ?? []).length,
+      crewSkills: (manifest.crewSkills ?? []).length,
+      crewAssignments: (manifest.crewAssignments ?? []).length,
+      checkItems: (manifest.checkItems ?? []).length,
+      checkRecords: (manifest.checkRecords ?? []).length,
+      groupTemplates: (manifest.groupTemplates ?? []).length,
     },
   };
 }

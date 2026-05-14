@@ -1,29 +1,52 @@
 import { Resend } from "resend";
+import { env } from "@/env";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const resend = new Resend(env.RESEND_API_KEY);
 
-const emailFrom = process.env.EMAIL_FROM || "GearFlow <noreply@gearflow.app>";
+/**
+ * Optional attachment payload. Filename is what the recipient sees; content
+ * is the raw bytes (Buffer / Uint8Array) — Resend handles base64 encoding
+ * internally.
+ */
+export interface EmailAttachment {
+  filename: string;
+  content: Buffer | string;
+  contentType?: string;
+}
 
 export async function sendEmail({
   to,
   subject,
   html,
+  attachments,
 }: {
   to: string;
   subject: string;
   html: string;
+  attachments?: EmailAttachment[];
 }) {
-  if (!process.env.RESEND_API_KEY || process.env.RESEND_API_KEY === "re_xxxxxxxxxxxxxxxxxxxx") {
+  if (!env.RESEND_API_KEY || env.RESEND_API_KEY === "re_xxxxxxxxxxxxxxxxxxxx") {
     console.log(`[Email] Would send to ${to}: ${subject}`);
     console.log(`[Email] HTML: ${html.substring(0, 200)}...`);
+    if (attachments?.length) {
+      console.log(`[Email] Attachments: ${attachments.map((a) => a.filename).join(", ")}`);
+    }
     return { id: "dev-mock" };
   }
 
   const { data, error } = await resend.emails.send({
-    from: emailFrom,
+    from: env.EMAIL_FROM,
     to,
     subject,
     html,
+    attachments: attachments?.map((a) => ({
+      filename: a.filename,
+      content:
+        typeof a.content === "string"
+          ? Buffer.from(a.content, "utf8")
+          : a.content,
+      contentType: a.contentType,
+    })),
   });
 
   if (error) {

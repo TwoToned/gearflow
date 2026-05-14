@@ -34,6 +34,7 @@ import { useCanDo } from "@/lib/use-permissions";
 import { FadeIn } from "@/components/ui/motion";
 
 import { Button } from "@/components/ui/button";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -96,6 +97,7 @@ export default function CheckItemsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Record<string, unknown> | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
 
   const { data: checkItems = [], isLoading } = useQuery({
     queryKey: ["check-items", orgId],
@@ -249,11 +251,12 @@ export default function CheckItemsPage() {
                                   variant="ghost"
                                   size="sm"
                                   className="text-destructive"
-                                  onClick={() => {
-                                    if (confirm(`Delete "${item.label}"?`)) {
-                                      deleteMutation.mutate(item.id as string);
-                                    }
-                                  }}
+                                  onClick={() =>
+                                    setDeleteTarget({
+                                      id: item.id as string,
+                                      label: item.label as string,
+                                    })
+                                  }
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />
                                 </Button>
@@ -274,6 +277,21 @@ export default function CheckItemsPage() {
           open={dialogOpen}
           onOpenChange={setDialogOpen}
           editing={editing}
+        />
+
+        <DeleteDialog
+          open={!!deleteTarget}
+          onOpenChange={(open) => !open && setDeleteTarget(null)}
+          title={`Delete "${deleteTarget?.label ?? ""}"?`}
+          description="This removes the check item from new model/kit templates. Existing checklist instances on past projects are preserved."
+          confirmLabel="Delete check item"
+          onConfirm={() => {
+            if (deleteTarget) {
+              deleteMutation.mutate(deleteTarget.id);
+              setDeleteTarget(null);
+            }
+          }}
+          pending={deleteMutation.isPending}
         />
       </div>
     </FadeIn>

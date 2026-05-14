@@ -53,7 +53,6 @@ const BUILT_IN_ROLES = [
   { value: "admin", label: "Admin" },
   { value: "manager", label: "Manager" },
   { value: "member", label: "Member" },
-  { value: "staff", label: "Staff" },
   { value: "warehouse", label: "Warehouse" },
   { value: "viewer", label: "Viewer" },
 ];
@@ -266,7 +265,7 @@ export default function AdminOrgDetailPage({
               <div className="flex items-center gap-3">
                 <Package className="h-5 w-5 text-fg-3" />
                 <div>
-                  <p className="text-2xl font-bold">{counts.assets}</p>
+                  <p className="t-title t-data">{counts.assets}</p>
                   <p className="text-xs text-fg-3">Assets</p>
                 </div>
               </div>
@@ -275,7 +274,7 @@ export default function AdminOrgDetailPage({
               <div className="flex items-center gap-3">
                 <Boxes className="h-5 w-5 text-fg-3" />
                 <div>
-                  <p className="text-2xl font-bold">{counts.bulkAssets}</p>
+                  <p className="t-title t-data">{counts.bulkAssets}</p>
                   <p className="text-xs text-fg-3">Bulk Assets</p>
                 </div>
               </div>
@@ -284,7 +283,7 @@ export default function AdminOrgDetailPage({
               <div className="flex items-center gap-3">
                 <FolderKanban className="h-5 w-5 text-fg-3" />
                 <div>
-                  <p className="text-2xl font-bold">{counts.projects}</p>
+                  <p className="t-title t-data">{counts.projects}</p>
                   <p className="text-xs text-fg-3">Projects</p>
                 </div>
               </div>
@@ -293,7 +292,7 @@ export default function AdminOrgDetailPage({
               <div className="flex items-center gap-3">
                 <BoxIcon className="h-5 w-5 text-fg-3" />
                 <div>
-                  <p className="text-2xl font-bold">{counts.kits}</p>
+                  <p className="t-title t-data">{counts.kits}</p>
                   <p className="text-xs text-fg-3">Kits</p>
                 </div>
               </div>

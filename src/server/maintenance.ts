@@ -86,6 +86,64 @@ export async function getMaintenanceRecord(id: string) {
   );
 }
 
+/**
+ * State-machine invariants for MaintenanceRecord → Asset.status:
+ *
+ *   SCHEDULED       does NOT hold the assets (no status change)
+ *   IN_PROGRESS     holds: AVAILABLE → IN_MAINTENANCE (guarded — never
+ *                   overwrites CHECKED_OUT / LOST / RETIRED)
+ *   COMPLETED PASS  releases: IN_MAINTENANCE → AVAILABLE (guarded — only
+ *                   if no other active IN_PROGRESS record still holds
+ *                   this asset, and only if currently IN_MAINTENANCE)
+ *   COMPLETED FAIL  holds: leaves IN_MAINTENANCE in place
+ *   CANCELLED       releases (same guards as COMPLETED PASS)
+ *
+ * The "guarded" pattern matters because Asset.status is a single mutable
+ * enum touched by maintenance, warehouse checkout, T&T, and lost/retired
+ * lifecycles. We never overwrite a status set by a different lifecycle.
+ * A proper priority model (Asset hold table) is Wave 3+ work.
+ */
+
+type TxClient = Prisma.TransactionClient;
+
+/** Mark assets as IN_MAINTENANCE only if currently AVAILABLE. */
+async function holdAssets(tx: TxClient, assetIds: string[]) {
+  if (assetIds.length === 0) return;
+  await tx.asset.updateMany({
+    where: { id: { in: assetIds }, status: "AVAILABLE" },
+    data: { status: "IN_MAINTENANCE" },
+  });
+}
+
+/**
+ * Release assets back to AVAILABLE — but only if currently IN_MAINTENANCE
+ * AND no other active (IN_PROGRESS) maintenance record still holds them.
+ * Pass the record id being completed/cancelled so we exclude it from the
+ * "other holds" check.
+ */
+async function releaseAssets(
+  tx: TxClient,
+  assetIds: string[],
+  currentRecordId: string,
+) {
+  if (assetIds.length === 0) return;
+  const stillHeld = await tx.maintenanceRecordAsset.findMany({
+    where: {
+      assetId: { in: assetIds },
+      maintenanceRecordId: { not: currentRecordId },
+      maintenanceRecord: { status: "IN_PROGRESS" },
+    },
+    select: { assetId: true },
+  });
+  const stillHeldIds = new Set(stillHeld.map((r) => r.assetId));
+  const toRelease = assetIds.filter((id) => !stillHeldIds.has(id));
+  if (toRelease.length === 0) return;
+  await tx.asset.updateMany({
+    where: { id: { in: toRelease }, status: "IN_MAINTENANCE" },
+    data: { status: "AVAILABLE" },
+  });
+}
+
 export async function createMaintenanceRecord(data: MaintenanceFormValues) {
   const { organizationId, userId, userName } = await requirePermission("maintenance", "create");
   const parsed = maintenanceSchema.parse(data);
@@ -98,47 +156,42 @@ export async function createMaintenanceRecord(data: MaintenanceFormValues) {
 
   if (assetIds.length === 0) throw new Error("At least one asset is required");
 
-  const record = await prisma.maintenanceRecord.create({
-    data: {
-      organizationId,
-      type: parsed.type,
-      status: parsed.status,
-      title: parsed.title,
-      description: parsed.description || null,
-      reportedById: parsed.reportedById || userId,
-      assignedToId: parsed.assignedToId || null,
-      scheduledDate: parsed.scheduledDate ?? null,
-      completedDate: parsed.completedDate ?? null,
-      cost: parsed.cost ?? null,
-      partsUsed: parsed.partsUsed || null,
-      result: parsed.result ?? null,
-      nextDueDate: parsed.nextDueDate ?? null,
-      tags: parsed.tags,
-      assets: {
-        create: assetIds.map((assetId) => ({ assetId })),
-      },
-    },
-    include: {
-      ...assetInclude,
-    },
-  });
-
-  // Update asset statuses
-  if (parsed.status === "IN_PROGRESS") {
-    await prisma.asset.updateMany({
-      where: { id: { in: assetIds } },
-      data: { status: "IN_MAINTENANCE" },
-    });
-  }
-
-  if (parsed.status === "COMPLETED") {
-    await prisma.asset.updateMany({
-      where: { id: { in: assetIds } },
+  const record = await prisma.$transaction(async (tx) => {
+    const created = await tx.maintenanceRecord.create({
       data: {
-        status: parsed.result === "FAIL" ? "IN_MAINTENANCE" : "AVAILABLE",
+        organizationId,
+        type: parsed.type,
+        status: parsed.status,
+        title: parsed.title,
+        description: parsed.description || null,
+        reportedById: parsed.reportedById || userId,
+        assignedToId: parsed.assignedToId || null,
+        scheduledDate: parsed.scheduledDate ?? null,
+        completedDate: parsed.completedDate ?? null,
+        cost: parsed.cost ?? null,
+        partsUsed: parsed.partsUsed || null,
+        result: parsed.result ?? null,
+        nextDueDate: parsed.nextDueDate ?? null,
+        tags: parsed.tags,
+        assets: {
+          create: assetIds.map((assetId) => ({ assetId })),
+        },
+      },
+      include: {
+        ...assetInclude,
       },
     });
-  }
+
+    // Apply state-machine transitions atomically with record creation
+    if (parsed.status === "IN_PROGRESS") {
+      await holdAssets(tx, assetIds);
+    } else if (parsed.status === "COMPLETED" && parsed.result !== "FAIL") {
+      // PASS releases; FAIL keeps held (no change)
+      await releaseAssets(tx, assetIds, created.id);
+    }
+
+    return created;
+  });
 
   await logActivity({
     organizationId,
@@ -178,60 +231,73 @@ export async function updateMaintenanceRecord(
       ? [parsed.assetId]
       : existingAssetIds;
 
-  const toAdd = newAssetIds.filter((id) => !existingAssetIds.includes(id));
   const toRemove = existingAssetIds.filter((id) => !newAssetIds.includes(id));
 
-  const record = await prisma.maintenanceRecord.update({
-    where: { id, organizationId },
-    data: {
-      type: parsed.type,
-      status: parsed.status,
-      title: parsed.title,
-      description: parsed.description || null,
-      reportedById: parsed.reportedById || undefined,
-      assignedToId: parsed.assignedToId || null,
-      scheduledDate: parsed.scheduledDate ?? null,
-      completedDate: parsed.completedDate ?? null,
-      cost: parsed.cost ?? null,
-      partsUsed: parsed.partsUsed || null,
-      result: parsed.result ?? null,
-      nextDueDate: parsed.nextDueDate ?? null,
-      tags: parsed.tags,
-      assets: {
-        deleteMany: toRemove.length > 0 ? { assetId: { in: toRemove } } : undefined,
-        create: toAdd.map((assetId) => ({ assetId })),
-      },
-    },
-    include: {
-      ...assetInclude,
-    },
-  });
-
-  // Handle status transitions for all linked assets
-  if (newAssetIds.length > 0) {
-    if (parsed.status === "IN_PROGRESS" && existing.status !== "IN_PROGRESS") {
-      await prisma.asset.updateMany({
-        where: { id: { in: newAssetIds } },
-        data: { status: "IN_MAINTENANCE" },
-      });
-    }
-
-    if (parsed.status === "COMPLETED" && existing.status !== "COMPLETED") {
-      await prisma.asset.updateMany({
-        where: { id: { in: newAssetIds } },
-        data: {
-          status: parsed.result === "FAIL" ? "IN_MAINTENANCE" : "AVAILABLE",
+  const record = await prisma.$transaction(async (tx) => {
+    const updated = await tx.maintenanceRecord.update({
+      where: { id, organizationId },
+      data: {
+        type: parsed.type,
+        status: parsed.status,
+        title: parsed.title,
+        description: parsed.description || null,
+        reportedById: parsed.reportedById || undefined,
+        assignedToId: parsed.assignedToId || null,
+        scheduledDate: parsed.scheduledDate ?? null,
+        completedDate: parsed.completedDate ?? null,
+        cost: parsed.cost ?? null,
+        partsUsed: parsed.partsUsed || null,
+        result: parsed.result ?? null,
+        nextDueDate: parsed.nextDueDate ?? null,
+        tags: parsed.tags,
+        assets: {
+          deleteMany: toRemove.length > 0 ? { assetId: { in: toRemove } } : undefined,
+          create: newAssetIds
+            .filter((id) => !existingAssetIds.includes(id))
+            .map((assetId) => ({ assetId })),
         },
-      });
+      },
+      include: {
+        ...assetInclude,
+      },
+    });
+
+    // Asset-removal release: previously a bug — removed assets stayed
+    // IN_MAINTENANCE forever. Release them now, with the same guards as
+    // any other release (only if no other active record still holds them
+    // and only if currently IN_MAINTENANCE).
+    //
+    // Apply this regardless of the new record status, because the asset
+    // is no longer associated with THIS record after the update above.
+    if (toRemove.length > 0) {
+      await releaseAssets(tx, toRemove, id);
     }
 
-    if (parsed.status === "CANCELLED" && existing.status === "IN_PROGRESS") {
-      await prisma.asset.updateMany({
-        where: { id: { in: newAssetIds } },
-        data: { status: "AVAILABLE" },
-      });
+    // State-machine transitions for remaining assets:
+    if (newAssetIds.length > 0) {
+      const wasHolding = existing.status === "IN_PROGRESS";
+      const isHolding = parsed.status === "IN_PROGRESS";
+
+      // Just entered IN_PROGRESS: hold remaining assets
+      if (isHolding && !wasHolding) {
+        await holdAssets(tx, newAssetIds);
+      }
+
+      // Completed PASS or Cancelled (and was holding): release
+      if (
+        wasHolding &&
+        ((parsed.status === "COMPLETED" && parsed.result !== "FAIL") ||
+          parsed.status === "CANCELLED")
+      ) {
+        await releaseAssets(tx, newAssetIds, id);
+      }
+
+      // Completed FAIL: stay IN_MAINTENANCE (no change — guarded hold
+      // remains in place; nothing to do here).
     }
-  }
+
+    return updated;
+  });
 
   await logActivity({
     organizationId,

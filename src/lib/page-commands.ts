@@ -155,6 +155,17 @@ export const PAGE_COMMANDS: PageCommand[] = [
     description: "Supplier management and purchase orders",
     searchable: true,
     searchType: "supplier",
+    children: [
+      {
+        label: "Sub-Hires",
+        href: "/suppliers",
+        aliases: ["subhires", "subhire", "subrentals", "subrental", "crosshires", "crosshire"],
+        icon: "PackageOpen",
+        description: "Find sub-hire orders by order number, supplier, or items",
+        searchable: true,
+        searchType: "sub-hire" as const,
+      },
+    ],
   },
   {
     label: "Crew",
@@ -309,6 +320,15 @@ export const PAGE_COMMANDS: PageCommand[] = [
         description: "Quality check item library",
         searchable: true,
         searchType: "check-item" as const,
+      },
+      {
+        label: "Group Templates",
+        href: "/settings/group-templates",
+        aliases: ["grouptemplates", "templates", "grouptemplate", "groups", "lineitemtemplates"],
+        icon: "Bookmark",
+        description: "Reusable line item group templates",
+        searchable: true,
+        searchType: "group-template" as const,
       },
     ],
   },

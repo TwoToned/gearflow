@@ -20,8 +20,8 @@ export default function EditModelPage({ params }: { params: Promise<{ id: string
     queryFn: () => getModel(id),
   });
 
-  if (isLoading) return <div className="text-[13px] text-fg-3">Loading...</div>;
-  if (!model) return <div className="text-[13px] text-fg-3">Model not found.</div>;
+  if (isLoading) return <div className="t-body text-fg-3">Loading...</div>;
+  if (!model) return <div className="t-body text-fg-3">Model not found.</div>;
 
   const initialData: ModelFormValues & { id: string } = {
     id: model.id,
@@ -67,7 +67,7 @@ export default function EditModelPage({ params }: { params: Promise<{ id: string
         </div>
         <div>
           <h1 className="t-title text-fg">Edit Model</h1>
-          <p className="text-[13px] text-fg-3">{model.name}</p>
+          <p className="t-body text-fg-3">{model.name}</p>
         </div>
         <ModelForm initialData={initialData} />
       </div>

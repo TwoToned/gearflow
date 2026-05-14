@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { getOrgContext, requirePermission } from "@/lib/org-context";
+import { requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import {
@@ -14,7 +14,7 @@ import {
 // ─── Check Item Library ─────────────────────────────────────────────────────
 
 export async function getCheckItems() {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requirePermission("checkItem", "read");
 
   return serialize(
     await prisma.checkItem.findMany({
@@ -28,7 +28,7 @@ export async function getCheckItems() {
 }
 
 export async function getCheckItem(id: string) {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requirePermission("checkItem", "read");
 
   const item = await prisma.checkItem.findFirst({
     where: { id, organizationId },
@@ -153,7 +153,7 @@ export async function deleteCheckItem(id: string) {
 // ─── Model Check Items (assign check items to a model) ──────────────────────
 
 export async function getModelCheckItems(modelId: string) {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requirePermission("checkItem", "read");
 
   return serialize(
     await prisma.modelCheckItem.findMany({
@@ -343,7 +343,7 @@ export async function bulkAddCheckItemsToModels(
 // ─── Kit Check Items ──────────────────────────────────────────────────────────
 
 export async function getKitCheckItems(kitId: string) {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requirePermission("checkItem", "read");
 
   return serialize(
     await prisma.kitCheckItem.findMany({

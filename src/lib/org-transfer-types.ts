@@ -39,6 +39,28 @@ export interface OrgExportManifest {
 
   savedReports: Record<string, unknown>[];
 
+  // ─── Crew (32 in FEATUREDOCS — added in Track B integration-checklist pass) ──
+  crewMembers?: Record<string, unknown>[];
+  crewRoles?: Record<string, unknown>[];
+  crewSkills?: Record<string, unknown>[];
+  /** Many-to-many join: skillId + crewMemberId */
+  crewMemberSkills?: Array<{ crewMemberId: string; skillId: string }>;
+  crewCertifications?: Record<string, unknown>[];
+  crewAssignments?: Record<string, unknown>[];
+  crewShifts?: Record<string, unknown>[];
+  crewAvailability?: Record<string, unknown>[];
+  crewTimeEntries?: Record<string, unknown>[];
+
+  // ─── Check items (37 — added in Track B integration-checklist pass) ─────────
+  checkItems?: Record<string, unknown>[];
+  modelCheckItems?: Record<string, unknown>[];
+  kitCheckItems?: Record<string, unknown>[];
+  checkRecords?: Record<string, unknown>[];
+
+  // ─── Group templates (Track B integration-checklist pass) ───────────────────
+  groupTemplates?: Record<string, unknown>[];
+  groupTemplateItems?: Record<string, unknown>[];
+
   /** Members with user email for matching on import */
   members: Array<{
     role: string;

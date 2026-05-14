@@ -15,6 +15,10 @@ export default defineConfig({
       ".next",
       "src/generated/**",
       "e2e/**",
+      // Integration tests run via vitest.integration.config.ts against a real
+      // Postgres test DB. Keep the unit suite fast and Docker-free.
+      "src/**/*.int.test.ts",
+      "tests/**/*.int.test.ts",
     ],
     setupFiles: ["./tests/helpers/setup.ts"],
     coverage: {

@@ -5,6 +5,99 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-05-14
+
+App-wide cleanup, unification, and feature-completeness pass. Wave 1 fixed
+four operational bugs that could leave inventory or revenue in a wrong state.
+Wave 2 closed the highest-pain audit gaps (errors, custom-items pricing,
+project totals, notifications, scheduled reports, settings IA, design drift).
+Per P10, the multi-tenancy harness is retained but soft-warn linted —
+single-tenant is the operational reality.
+
+### Added
+- **Boot-time env validation** — `src/env.ts` fails fast on missing or
+  malformed environment variables. Replaces scattered `process.env.X!` reads.
+- **Sentry** — `@sentry/nextjs` wired with safe defaults for client/server/edge.
+- **DamageEvent model + MaintenanceRecord.projectId** — operational P&L can
+  now attribute repair cost and damage to a specific project.
+- **Notification email delivery** — cron endpoint that fans out batched
+  notifications to opted-in recipients via Resend, with a `NotificationEmailLog`
+  dedupe table to prevent the same notification firing twice in a window.
+- **Notification preference table** — settings page lets users opt in/out of
+  each notification type.
+- **Persistent notification dismissal** — `Notification.dismissedAt` replaces
+  per-device localStorage so a dismissal on phone clears desktop too.
+- **Scheduled reports** — saved reports can now run on a `DAILY` /
+  `WEEKLY` / `MONTHLY` cadence and email a CSV to a list of recipients.
+- **Test & Tag checkout gate** — assets with a current `FAILED` or `OVERDUE`
+  T&T record cannot be checked out. `SCAN_VERIFY` denial event is logged.
+- **Shared inventory mutation helper** — `src/lib/inventory-mutations.ts`
+  provides `adjustBulkAvailability` (guarded `updateMany`) and an
+  `InventoryError` class with `NOT_FOUND` / `CROSS_ORG` / `INSUFFICIENT_STOCK`
+  codes. Used by all bulk-asset write paths.
+- **Audit-trail timeline UI** — every entity detail page now shows the last
+  5 events with a "View all" link to `/activity` scoped by entityType +
+  entityId.
+- **TOTAL column on /projects** — the project list now shows the canonical
+  rolled-up job total (services + line items + sub-hires).
+- **Custom-line-item pricing fields** — the Add Custom Item dialog now
+  exposes `isOptional` and discount, matching the rest of the line-items UI.
+- **DeleteDialog / BulkDeleteDialog / ConfirmActionMenuItem** primitives —
+  one consistent confirm pattern across the app, replacing every remaining
+  `window.confirm`.
+- **`subHire` + `groupTemplate`** in global search; **crew, check items,
+  group templates** in org export/import.
+
+### Changed
+- **Settings nav** grouped into 4 IA sections with overline labels
+  (Organization, Operations, Documents, Integrations).
+- **Activity Timeline** is collapsed by default (5 events) on every
+  entity detail page, with a deep-link to `/activity`.
+- **General settings** page flattened — one `Card` per section was
+  visual noise. Replaced with section headers + dividers.
+- **`staff` role consolidated into `member`** — `staff` was identical
+  to `member` in permissions. One migration row update, no UX change.
+- **`ProjectLineItem.isSubhire` dropped** — sub-hire detection is now
+  `subHireId != null` (single source of truth). Migration includes a
+  prod-check note: confirm zero legacy-only rows before deploy.
+- **Custom items in groups** now contribute to project total via
+  `customExtras` on top of `bundlePrice * quantity`. The "suggested
+  price" remains equipment-only — custom items are always extras.
+
+### Fixed
+- **Kit checkout/checkin** now correctly updates bulk-asset availability
+  for nested KitBulkItems. Previously a kit holding bulk items would
+  check out the parent but leave bulk availability stale.
+- **Maintenance state machine** — atomic transaction wraps create / update;
+  asset status only transitions `AVAILABLE → IN_MAINTENANCE` on hold and
+  `IN_MAINTENANCE → AVAILABLE` on release (and only when no other
+  IN_PROGRESS record holds the asset).
+- **BulkAsset availability** — one-shot reconcile script repairs any
+  rows where `availableQuantity` drifted from `totalQuantity − checkedOut`.
+- **LOW_STOCK email regression** — `getNotifications` now live-computes
+  `availableQuantity <= reorderThreshold AND reorderThreshold > 0` instead
+  of trusting the cached `status` enum. Previously a refilled bulk asset
+  could keep sending low-stock alerts.
+- **Custom-items-in-groups double-count (pre-landing review)** —
+  `calculateSuggestedPrice` is now equipment-only. Accepting the
+  suggestion no longer billed every custom item twice.
+- **Scheduled-report duplicate-send (adversarial review)** —
+  per-recipient try/catch in the cron runner. A transient sendEmail
+  failure on one recipient no longer prevents the `scheduleLastRunAt`
+  stamp and trigger a re-fire to everyone on the next tick.
+- **`requirePermission` enforced on reads** in `group-templates`, `crew`,
+  `check-items`, and `sub-hires` server actions.
+- **DESIGN.md typography drift** swept across components.
+
+### Engineering
+- **50 new integration tests** across 5 files: `warehouse-tt-block`,
+  `maintenance-state`, `group-revenue-custom-items`,
+  `notifications`, `scheduled-reports`. Integration harness runs against
+  a real Postgres instance (`gearflow_test`).
+- **Wave 2 Track E** ships a soft-warn lint that flags `requirePermission`
+  / `logActivity` gaps on server actions. Single-tenant per P10 — failures
+  in audit do not block builds, but the report runs in CI.
+
 ## [0.4.5] - 2026-04-20
 
 ### Fixed

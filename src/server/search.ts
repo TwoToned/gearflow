@@ -16,7 +16,9 @@ export type SearchResultType =
   | "category"
   | "maintenance"
   | "crew"
-  | "check-item";
+  | "check-item"
+  | "group-template"
+  | "sub-hire";
 
 export type SearchResult = {
   id: string;
@@ -48,6 +50,8 @@ type SupplierRow = { id: string; name: string; contactName: string | null; accou
 type MaintenanceRow = { id: string; title: string; status: string; match_quality: number };
 type CrewRow = { id: string; firstName: string; lastName: string; email: string | null; department: string | null; roleName: string | null; match_quality: number };
 type CheckItemRow = { id: string; label: string; type: string; category: string | null; match_quality: number };
+type GroupTemplateRow = { id: string; name: string; description: string | null; itemCount: number; match_quality: number };
+type SubHireRow = { id: string; orderNumber: string; status: string; supplierName: string; supplierReference: string | null; projectId: string | null; match_quality: number };
 
 // Child row types
 type ChildAssetRow = { id: string; assetTag: string; serialNumber: string | null; customName: string | null; modelId: string; status: string };
@@ -74,7 +78,7 @@ export async function globalSearch(query: string) {
 
   if (nq.length < 1) return { results: [] };
 
-  const [models, kits, assets, bulkAssets, projects, clients, suppliers, locations, categories, maintenance, crew, checkItems] =
+  const [models, kits, assets, bulkAssets, projects, clients, suppliers, locations, categories, maintenance, crew, checkItems, groupTemplates, subHires] =
     await Promise.all([
       prisma.$queryRaw<ModelRow[]>`
         SELECT m.id, m.name, m.manufacturer, m."modelNumber",
@@ -297,6 +301,51 @@ export async function globalSearch(query: string) {
             OR similarity(ci.label, ${q}) > ${trigramThreshold}
           )
         ORDER BY match_quality DESC, ci.label ASC LIMIT 10
+      `,
+
+      prisma.$queryRaw<GroupTemplateRow[]>`
+        SELECT gt.id, gt.name, gt.description,
+               (SELECT COUNT(*)::int FROM "public"."group_template_item" gti WHERE gti."templateId" = gt.id) AS "itemCount",
+               GREATEST(
+                 similarity(lower(gt.name), ${ql}),
+                 similarity(lower(COALESCE(gt.description, '')), ${ql})
+               ) AS match_quality
+        FROM "public"."group_template" gt
+        WHERE gt."organizationId" = ${organizationId}
+          AND (
+            gt.name ILIKE ${ilikePattern}
+            OR COALESCE(gt.description, '') ILIKE ${ilikePattern}
+            OR lower(regexp_replace(gt.name, '[^a-zA-Z0-9]', '', 'g')) LIKE ${nqPattern}
+            OR similarity(gt.name, ${q}) > ${trigramThreshold}
+          )
+        ORDER BY match_quality DESC, gt.name ASC LIMIT 10
+      `,
+
+      prisma.$queryRaw<SubHireRow[]>`
+        SELECT sh.id, sh."orderNumber", sh.status, s.name AS "supplierName", sh."supplierReference", sh."projectId",
+               GREATEST(
+                 similarity(lower(sh."orderNumber"), ${ql}),
+                 similarity(lower(s.name), ${ql}),
+                 similarity(lower(COALESCE(sh."supplierReference", '')), ${ql})
+               ) AS match_quality
+        FROM "public"."sub_hire" sh
+        JOIN "public"."supplier" s ON sh."supplierId" = s.id
+        WHERE sh."organizationId" = ${organizationId}
+          AND (
+            sh."orderNumber" ILIKE ${ilikePattern}
+            OR s.name ILIKE ${ilikePattern}
+            OR COALESCE(sh."supplierReference", '') ILIKE ${ilikePattern}
+            OR COALESCE(sh.notes, '') ILIKE ${ilikePattern}
+            OR lower(regexp_replace(sh."orderNumber", '[^a-zA-Z0-9]', '', 'g')) LIKE ${nqPattern}
+            OR lower(regexp_replace(s.name, '[^a-zA-Z0-9]', '', 'g')) LIKE ${nqPattern}
+            OR similarity(sh."orderNumber", ${q}) > ${trigramThreshold}
+            OR similarity(s.name, ${q}) > ${trigramThreshold}
+            OR EXISTS(
+              SELECT 1 FROM "public"."sub_hire_item" shi
+              WHERE shi."subHireId" = sh.id AND shi.description ILIKE ${ilikePattern}
+            )
+          )
+        ORDER BY match_quality DESC, sh."orderNumber" ASC LIMIT 10
       `,
     ]);
 
@@ -629,6 +678,30 @@ export async function globalSearch(query: string) {
       title: ci.label,
       subtitle: [typeLabel, ci.category].filter(Boolean).join(" · "),
       href: `/settings/check-items`, relevance: Number(ci.match_quality) || 0,
+    });
+  }
+
+  // Group templates
+  for (const gt of groupTemplates) {
+    results.push({
+      id: gt.id, type: "group-template",
+      title: gt.name,
+      subtitle: gt.description ?? `${gt.itemCount} item${gt.itemCount !== 1 ? "s" : ""}`,
+      href: `/settings/group-templates`, relevance: Number(gt.match_quality) || 0,
+    });
+  }
+
+  // Sub-hires (managed via project equipment tab — link to the project, falling
+  // back to the global suppliers page when the sub-hire isn't tied to a project)
+  for (const sh of subHires) {
+    const href = sh.projectId
+      ? `/projects/${sh.projectId}?tab=equipment&subHireId=${sh.id}`
+      : `/suppliers`;
+    results.push({
+      id: sh.id, type: "sub-hire",
+      title: `${sh.orderNumber} — ${sh.supplierName}`,
+      subtitle: [sh.status, sh.supplierReference].filter(Boolean).join(" · ") || null,
+      href, relevance: Number(sh.match_quality) || 0,
     });
   }
 

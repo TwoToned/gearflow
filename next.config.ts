@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import withPWAInit from "@ducanh2912/next-pwa";
+import { withSentryConfig } from "@sentry/nextjs";
 
 const withPWA = withPWAInit({
   dest: "public",
@@ -32,4 +33,18 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withPWA(nextConfig);
+// Sentry wraps last so it can instrument the fully-composed config.
+// Source-map upload only runs in CI (SENTRY_AUTH_TOKEN must be set).
+export default withSentryConfig(withPWA(nextConfig), {
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  // Silent in CI logs (Sentry's progress output is noisy)
+  silent: !process.env.CI,
+  // Hide source maps from client bundles after upload to Sentry
+  sourcemaps: {
+    deleteSourcemapsAfterUpload: true,
+  },
+  // Disable Sentry's logger on startup
+  disableLogger: true,
+});

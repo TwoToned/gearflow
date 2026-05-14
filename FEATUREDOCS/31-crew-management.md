@@ -269,6 +269,15 @@ Resource `crew` with actions: `read, create, update, delete`
 - manager: create, read, update
 - member/staff/warehouse/viewer: read
 
+All read server actions enforce `requirePermission("crew", "read")` —
+including `getCrewMembers`, `getCrewMemberById`, `getCrewRoles`,
+`getCrewSkills`, `getCrewRoleOptions`, `getCrewSkillOptions`,
+`getCrewDepartments`. `getOrgUsersForCrewLink` requires `update` since
+its only purpose is to populate the link-to-user picker. The lone
+exception is `getMyCrewMemberId`, which uses `getOrgContext()` so a
+user can always look up their own crew profile regardless of crew
+read permission.
+
 ## Crew Dashboard (`src/server/crew-dashboard.ts`)
 - Manager/admin/owner only — users with `crew.update` permission see the dashboard; others see the crew table
 - **Stats**: active crew, assignments, pending offers, submitted timesheets, hours (7d), expiring certs

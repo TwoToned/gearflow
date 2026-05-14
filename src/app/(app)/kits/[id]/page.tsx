@@ -37,6 +37,7 @@ import { MediaThumbnail } from "@/components/media/media-thumbnail";
 import { resolveKitPhotoUrl } from "@/lib/media-utils";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { BookingCalendar } from "@/components/bookings/booking-calendar";
@@ -102,6 +103,9 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const [showAddItem, setShowAddItem] = useState(false);
   const [showAddBulkItem, setShowAddBulkItem] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [forceReturnOpen, setForceReturnOpen] = useState(false);
+  const [removeAssetId, setRemoveAssetId] = useState<string | null>(null);
+  const [removeBulkItemId, setRemoveBulkItemId] = useState<string | null>(null);
   const [stagedItems, setStagedItems] = useState<Array<{ assetId: string; assetTag: string; modelName: string }>>([]);
   const [addBulkAssetId, setAddBulkAssetId] = useState("");
   const [addBulkQuantity, setAddBulkQuantity] = useState(1);
@@ -272,7 +276,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   variant="outline"
                   size="sm"
                   className="text-amber-600"
-                  onClick={() => { if (confirm("Force return this kit and all its contents? All project assignments will be marked as returned.")) forceReturnMutation.mutate(); }}
+                  onClick={() => setForceReturnOpen(true)}
                   disabled={forceReturnMutation.isPending}
                 >
                   <RotateCcw className="mr-2 h-4 w-4" />
@@ -362,11 +366,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                                 variant="ghost"
                                 size="icon-sm"
                                 className="text-destructive"
-                                onClick={() => {
-                                  if (confirm("Remove this item from the kit?")) {
-                                    removeItemMutation.mutate(item.assetId);
-                                  }
-                                }}
+                                onClick={() => setRemoveAssetId(item.assetId)}
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -420,11 +420,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                                 variant="ghost"
                                 size="icon-sm"
                                 className="text-destructive"
-                                onClick={() => {
-                                  if (confirm("Remove this bulk item from the kit?")) {
-                                    removeBulkMutation.mutate(item.id);
-                                  }
-                                }}
+                                onClick={() => setRemoveBulkItemId(item.id)}
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -682,6 +678,47 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
       </div>
     </div>
     </FadeIn>
+
+    <DeleteDialog
+      open={forceReturnOpen}
+      onOpenChange={setForceReturnOpen}
+      title="Force return this kit?"
+      description="All project assignments for the kit and its contents will be marked as returned. The kit moves back to AVAILABLE. Use when scanning isn't possible."
+      confirmLabel="Force return kit"
+      onConfirm={() => {
+        forceReturnMutation.mutate();
+        setForceReturnOpen(false);
+      }}
+      pending={forceReturnMutation.isPending}
+    />
+    <DeleteDialog
+      open={!!removeAssetId}
+      onOpenChange={(open) => !open && setRemoveAssetId(null)}
+      title="Remove asset from kit?"
+      description="The asset is removed from this kit's membership. The asset itself is not deleted."
+      confirmLabel="Remove from kit"
+      onConfirm={() => {
+        if (removeAssetId) {
+          removeItemMutation.mutate(removeAssetId);
+          setRemoveAssetId(null);
+        }
+      }}
+      pending={removeItemMutation.isPending}
+    />
+    <DeleteDialog
+      open={!!removeBulkItemId}
+      onOpenChange={(open) => !open && setRemoveBulkItemId(null)}
+      title="Remove bulk item from kit?"
+      description="The bulk item is removed from this kit's membership. Bulk inventory itself is not deleted."
+      confirmLabel="Remove from kit"
+      onConfirm={() => {
+        if (removeBulkItemId) {
+          removeBulkMutation.mutate(removeBulkItemId);
+          setRemoveBulkItemId(null);
+        }
+      }}
+      pending={removeBulkMutation.isPending}
+    />
 
     {/* Add Serialized Items Dialog */}
     <Dialog

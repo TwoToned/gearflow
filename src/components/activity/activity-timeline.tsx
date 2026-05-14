@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { getEntityActivityLog } from "@/server/activity-log";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -19,29 +20,36 @@ function formatDate(date: string | Date) {
 interface ActivityTimelineProps {
   entityType: string;
   entityId: string;
+  /** Number of events to render. Defaults to 5; the "View all" link routes to /activity for the full history. */
+  limit?: number;
 }
 
-export function ActivityTimeline({ entityType, entityId }: ActivityTimelineProps) {
+export function ActivityTimeline({ entityType, entityId, limit = 5 }: ActivityTimelineProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: logs, isLoading } = useQuery({
-    queryKey: ["entity-activity", orgId, entityType, entityId],
-    queryFn: () => getEntityActivityLog(entityType, entityId),
+  const { data, isLoading } = useQuery({
+    queryKey: ["entity-activity", orgId, entityType, entityId, limit],
+    queryFn: () => getEntityActivityLog(entityType, entityId, limit),
     enabled: !!entityId,
   });
+
+  const items = (data?.items ?? []) as Record<string, unknown>[];
+  const total = data?.total ?? 0;
 
   if (isLoading) {
     return <p className="text-sm text-fg-3">Loading activity...</p>;
   }
 
-  if (!logs || logs.length === 0) {
+  if (items.length === 0) {
     return <EmptyState preset="activity" />;
   }
 
+  const viewAllHref = `/activity?entityType=${encodeURIComponent(entityType)}&entityId=${encodeURIComponent(entityId)}`;
+
   return (
     <div className="space-y-3">
-      {logs.map((log: Record<string, unknown>) => {
+      {items.map((log: Record<string, unknown>) => {
         const action = log.action as string;
         const details = log.details as Record<string, unknown> | null;
         const changes = details?.changes as Array<{ field: string; from: unknown; to: unknown; fromLabel?: string; toLabel?: string }> | undefined;
@@ -79,6 +87,14 @@ export function ActivityTimeline({ entityType, entityId }: ActivityTimelineProps
           </div>
         );
       })}
+      {total > items.length && (
+        <Link
+          href={viewAllHref}
+          className="block text-xs text-fg-3 underline-offset-2 hover:underline"
+        >
+          View all {total} events →
+        </Link>
+      )}
     </div>
   );
 }

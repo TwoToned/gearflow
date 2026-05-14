@@ -86,9 +86,16 @@ export async function calculateSuggestedPrice(groupId: string): Promise<number> 
 
   let total = 0;
 
+  // Custom items intentionally excluded: the suggested price covers the
+  // *equipment bundle* only. Custom items are always counted as extras on
+  // top via `recalculateProjectTotals` (customExtras). Including them here
+  // double-counts when the user clicks Accept Suggested Price — the
+  // suggestion becomes `g.price`, and the extras get added again.
   if (hasNewBilling) {
     const totalDays = computeTotalDays(months, weeks, days);
     for (const item of group.lineItems) {
+      if (item.isCustomItem) continue;
+
       const dailyRate = item.model?.dailyRate != null ? Number(item.model.dailyRate) : null;
       const weeklyRate = item.model?.weeklyRate != null ? Number(item.model.weeklyRate) : null;
       const monthlyRate = item.model?.monthlyRate != null ? Number(item.model.monthlyRate) : null;
@@ -103,6 +110,8 @@ export async function calculateSuggestedPrice(groupId: string): Promise<number> 
     const rentalPeriod = group.rentalPeriod ?? group.project.defaultRentalPeriod ?? "DAILY";
     const rentalQuantity = group.rentalQuantity ?? group.project.defaultRentalQuantity ?? 1;
     for (const item of group.lineItems) {
+      if (item.isCustomItem) continue;
+
       const rate =
         rentalPeriod === "WEEKLY"
           ? Number(item.model?.weeklyRate ?? item.model?.dailyRate ?? item.unitPrice ?? 0)

@@ -211,7 +211,7 @@ export default function RunsheetPage({
                     )}
                     <span
                       className={cn(
-                        "text-[10px] font-semibold uppercase tracking-[0.08em]",
+                        "t-overline",
                         isToday ? "text-teal-500" : "text-fg-3"
                       )}
                     >
@@ -281,7 +281,7 @@ export default function RunsheetPage({
                             <div className="mt-3 border-t border-border pt-2.5">
                               <div className="flex items-center gap-1.5 mb-2">
                                 <Users className="h-3 w-3 text-fg-4" />
-                                <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-4">
+                                <span className="t-overline text-fg-4">
                                   Crew ({service.crewAssignments.length})
                                 </span>
                               </div>
@@ -331,7 +331,7 @@ export default function RunsheetPage({
         {/* Site contact */}
         {project?.siteContactName && (
           <div className="mt-6 rounded-md border border-border bg-bg-surface p-3.5">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-4 mb-2">
+            <div className="t-overline text-fg-4 mb-2">
               Site Contact
             </div>
             <p className="text-sm font-medium text-fg">{project.siteContactName}</p>

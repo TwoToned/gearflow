@@ -76,7 +76,7 @@ describe("ASSIGNABLE_BUILT_IN_ROLES", () => {
 
 describe("roleLabels", () => {
   it("has a label for every built-in role", () => {
-    const builtInRoles = ["owner", "admin", "manager", "member", "staff", "warehouse", "viewer"];
+    const builtInRoles = ["owner", "admin", "manager", "member", "warehouse", "viewer"];
     for (const role of builtInRoles) {
       expect(roleLabels[role]).toBeTruthy();
     }
@@ -87,7 +87,6 @@ describe("roleLabels", () => {
     expect(roleLabels.admin).toBe("Admin");
     expect(roleLabels.manager).toBe("Manager");
     expect(roleLabels.member).toBe("Member");
-    expect(roleLabels.staff).toBe("Staff");
     expect(roleLabels.warehouse).toBe("Warehouse");
     expect(roleLabels.viewer).toBe("Viewer");
   });
@@ -157,12 +156,12 @@ describe("rolePermissions", () => {
     expect(memberMembers).toEqual([]);
   });
 
-  it("staff and member have identical permissions", () => {
-    expect(rolePermissions.staff).toEqual(rolePermissions.member);
+  it("staff role is removed (consolidated into member in Wave 2)", () => {
+    expect(rolePermissions.staff).toBeUndefined();
   });
 
   it("every built-in role covers all 16 resources", () => {
-    const builtInRoles = ["owner", "admin", "manager", "member", "staff", "warehouse", "viewer"];
+    const builtInRoles = ["owner", "admin", "manager", "member", "warehouse", "viewer"];
     for (const role of builtInRoles) {
       for (const resource of RESOURCES) {
         expect(rolePermissions[role][resource]).toBeDefined();
@@ -336,9 +335,12 @@ describe("isBuiltInRole", () => {
     expect(isBuiltInRole("admin")).toBe(true);
     expect(isBuiltInRole("manager")).toBe(true);
     expect(isBuiltInRole("member")).toBe(true);
-    expect(isBuiltInRole("staff")).toBe(true);
     expect(isBuiltInRole("warehouse")).toBe(true);
     expect(isBuiltInRole("viewer")).toBe(true);
+  });
+
+  it("staff is no longer a built-in role (Wave 2 consolidation)", () => {
+    expect(isBuiltInRole("staff")).toBe(false);
   });
 
   it("returns false for custom roles", () => {

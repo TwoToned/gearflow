@@ -99,40 +99,40 @@ export default function TestAndTagPage() {
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-6">
         <div className="rounded-lg bg-bg-surface p-4 surface-ring">
-          <p className="text-sm font-medium text-fg-3 mb-2">Total Items</p>
-          <div className="text-2xl font-bold t-data">{stats.total}</div>
+          <p className="t-micro text-fg-3 mb-2 uppercase tracking-wide">Total Items</p>
+          <div className="t-title t-data">{stats.total}</div>
         </div>
         <div className="rounded-lg bg-bg-surface p-4 surface-ring">
           <p className="text-sm font-medium text-fg-3 mb-2">Overdue</p>
-          <div className="text-2xl font-bold t-data text-destructive flex items-center gap-2">
+          <div className="t-title t-data text-destructive flex items-center gap-2">
             <AlertTriangle className="h-5 w-5" />
             {stats.overdue}
           </div>
         </div>
         <div className="rounded-lg bg-bg-surface p-4 surface-ring">
           <p className="text-sm font-medium text-fg-3 mb-2">Due Soon</p>
-          <div className="text-2xl font-bold t-data text-amber-400 flex items-center gap-2">
+          <div className="t-title t-data text-amber-400 flex items-center gap-2">
             <Clock className="h-5 w-5" />
             {stats.dueSoon}
           </div>
         </div>
         <div className="rounded-lg bg-bg-surface p-4 surface-ring">
           <p className="text-sm font-medium text-fg-3 mb-2">Current</p>
-          <div className="text-2xl font-bold t-data text-green-400 flex items-center gap-2">
+          <div className="t-title t-data text-green-400 flex items-center gap-2">
             <CheckCircle className="h-5 w-5" />
             {stats.current}
           </div>
         </div>
         <div className="rounded-lg bg-bg-surface p-4 surface-ring">
           <p className="text-sm font-medium text-fg-3 mb-2">Failed</p>
-          <div className="text-2xl font-bold t-data text-destructive flex items-center gap-2">
+          <div className="t-title t-data text-destructive flex items-center gap-2">
             <XCircle className="h-5 w-5" />
             {stats.failed}
           </div>
         </div>
         <div className="rounded-lg bg-bg-surface p-4 surface-ring">
           <p className="text-sm font-medium text-fg-3 mb-2">Not Yet Tested</p>
-          <div className="text-2xl font-bold t-data text-fg-3 flex items-center gap-2">
+          <div className="t-title t-data text-fg-3 flex items-center gap-2">
             <HelpCircle className="h-5 w-5" />
             {stats.notYetTested}
           </div>
@@ -144,7 +144,7 @@ export default function TestAndTagPage() {
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-destructive" />
-            <h2 className="text-xl font-semibold">Overdue Items</h2>
+            <h2 className="t-title">Overdue Items</h2>
           </div>
           <div className="rounded-lg bg-bg-surface surface-ring overflow-x-auto">
             <Table>
@@ -201,7 +201,7 @@ export default function TestAndTagPage() {
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <Clock className="h-5 w-5 text-amber-400" />
-            <h2 className="text-xl font-semibold">Due Soon</h2>
+            <h2 className="t-title">Due Soon</h2>
           </div>
           <div className="rounded-lg bg-bg-surface surface-ring overflow-x-auto">
             <Table>
@@ -258,7 +258,7 @@ export default function TestAndTagPage() {
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <CheckCircle className="h-5 w-5 text-green-400" />
-            <h2 className="text-xl font-semibold">Recently Tested</h2>
+            <h2 className="t-title">Recently Tested</h2>
           </div>
           <div className="rounded-lg bg-bg-surface surface-ring overflow-x-auto">
             <Table>

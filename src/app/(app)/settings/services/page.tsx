@@ -33,6 +33,7 @@ import { useCanDo } from "@/lib/use-permissions";
 import { FadeIn } from "@/components/ui/motion";
 
 import { Button } from "@/components/ui/button";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -100,6 +101,7 @@ export default function ServiceTemplatesPage() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Record<string, unknown> | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
 
   const { data: templates = [], isLoading } = useQuery({
     queryKey: ["service-templates", orgId],
@@ -230,11 +232,12 @@ export default function ServiceTemplatesPage() {
                             variant="ghost"
                             size="sm"
                             className="text-destructive"
-                            onClick={() => {
-                              if (confirm(`Delete template "${t.title}"?`)) {
-                                deleteMutation.mutate(t.id as string);
-                              }
-                            }}
+                            onClick={() =>
+                              setDeleteTarget({
+                                id: t.id as string,
+                                title: t.title as string,
+                              })
+                            }
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
@@ -253,6 +256,20 @@ export default function ServiceTemplatesPage() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         editing={editing}
+      />
+      <DeleteDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title={`Delete template "${deleteTarget?.title ?? ""}"?`}
+        description="This removes the service template. Existing project line items that referenced this template are preserved."
+        confirmLabel="Delete template"
+        onConfirm={() => {
+          if (deleteTarget) {
+            deleteMutation.mutate(deleteTarget.id);
+            setDeleteTarget(null);
+          }
+        }}
+        pending={deleteMutation.isPending}
       />
     </div>
     </FadeIn>

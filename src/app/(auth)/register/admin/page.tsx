@@ -95,7 +95,7 @@ function AdminRegisterForm() {
         <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-destructive text-destructive-foreground">
           <Shield className="h-5 w-5" />
         </div>
-        <h2 className="text-xl font-semibold tracking-tight">Site Admin Registration</h2>
+        <h2 className="t-title">Site Admin Registration</h2>
         <p className="text-sm text-fg-3">
           Create a site administrator account.
         </p>

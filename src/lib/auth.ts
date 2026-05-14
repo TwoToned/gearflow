@@ -3,6 +3,7 @@ import { organization, twoFactor, admin } from "better-auth/plugins";
 import { passkey } from "@better-auth/passkey";
 import { sso } from "@better-auth/sso";
 import { prismaAdapter } from "better-auth/adapters/prisma";
+import { env } from "@/env";
 import { prisma } from "./prisma";
 import { sendEmail } from "./email";
 import { getPlatformName } from "./platform";
@@ -73,10 +74,10 @@ export const auth = betterAuth({
       allowUserToCreateOrganization: false,
       organizationLimit: 1,
       creatorRole: "owner",
-      memberRoleHierarchy: ["owner", "admin", "manager", "member", "staff", "warehouse", "viewer"],
+      memberRoleHierarchy: ["owner", "admin", "manager", "member", "warehouse", "viewer"],
       sendInvitationEmail: async (data) => {
         const pName = await getPlatformName();
-        const inviteUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/invite/${data.id}`;
+        const inviteUrl = `${env.NEXT_PUBLIC_APP_URL}/invite/${data.id}`;
         await sendEmail({
           to: data.email,
           subject: `You've been invited to ${data.organization.name} on ${pName}`,
@@ -100,9 +101,9 @@ export const auth = betterAuth({
     }),
     admin(),
     passkey({
-      rpID: process.env.PASSKEY_RP_ID || "localhost",
-      rpName: process.env.PLATFORM_NAME || "GearFlow",
-      origin: process.env.BETTER_AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+      rpID: env.PASSKEY_RP_ID,
+      rpName: env.PLATFORM_NAME,
+      origin: env.BETTER_AUTH_URL,
     }),
     sso({
       organizationProvisioning: {
@@ -117,16 +118,16 @@ export const auth = betterAuth({
     }),
   ],
   socialProviders: {
-    ...(process.env.GOOGLE_CLIENT_ID && {
+    ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && {
       google: {
-        clientId: process.env.GOOGLE_CLIENT_ID,
-        clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+        clientId: env.GOOGLE_CLIENT_ID,
+        clientSecret: env.GOOGLE_CLIENT_SECRET,
       },
     }),
-    ...(process.env.MICROSOFT_CLIENT_ID && {
+    ...(env.MICROSOFT_CLIENT_ID && env.MICROSOFT_CLIENT_SECRET && {
       microsoft: {
-        clientId: process.env.MICROSOFT_CLIENT_ID,
-        clientSecret: process.env.MICROSOFT_CLIENT_SECRET!,
+        clientId: env.MICROSOFT_CLIENT_ID,
+        clientSecret: env.MICROSOFT_CLIENT_SECRET,
       },
     }),
   },
@@ -259,7 +260,7 @@ export const auth = betterAuth({
     },
   },
   trustedOrigins: [
-    process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+    env.NEXT_PUBLIC_APP_URL,
     // SSO IdP origins — wildcards cover all subdomains/endpoints used in OIDC discovery
     "https://*.microsoftonline.com",
     "https://*.microsoft.com",
@@ -269,6 +270,6 @@ export const auth = betterAuth({
     "https://*.auth0.com",
     "https://*.onelogin.com",
     "https://*.duosecurity.com",
-    ...(process.env.SSO_TRUSTED_ORIGINS?.split(",").map((s) => s.trim()).filter(Boolean) || []),
+    ...(env.SSO_TRUSTED_ORIGINS?.split(",").map((s) => s.trim()).filter(Boolean) ?? []),
   ],
 });

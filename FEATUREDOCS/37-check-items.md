@@ -150,6 +150,9 @@ After saving check records, if any check item has a FAIL result:
 - Resource: `checkItem` with actions: read, create, update, delete
 - Action: `warehouse.close` for close-out operations
 - Default grants: owner/admin/manager get all checkItem actions; member/staff/warehouse get read
+- All read server actions enforce `requirePermission("checkItem", "read")` —
+  `getCheckItems`, `getCheckItem`, `getModelCheckItems`, `getKitCheckItems`.
+  Custom roles without `checkItem.read` cannot see the library at all.
 
 ## Notifications
 

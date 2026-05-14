@@ -7,6 +7,7 @@ import { invalidatePlatformNameCache } from "@/lib/platform";
 import { sendEmail } from "@/lib/email";
 import { getPlatformName } from "@/lib/platform";
 import { getTheOrg, invalidateOrgCache } from "@/lib/single-org";
+import { env } from "@/env";
 
 /** Verify the current user is a site admin. Throws if not. */
 async function requireSiteAdmin() {
@@ -552,7 +553,7 @@ export async function adminInviteUser(email: string) {
     },
   });
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const baseUrl = env.NEXT_PUBLIC_APP_URL;
   const registerUrl = `${baseUrl}/register?invite=${invitation.id}`;
   const pName = await getPlatformName();
 

@@ -10,7 +10,7 @@ export default function PendingApprovalPage() {
         <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400">
           <Clock className="h-6 w-6" />
         </div>
-        <h2 className="text-xl font-semibold tracking-tight">Pending Approval</h2>
+        <h2 className="t-title">Pending Approval</h2>
         <p className="text-sm text-fg-3">Your account is awaiting administrator review</p>
       </div>
       <div>

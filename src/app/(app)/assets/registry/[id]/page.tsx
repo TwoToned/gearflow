@@ -1,6 +1,6 @@
 "use client";
 
-import { use, Suspense, useEffect, useMemo } from "react";
+import { use, Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useSearchParams } from "next/navigation";
@@ -21,6 +21,7 @@ import {
 } from "@/server/asset-media";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -127,6 +128,10 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
     onError: (e) => toast.error(e.message),
   });
 
+  const [forceReturnOpen, setForceReturnOpen] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
   // ─── Bulk Asset → Redirect to Model page ────────────────────────────
   const bulkModelId = isBulk ? bulkQuery.data?.modelId : null;
   useEffect(() => {
@@ -207,7 +212,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     variant="outline"
                     size="sm"
                     className="text-amber-600"
-                    onClick={() => { if (confirm("Force return this asset? All project assignments will be marked as returned.")) forceReturnMutation.mutate(); }}
+                    onClick={() => setForceReturnOpen(true)}
                     disabled={forceReturnMutation.isPending}
                   >
                     <RotateCcw className="mr-2 h-4 w-4" />
@@ -223,7 +228,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     variant="outline"
                     size="sm"
                     className="text-destructive"
-                    onClick={() => { if (confirm("Archive this asset?")) archiveMutation.mutate(); }}
+                    onClick={() => setArchiveOpen(true)}
                   >
                     <Archive className="mr-2 h-4 w-4" />
                     Archive
@@ -233,7 +238,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   variant="outline"
                   size="sm"
                   className="text-destructive"
-                  onClick={() => { if (confirm("Permanently delete this asset? This cannot be undone.")) deleteMutation.mutate(); }}
+                  onClick={() => setDeleteOpen(true)}
                   disabled={deleteMutation.isPending}
                 >
                   <Trash2 className="mr-2 h-4 w-4" />
@@ -632,6 +637,42 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
           </div>
         </div>
       </div>
+      <DeleteDialog
+        open={forceReturnOpen}
+        onOpenChange={setForceReturnOpen}
+        title="Force return this asset?"
+        description="All project assignments for this asset will be marked as returned. The asset moves back to AVAILABLE. Use this when scanning isn't possible."
+        confirmLabel="Force return"
+        onConfirm={() => {
+          forceReturnMutation.mutate();
+          setForceReturnOpen(false);
+        }}
+        pending={forceReturnMutation.isPending}
+      />
+      <DeleteDialog
+        open={archiveOpen}
+        onOpenChange={setArchiveOpen}
+        title="Archive this asset?"
+        description="The asset is hidden from quoting and warehouse pulls but retained for reporting. You can restore it later."
+        confirmLabel="Archive asset"
+        onConfirm={() => {
+          archiveMutation.mutate();
+          setArchiveOpen(false);
+        }}
+        pending={archiveMutation.isPending}
+      />
+      <DeleteDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Delete asset?"
+        description="This permanently removes the asset and its maintenance / test-tag history. This cannot be undone."
+        confirmLabel="Delete asset"
+        onConfirm={() => {
+          deleteMutation.mutate();
+          setDeleteOpen(false);
+        }}
+        pending={deleteMutation.isPending}
+      />
     </FadeIn>
   );
 }

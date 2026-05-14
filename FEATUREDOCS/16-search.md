@@ -12,6 +12,10 @@
 - Locations (name, address) — children: child locations
 - Categories (name) — children: models
 - Maintenance (title)
+- Crew members (firstName, lastName, email, phone, department, role)
+- Check items (label, category, description)
+- Group templates (name, description) — deep-links to `/settings/group-templates`
+- Sub-hires (orderNumber, supplier name, supplierReference, item descriptions) — deep-links to the parent project's equipment tab
 
 Uses PostgreSQL ILIKE and trigram similarity for fuzzy matching. Tags matched via raw SQL `EXISTS(SELECT 1 FROM unnest(tags) t WHERE t ILIKE ...)`.
 

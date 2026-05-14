@@ -1443,7 +1443,7 @@ function ServiceDialog({
 
             {/* Charge to Client */}
             <div className="space-y-3 rounded-md border border-border p-3">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-3">
+              <div className="t-overline text-fg-3">
                 Charge to Client
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -1482,7 +1482,7 @@ function ServiceDialog({
 
             {/* Cost to Business */}
             <div className="space-y-3 rounded-md border border-border p-3">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-3">
+              <div className="t-overline text-fg-3">
                 Cost to Business
               </div>
               <div className="space-y-1.5">

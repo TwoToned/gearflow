@@ -21,7 +21,7 @@ export const lineItemSchema = z.object({
   groupName: z.string().optional(),
   notes: z.string().optional(),
   isOptional: z.boolean().default(false),
-  isSubhire: z.boolean().default(false),
+  // `isSubhire` removed (Wave 2). Sub-hire detection via `subHireId != null`.
   showSubhireOnDocs: z.boolean().default(false),
   supplierId: z.string().optional(),
   subhireOrderNumber: z.string().max(100).optional(),

@@ -7,7 +7,6 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SectionHeader } from "@/components/layout/page-layouts";
 import { FadeIn } from "@/components/ui/motion";
 import {
   getOrganization,
@@ -63,11 +62,14 @@ export default function GeneralSettingsPage() {
     "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
 
   return (
-    <FadeIn className="space-y-8">
-      {/* General section */}
-      <section>
-        <SectionHeader label="General" />
-        <div className="mt-4 rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+    <FadeIn className="space-y-6">
+      {/* Single surface holds all sections; sections separated by border-top per DESIGN.md */}
+      <div className="rounded-lg bg-bg-surface surface-ring overflow-hidden">
+        {/* General section */}
+        <section className="p-5 sm:p-6">
+          <div className="mb-4">
+            <h3 className="t-heading text-fg">General</h3>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2 space-y-2">
               <Label htmlFor="orgName">Business Name</Label>
@@ -149,18 +151,18 @@ export default function GeneralSettingsPage() {
                 <option value="AE">United Arab Emirates</option>
                 <option value="ZA">South Africa</option>
               </select>
-              <p className="text-xs text-fg-3">
+              <p className="t-micro text-fg-3">
                 Used to prefer local results in address autocomplete.
               </p>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Timezone section */}
-      <section>
-        <SectionHeader label="Timezone" />
-        <div className="mt-4 rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        {/* Timezone section */}
+        <section className="border-t border-border p-5 sm:p-6">
+          <div className="mb-4">
+            <h3 className="t-heading text-fg">Timezone</h3>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="timezone">Timezone</Label>
@@ -192,18 +194,18 @@ export default function GeneralSettingsPage() {
                 <option value="America/Los_Angeles">America/Los_Angeles (PST)</option>
                 <option value="UTC">UTC</option>
               </select>
-              <p className="text-xs text-fg-3">
+              <p className="t-micro text-fg-3">
                 Used for date display across the platform.
               </p>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Project Defaults */}
-      <section>
-        <SectionHeader label="Project Defaults" />
-        <div className="mt-4 rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        {/* Project Defaults */}
+        <section className="border-t border-border p-5 sm:p-6">
+          <div className="mb-4">
+            <h3 className="t-heading text-fg">Project Defaults</h3>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="defaultTaxRate">Default Tax Rate (%)</Label>
@@ -218,13 +220,13 @@ export default function GeneralSettingsPage() {
                 placeholder="e.g. 10"
                 disabled={!canEdit}
               />
-              <p className="text-xs text-fg-3">
+              <p className="t-micro text-fg-3">
                 Applied to new projects unless overridden. Used for GST/VAT calculation.
               </p>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </div>
 
       {/* Save button */}
       {canEdit && (

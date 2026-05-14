@@ -5,7 +5,8 @@ Two-tier reporting: ~30 pre-built reports + custom report builder with save/shar
 
 ## Data Model
 - **`SavedReport`** — `id, organizationId, name, description, dataSource, config (JSON), createdById, isShared, isPinned, lastRunAt, createdAt, updatedAt`
-- Indexed on `[organizationId]` and `[organizationId, createdById]`
+- Scheduling fields (all nullable when ad-hoc): `scheduleFrequency` (`ScheduleFrequency?` enum: `DAILY` | `WEEKLY` | `MONTHLY`), `scheduleHour` (0-23 UTC), `scheduleDayOfWeek` (0=Sun..6=Sat, for WEEKLY), `scheduleDayOfMonth` (1-28, for MONTHLY), `scheduleRecipients` (`String[]`), `scheduleLastRunAt`
+- Indexed on `[organizationId]`, `[organizationId, createdById]`, `[scheduleFrequency, scheduleLastRunAt]`
 
 ## Report Engine (`src/lib/report-engine.ts`)
 Translates `ReportConfig` → Prisma queries:
@@ -55,6 +56,14 @@ Translates `ReportConfig` → Prisma queries:
 - CRUD: `saveReport`, `updateSavedReport`, `deleteSavedReport`, `getSavedReports`, `getSavedReportById`
 - `togglePinReport(id)` — pin/unpin
 - `updateReportLastRun(id)` — track last execution
+
+## Scheduled Reports
+- Validation/logic: `src/lib/validations/report-schedule.ts` — `reportScheduleSchema`, `isReportScheduleDue(schedule, now)`
+- Server actions: `getReportSchedule(id)`, `updateReportSchedule(id, values)` in `src/server/scheduled-reports.ts`
+- Runner: `runDueScheduledReports()` — iterates all `SavedReport` rows with a non-null schedule, runs each due report via `executeReport()` + `generateCSV()`, sends a CSV attachment to each recipient using `scheduledReportEmail` from `src/lib/report-emails.ts`, stamps `scheduleLastRunAt`
+- Cron endpoint: `POST /api/cron/reports` (also GET), auth `Bearer ${CRON_SECRET}`. Run hourly.
+- UI: `ReportScheduleCard` on `/reports/[id]` lets the report's creator toggle a schedule, pick frequency/hour/day, and manage recipient emails
+- Bucketing: a report won't re-run within the same bucket (today's bucket for daily, this week's bucket for weekly, this month's bucket for monthly), so over-firing the cron is safe
 
 ## Components
 - `ReportViewer` — table display with pagination, aggregation summary, CSV + PDF export; opens in wide-screen dialog with auto-run

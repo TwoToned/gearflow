@@ -1,10 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { Button } from "@/components/ui/button";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import {
@@ -75,6 +77,9 @@ export function MemberList() {
   const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+
+  const [revokeTarget, setRevokeTarget] = useState<{ id: string; email: string } | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<{ id: string; label: string } | null>(null);
 
   const { data: members, isLoading } = useQuery({
     queryKey: ["org-members", orgId],
@@ -206,11 +211,9 @@ export function MemberList() {
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7"
-                      onClick={() => {
-                        if (confirm(`Revoke invitation for ${inv.email}?`)) {
-                          revokeMut.mutate(inv.id);
-                        }
-                      }}
+                      onClick={() =>
+                        setRevokeTarget({ id: inv.id, email: inv.email })
+                      }
                     >
                       <X className="h-3.5 w-3.5 text-destructive" />
                     </Button>
@@ -276,11 +279,12 @@ export function MemberList() {
                     variant="ghost"
                     size="icon"
                     className="h-7 w-7"
-                    onClick={() => {
-                      if (confirm(`Remove ${member.user.name || member.user.email} from the organization?`)) {
-                        removeMut.mutate(member.id);
-                      }
-                    }}
+                    onClick={() =>
+                      setRemoveTarget({
+                        id: member.id,
+                        label: member.user.name || member.user.email,
+                      })
+                    }
                   >
                     <Trash2 className="h-3.5 w-3.5 text-destructive" />
                   </Button>
@@ -290,6 +294,34 @@ export function MemberList() {
           </div>
         );
       })}
+      <DeleteDialog
+        open={!!revokeTarget}
+        onOpenChange={(open) => !open && setRevokeTarget(null)}
+        title={`Revoke invitation for ${revokeTarget?.email ?? ""}?`}
+        description="The pending invitation link stops working immediately. You can send a fresh invite later."
+        confirmLabel="Revoke invitation"
+        onConfirm={() => {
+          if (revokeTarget) {
+            revokeMut.mutate(revokeTarget.id);
+            setRevokeTarget(null);
+          }
+        }}
+        pending={revokeMut.isPending}
+      />
+      <DeleteDialog
+        open={!!removeTarget}
+        onOpenChange={(open) => !open && setRemoveTarget(null)}
+        title={`Remove ${removeTarget?.label ?? ""} from the organization?`}
+        description="They lose access immediately. Their past activity, comments, and assignments are preserved."
+        confirmLabel="Remove member"
+        onConfirm={() => {
+          if (removeTarget) {
+            removeMut.mutate(removeTarget.id);
+            setRemoveTarget(null);
+          }
+        }}
+        pending={removeMut.isPending}
+      />
     </div>
   );
 }

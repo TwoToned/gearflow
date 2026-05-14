@@ -28,6 +28,7 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { Button } from "@/components/ui/button";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Badge } from "@/components/ui/badge";
 
 import { Input } from "@/components/ui/input";
@@ -64,6 +65,8 @@ export default function CrewSettingsPage() {
   // ─── Roles ──────────────────────────────────────────────────────────────
   const [roleDialogOpen, setRoleDialogOpen] = useState(false);
   const [editingRole, setEditingRole] = useState<Record<string, unknown> | null>(null);
+  const [deleteRoleTarget, setDeleteRoleTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleteSkillTarget, setDeleteSkillTarget] = useState<{ id: string; name: string } | null>(null);
 
   const { data: roles, isLoading: rolesLoading } = useQuery({
     queryKey: ["crew-roles-all", orgId],
@@ -129,7 +132,7 @@ export default function CrewSettingsPage() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="t-heading text-fg">Crew Roles</h3>
-              <p className="text-[13px] text-fg-3 mt-1">
+              <p className="t-body text-fg-3 mt-1">
                 Define roles that can be assigned to crew members and project
                 assignments. Each role can have a default rate.
               </p>
@@ -251,14 +254,9 @@ export default function CrewSettingsPage() {
                               size="icon"
                               className="h-7 w-7 text-destructive"
                               disabled={role._count.crewMembers > 0}
-                              onClick={() => {
-                                if (
-                                  confirm(
-                                    `Delete role "${role.name}"? This cannot be undone.`
-                                  )
-                                )
-                                  deleteRoleMut.mutate(role.id);
-                              }}
+                              onClick={() =>
+                                setDeleteRoleTarget({ id: role.id, name: role.name })
+                              }
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
@@ -278,7 +276,7 @@ export default function CrewSettingsPage() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="t-heading text-fg">Crew Skills</h3>
-              <p className="text-[13px] text-fg-3 mt-1">
+              <p className="t-body text-fg-3 mt-1">
                 Skills are tags that describe what a crew member can do. Use them
                 to filter when searching for available crew.
               </p>
@@ -343,14 +341,9 @@ export default function CrewSettingsPage() {
                             size="icon"
                             className="h-7 w-7 text-destructive"
                             disabled={skill._count.crewMembers > 0}
-                            onClick={() => {
-                              if (
-                                confirm(
-                                  `Delete skill "${skill.name}"? This cannot be undone.`
-                                )
-                              )
-                                deleteSkillMut.mutate(skill.id);
-                            }}
+                            onClick={() =>
+                              setDeleteSkillTarget({ id: skill.id, name: skill.name })
+                            }
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
@@ -428,6 +421,34 @@ export default function CrewSettingsPage() {
           </form>
         </DialogContent>
       </Dialog>
+      <DeleteDialog
+        open={!!deleteRoleTarget}
+        onOpenChange={(open) => !open && setDeleteRoleTarget(null)}
+        title={`Delete role "${deleteRoleTarget?.name ?? ""}"?`}
+        description="This permanently removes the crew role. Roles assigned to crew members must be unassigned first. This cannot be undone."
+        confirmLabel="Delete role"
+        onConfirm={() => {
+          if (deleteRoleTarget) {
+            deleteRoleMut.mutate(deleteRoleTarget.id);
+            setDeleteRoleTarget(null);
+          }
+        }}
+        pending={deleteRoleMut.isPending}
+      />
+      <DeleteDialog
+        open={!!deleteSkillTarget}
+        onOpenChange={(open) => !open && setDeleteSkillTarget(null)}
+        title={`Delete skill "${deleteSkillTarget?.name ?? ""}"?`}
+        description="This permanently removes the skill. Skills assigned to crew members must be unassigned first. This cannot be undone."
+        confirmLabel="Delete skill"
+        onConfirm={() => {
+          if (deleteSkillTarget) {
+            deleteSkillMut.mutate(deleteSkillTarget.id);
+            setDeleteSkillTarget(null);
+          }
+        }}
+        pending={deleteSkillMut.isPending}
+      />
     </RequirePermission>
   );
 }

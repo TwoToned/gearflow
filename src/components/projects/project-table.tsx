@@ -205,9 +205,14 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     sortKey: "total",
     align: "right",
     cell: (row) => (
+      // Show the canonical job total — equipment revenue + service cost +
+      // labour cost + sub-hire cost + adjustments − discount + tax, written
+      // by recalculateProjectTotals. Per P8, GearFlow doesn't own
+      // invoicing — `invoicedTotal` is operator memo only and shouldn't
+      // shadow the computed total in the list view.
       <span className="t-data">
-        {(row.invoicedTotal != null || row.total != null)
-          ? `$${Number(row.invoicedTotal ?? row.total).toLocaleString("en-AU", { minimumFractionDigits: 2 })}`
+        {row.total != null
+          ? `$${Number(row.total).toLocaleString("en-AU", { minimumFractionDigits: 2 })}`
           : "—"}
       </span>
     ),

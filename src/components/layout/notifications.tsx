@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useCallback, useMemo, useEffect } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import {
   Bell,
@@ -21,24 +21,37 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { getNotifications, type AppNotification } from "@/server/notifications";
+import {
+  dismissNotification,
+  getDismissedKeys,
+  getNotifications,
+  pruneStaleDismissals,
+} from "@/server/notifications";
 import { getStatusColor } from "@/lib/status-colors";
 import { formatDistanceToNow } from "date-fns";
 import { useActiveOrganization } from "@/lib/auth-client";
 
+// Optimistic-UI fallback. The DB is the source of truth; this just hides the
+// item instantly while the server mutation is in flight.
 const DISMISSED_KEY = "gearflow-dismissed-notifications";
 
-function getDismissedIds(): Set<string> {
+function readLocalDismissed(): Set<string> {
+  if (typeof window === "undefined") return new Set();
   try {
-    const raw = localStorage.getItem(DISMISSED_KEY);
+    const raw = window.localStorage.getItem(DISMISSED_KEY);
     return raw ? new Set(JSON.parse(raw)) : new Set();
   } catch {
     return new Set();
   }
 }
 
-function saveDismissedIds(ids: Set<string>) {
-  localStorage.setItem(DISMISSED_KEY, JSON.stringify([...ids]));
+function writeLocalDismissed(ids: Set<string>) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(DISMISSED_KEY, JSON.stringify([...ids]));
+  } catch {
+    // localStorage may be unavailable (private mode, quota) — non-fatal.
+  }
 }
 
 const typeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -52,13 +65,9 @@ const typeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
 
 export function Notifications() {
   const router = useRouter();
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-
-  useEffect(() => {
-    setDismissed(getDismissedIds()); // eslint-disable-line react-hooks/set-state-in-effect
-  }, []);
 
   const { data: notifications } = useQuery({
     queryKey: ["notifications", orgId],
@@ -66,32 +75,57 @@ export function Notifications() {
     refetchInterval: 60_000,
   });
 
-  // Prune dismissed IDs that no longer exist in the current notification list
+  const { data: serverDismissed } = useQuery({
+    queryKey: ["notification-dismissals", orgId],
+    queryFn: getDismissedKeys,
+    refetchInterval: 60_000,
+  });
+
+  // Union of server-side dismissals and the local optimistic set so newly
+  // clicked items disappear immediately, even before the mutation resolves.
+  const dismissed = useMemo(() => {
+    const merged = new Set<string>(serverDismissed ?? []);
+    for (const id of readLocalDismissed()) merged.add(id);
+    return merged;
+  }, [serverDismissed]);
+
+  // Prune stale rows on the server when the active notification list changes.
+  // Fire-and-forget; the next refetch picks up the updated dismissal list.
   useEffect(() => {
     if (!notifications || notifications.length === 0) return;
-    const currentIds = new Set(notifications.map((n) => n.id));
-    const stored = getDismissedIds();
+    const activeKeys = notifications.map((n) => n.id);
+    void pruneStaleDismissals(activeKeys).catch(() => {});
+
+    // Also tidy localStorage so it doesn't grow unbounded.
+    const stored = readLocalDismissed();
+    const active = new Set(activeKeys);
     let changed = false;
     for (const id of stored) {
-      if (!currentIds.has(id)) {
+      if (!active.has(id)) {
         stored.delete(id);
         changed = true;
       }
     }
-    if (changed) {
-      saveDismissedIds(stored);
-      setDismissed(new Set(stored)); // eslint-disable-line react-hooks/set-state-in-effect
-    }
+    if (changed) writeLocalDismissed(stored);
   }, [notifications]);
 
-  const dismiss = useCallback((id: string) => {
-    setDismissed((prev) => {
-      const next = new Set(prev);
-      next.add(id);
-      saveDismissedIds(next);
-      return next;
-    });
-  }, []);
+  const dismissMutation = useMutation({
+    mutationFn: (id: string) => dismissNotification(id),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["notification-dismissals", orgId] });
+    },
+  });
+
+  const dismiss = useCallback(
+    (id: string) => {
+      // Optimistic: write to localStorage immediately, then mutate.
+      const local = readLocalDismissed();
+      local.add(id);
+      writeLocalDismissed(local);
+      dismissMutation.mutate(id);
+    },
+    [dismissMutation],
+  );
 
   const visible = (notifications || []).filter((n) => !dismissed.has(n.id)).slice(0, 10);
   const count = visible.length;

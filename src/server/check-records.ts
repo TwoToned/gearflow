@@ -55,7 +55,6 @@ export async function splitLineItem(
       notes: lineItem.notes,
       isOptional: lineItem.isOptional,
       isCustomItem: lineItem.isCustomItem,
-      isSubhire: lineItem.isSubhire,
       showSubhireOnDocs: lineItem.showSubhireOnDocs,
       supplierId: lineItem.supplierId,
       subhireOrderNumber: lineItem.subhireOrderNumber,

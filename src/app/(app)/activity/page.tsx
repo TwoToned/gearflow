@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, Suspense, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Download } from "lucide-react";
 import { format } from "date-fns";
@@ -114,6 +115,10 @@ function ActivityLogContent() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
+  const searchParams = useSearchParams();
+  const urlEntityType = searchParams.get("entityType") || undefined;
+  const urlEntityId = searchParams.get("entityId") || undefined;
+
   const {
     sortBy, sortOrder, pageSize, page,
     setPage, setPageSize, handleSort,
@@ -121,12 +126,19 @@ function ActivityLogContent() {
     filters, setFilter,
   } = useTablePreferences("activity-log", { sortBy: "createdAt", sortOrder: "desc" });
 
+  // Pre-seed the entityType filter from the URL so deep-links from
+  // per-entity ActivityTimeline "View all" land with the dropdown set.
+  useEffect(() => {
+    if (urlEntityType) setFilter("entityType", [urlEntityType]);
+  }, [urlEntityType, setFilter]);
+
   const [search, setSearch] = useState("");
   const [isExporting, setIsExporting] = useState(false);
 
   const queryFilters = {
     search: search || undefined,
-    entityType: Array.isArray(filters.entityType) ? filters.entityType[0] : undefined,
+    entityType: Array.isArray(filters.entityType) ? filters.entityType[0] : urlEntityType,
+    entityId: urlEntityId,
     action: Array.isArray(filters.action) ? filters.action[0] : undefined,
     page,
     pageSize,
@@ -150,7 +162,8 @@ function ActivityLogContent() {
     try {
       const csv = await exportActivityLogCSV({
         search: search || undefined,
-        entityType: Array.isArray(filters.entityType) ? filters.entityType[0] : undefined,
+        entityType: Array.isArray(filters.entityType) ? filters.entityType[0] : urlEntityType,
+        entityId: urlEntityId,
         action: Array.isArray(filters.action) ? filters.action[0] : undefined,
       });
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -169,9 +182,14 @@ function ActivityLogContent() {
   }
 
   // Build contextual description
-  const description = total > 0
-    ? `${total.toLocaleString()} recorded ${total === 1 ? "event" : "events"} across your workspace`
-    : "Audit trail of every action taken by your team.";
+  const scopeLabel = urlEntityId
+    ? `${entityTypeLabels[urlEntityType ?? ""] ?? urlEntityType ?? "entity"} ${urlEntityId.slice(0, 8)}…`
+    : null;
+  const description = scopeLabel
+    ? `Filtered to ${scopeLabel} · ${total.toLocaleString()} ${total === 1 ? "event" : "events"}`
+    : total > 0
+      ? `${total.toLocaleString()} recorded ${total === 1 ? "event" : "events"} across your workspace`
+      : "Audit trail of every action taken by your team.";
 
   return (
     <FadeIn className="space-y-6">

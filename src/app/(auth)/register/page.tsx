@@ -92,7 +92,7 @@ function RegisterContent() {
           <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-destructive text-destructive-foreground">
             <ShieldX className="h-5 w-5" />
           </div>
-          <h2 className="text-xl font-semibold tracking-tight">Registration Disabled</h2>
+          <h2 className="t-title">Registration Disabled</h2>
           <p className="text-sm text-fg-3">
             New account registration is currently disabled. Contact an administrator for access.
           </p>
@@ -116,7 +116,7 @@ function RegisterContent() {
           <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-bg-inset text-fg-3">
             <ShieldX className="h-5 w-5" />
           </div>
-          <h2 className="text-xl font-semibold tracking-tight">Invite Only</h2>
+          <h2 className="t-title">Invite Only</h2>
           <p className="text-sm text-fg-3">
             Registration is invite-only. Contact an administrator to get an invitation.
           </p>
@@ -143,7 +143,7 @@ function RegisterContent() {
             platformName.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2)
           )}
         </div>
-        <h2 className="text-xl font-semibold tracking-tight">Create your account</h2>
+        <h2 className="t-title">Create your account</h2>
         <p className="text-sm text-fg-3">
           Get started with {platformName} for your AV business
         </p>

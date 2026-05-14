@@ -55,6 +55,8 @@ import {
   Clock,
   CalendarOff,
   ClipboardCheck,
+  Bookmark,
+  PackageOpen,
 } from "lucide-react";
 import {
   Dialog,
@@ -83,6 +85,8 @@ const typeIcons: Record<SearchResultType, React.ComponentType<{ className?: stri
   maintenance: Wrench,
   crew: HardHat,
   "check-item": ClipboardCheck,
+  "group-template": Bookmark,
+  "sub-hire": PackageOpen,
 };
 
 const typeLabels: Record<SearchResultType, string> = {
@@ -98,6 +102,8 @@ const typeLabels: Record<SearchResultType, string> = {
   maintenance: "Maintenance",
   crew: "Crew",
   "check-item": "Check Item",
+  "group-template": "Group Template",
+  "sub-hire": "Sub-Hire",
 };
 
 const pageIcons: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -107,7 +113,7 @@ const pageIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   CreditCard, Palette, Truck, FileText, ClipboardList, Pencil, Copy,
   Upload, Download, QrCode, ScrollText, ScanBarcode, PackagePlus,
   LogOut, CheckCircle, CircleCheck, CircleX, StickyNote, Share2, HardHat,
-  Briefcase, Clock, CalendarOff,
+  Briefcase, Clock, CalendarOff, ClipboardCheck, Bookmark, PackageOpen,
 };
 
 function normalize(s: string): string {
@@ -309,6 +315,10 @@ export function CommandSearch() {
       location: ["location"],
       maintenance: ["maintenance"],
       supplier: ["supplier"],
+      crew: ["crew"],
+      "check-item": ["check-item"],
+      "group-template": ["group-template"],
+      "sub-hire": ["sub-hire"],
     };
     const allowedTypes = typeMap[atSearchType] || [];
     const statusFilter = atSearchStatusFilter;
@@ -551,6 +561,10 @@ export function CommandSearch() {
       location: ["location"],
       maintenance: ["maintenance"],
       supplier: ["supplier"],
+      crew: ["crew"],
+      "check-item": ["check-item"],
+      "group-template": ["group-template"],
+      "sub-hire": ["sub-hire"],
     };
     const allowedTypes = typeMap[atEntitySearchType] || [];
     const statusFilter = atEntityStatusFilter;

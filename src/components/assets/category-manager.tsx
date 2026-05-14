@@ -13,6 +13,7 @@ import { getCategories, createCategory, updateCategory, deleteCategory } from "@
 import { getOrgTags } from "@/server/tags";
 import { TagInput } from "@/components/ui/tag-input";
 import { Button } from "@/components/ui/button";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -32,6 +33,7 @@ export function CategoryManager() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [parentId, setParentId] = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
@@ -219,9 +221,7 @@ export function CategoryManager() {
                     variant="ghost"
                     size="icon"
                     className="h-7 w-7 text-destructive"
-                    onClick={() => {
-                      if (confirm("Delete this category?")) deleteMutation.mutate(cat.id);
-                    }}
+                    onClick={() => setDeleteId(cat.id)}
                   >
                     <Trash2 className="h-3 w-3" />
                   </Button>
@@ -243,9 +243,7 @@ export function CategoryManager() {
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7 text-destructive"
-                          onClick={() => {
-                            if (confirm("Delete this category?")) deleteMutation.mutate(child.id);
-                          }}
+                          onClick={() => setDeleteId(child.id)}
                         >
                           <Trash2 className="h-3 w-3" />
                         </Button>
@@ -258,6 +256,20 @@ export function CategoryManager() {
           })}
         </div>
       )}
+      <DeleteDialog
+        open={!!deleteId}
+        onOpenChange={(open) => !open && setDeleteId(null)}
+        title="Delete this category?"
+        description="Models, assets, and projects assigned to this category will be unlinked. Sub-categories under it will also be removed."
+        confirmLabel="Delete category"
+        onConfirm={() => {
+          if (deleteId) {
+            deleteMutation.mutate(deleteId);
+            setDeleteId(null);
+          }
+        }}
+        pending={deleteMutation.isPending}
+      />
     </div>
   );
 }

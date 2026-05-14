@@ -11,6 +11,7 @@ import { getTemplates, deleteTemplate, duplicateProject } from "@/server/project
 import { RequirePermission } from "@/components/auth/require-permission";
 import { CanDo } from "@/components/auth/permission-gate";
 import { Button } from "@/components/ui/button";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Badge } from "@/components/ui/badge";
 import { FadeIn } from "@/components/ui/motion";
 
@@ -54,6 +55,7 @@ export default function TemplatesPage() {
   const [createFrom, setCreateFrom] = useState<any>(null);
   const [projectNumber, setProjectNumber] = useState("");
   const [projectName, setProjectName] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
@@ -186,11 +188,9 @@ export default function TemplatesPage() {
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8 text-destructive"
-                              onClick={() => {
-                                if (confirm(`Delete template "${t.name}"?`)) {
-                                  deleteMut.mutate(t.id);
-                                }
-                              }}
+                              onClick={() =>
+                                setDeleteTarget({ id: t.id, name: t.name })
+                              }
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
@@ -256,6 +256,20 @@ export default function TemplatesPage() {
           </form>
         </DialogContent>
       </Dialog>
+      <DeleteDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title={`Delete template "${deleteTarget?.name ?? ""}"?`}
+        description="This removes the project template. Projects already created from this template are not affected."
+        confirmLabel="Delete template"
+        onConfirm={() => {
+          if (deleteTarget) {
+            deleteMut.mutate(deleteTarget.id);
+            setDeleteTarget(null);
+          }
+        }}
+        pending={deleteMut.isPending}
+      />
     </RequirePermission>
   );
 }

@@ -38,7 +38,7 @@ function NewAssetContent() {
         </Breadcrumb>
         <div>
           <h1 className="t-title text-fg">{title}</h1>
-          <p className="text-[13px] text-fg-3">
+          <p className="t-body text-fg-3">
             {type === "bulk"
               ? "Create a bulk stock entry tracked by quantity."
               : "Create a serialized asset tracked individually."}
@@ -56,7 +56,7 @@ function NewAssetContent() {
 
 export default function NewAssetPage() {
   return (
-    <Suspense fallback={<div className="text-[13px] text-fg-3">Loading...</div>}>
+    <Suspense fallback={<div className="t-body text-fg-3">Loading...</div>}>
       <NewAssetContent />
     </Suspense>
   );

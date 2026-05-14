@@ -121,7 +121,8 @@ export async function getSupplierSubhires(supplierId: string, params: {
   const { organizationId } = await getOrgContext();
   const { page = 1, pageSize = 25 } = params;
 
-  const where = { organizationId, supplierId, isSubhire: true };
+  // Sub-hire line items now identified by `subHireId != null` (Wave 2).
+  const where = { organizationId, supplierId, subHireId: { not: null } };
 
   const [lineItems, total] = await Promise.all([
     prisma.projectLineItem.findMany({

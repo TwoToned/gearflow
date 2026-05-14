@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { recalculateAllTestTagStatuses, sendTestTagReminderDigests } from "@/server/test-tag-reminders";
+import { env } from "@/env";
 
 /**
  * POST /api/cron/test-tag-reminders
@@ -9,7 +10,7 @@ import { recalculateAllTestTagStatuses, sendTestTagReminderDigests } from "@/ser
  * cron-job.org, AWS EventBridge) with Authorization: Bearer <CRON_SECRET>.
  */
 export async function POST(request: NextRequest) {
-  const cronSecret = process.env.CRON_SECRET;
+  const cronSecret = env.CRON_SECRET;
   if (!cronSecret) {
     return NextResponse.json(
       { error: "CRON_SECRET not configured" },

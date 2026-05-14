@@ -55,6 +55,24 @@ export async function exportOrganization(orgId: string) {
     locationMedia,
     savedReports,
     members,
+    // Crew (FEATUREDOCS/31)
+    crewMembers,
+    crewRoles,
+    crewSkills,
+    crewMemberSkillRows,
+    crewCertifications,
+    crewAssignments,
+    crewShifts,
+    crewAvailability,
+    crewTimeEntries,
+    // Check items (FEATUREDOCS/37)
+    checkItems,
+    modelCheckItems,
+    kitCheckItems,
+    checkRecords,
+    // Group templates (FEATUREDOCS — applied during integration-checklist pass)
+    groupTemplates,
+    groupTemplateItems,
   ] = await Promise.all([
     prisma.customRole.findMany({ where: { organizationId: orgId } }),
     prisma.category.findMany({ where: { organizationId: orgId } }),
@@ -93,6 +111,44 @@ export async function exportOrganization(orgId: string) {
       where: { organizationId: orgId },
       include: { user: { select: { id: true, email: true, name: true } } },
     }),
+    // ── Crew (FEATUREDOCS/31) ─────────────────────────────────────────
+    prisma.crewMember.findMany({ where: { organizationId: orgId } }),
+    prisma.crewRole.findMany({ where: { organizationId: orgId } }),
+    prisma.crewSkill.findMany({ where: { organizationId: orgId } }),
+    // CrewMember <-> CrewSkill is an implicit Prisma m:n table — pull the
+    // pairings explicitly via the relation so we can recreate them on import.
+    prisma.crewMember
+      .findMany({
+        where: { organizationId: orgId },
+        select: {
+          id: true,
+          skills: { select: { id: true } },
+        },
+      })
+      .then((rows) =>
+        rows.flatMap((r) =>
+          r.skills.map((s) => ({ crewMemberId: r.id, skillId: s.id })),
+        ),
+      ),
+    prisma.crewCertification.findMany({
+      where: { crewMember: { organizationId: orgId } },
+    }),
+    prisma.crewAssignment.findMany({ where: { organizationId: orgId } }),
+    prisma.crewShift.findMany({
+      where: { assignment: { organizationId: orgId } },
+    }),
+    prisma.crewAvailability.findMany({
+      where: { crewMember: { organizationId: orgId } },
+    }),
+    prisma.crewTimeEntry.findMany({ where: { organizationId: orgId } }),
+    // ── Check items (FEATUREDOCS/37) ──────────────────────────────────
+    prisma.checkItem.findMany({ where: { organizationId: orgId } }),
+    prisma.modelCheckItem.findMany({ where: { organizationId: orgId } }),
+    prisma.kitCheckItem.findMany({ where: { organizationId: orgId } }),
+    prisma.checkRecord.findMany({ where: { organizationId: orgId } }),
+    // ── Group templates ───────────────────────────────────────────────
+    prisma.groupTemplate.findMany({ where: { organizationId: orgId } }),
+    prisma.groupTemplateItem.findMany({ where: { organizationId: orgId } }),
   ]);
 
   // Build user email map for all user IDs referenced across the org
@@ -119,6 +175,11 @@ export async function exportOrganization(orgId: string) {
   collectUserIds(activityLogs as unknown as Record<string, unknown>[], ["userId"]);
   collectUserIds(fileUploads as unknown as Record<string, unknown>[], ["uploadedById"]);
   collectUserIds(savedReports as unknown as Record<string, unknown>[], ["createdById"]);
+  collectUserIds(crewMembers as unknown as Record<string, unknown>[], ["userId"]);
+  collectUserIds(crewAssignments as unknown as Record<string, unknown>[], ["confirmedById"]);
+  collectUserIds(crewTimeEntries as unknown as Record<string, unknown>[], ["approvedById"]);
+  collectUserIds(checkItems as unknown as Record<string, unknown>[], ["createdById"]);
+  collectUserIds(checkRecords as unknown as Record<string, unknown>[], ["performedById"]);
 
   const users = await prisma.user.findMany({
     where: { id: { in: [...userIds] } },
@@ -164,6 +225,24 @@ export async function exportOrganization(orgId: string) {
     clientMedia: clean(clientMedia) as Record<string, unknown>[],
     locationMedia: clean(locationMedia) as Record<string, unknown>[],
     savedReports: clean(savedReports) as Record<string, unknown>[],
+
+    crewMembers: clean(crewMembers) as Record<string, unknown>[],
+    crewRoles: clean(crewRoles) as Record<string, unknown>[],
+    crewSkills: clean(crewSkills) as Record<string, unknown>[],
+    crewMemberSkills: crewMemberSkillRows,
+    crewCertifications: clean(crewCertifications) as Record<string, unknown>[],
+    crewAssignments: clean(crewAssignments) as Record<string, unknown>[],
+    crewShifts: clean(crewShifts) as Record<string, unknown>[],
+    crewAvailability: clean(crewAvailability) as Record<string, unknown>[],
+    crewTimeEntries: clean(crewTimeEntries) as Record<string, unknown>[],
+
+    checkItems: clean(checkItems) as Record<string, unknown>[],
+    modelCheckItems: clean(modelCheckItems) as Record<string, unknown>[],
+    kitCheckItems: clean(kitCheckItems) as Record<string, unknown>[],
+    checkRecords: clean(checkRecords) as Record<string, unknown>[],
+
+    groupTemplates: clean(groupTemplates) as Record<string, unknown>[],
+    groupTemplateItems: clean(groupTemplateItems) as Record<string, unknown>[],
 
     members: members.map((m) => ({
       role: m.role,

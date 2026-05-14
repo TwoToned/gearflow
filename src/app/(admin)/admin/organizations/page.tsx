@@ -148,23 +148,23 @@ export default function AdminOrganizationsPage() {
               </div>
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
                 <div>
-                  <p className="text-2xl font-bold">{memberCount}</p>
+                  <p className="t-title t-data">{memberCount}</p>
                   <p className="text-xs text-fg-3">Members</p>
                 </div>
                 <div>
-                  <p className="text-2xl font-bold">{counts.assets}</p>
+                  <p className="t-title t-data">{counts.assets}</p>
                   <p className="text-xs text-fg-3">Assets</p>
                 </div>
                 <div>
-                  <p className="text-2xl font-bold">{counts.bulkAssets}</p>
+                  <p className="t-title t-data">{counts.bulkAssets}</p>
                   <p className="text-xs text-fg-3">Bulk Assets</p>
                 </div>
                 <div>
-                  <p className="text-2xl font-bold">{counts.projects}</p>
+                  <p className="t-title t-data">{counts.projects}</p>
                   <p className="text-xs text-fg-3">Projects</p>
                 </div>
                 <div>
-                  <p className="text-2xl font-bold">{counts.kits}</p>
+                  <p className="t-title t-data">{counts.kits}</p>
                   <p className="text-xs text-fg-3">Kits</p>
                 </div>
               </div>

@@ -25,6 +25,7 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { PageMeta } from "@/components/layout/page-meta";
 import { Button } from "@/components/ui/button";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -149,6 +150,8 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
   });
 
   const [expandedRecordId, setExpandedRecordId] = useState<string | null>(null);
+  const [retireOpen, setRetireOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   if (isLoading) return <DetailPageSkeleton />;
 
@@ -227,11 +230,7 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     variant="outline"
                     size="sm"
                     className="text-destructive"
-                    onClick={() => {
-                      if (confirm("Are you sure you want to retire this test tag asset?")) {
-                        retireMutation.mutate();
-                      }
-                    }}
+                    onClick={() => setRetireOpen(true)}
                     disabled={retireMutation.isPending}
                   >
                     <ArchiveX className="mr-2 h-4 w-4" />
@@ -243,11 +242,7 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     variant="outline"
                     size="sm"
                     className="text-destructive"
-                    onClick={() => {
-                      if (confirm("Permanently delete this test tag asset and all its test records? This cannot be undone.")) {
-                        deleteMutation.mutate();
-                      }
-                    }}
+                    onClick={() => setDeleteOpen(true)}
                     disabled={deleteMutation.isPending}
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
@@ -680,6 +675,30 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
           />
         </div>
       )}
+      <DeleteDialog
+        open={retireOpen}
+        onOpenChange={setRetireOpen}
+        title="Retire this test tag asset?"
+        description="The asset is marked RETIRED. Its test history is preserved. You can permanently delete it later."
+        confirmLabel="Retire asset"
+        onConfirm={() => {
+          retireMutation.mutate();
+          setRetireOpen(false);
+        }}
+        pending={retireMutation.isPending}
+      />
+      <DeleteDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Delete this test tag asset?"
+        description="Permanently removes the asset and all its test-and-tag records. This cannot be undone."
+        confirmLabel="Delete asset"
+        onConfirm={() => {
+          deleteMutation.mutate();
+          setDeleteOpen(false);
+        }}
+        pending={deleteMutation.isPending}
+      />
     </FadeIn>
   );
 }

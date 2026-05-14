@@ -241,7 +241,9 @@ export const FIELD_DEFINITIONS: Record<DataSource, FieldDefinition[]> = {
     { field: "lineTotal", label: "Line Total", type: "number", section: "core" },
     { field: "groupName", label: "Group", type: "string", section: "core" },
     { field: "isOptional", label: "Optional", type: "boolean", section: "core" },
-    { field: "isSubhire", label: "Subhire", type: "boolean", section: "core" },
+    // `isSubhire` removed (Wave 2). Filter on `subHireId is_not_empty` to find
+    // sub-hire line items; the supplier name is exposed via the related section.
+    { field: "subHireId", label: "Sub-Hire ID", type: "string", section: "core" },
     { field: "createdAt", label: "Created", type: "date", section: "core" },
     { field: "project.projectNumber", label: "Project #", type: "string", section: "related" },
     { field: "project.name", label: "Project Name", type: "string", section: "related" },
@@ -576,7 +578,7 @@ export const PRE_BUILT_REPORTS: PreBuiltReport[] = [
         { field: "supplier.name", visible: true },
         { field: "lineTotal", visible: true },
       ],
-      filters: [{ field: "isSubhire", operator: "equals", value: true }],
+      filters: [{ field: "subHireId", operator: "is_not_empty", value: "" }],
       groupBy: {
         field: "supplier.name",
         aggregateColumns: [

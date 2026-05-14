@@ -19,7 +19,7 @@ import { format } from "date-fns";
 
 import { getProjects, updateProjectStatus } from "@/server/projects";
 import { batchCloseOut } from "@/server/warehouse-close";
-import { Input } from "@/components/ui/input";
+import { ScanInput } from "@/components/ui/scan-input";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Button } from "@/components/ui/button";
 import {
@@ -316,21 +316,23 @@ export default function WarehousePage() {
         </div>
       </FadeIn>
 
-      {/* Prominent scanner input */}
+      {/* Prominent scanner input — text + camera scan for project lookup. */}
       <FadeIn delay={0.05}>
         <div className="relative max-w-lg">
-          <ScanBarcode className="absolute left-3 top-1/2 h-4.5 w-4.5 -translate-y-1/2 text-fg-3" />
-          <Input
+          <ScanBarcode className="pointer-events-none absolute left-3 top-2.5 z-10 h-4.5 w-4.5 text-fg-3" />
+          <ScanInput
             placeholder="Scan barcode or search by project name / number..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onScan={(scanned) => setSearch(scanned)}
             className="h-10 pl-10 text-[13.5px]"
             autoFocus
+            scannerTitle="Scan project barcode"
           />
           {search && (
             <button
               onClick={() => setSearch("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-4 hover:text-fg-2 transition-colors"
+              className="absolute right-10 top-2.5 text-fg-4 hover:text-fg-2 transition-colors"
             >
               <span className="text-xs">Clear</span>
             </button>

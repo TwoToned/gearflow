@@ -6,7 +6,7 @@ import type { Organization } from "@/generated/prisma/client";
  * Role hierarchy for resolving multiple group matches.
  * Lower index = higher privilege.
  */
-const ROLE_HIERARCHY = ["owner", "admin", "manager", "member", "staff", "warehouse", "viewer"];
+const ROLE_HIERARCHY = ["owner", "admin", "manager", "member", "warehouse", "viewer"];
 
 /**
  * Resolve a GearFlow role from IdP group memberships.

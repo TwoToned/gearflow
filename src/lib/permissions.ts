@@ -301,26 +301,11 @@ export const rolePermissions: Record<string, PermissionMap> = {
     reports: ["view"],
     checkItem: ["read"],
   },
-  staff: {
-    asset: ["create", "read", "update"],
-    bulkAsset: ["create", "read", "update"],
-    model: ["create", "read", "update"],
-    kit: ["read"],
-    project: ["create", "read", "update", "manage_line_items", "generate_documents"],
-    client: ["create", "read", "update"],
-    warehouse: ["read", "check_out", "check_in", "scan"],
-    testTag: ["create", "read", "update", "quick_test"],
-    maintenance: ["create", "read", "update"],
-    location: ["read"],
-    document: ["generate"],
-    orgSettings: [],
-    orgMembers: [],
-    supplier: ["read"],
-    subHire: ["create", "read"],
-    crew: ["read"],
-    reports: ["view"],
-    checkItem: ["read"],
-  },
+  // `staff` role removed (Wave 2) — was a duplicate of `member` with identical
+  // permissions. Existing `staff` members are migrated to `member` via the
+  // consolidate-staff-role migration. Better Auth's memberRoleHierarchy and
+  // sso-provisioning ROLE_HIERARCHY no longer list it. UI dropdowns no longer
+  // offer it.
   warehouse: {
     asset: ["read"],
     bulkAsset: ["read"],
@@ -423,7 +408,6 @@ export const roleLabels: Record<string, string> = {
   admin: "Admin",
   manager: "Manager",
   member: "Member",
-  staff: "Staff",
   warehouse: "Warehouse",
   viewer: "Viewer",
 };

@@ -265,7 +265,7 @@ export async function getNextAssetTag(): Promise<string> {
   return tags[0];
 }
 
-const VALID_BUILT_IN_ROLES = ["admin", "manager", "member", "staff", "warehouse", "viewer"] as const;
+const VALID_BUILT_IN_ROLES = ["admin", "manager", "member", "warehouse", "viewer"] as const;
 
 export async function addMemberByEmail(email: string, role: string) {
   const { organizationId, userId, userName } = await getOrgContext();

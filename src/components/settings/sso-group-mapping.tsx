@@ -16,7 +16,6 @@ const BUILT_IN_ROLES = [
   { value: "admin", label: "Admin" },
   { value: "manager", label: "Manager" },
   { value: "member", label: "Member" },
-  { value: "staff", label: "Staff" },
   { value: "warehouse", label: "Warehouse" },
   { value: "viewer", label: "Viewer" },
 ];

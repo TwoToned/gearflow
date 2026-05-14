@@ -74,7 +74,7 @@ export const auth = betterAuth({
       allowUserToCreateOrganization: false,
       organizationLimit: 1,
       creatorRole: "owner",
-      memberRoleHierarchy: ["owner", "admin", "manager", "member", "staff", "warehouse", "viewer"],
+      memberRoleHierarchy: ["owner", "admin", "manager", "member", "warehouse", "viewer"],
       sendInvitationEmail: async (data) => {
         const pName = await getPlatformName();
         const inviteUrl = `${env.NEXT_PUBLIC_APP_URL}/invite/${data.id}`;

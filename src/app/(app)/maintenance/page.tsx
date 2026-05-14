@@ -21,6 +21,7 @@ import {
 } from "@/server/maintenance";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Badge } from "@/components/ui/badge";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
@@ -238,9 +239,7 @@ function useMaintenanceColumns(
             size="icon-sm"
             onClick={(e) => {
               e.stopPropagation();
-              if (confirm("Delete this maintenance record?")) {
-                onDelete(row.id);
-              }
+              onDelete(row.id);
             }}
           >
             <Trash2 className="h-4 w-4 text-fg-3 hover:text-destructive" />
@@ -261,6 +260,7 @@ export default function MaintenancePage() {
   } = useTablePreferences("maintenance", { sortBy: "scheduledDate", sortOrder: "asc" });
 
   const [search, setSearch] = useState("");
+  const [deleteId, setDeleteId] = useState<string | null>(null);
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
@@ -291,7 +291,7 @@ export default function MaintenancePage() {
   const total = data?.total || 0;
   const now = new Date();
 
-  const columns = useMaintenanceColumns(now, (id) => deleteMutation.mutate(id));
+  const columns = useMaintenanceColumns(now, (id) => setDeleteId(id));
 
   const overdueMaintenance = records.filter((r) => {
     if (r.status !== "SCHEDULED" && r.status !== "IN_PROGRESS") return false;
@@ -349,6 +349,20 @@ export default function MaintenancePage() {
         />
       </div>
     </RequirePermission>
+    <DeleteDialog
+      open={!!deleteId}
+      onOpenChange={(open) => !open && setDeleteId(null)}
+      title="Delete maintenance record?"
+      description="This removes the maintenance record and its work-order history. This cannot be undone."
+      confirmLabel="Delete record"
+      onConfirm={() => {
+        if (deleteId) {
+          deleteMutation.mutate(deleteId);
+          setDeleteId(null);
+        }
+      }}
+      pending={deleteMutation.isPending}
+    />
     </FadeIn>
   );
 }

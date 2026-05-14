@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { usePlatformBranding } from "@/lib/use-platform-name";
 
 import { Button } from "@/components/ui/button";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -73,6 +74,7 @@ export default function AccountPage() {
 
   // Passkey rename
   const [renamePasskey, setRenamePasskey] = useState<{ id: string; name: string } | null>(null);
+  const [deletePasskeyId, setDeletePasskeyId] = useState<string | null>(null);
   const [passkeyNewName, setPasskeyNewName] = useState("");
 
   const profileQuery = useQuery({
@@ -547,11 +549,7 @@ export default function AccountPage() {
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      onClick={() => {
-                        if (confirm("Delete this passkey?")) {
-                          deletePasskeyMutation.mutate(pk.id);
-                        }
-                      }}
+                      onClick={() => setDeletePasskeyId(pk.id)}
                     >
                       <Trash2 className="h-3.5 w-3.5 text-destructive" />
                     </Button>
@@ -766,6 +764,20 @@ export default function AccountPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <DeleteDialog
+        open={!!deletePasskeyId}
+        onOpenChange={(open) => !open && setDeletePasskeyId(null)}
+        title="Delete this passkey?"
+        description="Removing this passkey signs out any device that relies on it for second-factor authentication. You'll still be able to sign in with your password or other factors."
+        confirmLabel="Delete passkey"
+        onConfirm={() => {
+          if (deletePasskeyId) {
+            deletePasskeyMutation.mutate(deletePasskeyId);
+            setDeletePasskeyId(null);
+          }
+        }}
+        pending={deletePasskeyMutation.isPending}
+      />
     </FadeIn>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { use } from "react";
+import { use, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { getMaintenanceRecord, deleteMaintenanceRecord } from "@/server/maintenance";
 import { MaintenanceForm } from "@/components/maintenance/maintenance-form";
 import { Button } from "@/components/ui/button";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
@@ -39,6 +40,8 @@ export default function EditMaintenancePage({
     },
     onError: (e) => toast.error(e.message),
   });
+
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   if (isLoading) return <DetailPageSkeleton />;
   if (!record) return <div className="py-20 text-center text-fg-3">Record not found.</div>;
@@ -92,11 +95,7 @@ export default function EditMaintenancePage({
                 size="sm"
                 className="text-destructive hover:bg-destructive/10"
                 disabled={deleteMutation.isPending}
-                onClick={() => {
-                  if (confirm("Delete this maintenance record? This cannot be undone.")) {
-                    deleteMutation.mutate();
-                  }
-                }}
+                onClick={() => setDeleteOpen(true)}
               >
                 <Trash2 className="mr-2 h-4 w-4" />
                 Delete
@@ -106,6 +105,18 @@ export default function EditMaintenancePage({
           <MaintenanceForm initialData={initialData} />
         </div>
       </CanDo>
+      <DeleteDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Delete maintenance record?"
+        description="This permanently removes the maintenance record and its work-order history. This cannot be undone."
+        confirmLabel="Delete record"
+        onConfirm={() => {
+          deleteMutation.mutate();
+          setDeleteOpen(false);
+        }}
+        pending={deleteMutation.isPending}
+      />
     </RequirePermission>
   );
 }

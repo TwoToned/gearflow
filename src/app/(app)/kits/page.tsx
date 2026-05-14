@@ -12,6 +12,7 @@ import { getCategories } from "@/server/categories";
 import { forceReturnKit } from "@/server/warehouse";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { MediaThumbnail } from "@/components/media/media-thumbnail";
@@ -154,6 +155,7 @@ export default function KitsPage() {
 
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkForceReturnOpen, setBulkForceReturnOpen] = useState(false);
   const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
@@ -229,10 +231,7 @@ export default function KitsPage() {
                 variant="outline"
                 className="text-amber-500"
                 disabled={forceReturnMutation.isPending}
-                onClick={() => {
-                  if (confirm(`Force return ${selectedIds.size} selected kits and all their contents to available?`))
-                    forceReturnMutation.mutate();
-                }}
+                onClick={() => setBulkForceReturnOpen(true)}
               >
                 {forceReturnMutation.isPending ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <RotateCcw className="mr-2 h-3 w-3" />}
                 Force Return
@@ -279,6 +278,18 @@ export default function KitsPage() {
         />
       </div>
     </RequirePermission>
+    <DeleteDialog
+      open={bulkForceReturnOpen}
+      onOpenChange={setBulkForceReturnOpen}
+      title={`Force return ${selectedIds.size} kit${selectedIds.size === 1 ? "" : "s"}?`}
+      description="Project assignments for the selected kits and their contents will be marked as returned. Use when scanning isn't possible."
+      confirmLabel={`Force return ${selectedIds.size}`}
+      onConfirm={() => {
+        forceReturnMutation.mutate();
+        setBulkForceReturnOpen(false);
+      }}
+      pending={forceReturnMutation.isPending}
+    />
     </FadeIn>
   );
 }

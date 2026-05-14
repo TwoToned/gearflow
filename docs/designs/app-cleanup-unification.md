@@ -599,15 +599,19 @@ The `/check/[assetTag]` route exists but is hidden from the sidebar (per cross-c
 8. Regression tests on every fix (P6 — REQUIRED, not aspirational, per Eng review)
 ```
 
-### Multi-tenancy enforcement (Wave 2) — four-layer defense
+### Multi-tenancy enforcement (Wave 2) — revised per P10
 
-Both reviewers expand "do a sweep" into a real strategy:
-1. **AST scanner CI script** (`scripts/audit-server-actions.ts`, ~150 LOC, ts-morph): every exported async in `src/server/*.ts` must call `getOrgContext` or `requirePermission` or be allowlisted with a documented reason
-2. **Prisma query scanner**: same script flags `findUnique({where:{id}})`, `update({where:{id}})`, raw SQL without `"organizationId" =`, relation filters that don't prove org ownership
-3. **Manual audit pass** producing a written report of what was found (not just "we looked")
-4. **Runtime probe tests** with two-org fixtures asserting cross-org reads throw
+**Revised 2026-05-14**: The original Eng-review recommendation was a four-layer defense (AST scanner, Prisma query scanner, manual audit, runtime probe tests) treating cross-tenant leaks as critical. Per P10, GearFlow operates single-tenant — the multi-tenancy harness is defense-in-depth dead plumbing, not a live security boundary. There is no second tenant to leak to.
 
-Worst leaks (both reviewers flag): child entities like `SubHireItem`, `ModelMedia`, `CheckRecord`, `ProjectGroup`, `KitBulkItem`, where the child table may not have `organizationId` and queries use only child ID. Reads using `getOrgContext` but querying relation children without org filter.
+**What stays:**
+1. **AST scanner CI script (soft warn-only)** (`scripts/audit-server-actions.ts`, ~150 LOC, ts-morph): every exported async in `src/server/*.ts` must call `getOrgContext` or `requirePermission` or be allowlisted with a documented reason. **Warn in PR review, do not block CI.** This is documentation + regression guard, not enforcement. ~1 day to build.
+
+**What was cut:**
+- ~~Prisma query scanner~~ — overkill for single-tenant
+- ~~Manual audit pass with written report~~ — unnecessary
+- ~~Two-org runtime probe tests~~ — no second tenant exists
+
+The original audit's worst-leak suspects (child entities like `SubHireItem`, `ModelMedia`, `CheckRecord`, `ProjectGroup`, `KitBulkItem`) still apply as code-quality concerns — the soft lint will surface them in future PRs. Won't be retroactively audited.
 
 ### Operational P&L architecture (Wave 2)
 
@@ -988,6 +992,7 @@ This is the load-bearing pivot. GearFlow is **NOT** a finance system. It does no
 | P7 | Wedge + cheap wins | ACCEPT |
 | **P8 (new)** | **GearFlow stays an operations platform. Period.** No invoicing, no payments, no accounting integration. | **ACCEPT (user's explicit direction)** |
 | **P9 (new)** | **GearFlow is fully back-of-house / internal-only.** The operations team is the user. Clients see only ONE artifact: the **delivery docket**. No client portal, no quote-to-client email flow, no client-facing acceptance UI, no invoice emails. Quote/Invoice PDFs (if any) are *internal* documents — Xero produces the real client-facing finance documents. | **ACCEPT (user's explicit direction)** |
+| **P10 (new)** | **Single-tenant operational reality.** The multi-tenancy harness exists in code (`organizationId` columns, `getOrgContext`, `requirePermission`, Better Auth Organization plugin) but only one tenant will ever exist at a time. Cross-tenant leaks are theoretical, not real — no second tenant to leak to. The harness stays (ripping it out is enormous; defense-in-depth is harmless), but multi-tenant-specific investment stops. Org-export/import remains valid as a **backup/DR mechanism**, not as a tenant-migration feature. | **ACCEPT (2026-05-14, user-directed)** |
 
 ## Final execution plan — THREE WAVES (revised: no finance rebuild)
 
@@ -1003,12 +1008,13 @@ WAVE 1 — STOP THE BLEEDING (~2 weeks)
 WAVE 2 — AUDIT CLEANUP / "NOTHING FORGOTTEN" (~3-4 weeks)
   Integration checklist enforcement (FEATUREDOCS/29):
   ▸ groupTemplate → add to search, add CSV export, add to org-export, add activity log, link from /settings
-  ▸ crew → add to org-export (full module: crew, role, skill, certification, time, etc.)
-  ▸ checkItem + checkRecord → add to org-export, CSV import/export, full search, link from /settings
+  ▸ crew → add to org-export (full module: crew, role, skill, certification, time, etc.) — needed for backup/DR round-trip per P10
+  ▸ checkItem + checkRecord → add to org-export, CSV import/export, full search, link from /settings — needed for backup/DR
   ▸ subHire → add to search, expand activity log coverage
   ▸ Missing permission/audit calls (group-templates writes, crew reads, check-items reads)
-  Multi-tenancy sweep (pen-test style):
-  ▸ Audit every server action for getOrgContext()/requirePermission() — no cross-tenant read leaks
+  Multi-tenancy harness lint (revised per P10 — single-tenant operational reality):
+  ▸ Soft warn-only AST scanner in CI: flags any new server.ts export missing getOrgContext/requirePermission. Documentation + regression guard, not a sales-blocker. ~1 day.
+  ▸ Cross-tenant probe tests, manual pen-test audit, hard CI block: REMOVED. No second tenant to leak to; defense in depth is sufficient.
   Dead-code & inconsistency sweep:
   ▸ Kill legacy ProjectLineItem.isSubhire path (route everything through SubHire entity)
   ▸ Consolidate "staff" role into "member" (or document distinction)
@@ -1098,7 +1104,7 @@ Premises: see Step 0F above. Both reviewers and user converged on a four-wave pl
 | Failure Mode | Wave | Rescue Strategy |
 |---|---|---|
 | Critical bug-fix regresses existing flow | 1 | Integration tests on each fix; staged rollout to Two Toned data first |
-| Multi-tenancy leak found in audit | 2 | Server-action enumeration as pre-merge CI check; revoke + audit + notify |
+| MT harness violation in new PR | 2 | Soft AST lint warns in PR review (per P10 — single-tenant; no live security boundary) |
 | Email delivery fails silently | 2 | Resend webhook + Sentry alert + retry queue |
 | Notification read-state migration corrupts user state | 2 | Backfill from localStorage on first login post-migration; preserve a 30-day rollback window |
 | Operational P&L shows wrong number | 2 | The view is for decision-making, not for tax; show "estimated, source-of-truth Xero" disclaimer; per-line breakdown visible |
@@ -1149,16 +1155,16 @@ GearFlow wins on AV/theatre workflow density (kits/cases/preps/AS-NZS 3760/crew)
 
 Per P8, pricing-engine sophistication is **deferred** along with the rest of the finance work. GearFlow continues to produce per-day rate × duration totals (with discountPercent and taxRate as today). Anything more complex (dry-hire vs wet-hire, weekend rules, long-term discounts, package pricing, damage waivers) becomes a Xero-side concern OR a future wedge feature inside Wave 3 if Two Toned needs it operationally.
 
-### Section 9: Security / Multi-tenancy
+### Section 9: Security / Multi-tenancy (revised per P10)
 
-[CRITICAL gap acknowledged] The audit did not verify that `getOrgContext()` is called on every read. Wave 2 includes a pen-test-style sweep: enumerate all server actions, confirm each calls `getOrgContext()` or `requirePermission()`. Cross-tenant read leak is a customer-killing bug.
+The audit framed cross-tenant leaks as "customer-killing." With P10 locked (single-tenant operational reality), this is no longer a security severity — there is no second tenant to leak to. The multi-tenancy harness stays in place as defense-in-depth dead plumbing, and a soft warn-only AST lint flags new harness violations in PRs. No retroactive pen-test sweep, no two-org runtime probes. If GearFlow ever onboards a second tenant, lift the lint to hard-block first.
 
 ### Section 10: Success metrics (revised)
 
 | Wave | "Done" looks like |
 |---|---|
 | 1 | Zero CRITICAL bugs open. Sentry catches errors. Tests pass on every fix. Two Toned's live data stops drifting. |
-| 2 | All 4 recent features (crew/checkItem/groupTemplate/subHire) pass the FEATUREDOCS/29 checklist. Integration checklist becomes a CI gate. No legacy `isSubhire` path. Multi-tenancy pen-test clean. DESIGN.md drift cleared. Operational P&L view ships. Email delivery for quotes + notifications. |
+| 2 | All 4 recent features (crew/checkItem/groupTemplate/subHire) pass the FEATUREDOCS/29 checklist. Integration checklist becomes a CI gate. No legacy `isSubhire` path. MT harness soft-lint live in CI (warn-only per P10). DESIGN.md drift cleared. Operational P&L view ships. Email delivery for internal notifications. Org-export round-trips crew + checkItem + groupTemplate (for backup/DR per P10). |
 | 3 | One wedge feature ships per 1-2 week iteration with its own /autoplan. Workshop queue, damage capture, asset utilization, stocktake all land within 6 months. |
 
 ---

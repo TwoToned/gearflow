@@ -19,6 +19,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
+import { showError } from "@/lib/show-error";
 
 import {
   getProjectForWarehouse,
@@ -471,7 +472,7 @@ function WarehouseProjectPage({
               toast.success("Kit prepped — ready to deploy");
               invalidate();
             })
-            .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to prep kit"));
+            .catch((e) => showError(e, { fallbackTitle: "Failed to prep kit" }));
         } else {
           toast.success("Kit prepped — ready to deploy");
           invalidate();
@@ -485,7 +486,7 @@ function WarehouseProjectPage({
               toast.success("Kit deprep checked — returned to inventory");
               invalidate();
             })
-            .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to deprep kit"));
+            .catch((e) => showError(e, { fallbackTitle: "Failed to deprep kit" }));
         }
       } else {
         kitCheckInMutation.mutate(
@@ -505,7 +506,7 @@ function WarehouseProjectPage({
           }
           toast.success("Items prepped — ready to deploy");
           invalidate();
-        })().catch((e) => toast.error(e.message));
+        })().catch((e) => showError(e));
       } else {
         checkInMutation.mutate(
           { items: checkQueueDirectItems.map((i) => ({ lineItemId: i.lineItemId, returnCondition: (i.returnCondition || "GOOD") as "GOOD" | "DAMAGED" | "MISSING", quantity: i.quantity, notes: i.notes })) },
@@ -625,7 +626,7 @@ function WarehouseProjectPage({
       return result;
     },
     onSuccess: invalidate,
-    onError: (e) => toast.error(e.message),
+    onError: (e) => showError(e),
   });
 
   const checkInMutation = useMutation({
@@ -641,7 +642,7 @@ function WarehouseProjectPage({
       return result;
     },
     onSuccess: invalidate,
-    onError: (e) => toast.error(e.message),
+    onError: (e) => showError(e),
   });
 
   const quickAddMutation = useMutation({
@@ -681,24 +682,24 @@ function WarehouseProjectPage({
             toast.success(`Added and prepped: ${assetName}`);
             invalidate();
           })
-          .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to prep"));
+          .catch((e) => showError(e, { fallbackTitle: "Failed to prep" }));
         scanInputRef.current?.focus();
       }
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => showError(e),
   });
 
   const kitCheckOutMutation = useMutation({
     mutationFn: (kitId: string) => checkOutKit(projectId, kitId),
     onSuccess: () => invalidate(),
-    onError: (e) => toast.error(e.message),
+    onError: (e) => showError(e),
   });
 
   const kitCheckInMutation = useMutation({
     mutationFn: (data: { kitId: string; returnCondition: "GOOD" | "DAMAGED" | "MISSING" }) =>
       checkInKit(projectId, data.kitId, data.returnCondition),
     onSuccess: () => invalidate(),
-    onError: (e) => toast.error(e.message),
+    onError: (e) => showError(e),
   });
 
   const deprepMutation = useMutation({
@@ -711,7 +712,7 @@ function WarehouseProjectPage({
       toast.success("Item removed from prep");
       invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => showError(e),
   });
 
   const clearContainerMutation = useMutation({
@@ -720,7 +721,7 @@ function WarehouseProjectPage({
       toast.success("Container removed");
       invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => showError(e),
   });
 
   // --- Scan mutations ---
@@ -758,7 +759,7 @@ function WarehouseProjectPage({
                   toast.success(`Kit prepped: ${kitResult.assetName}`);
                   invalidate();
                 })
-                .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to prep kit"));
+                .catch((e) => showError(e, { fallbackTitle: "Failed to prep kit" }));
               setScanValue("");
               scanInputRef.current?.focus();
             }
@@ -837,7 +838,7 @@ function WarehouseProjectPage({
               scanInputRef.current?.focus();
               invalidate();
             })
-            .catch((e) => toast.error(e.message));
+            .catch((e) => showError(e));
         }
       } else if (result.found && !result.lineItemId) {
         if (result.reason === "not_on_project" && "modelId" in result && result.modelId) {
@@ -879,7 +880,7 @@ function WarehouseProjectPage({
       }
     },
     onError: (e) => {
-      toast.error(e.message);
+      showError(e);
       setScanValue("");
       scanInputRef.current?.focus();
     },
@@ -935,7 +936,7 @@ function WarehouseProjectPage({
       deployScanInputRef.current?.focus();
     },
     onError: (e) => {
-      toast.error(e.message);
+      showError(e);
       setDeployScanValue("");
       deployScanInputRef.current?.focus();
     },
@@ -1081,7 +1082,7 @@ function WarehouseProjectPage({
       }
     },
     onError: (e) => {
-      toast.error(e.message);
+      showError(e);
       setReturnScanValue("");
       returnScanInputRef.current?.focus();
     },
@@ -1528,7 +1529,7 @@ function WarehouseProjectPage({
                 toast.success(`Kit prepped: ${li.description || li.kit?.name || "Kit"}`);
                 invalidate();
               })
-              .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to prep kit"));
+              .catch((e) => showError(e, { fallbackTitle: "Failed to prep kit" }));
           }
         }
       }
@@ -1604,7 +1605,7 @@ function WarehouseProjectPage({
       setSelectedPrep(new Set());
       invalidate();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Prep failed");
+      showError(e, { fallbackTitle: "Prep failed" });
       invalidate();
     }
   };
@@ -1741,7 +1742,7 @@ function WarehouseProjectPage({
       }
       toast.success("Items prepped — ready to deploy");
       invalidate();
-    })().catch((e) => toast.error(e.message));
+    })().catch((e) => showError(e));
   };
 
   const handleReturnSelected = () => {
@@ -2139,7 +2140,7 @@ function WarehouseProjectPage({
                     toast.success("Kit removed from prep");
                     invalidate();
                   })
-                  .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to deprep kit"));
+                  .catch((e) => showError(e, { fallbackTitle: "Failed to deprep kit" }));
               } else if (d.quantity) {
                 deprepMutation.mutate({ lineItemId: d.lineItemId, quantity: d.quantity });
               } else {
@@ -2235,7 +2236,7 @@ function WarehouseProjectPage({
                       ).then(() => {
                         toast.success(`Prepped ${kitConfirm.verifiedCount} verified items`);
                         invalidate();
-                      }).catch((e) => toast.error(e.message));
+                      }).catch((e) => showError(e));
                     } else {
                       // Return only verified children — kit parent stays deployed until all returned
                       checkInMutation.mutate(
@@ -2481,7 +2482,7 @@ function WarehouseProjectPage({
               toast.success(`Passed all checks for ${remaining.length} item${remaining.length !== 1 ? "s" : ""}`);
               finishCheckQueue();
             } catch (e) {
-              toast.error(e instanceof Error ? e.message : "Pass all failed");
+              showError(e, { fallbackTitle: "Pass all failed" });
             } finally {
               setCheckFormSubmitting(false);
             }
@@ -2566,7 +2567,7 @@ function WarehouseProjectPage({
                 finishCheckQueue();
               }
             } catch (e) {
-              toast.error(e instanceof Error ? e.message : "Check submission failed");
+              showError(e, { fallbackTitle: "Check submission failed" });
             } finally {
               setCheckFormSubmitting(false);
             }

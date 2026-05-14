@@ -28,7 +28,7 @@ export default function AdminDashboardPage() {
               <p className="text-sm font-medium">Total Users</p>
               <Users className="h-4 w-4 text-fg-3" />
             </div>
-            <div className="text-2xl font-bold">{data?.totalUsers ?? "-"}</div>
+            <div className="t-title t-data">{data?.totalUsers ?? "-"}</div>
           </div>
           <div className="rounded-lg bg-bg-surface p-4 surface-ring">
             <div className="flex items-center justify-between pb-2">
@@ -37,14 +37,14 @@ export default function AdminDashboardPage() {
               </p>
               <Building2 className="h-4 w-4 text-fg-3" />
             </div>
-            <div className="text-2xl font-bold">{data?.totalOrgs ?? "-"}</div>
+            <div className="t-title t-data">{data?.totalOrgs ?? "-"}</div>
           </div>
           <div className="rounded-lg bg-bg-surface p-4 surface-ring">
             <div className="flex items-center justify-between pb-2">
               <p className="text-sm font-medium">Site Admins</p>
               <Shield className="h-4 w-4 text-fg-3" />
             </div>
-            <div className="text-2xl font-bold">
+            <div className="t-title t-data">
               {data?.siteAdminCount ?? "-"}
             </div>
           </div>

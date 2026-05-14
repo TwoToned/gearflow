@@ -115,7 +115,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                   />
                   {!client.isActive && <Badge variant="destructive">Archived</Badge>}
                 </div>
-                <p className="text-[13px] text-fg-3">
+                <p className="t-body text-fg-3">
                   {client.contactName || "No primary contact"}
                   {client.contactEmail && <> &middot; {client.contactEmail}</>}
                 </p>

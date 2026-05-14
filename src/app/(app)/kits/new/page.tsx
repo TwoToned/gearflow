@@ -16,7 +16,7 @@ export default function NewKitPage() {
         </div>
         <div>
           <h1 className="t-title text-fg">New Kit</h1>
-          <p className="text-[13px] text-fg-3">
+          <p className="t-body text-fg-3">
             Create a new kit or case to group assets together.
           </p>
         </div>

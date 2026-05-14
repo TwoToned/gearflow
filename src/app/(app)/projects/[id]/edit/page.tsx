@@ -117,7 +117,7 @@ export default function EditProjectPage({
           </Breadcrumb>
           <div>
             <h1 className="t-title text-fg">Edit Project</h1>
-            <p className="text-[13px] text-fg-3">
+            <p className="t-body text-fg-3">
               {project.projectNumber} &middot; {project.name}
             </p>
           </div>

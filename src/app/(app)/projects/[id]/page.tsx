@@ -935,7 +935,7 @@ function ProjectSummaryStrip({
           key={m.label}
           className="bg-bg-surface px-4 py-3 sm:first:rounded-l-md sm:last:rounded-r-md"
         >
-          <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-3">
+          <div className="t-overline text-fg-3">
             {m.label}
           </div>
           <div

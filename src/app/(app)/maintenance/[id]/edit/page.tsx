@@ -87,7 +87,7 @@ export default function EditMaintenancePage({
           <div className="flex items-center justify-between">
             <div>
               <h1 className="t-title text-fg">Edit Maintenance Record</h1>
-              <p className="text-[13px] text-fg-3">{r.title as string}</p>
+              <p className="t-body text-fg-3">{r.title as string}</p>
             </div>
             <CanDo resource="maintenance" action="delete">
               <Button

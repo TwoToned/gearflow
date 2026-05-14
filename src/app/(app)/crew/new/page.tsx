@@ -16,7 +16,7 @@ export default function NewCrewMemberPage() {
         </div>
         <div>
           <h1 className="t-title text-fg">New Crew Member</h1>
-          <p className="text-[13px] text-fg-3">
+          <p className="t-body text-fg-3">
             Add a new crew member to your directory.
           </p>
         </div>

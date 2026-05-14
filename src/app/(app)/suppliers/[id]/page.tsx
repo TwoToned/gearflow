@@ -116,7 +116,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                   <h1 className="t-title text-fg">{supplier.name}</h1>
                   {!supplier.isActive && <Badge variant="destructive">Archived</Badge>}
                 </div>
-                <p className="text-[13px] text-fg-3">
+                <p className="t-body text-fg-3">
                   {supplier.contactName || "No primary contact"}
                   {supplier.accountNumber && <> &middot; Acct: {supplier.accountNumber}</>}
                 </p>

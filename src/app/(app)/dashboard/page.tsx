@@ -84,7 +84,7 @@ export default function DashboardPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="t-title text-fg">{greeting}</h1>
-            <p className="text-[13px] text-fg-3">
+            <p className="t-body text-fg-3">
               {format(now, "EEEE, d MMMM yyyy")}
             </p>
           </div>
@@ -300,8 +300,8 @@ function MetricCell({
 }) {
   const content = (
     <>
-      <p className="text-xs text-fg-3">{label}</p>
-      <div className="mt-1 text-2xl font-bold t-data">
+      <p className="t-micro text-fg-3">{label}</p>
+      <div className="mt-1 t-title t-data">
         {typeof value === "number" ? (
           fmt === "currency" ? (
             <span className="tabular-nums">{formatCurrency(value)}</span>

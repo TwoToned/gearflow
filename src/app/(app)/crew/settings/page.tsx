@@ -132,7 +132,7 @@ export default function CrewSettingsPage() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="t-heading text-fg">Crew Roles</h3>
-              <p className="text-[13px] text-fg-3 mt-1">
+              <p className="t-body text-fg-3 mt-1">
                 Define roles that can be assigned to crew members and project
                 assignments. Each role can have a default rate.
               </p>
@@ -276,7 +276,7 @@ export default function CrewSettingsPage() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="t-heading text-fg">Crew Skills</h3>
-              <p className="text-[13px] text-fg-3 mt-1">
+              <p className="t-body text-fg-3 mt-1">
                 Skills are tags that describe what a crew member can do. Use them
                 to filter when searching for available crew.
               </p>

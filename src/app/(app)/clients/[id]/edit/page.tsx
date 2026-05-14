@@ -71,7 +71,7 @@ export default function EditClientPage({ params }: { params: Promise<{ id: strin
         </Breadcrumb>
         <div>
           <h1 className="t-title text-fg">Edit Client</h1>
-          <p className="text-[13px] text-fg-3">{client.name}</p>
+          <p className="t-body text-fg-3">{client.name}</p>
         </div>
         <ClientForm initialData={initialData} />
       </div>

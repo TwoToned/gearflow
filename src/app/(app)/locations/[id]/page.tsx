@@ -115,7 +115,7 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
                     <Star className="h-4 w-4 fill-amber-500 text-amber-500" />
                   )}
                 </div>
-                <p className="text-[13px] text-fg-3">
+                <p className="t-body text-fg-3">
                   {location.address || "No address"}
                   {location.parent && <> &middot; Sub-location of {location.parent.name}</>}
                 </p>

@@ -48,7 +48,7 @@ export default function EditLocationPage({ params }: { params: Promise<{ id: str
         </div>
         <div>
           <h1 className="t-title text-fg">Edit Location</h1>
-          <p className="text-[13px] text-fg-3">{location.name}</p>
+          <p className="t-body text-fg-3">{location.name}</p>
         </div>
         <LocationForm initialData={initialData} />
       </div>

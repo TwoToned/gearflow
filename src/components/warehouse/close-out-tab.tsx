@@ -102,24 +102,24 @@ export function CloseOutTab({ projectId }: { projectId: string }) {
       {/* Summary metrics strip */}
       <div className="flex items-center rounded-lg bg-bg-surface surface-ring divide-x divide-border">
         <div className="flex-1 px-4 py-3">
-          <p className="text-2xl font-bold t-data">{totalItems}</p>
-          <p className="text-xs text-fg-3 mt-0.5">Total Items</p>
+          <p className="t-title t-data">{totalItems}</p>
+          <p className="t-micro text-fg-3 mt-0.5">Total Items</p>
         </div>
         <div className="flex-1 px-4 py-3">
-          <p className="text-2xl font-bold text-green-500">{storedCount}</p>
-          <p className="text-xs text-fg-3 mt-0.5">Stored</p>
+          <p className="t-title t-data text-green-500">{storedCount}</p>
+          <p className="t-micro text-fg-3 mt-0.5">Stored</p>
         </div>
         <div className="flex-1 px-4 py-3">
-          <p className={`text-2xl font-bold ${damagedCount > 0 ? "text-amber-500" : "text-fg-3"}`}>
+          <p className={`t-title t-data ${damagedCount > 0 ? "text-amber-500" : "text-fg-3"}`}>
             {damagedCount}
           </p>
-          <p className="text-xs text-fg-3 mt-0.5">Damaged</p>
+          <p className="t-micro text-fg-3 mt-0.5">Damaged</p>
         </div>
         <div className="flex-1 px-4 py-3">
-          <p className={`text-2xl font-bold ${lostCount > 0 ? "text-destructive" : "text-fg-3"}`}>
+          <p className={`t-title t-data ${lostCount > 0 ? "text-destructive" : "text-fg-3"}`}>
             {lostCount}
           </p>
-          <p className="text-xs text-fg-3 mt-0.5">Lost</p>
+          <p className="t-micro text-fg-3 mt-0.5">Lost</p>
         </div>
       </div>
 

@@ -36,7 +36,7 @@ export default function EditCrewMemberPage({ params }: { params: Promise<{ id: s
         </div>
         <div>
           <h1 className="t-title text-fg">Edit Crew Member</h1>
-          <p className="text-[13px] text-fg-3">
+          <p className="t-body text-fg-3">
             Update crew member details.
           </p>
         </div>

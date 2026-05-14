@@ -69,7 +69,7 @@ export default function OnboardingPage() {
         <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold">
           GF
         </div>
-        <h2 className="text-xl font-semibold tracking-tight">Set up your instance</h2>
+        <h2 className="t-title">Set up your instance</h2>
         <p className="text-sm text-fg-3">
           Create your organization to start managing gear and projects.
         </p>

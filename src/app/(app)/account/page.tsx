@@ -621,7 +621,7 @@ export default function AccountPage() {
       <section>
         <SectionHeader label="Active Sessions" />
         <div className="mt-4 space-y-4">
-          <p className="text-[13px] text-fg-3">
+          <p className="t-body text-fg-3">
             Devices where you&apos;re currently logged in.
           </p>
           {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}

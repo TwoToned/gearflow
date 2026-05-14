@@ -104,7 +104,7 @@ export default function InviteAcceptPage({
           <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold">
             GF
           </div>
-          <h2 className="text-xl font-semibold tracking-tight">Organization Invitation</h2>
+          <h2 className="t-title">Organization Invitation</h2>
           <p className="text-sm text-fg-3">
             You need to sign in or create an account to accept this invitation.
           </p>
@@ -136,7 +136,7 @@ export default function InviteAcceptPage({
         <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold">
           GF
         </div>
-        <h2 className="text-xl font-semibold tracking-tight">Organization Invitation</h2>
+        <h2 className="t-title">Organization Invitation</h2>
         <p className="text-sm text-fg-3">
           You&apos;ve been invited to join an organization.
         </p>

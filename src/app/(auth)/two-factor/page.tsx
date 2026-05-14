@@ -53,7 +53,7 @@ export default function TwoFactorPage() {
         <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
           <Shield className="h-5 w-5" />
         </div>
-        <h2 className="text-xl font-semibold tracking-tight">Two-Factor Authentication</h2>
+        <h2 className="t-title">Two-Factor Authentication</h2>
         <p className="text-sm text-fg-3">
           {useBackupCode
             ? "Enter one of your backup codes"

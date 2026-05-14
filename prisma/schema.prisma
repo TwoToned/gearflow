@@ -60,6 +60,8 @@ model User {
   projectManagerAssignments ProjectManager[] @relation("ProjectManagerAssignment")
   subHires                   SubHire[]
   notificationDismissals     NotificationDismissal[]
+  notificationPreference     UserNotificationPreference?
+  notificationEmailLogs      NotificationEmailLog[]
 
   @@map("user")
 }
@@ -183,6 +185,7 @@ model Organization {
   subHires                   SubHire[]
   supplierModelRates         SupplierModelRate[]
   notificationDismissals     NotificationDismissal[]
+  notificationEmailLogs      NotificationEmailLog[]
   @@map("organization")
 }
 
@@ -2746,6 +2749,53 @@ model NotificationDismissal {
   @@unique([userId, notificationKey])
   @@index([organizationId, userId])
   @@map("notification_dismissal")
+}
+
+/**
+ * Per-user opt-in flags for email delivery of in-app notifications. One row
+ * per user, lazily created the first time they visit the preferences UI.
+ * Defaults are intentionally conservative — only the high-signal actionable
+ * events default to ON (overdue maintenance / returns, low stock, invitations,
+ * expiring certs, flagged assets).
+ */
+model UserNotificationPreference {
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  overdueMaintenance   Boolean  @default(true)
+  overdueReturn        Boolean  @default(true)
+  upcomingProject      Boolean  @default(false)
+  lowStock             Boolean  @default(true)
+  pendingInvitation    Boolean  @default(true)
+  expiringCert         Boolean  @default(true)
+  pendingOffers        Boolean  @default(false)
+  pendingTimesheets    Boolean  @default(false)
+  flaggedAsset         Boolean  @default(true)
+
+  updatedAt            DateTime @updatedAt
+
+  @@map("user_notification_preference")
+}
+
+/**
+ * Dedupe ledger for outbound notification emails. We don't want to re-email
+ * the same user about the same notification every time the cron fires — one
+ * row per (user, notificationKey) means "this user has been emailed about
+ * this thing at least once." Cleared lazily by pruneStaleNotificationLogs.
+ */
+model NotificationEmailLog {
+  id              String   @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notificationKey String
+  sentAt          DateTime @default(now())
+
+  @@unique([userId, notificationKey])
+  @@index([organizationId, sentAt])
+  @@map("notification_email_log")
 }
 
 // ─── Prep System (Pre-Packing / Staging) ─────────────────────────────────────

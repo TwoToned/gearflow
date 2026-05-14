@@ -21,12 +21,13 @@ describe("RESOURCES", () => {
       "asset", "bulkAsset", "model", "kit", "project", "client",
       "warehouse", "testTag", "maintenance", "location", "document",
       "orgSettings", "orgMembers", "supplier", "subHire", "crew", "reports", "checkItem",
+      "stocktake",
     ];
     expect(RESOURCES).toEqual(expected);
   });
 
-  it("has 18 resources", () => {
-    expect(RESOURCES).toHaveLength(18);
+  it("has 19 resources", () => {
+    expect(RESOURCES).toHaveLength(19);
   });
 });
 

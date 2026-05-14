@@ -942,18 +942,39 @@ export async function recalculateProjectTotals(projectId: string) {
     },
   });
 
-  // 1. Equipment revenue from groups (price × quantity)
+  // 1. Equipment revenue from groups: bundle price × quantity, PLUS any
+  // custom items placed inside the group. Custom items live outside the
+  // model-rate optimizer, so their lineTotal doesn't roll into the bundle
+  // price — they're "extras on top." Without this addition, a custom item
+  // added to a group is invisible to the project total.
   const groups = await prisma.projectGroup.findMany({
     where: { projectId },
-    select: { price: true, quantity: true },
+    select: {
+      price: true,
+      quantity: true,
+      lineItems: {
+        where: {
+          isCustomItem: true,
+          isOptional: false,
+          isKitChild: false,
+          status: { not: "CANCELLED" },
+        },
+        select: { lineTotal: true },
+      },
+    },
   });
 
   const groupRevenue = groups.reduce((sum, g) => {
-    const price = g.price != null ? Number(g.price) : 0;
-    return sum + price * g.quantity;
+    const bundlePrice = g.price != null ? Number(g.price) : 0;
+    const customExtras = g.lineItems.reduce(
+      (s, li) => s + (li.lineTotal != null ? Number(li.lineTotal) : 0),
+      0,
+    );
+    return sum + bundlePrice * g.quantity + customExtras;
   }, 0);
 
-  // 2. Equipment revenue from standalone (ungrouped) line items
+  // 2. Equipment revenue from standalone (ungrouped) line items —
+  // this naturally includes ungrouped custom items via their lineTotal.
   const standaloneItems = await prisma.projectLineItem.findMany({
     where: {
       projectId,

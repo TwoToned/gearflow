@@ -89,6 +89,15 @@ export async function calculateSuggestedPrice(groupId: string): Promise<number> 
   if (hasNewBilling) {
     const totalDays = computeTotalDays(months, weeks, days);
     for (const item of group.lineItems) {
+      // Custom items have no model rate. Use their own pre-computed
+      // lineTotal so they contribute to the group's suggested price.
+      // Without this branch, custom items in groups silently vanish from
+      // the suggestion and the project total.
+      if (item.isCustomItem) {
+        total += item.lineTotal != null ? Number(item.lineTotal) : 0;
+        continue;
+      }
+
       const dailyRate = item.model?.dailyRate != null ? Number(item.model.dailyRate) : null;
       const weeklyRate = item.model?.weeklyRate != null ? Number(item.model.weeklyRate) : null;
       const monthlyRate = item.model?.monthlyRate != null ? Number(item.model.monthlyRate) : null;
@@ -103,6 +112,12 @@ export async function calculateSuggestedPrice(groupId: string): Promise<number> 
     const rentalPeriod = group.rentalPeriod ?? group.project.defaultRentalPeriod ?? "DAILY";
     const rentalQuantity = group.rentalQuantity ?? group.project.defaultRentalQuantity ?? 1;
     for (const item of group.lineItems) {
+      // Same custom-item carve-out as the new-billing branch above.
+      if (item.isCustomItem) {
+        total += item.lineTotal != null ? Number(item.lineTotal) : 0;
+        continue;
+      }
+
       const rate =
         rentalPeriod === "WEEKLY"
           ? Number(item.model?.weeklyRate ?? item.model?.dailyRate ?? item.unitPrice ?? 0)

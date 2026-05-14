@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -151,6 +152,8 @@ export default function DisplaySettingsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [newToken, setNewToken] = useState<string | null>(null);
   const [editingToken, setEditingToken] = useState<DisplayToken | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<{ id: string; name: string } | null>(null);
+  const [regenerateOpen, setRegenerateOpen] = useState(false);
   const [regeneratedUrl, setRegeneratedUrl] = useState<string | null>(null);
 
   // Create form state
@@ -333,14 +336,7 @@ export default function DisplaySettingsPage() {
                           variant="outline"
                           size="icon"
                           className="text-destructive hover:text-destructive"
-                          onClick={() => {
-                            if (
-                              confirm(
-                                `Revoke display "${t.name}"? The screen will stop working.`
-                              )
-                            )
-                              revokeMutation.mutate(t.id);
-                          }}
+                          onClick={() => setRevokeTarget({ id: t.id, name: t.name })}
                           disabled={revokeMutation.isPending}
                         >
                           <Trash2 className="h-4 w-4" />
@@ -524,13 +520,7 @@ export default function DisplaySettingsPage() {
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        if (
-                          editingToken &&
-                          confirm(
-                            "Generate a new URL? The current URL will stop working and the screen will need to be updated."
-                          )
-                        )
-                          regenerateMutation.mutate(editingToken.id);
+                        if (editingToken) setRegenerateOpen(true);
                       }}
                       disabled={regenerateMutation.isPending}
                     >
@@ -569,6 +559,34 @@ export default function DisplaySettingsPage() {
           </>
         )}
       </div>
+      <DeleteDialog
+        open={!!revokeTarget}
+        onOpenChange={(open) => !open && setRevokeTarget(null)}
+        title={`Revoke display "${revokeTarget?.name ?? ""}"?`}
+        description="The screen using this display URL stops working immediately. You can create a new display token to replace it."
+        confirmLabel="Revoke display"
+        onConfirm={() => {
+          if (revokeTarget) {
+            revokeMutation.mutate(revokeTarget.id);
+            setRevokeTarget(null);
+          }
+        }}
+        pending={revokeMutation.isPending}
+      />
+      <DeleteDialog
+        open={regenerateOpen}
+        onOpenChange={setRegenerateOpen}
+        title="Regenerate display URL?"
+        description="The current URL stops working immediately. You'll need to update the screen that uses this display."
+        confirmLabel="Regenerate URL"
+        onConfirm={() => {
+          if (editingToken) {
+            regenerateMutation.mutate(editingToken.id);
+            setRegenerateOpen(false);
+          }
+        }}
+        pending={regenerateMutation.isPending}
+      />
     </div>
     </FadeIn>
   );

@@ -27,6 +27,7 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { useCanDo } from "@/lib/use-permissions";
 
 import { Button } from "@/components/ui/button";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -78,6 +79,7 @@ export function KitChecksTab({ kitId, checkMode }: KitChecksTabProps) {
   const canEdit = useCanDo("checkItem", "update");
 
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<{ id: string; label: string } | null>(null);
   const isPerItem = checkMode === "PER_ITEM";
 
   const { data: kitCheckItems = [], isLoading } = useQuery({
@@ -252,11 +254,12 @@ export function KitChecksTab({ kitId, checkMode }: KitChecksTabProps) {
                           variant="ghost"
                           size="sm"
                           className="text-destructive"
-                          onClick={() => {
-                            if (confirm(`Remove "${ci.label}" from this kit?`)) {
-                              removeMutation.mutate(ci.id as string);
-                            }
-                          }}
+                          onClick={() =>
+                            setRemoveTarget({
+                              id: ci.id as string,
+                              label: ci.label as string,
+                            })
+                          }
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -278,6 +281,20 @@ export function KitChecksTab({ kitId, checkMode }: KitChecksTabProps) {
           const ci = i.checkItem as Record<string, unknown>;
           return ci.id as string;
         })}
+      />
+      <DeleteDialog
+        open={!!removeTarget}
+        onOpenChange={(open) => !open && setRemoveTarget(null)}
+        title={`Remove "${removeTarget?.label ?? ""}" from this kit?`}
+        description="The check item is removed from this kit's checklist template. Past check responses on previous projects are preserved."
+        confirmLabel="Remove check"
+        onConfirm={() => {
+          if (removeTarget) {
+            removeMutation.mutate(removeTarget.id);
+            setRemoveTarget(null);
+          }
+        }}
+        pending={removeMutation.isPending}
       />
     </div>
   );

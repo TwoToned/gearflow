@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { categorySchema, type CategoryFormValues } from "@/lib/validations/category";
 import { getCategories, createCategory, updateCategory, deleteCategory } from "@/server/categories";
 import { Button } from "@/components/ui/button";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -45,6 +46,7 @@ export default function CategoriesPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [parentId, setParentId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [deleteId, setDeleteId] = useState<string | null>(null);
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
@@ -276,9 +278,7 @@ export default function CategoriesPage() {
                             size="icon"
                             className="h-7 w-7 text-destructive"
                             title="Delete"
-                            onClick={() => {
-                              if (confirm("Delete this category?")) deleteMutation.mutate(cat.id);
-                            }}
+                            onClick={() => setDeleteId(cat.id)}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
@@ -337,6 +337,20 @@ export default function CategoriesPage() {
         </DialogContent>
       </Dialog>
     </div>
+    <DeleteDialog
+      open={!!deleteId}
+      onOpenChange={(open) => !open && setDeleteId(null)}
+      title="Delete this category?"
+      description="Models, assets, and projects assigned to this category will be unlinked. Sub-categories under it will also be removed."
+      confirmLabel="Delete category"
+      onConfirm={() => {
+        if (deleteId) {
+          deleteMutation.mutate(deleteId);
+          setDeleteId(null);
+        }
+      }}
+      pending={deleteMutation.isPending}
+    />
     </FadeIn>
   );
 }

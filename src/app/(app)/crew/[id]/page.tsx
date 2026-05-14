@@ -85,6 +85,8 @@ import { useActiveOrganization, useSession } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
 import { useCanDo } from "@/lib/use-permissions";
 import { Button } from "@/components/ui/button";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
+import { ConfirmActionMenuItem } from "@/components/ui/confirm-action-menu-item";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -183,6 +185,10 @@ export default function CrewMemberDetailPage({
   const [addAvailOpen, setAddAvailOpen] = useState(false);
   const [addTimeOpen, setAddTimeOpen] = useState(false);
   const [editingTimeEntry, setEditingTimeEntry] = useState<string | null>(null);
+  const [deleteCrewOpen, setDeleteCrewOpen] = useState(false);
+  const [regenerateTokenOpen, setRegenerateTokenOpen] = useState(false);
+  const [removeAvailId, setRemoveAvailId] = useState<string | null>(null);
+  const [removeCertTarget, setRemoveCertTarget] = useState<{ id: string; name: string } | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
   // Slash command listener
@@ -552,14 +558,7 @@ export default function CrewMemberDetailPage({
                     <Button
                       variant="outline"
                       className="text-destructive"
-                      onClick={() => {
-                        if (
-                          confirm(
-                            "Delete this crew member? This cannot be undone."
-                          )
-                        )
-                          deleteMutation.mutate();
-                      }}
+                      onClick={() => setDeleteCrewOpen(true)}
                     >
                       <Trash2 className="mr-2 h-4 w-4" />
                       Delete
@@ -743,16 +742,12 @@ export default function CrewMemberDetailPage({
                                                 </DropdownMenuItem>
                                               ))}
                                               <CanDo resource="crew" action="delete">
-                                                <DropdownMenuItem
-                                                  className="text-destructive"
-                                                  onClick={() => {
-                                                    if (confirm("Remove this assignment?"))
-                                                      deleteAssignmentMutation.mutate(a.id);
-                                                  }}
+                                                <ConfirmActionMenuItem
+                                                  icon={<Trash2 className="mr-2 h-4 w-4" />}
+                                                  onConfirm={() => deleteAssignmentMutation.mutate(a.id)}
                                                 >
-                                                  <Trash2 className="mr-2 h-4 w-4" />
-                                                  Remove
-                                                </DropdownMenuItem>
+                                                  Remove assignment
+                                                </ConfirmActionMenuItem>
                                               </CanDo>
                                             </DropdownMenuGroup>
                                           </DropdownMenuContent>
@@ -852,14 +847,7 @@ export default function CrewMemberDetailPage({
                                           variant="ghost"
                                           size="icon"
                                           className="h-7 w-7 text-destructive"
-                                          onClick={() => {
-                                            if (
-                                              confirm(
-                                                "Remove this availability block?"
-                                              )
-                                            )
-                                              removeAvailMutation.mutate(av.id);
-                                          }}
+                                          onClick={() => setRemoveAvailId(av.id)}
                                         >
                                           <Trash2 className="h-3.5 w-3.5" />
                                         </Button>
@@ -967,14 +955,12 @@ export default function CrewMemberDetailPage({
                                           variant="ghost"
                                           size="icon"
                                           className="h-7 w-7 text-destructive"
-                                          onClick={() => {
-                                            if (
-                                              confirm(
-                                                `Remove certification "${cert.name}"?`
-                                              )
-                                            )
-                                              removeCertMutation.mutate(cert.id);
-                                          }}
+                                          onClick={() =>
+                                            setRemoveCertTarget({
+                                              id: cert.id,
+                                              name: cert.name,
+                                            })
+                                          }
                                         >
                                           <Trash2 className="h-3.5 w-3.5" />
                                         </Button>
@@ -1267,14 +1253,7 @@ export default function CrewMemberDetailPage({
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => {
-                                  if (
-                                    confirm(
-                                      "Regenerate token? The old URL will stop working."
-                                    )
-                                  )
-                                    regenerateTokenMutation.mutate();
-                                }}
+                                onClick={() => setRegenerateTokenOpen(true)}
                                 disabled={regenerateTokenMutation.isPending}
                               >
                                 <RefreshCw className="mr-2 h-3.5 w-3.5" />
@@ -1527,6 +1506,59 @@ export default function CrewMemberDetailPage({
           </div>
         </div>
       </FadeIn>
+
+      <DeleteDialog
+        open={deleteCrewOpen}
+        onOpenChange={setDeleteCrewOpen}
+        title="Delete this crew member?"
+        description="Removes the crew member from your roster. Past assignments, timesheets, and certifications are preserved but unlinked. This cannot be undone."
+        confirmLabel="Delete crew member"
+        onConfirm={() => {
+          deleteMutation.mutate();
+          setDeleteCrewOpen(false);
+        }}
+        pending={deleteMutation.isPending}
+      />
+      <DeleteDialog
+        open={regenerateTokenOpen}
+        onOpenChange={setRegenerateTokenOpen}
+        title="Regenerate self-service token?"
+        description="The current self-service URL stops working immediately. You'll need to send the new URL to this crew member."
+        confirmLabel="Regenerate token"
+        onConfirm={() => {
+          regenerateTokenMutation.mutate();
+          setRegenerateTokenOpen(false);
+        }}
+        pending={regenerateTokenMutation.isPending}
+      />
+      <DeleteDialog
+        open={!!removeAvailId}
+        onOpenChange={(open) => !open && setRemoveAvailId(null)}
+        title="Remove this availability block?"
+        description="The block is removed from the planner. This does not affect existing assignments."
+        confirmLabel="Remove block"
+        onConfirm={() => {
+          if (removeAvailId) {
+            removeAvailMutation.mutate(removeAvailId);
+            setRemoveAvailId(null);
+          }
+        }}
+        pending={removeAvailMutation.isPending}
+      />
+      <DeleteDialog
+        open={!!removeCertTarget}
+        onOpenChange={(open) => !open && setRemoveCertTarget(null)}
+        title={`Remove certification "${removeCertTarget?.name ?? ""}"?`}
+        description="The certification is removed from this crew member's profile."
+        confirmLabel="Remove certification"
+        onConfirm={() => {
+          if (removeCertTarget) {
+            removeCertMutation.mutate(removeCertTarget.id);
+            setRemoveCertTarget(null);
+          }
+        }}
+        pending={removeCertMutation.isPending}
+      />
 
       {/* Add Certification Dialog */}
       <AddCertificationDialog

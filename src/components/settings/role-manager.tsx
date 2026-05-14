@@ -14,6 +14,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ConfirmActionMenuItem } from "@/components/ui/confirm-action-menu-item";
 import { NotViewer } from "@/components/auth/permission-gate";
 import { RoleEditorDialog, ROLE_COLORS } from "./role-editor-dialog";
 import { PermissionMatrix } from "./permission-matrix";
@@ -193,17 +194,12 @@ export function RoleManager() {
                         <Copy className="mr-2 h-3.5 w-3.5" />
                         Duplicate
                       </DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="text-destructive"
-                        onClick={() => {
-                          if (confirm(`Delete the "${role.name}" role?`)) {
-                            deleteMut.mutate(role.id);
-                          }
-                        }}
+                      <ConfirmActionMenuItem
+                        icon={<Trash2 className="mr-2 h-3.5 w-3.5" />}
+                        onConfirm={() => deleteMut.mutate(role.id)}
                       >
-                        <Trash2 className="mr-2 h-3.5 w-3.5" />
-                        Delete
-                      </DropdownMenuItem>
+                        Delete role
+                      </ConfirmActionMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </NotViewer>

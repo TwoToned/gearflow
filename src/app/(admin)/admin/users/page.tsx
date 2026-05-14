@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { Button } from "@/components/ui/button";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -47,6 +48,7 @@ export default function AdminUsersPage() {
   const [deleteTarget, setDeleteTarget] = useState<UserRow | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
+  const [revokeTarget, setRevokeTarget] = useState<{ id: string; email: string } | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-users", search, page],
@@ -195,11 +197,9 @@ export default function AdminUsersPage() {
                     variant="ghost"
                     size="sm"
                     className="shrink-0 text-destructive"
-                    onClick={() => {
-                      if (confirm(`Revoke invitation for ${inv.email}?`)) {
-                        revokeMutation.mutate(inv.id);
-                      }
-                    }}
+                    onClick={() =>
+                      setRevokeTarget({ id: inv.id, email: inv.email })
+                    }
                   >
                     <X className="h-3.5 w-3.5 sm:mr-1" />
                     <span className="hidden sm:inline">Revoke</span>
@@ -496,6 +496,20 @@ export default function AdminUsersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <DeleteDialog
+        open={!!revokeTarget}
+        onOpenChange={(open) => !open && setRevokeTarget(null)}
+        title={`Revoke invitation for ${revokeTarget?.email ?? ""}?`}
+        description="The pending invitation link stops working immediately. You can send a fresh invite later."
+        confirmLabel="Revoke invitation"
+        onConfirm={() => {
+          if (revokeTarget) {
+            revokeMutation.mutate(revokeTarget.id);
+            setRevokeTarget(null);
+          }
+        }}
+        pending={revokeMutation.isPending}
+      />
     </AdminShell>
   );
 }

@@ -81,25 +81,34 @@ export async function getActivityLogs(filters: ActivityLogFilters = {}) {
   });
 }
 
-export async function getEntityActivityLog(entityType: string, entityId: string) {
+export async function getEntityActivityLog(
+  entityType: string,
+  entityId: string,
+  limit = 5,
+) {
   const { organizationId } = await getOrgContext();
+  const where = { organizationId, entityType, entityId };
 
-  const items = await prisma.activityLog.findMany({
-    where: { organizationId, entityType, entityId },
-    include: {
-      user: { select: { id: true, name: true, image: true } },
-    },
-    orderBy: { createdAt: "desc" },
-    take: 100,
-  });
+  const [items, total] = await Promise.all([
+    prisma.activityLog.findMany({
+      where,
+      include: {
+        user: { select: { id: true, name: true, image: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    }),
+    prisma.activityLog.count({ where }),
+  ]);
 
-  return serialize(items);
+  return serialize({ items, total });
 }
 
 export async function exportActivityLogCSV(filters: ActivityLogFilters = {}) {
   const { organizationId } = await getOrgContext();
   const {
     entityType,
+    entityId,
     action,
     userId,
     search,
@@ -109,6 +118,7 @@ export async function exportActivityLogCSV(filters: ActivityLogFilters = {}) {
 
   const where: Record<string, unknown> = { organizationId };
   if (entityType) where.entityType = entityType;
+  if (entityId) where.entityId = entityId;
   if (action) where.action = action;
   if (userId) where.userId = userId;
   if (search) where.summary = { contains: search, mode: "insensitive" };

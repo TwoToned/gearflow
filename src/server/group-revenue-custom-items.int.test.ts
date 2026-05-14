@@ -26,6 +26,7 @@ import {
   createModelFixture,
 } from "../../tests/helpers/integration";
 import { createId } from "@paralleldrive/cuid2";
+import { calculateSuggestedPrice } from "./project-groups";
 
 async function createProjectFixture(orgId: string) {
   return testPrisma.project.create({
@@ -277,6 +278,61 @@ describe("group revenue with custom items (Wave 2 fix)", () => {
 
     const groupRevenue = await calculateGroupRevenue(project.id);
     expect(groupRevenue).toBe(350); // (100 × 3) + 50
+  });
+
+  it("regression: calculateSuggestedPrice excludes custom items (no double-count on Accept Suggested)", async () => {
+    // Accept-suggested-price flow copies calculateSuggestedPrice() into
+    // ProjectGroup.price. recalculateProjectTotals then adds customExtras
+    // on top. If calculateSuggestedPrice ALSO included custom items,
+    // every custom item would get billed twice.
+    //
+    // The fix: calculateSuggestedPrice is equipment-only; custom items
+    // are always extras handled by recalculateProjectTotals.
+    const org = await createOrgFixture();
+    await createUserFixture(org.id);
+    const model = await testPrisma.model.create({
+      data: {
+        organizationId: org.id,
+        name: "Rate-Bearing Model",
+        dailyRate: 100,
+      },
+    });
+    const project = await createProjectFixture(org.id);
+
+    // Project needs daily billing for the optimizer to fire
+    await testPrisma.project.update({
+      where: { id: project.id },
+      data: { billingDays: 1 },
+    });
+
+    const group = await createProjectGroupFixture(org.id, project.id, {
+      price: 0,
+      quantity: 1,
+    });
+
+    // One real equipment line (1× $100/day) and one custom $999 item
+    await testPrisma.projectLineItem.create({
+      data: {
+        organizationId: org.id,
+        projectId: project.id,
+        type: "EQUIPMENT",
+        modelId: model.id,
+        groupId: group.id,
+        quantity: 1,
+        unitPrice: 100,
+        duration: 1,
+        pricingType: "PER_DAY",
+        lineTotal: 100,
+        status: "QUOTED",
+      },
+    });
+    await createCustomLineItem(org.id, project.id, {
+      lineTotal: 999,
+      groupId: group.id,
+    });
+
+    const suggested = await calculateSuggestedPrice(group.id);
+    expect(suggested).toBe(100); // equipment only, NOT 100 + 999
   });
 
   it("regression: kit-child custom items do NOT double-count", async () => {

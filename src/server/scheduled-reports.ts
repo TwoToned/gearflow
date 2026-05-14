@@ -96,6 +96,10 @@ export async function runDueScheduledReports(): Promise<ScheduledReportRunResult
       const reportUrl = `${env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "")}/reports/${r.id}`;
       const filename = `${r.name.replace(/[^a-zA-Z0-9_-]+/g, "-").slice(0, 60) || "report"}-${now.toISOString().slice(0, 10)}.csv`;
 
+      // Per-recipient try/catch: a transient Resend failure on one
+      // recipient must NOT prevent the schedule-stamp below. Without
+      // this guard, an unstamped run re-fires on the next cron tick
+      // and every already-emailed recipient gets the report again.
       for (const to of r.scheduleRecipients) {
         const { subject, html } = scheduledReportEmail({
           recipientName: to.split("@")[0],
@@ -108,19 +112,26 @@ export async function runDueScheduledReports(): Promise<ScheduledReportRunResult
           generatedAt: now,
           frequencyLabel: frequencyLabel(r.scheduleFrequency!),
         });
-        await sendEmail({
-          to,
-          subject,
-          html,
-          attachments: [
-            {
-              filename,
-              content: csv,
-              contentType: "text/csv",
-            },
-          ],
-        });
-        result.emailedRecipients += 1;
+        try {
+          await sendEmail({
+            to,
+            subject,
+            html,
+            attachments: [
+              {
+                filename,
+                content: csv,
+                contentType: "text/csv",
+              },
+            ],
+          });
+          result.emailedRecipients += 1;
+        } catch (sendErr) {
+          result.errors.push({
+            reportId: r.id,
+            message: `recipient ${to}: ${sendErr instanceof Error ? sendErr.message : String(sendErr)}`,
+          });
+        }
       }
 
       await prisma.savedReport.update({
@@ -129,6 +140,9 @@ export async function runDueScheduledReports(): Promise<ScheduledReportRunResult
       });
       result.ran += 1;
     } catch (e) {
+      // Outer catch handles execute/generate failures — these block
+      // the whole report and intentionally leave scheduleLastRunAt
+      // unstamped so the next cron retries.
       result.errors.push({
         reportId: r.id,
         message: e instanceof Error ? e.message : String(e),

@@ -706,6 +706,7 @@ model Supplier {
   orders             SupplierOrder[]
   subHires           SubHire[]
   supplierModelRates SupplierModelRate[]
+  preferredBulkAssets BulkAsset[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -1056,6 +1057,14 @@ model BulkAsset {
   location             Location?       @relation(fields: [locationId], references: [id])
   status               BulkAssetStatus @default(ACTIVE)
   reorderThreshold     Int?
+  /** Preferred supplier for reorder. Drives the supplier grouping on
+   *  /warehouse/reorder and pre-fills the draft SupplierOrder. */
+  preferredSupplierId  String?
+  preferredSupplier    Supplier?       @relation(fields: [preferredSupplierId], references: [id], onDelete: SetNull)
+  /** Last time a SupplierOrder containing this bulk asset was created.
+   *  Populated lazily by createReorderDraft so the dashboard can show
+   *  "ordered 12 days ago" alongside current stock. */
+  lastReorderedAt      DateTime?
   notes                String?
   tags                 String[]        @default([])
   isActive             Boolean         @default(true)

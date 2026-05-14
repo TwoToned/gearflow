@@ -114,6 +114,7 @@ export async function createBulkAsset(data: BulkAssetFormValues) {
         locationId: parsed.locationId || null,
         status: parsed.status,
         reorderThreshold: parsed.reorderThreshold,
+        preferredSupplierId: parsed.preferredSupplierId || null,
         notes: parsed.notes,
         isActive: parsed.isActive,
         tags: parsed.tags,

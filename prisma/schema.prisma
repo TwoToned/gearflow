@@ -2603,13 +2603,28 @@ model SavedReport {
   isShared        Boolean  @default(false)
   isPinned        Boolean  @default(false)
 
+  // Scheduling — nullable when scheduleFrequency is null (report runs ad-hoc).
+  scheduleFrequency  ScheduleFrequency?
+  scheduleHour       Int?                          // 0-23, UTC
+  scheduleDayOfWeek  Int?                          // 0 = Sunday … 6 = Saturday, for WEEKLY
+  scheduleDayOfMonth Int?                          // 1-28, for MONTHLY (capped at 28 to avoid Feb edge case)
+  scheduleRecipients String[]  @default([])        // user emails that receive each scheduled run
+  scheduleLastRunAt  DateTime?
+
   lastRunAt       DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   @@index([organizationId])
   @@index([organizationId, createdById])
+  @@index([scheduleFrequency, scheduleLastRunAt])
   @@map("saved_report")
+}
+
+enum ScheduleFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
 }
 
 // ─── Check Item System ───────────────────────────────────────────────────────

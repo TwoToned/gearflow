@@ -3,18 +3,34 @@ import { env } from "@/env";
 
 const resend = new Resend(env.RESEND_API_KEY);
 
+/**
+ * Optional attachment payload. Filename is what the recipient sees; content
+ * is the raw bytes (Buffer / Uint8Array) — Resend handles base64 encoding
+ * internally.
+ */
+export interface EmailAttachment {
+  filename: string;
+  content: Buffer | string;
+  contentType?: string;
+}
+
 export async function sendEmail({
   to,
   subject,
   html,
+  attachments,
 }: {
   to: string;
   subject: string;
   html: string;
+  attachments?: EmailAttachment[];
 }) {
   if (!env.RESEND_API_KEY || env.RESEND_API_KEY === "re_xxxxxxxxxxxxxxxxxxxx") {
     console.log(`[Email] Would send to ${to}: ${subject}`);
     console.log(`[Email] HTML: ${html.substring(0, 200)}...`);
+    if (attachments?.length) {
+      console.log(`[Email] Attachments: ${attachments.map((a) => a.filename).join(", ")}`);
+    }
     return { id: "dev-mock" };
   }
 
@@ -23,6 +39,14 @@ export async function sendEmail({
     to,
     subject,
     html,
+    attachments: attachments?.map((a) => ({
+      filename: a.filename,
+      content:
+        typeof a.content === "string"
+          ? Buffer.from(a.content, "utf8")
+          : a.content,
+      contentType: a.contentType,
+    })),
   });
 
   if (error) {

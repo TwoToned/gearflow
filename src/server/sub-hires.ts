@@ -66,7 +66,7 @@ export async function getSubHires(filters?: {
   dateFrom?: string;
   dateTo?: string;
 }) {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requirePermission("subHire", "read");
 
   const where: Prisma.SubHireWhereInput = { organizationId };
 
@@ -133,7 +133,7 @@ export async function getSubHires(filters?: {
 }
 
 export async function getSubHire(id: string) {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requirePermission("subHire", "read");
 
   const subHire = await prisma.subHire.findUnique({
     where: { id, organizationId },
@@ -1668,7 +1668,7 @@ export async function updateSubHirePaymentStatus(id: string, paymentStatus: SubH
 // ─── Media / Attachments ────────────────────────────────────────────────────
 
 export async function getSubHireMedia(subHireId: string) {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requirePermission("subHire", "read");
 
   const media = await prisma.subHireMedia.findMany({
     where: { subHireId, organizationId },

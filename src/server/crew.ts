@@ -35,7 +35,7 @@ export async function getCrewMembers(params: {
   sortBy?: string;
   sortOrder?: "asc" | "desc";
 }) {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requirePermission("crew", "read");
   const { search, filters, page = 1, pageSize = 25, sortBy = "lastName", sortOrder = "asc" } = params;
 
   const filterWhere = filters ? buildFilterWhere(filters, filterColumnDefs) : {};
@@ -77,7 +77,7 @@ export async function getCrewMembers(params: {
 }
 
 export async function getCrewMemberById(id: string) {
-  const { organizationId, userId } = await getOrgContext();
+  const { organizationId, userId } = await requirePermission("crew", "read");
   const crewMember = await prisma.crewMember.findUnique({
     where: { id, organizationId },
     include: {
@@ -260,7 +260,7 @@ export async function deleteCrewMember(id: string) {
 // ─── Crew Roles ──────────────────────────────────────────────────────────────
 
 export async function getCrewRoles() {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requirePermission("crew", "read");
   return serialize(
     await prisma.crewRole.findMany({
       where: { organizationId, isActive: true },
@@ -357,7 +357,7 @@ export async function deleteCrewRole(id: string) {
 // ─── Crew Skills ─────────────────────────────────────────────────────────────
 
 export async function getCrewSkills() {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requirePermission("crew", "read");
   return serialize(
     await prisma.crewSkill.findMany({
       where: { organizationId },
@@ -439,7 +439,7 @@ export async function removeCertification(certId: string) {
 
 /** Get all crew roles for dropdown options */
 export async function getCrewRoleOptions() {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requirePermission("crew", "read");
   return serialize(
     await prisma.crewRole.findMany({
       where: { organizationId, isActive: true },
@@ -451,7 +451,7 @@ export async function getCrewRoleOptions() {
 
 /** Get all crew skills for multi-select */
 export async function getCrewSkillOptions() {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requirePermission("crew", "read");
   return serialize(
     await prisma.crewSkill.findMany({
       where: { organizationId },
@@ -463,7 +463,9 @@ export async function getCrewSkillOptions() {
 
 /** Get org users that can be linked to crew members */
 export async function getOrgUsersForCrewLink() {
-  const { organizationId } = await getOrgContext();
+  // Only callers with update access can actually link — guard the picker too
+  // so non-managers don't enumerate the member list.
+  const { organizationId } = await requirePermission("crew", "update");
 
   // Get all org members with user info
   const members = await prisma.member.findMany({
@@ -555,7 +557,7 @@ export async function linkCrewMemberToUser(id: string, userId: string | null) {
 
 /** Get distinct departments for filter options */
 export async function getCrewDepartments() {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requirePermission("crew", "read");
   const results = await prisma.crewMember.findMany({
     where: { organizationId, department: { not: null } },
     select: { department: true },

@@ -59,6 +59,7 @@ model User {
   warehouseCloses          WarehouseClose[] @relation("WarehouseClosedBy")
   projectManagerAssignments ProjectManager[] @relation("ProjectManagerAssignment")
   subHires                   SubHire[]
+  notificationDismissals     NotificationDismissal[]
 
   @@map("user")
 }
@@ -181,6 +182,7 @@ model Organization {
   projectManagers            ProjectManager[]
   subHires                   SubHire[]
   supplierModelRates         SupplierModelRate[]
+  notificationDismissals     NotificationDismissal[]
   @@map("organization")
 }
 
@@ -2717,6 +2719,33 @@ model WarehouseClose {
   @@unique([projectId, organizationId])
   @@index([organizationId])
   @@map("warehouse_close")
+}
+
+// ─── Notifications ───────────────────────────────────────────────────────────
+
+/**
+ * Per-user dismissal record for a computed-on-read notification. Notifications
+ * themselves are not persisted — they're derived from app state. This table
+ * stores which notification keys a given user has already dismissed so the
+ * dismissal persists across browsers / cleared localStorage.
+ *
+ * notificationKey is the stable identifier the server uses for the notification
+ * (e.g. `maint-<id>`, `return-<id>`, `low_stock:<id>`, etc.). Keys are scoped
+ * by user; if the same notification re-fires for a new entity instance it gets
+ * a different key and re-surfaces.
+ */
+model NotificationDismissal {
+  id              String       @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notificationKey String
+  dismissedAt     DateTime     @default(now())
+
+  @@unique([userId, notificationKey])
+  @@index([organizationId, userId])
+  @@map("notification_dismissal")
 }
 
 // ─── Prep System (Pre-Packing / Staging) ─────────────────────────────────────

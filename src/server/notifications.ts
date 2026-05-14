@@ -14,6 +14,69 @@ export interface AppNotification {
   timestamp: string;
 }
 
+/**
+ * Return the set of notification keys (i.e. AppNotification.id values) the
+ * current user has dismissed. Used by the client to filter out dismissed
+ * items. Source of truth is the database — not localStorage — so dismissals
+ * survive browser changes / cache clears.
+ */
+export async function getDismissedKeys(): Promise<string[]> {
+  let ctx;
+  try {
+    ctx = await getOrgContext();
+  } catch {
+    return [];
+  }
+  const { userId } = ctx;
+
+  const rows = await prisma.notificationDismissal.findMany({
+    where: { userId },
+    select: { notificationKey: true },
+  });
+  return rows.map((r) => r.notificationKey);
+}
+
+/**
+ * Persist a notification dismissal for the current user. Idempotent — calling
+ * twice for the same key is a no-op.
+ */
+export async function dismissNotification(notificationKey: string): Promise<void> {
+  if (!notificationKey) return;
+  const { organizationId, userId } = await getOrgContext();
+
+  await prisma.notificationDismissal.upsert({
+    where: {
+      userId_notificationKey: { userId, notificationKey },
+    },
+    create: { organizationId, userId, notificationKey },
+    update: {}, // already dismissed — keep original dismissedAt
+  });
+}
+
+/**
+ * Garbage-collect dismissal rows whose underlying notification key is no
+ * longer in the active set. Keeps the table small and prevents stale keys
+ * from accumulating forever. Safe to call frequently; runs as a single
+ * deleteMany.
+ */
+export async function pruneStaleDismissals(activeKeys: string[]): Promise<number> {
+  let ctx;
+  try {
+    ctx = await getOrgContext();
+  } catch {
+    return 0;
+  }
+  const { userId } = ctx;
+
+  const result = await prisma.notificationDismissal.deleteMany({
+    where: {
+      userId,
+      notificationKey: { notIn: activeKeys.length > 0 ? activeKeys : [""] },
+    },
+  });
+  return result.count;
+}
+
 export async function getNotifications(): Promise<AppNotification[]> {
   let ctx;
   try {

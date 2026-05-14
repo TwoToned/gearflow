@@ -11,16 +11,16 @@ datasource db {
 // ─── Better Auth Core Tables ─────────────────────────────────────────────────
 
 model User {
-  id            String    @id @default(cuid())
+  id            String   @id @default(cuid())
   name          String
-  email         String    @unique
-  emailVerified Boolean   @default(false)
+  email         String   @unique
+  emailVerified Boolean  @default(false)
   image         String?
-  role          String    @default("user") // "user" or "admin" (site-level)
+  role          String   @default("user") // "user" or "admin" (site-level)
   banned        Boolean?
   banReason     String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   // Better Auth 2FA fields
   twoFactorEnabled Boolean?
@@ -30,52 +30,53 @@ model User {
   members  Member[]
 
   // App relations
-  reportedMaintenance MaintenanceRecord[] @relation("ReportedBy")
-  assignedMaintenance MaintenanceRecord[] @relation("AssignedTo")
-  managedProjects     Project[]           @relation("ProjectManager")
-  scanLogs            AssetScanLog[]
-  checkedOutLineItems ProjectLineItem[]   @relation("CheckedOutBy")
-  returnedLineItems   ProjectLineItem[]   @relation("ReturnedBy")
-  addedKitSerializedItems KitSerializedItem[] @relation("KitSerializedItemAddedBy")
-  addedKitBulkItems       KitBulkItem[]      @relation("KitBulkItemAddedBy")
-  uploads                 FileUpload[]
-  testTagRecords          TestTagRecord[]
-  twoFactors              TwoFactor[]
-  backupCodes             BackupCode[]
-  activityLogs            ActivityLog[]
-  passkeys                Passkey[]
-  supplierOrders          SupplierOrder[]
-  crewMembers             CrewMember[]
-  confirmedAssignments    CrewAssignment[] @relation("ConfirmedBy")
-  approvedTimeEntries     CrewTimeEntry[]  @relation("TimeEntryApprovedBy")
-  ssoProviders            SsoProvider[]
-  pendingSSOApprovals     PendingSSOApproval[]
-  reviewedSSOApprovals    PendingSSOApproval[] @relation("SSOReviewer")
-  warehouseDashboardTokens WarehouseDashboardToken[]
-  testTagAuditorTokens     TestTagAuditorToken[]
-  savedReports             SavedReport[]
-  checkItems               CheckItem[]
-  checkRecords             CheckRecord[]  @relation("CheckRecordPerformedBy")
-  warehouseCloses          WarehouseClose[] @relation("WarehouseClosedBy")
-  projectManagerAssignments ProjectManager[] @relation("ProjectManagerAssignment")
-  subHires                   SubHire[]
-  notificationDismissals     NotificationDismissal[]
-  notificationPreference     UserNotificationPreference?
-  notificationEmailLogs      NotificationEmailLog[]
+  reportedMaintenance       MaintenanceRecord[]         @relation("ReportedBy")
+  assignedMaintenance       MaintenanceRecord[]         @relation("AssignedTo")
+  managedProjects           Project[]                   @relation("ProjectManager")
+  scanLogs                  AssetScanLog[]
+  checkedOutLineItems       ProjectLineItem[]           @relation("CheckedOutBy")
+  returnedLineItems         ProjectLineItem[]           @relation("ReturnedBy")
+  addedKitSerializedItems   KitSerializedItem[]         @relation("KitSerializedItemAddedBy")
+  addedKitBulkItems         KitBulkItem[]               @relation("KitBulkItemAddedBy")
+  uploads                   FileUpload[]
+  testTagRecords            TestTagRecord[]
+  twoFactors                TwoFactor[]
+  backupCodes               BackupCode[]
+  activityLogs              ActivityLog[]
+  passkeys                  Passkey[]
+  supplierOrders            SupplierOrder[]
+  crewMembers               CrewMember[]
+  confirmedAssignments      CrewAssignment[]            @relation("ConfirmedBy")
+  approvedTimeEntries       CrewTimeEntry[]             @relation("TimeEntryApprovedBy")
+  ssoProviders              SsoProvider[]
+  pendingSSOApprovals       PendingSSOApproval[]
+  reviewedSSOApprovals      PendingSSOApproval[]        @relation("SSOReviewer")
+  warehouseDashboardTokens  WarehouseDashboardToken[]
+  testTagAuditorTokens      TestTagAuditorToken[]
+  savedReports              SavedReport[]
+  checkItems                CheckItem[]
+  checkRecords              CheckRecord[]               @relation("CheckRecordPerformedBy")
+  warehouseCloses           WarehouseClose[]            @relation("WarehouseClosedBy")
+  projectManagerAssignments ProjectManager[]            @relation("ProjectManagerAssignment")
+  subHires                  SubHire[]
+  notificationDismissals    NotificationDismissal[]
+  notificationPreference    UserNotificationPreference?
+  notificationEmailLogs     NotificationEmailLog[]
+  damageEventsCreated       DamageEvent[]               @relation("DamageEventCreatedBy")
 
   @@map("user")
 }
 
 model Session {
-  id                   String    @id @default(cuid())
+  id                   String   @id @default(cuid())
   expiresAt            DateTime
-  token                String    @unique
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  token                String   @unique
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
   ipAddress            String?
   userAgent            String?
   userId               String
-  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   activeOrganizationId String?
 
   @@map("session")
@@ -114,78 +115,80 @@ model Verification {
 // ─── Better Auth Organization Tables ─────────────────────────────────────────
 
 model Organization {
-  id        String    @id @default(cuid())
-  name      String
-  slug      String    @unique
-  logo      String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  metadata       String?   // JSON string for extended org settings
-  defaultTaxRate Decimal?  @db.Decimal(5, 2)
+  id             String   @id @default(cuid())
+  name           String
+  slug           String   @unique
+  logo           String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  metadata       String? // JSON string for extended org settings
+  defaultTaxRate Decimal? @db.Decimal(5, 2)
 
   members     Member[]
   invitations Invitation[]
   customRoles CustomRole[]
 
   // App relations
-  categories         Category[]
-  models             Model[]
-  assets             Asset[]
-  bulkAssets         BulkAsset[]
-  locations          Location[]
-  maintenanceRecords MaintenanceRecord[]
-  clients            Client[]
-  projects           Project[]
-  projectLineItems   ProjectLineItem[]
-  scanLogs           AssetScanLog[]
-  suppliers          Supplier[]
-  supplierOrders     SupplierOrder[]
-  kits               Kit[]
-  kitSerializedItems KitSerializedItem[]
-  kitBulkItems       KitBulkItem[]
-  fileUploads        FileUpload[]
-  modelMedia         ModelMedia[]
-  assetMedia         AssetMedia[]
-  kitMedia           KitMedia[]
-  projectMedia       ProjectMedia[]
-  clientMedia        ClientMedia[]
-  locationMedia      LocationMedia[]
-  subHireMedia       SubHireMedia[]
-  testProfiles       TestProfile[]
-  testTagAssets      TestTagAsset[]
-  testTagRecords     TestTagRecord[]
-  activityLogs       ActivityLog[]
-  crewMembers        CrewMember[]
-  crewRoles          CrewRole[]
-  crewSkills         CrewSkill[]
-  crewAssignments    CrewAssignment[]
-  crewTimeEntries    CrewTimeEntry[]
-  projectServices    ProjectService[]
-  serviceTemplates   ServiceTemplate[]
-  documentTemplates          DocumentTemplate[]
-  brandTemplates             BrandTemplate[]
-  sectionPresets             SectionPreset[]
-  ssoProviders               SsoProvider[]
-  pendingSSOApprovals        PendingSSOApproval[]
-  warehouseDashboardTokens   WarehouseDashboardToken[]
-  testTagAuditorTokens       TestTagAuditorToken[]
-  wooCommerceIntegration     WooCommerceIntegration?
-  wooCommerceOrderLogs       WooCommerceOrderLog[]
-  savedReports               SavedReport[]
-  checkItems                 CheckItem[]
-  modelCheckItems            ModelCheckItem[]
-  kitCheckItems              KitCheckItem[]
-  checkRecords               CheckRecord[]
-  warehouseCloses            WarehouseClose[]
-  projectCategories          ProjectCategory[]
-  projectGroups              ProjectGroup[]
-  groupTemplates             GroupTemplate[]
-  groupTemplateItems         GroupTemplateItem[]
-  projectManagers            ProjectManager[]
-  subHires                   SubHire[]
-  supplierModelRates         SupplierModelRate[]
-  notificationDismissals     NotificationDismissal[]
-  notificationEmailLogs      NotificationEmailLog[]
+  categories               Category[]
+  models                   Model[]
+  assets                   Asset[]
+  bulkAssets               BulkAsset[]
+  locations                Location[]
+  maintenanceRecords       MaintenanceRecord[]
+  damageEvents             DamageEvent[]
+  clients                  Client[]
+  projects                 Project[]
+  projectLineItems         ProjectLineItem[]
+  scanLogs                 AssetScanLog[]
+  suppliers                Supplier[]
+  supplierOrders           SupplierOrder[]
+  kits                     Kit[]
+  kitSerializedItems       KitSerializedItem[]
+  kitBulkItems             KitBulkItem[]
+  fileUploads              FileUpload[]
+  modelMedia               ModelMedia[]
+  assetMedia               AssetMedia[]
+  kitMedia                 KitMedia[]
+  projectMedia             ProjectMedia[]
+  clientMedia              ClientMedia[]
+  locationMedia            LocationMedia[]
+  subHireMedia             SubHireMedia[]
+  testProfiles             TestProfile[]
+  testTagAssets            TestTagAsset[]
+  testTagRecords           TestTagRecord[]
+  activityLogs             ActivityLog[]
+  crewMembers              CrewMember[]
+  crewRoles                CrewRole[]
+  crewSkills               CrewSkill[]
+  crewAssignments          CrewAssignment[]
+  crewTimeEntries          CrewTimeEntry[]
+  projectServices          ProjectService[]
+  serviceTemplates         ServiceTemplate[]
+  documentTemplates        DocumentTemplate[]
+  brandTemplates           BrandTemplate[]
+  sectionPresets           SectionPreset[]
+  ssoProviders             SsoProvider[]
+  pendingSSOApprovals      PendingSSOApproval[]
+  warehouseDashboardTokens WarehouseDashboardToken[]
+  testTagAuditorTokens     TestTagAuditorToken[]
+  wooCommerceIntegration   WooCommerceIntegration?
+  wooCommerceOrderLogs     WooCommerceOrderLog[]
+  savedReports             SavedReport[]
+  checkItems               CheckItem[]
+  modelCheckItems          ModelCheckItem[]
+  kitCheckItems            KitCheckItem[]
+  checkRecords             CheckRecord[]
+  warehouseCloses          WarehouseClose[]
+  projectCategories        ProjectCategory[]
+  projectGroups            ProjectGroup[]
+  groupTemplates           GroupTemplate[]
+  groupTemplateItems       GroupTemplateItem[]
+  projectManagers          ProjectManager[]
+  subHires                 SubHire[]
+  supplierModelRates       SupplierModelRate[]
+  notificationDismissals   NotificationDismissal[]
+  notificationEmailLogs    NotificationEmailLog[]
+
   @@map("organization")
 }
 
@@ -195,7 +198,7 @@ model Member {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   userId         String
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role           String       // owner, admin, manager, staff, warehouse
+  role           String // owner, admin, manager, staff, warehouse
   createdAt      DateTime     @default(now())
 
   @@map("member")
@@ -207,7 +210,7 @@ model Invitation {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   email          String
   role           String?
-  status         String       // pending, accepted, rejected, cancelled
+  status         String // pending, accepted, rejected, cancelled
   expiresAt      DateTime
   inviterId      String
   createdAt      DateTime     @default(now())
@@ -223,9 +226,9 @@ model CustomRole {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   name           String
   description    String?
-  color          String?      // Badge color class
-  permissions    String       // JSON-serialized PermissionMap
-  ssoGroupClaim  String?      // OIDC/SAML group claim value for auto-matching
+  color          String? // Badge color class
+  permissions    String // JSON-serialized PermissionMap
+  ssoGroupClaim  String? // OIDC/SAML group claim value for auto-matching
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -240,8 +243,8 @@ model CustomRole {
 model SsoProvider {
   id             String        @id @default(cuid())
   issuer         String
-  oidcConfig     String?       // JSON-encoded OIDC settings
-  samlConfig     String?       // JSON-encoded SAML settings
+  oidcConfig     String? // JSON-encoded OIDC settings
+  samlConfig     String? // JSON-encoded SAML settings
   userId         String?
   user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
   providerId     String        @unique
@@ -475,8 +478,8 @@ enum KitPricingMode {
 }
 
 enum KitCheckMode {
-  KIT_LEVEL   // Check the kit once; all contents inherit the result
-  PER_ITEM    // Each child asset goes through its own model's checks
+  KIT_LEVEL // Check the kit once; all contents inherit the result
+  PER_ITEM // Each child asset goes through its own model's checks
 }
 
 enum MediaType {
@@ -589,23 +592,23 @@ enum ProjectMediaType {
 // ─── Category ────────────────────────────────────────────────────────────────
 
 model Category {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  name           String
-  parentId       String?
-  parent         Category?    @relation("CategoryHierarchy", fields: [parentId], references: [id])
-  children       Category[]   @relation("CategoryHierarchy")
-  description    String?
-  icon           String?
-  sortOrder      Int          @default(0)
+  id                 String       @id @default(cuid())
+  organizationId     String
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name               String
+  parentId           String?
+  parent             Category?    @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children           Category[]   @relation("CategoryHierarchy")
+  description        String?
+  icon               String?
+  sortOrder          Int          @default(0)
   tags               String[]     @default([])
   suggestedCrewRoles String[]     @default([])
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
-  models     Model[]
-  kits       Kit[]
+  models Model[]
+  kits   Kit[]
 
   @@index([organizationId])
   @@index([parentId])
@@ -615,53 +618,53 @@ model Category {
 // ─── Model (Equipment Template) ──────────────────────────────────────────────
 
 model Model {
-  id                      String       @id @default(cuid())
+  id                      String          @id @default(cuid())
   organizationId          String
-  organization            Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization            Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   name                    String
   manufacturer            String?
   modelNumber             String?
   sku                     String?
   categoryId              String?
-  category                Category?    @relation(fields: [categoryId], references: [id])
+  category                Category?       @relation(fields: [categoryId], references: [id])
   description             String?
   image                   String?
-  images                  String[]     @default([])
-  manuals                 String[]     @default([])
-  specifications          Json?        // key-value pairs
-  customFields            Json?        // org-defined fields inherited by assets
-  defaultRentalPrice      Decimal?     @db.Decimal(10, 2)
-  dailyRate               Decimal?     @db.Decimal(10, 2)
-  weeklyRate              Decimal?     @db.Decimal(10, 2)
-  monthlyRate             Decimal?     @db.Decimal(10, 2)
-  defaultPurchasePrice    Decimal?     @db.Decimal(10, 2)
-  replacementCost         Decimal?     @db.Decimal(10, 2)
-  weight                  Decimal?     @db.Decimal(8, 2)
+  images                  String[]        @default([])
+  manuals                 String[]        @default([])
+  specifications          Json? // key-value pairs
+  customFields            Json? // org-defined fields inherited by assets
+  defaultRentalPrice      Decimal?        @db.Decimal(10, 2)
+  dailyRate               Decimal?        @db.Decimal(10, 2)
+  weeklyRate              Decimal?        @db.Decimal(10, 2)
+  monthlyRate             Decimal?        @db.Decimal(10, 2)
+  defaultPurchasePrice    Decimal?        @db.Decimal(10, 2)
+  replacementCost         Decimal?        @db.Decimal(10, 2)
+  weight                  Decimal?        @db.Decimal(8, 2)
   powerDraw               Int?
-  requiresTestAndTag         Boolean         @default(false)
-  testAndTagIntervalDays     Int?
-  defaultEquipmentClass      EquipmentClass?
-  defaultApplianceType       ApplianceType?
-  defaultTestProfileId       String?
-  defaultTestProfile         TestProfile?    @relation("ModelDefaultTestProfile", fields: [defaultTestProfileId], references: [id], onDelete: SetNull)
-  maintenanceIntervalDays    Int?
-  assetType               AssetType    @default(SERIALIZED)
+  requiresTestAndTag      Boolean         @default(false)
+  testAndTagIntervalDays  Int?
+  defaultEquipmentClass   EquipmentClass?
+  defaultApplianceType    ApplianceType?
+  defaultTestProfileId    String?
+  defaultTestProfile      TestProfile?    @relation("ModelDefaultTestProfile", fields: [defaultTestProfileId], references: [id], onDelete: SetNull)
+  maintenanceIntervalDays Int?
+  assetType               AssetType       @default(SERIALIZED)
   barcodeLabelTemplate    String?
-  tags                    String[]     @default([])
-  isActive                Boolean      @default(true)
-  createdAt               DateTime     @default(now())
-  updatedAt               DateTime     @updatedAt
+  tags                    String[]        @default([])
+  isActive                Boolean         @default(true)
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
 
-  assets              Asset[]
-  bulkAssets          BulkAsset[]
-  lineItems           ProjectLineItem[]
-  media               ModelMedia[]
-  modelCheckItems     ModelCheckItem[]
-  groupTemplateItems  GroupTemplateItem[]
+  assets             Asset[]
+  bulkAssets         BulkAsset[]
+  lineItems          ProjectLineItem[]
+  media              ModelMedia[]
+  modelCheckItems    ModelCheckItem[]
+  groupTemplateItems GroupTemplateItem[]
 
-  supplierOrderItems  SupplierOrderItem[]
-  subHireItems        SubHireItem[]
-  supplierModelRates  SupplierModelRate[]
+  supplierOrderItems SupplierOrderItem[]
+  subHireItems       SubHireItem[]
+  supplierModelRates SupplierModelRate[]
 
   @@unique([organizationId, sku])
   @@index([organizationId])
@@ -693,10 +696,10 @@ model Supplier {
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
-  assets    Asset[]
-  lineItems ProjectLineItem[]
-  orders    SupplierOrder[]
-  subHires  SubHire[]
+  assets             Asset[]
+  lineItems          ProjectLineItem[]
+  orders             SupplierOrder[]
+  subHires           SubHire[]
   supplierModelRates SupplierModelRate[]
 
   @@unique([organizationId, name])
@@ -707,30 +710,30 @@ model Supplier {
 // ─── Supplier Orders ────────────────────────────────────────────────────────
 
 model SupplierOrder {
-  id              String              @id @default(cuid())
-  organizationId  String
-  organization    Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  supplierId      String
-  supplier        Supplier            @relation(fields: [supplierId], references: [id], onDelete: Cascade)
-  orderNumber     String
-  type            SupplierOrderType
-  status          SupplierOrderStatus @default(DRAFT)
-  orderDate       DateTime?
-  expectedDate    DateTime?
-  receivedDate    DateTime?
-  subtotal        Decimal?            @db.Decimal(10, 2)
-  taxAmount       Decimal?            @db.Decimal(10, 2)
-  total           Decimal?            @db.Decimal(10, 2)
-  projectId       String?
-  project         Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  notes           String?
-  createdById     String?
-  createdBy       User?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  items           SupplierOrderItem[]
-  assets          Asset[]
-  lineItems       ProjectLineItem[]
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  id             String              @id @default(cuid())
+  organizationId String
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplierId     String
+  supplier       Supplier            @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  orderNumber    String
+  type           SupplierOrderType
+  status         SupplierOrderStatus @default(DRAFT)
+  orderDate      DateTime?
+  expectedDate   DateTime?
+  receivedDate   DateTime?
+  subtotal       Decimal?            @db.Decimal(10, 2)
+  taxAmount      Decimal?            @db.Decimal(10, 2)
+  total          Decimal?            @db.Decimal(10, 2)
+  projectId      String?
+  project        Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  notes          String?
+  createdById    String?
+  createdBy      User?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  items          SupplierOrderItem[]
+  assets         Asset[]
+  lineItems      ProjectLineItem[]
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
 
   @@index([organizationId])
   @@index([organizationId, supplierId])
@@ -739,19 +742,19 @@ model SupplierOrder {
 }
 
 model SupplierOrderItem {
-  id          String         @id @default(cuid())
+  id          String        @id @default(cuid())
   orderId     String
-  order       SupplierOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order       SupplierOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   description String
-  quantity    Int            @default(1)
-  unitPrice   Decimal?       @db.Decimal(10, 2)
-  lineTotal   Decimal?       @db.Decimal(10, 2)
+  quantity    Int           @default(1)
+  unitPrice   Decimal?      @db.Decimal(10, 2)
+  lineTotal   Decimal?      @db.Decimal(10, 2)
   modelId     String?
-  model       Model?         @relation(fields: [modelId], references: [id], onDelete: SetNull)
+  model       Model?        @relation(fields: [modelId], references: [id], onDelete: SetNull)
   assetId     String?
-  asset       Asset?         @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  asset       Asset?        @relation(fields: [assetId], references: [id], onDelete: SetNull)
   notes       String?
-  sortOrder   Int            @default(0)
+  sortOrder   Int           @default(0)
 
   @@index([orderId])
   @@map("supplier_order_item")
@@ -760,39 +763,39 @@ model SupplierOrderItem {
 // ─── Sub-Hire (Renting gear from third-party suppliers) ─────────────────────
 
 model SubHire {
-  id              String        @id @default(cuid())
-  organizationId  String
-  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  supplierId      String
-  supplier        Supplier      @relation(fields: [supplierId], references: [id], onDelete: Cascade)
-  projectId       String?
-  project         Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  createdById     String
-  createdBy       User          @relation(fields: [createdById], references: [id], onDelete: Cascade)
-  orderNumber     String
-  supplierReference String?     // Supplier's invoice/order/PO number
-  status          SubHireStatus @default(DRAFT)
-  hireStart       DateTime?
-  hireEnd         DateTime?
-  totalCost       Decimal       @default(0) @db.Decimal(10, 2)
-  totalCharge     Decimal       @default(0) @db.Decimal(10, 2)
-  pricingMode     SubHirePricingMode @default(ITEMIZED)
-  orderTotalCost  Decimal?      @db.Decimal(10, 2)
-  orderTotalCharge Decimal?     @db.Decimal(10, 2)
-  showOnDocs      Boolean       @default(false) // Default for new items
-  paymentStatus   SubHirePaymentStatus @default(UNPAID)
-  notes           String?
+  id                      String               @id @default(cuid())
+  organizationId          String
+  organization            Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplierId              String
+  supplier                Supplier             @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  projectId               String?
+  project                 Project?             @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  createdById             String
+  createdBy               User                 @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  orderNumber             String
+  supplierReference       String? // Supplier's invoice/order/PO number
+  status                  SubHireStatus        @default(DRAFT)
+  hireStart               DateTime?
+  hireEnd                 DateTime?
+  totalCost               Decimal              @default(0) @db.Decimal(10, 2)
+  totalCharge             Decimal              @default(0) @db.Decimal(10, 2)
+  pricingMode             SubHirePricingMode   @default(ITEMIZED)
+  orderTotalCost          Decimal?             @db.Decimal(10, 2)
+  orderTotalCharge        Decimal?             @db.Decimal(10, 2)
+  showOnDocs              Boolean              @default(false) // Default for new items
+  paymentStatus           SubHirePaymentStatus @default(UNPAID)
+  notes                   String?
   // Default placement for items that don't override
-  defaultTargetCategoryId  String?
-  defaultTargetCategory    ProjectCategory? @relation(fields: [defaultTargetCategoryId], references: [id], onDelete: SetNull)
-  defaultTargetGroupId     String?
-  defaultTargetGroup       ProjectGroup?    @relation("SubHireDefaultTargetGroup", fields: [defaultTargetGroupId], references: [id], onDelete: SetNull)
-  groups          SubHireGroup[]
-  items           SubHireItem[]
-  lineItems       ProjectLineItem[]
-  media           SubHireMedia[]
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  defaultTargetCategoryId String?
+  defaultTargetCategory   ProjectCategory?     @relation(fields: [defaultTargetCategoryId], references: [id], onDelete: SetNull)
+  defaultTargetGroupId    String?
+  defaultTargetGroup      ProjectGroup?        @relation("SubHireDefaultTargetGroup", fields: [defaultTargetGroupId], references: [id], onDelete: SetNull)
+  groups                  SubHireGroup[]
+  items                   SubHireItem[]
+  lineItems               ProjectLineItem[]
+  media                   SubHireMedia[]
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
 
   @@unique([organizationId, orderNumber])
   @@index([organizationId])
@@ -803,29 +806,29 @@ model SubHire {
 }
 
 model SubHireItem {
-  id           String         @id @default(cuid())
-  subHireId    String
-  subHire      SubHire        @relation(fields: [subHireId], references: [id], onDelete: Cascade)
-  groupId      String?
-  group        SubHireGroup?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  modelId      String?
-  model        Model?         @relation(fields: [modelId], references: [id], onDelete: SetNull)
-  description  String
-  quantity     Int            @default(1)
-  unitCost     Decimal        @default(0) @db.Decimal(10, 2)
-  unitCharge   Decimal        @default(0) @db.Decimal(10, 2)
-  pricingType  PricingType    @default(FLAT)
-  duration     Int            @default(1)
-  discount     Decimal        @default(0) @db.Decimal(5, 2)
-  showOnQuote  Boolean        @default(true)  // Whether item appears on client quote/invoice
-  showOnDocs   Boolean        @default(false) // Whether to show "sub-hired" label on client docs
-  sortOrder    Int            @default(0)
+  id               String            @id @default(cuid())
+  subHireId        String
+  subHire          SubHire           @relation(fields: [subHireId], references: [id], onDelete: Cascade)
+  groupId          String?
+  group            SubHireGroup?     @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  modelId          String?
+  model            Model?            @relation(fields: [modelId], references: [id], onDelete: SetNull)
+  description      String
+  quantity         Int               @default(1)
+  unitCost         Decimal           @default(0) @db.Decimal(10, 2)
+  unitCharge       Decimal           @default(0) @db.Decimal(10, 2)
+  pricingType      PricingType       @default(FLAT)
+  duration         Int               @default(1)
+  discount         Decimal           @default(0) @db.Decimal(5, 2)
+  showOnQuote      Boolean           @default(true) // Whether item appears on client quote/invoice
+  showOnDocs       Boolean           @default(false) // Whether to show "sub-hired" label on client docs
+  sortOrder        Int               @default(0)
   // Placement on project (ungrouped items only; grouped items use their group's target)
-  targetCategoryId  String?
-  targetCategory    ProjectCategory? @relation(fields: [targetCategoryId], references: [id], onDelete: SetNull)
-  targetGroupId     String?
-  targetGroup       ProjectGroup?    @relation("SubHireItemTargetGroup", fields: [targetGroupId], references: [id], onDelete: SetNull)
-  lineItems    ProjectLineItem[]
+  targetCategoryId String?
+  targetCategory   ProjectCategory?  @relation(fields: [targetCategoryId], references: [id], onDelete: SetNull)
+  targetGroupId    String?
+  targetGroup      ProjectGroup?     @relation("SubHireItemTargetGroup", fields: [targetGroupId], references: [id], onDelete: SetNull)
+  lineItems        ProjectLineItem[]
 
   @@index([subHireId])
   @@index([groupId])
@@ -834,41 +837,41 @@ model SubHireItem {
 }
 
 model SubHireGroup {
-  id          String          @id @default(cuid())
-  subHireId   String
-  subHire     SubHire         @relation(fields: [subHireId], references: [id], onDelete: Cascade)
-  title       String
-  sortOrder   Int             @default(0)
+  id               String            @id @default(cuid())
+  subHireId        String
+  subHire          SubHire           @relation(fields: [subHireId], references: [id], onDelete: Cascade)
+  title            String
+  sortOrder        Int               @default(0)
   // Pricing — cost (supplier) and charge (client), both optional overrides
-  quantity    Int             @default(1)
-  cost        Decimal?        @db.Decimal(12, 2)
-  charge      Decimal?        @db.Decimal(12, 2)
-  showOnQuote Boolean         @default(true)  // Whether group items appear on client quote/invoice
-  showOnDocs  Boolean         @default(false) // Whether to show "sub-hired" label on client docs
+  quantity         Int               @default(1)
+  cost             Decimal?          @db.Decimal(12, 2)
+  charge           Decimal?          @db.Decimal(12, 2)
+  showOnQuote      Boolean           @default(true) // Whether group items appear on client quote/invoice
+  showOnDocs       Boolean           @default(false) // Whether to show "sub-hired" label on client docs
   // Placement on project (where the group's parent line item lands)
-  targetCategoryId  String?
-  targetCategory    ProjectCategory? @relation(fields: [targetCategoryId], references: [id], onDelete: SetNull)
-  targetGroupId     String?
-  targetGroup       ProjectGroup?    @relation("SubHireGroupTargetGroup", fields: [targetGroupId], references: [id], onDelete: SetNull)
-  items       SubHireItem[]
-  lineItems   ProjectLineItem[]
+  targetCategoryId String?
+  targetCategory   ProjectCategory?  @relation(fields: [targetCategoryId], references: [id], onDelete: SetNull)
+  targetGroupId    String?
+  targetGroup      ProjectGroup?     @relation("SubHireGroupTargetGroup", fields: [targetGroupId], references: [id], onDelete: SetNull)
+  items            SubHireItem[]
+  lineItems        ProjectLineItem[]
 
   @@index([subHireId])
   @@map("sub_hire_group")
 }
 
 model SupplierModelRate {
-  id              String       @id @default(cuid())
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  supplierId      String
-  supplier        Supplier     @relation(fields: [supplierId], references: [id], onDelete: Cascade)
-  modelId         String
-  model           Model        @relation(fields: [modelId], references: [id], onDelete: Cascade)
-  lastUnitCost    Decimal      @db.Decimal(10, 2)
-  pricingType     PricingType  @default(FLAT)
-  lastUsedAt      DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplierId     String
+  supplier       Supplier     @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  modelId        String
+  model          Model        @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  lastUnitCost   Decimal      @db.Decimal(10, 2)
+  pricingType    PricingType  @default(FLAT)
+  lastUsedAt     DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   @@unique([organizationId, supplierId, modelId])
   @@index([organizationId, supplierId])
@@ -879,45 +882,45 @@ model SupplierModelRate {
 // ─── Kit (Physical Container) ────────────────────────────────────────────────
 
 model Kit {
-  id                  String         @id @default(cuid())
-  organizationId      String
-  organization        Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  assetTag            String
-  name                String
-  description         String?
-  categoryId          String?
-  category            Category?      @relation(fields: [categoryId], references: [id])
-  status              KitStatus      @default(AVAILABLE)
-  condition           AssetCondition @default(NEW)
-  locationId          String?
-  location            Location?      @relation(fields: [locationId], references: [id])
-  weight              Decimal?       @db.Decimal(8, 2)
-  caseType            String?
-  caseDimensions      String?
-  image               String?
-  images              String[]       @default([])
-  barcode             String?
-  qrCode              String?
-  notes               String?
-  purchaseDate        DateTime?
-  purchasePrice       Decimal?       @db.Decimal(10, 2)
-  customFieldValues   Json?
-  tags                String[]       @default([])
-  checkMode           KitCheckMode   @default(KIT_LEVEL)
-  isPrep              Boolean        @default(false)
-  isActive            Boolean        @default(true)
-  createdAt           DateTime       @default(now())
-  updatedAt           DateTime       @updatedAt
+  id                String         @id @default(cuid())
+  organizationId    String
+  organization      Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assetTag          String
+  name              String
+  description       String?
+  categoryId        String?
+  category          Category?      @relation(fields: [categoryId], references: [id])
+  status            KitStatus      @default(AVAILABLE)
+  condition         AssetCondition @default(NEW)
+  locationId        String?
+  location          Location?      @relation(fields: [locationId], references: [id])
+  weight            Decimal?       @db.Decimal(8, 2)
+  caseType          String?
+  caseDimensions    String?
+  image             String?
+  images            String[]       @default([])
+  barcode           String?
+  qrCode            String?
+  notes             String?
+  purchaseDate      DateTime?
+  purchasePrice     Decimal?       @db.Decimal(10, 2)
+  customFieldValues Json?
+  tags              String[]       @default([])
+  checkMode         KitCheckMode   @default(KIT_LEVEL)
+  isPrep            Boolean        @default(false)
+  isActive          Boolean        @default(true)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
 
-  serializedItems  KitSerializedItem[]
-  bulkItems        KitBulkItem[]
-  assets           Asset[]
-  lineItems        ProjectLineItem[]
-  scanLogs         AssetScanLog[]
+  serializedItems    KitSerializedItem[]
+  bulkItems          KitBulkItem[]
+  assets             Asset[]
+  lineItems          ProjectLineItem[]
+  scanLogs           AssetScanLog[]
   maintenanceRecords MaintenanceRecord[]
-  media            KitMedia[]
-  kitCheckItems    KitCheckItem[]
-  checkRecords     CheckRecord[]
+  media              KitMedia[]
+  kitCheckItems      KitCheckItem[]
+  checkRecords       CheckRecord[]
   groupTemplateItems GroupTemplateItem[]
 
   @@unique([organizationId, assetTag])
@@ -1006,17 +1009,18 @@ model Asset {
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
 
-  kitId              String?
-  kit                Kit?           @relation(fields: [kitId], references: [id])
-  kitItem            KitSerializedItem?
+  kitId   String?
+  kit     Kit?               @relation(fields: [kitId], references: [id])
+  kitItem KitSerializedItem?
 
-  maintenanceLinks    MaintenanceRecordAsset[]
-  lineItems           ProjectLineItem[]
-  scanLogs            AssetScanLog[]
-  media               AssetMedia[]
-  testTagAsset        TestTagAsset?
-  supplierOrderItems  SupplierOrderItem[]
-  checkRecords        CheckRecord[]
+  maintenanceLinks   MaintenanceRecordAsset[]
+  lineItems          ProjectLineItem[]
+  scanLogs           AssetScanLog[]
+  media              AssetMedia[]
+  testTagAsset       TestTagAsset?
+  supplierOrderItems SupplierOrderItem[]
+  checkRecords       CheckRecord[]
+  damageEvents       DamageEvent[]
 
   @@unique([organizationId, assetTag])
   @@index([organizationId])
@@ -1033,30 +1037,31 @@ model Asset {
 // ─── Bulk Asset ──────────────────────────────────────────────────────────────
 
 model BulkAsset {
-  id                  String          @id @default(cuid())
-  organizationId      String
-  organization        Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  modelId             String
-  model               Model           @relation(fields: [modelId], references: [id])
-  assetTag            String
-  totalQuantity       Int             @default(0)
-  availableQuantity   Int             @default(0)
-  purchasePricePerUnit Decimal?       @db.Decimal(10, 2)
-  locationId          String?
-  location            Location?       @relation(fields: [locationId], references: [id])
-  status              BulkAssetStatus @default(ACTIVE)
-  reorderThreshold    Int?
-  notes               String?
-  tags                String[]        @default([])
-  isActive            Boolean         @default(true)
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
+  id                   String          @id @default(cuid())
+  organizationId       String
+  organization         Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  modelId              String
+  model                Model           @relation(fields: [modelId], references: [id])
+  assetTag             String
+  totalQuantity        Int             @default(0)
+  availableQuantity    Int             @default(0)
+  purchasePricePerUnit Decimal?        @db.Decimal(10, 2)
+  locationId           String?
+  location             Location?       @relation(fields: [locationId], references: [id])
+  status               BulkAssetStatus @default(ACTIVE)
+  reorderThreshold     Int?
+  notes                String?
+  tags                 String[]        @default([])
+  isActive             Boolean         @default(true)
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
 
   kitBulkItems  KitBulkItem[]
   lineItems     ProjectLineItem[]
   scanLogs      AssetScanLog[]
   testTagAssets TestTagAsset[]
   checkRecords  CheckRecord[]
+  damageEvents  DamageEvent[]
 
   @@unique([organizationId, assetTag])
   @@index([organizationId])
@@ -1086,10 +1091,10 @@ model Location {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  assets     Asset[]
-  bulkAssets BulkAsset[]
-  kits       Kit[]
-  projects   Project[]
+  assets                   Asset[]
+  bulkAssets               BulkAsset[]
+  kits                     Kit[]
+  projects                 Project[]
   media                    LocationMedia[]
   warehouseDashboardTokens WarehouseDashboardToken[]
 
@@ -1101,36 +1106,95 @@ model Location {
 // ─── Maintenance Record ──────────────────────────────────────────────────────
 
 model MaintenanceRecord {
-  id             String            @id @default(cuid())
+  id             String             @id @default(cuid())
   organizationId String
-  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   kitId          String?
-  kit            Kit?              @relation(fields: [kitId], references: [id], onDelete: Cascade)
+  kit            Kit?               @relation(fields: [kitId], references: [id], onDelete: Cascade)
+  // Optional link to the project that incurred the maintenance need. Used by
+  // ProjectOperationalSummary to roll maintenance cost into project P&L
+  // (operational, not financial — Xero owns invoicing per P8). Nullable
+  // because preventive maintenance has no causal project.
+  projectId      String?
+  project        Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
   type           MaintenanceType
-  status         MaintenanceStatus @default(SCHEDULED)
+  status         MaintenanceStatus  @default(SCHEDULED)
   title          String
   description    String?
   reportedById   String?
-  reportedBy     User?             @relation("ReportedBy", fields: [reportedById], references: [id])
+  reportedBy     User?              @relation("ReportedBy", fields: [reportedById], references: [id])
   assignedToId   String?
-  assignedTo     User?             @relation("AssignedTo", fields: [assignedToId], references: [id])
+  assignedTo     User?              @relation("AssignedTo", fields: [assignedToId], references: [id])
   scheduledDate  DateTime?
   completedDate  DateTime?
-  cost           Decimal?          @db.Decimal(10, 2)
+  cost           Decimal?           @db.Decimal(10, 2)
   partsUsed      String?
-  attachments    String[]          @default([])
+  attachments    String[]           @default([])
   result         MaintenanceResult?
   nextDueDate    DateTime?
-  tags           String[]          @default([])
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
+  tags           String[]           @default([])
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
 
-  assets MaintenanceRecordAsset[]
+  assets       MaintenanceRecordAsset[]
+  damageEvents DamageEvent[]
 
   @@index([organizationId])
   @@index([status])
   @@index([scheduledDate])
+  @@index([projectId])
   @@map("maintenance_record")
+}
+
+/// Damage incident captured at warehouse check-in (or recorded later).
+/// Promoted from `ProjectLineItem.returnCondition` so we can attach photos,
+/// record severity, capture notes, and track repair lifecycle. The line-item
+/// enum stays as a fast filter; this row is source of truth for the damage
+/// event itself. UI to capture damage events is Wave 3 (damage-capture flow).
+model DamageEvent {
+  id                  String             @id @default(cuid())
+  organizationId      String
+  organization        Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId           String?
+  project             Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  lineItemId          String?
+  lineItem            ProjectLineItem?   @relation(fields: [lineItemId], references: [id], onDelete: SetNull)
+  assetId             String?
+  asset               Asset?             @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  bulkAssetId         String?
+  bulkAsset           BulkAsset?         @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
+  severity            DamageSeverity
+  status              DamageStatus       @default(OPEN)
+  notes               String?
+  photos              String[]           @default([])
+  estimatedCost       Decimal?           @db.Decimal(10, 2)
+  actualCost          Decimal?           @db.Decimal(10, 2)
+  chargedBack         Boolean            @default(false)
+  maintenanceRecordId String?
+  maintenanceRecord   MaintenanceRecord? @relation(fields: [maintenanceRecordId], references: [id], onDelete: SetNull)
+  createdById         String
+  createdBy           User               @relation("DamageEventCreatedBy", fields: [createdById], references: [id])
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@index([organizationId, status])
+  @@index([projectId])
+  @@index([assetId])
+  @@index([bulkAssetId])
+  @@map("damage_event")
+}
+
+enum DamageSeverity {
+  MINOR
+  MAJOR
+  TOTAL
+}
+
+enum DamageStatus {
+  OPEN
+  UNDER_REPAIR
+  RESOLVED
+  CHARGED_BACK
 }
 
 model MaintenanceRecordAsset {
@@ -1148,28 +1212,28 @@ model MaintenanceRecordAsset {
 // ─── Client ──────────────────────────────────────────────────────────────────
 
 model Client {
-  id              String     @id @default(cuid())
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  name            String
-  type            ClientType @default(COMPANY)
-  contactName     String?
-  contactEmail    String?
-  contactPhone    String?
+  id                String       @id @default(cuid())
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name              String
+  type              ClientType   @default(COMPANY)
+  contactName       String?
+  contactEmail      String?
+  contactPhone      String?
   billingAddress    String?
   billingLatitude   Float?
   billingLongitude  Float?
   shippingAddress   String?
   shippingLatitude  Float?
   shippingLongitude Float?
-  taxId           String?
-  paymentTerms    String?
-  defaultDiscount Decimal?   @db.Decimal(5, 2)
-  notes           String?
-  tags            String[]   @default([])
-  isActive        Boolean    @default(true)
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  taxId             String?
+  paymentTerms      String?
+  defaultDiscount   Decimal?     @db.Decimal(5, 2)
+  notes             String?
+  tags              String[]     @default([])
+  isActive          Boolean      @default(true)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
 
   projects Project[]
   media    ClientMedia[]
@@ -1182,72 +1246,74 @@ model Client {
 // ─── Project ─────────────────────────────────────────────────────────────────
 
 model Project {
-  id                String        @id @default(cuid())
-  organizationId    String
-  organization      Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  projectNumber     String
-  name              String
-  clientId          String?
-  client            Client?       @relation(fields: [clientId], references: [id])
-  status            ProjectStatus @default(ENQUIRY)
-  type              ProjectType   @default(OTHER)
-  description        String?
-  locationId         String?
-  location           Location?    @relation(fields: [locationId], references: [id])
-  siteContactName    String?
-  siteContactPhone   String?
-  siteContactEmail   String?
-  loadInDate        DateTime?
-  loadInTime        String?
-  eventStartDate    DateTime?
-  eventStartTime    String?
-  eventEndDate      DateTime?
-  eventEndTime      String?
-  loadOutDate       DateTime?
-  loadOutTime       String?
-  rentalStartDate   DateTime?
-  rentalEndDate     DateTime?
-  projectManagerId     String?
-  projectManager       User?         @relation("ProjectManager", fields: [projectManagerId], references: [id])
-  defaultRentalPeriod  RentalPeriod?
+  id                    String        @id @default(cuid())
+  organizationId        String
+  organization          Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectNumber         String
+  name                  String
+  clientId              String?
+  client                Client?       @relation(fields: [clientId], references: [id])
+  status                ProjectStatus @default(ENQUIRY)
+  type                  ProjectType   @default(OTHER)
+  description           String?
+  locationId            String?
+  location              Location?     @relation(fields: [locationId], references: [id])
+  siteContactName       String?
+  siteContactPhone      String?
+  siteContactEmail      String?
+  loadInDate            DateTime?
+  loadInTime            String?
+  eventStartDate        DateTime?
+  eventStartTime        String?
+  eventEndDate          DateTime?
+  eventEndTime          String?
+  loadOutDate           DateTime?
+  loadOutTime           String?
+  rentalStartDate       DateTime?
+  rentalEndDate         DateTime?
+  projectManagerId      String?
+  projectManager        User?         @relation("ProjectManager", fields: [projectManagerId], references: [id])
+  defaultRentalPeriod   RentalPeriod?
   defaultRentalQuantity Int?
-  billingMonths        Int?
-  billingWeeks         Int?
-  billingDays          Int?
-  taxRate              Decimal?      @db.Decimal(5, 2)
-  equipmentRevenue     Decimal?      @db.Decimal(12, 2)
-  serviceCostTotal     Decimal?      @db.Decimal(12, 2)
-  labourCostTotal      Decimal?      @db.Decimal(12, 2)
-  subHireCostTotal     Decimal?      @db.Decimal(12, 2)
-  margin               Decimal?      @db.Decimal(12, 2)
-  crewNotes         String?
-  internalNotes     String?
-  clientNotes       String?
-  subtotal          Decimal?      @db.Decimal(12, 2)
-  discountPercent   Decimal?      @db.Decimal(5, 2)
-  discountAmount    Decimal?      @db.Decimal(12, 2)
-  taxAmount         Decimal?      @db.Decimal(12, 2)
-  total             Decimal?      @db.Decimal(12, 2)
-  depositPercent    Decimal?      @db.Decimal(5, 2)
-  depositPaid       Decimal?      @db.Decimal(12, 2)
-  invoicedTotal     Decimal?      @db.Decimal(12, 2)
-  tags              String[]      @default([])
-  isTemplate        Boolean       @default(false)
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  billingMonths         Int?
+  billingWeeks          Int?
+  billingDays           Int?
+  taxRate               Decimal?      @db.Decimal(5, 2)
+  equipmentRevenue      Decimal?      @db.Decimal(12, 2)
+  serviceCostTotal      Decimal?      @db.Decimal(12, 2)
+  labourCostTotal       Decimal?      @db.Decimal(12, 2)
+  subHireCostTotal      Decimal?      @db.Decimal(12, 2)
+  margin                Decimal?      @db.Decimal(12, 2)
+  crewNotes             String?
+  internalNotes         String?
+  clientNotes           String?
+  subtotal              Decimal?      @db.Decimal(12, 2)
+  discountPercent       Decimal?      @db.Decimal(5, 2)
+  discountAmount        Decimal?      @db.Decimal(12, 2)
+  taxAmount             Decimal?      @db.Decimal(12, 2)
+  total                 Decimal?      @db.Decimal(12, 2)
+  depositPercent        Decimal?      @db.Decimal(5, 2)
+  depositPaid           Decimal?      @db.Decimal(12, 2)
+  invoicedTotal         Decimal?      @db.Decimal(12, 2)
+  tags                  String[]      @default([])
+  isTemplate            Boolean       @default(false)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
 
-  lineItems        ProjectLineItem[]
-  scanLogs         AssetScanLog[]
-  media            ProjectMedia[]
-  supplierOrders   SupplierOrder[]
-  subHires         SubHire[]
-  crewAssignments  CrewAssignment[]
-  services         ProjectService[]
+  lineItems            ProjectLineItem[]
+  scanLogs             AssetScanLog[]
+  media                ProjectMedia[]
+  supplierOrders       SupplierOrder[]
+  subHires             SubHire[]
+  crewAssignments      CrewAssignment[]
+  services             ProjectService[]
   wooCommerceOrderLogs WooCommerceOrderLog[]
   warehouseCloses      WarehouseClose[]
-  categories       ProjectCategory[]
-  groups           ProjectGroup[]
-  projectManagers  ProjectManager[]
+  categories           ProjectCategory[]
+  groups               ProjectGroup[]
+  projectManagers      ProjectManager[]
+  maintenanceRecords   MaintenanceRecord[]
+  damageEvents         DamageEvent[]
 
   @@unique([organizationId, projectNumber])
   @@index([organizationId])
@@ -1262,76 +1328,77 @@ model Project {
 // ─── Project Line Item ───────────────────────────────────────────────────────
 
 model ProjectLineItem {
-  id              String         @id @default(cuid())
-  organizationId  String
-  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  projectId       String
-  project         Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  type            LineItemType   @default(EQUIPMENT)
-  modelId         String?
-  model           Model?         @relation(fields: [modelId], references: [id])
-  assetId         String?
-  asset           Asset?         @relation(fields: [assetId], references: [id], onDelete: SetNull)
-  bulkAssetId     String?
-  bulkAsset       BulkAsset?     @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
-  kitId           String?
-  kit             Kit?           @relation(fields: [kitId], references: [id], onDelete: SetNull)
-  isKitChild      Boolean        @default(false)
-  parentLineItemId String?
-  parentLineItem  ProjectLineItem? @relation("KitLineItemChildren", fields: [parentLineItemId], references: [id], onDelete: Cascade)
-  childLineItems  ProjectLineItem[] @relation("KitLineItemChildren")
-  pricingMode     KitPricingMode?
-  description     String?
-  quantity         Int           @default(1)
-  unitPrice       Decimal?       @db.Decimal(10, 2)
-  pricingType     PricingType    @default(PER_DAY)
-  duration        Int            @default(1)
-  discount        Decimal?       @db.Decimal(10, 2)
-  lineTotal       Decimal?       @db.Decimal(12, 2)
-  priceBreakdown  String?
-  priceOverridden Boolean        @default(false)
-  overrideReason  String?
-  sortOrder       Int            @default(0)
-  groupName       String?
-  categoryId      String?
-  category        ProjectCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  groupId         String?
-  group           ProjectGroup?    @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  notes           String?
-  isOptional      Boolean        @default(false)
-  status              LineItemStatus @default(QUOTED)
-  checkedOutQuantity  Int            @default(0)
-  returnedQuantity    Int            @default(0)
-  checkedOutAt    DateTime?
-  checkedOutById  String?
-  checkedOutBy    User?          @relation("CheckedOutBy", fields: [checkedOutById], references: [id])
-  returnedAt      DateTime?
-  returnedById    String?
-  returnedBy      User?          @relation("ReturnedBy", fields: [returnedById], references: [id])
-  returnCondition ReturnCondition?
-  returnNotes     String?
-  prepStatus      PrepStatus?
-  prepContainer        String?
-  isContainerLineItem  Boolean        @default(false)
-  isCustomItem         Boolean        @default(false)
-  returnStatus    ReturnStatus?
-  isSubhire         Boolean        @default(false)
-  showSubhireOnDocs Boolean        @default(false)
-  supplierId        String?
-  supplier          Supplier?      @relation(fields: [supplierId], references: [id])
-  subhireOrderNumber String?
-  supplierOrderId   String?
-  supplierOrder     SupplierOrder? @relation(fields: [supplierOrderId], references: [id], onDelete: SetNull)
-  subHireId         String?
-  subHire           SubHire?       @relation(fields: [subHireId], references: [id], onDelete: SetNull)
-  subHireItemId     String?
-  subHireItem       SubHireItem?   @relation(fields: [subHireItemId], references: [id], onDelete: SetNull)
-  subHireGroupId    String?
-  subHireGroup      SubHireGroup?  @relation(fields: [subHireGroupId], references: [id], onDelete: SetNull)
-  service           ProjectService?
-  checkRecords      CheckRecord[]
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  id                  String            @id @default(cuid())
+  organizationId      String
+  organization        Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId           String
+  project             Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type                LineItemType      @default(EQUIPMENT)
+  modelId             String?
+  model               Model?            @relation(fields: [modelId], references: [id])
+  assetId             String?
+  asset               Asset?            @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  bulkAssetId         String?
+  bulkAsset           BulkAsset?        @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
+  kitId               String?
+  kit                 Kit?              @relation(fields: [kitId], references: [id], onDelete: SetNull)
+  isKitChild          Boolean           @default(false)
+  parentLineItemId    String?
+  parentLineItem      ProjectLineItem?  @relation("KitLineItemChildren", fields: [parentLineItemId], references: [id], onDelete: Cascade)
+  childLineItems      ProjectLineItem[] @relation("KitLineItemChildren")
+  pricingMode         KitPricingMode?
+  description         String?
+  quantity            Int               @default(1)
+  unitPrice           Decimal?          @db.Decimal(10, 2)
+  pricingType         PricingType       @default(PER_DAY)
+  duration            Int               @default(1)
+  discount            Decimal?          @db.Decimal(10, 2)
+  lineTotal           Decimal?          @db.Decimal(12, 2)
+  priceBreakdown      String?
+  priceOverridden     Boolean           @default(false)
+  overrideReason      String?
+  sortOrder           Int               @default(0)
+  groupName           String?
+  categoryId          String?
+  category            ProjectCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  groupId             String?
+  group               ProjectGroup?     @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  notes               String?
+  isOptional          Boolean           @default(false)
+  status              LineItemStatus    @default(QUOTED)
+  checkedOutQuantity  Int               @default(0)
+  returnedQuantity    Int               @default(0)
+  checkedOutAt        DateTime?
+  checkedOutById      String?
+  checkedOutBy        User?             @relation("CheckedOutBy", fields: [checkedOutById], references: [id])
+  returnedAt          DateTime?
+  returnedById        String?
+  returnedBy          User?             @relation("ReturnedBy", fields: [returnedById], references: [id])
+  returnCondition     ReturnCondition?
+  returnNotes         String?
+  prepStatus          PrepStatus?
+  prepContainer       String?
+  isContainerLineItem Boolean           @default(false)
+  isCustomItem        Boolean           @default(false)
+  returnStatus        ReturnStatus?
+  isSubhire           Boolean           @default(false)
+  showSubhireOnDocs   Boolean           @default(false)
+  supplierId          String?
+  supplier            Supplier?         @relation(fields: [supplierId], references: [id])
+  subhireOrderNumber  String?
+  supplierOrderId     String?
+  supplierOrder       SupplierOrder?    @relation(fields: [supplierOrderId], references: [id], onDelete: SetNull)
+  subHireId           String?
+  subHire             SubHire?          @relation(fields: [subHireId], references: [id], onDelete: SetNull)
+  subHireItemId       String?
+  subHireItem         SubHireItem?      @relation(fields: [subHireItemId], references: [id], onDelete: SetNull)
+  subHireGroupId      String?
+  subHireGroup        SubHireGroup?     @relation(fields: [subHireGroupId], references: [id], onDelete: SetNull)
+  service             ProjectService?
+  checkRecords        CheckRecord[]
+  damageEvents        DamageEvent[]
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
 
   @@index([organizationId])
   @@index([projectId])
@@ -1353,22 +1420,22 @@ model ProjectLineItem {
 // ─── Project Category ───────────────────────────────────────────────────────
 
 model ProjectCategory {
-  id              String   @id @default(cuid())
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  projectId       String
-  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  name            String
-  sortOrder       Int      @default(0)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId      String
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name           String
+  sortOrder      Int          @default(0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
-  groups          ProjectGroup[]
-  lineItems       ProjectLineItem[]
+  groups              ProjectGroup[]
+  lineItems           ProjectLineItem[]
   // Sub-hire placement targets
-  subHireDefaults      SubHire[]
-  subHireGroupTargets  SubHireGroup[]
-  subHireItemTargets   SubHireItem[]
+  subHireDefaults     SubHire[]
+  subHireGroupTargets SubHireGroup[]
+  subHireItemTargets  SubHireItem[]
 
   @@index([projectId])
   @@index([organizationId])
@@ -1378,32 +1445,32 @@ model ProjectCategory {
 // ─── Project Group ──────────────────────────────────────────────────────────
 
 model ProjectGroup {
-  id              String        @id @default(cuid())
-  organizationId  String
-  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  projectId       String
-  project         Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  categoryId      String
-  category        ProjectCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  title           String
-  description     String?
-  quantity        Int           @default(1)
-  price           Decimal?      @db.Decimal(12, 2)
-  suggestedPrice  Decimal?      @db.Decimal(12, 2)
-  rentalPeriod    RentalPeriod?
-  rentalQuantity  Int?
-  billingMonths   Int?
-  billingWeeks    Int?
-  billingDays     Int?
-  sortOrder       Int           @default(0)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  id             String          @id @default(cuid())
+  organizationId String
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId      String
+  project        Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  categoryId     String
+  category       ProjectCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  title          String
+  description    String?
+  quantity       Int             @default(1)
+  price          Decimal?        @db.Decimal(12, 2)
+  suggestedPrice Decimal?        @db.Decimal(12, 2)
+  rentalPeriod   RentalPeriod?
+  rentalQuantity Int?
+  billingMonths  Int?
+  billingWeeks   Int?
+  billingDays    Int?
+  sortOrder      Int             @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 
-  lineItems       ProjectLineItem[]
+  lineItems           ProjectLineItem[]
   // Sub-hire placement targets
-  subHireDefaults      SubHire[]           @relation("SubHireDefaultTargetGroup")
-  subHireGroupTargets  SubHireGroup[]      @relation("SubHireGroupTargetGroup")
-  subHireItemTargets   SubHireItem[]       @relation("SubHireItemTargetGroup")
+  subHireDefaults     SubHire[]         @relation("SubHireDefaultTargetGroup")
+  subHireGroupTargets SubHireGroup[]    @relation("SubHireGroupTargetGroup")
+  subHireItemTargets  SubHireItem[]     @relation("SubHireItemTargetGroup")
 
   @@index([projectId])
   @@index([categoryId])
@@ -1414,14 +1481,14 @@ model ProjectGroup {
 // ─── Project Manager (join table) ───────────────────────────────────────────
 
 model ProjectManager {
-  id              String   @id @default(cuid())
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  projectId       String
-  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  userId          String
-  user            User     @relation("ProjectManagerAssignment", fields: [userId], references: [id], onDelete: Cascade)
-  addedAt         DateTime @default(now())
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId      String
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation("ProjectManagerAssignment", fields: [userId], references: [id], onDelete: Cascade)
+  addedAt        DateTime     @default(now())
 
   @@unique([projectId, userId])
   @@index([projectId])
@@ -1433,15 +1500,15 @@ model ProjectManager {
 // ─── Group Template ─────────────────────────────────────────────────────────
 
 model GroupTemplate {
-  id              String   @id @default(cuid())
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  name            String
-  description     String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
-  items           GroupTemplateItem[]
+  items GroupTemplateItem[]
 
   @@index([organizationId])
   @@map("group_template")
@@ -1454,17 +1521,17 @@ model GroupTemplate {
 // one of modelId / kitId is set. Kit items expand via addKitLineItem when the
 // template is applied, pulling in the kit's children as usual.
 model GroupTemplateItem {
-  id              String   @id @default(cuid())
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  templateId      String
-  template        GroupTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  modelId         String?
-  model           Model?   @relation(fields: [modelId], references: [id], onDelete: Cascade)
-  kitId           String?
-  kit             Kit?     @relation(fields: [kitId], references: [id], onDelete: Cascade)
-  quantity        Int      @default(1)
-  sortOrder       Int      @default(0)
+  id             String        @id @default(cuid())
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  templateId     String
+  template       GroupTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  modelId        String?
+  model          Model?        @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  kitId          String?
+  kit            Kit?          @relation(fields: [kitId], references: [id], onDelete: Cascade)
+  quantity       Int           @default(1)
+  sortOrder      Int           @default(0)
 
   @@index([templateId])
   @@index([modelId])
@@ -1521,13 +1588,13 @@ model FileUpload {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  modelMedia     ModelMedia[]
-  assetMedia     AssetMedia[]
-  kitMedia       KitMedia[]
-  projectMedia   ProjectMedia[]
-  clientMedia    ClientMedia[]
-  locationMedia  LocationMedia[]
-  subHireMedia   SubHireMedia[]
+  modelMedia    ModelMedia[]
+  assetMedia    AssetMedia[]
+  kitMedia      KitMedia[]
+  projectMedia  ProjectMedia[]
+  clientMedia   ClientMedia[]
+  locationMedia LocationMedia[]
+  subHireMedia  SubHireMedia[]
 
   @@index([organizationId])
   @@map("file_upload")
@@ -1672,26 +1739,26 @@ model SubHireMedia {
 // ─── Test Profile ─────────────────────────────────────────────────────────
 
 model TestProfile {
-  id                   String         @id @default(cuid())
-  organizationId       String
-  organization         Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  name                 String
-  equipmentClass       EquipmentClass @default(CLASS_I)
-  applianceType        ApplianceType  @default(APPLIANCE)
-  visualChecks         Json           // Array of {key, label, enabled}
-  electricalTests      Json           // Array of {key, label, threshold, operator, unit, enabled}
-  thresholds           Json           // {earthMax, insulationMin, leakageMax, rcdTripTimeMax, ...}
-  requiresSubTests     Boolean        @default(false)
-  defaultSubTestCount  Int            @default(1)
-  subTestLabel         String         @default("Outlet") // "Outlet" | "Phase" | custom
-  isDefault            Boolean        @default(false)
-  isActive             Boolean        @default(true)
-  createdAt            DateTime       @default(now())
-  updatedAt            DateTime       @updatedAt
+  id                  String         @id @default(cuid())
+  organizationId      String
+  organization        Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name                String
+  equipmentClass      EquipmentClass @default(CLASS_I)
+  applianceType       ApplianceType  @default(APPLIANCE)
+  visualChecks        Json // Array of {key, label, enabled}
+  electricalTests     Json // Array of {key, label, threshold, operator, unit, enabled}
+  thresholds          Json // {earthMax, insulationMin, leakageMax, rcdTripTimeMax, ...}
+  requiresSubTests    Boolean        @default(false)
+  defaultSubTestCount Int            @default(1)
+  subTestLabel        String         @default("Outlet") // "Outlet" | "Phase" | custom
+  isDefault           Boolean        @default(false)
+  isActive            Boolean        @default(true)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
 
-  testTagAssets        TestTagAsset[]
-  testTagRecords       TestTagRecord[]
-  models               Model[]        @relation("ModelDefaultTestProfile")
+  testTagAssets  TestTagAsset[]
+  testTagRecords TestTagRecord[]
+  models         Model[]         @relation("ModelDefaultTestProfile")
 
   @@unique([organizationId, name])
   @@index([organizationId, isActive])
@@ -1719,20 +1786,20 @@ model TestTagAsset {
   nextDueDate        DateTime?
   notes              String?
 
-  assetId            String?        @unique
-  asset              Asset?         @relation(fields: [assetId], references: [id], onDelete: SetNull)
-  bulkAssetId        String?
-  bulkAsset          BulkAsset?     @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
+  assetId     String?    @unique
+  asset       Asset?     @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  bulkAssetId String?
+  bulkAsset   BulkAsset? @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
 
-  testProfileId      String?
-  testProfile        TestProfile?   @relation(fields: [testProfileId], references: [id], onDelete: SetNull)
-  outletCount        Int?
+  testProfileId String?
+  testProfile   TestProfile? @relation(fields: [testProfileId], references: [id], onDelete: SetNull)
+  outletCount   Int?
 
-  isActive           Boolean        @default(true)
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  testRecords        TestTagRecord[]
+  testRecords TestTagRecord[]
 
   @@unique([organizationId, testTagId])
   @@index([organizationId, status])
@@ -1746,72 +1813,72 @@ model TestTagAsset {
 // ─── Test & Tag Record ──────────────────────────────────────────────────────
 
 model TestTagRecord {
-  id                     String         @id @default(cuid())
-  organizationId         String
-  organization           Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  testTagAssetId         String
-  testTagAsset           TestTagAsset   @relation(fields: [testTagAssetId], references: [id], onDelete: Cascade)
-  testProfileId          String?
-  testProfile            TestProfile?   @relation(fields: [testProfileId], references: [id], onDelete: SetNull)
-  testDate               DateTime
-  testedById             String
-  testedBy               User           @relation(fields: [testedById], references: [id])
-  testerName             String
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  testTagAssetId String
+  testTagAsset   TestTagAsset @relation(fields: [testTagAssetId], references: [id], onDelete: Cascade)
+  testProfileId  String?
+  testProfile    TestProfile? @relation(fields: [testProfileId], references: [id], onDelete: SetNull)
+  testDate       DateTime
+  testedById     String
+  testedBy       User         @relation(fields: [testedById], references: [id])
+  testerName     String
 
-  result                 TestResult     @default(PASS)
+  result TestResult @default(PASS)
 
   // Visual inspection
-  visualInspectionResult TestResult     @default(PASS)
-  visualCordCondition    Boolean?
-  visualPlugCondition    Boolean?
-  visualHousingCondition Boolean?
-  visualSwitchCondition  Boolean?
+  visualInspectionResult  TestResult @default(PASS)
+  visualCordCondition     Boolean?
+  visualPlugCondition     Boolean?
+  visualHousingCondition  Boolean?
+  visualSwitchCondition   Boolean?
   visualVentsUnobstructed Boolean?
-  visualCordGrip         Boolean?
-  visualEarthPin         Boolean?
-  visualMarkingsLegible  Boolean?
-  visualNoModifications  Boolean?
-  visualNotes            String?
+  visualCordGrip          Boolean?
+  visualEarthPin          Boolean?
+  visualMarkingsLegible   Boolean?
+  visualNoModifications   Boolean?
+  visualNotes             String?
 
   // Electrical tests
-  equipmentClassTested   EquipmentClass @default(CLASS_I)
-  testMethod             TestMethod     @default(INSULATION_RESISTANCE)
+  equipmentClassTested EquipmentClass @default(CLASS_I)
+  testMethod           TestMethod     @default(INSULATION_RESISTANCE)
 
   // Earth continuity (Class I only)
-  earthContinuityResult  TestResult     @default(NOT_APPLICABLE)
+  earthContinuityResult  TestResult @default(NOT_APPLICABLE)
   earthContinuityReading Float?
 
   // Insulation resistance
-  insulationResult       TestResult     @default(NOT_APPLICABLE)
-  insulationReading      Float?
-  insulationTestVoltage  Int?
+  insulationResult      TestResult @default(NOT_APPLICABLE)
+  insulationReading     Float?
+  insulationTestVoltage Int?
 
   // Leakage current
-  leakageCurrentResult   TestResult     @default(NOT_APPLICABLE)
-  leakageCurrentReading  Float?
+  leakageCurrentResult  TestResult @default(NOT_APPLICABLE)
+  leakageCurrentReading Float?
 
   // Polarity
-  polarityResult         TestResult     @default(NOT_APPLICABLE)
+  polarityResult TestResult @default(NOT_APPLICABLE)
 
   // RCD trip time
-  rcdTripTimeResult      TestResult     @default(NOT_APPLICABLE)
-  rcdTripTimeReading     Float?
+  rcdTripTimeResult  TestResult @default(NOT_APPLICABLE)
+  rcdTripTimeReading Float?
 
   // Functional test
-  functionalTestResult   TestResult     @default(NOT_APPLICABLE)
-  functionalTestNotes    String?
+  functionalTestResult TestResult @default(NOT_APPLICABLE)
+  functionalTestNotes  String?
 
   // Failure actions
-  failureAction          FailureAction  @default(NONE)
-  failureNotes           String?
+  failureAction FailureAction @default(NONE)
+  failureNotes  String?
 
   // Next test
-  nextDueDate            DateTime
+  nextDueDate DateTime
 
-  createdAt              DateTime       @default(now())
-  updatedAt              DateTime       @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  subTestRecords         SubTestRecord[]
+  subTestRecords SubTestRecord[]
 
   @@index([organizationId, testTagAssetId])
   @@index([organizationId, testDate])
@@ -1822,24 +1889,24 @@ model TestTagRecord {
 // ─── Sub-Test Record ──────────────────────────────────────────────────────
 
 model SubTestRecord {
-  id                     String         @id @default(cuid())
-  testTagRecordId        String
-  testTagRecord          TestTagRecord  @relation(fields: [testTagRecordId], references: [id], onDelete: Cascade)
-  label                  String         // "Outlet 1", "Phase L1-L2", etc.
-  sortOrder              Int            @default(0)
-  result                 TestResult     @default(PASS)
+  id              String        @id @default(cuid())
+  testTagRecordId String
+  testTagRecord   TestTagRecord @relation(fields: [testTagRecordId], references: [id], onDelete: Cascade)
+  label           String // "Outlet 1", "Phase L1-L2", etc.
+  sortOrder       Int           @default(0)
+  result          TestResult    @default(PASS)
 
   // Electrical readings (same columns as parent record)
-  earthContinuityResult  TestResult     @default(NOT_APPLICABLE)
+  earthContinuityResult  TestResult @default(NOT_APPLICABLE)
   earthContinuityReading Float?
-  insulationResult       TestResult     @default(NOT_APPLICABLE)
+  insulationResult       TestResult @default(NOT_APPLICABLE)
   insulationReading      Float?
-  leakageCurrentResult   TestResult     @default(NOT_APPLICABLE)
+  leakageCurrentResult   TestResult @default(NOT_APPLICABLE)
   leakageCurrentReading  Float?
-  polarityResult         TestResult     @default(NOT_APPLICABLE)
+  polarityResult         TestResult @default(NOT_APPLICABLE)
   notes                  String?
 
-  createdAt              DateTime       @default(now())
+  createdAt DateTime @default(now())
 
   @@index([testTagRecordId, sortOrder])
   @@map("sub_test_record")
@@ -1848,11 +1915,11 @@ model SubTestRecord {
 // ─── Better Auth Two-Factor Tables ──────────────────────────────────────────
 
 model TwoFactor {
-  id            String   @id @default(cuid())
-  secret        String
-  backupCodes   String
-  userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id          String @id @default(cuid())
+  secret      String
+  backupCodes String
+  userId      String
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("twoFactor")
 }
@@ -1869,18 +1936,18 @@ model BackupCode {
 }
 
 model Passkey {
-  id              String   @id @default(cuid())
-  name            String?
-  publicKey       String
-  userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  credentialID    String   @unique
-  counter         Int
-  deviceType      String
-  backedUp        Boolean
-  transports      String?
-  aaguid          String?
-  createdAt       DateTime @default(now())
+  id           String   @id @default(cuid())
+  name         String?
+  publicKey    String
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialID String   @unique
+  counter      Int
+  deviceType   String
+  backedUp     Boolean
+  transports   String?
+  aaguid       String?
+  createdAt    DateTime @default(now())
 
   @@index([userId])
   @@map("passkey")
@@ -1889,19 +1956,19 @@ model Passkey {
 // ─── Site Settings ──────────────────────────────────────────────────────────
 
 model SiteSettings {
-  id                     String   @id @default(cuid())
-  platformName           String   @default("GearFlow")
-  platformIcon           String?  // Lucide icon name, e.g. "clapperboard", "zap"
-  platformLogo           String?
-  registrationPolicy     String   @default("OPEN") // OPEN, INVITE_ONLY, DISABLED
-  twoFactorGlobalPolicy  String   @default("OFF")  // OFF, RECOMMENDED, REQUIRED_SITE_ADMINS, REQUIRED_ALL
-  defaultCurrency        String   @default("AUD")
-  defaultTaxRate         Float    @default(10)
-  allowOrgCreation       Boolean  @default(true)
-  socialLoginGoogle      Boolean  @default(false)
-  socialLoginMicrosoft   Boolean  @default(false)
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  platformName          String   @default("GearFlow")
+  platformIcon          String? // Lucide icon name, e.g. "clapperboard", "zap"
+  platformLogo          String?
+  registrationPolicy    String   @default("OPEN") // OPEN, INVITE_ONLY, DISABLED
+  twoFactorGlobalPolicy String   @default("OFF") // OFF, RECOMMENDED, REQUIRED_SITE_ADMINS, REQUIRED_ALL
+  defaultCurrency       String   @default("AUD")
+  defaultTaxRate        Float    @default(10)
+  allowOrgCreation      Boolean  @default(true)
+  socialLoginGoogle     Boolean  @default(false)
+  socialLoginMicrosoft  Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   @@map("site_settings")
 }
@@ -1909,28 +1976,28 @@ model SiteSettings {
 // ─── Activity Log ────────────────────────────────────────────────────────────
 
 model ActivityLog {
-  id              String   @id @default(cuid())
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  action          String   // CREATE, UPDATE, DELETE, STATUS_CHANGE, CHECK_OUT, CHECK_IN, etc.
-  entityType      String   // asset, bulkAsset, model, kit, project, client, location, etc.
-  entityId        String
-  entityName      String   // Human-readable name/tag at time of action
+  action     String // CREATE, UPDATE, DELETE, STATUS_CHANGE, CHECK_OUT, CHECK_IN, etc.
+  entityType String // asset, bulkAsset, model, kit, project, client, location, etc.
+  entityId   String
+  entityName String // Human-readable name/tag at time of action
 
-  userId          String?
-  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  userName        String   // Denormalized — preserved if user is deleted
+  userId   String?
+  user     User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userName String // Denormalized — preserved if user is deleted
 
-  summary         String   // Human-readable: "Created asset GF-00042"
-  details         Json?    // Structured change data
-  metadata        Json?    // Extra context
+  summary  String // Human-readable: "Created asset GF-00042"
+  details  Json? // Structured change data
+  metadata Json? // Extra context
 
-  projectId       String?
-  assetId         String?
-  kitId           String?
+  projectId String?
+  assetId   String?
+  kitId     String?
 
-  createdAt       DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([organizationId, createdAt])
   @@index([organizationId, entityType])
@@ -1944,61 +2011,61 @@ model ActivityLog {
 // ─── Crew Management ─────────────────────────────────────────────────────────
 
 model CrewMember {
-  id              String   @id @default(cuid())
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   // Identity
-  firstName       String
-  lastName        String
-  email           String?
-  phone           String?
-  image           String?
+  firstName String
+  lastName  String
+  email     String?
+  phone     String?
+  image     String?
 
   // Link to platform user (optional)
-  userId          String?
-  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   // Employment type
-  type            CrewMemberType  @default(FREELANCER)
-  status          CrewMemberStatus @default(ACTIVE)
-  department      String?
+  type       CrewMemberType   @default(FREELANCER)
+  status     CrewMemberStatus @default(ACTIVE)
+  department String?
 
   // Rates
-  defaultDayRate    Decimal?  @db.Decimal(10, 2)
-  defaultHourlyRate Decimal?  @db.Decimal(10, 2)
+  defaultDayRate     Decimal? @db.Decimal(10, 2)
+  defaultHourlyRate  Decimal? @db.Decimal(10, 2)
   overtimeMultiplier Decimal? @db.Decimal(3, 2)
-  currency          String?
+  currency           String?
 
   // Contact & personal
-  address           String?
-  addressLatitude   Float?
-  addressLongitude  Float?
+  address               String?
+  addressLatitude       Float?
+  addressLongitude      Float?
   emergencyContactName  String?
   emergencyContactPhone String?
-  dateOfBirth     DateTime?
-  abnOrGst        String?
+  dateOfBirth           DateTime?
+  abnOrGst              String?
 
   // Notes & tags
-  notes           String?
-  tags            String[] @default([])
+  notes String?
+  tags  String[] @default([])
 
   // Calendar integration
-  icalEnabled     Boolean  @default(false)
-  icalToken       String?  @unique
+  icalEnabled Boolean @default(false)
+  icalToken   String? @unique
 
   // Relations
-  skills          CrewSkill[]
-  certifications  CrewCertification[]
-  assignments     CrewAssignment[]
-  availability    CrewAvailability[]
-  timeEntries     CrewTimeEntry[]
-  crewRoleId      String?
-  crewRole        CrewRole? @relation(fields: [crewRoleId], references: [id], onDelete: SetNull)
+  skills         CrewSkill[]
+  certifications CrewCertification[]
+  assignments    CrewAssignment[]
+  availability   CrewAvailability[]
+  timeEntries    CrewTimeEntry[]
+  crewRoleId     String?
+  crewRole       CrewRole?           @relation(fields: [crewRoleId], references: [id], onDelete: SetNull)
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  isActive        Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  isActive  Boolean  @default(true)
 
   @@unique([organizationId, email])
   @@index([organizationId])
@@ -2022,18 +2089,18 @@ enum CrewMemberStatus {
 }
 
 model CrewRole {
-  id              String   @id @default(cuid())
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  name            String
-  description     String?
-  department      String?
-  color           String?
-  defaultRate     Decimal? @db.Decimal(10, 2)
-  rateType        CrewRateType?
-  sortOrder       Int      @default(0)
-  isActive        Boolean  @default(true)
+  name        String
+  description String?
+  department  String?
+  color       String?
+  defaultRate Decimal?      @db.Decimal(10, 2)
+  rateType    CrewRateType?
+  sortOrder   Int           @default(0)
+  isActive    Boolean       @default(true)
 
   crewMembers     CrewMember[]
   assignments     CrewAssignment[]
@@ -2051,14 +2118,14 @@ enum CrewRateType {
 }
 
 model CrewSkill {
-  id              String   @id @default(cuid())
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  name            String
-  category        String?
+  name     String
+  category String?
 
-  crewMembers     CrewMember[]
+  crewMembers CrewMember[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -2066,16 +2133,16 @@ model CrewSkill {
 }
 
 model CrewCertification {
-  id              String   @id @default(cuid())
-  crewMemberId    String
-  crewMember      CrewMember @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
+  id           String     @id @default(cuid())
+  crewMemberId String
+  crewMember   CrewMember @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
 
-  name            String
-  issuedBy        String?
+  name              String
+  issuedBy          String?
   certificateNumber String?
-  issuedDate      DateTime?
-  expiryDate      DateTime?
-  status          CrewCertStatus @default(NOT_VERIFIED)
+  issuedDate        DateTime?
+  expiryDate        DateTime?
+  status            CrewCertStatus @default(NOT_VERIFIED)
 
   @@index([crewMemberId])
   @@map("crew_certification")
@@ -2089,59 +2156,59 @@ enum CrewCertStatus {
 }
 
 model CrewAssignment {
-  id              String   @id @default(cuid())
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  projectId       String
-  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
-  crewMemberId    String
-  crewMember      CrewMember @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
+  crewMemberId String
+  crewMember   CrewMember @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
 
-  crewRoleId      String?
-  crewRole        CrewRole? @relation(fields: [crewRoleId], references: [id], onDelete: SetNull)
+  crewRoleId String?
+  crewRole   CrewRole? @relation(fields: [crewRoleId], references: [id], onDelete: SetNull)
 
-  status          AssignmentStatus @default(PENDING)
-  phase           ProjectPhase?
-  isProjectManager Boolean @default(false)
+  status           AssignmentStatus @default(PENDING)
+  phase            ProjectPhase?
+  isProjectManager Boolean          @default(false)
 
   // Schedule
-  startDate       DateTime?
-  startTime       String?
-  endDate         DateTime?
-  endTime         String?
+  startDate DateTime?
+  startTime String?
+  endDate   DateTime?
+  endTime   String?
 
   // Rate
-  rateOverride    Decimal?  @db.Decimal(10, 2)
-  rateType        CrewRateType?
-  estimatedHours  Decimal?  @db.Decimal(6, 2)
-  estimatedCost   Decimal?  @db.Decimal(10, 2)
+  rateOverride   Decimal?      @db.Decimal(10, 2)
+  rateType       CrewRateType?
+  estimatedHours Decimal?      @db.Decimal(6, 2)
+  estimatedCost  Decimal?      @db.Decimal(10, 2)
 
   // Notes
-  notes           String?
-  internalNotes   String?
+  notes         String?
+  internalNotes String?
 
   // Response tracking
-  responseToken   String?  @unique
-  offeredAt       DateTime?
-  respondedAt     DateTime?
-  responseNote    String?
+  responseToken String?   @unique
+  offeredAt     DateTime?
+  respondedAt   DateTime?
+  responseNote  String?
 
   // Confirmation
-  confirmedAt     DateTime?
-  confirmedById   String?
-  confirmedBy     User?    @relation("ConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  confirmedAt   DateTime?
+  confirmedById String?
+  confirmedBy   User?     @relation("ConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
 
   // Service link (when assigned via a ProjectService)
-  serviceId       String?
-  service         ProjectService? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  serviceId String?
+  service   ProjectService? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
 
-  shifts          CrewShift[]
-  timeEntries     CrewTimeEntry[]
+  shifts      CrewShift[]
+  timeEntries CrewTimeEntry[]
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Partial unique index created via raw SQL migration:
   // UNIQUE(projectId, crewMemberId, serviceId) WHERE serviceId IS NOT NULL
@@ -2175,17 +2242,17 @@ enum ProjectPhase {
 }
 
 model CrewShift {
-  id              String   @id @default(cuid())
-  assignmentId    String
-  assignment      CrewAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  id           String         @id @default(cuid())
+  assignmentId String
+  assignment   CrewAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
 
-  date            DateTime
-  callTime        String?
-  endTime         String?
-  breakMinutes    Int?
-  location        String?
-  notes           String?
-  status          ShiftStatus @default(SCHEDULED)
+  date         DateTime
+  callTime     String?
+  endTime      String?
+  breakMinutes Int?
+  location     String?
+  notes        String?
+  status       ShiftStatus @default(SCHEDULED)
 
   @@index([assignmentId])
   @@index([assignmentId, date])
@@ -2203,20 +2270,20 @@ enum ShiftStatus {
 // ─── Crew Availability ──────────────────────────────────────────────────────
 
 model CrewAvailability {
-  id              String   @id @default(cuid())
-  crewMemberId    String
-  crewMember      CrewMember @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
+  id           String     @id @default(cuid())
+  crewMemberId String
+  crewMember   CrewMember @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
 
-  startDate       DateTime
-  endDate         DateTime
-  type            AvailabilityType @default(UNAVAILABLE)
-  reason          String?
-  isAllDay        Boolean  @default(true)
-  startTime       String?
-  endTime         String?
+  startDate DateTime
+  endDate   DateTime
+  type      AvailabilityType @default(UNAVAILABLE)
+  reason    String?
+  isAllDay  Boolean          @default(true)
+  startTime String?
+  endTime   String?
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([crewMemberId])
   @@index([crewMemberId, startDate, endDate])
@@ -2232,32 +2299,32 @@ enum AvailabilityType {
 // ── Time Tracking ──────────────────────────────────────────────────
 
 model CrewTimeEntry {
-  id              String   @id @default(cuid())
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  assignmentId    String?
-  assignment      CrewAssignment? @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  assignmentId String?
+  assignment   CrewAssignment? @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
 
-  crewMemberId    String
-  crewMember      CrewMember @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
+  crewMemberId String
+  crewMember   CrewMember @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
 
-  description     String?          // For standalone shifts not linked to a project
+  description String? // For standalone shifts not linked to a project
 
-  date            DateTime
-  startTime       String
-  endTime         String
-  breakMinutes    Int      @default(0)
-  totalHours      Decimal? @db.Decimal(6, 2)
+  date         DateTime
+  startTime    String
+  endTime      String
+  breakMinutes Int      @default(0)
+  totalHours   Decimal? @db.Decimal(6, 2)
 
-  status          TimeEntryStatus @default(DRAFT)
-  approvedById    String?
-  approvedBy      User?    @relation("TimeEntryApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
-  approvedAt      DateTime?
-  notes           String?
+  status       TimeEntryStatus @default(DRAFT)
+  approvedById String?
+  approvedBy   User?           @relation("TimeEntryApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt   DateTime?
+  notes        String?
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([organizationId])
   @@index([assignmentId])
@@ -2276,68 +2343,68 @@ enum TimeEntryStatus {
 // ─── Project Services ───────────────────────────────────────────────────────
 
 model ProjectService {
-  id              String   @id @default(cuid())
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  projectId       String
-  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   // Type & description
-  type            ServiceType
-  title           String
-  description     String?
-  notes           String?
+  type        ServiceType
+  title       String
+  description String?
+  notes       String?
 
   // Schedule
-  date            DateTime?
-  endDate         DateTime?
-  startTime       String?
-  endTime         String?
-  scheduledTime   String?   // Delivery/pickup time (separate from service work window)
+  date              DateTime?
+  endDate           DateTime?
+  startTime         String?
+  endTime           String?
+  scheduledTime     String? // Delivery/pickup time (separate from service work window)
   estimatedDuration Int?
 
   // Address (for delivery/pickup)
-  address         String?
-  latitude        Float?
-  longitude       Float?
+  address   String?
+  latitude  Float?
+  longitude Float?
 
   // Status
-  status          ServiceStatus @default(PLANNED)
+  status ServiceStatus @default(PLANNED)
 
   // Financial
-  showOnDocuments Boolean  @default(false)
-  billableToClient Boolean @default(false)
-  unitPrice       Decimal? @db.Decimal(10, 2)
-  quantity        Int      @default(1)
-  pricingType     PricingType?
-  duration        Decimal? @db.Decimal(6, 2)
-  discount        Decimal? @db.Decimal(5, 2)
-  lineTotal       Decimal? @db.Decimal(10, 2)
-  costTotal       Decimal? @db.Decimal(12, 2)
-  taxable         Boolean  @default(true)
+  showOnDocuments  Boolean      @default(false)
+  billableToClient Boolean      @default(false)
+  unitPrice        Decimal?     @db.Decimal(10, 2)
+  quantity         Int          @default(1)
+  pricingType      PricingType?
+  duration         Decimal?     @db.Decimal(6, 2)
+  discount         Decimal?     @db.Decimal(5, 2)
+  lineTotal        Decimal?     @db.Decimal(10, 2)
+  costTotal        Decimal?     @db.Decimal(12, 2)
+  taxable          Boolean      @default(true)
 
   // Linked line item (legacy — being phased out, kept for migration)
-  lineItemId      String?  @unique
-  lineItem        ProjectLineItem? @relation(fields: [lineItemId], references: [id], onDelete: SetNull)
+  lineItemId String?          @unique
+  lineItem   ProjectLineItem? @relation(fields: [lineItemId], references: [id], onDelete: SetNull)
 
   // Transport-specific (for DELIVERY/PICKUP)
   vehicleDescription String?
   numberOfTrips      Int?
 
   // Labour-specific
-  crewCountRequired  Int?
-  crewRoleId         String?
-  crewRole           CrewRole? @relation(fields: [crewRoleId], references: [id], onDelete: SetNull)
+  crewCountRequired Int?
+  crewRoleId        String?
+  crewRole          CrewRole? @relation(fields: [crewRoleId], references: [id], onDelete: SetNull)
 
   // Crew assignments linked to this service
-  crewAssignments    CrewAssignment[]
+  crewAssignments CrewAssignment[]
 
   // Ordering
-  sortOrder       Int      @default(0)
+  sortOrder Int @default(0)
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([organizationId])
   @@index([projectId])
@@ -2366,24 +2433,24 @@ enum ServiceStatus {
 // ─── Service Templates ──────────────────────────────────────────────────────
 
 model ServiceTemplate {
-  id              String   @id @default(cuid())
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  type            ServiceType
-  title           String
-  description     String?
-  defaultCrewCount Int?
-  defaultVehicle  String?
+  type               ServiceType
+  title              String
+  description        String?
+  defaultCrewCount   Int?
+  defaultVehicle     String?
   defaultPricingType PricingType?
-  defaultUnitPrice Decimal? @db.Decimal(10, 2)
-  showOnDocuments Boolean  @default(false)
-  isAutoAdded     Boolean  @default(false)
-  sortOrder       Int      @default(0)
-  isActive        Boolean  @default(true)
+  defaultUnitPrice   Decimal?     @db.Decimal(10, 2)
+  showOnDocuments    Boolean      @default(false)
+  isAutoAdded        Boolean      @default(false)
+  sortOrder          Int          @default(0)
+  isActive           Boolean      @default(true)
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([organizationId])
   @@map("service_template")
@@ -2392,14 +2459,14 @@ model ServiceTemplate {
 // ─── Brand Templates ─────────────────────────────────────────────────────────
 
 model BrandTemplate {
-  id             String   @id @default(cuid())
+  id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   name           String
-  headerSettings String   @db.Text  // JSON — logo mode, org details visibility
-  footerSettings String   @db.Text  // JSON — footer text, visibility
-  accentColor    String?  // hex color override (null = use org's documentColor)
+  headerSettings String   @db.Text // JSON — logo mode, org details visibility
+  footerSettings String   @db.Text // JSON — footer text, visibility
+  accentColor    String? // hex color override (null = use org's documentColor)
   isDefault      Boolean  @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -2413,31 +2480,31 @@ model BrandTemplate {
 // ─── Document Templates ──────────────────────────────────────────────────────
 
 model DocumentTemplate {
-  id             String   @id @default(cuid())
+  id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  name           String
-  type           String   // "quote" | "invoice" | "packing-list" | "return-sheet" | "delivery-docket" | "call-sheet"
+  name String
+  type String // "quote" | "invoice" | "packing-list" | "return-sheet" | "delivery-docket" | "call-sheet"
 
   // Legacy fields (preserved for backward compatibility)
-  basePdf        String?  @db.Text  // JSON — page size, orientation, margins (legacy only)
-  schemas        String?  @db.Text  // JSON — pdfme schema array (legacy only)
-  settings       String?  @db.Text  // JSON — TemplateSettings (legacy settings-based config)
+  basePdf  String? @db.Text // JSON — page size, orientation, margins (legacy only)
+  schemas  String? @db.Text // JSON — pdfme schema array (legacy only)
+  settings String? @db.Text // JSON — TemplateSettings (legacy settings-based config)
 
   // New section-based fields
-  sections       String?  @db.Text  // JSON — TemplateSection[] (ordered section list)
+  sections        String?        @db.Text // JSON — TemplateSection[] (ordered section list)
   brandTemplateId String?
-  brandTemplate  BrandTemplate? @relation(fields: [brandTemplateId], references: [id], onDelete: SetNull)
-  thumbnailData  String?  @db.Text  // base64 thumbnail image
+  brandTemplate   BrandTemplate? @relation(fields: [brandTemplateId], references: [id], onDelete: SetNull)
+  thumbnailData   String?        @db.Text // base64 thumbnail image
 
-  isDefault      Boolean  @default(false)
-  isDraft        Boolean  @default(true)
-  version        Int      @default(1)
-  thumbnailUrl   String?
-  publishedAt    DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  isDefault    Boolean   @default(false)
+  isDraft      Boolean   @default(true)
+  version      Int       @default(1)
+  thumbnailUrl String?
+  publishedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@index([organizationId, type])
   @@map("document_template")
@@ -2446,15 +2513,15 @@ model DocumentTemplate {
 // ─── Section Presets (reusable custom sections across templates) ──────────────
 
 model SectionPreset {
-  id             String   @id @default(cuid())
+  id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  name           String   // e.g. "Bank Details", "Terms & Conditions"
-  description    String?  // optional description
-  sections       String   @db.Text  // JSON — TemplateSection[] (one or more sections)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  name        String // e.g. "Bank Details", "Terms & Conditions"
+  description String? // optional description
+  sections    String   @db.Text // JSON — TemplateSection[] (one or more sections)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([organizationId])
   @@map("section_preset")
@@ -2463,22 +2530,22 @@ model SectionPreset {
 // ─── Warehouse Dashboard Display ─────────────────────────────────────────────
 
 model WarehouseDashboardToken {
-  id              String   @id @default(cuid())
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  name            String               // "Main Warehouse TV", "Loading Dock Screen"
-  token           String               // Raw access token (for URL display in settings)
-  tokenHash       String   @unique     // SHA-256 of the access token (for lookup)
-  locationId      String?              // Scope to a specific warehouse location
-  location        Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
-  isActive        Boolean  @default(true)
-  layout          String   @default("standard") // "standard", "compact", "dispatch-only"
+  name       String // "Main Warehouse TV", "Loading Dock Screen"
+  token      String // Raw access token (for URL display in settings)
+  tokenHash  String    @unique // SHA-256 of the access token (for lookup)
+  locationId String? // Scope to a specific warehouse location
+  location   Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  isActive   Boolean   @default(true)
+  layout     String    @default("standard") // "standard", "compact", "dispatch-only"
 
-  createdById     String
-  createdBy       User     @relation(fields: [createdById], references: [id], onDelete: Cascade)
-  lastAccessedAt  DateTime?
-  createdAt       DateTime @default(now())
+  createdById    String
+  createdBy      User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  lastAccessedAt DateTime?
+  createdAt      DateTime  @default(now())
 
   @@index([organizationId])
   @@map("warehouse_dashboard_token")
@@ -2487,21 +2554,21 @@ model WarehouseDashboardToken {
 // ─── Test & Tag Auditor Portal ───────────────────────────────────────────────
 
 model TestTagAuditorToken {
-  id              String    @id @default(cuid())
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  name            String               // "Insurance Auditor", "Annual Compliance Check"
-  token           String               // Raw access token (displayed in settings)
-  tokenHash       String    @unique    // SHA-256 for secure lookup
-  isActive        Boolean   @default(true)
-  expiresAt       DateTime?            // Optional expiry date
-  scope           String?              // JSON: { categories?, equipmentClasses?, locations?, assetIds? }
+  name      String // "Insurance Auditor", "Annual Compliance Check"
+  token     String // Raw access token (displayed in settings)
+  tokenHash String    @unique // SHA-256 for secure lookup
+  isActive  Boolean   @default(true)
+  expiresAt DateTime? // Optional expiry date
+  scope     String? // JSON: { categories?, equipmentClasses?, locations?, assetIds? }
 
-  createdById     String
-  createdBy       User     @relation(fields: [createdById], references: [id], onDelete: Cascade)
-  lastAccessedAt  DateTime?
-  createdAt       DateTime @default(now())
+  createdById    String
+  createdBy      User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  lastAccessedAt DateTime?
+  createdAt      DateTime  @default(now())
 
   @@index([organizationId])
   @@map("test_tag_auditor_token")
@@ -2510,69 +2577,69 @@ model TestTagAuditorToken {
 // ─── WooCommerce Integration ─────────────────────────────────────────────────
 
 model WooCommerceIntegration {
-  id              String       @id @default(cuid())
-  organizationId  String       @unique
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id             String       @id @default(cuid())
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  isEnabled       Boolean  @default(false)
-  webhookSecret   String                     // Shared secret for HMAC verification
-  storeUrl        String?                    // WooCommerce store URL (for reference/display)
+  isEnabled     Boolean @default(false)
+  webhookSecret String // Shared secret for HMAC verification
+  storeUrl      String? // WooCommerce store URL (for reference/display)
 
   // Matching strategy
-  productMatchField String  @default("sku")  // "sku", "custom_field", "name"
-  customFieldKey    String?                   // If productMatchField = "custom_field", which meta key
+  productMatchField String  @default("sku") // "sku", "custom_field", "name"
+  customFieldKey    String? // If productMatchField = "custom_field", which meta key
 
   // Date field mapping (WooCommerce meta_data keys → project fields)
-  rentalStartKey    String?                   // e.g. "rental_start_date"
-  rentalEndKey      String?                   // e.g. "rental_end_date"
-  eventStartKey     String?                   // e.g. "event_date"
-  deliveryAddressKey String?                  // e.g. "delivery_address"
-  notesKey          String?                   // e.g. "order_notes" or "customer_note"
+  rentalStartKey     String? // e.g. "rental_start_date"
+  rentalEndKey       String? // e.g. "rental_end_date"
+  eventStartKey      String? // e.g. "event_date"
+  deliveryAddressKey String? // e.g. "delivery_address"
+  notesKey           String? // e.g. "order_notes" or "customer_note"
 
   // Date format preference
-  dateFormat        String  @default("auto")  // "auto", "DD/MM/YYYY", "MM/DD/YYYY", "ISO"
+  dateFormat String @default("auto") // "auto", "DD/MM/YYYY", "MM/DD/YYYY", "ISO"
 
   // Location mapping
-  locationMetaKey    String?                  // WooCommerce meta key containing venue/location name
-  defaultLocationId  String?                  // Fallback location if no meta key match
+  locationMetaKey   String? // WooCommerce meta key containing venue/location name
+  defaultLocationId String? // Fallback location if no meta key match
 
   // Defaults for created projects
-  defaultProjectType String @default("DRY_HIRE")
-  autoConfirmEnquiry Boolean @default(false)  // If true, set status to QUOTING instead of ENQUIRY
+  defaultProjectType String  @default("DRY_HIRE")
+  autoConfirmEnquiry Boolean @default(false) // If true, set status to QUOTING instead of ENQUIRY
 
   // Notification
-  notifyUserIds     String[] @default([])     // User IDs to notify on new website orders
+  notifyUserIds String[] @default([]) // User IDs to notify on new website orders
 
   // Last webhook payload (for "Test & Detect" feature)
-  lastPayload       Json?
+  lastPayload Json?
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("woocommerce_integration")
 }
 
 model WooCommerceOrderLog {
-  id              String   @id @default(cuid())
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  wooOrderId      Int                        // WooCommerce order ID
-  wooOrderNumber  String?                    // WooCommerce order number (may differ from ID)
-  status          WooOrderLogStatus          // RECEIVED, PROCESSING, COMPLETED, FAILED, DUPLICATE
+  wooOrderId     Int // WooCommerce order ID
+  wooOrderNumber String? // WooCommerce order number (may differ from ID)
+  status         WooOrderLogStatus // RECEIVED, PROCESSING, COMPLETED, FAILED, DUPLICATE
 
   // What was created
-  projectId       String?
-  project         Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  clientId        String?
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  clientId  String?
 
   // Debugging
-  payload         Json                       // Full webhook payload (for debugging)
-  errorMessage    String?                    // If FAILED
-  matchResults    Json?                      // Which products matched which models
-  dateExtraction  Json?                      // Date parsing results for display
+  payload        Json // Full webhook payload (for debugging)
+  errorMessage   String? // If FAILED
+  matchResults   Json? // Which products matched which models
+  dateExtraction Json? // Date parsing results for display
 
-  createdAt       DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([organizationId])
   @@index([wooOrderId])
@@ -2590,30 +2657,30 @@ enum WooOrderLogStatus {
 // ─── Saved Reports ──────────────────────────────────────────────────────────
 
 model SavedReport {
-  id              String   @id @default(cuid())
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  name            String
-  description     String?
-  dataSource      String           // "assets", "models", "projects", "kits", "lineItems", "clients", "locations", "maintenance", "activityLog", "crew", "crewAssignments"
-  config          Json             // Full ReportConfig JSON
-  createdById     String?
-  createdBy       User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  isShared        Boolean  @default(false)
-  isPinned        Boolean  @default(false)
+  name        String
+  description String?
+  dataSource  String // "assets", "models", "projects", "kits", "lineItems", "clients", "locations", "maintenance", "activityLog", "crew", "crewAssignments"
+  config      Json // Full ReportConfig JSON
+  createdById String?
+  createdBy   User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  isShared    Boolean @default(false)
+  isPinned    Boolean @default(false)
 
   // Scheduling — nullable when scheduleFrequency is null (report runs ad-hoc).
   scheduleFrequency  ScheduleFrequency?
-  scheduleHour       Int?                          // 0-23, UTC
-  scheduleDayOfWeek  Int?                          // 0 = Sunday … 6 = Saturday, for WEEKLY
-  scheduleDayOfMonth Int?                          // 1-28, for MONTHLY (capped at 28 to avoid Feb edge case)
-  scheduleRecipients String[]  @default([])        // user emails that receive each scheduled run
+  scheduleHour       Int? // 0-23, UTC
+  scheduleDayOfWeek  Int? // 0 = Sunday … 6 = Saturday, for WEEKLY
+  scheduleDayOfMonth Int? // 1-28, for MONTHLY (capped at 28 to avoid Feb edge case)
+  scheduleRecipients String[]           @default([]) // user emails that receive each scheduled run
   scheduleLastRunAt  DateTime?
 
-  lastRunAt       DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  lastRunAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   @@index([organizationId])
   @@index([organizationId, createdById])
@@ -2630,25 +2697,25 @@ enum ScheduleFrequency {
 // ─── Check Item System ───────────────────────────────────────────────────────
 
 model CheckItem {
-  id               String        @id @default(cuid())
-  organizationId   String
-  organization     Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  label            String
-  description      String?
-  type             CheckItemType @default(PASS_FAIL)
-  category         String?
-  measurementUnit  String?       // for MEASUREMENT type (e.g. "mm", "kg", "V")
-  measurementMin   Float?        // pass threshold minimum
-  measurementMax   Float?        // pass threshold maximum
-  dropdownOptions  Json?         // for DROPDOWN type: { label: string, isFail: boolean }[]
-  createdById      String?
-  createdBy        User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  id              String        @id @default(cuid())
+  organizationId  String
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  label           String
+  description     String?
+  type            CheckItemType @default(PASS_FAIL)
+  category        String?
+  measurementUnit String? // for MEASUREMENT type (e.g. "mm", "kg", "V")
+  measurementMin  Float? // pass threshold minimum
+  measurementMax  Float? // pass threshold maximum
+  dropdownOptions Json? // for DROPDOWN type: { label: string, isFail: boolean }[]
+  createdById     String?
+  createdBy       User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
-  modelCheckItems  ModelCheckItem[]
-  kitCheckItems    KitCheckItem[]
-  checkRecords     CheckRecord[]
+  modelCheckItems ModelCheckItem[]
+  kitCheckItems   KitCheckItem[]
+  checkRecords    CheckRecord[]
 
   @@index([organizationId])
   @@index([organizationId, category])
@@ -2690,29 +2757,29 @@ model KitCheckItem {
 }
 
 model CheckRecord {
-  id                      String        @id @default(cuid())
-  organizationId          String
-  organization            Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  context                 CheckContext
-  lineItemId              String?       // null for AD_HOC
-  lineItem                ProjectLineItem? @relation(fields: [lineItemId], references: [id], onDelete: SetNull)
-  assetId                 String?       // null when no serialized asset assigned
-  asset                   Asset?        @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  bulkAssetId             String?       // for bulk asset checks
-  bulkAsset               BulkAsset?    @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
-  kitId                   String?       // for kit-level checks
-  kit                     Kit?          @relation(fields: [kitId], references: [id], onDelete: SetNull)
-  checkItemId             String
-  checkItem               CheckItem     @relation(fields: [checkItemId], references: [id], onDelete: Cascade)
-  checkItemLabelSnapshot  String
-  checkItemTypeSnapshot   CheckItemType
-  result                  CheckResult
-  value                   String?       // measurement reading or dropdown selection
-  notes                   String?
-  photos                  String[]      @default([]) // S3 keys
-  performedById           String
-  performedBy             User          @relation("CheckRecordPerformedBy", fields: [performedById], references: [id], onDelete: Cascade)
-  performedAt             DateTime      @default(now())
+  id                     String           @id @default(cuid())
+  organizationId         String
+  organization           Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  context                CheckContext
+  lineItemId             String? // null for AD_HOC
+  lineItem               ProjectLineItem? @relation(fields: [lineItemId], references: [id], onDelete: SetNull)
+  assetId                String? // null when no serialized asset assigned
+  asset                  Asset?           @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  bulkAssetId            String? // for bulk asset checks
+  bulkAsset              BulkAsset?       @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
+  kitId                  String? // for kit-level checks
+  kit                    Kit?             @relation(fields: [kitId], references: [id], onDelete: SetNull)
+  checkItemId            String
+  checkItem              CheckItem        @relation(fields: [checkItemId], references: [id], onDelete: Cascade)
+  checkItemLabelSnapshot String
+  checkItemTypeSnapshot  CheckItemType
+  result                 CheckResult
+  value                  String? // measurement reading or dropdown selection
+  notes                  String?
+  photos                 String[]         @default([]) // S3 keys
+  performedById          String
+  performedBy            User             @relation("CheckRecordPerformedBy", fields: [performedById], references: [id], onDelete: Cascade)
+  performedAt            DateTime         @default(now())
 
   @@index([organizationId])
   @@index([organizationId, assetId])
@@ -2746,7 +2813,6 @@ model WarehouseClose {
  * themselves are not persisted — they're derived from app state. This table
  * stores which notification keys a given user has already dismissed so the
  * dismissal persists across browsers / cleared localStorage.
- *
  * notificationKey is the stable identifier the server uses for the notification
  * (e.g. `maint-<id>`, `return-<id>`, `low_stock:<id>`, etc.). Keys are scoped
  * by user; if the same notification re-fires for a new entity instance it gets
@@ -2774,21 +2840,21 @@ model NotificationDismissal {
  * expiring certs, flagged assets).
  */
 model UserNotificationPreference {
-  id                   String   @id @default(cuid())
-  userId               String   @unique
-  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  overdueMaintenance   Boolean  @default(true)
-  overdueReturn        Boolean  @default(true)
-  upcomingProject      Boolean  @default(false)
-  lowStock             Boolean  @default(true)
-  pendingInvitation    Boolean  @default(true)
-  expiringCert         Boolean  @default(true)
-  pendingOffers        Boolean  @default(false)
-  pendingTimesheets    Boolean  @default(false)
-  flaggedAsset         Boolean  @default(true)
+  overdueMaintenance Boolean @default(true)
+  overdueReturn      Boolean @default(true)
+  upcomingProject    Boolean @default(false)
+  lowStock           Boolean @default(true)
+  pendingInvitation  Boolean @default(true)
+  expiringCert       Boolean @default(true)
+  pendingOffers      Boolean @default(false)
+  pendingTimesheets  Boolean @default(false)
+  flaggedAsset       Boolean @default(true)
 
-  updatedAt            DateTime @updatedAt
+  updatedAt DateTime @updatedAt
 
   @@map("user_notification_preference")
 }
@@ -2800,13 +2866,13 @@ model UserNotificationPreference {
  * this thing at least once." Cleared lazily by pruneStaleNotificationLogs.
  */
 model NotificationEmailLog {
-  id              String   @id @default(cuid())
+  id              String       @id @default(cuid())
   organizationId  String
   organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   notificationKey String
-  sentAt          DateTime @default(now())
+  sentAt          DateTime     @default(now())
 
   @@unique([userId, notificationKey])
   @@index([organizationId, sentAt])
@@ -2814,4 +2880,3 @@ model NotificationEmailLog {
 }
 
 // ─── Prep System (Pre-Packing / Staging) ─────────────────────────────────────
-

@@ -28,6 +28,7 @@ import {
   Plus,
   AlertTriangle,
   Hammer,
+  Activity,
   type LucideIcon,
 } from "lucide-react";
 import { usePlatformBranding } from "@/lib/use-platform-name";
@@ -131,6 +132,7 @@ const navSections: NavSection[] = [
       { title: "Models", url: "/assets/models", icon: Boxes, resource: "model" },
       { title: "Categories", url: "/assets/categories", icon: Tags, resource: "model" },
       { title: "Kits", url: "/kits", icon: Container, resource: "kit" },
+      { title: "Utilization", url: "/utilization", icon: Activity, resource: "asset" },
     ],
   },
   {

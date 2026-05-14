@@ -6,7 +6,7 @@ import {
   maintenanceSchema,
   type MaintenanceFormValues,
 } from "@/lib/validations/maintenance";
-import type { Prisma } from "@/generated/prisma/client";
+import type { Prisma, MaintenanceStatus } from "@/generated/prisma/client";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { UserFacingError } from "@/lib/errors";
@@ -153,14 +153,14 @@ export async function getMaintenanceRecord(id: string) {
 type TxClient = Prisma.TransactionClient;
 
 /** Statuses where the asset is physically in the workshop's hands. */
-const HOLDING_STATUSES: Prisma.MaintenanceStatus[] = [
+const HOLDING_STATUSES: MaintenanceStatus[] = [
   "AWAITING_PARTS",
   "IN_PROGRESS",
   "QA",
 ];
 
 /** Predicate the rest of the file uses to decide "do we hold this asset?". */
-function isHoldingStatus(status: Prisma.MaintenanceStatus): boolean {
+function isHoldingStatus(status: MaintenanceStatus): boolean {
   return HOLDING_STATUSES.includes(status);
 }
 
@@ -390,7 +390,7 @@ export async function updateMaintenanceRecord(
  */
 export async function setMaintenanceStatus(
   id: string,
-  nextStatus: Prisma.MaintenanceStatus,
+  nextStatus: MaintenanceStatus,
   result?: "PASS" | "FAIL",
 ) {
   const { organizationId, userId, userName } = await requirePermission(

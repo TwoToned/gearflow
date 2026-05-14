@@ -212,12 +212,22 @@ async function buildOrgNotifications(ctx: BuildContext): Promise<NotificationToS
     });
   }
 
-  // 4. Low stock
-  const lowStock = await prisma.bulkAsset.findMany({
-    where: { organizationId, isActive: true, status: "LOW_STOCK" },
+  // 4. Low stock — compute live from availableQuantity vs reorderThreshold
+  // rather than trusting BulkAsset.status (which is a cached enum that can
+  // drift). Only fires when a threshold is configured AND availability is
+  // at-or-below it. Mirrors the in-app bell logic in notifications.ts.
+  const lowStockCandidates = await prisma.bulkAsset.findMany({
+    where: {
+      organizationId,
+      isActive: true,
+      reorderThreshold: { not: null, gt: 0 },
+    },
     include: { model: true },
     take: 50,
   });
+  const lowStock = lowStockCandidates.filter(
+    (b) => b.reorderThreshold !== null && b.availableQuantity <= b.reorderThreshold,
+  );
   for (const b of lowStock) {
     out.push({
       key: `stock-${b.id}`,

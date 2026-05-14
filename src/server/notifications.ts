@@ -170,23 +170,30 @@ export async function getNotifications(): Promise<AppNotification[]> {
     });
   }
 
-  // 4. Low stock bulk assets
-  const lowStock = await prisma.bulkAsset.findMany({
+  // 4. Low stock bulk assets — compute live from availableQuantity vs
+  // reorderThreshold rather than trusting BulkAsset.status (which is a
+  // cached enum that can drift out of sync with actual quantities). An
+  // asset is "low" iff it has a configured threshold AND current
+  // availability is at-or-below it. No threshold → no alert.
+  const lowStockCandidates = await prisma.bulkAsset.findMany({
     where: {
       organizationId,
       isActive: true,
-      status: "LOW_STOCK",
+      reorderThreshold: { not: null, gt: 0 },
     },
     include: { model: true },
-    take: 10,
+    take: 50,
   });
+  const lowStock = lowStockCandidates.filter(
+    (b) => b.reorderThreshold !== null && b.availableQuantity <= b.reorderThreshold,
+  );
 
   for (const b of lowStock) {
     notifications.push({
       id: `stock-${b.id}`,
       type: "low_stock",
       title: `Low stock: ${b.model.name}`,
-      description: `${b.assetTag} — ${b.availableQuantity} of ${b.totalQuantity} available`,
+      description: `${b.assetTag} — ${b.availableQuantity} of ${b.totalQuantity} available (threshold ${b.reorderThreshold})`,
       href: `/assets/registry/${b.id}`,
       severity: "warning",
       timestamp: b.updatedAt.toISOString(),

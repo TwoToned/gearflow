@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { showError } from "@/lib/show-error";
+import { DamageReportDialog } from "@/components/damage/damage-report-dialog";
 
 import {
   getProjectForWarehouse,
@@ -311,6 +312,16 @@ function WarehouseProjectPage({
 
   // Kit verification — track which child assets have been scanned to confirm presence
   const [verifiedKitItems, setVerifiedKitItems] = useState<Set<string>>(new Set());
+
+  // Damage report queue — populated when an item is returned with
+  // returnCondition === "DAMAGED". We surface a single dialog at a time
+  // so a 5-item DAMAGED return doesn't open 5 dialogs at once.
+  const [damageQueue, setDamageQueue] = useState<Array<{
+    lineItemId: string;
+    assetId: string | null;
+    bulkAssetId: string | null;
+    itemLabel: string;
+  }>>([]);
 
   // "Add to project" prompt state (when scanned asset is not on the project)
   const [addPromptOpen, setAddPromptOpen] = useState(false);
@@ -641,7 +652,33 @@ function WarehouseProjectPage({
       for (const c of containers) await syncContainerStatus(projectId, c);
       return result;
     },
-    onSuccess: invalidate,
+    onSuccess: (_data, variables) => {
+      invalidate();
+      // Surface a damage-capture dialog for any items the operator marked
+      // DAMAGED on check-in. We queue them up so a multi-item return shows
+      // one dialog at a time instead of stacking them.
+      const damaged = variables.items.filter((i) => i.returnCondition === "DAMAGED");
+      if (damaged.length > 0) {
+        const enriched = damaged
+          .map((i) => {
+            const li = lineItems.find((l) => l.id === i.lineItemId);
+            if (!li) return null;
+            const label = li.asset?.assetTag
+              ? `${li.model?.name ?? "Item"} — ${li.asset.assetTag}`
+              : li.bulkAsset?.assetTag
+                ? `${li.model?.name ?? "Bulk item"} — ${li.bulkAsset.assetTag}`
+                : (li.description ?? "Custom item");
+            return {
+              lineItemId: li.id,
+              assetId: li.assetId,
+              bulkAssetId: li.bulkAssetId,
+              itemLabel: label,
+            };
+          })
+          .filter((v): v is NonNullable<typeof v> => v != null);
+        if (enriched.length > 0) setDamageQueue((prev) => [...prev, ...enriched]);
+      }
+    },
     onError: (e) => showError(e),
   });
 
@@ -2572,6 +2609,22 @@ function WarehouseProjectPage({
               setCheckFormSubmitting(false);
             }
           }}
+        />
+      )}
+
+      {/* Damage report queue — one dialog at a time per damaged return */}
+      {damageQueue.length > 0 && (
+        <DamageReportDialog
+          open={true}
+          onOpenChange={(next) => {
+            if (!next) setDamageQueue((q) => q.slice(1));
+          }}
+          assetId={damageQueue[0].assetId}
+          bulkAssetId={damageQueue[0].bulkAssetId}
+          lineItemId={damageQueue[0].lineItemId}
+          projectId={projectId}
+          itemLabel={damageQueue[0].itemLabel}
+          onCreated={() => setDamageQueue((q) => q.slice(1))}
         />
       )}
     </div>

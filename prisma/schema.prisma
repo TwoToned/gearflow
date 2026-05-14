@@ -340,7 +340,9 @@ enum MaintenanceType {
 
 enum MaintenanceStatus {
   SCHEDULED
+  AWAITING_PARTS
   IN_PROGRESS
+  QA
   COMPLETED
   CANCELLED
 }

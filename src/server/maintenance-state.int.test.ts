@@ -34,6 +34,9 @@ async function holdAssets(orgId: string, assetIds: string[]) {
   });
 }
 
+// Wave 3 extension: any of these statuses count as "holding" the asset.
+const HOLDING_STATUSES = ["AWAITING_PARTS", "IN_PROGRESS", "QA"] as const;
+
 async function releaseAssets(
   orgId: string,
   assetIds: string[],
@@ -44,7 +47,7 @@ async function releaseAssets(
     where: {
       assetId: { in: assetIds },
       maintenanceRecordId: { not: currentRecordId },
-      maintenanceRecord: { status: "IN_PROGRESS" },
+      maintenanceRecord: { status: { in: [...HOLDING_STATUSES] } },
     },
     select: { assetId: true },
   });
@@ -60,7 +63,7 @@ async function releaseAssets(
 async function createMaintenanceRecord(
   orgId: string,
   options: {
-    status: "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+    status: "SCHEDULED" | "AWAITING_PARTS" | "IN_PROGRESS" | "QA" | "COMPLETED" | "CANCELLED";
     assetIds: string[];
   },
 ) {
@@ -251,6 +254,94 @@ describe("maintenance state machine (Wave 1.6)", () => {
       });
       expect(releasedAfter?.status).toBe("AVAILABLE");
       expect(stuckAfter?.status).toBe("IN_MAINTENANCE");
+    });
+  });
+
+  // ─── Wave 3: workshop kanban transitions ───────────────────────────
+  describe("workshop kanban statuses", () => {
+    it.each(["AWAITING_PARTS", "IN_PROGRESS", "QA"] as const)(
+      "another active %s record blocks release",
+      async (otherStatus) => {
+        const org = await createOrgFixture();
+        await createUserFixture(org.id);
+        const model = await createModelFixture(org.id);
+        const asset = await createAssetFixture(org.id, model.id, {
+          assetTag: `WS-${Math.random().toString(36).slice(2, 8)}`,
+          status: "IN_MAINTENANCE",
+        });
+
+        const completing = await createMaintenanceRecord(org.id, {
+          status: "IN_PROGRESS",
+          assetIds: [asset.id],
+        });
+        await createMaintenanceRecord(org.id, {
+          status: otherStatus,
+          assetIds: [asset.id],
+        });
+
+        await releaseAssets(org.id, [asset.id], completing.id);
+
+        const after = await testPrisma.asset.findUnique({
+          where: { id: asset.id },
+          select: { status: true },
+        });
+        expect(after?.status).toBe("IN_MAINTENANCE");
+      },
+    );
+
+    it("a SCHEDULED record does NOT block release (not a holding status)", async () => {
+      const org = await createOrgFixture();
+      await createUserFixture(org.id);
+      const model = await createModelFixture(org.id);
+      const asset = await createAssetFixture(org.id, model.id, {
+        assetTag: `WS-${Math.random().toString(36).slice(2, 8)}`,
+        status: "IN_MAINTENANCE",
+      });
+
+      const completing = await createMaintenanceRecord(org.id, {
+        status: "IN_PROGRESS",
+        assetIds: [asset.id],
+      });
+      // SCHEDULED is upcoming work — doesn't physically hold the asset
+      await createMaintenanceRecord(org.id, {
+        status: "SCHEDULED",
+        assetIds: [asset.id],
+      });
+
+      await releaseAssets(org.id, [asset.id], completing.id);
+
+      const after = await testPrisma.asset.findUnique({
+        where: { id: asset.id },
+        select: { status: true },
+      });
+      expect(after?.status).toBe("AVAILABLE");
+    });
+
+    it("a COMPLETED record never blocks release", async () => {
+      const org = await createOrgFixture();
+      await createUserFixture(org.id);
+      const model = await createModelFixture(org.id);
+      const asset = await createAssetFixture(org.id, model.id, {
+        assetTag: `WS-${Math.random().toString(36).slice(2, 8)}`,
+        status: "IN_MAINTENANCE",
+      });
+
+      const completing = await createMaintenanceRecord(org.id, {
+        status: "IN_PROGRESS",
+        assetIds: [asset.id],
+      });
+      await createMaintenanceRecord(org.id, {
+        status: "COMPLETED",
+        assetIds: [asset.id],
+      });
+
+      await releaseAssets(org.id, [asset.id], completing.id);
+
+      const after = await testPrisma.asset.findUnique({
+        where: { id: asset.id },
+        select: { status: true },
+      });
+      expect(after?.status).toBe("AVAILABLE");
     });
   });
 });

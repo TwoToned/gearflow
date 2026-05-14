@@ -27,6 +27,7 @@ import {
   Clock,
   Plus,
   AlertTriangle,
+  Hammer,
   type LucideIcon,
 } from "lucide-react";
 import { usePlatformBranding } from "@/lib/use-platform-name";
@@ -136,6 +137,7 @@ const navSections: NavSection[] = [
     label: "OPERATIONS",
     items: [
       { title: "Warehouse", url: "/warehouse", icon: Warehouse, resource: "warehouse" },
+      { title: "Workshop", url: "/workshop", icon: Hammer, resource: "maintenance" },
       { title: "Maintenance", url: "/maintenance", icon: Wrench, resource: "maintenance" },
       { title: "Damage", url: "/damage", icon: AlertTriangle, resource: "maintenance" },
       {

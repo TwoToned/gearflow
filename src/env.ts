@@ -56,12 +56,23 @@ const serverEnvSchema = z.object({
   // Cron / scheduled jobs
   CRON_SECRET: z.string().optional(),
 
+  // Sentry — error tracking. If unset, Sentry is disabled (dev/local).
+  SENTRY_DSN: z.string().optional(),
+  // Source map upload (CI only)
+  SENTRY_AUTH_TOKEN: z.string().optional(),
+  SENTRY_ORG: z.string().optional(),
+  SENTRY_PROJECT: z.string().optional(),
+  // Release identifier — usually set by CI (git SHA)
+  SENTRY_RELEASE: z.string().optional(),
+
   // Public — duplicated in clientEnv for typed access on server too
   NEXT_PUBLIC_APP_URL: z.string().url("NEXT_PUBLIC_APP_URL must be a valid URL"),
   NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: z.string().optional(),
   NEXT_PUBLIC_GOOGLE_CONFIGURED: z.string().optional(),
   NEXT_PUBLIC_MICROSOFT_CONFIGURED: z.string().optional(),
   NEXT_PUBLIC_SITE_ADMIN_REG_ENABLED: z.string().optional(),
+  // Sentry — client-side DSN (separate from server DSN by Next convention)
+  NEXT_PUBLIC_SENTRY_DSN: z.string().optional(),
 });
 
 // In Vitest, process.env.VITEST is set automatically. Provide test-only defaults
@@ -69,14 +80,14 @@ const serverEnvSchema = z.object({
 // (prisma, auth, etc.) without each test having to construct an env fixture.
 // Integration tests against a real database still need DATABASE_URL set explicitly.
 const isTest = process.env.NODE_ENV === "test" || process.env.VITEST === "true";
-const envSource = isTest
+const envSource: NodeJS.ProcessEnv = isTest
   ? {
-      DATABASE_URL: "postgresql://test:test@localhost:5432/gearflow_test",
-      BETTER_AUTH_SECRET: "test-secret-not-for-production",
-      BETTER_AUTH_URL: "http://localhost:3000",
-      NEXT_PUBLIC_APP_URL: "http://localhost:3000",
-      NODE_ENV: "test" as const,
       ...process.env,
+      DATABASE_URL: process.env.DATABASE_URL ?? "postgresql://test:test@localhost:5432/gearflow_test",
+      BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET ?? "test-secret-not-for-production",
+      BETTER_AUTH_URL: process.env.BETTER_AUTH_URL ?? "http://localhost:3000",
+      NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+      NODE_ENV: process.env.NODE_ENV ?? "test",
     }
   : process.env;
 

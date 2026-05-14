@@ -22,9 +22,12 @@ describe("env validation", () => {
     for (const key of Object.keys(process.env)) {
       delete process.env[key];
     }
-    // Vitest sets these automatically — restore so loadEnv can opt out
-    process.env.VITEST = ORIGINAL_ENV.VITEST;
-    process.env.NODE_ENV = ORIGINAL_ENV.NODE_ENV;
+    // Vitest sets these automatically — restore so loadEnv can opt out.
+    // NODE_ENV is read-only on the TS process.env type; assign via Object.assign.
+    if (ORIGINAL_ENV.VITEST) process.env.VITEST = ORIGINAL_ENV.VITEST;
+    if (ORIGINAL_ENV.NODE_ENV) {
+      Object.assign(process.env, { NODE_ENV: ORIGINAL_ENV.NODE_ENV });
+    }
   });
 
   afterEach(() => {

@@ -107,7 +107,7 @@ interface LineItemData {
   type?: string;
   priceBreakdown?: string | null;
   priceOverridden?: boolean;
-  isSubhire?: boolean;
+  // `isSubhire` removed (Wave 2). Use `subHireId != null` to detect sub-hire items.
   isCustomItem?: boolean;
   isKitChild?: boolean;
   subHireId?: string | null;
@@ -452,7 +452,7 @@ function SortableLineItemRow({
   onRemove: () => void;
 }) {
   // Show expand/collapse for kits and sub-hire group parents
-  const hasChildren = (item.childLineItems?.length ?? 0) > 0 && (!!item.kitId || (item.isSubhire && !item.isKitChild));
+  const hasChildren = (item.childLineItems?.length ?? 0) > 0 && (!!item.kitId || (item.subHireId != null && !item.isKitChild));
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: `li-${item.id}` });
 
@@ -514,7 +514,7 @@ function SortableLineItemRow({
               Optional
             </Badge>
           )}
-          {(item.isSubhire || item.type === "SUBHIRE") && (
+          {(item.subHireId != null || item.type === "SUBHIRE") && (
             <Badge variant="outline" className="ml-1.5 text-xs bg-cyan-500/10 text-cyan-600 border-cyan-500/20">
               Subhire
             </Badge>
@@ -550,7 +550,7 @@ function SortableLineItemRow({
           )}
           <OverbookedBadge info={overbookedInfo} />
         </div>
-        {(item.isSubhire || item.type === "SUBHIRE") && item.supplier && (
+        {(item.subHireId != null || item.type === "SUBHIRE") && item.supplier && (
           <p className={`text-xs text-fg-3 mt-0.5 ${indent}`}>via {item.supplier.name}</p>
         )}
         {item.notes && (
@@ -1401,7 +1401,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                 key={item.id}
                                 item={item}
                                 indent="ml-12"
-                                overbookedInfo={item.isSubhire ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
+                                overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                                 isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
                                 isExpanded={expandedParents.has(item.id)}
                                 onToggle={() => toggleParent(item.id)}
@@ -1420,7 +1420,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                           key={item.id}
                           item={item}
                           indent="ml-3"
-                          overbookedInfo={item.isSubhire ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
+                          overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                           isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
                           isExpanded={expandedParents.has(item.id)}
                           onToggle={() => toggleParent(item.id)}
@@ -1449,7 +1449,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                     key={item.id}
                     item={item}
                     indent=""
-                    overbookedInfo={item.isSubhire ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
+                    overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                     isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
                     isExpanded={expandedParents.has(item.id)}
                     onToggle={() => toggleParent(item.id)}

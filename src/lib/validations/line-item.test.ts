@@ -17,7 +17,6 @@ const validComplete = {
   groupName: "Lighting",
   notes: "Include spare fuses",
   isOptional: false,
-  isSubhire: true,
   showSubhireOnDocs: true,
   supplierId: "sup-001",
   subhireOrderNumber: "PO-2024-001",
@@ -251,10 +250,13 @@ describe("lineItemSchema", () => {
       if (result.success) expect(result.data.isOptional).toBe(false);
     });
 
-    it("defaults isSubhire to false", () => {
+    it("does NOT have an isSubhire field (removed in Wave 2)", () => {
       const result = lineItemSchema.safeParse({});
       expect(result.success).toBe(true);
-      if (result.success) expect(result.data.isSubhire).toBe(false);
+      if (result.success) {
+        // @ts-expect-error — isSubhire was removed from the schema
+        expect(result.data.isSubhire).toBeUndefined();
+      }
     });
 
     it("defaults showSubhireOnDocs to false", () => {

@@ -22,7 +22,8 @@ export interface LineItem {
   prepContainer: string | null;
   isContainerLineItem: boolean;
   isCustomItem: boolean;
-  isSubhire: boolean;
+  /** Sub-hire association — null = own-stock, non-null = sub-hire from supplier. */
+  subHireId: string | null;
   supplier: { name: string } | null;
   childLineItems?: LineItem[];
 }

@@ -72,7 +72,7 @@ export async function computeOverbookedStatus(
     parentLineItemId: string | null;
     kitId: string | null;
     status: string;
-    isSubhire?: boolean;
+    subHireId?: string | null;
   }>,
   rentalStartDate: Date | null,
   rentalEndDate: Date | null,
@@ -83,7 +83,7 @@ export async function computeOverbookedStatus(
   // Collect ALL equipment line items with a modelId (including kit children).
   // Sub-hire items represent third-party stock and never consume our inventory.
   const relevantItems = lineItems.filter(
-    (li) => li.modelId && li.status !== "CANCELLED" && !li.isSubhire,
+    (li) => li.modelId && li.status !== "CANCELLED" && li.subHireId == null,
   );
   if (relevantItems.length === 0) return overbookedMap;
 
@@ -100,7 +100,7 @@ export async function computeOverbookedStatus(
           organizationId,
           modelId: { in: modelIds },
           status: { not: "CANCELLED" },
-          isSubhire: false,
+          subHireId: null,
           project: {
             isTemplate: false,
             status: {
@@ -117,7 +117,7 @@ export async function computeOverbookedStatus(
           organizationId,
           modelId: { in: modelIds },
           status: { not: "CANCELLED" },
-          isSubhire: false,
+          subHireId: null,
           projectId,
         },
         select: { modelId: true, quantity: true, projectId: true },

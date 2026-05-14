@@ -1213,9 +1213,9 @@ function WarehouseProjectPage({
   const equipmentItems = lineItems.filter((item) => {
     if (item.type !== "EQUIPMENT") return false;
     if (item.isContainerLineItem) return false;
-    if (item.isKitChild && !item.isSubhire) return false; // real kit children stay hidden
+    if (item.isKitChild && !item.subHireId != null) return false; // real kit children stay hidden
     // Hide sub-hire group parent wrappers — children show individually
-    if (item.isSubhire && !item.isKitChild && !item.kitId && (item.childLineItems?.length ?? 0) > 0) return false;
+    if (item.subHireId != null && !item.isKitChild && !item.kitId && (item.childLineItems?.length ?? 0) > 0) return false;
     return true;
   });
 
@@ -1436,7 +1436,7 @@ function WarehouseProjectPage({
       const actualBulkItems: typeof bulkItems = [];
       for (const bi of bulkItems) {
         const li = lineItems.find((l) => l.id === bi.lineItemId);
-        if (li && !li.bulkAssetId && li.model?.assetType === "SERIALIZED" && li.modelId && !li.isSubhire) {
+        if (li && !li.bulkAssetId && li.model?.assetType === "SERIALIZED" && li.modelId && !li.subHireId != null) {
           // Multi-qty serialized item — needs asset picker
           items.push({ lineItemId: bi.lineItemId, quantity: bi.quantity });
         } else {
@@ -1452,7 +1452,7 @@ function WarehouseProjectPage({
       const readyItems: typeof items = [];
       for (const item of items) {
         const li = lineItems.find((l) => l.id === item.lineItemId);
-        if (li && !li.assetId && !li.bulkAssetId && li.model?.assetType === "SERIALIZED" && li.modelId && !li.isSubhire) {
+        if (li && !li.assetId && !li.bulkAssetId && li.model?.assetType === "SERIALIZED" && li.modelId && !li.subHireId != null) {
           needsAssetPicker.push(item);
         } else {
           readyItems.push(item);
@@ -1858,10 +1858,10 @@ function WarehouseProjectPage({
     const name = entry.kind === "serialized-group" ? entry.modelName : modelDisplayName(entry.item);
     const count = entry.kind === "serialized-group" ? entry.items.length : entry.unitCount;
     const hasSubhire = entry.kind === "serialized-group"
-      ? entry.items.some((i) => i.isSubhire)
-      : entry.item.isSubhire;
+      ? entry.items.some((i) => i.subHireId != null)
+      : entry.item.subHireId != null;
     const supplierName = entry.kind === "serialized-group"
-      ? entry.items.find((i) => i.isSubhire && i.supplier)?.supplier?.name
+      ? entry.items.find((i) => i.subHireId != null && i.supplier)?.supplier?.name
       : entry.item.supplier?.name;
 
     return (

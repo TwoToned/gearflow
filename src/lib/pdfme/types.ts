@@ -64,8 +64,8 @@ export interface DocumentLineItem {
   overbookedReducedOnly?: boolean;
   overbookedHasOverbooked?: boolean;
   overbookedHasReduced?: boolean;
-  // Subhire
-  isSubhire?: boolean;
+  // Subhire — `isSubhire` removed (Wave 2); detect via `subHireId != null`.
+  subHireId?: string | null;
   showSubhireOnDocs?: boolean;
   supplierName?: string | null;
   // Container

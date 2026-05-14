@@ -1381,7 +1381,10 @@ model ProjectLineItem {
   isContainerLineItem Boolean           @default(false)
   isCustomItem        Boolean           @default(false)
   returnStatus        ReturnStatus?
-  isSubhire           Boolean           @default(false)
+  // `isSubhire` removed (Wave 2). Sub-hire detection is now
+  // `subHireId != null` — single source of truth. Production
+  // verified to have 0 legacy-only rows before drop. See
+  // 20260514XXXXXX_drop_line_item_isSubhire migration.
   showSubhireOnDocs   Boolean           @default(false)
   supplierId          String?
   supplier            Supplier?         @relation(fields: [supplierId], references: [id])

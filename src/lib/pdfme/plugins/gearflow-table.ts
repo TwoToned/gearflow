@@ -310,7 +310,7 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
         // Calculate row content height
         const noteLineHeight = noteFontSize + 2;
         let rowContentHeight = fontSize + rowPadding * 2;
-        if (item.isSubhire && item.supplierName) {
+        if (item.subHireId != null && item.supplierName) {
           rowContentHeight += fontSize + 1; // "via Supplier" line
         }
         if (item.notes && config.showNotes) {
@@ -397,7 +397,7 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
 
             // "via Supplier" for sub-hire items on internal docs
             let supplierLineOffset = 0;
-            if (item.isSubhire && item.supplierName) {
+            if (item.subHireId != null && item.supplierName) {
               const viaText = `via ${item.supplierName}`;
               supplierLineOffset = fontSize + 1;
               page.drawText(viaText, {
@@ -1071,7 +1071,7 @@ function getBadges(item: DocumentLineItem, documentType?: string): typeof BADGE_
   // Internal docs (packing-list, return-sheet, delivery-docket) always show subhire badge
   // Client-facing docs (quote, invoice) only show when showSubhireOnDocs is true
   const isInternalDoc = documentType === "packing-list" || documentType === "return-sheet" || documentType === "delivery-docket";
-  if (item.isSubhire && (isInternalDoc || item.showSubhireOnDocs)) {
+  if (item.subHireId != null && (isInternalDoc || item.showSubhireOnDocs)) {
     badges.push(BADGE_STYLES.subhire);
   }
 

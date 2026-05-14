@@ -19,9 +19,10 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
   const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
   const parsed = lineItemSchema.parse(data);
 
-  // Server-side availability enforcement for equipment
+  // Server-side availability enforcement for equipment.
   // Sub-hire items represent third-party stock and never consume our inventory.
-  if (parsed.type === "EQUIPMENT" && parsed.modelId && !parsed.isSubhire && !allowOverbook) {
+  // Detection moved from `isSubhire` boolean to `subHireId != null` (Wave 2).
+  if (parsed.type === "EQUIPMENT" && parsed.modelId && !allowOverbook) {
     const project = await prisma.project.findUnique({
       where: { id: projectId, organizationId },
       select: { rentalStartDate: true, rentalEndDate: true },
@@ -82,7 +83,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
                 organizationId,
                 modelId: parsed.modelId,
                 status: { not: "CANCELLED" },
-                isSubhire: false,
+                subHireId: null,
                 project: {
                   status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
                   rentalStartDate: { lte: project!.rentalEndDate! },
@@ -95,7 +96,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
                 organizationId,
                 modelId: parsed.modelId,
                 status: { not: "CANCELLED" },
-                isSubhire: false,
+                subHireId: null,
                 projectId,
               },
             });
@@ -129,7 +130,9 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         groupId: parsed.groupId ?? null,
         categoryId: parsed.categoryId ?? null,
         isKitChild: false,
-        isSubhire: parsed.isSubhire ?? false,
+        // Merge only among non-sub-hire items. Sub-hire items always live in
+        // their own SubHire-managed rows and shouldn't merge with manual adds.
+        subHireId: null,
         status: { not: "CANCELLED" },
       },
     });
@@ -274,7 +277,6 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
       groupName: parsed.groupName || null,
       notes: parsed.notes || null,
       isOptional: parsed.isOptional,
-      isSubhire: parsed.isSubhire,
       showSubhireOnDocs: parsed.showSubhireOnDocs,
       supplierId: parsed.supplierId || null,
       subhireOrderNumber: parsed.subhireOrderNumber || null,
@@ -320,7 +322,14 @@ export async function updateLineItem(id: string, data: LineItemFormValues, allow
   // Detect price override: if user changes unitPrice on an OPTIMIZED item
   const existing = await prisma.projectLineItem.findUnique({
     where: { id, organizationId },
-    select: { unitPrice: true, pricingType: true, projectId: true, quantity: true, modelId: true },
+    select: {
+      unitPrice: true,
+      pricingType: true,
+      projectId: true,
+      quantity: true,
+      modelId: true,
+      subHireId: true,
+    },
   });
 
   // Server-side availability enforcement for equipment (mirrors addLineItem).
@@ -331,7 +340,9 @@ export async function updateLineItem(id: string, data: LineItemFormValues, allow
     existing &&
     parsed.type === "EQUIPMENT" &&
     parsed.modelId &&
-    !parsed.isSubhire &&
+    // Sub-hire items are identified by `existing.subHireId != null` now
+    // (Wave 2 — no more isSubhire flag on the form schema).
+    existing.subHireId == null &&
     !allowOverbook &&
     parsed.quantity > existing.quantity
   ) {
@@ -356,7 +367,7 @@ export async function updateLineItem(id: string, data: LineItemFormValues, allow
               organizationId,
               modelId: parsed.modelId,
               status: { not: "CANCELLED" },
-              isSubhire: false,
+              subHireId: null,
               id: { not: id },
               project: {
                 status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
@@ -370,7 +381,7 @@ export async function updateLineItem(id: string, data: LineItemFormValues, allow
               organizationId,
               modelId: parsed.modelId,
               status: { not: "CANCELLED" },
-              isSubhire: false,
+              subHireId: null,
               id: { not: id },
               projectId: existing.projectId,
             },
@@ -421,7 +432,6 @@ export async function updateLineItem(id: string, data: LineItemFormValues, allow
       groupName: parsed.groupName || null,
       notes: parsed.notes || null,
       isOptional: parsed.isOptional,
-      isSubhire: parsed.isSubhire,
       showSubhireOnDocs: parsed.showSubhireOnDocs,
       ...(parsed.supplierId !== undefined && { supplierId: parsed.supplierId || null }),
       subhireOrderNumber: parsed.subhireOrderNumber || null,
@@ -717,7 +727,7 @@ export async function checkAvailability(
           organizationId,
           modelId,
           status: { not: "CANCELLED" },
-          isSubhire: false,
+          subHireId: null,
           project: {
             isTemplate: false,
             status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
@@ -735,7 +745,7 @@ export async function checkAvailability(
             organizationId,
             modelId,
             status: { not: "CANCELLED" },
-            isSubhire: false,
+            subHireId: null,
             projectId: excludeProjectId,
           },
           include: {

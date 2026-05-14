@@ -229,7 +229,7 @@ export default function PullSheetPage({
                     const assetTag = asset?.assetTag || bulkAsset?.assetTag || null;
                     const overbookedInfo = item.overbookedInfo as { overBy: number; totalStock: number; totalBooked: number; inherited?: boolean } | null;
                     const supplier = item.supplier as { name: string } | null;
-                    const isSubhire = !!(item.isSubhire);
+                    const isSubhire = !!(item.subHireId != null);
                     const isKit = !!(item.kitId) && !(item.isKitChild);
                     const isGroupParent = isKit;
                     const children = isGroupParent ? ((item.childLineItems || []) as Array<Record<string, unknown>>) : [];

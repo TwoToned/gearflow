@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useMemo, Suspense } from "react";
+import { use, useMemo, Suspense, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -21,6 +21,7 @@ import {
 } from "@/server/model-media";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -116,6 +117,15 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
     onError: (e) => toast.error(e.message),
   });
 
+  // Standardized destructive confirmations.
+  const [archiveModelOpen, setArchiveModelOpen] = useState(false);
+  const [forceReturnAssetId, setForceReturnAssetId] = useState<{
+    id: string;
+    tag: string;
+  } | null>(null);
+  const [archiveBulkId, setArchiveBulkId] = useState<string | null>(null);
+  const [deleteBulkId, setDeleteBulkId] = useState<string | null>(null);
+
   if (isLoading) {
     return <DetailPageSkeleton />;
   }
@@ -199,7 +209,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     variant="outline"
                     size="sm"
                     className="text-destructive"
-                    onClick={() => { if (confirm("Archive this model?")) archiveMutation.mutate(); }}
+                    onClick={() => setArchiveModelOpen(true)}
                   >
                     <Archive className="mr-2 h-4 w-4" />
                     Archive
@@ -351,10 +361,12 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                                       size="icon"
                                       className="h-7 w-7 text-amber-500"
                                       title="Force Return"
-                                      onClick={() => {
-                                        if (confirm(`Force return ${asset.assetTag} to available? This will reset its status and location.`))
-                                          forceReturnMutation.mutate(asset.id);
-                                      }}
+                                      onClick={() =>
+                                        setForceReturnAssetId({
+                                          id: asset.id,
+                                          tag: asset.assetTag,
+                                        })
+                                      }
                                     >
                                       <RotateCcw className="h-3.5 w-3.5" />
                                     </Button>
@@ -418,10 +430,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                                         variant="ghost"
                                         size="icon"
                                         className="h-7 w-7 text-destructive"
-                                        onClick={() => {
-                                          if (confirm("Archive this bulk asset?"))
-                                            archiveBulkMutation.mutate(ba.id);
-                                        }}
+                                        onClick={() => setArchiveBulkId(ba.id)}
                                       >
                                         <Archive className="h-3.5 w-3.5" />
                                       </Button>
@@ -430,10 +439,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                                         variant="ghost"
                                         size="icon"
                                         className="h-7 w-7 text-destructive"
-                                        onClick={() => {
-                                          if (confirm("Permanently delete this bulk asset?"))
-                                            deleteBulkMutation.mutate(ba.id);
-                                        }}
+                                        onClick={() => setDeleteBulkId(ba.id)}
                                       >
                                         <Trash2 className="h-3.5 w-3.5" />
                                       </Button>
@@ -623,6 +629,60 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
         </div>
       </div>
     </FadeIn>
+    <DeleteDialog
+      open={archiveModelOpen}
+      onOpenChange={setArchiveModelOpen}
+      title="Archive this model?"
+      description="The model is hidden from new quotes and the catalog. Existing assets remain. You can restore it from the archived view."
+      confirmLabel="Archive model"
+      onConfirm={() => {
+        archiveMutation.mutate();
+        setArchiveModelOpen(false);
+      }}
+      pending={archiveMutation.isPending}
+    />
+    <DeleteDialog
+      open={!!forceReturnAssetId}
+      onOpenChange={(open) => !open && setForceReturnAssetId(null)}
+      title={`Force return ${forceReturnAssetId?.tag ?? ""}?`}
+      description="Project assignments are marked returned, status resets, and the asset returns to its home location. Use when scanning isn't possible."
+      confirmLabel="Force return"
+      onConfirm={() => {
+        if (forceReturnAssetId) {
+          forceReturnMutation.mutate(forceReturnAssetId.id);
+          setForceReturnAssetId(null);
+        }
+      }}
+      pending={forceReturnMutation.isPending}
+    />
+    <DeleteDialog
+      open={!!archiveBulkId}
+      onOpenChange={(open) => !open && setArchiveBulkId(null)}
+      title="Archive this bulk asset?"
+      description="Hidden from new quotes and warehouse pulls. Existing reservations remain. You can restore it later."
+      confirmLabel="Archive bulk asset"
+      onConfirm={() => {
+        if (archiveBulkId) {
+          archiveBulkMutation.mutate(archiveBulkId);
+          setArchiveBulkId(null);
+        }
+      }}
+      pending={archiveBulkMutation.isPending}
+    />
+    <DeleteDialog
+      open={!!deleteBulkId}
+      onOpenChange={(open) => !open && setDeleteBulkId(null)}
+      title="Permanently delete this bulk asset?"
+      description="This removes the bulk inventory record and its history. This cannot be undone."
+      confirmLabel="Delete bulk asset"
+      onConfirm={() => {
+        if (deleteBulkId) {
+          deleteBulkMutation.mutate(deleteBulkId);
+          setDeleteBulkId(null);
+        }
+      }}
+      pending={deleteBulkMutation.isPending}
+    />
     </RequirePermission>
   );
 }

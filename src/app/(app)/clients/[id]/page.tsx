@@ -1,6 +1,6 @@
 "use client";
 
-import { use } from "react";
+import { use, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -30,6 +30,7 @@ import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { FadeIn } from "@/components/ui/motion";
 import { SectionHeader } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
@@ -70,6 +71,8 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
       router.push("/clients");
     },
   });
+
+  const [archiveOpen, setArchiveOpen] = useState(false);
 
   if (isLoading) {
     return <DetailPageSkeleton />;
@@ -127,9 +130,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                     <Button
                       variant="outline"
                       className="text-destructive"
-                      onClick={() => {
-                        if (confirm("Archive this client?")) archiveMutation.mutate();
-                      }}
+                      onClick={() => setArchiveOpen(true)}
                     >
                       <Archive className="mr-2 h-4 w-4" />
                       Archive
@@ -402,6 +403,18 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
           </div>
         </div>
       </FadeIn>
+      <DeleteDialog
+        open={archiveOpen}
+        onOpenChange={setArchiveOpen}
+        title="Archive this client?"
+        description="The client is hidden from new projects but past projects, quotes, and invoices remain. You can restore the client later from the archived view."
+        confirmLabel="Archive client"
+        onConfirm={() => {
+          archiveMutation.mutate();
+          setArchiveOpen(false);
+        }}
+        pending={archiveMutation.isPending}
+      />
     </RequirePermission>
   );
 }

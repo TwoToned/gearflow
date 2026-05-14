@@ -1,6 +1,6 @@
 "use client";
 
-import { use } from "react";
+import { use, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -18,6 +18,7 @@ import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { FadeIn } from "@/components/ui/motion";
@@ -84,6 +85,8 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
     onError: (e) => toast.error(e.message),
   });
 
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
   if (isLoading) return <DetailPageSkeleton />;
   if (!supplier) return <div className="text-fg-3 py-12 text-center">Supplier not found.</div>;
 
@@ -128,7 +131,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                     <Button
                       variant="outline"
                       className="text-destructive"
-                      onClick={() => { if (confirm("Delete this supplier? This cannot be undone.")) deleteMutation.mutate(); }}
+                      onClick={() => setDeleteOpen(true)}
                     >
                       <Trash2 className="mr-2 h-4 w-4" />
                       Delete
@@ -441,6 +444,18 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
           </div>
         </div>
       </FadeIn>
+      <DeleteDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Delete supplier?"
+        description="This permanently removes the supplier. Past orders and subhires that referenced this supplier are preserved but unlinked. This cannot be undone."
+        confirmLabel="Delete supplier"
+        onConfirm={() => {
+          deleteMutation.mutate();
+          setDeleteOpen(false);
+        }}
+        pending={deleteMutation.isPending}
+      />
     </RequirePermission>
   );
 }

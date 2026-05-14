@@ -1,6 +1,6 @@
 "use client";
 
-import { use } from "react";
+import { use, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -30,6 +30,7 @@ import { addLocationMedia, removeLocationMedia } from "@/server/location-media";
 import { NotesEditor } from "@/components/ui/notes-editor";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Badge } from "@/components/ui/badge";
 import { FadeIn } from "@/components/ui/motion";
 import { SectionHeader } from "@/components/layout/page-layouts";
@@ -68,6 +69,8 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
     },
     onError: (e) => toast.error(e.message),
   });
+
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   if (isLoading) {
     return <DetailPageSkeleton />;
@@ -126,7 +129,7 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
                   <Button
                     variant="outline"
                     className="text-destructive"
-                    onClick={() => { if (confirm("Delete this location? This cannot be undone.")) deleteMutation.mutate(); }}
+                    onClick={() => setDeleteOpen(true)}
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
                     Delete
@@ -414,6 +417,18 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
           </div>
         </div>
       </FadeIn>
+      <DeleteDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Delete location?"
+        description="This permanently removes the location. Assets, kits, and projects referencing it will be unlinked. This cannot be undone."
+        confirmLabel="Delete location"
+        onConfirm={() => {
+          deleteMutation.mutate();
+          setDeleteOpen(false);
+        }}
+        pending={deleteMutation.isPending}
+      />
     </RequirePermission>
   );
 }

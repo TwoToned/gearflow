@@ -43,6 +43,110 @@ async function collectKitBulkAdjustments(
 }
 
 // ---------------------------------------------------------------------------
+// Test & Tag (AS/NZS 3760:2022) compliance gate
+// ---------------------------------------------------------------------------
+
+/**
+ * Thrown when a scan or checkout is blocked because an asset has a Test &
+ * Tag record in FAILED or OVERDUE status. Per AS/NZS 3760:2022, equipment
+ * without current electrical-safety testing must not be deployed.
+ *
+ * Hard block — no in-flow override. An override flow (admin role + mandatory
+ * reason + activity log entry) is a separate Wave 2+ feature.
+ */
+export class TestTagBlockError extends Error {
+  constructor(
+    public readonly blocks: Array<{
+      assetTag: string;
+      status: "FAILED" | "OVERDUE";
+      nextDueDate: Date | null;
+    }>,
+  ) {
+    const lines = blocks.map(
+      (b) =>
+        `  • ${b.assetTag}: T&T ${b.status}${
+          b.nextDueDate ? ` (next test due ${b.nextDueDate.toISOString().split("T")[0]})` : ""
+        }`,
+    );
+    super(
+      `Cannot check out — Test & Tag compliance block:\n${lines.join("\n")}\n\n` +
+        `Resolve the failed/overdue tests before deploying.`,
+    );
+    this.name = "TestTagBlockError";
+  }
+}
+
+/**
+ * Asserts that none of the given assets are blocked by failed/overdue
+ * Test & Tag status. Throws TestTagBlockError on block. Logs a SCAN_VERIFY
+ * row for each blocked asset so the denied scan is auditable.
+ *
+ * Pass at least one of assetIds or bulkAssetIds. Empty input is a no-op.
+ */
+async function assertTestTagAllowsCheckout(
+  tx: TxClient,
+  organizationId: string,
+  options: {
+    assetIds?: string[];
+    bulkAssetIds?: string[];
+    projectId?: string | null;
+    scannedById: string;
+    kitId?: string | null;
+  },
+): Promise<void> {
+  const assetIds = options.assetIds?.filter(Boolean) ?? [];
+  const bulkAssetIds = options.bulkAssetIds?.filter(Boolean) ?? [];
+  if (assetIds.length === 0 && bulkAssetIds.length === 0) return;
+
+  const blocked = await tx.testTagAsset.findMany({
+    where: {
+      organizationId,
+      isActive: true,
+      status: { in: ["FAILED", "OVERDUE"] },
+      OR: [
+        ...(assetIds.length > 0 ? [{ assetId: { in: assetIds } }] : []),
+        ...(bulkAssetIds.length > 0 ? [{ bulkAssetId: { in: bulkAssetIds } }] : []),
+      ],
+    },
+    select: {
+      testTagId: true,
+      status: true,
+      nextDueDate: true,
+      assetId: true,
+      bulkAssetId: true,
+      asset: { select: { assetTag: true } },
+      bulkAsset: { select: { assetTag: true } },
+    },
+  });
+
+  if (blocked.length === 0) return;
+
+  // Log every blocked scan so the audit trail is complete
+  for (const b of blocked) {
+    await tx.assetScanLog.create({
+      data: {
+        organizationId,
+        assetId: b.assetId,
+        bulkAssetId: b.bulkAssetId,
+        kitId: options.kitId ?? null,
+        projectId: options.projectId ?? null,
+        action: "SCAN_VERIFY",
+        scannedById: options.scannedById,
+        notes: `Checkout blocked: T&T ${b.status} for ${b.asset?.assetTag ?? b.bulkAsset?.assetTag ?? b.testTagId}`,
+      },
+    });
+  }
+
+  throw new TestTagBlockError(
+    blocked.map((b) => ({
+      assetTag: b.asset?.assetTag ?? b.bulkAsset?.assetTag ?? b.testTagId,
+      status: b.status as "FAILED" | "OVERDUE",
+      nextDueDate: b.nextDueDate,
+    })),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // 1. getProjectForWarehouse
 // ---------------------------------------------------------------------------
 
@@ -169,6 +273,36 @@ export async function lookupAssetForScan(
       assetName, reason: "asset_unavailable" as const,
       assetStatus: asset.status,
     });
+  }
+
+  // Block checkout of T&T FAILED/OVERDUE assets (AS/NZS 3760:2022 compliance)
+  if (mode === "checkout") {
+    const blockingTt = await prisma.testTagAsset.findFirst({
+      where: {
+        organizationId,
+        isActive: true,
+        status: { in: ["FAILED", "OVERDUE"] },
+        OR: [
+          ...(asset ? [{ assetId: asset.id }] : []),
+          ...(bulkAsset ? [{ bulkAssetId: bulkAsset.id }] : []),
+        ],
+      },
+      select: { status: true, nextDueDate: true, lastTestDate: true, testTagId: true },
+    });
+    if (blockingTt) {
+      return serialize({
+        found: true as const,
+        type: null,
+        lineItemId: null,
+        assetId: asset?.id ?? null,
+        assetName,
+        reason: "tt_blocked" as const,
+        ttStatus: blockingTt.status,
+        ttNextDueDate: blockingTt.nextDueDate,
+        ttLastTestDate: blockingTt.lastTestDate,
+        ttTestTagId: blockingTt.testTagId,
+      });
+    }
   }
 
   // For serialized assets, first try to find a line item with this exact asset assigned
@@ -307,6 +441,28 @@ export async function checkOutItems(
       select: { locationId: true },
     });
     const projectLocationId = project?.locationId || null;
+
+    // Pre-flight T&T compliance block — fetch all line items first, gather
+    // every serialized and bulk asset id involved, and assert none have a
+    // failed/overdue Test & Tag record. Throws TestTagBlockError on block,
+    // rolling back the whole batch (no partial check-out across the items).
+    const preflightLineItems = await tx.projectLineItem.findMany({
+      where: { id: { in: items.map((i) => i.lineItemId) }, organizationId, projectId },
+      select: { id: true, assetId: true, bulkAssetId: true },
+    });
+    const preflightAssetIds = [
+      ...preflightLineItems.map((li) => li.assetId).filter(Boolean) as string[],
+      ...items.map((i) => i.assetId).filter(Boolean) as string[],
+    ];
+    const preflightBulkIds = preflightLineItems
+      .map((li) => li.bulkAssetId)
+      .filter(Boolean) as string[];
+    await assertTestTagAllowsCheckout(tx, organizationId, {
+      assetIds: preflightAssetIds,
+      bulkAssetIds: preflightBulkIds,
+      projectId,
+      scannedById: userId,
+    });
 
     for (const item of items) {
       // Verify line item belongs to this project and org
@@ -663,6 +819,53 @@ export async function checkOutKit(projectId: string, kitId: string) {
     });
     const projectLocationId = project?.locationId || null;
 
+    // Pre-flight T&T compliance block — gather every asset id reachable
+    // through the kit's permanent composition (KitSerializedItem and
+    // KitBulkItem) plus any nested kit's composition. If any asset has
+    // FAILED/OVERDUE T&T status, throw and roll back. Mirror of the
+    // bulk-availability gathering pattern from Wave 1.5.
+    const kitSerializedItems = await tx.kitSerializedItem.findMany({
+      where: { kitId },
+      select: { assetId: true },
+    });
+    const kitBulkItems = await tx.kitBulkItem.findMany({
+      where: { kitId, organizationId },
+      select: { bulkAssetId: true },
+    });
+    // Find nested kits via child line items so we can include their composition
+    const kitChildren = await tx.projectLineItem.findMany({
+      where: { parentLineItemId: kitLineItem.id, organizationId },
+      select: { kitId: true },
+    });
+    const nestedKitIds = kitChildren
+      .map((c) => c.kitId)
+      .filter(Boolean) as string[];
+    const nestedSerializedItems = nestedKitIds.length
+      ? await tx.kitSerializedItem.findMany({
+          where: { kitId: { in: nestedKitIds } },
+          select: { assetId: true },
+        })
+      : [];
+    const nestedBulkItems = nestedKitIds.length
+      ? await tx.kitBulkItem.findMany({
+          where: { kitId: { in: nestedKitIds }, organizationId },
+          select: { bulkAssetId: true },
+        })
+      : [];
+    await assertTestTagAllowsCheckout(tx, organizationId, {
+      assetIds: [
+        ...kitSerializedItems.map((k) => k.assetId),
+        ...nestedSerializedItems.map((k) => k.assetId),
+      ],
+      bulkAssetIds: [
+        ...kitBulkItems.map((k) => k.bulkAssetId),
+        ...nestedBulkItems.map((k) => k.bulkAssetId),
+      ],
+      projectId,
+      scannedById: userId,
+      kitId,
+    });
+
     // Update kit parent line item
     await tx.projectLineItem.update({
       where: { id: kitLineItem.id },
@@ -992,6 +1195,15 @@ export async function quickAddAndCheckOut(
   const { organizationId, userId } = await requirePermission("warehouse", "check_out");
 
   const result = await prisma.$transaction(async (tx) => {
+    // T&T compliance block — refuse to add an asset to a project if its
+    // electrical-safety test is failed or overdue.
+    await assertTestTagAllowsCheckout(tx, organizationId, {
+      assetIds: data.assetId ? [data.assetId] : [],
+      bulkAssetIds: data.bulkAssetId ? [data.bulkAssetId] : [],
+      projectId,
+      scannedById: userId,
+    });
+
     // Get next sort order
     const maxSort = await tx.projectLineItem.aggregate({
       where: { projectId, organizationId },

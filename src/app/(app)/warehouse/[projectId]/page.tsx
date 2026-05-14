@@ -855,6 +855,11 @@ function WarehouseProjectPage({
         }
         const detail = "detail" in result ? (result.detail as string) : "";
         const assetStatus = "assetStatus" in result ? (result.assetStatus as string) : "";
+        const ttStatus = "ttStatus" in result ? (result.ttStatus as string) : "";
+        const ttNextDue =
+          "ttNextDueDate" in result && result.ttNextDueDate
+            ? new Date(result.ttNextDueDate as unknown as string).toLocaleDateString()
+            : "";
         const messages: Record<string, string> = {
           already_checked_out: "Already deployed on this project",
           asset_checked_out_elsewhere: `Already deployed${detail}`,
@@ -862,6 +867,7 @@ function WarehouseProjectPage({
           not_checked_out: "Asset is not deployed on this project",
           already_returned: "All units already returned",
           asset_unavailable: `Asset is ${assetStatus.replace("_", " ").toLowerCase()} and cannot be deployed`,
+          tt_blocked: `Test & Tag ${ttStatus.toLowerCase()}${ttNextDue ? ` — next test due ${ttNextDue}` : ""}. Cannot deploy until tested.`,
         };
         toast.error(messages[result.reason as string] || "Cannot deploy this asset");
         setScanValue("");

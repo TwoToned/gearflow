@@ -30,6 +30,7 @@ export const maintenanceSchema = z.object({
     .transform((v) => (v === "" ? undefined : v)),
   cost: z.coerce.number().min(0).optional(),
   partsUsed: z.string().max(2000).optional(),
+  photos: z.array(z.string().url()).max(20).default([]),
   result: z.enum(["PASS", "FAIL", "CONDITIONAL"]).optional(),
   tags: z.array(z.string()).default([]),
   nextDueDate: z

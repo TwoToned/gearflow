@@ -111,6 +111,7 @@ function CardRow({
   }>;
   const firstTag = assetTags[0]?.asset.assetTag;
   const moreCount = Math.max(0, assetTags.length - 1);
+  const photos = (record.photos ?? []) as string[];
 
   return (
     <Link
@@ -164,6 +165,26 @@ function CardRow({
           <span className="tabular-nums">${Number(record.cost).toFixed(0)}</span>
         )}
       </div>
+
+      {/* Photo thumbnails (up to 4). Visual evidence on the card. */}
+      {photos.length > 0 && (
+        <div className="mt-2 grid grid-cols-4 gap-1">
+          {photos.slice(0, 4).map((url, i) => (
+            <div
+              key={url}
+              className="relative aspect-square overflow-hidden rounded bg-bg-inset"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={url} alt="" className="h-full w-full object-cover" />
+              {i === 3 && photos.length > 4 && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/55 text-[10px] font-semibold text-white">
+                  +{photos.length - 4}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Action row — stop bubbling so clicks don't navigate */}
       <div

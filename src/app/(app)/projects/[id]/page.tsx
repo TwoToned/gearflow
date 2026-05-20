@@ -29,6 +29,7 @@ import { CallSheetDialog } from "@/components/projects/call-sheet-dialog";
 import { ServicesPanel } from "@/components/projects/services-panel";
 import { FinancialSummary } from "@/components/projects/financial-summary";
 import { ProjectCostsPanel } from "@/components/projects/project-costs-panel";
+import { ProjectConflictsBanner } from "@/components/projects/project-conflicts-banner";
 import { ProjectManagersPanel } from "@/components/projects/project-managers-panel";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -445,6 +446,9 @@ export default function ProjectDetailPage({
               total={project.total as number | null}
             />
           )}
+
+          {/* Reservation conflict banner — hides itself when clean */}
+          {!project.isTemplate && <ProjectConflictsBanner projectId={id} />}
 
           {/* ── 2-Column Layout ────────────────────────────────────── */}
           <div className="flex flex-col gap-6 lg:flex-row">

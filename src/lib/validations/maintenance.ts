@@ -14,7 +14,7 @@ export const maintenanceSchema = z.object({
     ])
     .default("REPAIR"),
   status: z
-    .enum(["SCHEDULED", "IN_PROGRESS", "COMPLETED", "CANCELLED"])
+    .enum(["SCHEDULED", "AWAITING_PARTS", "IN_PROGRESS", "QA", "COMPLETED", "CANCELLED"])
     .default("SCHEDULED"),
   title: z.string().min(1, "Title is required").max(200),
   description: z.string().max(5000).optional(),
@@ -30,6 +30,7 @@ export const maintenanceSchema = z.object({
     .transform((v) => (v === "" ? undefined : v)),
   cost: z.coerce.number().min(0).optional(),
   partsUsed: z.string().max(2000).optional(),
+  photos: z.array(z.string().url()).max(20).default([]),
   result: z.enum(["PASS", "FAIL", "CONDITIONAL"]).optional(),
   tags: z.array(z.string()).default([]),
   nextDueDate: z

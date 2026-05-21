@@ -16,6 +16,7 @@ import { TagInput } from "@/components/ui/tag-input";
 import { peekNextAssetTags } from "@/server/settings";
 import { getModels } from "@/server/models";
 import { getLocations } from "@/server/locations";
+import { getSuppliers } from "@/server/suppliers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScanInput } from "@/components/ui/scan-input";
@@ -48,6 +49,12 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
     queryFn: () => getLocations({ pageSize: 100 }),
   });
   const locations = locationsData?.locations || [];
+
+  const { data: suppliersData } = useQuery({
+    queryKey: ["suppliers", orgId],
+    queryFn: () => getSuppliers(),
+  });
+  const suppliers = Array.isArray(suppliersData) ? suppliersData : [];
 
   const { data: orgTags } = useQuery({
     queryKey: ["org-tags", orgId],
@@ -148,6 +155,23 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
           <div className="space-y-2">
             <Label htmlFor="reorderThreshold">Reorder Threshold</Label>
             <Input id="reorderThreshold" type="number" {...form.register("reorderThreshold")} placeholder="Low stock alert" />
+            <p className="text-[11px] text-fg-4">
+              Items at or below this surface on /warehouse/reorder.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label>Preferred Supplier</Label>
+            <ComboboxPicker
+              value={form.watch("preferredSupplierId") || ""}
+              onChange={(v) => form.setValue("preferredSupplierId", v)}
+              options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
+              placeholder="No preferred supplier"
+              searchPlaceholder="Search suppliers..."
+              allowClear
+            />
+            <p className="text-[11px] text-fg-4">
+              Reorder dashboard groups low-stock items by supplier.
+            </p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="status">Status</Label>

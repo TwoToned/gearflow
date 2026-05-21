@@ -26,6 +26,7 @@ import { FormSection, SectionHeader } from "@/components/layout/page-layouts";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { QuickCreateLocation } from "./quick-create-location";
 import { QuickCreateSupplier } from "./quick-create-supplier";
+import { CustomFieldsInput } from "@/components/custom-fields/custom-fields-input";
 import { useActiveOrganization } from "@/lib/auth-client";
 
 interface AssetFormProps {
@@ -304,6 +305,19 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
           </div>
         </div>
       </FormSection>
+
+      {/* Operator-defined custom fields — renders nothing if none configured */}
+      <Controller
+        name="customFieldValues"
+        control={form.control}
+        render={({ field }) => (
+          <CustomFieldsInput
+            entityType="ASSET"
+            values={(field.value as Record<string, string>) ?? {}}
+            onChange={field.onChange}
+          />
+        )}
+      />
 
       <SectionHeader label="Notes" />
       <FormSection>

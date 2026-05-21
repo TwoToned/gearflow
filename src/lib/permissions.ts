@@ -30,6 +30,7 @@ export const RESOURCES = [
   "crew",
   "reports",
   "checkItem",
+  "stocktake",
 ] as const;
 
 export type Resource = (typeof RESOURCES)[number];
@@ -134,6 +135,15 @@ export const PERMISSION_REGISTRY: Record<
       { key: "delete", label: "Delete" },
     ],
   },
+  stocktake: {
+    label: "Stocktake",
+    actions: [
+      { key: "read", label: "View" },
+      { key: "create", label: "Create" },
+      { key: "update", label: "Edit" },
+      { key: "delete", label: "Delete" },
+    ],
+  },
   location: {
     label: "Locations",
     actions: [
@@ -231,6 +241,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     warehouse: ["read", "check_out", "check_in", "scan", "close"],
     testTag: ["create", "read", "update", "delete", "quick_test", "generate_reports"],
     maintenance: ALL_CRUD,
+    stocktake: ALL_CRUD,
     location: ALL_CRUD,
     document: ["generate", "send", "manage_templates"],
     orgSettings: ["read", "update"],
@@ -251,6 +262,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     warehouse: ["read", "check_out", "check_in", "scan", "close"],
     testTag: ["create", "read", "update", "delete", "quick_test", "generate_reports"],
     maintenance: ALL_CRUD,
+    stocktake: ALL_CRUD,
     location: ALL_CRUD,
     document: ["generate", "send", "manage_templates"],
     orgSettings: ["read", "update"],
@@ -271,6 +283,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     warehouse: ["read", "check_out", "check_in", "scan", "close"],
     testTag: ["create", "read", "update", "quick_test", "generate_reports"],
     maintenance: ["create", "read", "update"],
+    stocktake: ["create", "read", "update"],
     location: ["create", "read", "update"],
     document: ["generate", "send", "manage_templates"],
     orgSettings: ["read"],
@@ -291,6 +304,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     warehouse: ["read", "check_out", "check_in", "scan"],
     testTag: ["create", "read", "update", "quick_test"],
     maintenance: ["create", "read", "update"],
+    stocktake: ["create", "read", "update"],
     location: ["read"],
     document: ["generate"],
     orgSettings: [],
@@ -316,6 +330,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     warehouse: ["read", "check_out", "check_in", "scan", "close"],
     testTag: ["read"],
     maintenance: ["read"],
+    stocktake: ["read"],
     location: ["read"],
     document: [],
     orgSettings: [],
@@ -336,6 +351,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     warehouse: [],
     testTag: ["read"],
     maintenance: ["read"],
+    stocktake: ["read"],
     location: ["read"],
     document: [],
     orgSettings: [],

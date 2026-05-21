@@ -26,6 +26,11 @@ import {
   HardHat,
   Clock,
   Plus,
+  AlertTriangle,
+  Hammer,
+  Activity,
+  ClipboardList,
+  ShoppingCart,
   type LucideIcon,
 } from "lucide-react";
 import { usePlatformBranding } from "@/lib/use-platform-name";
@@ -129,13 +134,18 @@ const navSections: NavSection[] = [
       { title: "Models", url: "/assets/models", icon: Boxes, resource: "model" },
       { title: "Categories", url: "/assets/categories", icon: Tags, resource: "model" },
       { title: "Kits", url: "/kits", icon: Container, resource: "kit" },
+      { title: "Utilization", url: "/utilization", icon: Activity, resource: "asset" },
     ],
   },
   {
     label: "OPERATIONS",
     items: [
       { title: "Warehouse", url: "/warehouse", icon: Warehouse, resource: "warehouse" },
+      { title: "Stocktake", url: "/warehouse/stocktake", icon: ClipboardList, resource: "stocktake" },
+      { title: "Reorder", url: "/warehouse/reorder", icon: ShoppingCart, resource: "bulkAsset" },
+      { title: "Workshop", url: "/workshop", icon: Hammer, resource: "maintenance" },
       { title: "Maintenance", url: "/maintenance", icon: Wrench, resource: "maintenance" },
+      { title: "Damage", url: "/damage", icon: AlertTriangle, resource: "maintenance" },
       {
         title: "Test & Tag",
         url: "/test-and-tag",

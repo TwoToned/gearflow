@@ -48,6 +48,8 @@ model User {
   crewMembers               CrewMember[]
   confirmedAssignments      CrewAssignment[]            @relation("ConfirmedBy")
   approvedTimeEntries       CrewTimeEntry[]             @relation("TimeEntryApprovedBy")
+  stocktakesStarted         Stocktake[]                 @relation("StocktakeStarted")
+  stocktakesReviewed        Stocktake[]                 @relation("StocktakeReviewed")
   ssoProviders              SsoProvider[]
   pendingSSOApprovals       PendingSSOApproval[]
   reviewedSSOApprovals      PendingSSOApproval[]        @relation("SSOReviewer")
@@ -188,6 +190,8 @@ model Organization {
   supplierModelRates       SupplierModelRate[]
   notificationDismissals   NotificationDismissal[]
   notificationEmailLogs    NotificationEmailLog[]
+  stocktakes               Stocktake[]
+  customFieldDefinitions   CustomFieldDefinition[]
 
   @@map("organization")
 }
@@ -340,7 +344,9 @@ enum MaintenanceType {
 
 enum MaintenanceStatus {
   SCHEDULED
+  AWAITING_PARTS
   IN_PROGRESS
+  QA
   COMPLETED
   CANCELLED
 }
@@ -701,6 +707,7 @@ model Supplier {
   orders             SupplierOrder[]
   subHires           SubHire[]
   supplierModelRates SupplierModelRate[]
+  preferredBulkAssets BulkAsset[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -1021,6 +1028,7 @@ model Asset {
   supplierOrderItems SupplierOrderItem[]
   checkRecords       CheckRecord[]
   damageEvents       DamageEvent[]
+  stocktakeItems     StocktakeItem[]
 
   @@unique([organizationId, assetTag])
   @@index([organizationId])
@@ -1050,6 +1058,14 @@ model BulkAsset {
   location             Location?       @relation(fields: [locationId], references: [id])
   status               BulkAssetStatus @default(ACTIVE)
   reorderThreshold     Int?
+  /** Preferred supplier for reorder. Drives the supplier grouping on
+   *  /warehouse/reorder and pre-fills the draft SupplierOrder. */
+  preferredSupplierId  String?
+  preferredSupplier    Supplier?       @relation(fields: [preferredSupplierId], references: [id], onDelete: SetNull)
+  /** Last time a SupplierOrder containing this bulk asset was created.
+   *  Populated lazily by createReorderDraft so the dashboard can show
+   *  "ordered 12 days ago" alongside current stock. */
+  lastReorderedAt      DateTime?
   notes                String?
   tags                 String[]        @default([])
   isActive             Boolean         @default(true)
@@ -1057,11 +1073,12 @@ model BulkAsset {
   updatedAt            DateTime        @updatedAt
 
   kitBulkItems  KitBulkItem[]
-  lineItems     ProjectLineItem[]
-  scanLogs      AssetScanLog[]
-  testTagAssets TestTagAsset[]
-  checkRecords  CheckRecord[]
-  damageEvents  DamageEvent[]
+  lineItems       ProjectLineItem[]
+  scanLogs        AssetScanLog[]
+  testTagAssets   TestTagAsset[]
+  checkRecords    CheckRecord[]
+  damageEvents    DamageEvent[]
+  stocktakeItems  StocktakeItem[]
 
   @@unique([organizationId, assetTag])
   @@index([organizationId])
@@ -1097,6 +1114,7 @@ model Location {
   projects                 Project[]
   media                    LocationMedia[]
   warehouseDashboardTokens WarehouseDashboardToken[]
+  stocktakes               Stocktake[]
 
   @@index([organizationId])
   @@index([parentId])
@@ -1130,6 +1148,10 @@ model MaintenanceRecord {
   cost           Decimal?           @db.Decimal(10, 2)
   partsUsed      String?
   attachments    String[]           @default([])
+  /** Before/after photos uploaded during repair. Mirrors DamageEvent.photos
+   *  shape — string URLs from /api/uploads. Workshop kanban cards render
+   *  up to 4 thumbnails. */
+  photos         String[]           @default([])
   result         MaintenanceResult?
   nextDueDate    DateTime?
   tags           String[]           @default([])
@@ -2880,6 +2902,144 @@ model NotificationEmailLog {
   @@unique([userId, notificationKey])
   @@index([organizationId, sentAt])
   @@map("notification_email_log")
+}
+
+// ─── Stocktake / Inventory Verification ─────────────────────────────────────
+
+model Stocktake {
+  id              String          @id @default(cuid())
+  organizationId  String
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name            String
+  locationId      String
+  location        Location        @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  scope           StocktakeScope
+  categoryId      String?
+  status          StocktakeStatus @default(DRAFT)
+
+  startedAt       DateTime?
+  startedById     String?
+  startedBy       User?           @relation("StocktakeStarted", fields: [startedById], references: [id], onDelete: SetNull)
+  completedAt     DateTime?
+  reviewedById    String?
+  reviewedBy      User?           @relation("StocktakeReviewed", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  expectedCount    Int            @default(0)
+  foundCount       Int            @default(0)
+  missingCount     Int            @default(0)
+  unexpectedCount  Int            @default(0)
+  discrepancyCount Int            @default(0)
+
+  notes           String?
+  items           StocktakeItem[]
+
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([organizationId])
+  @@index([locationId])
+  @@map("stocktake")
+}
+
+model StocktakeItem {
+  id              String              @id @default(cuid())
+  stocktakeId     String
+  stocktake       Stocktake           @relation(fields: [stocktakeId], references: [id], onDelete: Cascade)
+
+  assetId         String?
+  asset           Asset?              @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  bulkAssetId     String?
+  bulkAsset       BulkAsset?          @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
+
+  expectedAtLocation Boolean          @default(true)
+  expectedQuantity   Int              @default(1)
+
+  found           Boolean             @default(false)
+  foundQuantity   Int                 @default(0)
+  scannedAt       DateTime?
+  scannedById     String?
+
+  result          StocktakeItemResult @default(MATCH)
+  conditionNote   String?
+  actionTaken     String?
+
+  @@index([stocktakeId])
+  @@index([assetId])
+  @@index([bulkAssetId])
+  @@map("stocktake_item")
+}
+
+enum StocktakeScope {
+  FULL
+  CATEGORY
+  SPOT_CHECK
+}
+
+enum StocktakeStatus {
+  DRAFT
+  IN_PROGRESS
+  REVIEWING
+  COMPLETED
+  CANCELLED
+}
+
+enum StocktakeItemResult {
+  MATCH
+  MISSING
+  UNEXPECTED
+  QUANTITY_MISMATCH
+  WRONG_LOCATION
+}
+
+// ─── Custom Fields (operator-defined entity attributes) ─────────────────────
+
+/**
+ * Org-defined custom fields. Each definition adds an input to an entity's
+ * create/edit form; the value is stored in that entity's existing
+ * `customFieldValues` JSON column keyed by `fieldKey`.
+ *
+ * entityType is an enum for forward-compat — v1 wires ASSET only; KIT /
+ * PROJECT / BULK_ASSET follow once they all carry a values column.
+ */
+model CustomFieldDefinition {
+  id             String            @id @default(cuid())
+  organizationId String
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  entityType     CustomFieldEntity @default(ASSET)
+  /** Human label shown on the form, e.g. "Rig Number". */
+  label          String
+  /** Stable machine key into the customFieldValues JSON. Immutable once set. */
+  fieldKey       String
+  fieldType      CustomFieldType   @default(TEXT)
+  /** Choices for SELECT type. Empty for other types. */
+  options        String[]          @default([])
+  required       Boolean           @default(false)
+  helpText       String?
+  sortOrder      Int               @default(0)
+  isActive       Boolean           @default(true)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@unique([organizationId, entityType, fieldKey])
+  @@index([organizationId, entityType])
+  @@map("custom_field_definition")
+}
+
+enum CustomFieldEntity {
+  ASSET
+  BULK_ASSET
+  KIT
+  PROJECT
+}
+
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  DATE
+  SELECT
+  BOOLEAN
 }
 
 // ─── Prep System (Pre-Packing / Staging) ─────────────────────────────────────

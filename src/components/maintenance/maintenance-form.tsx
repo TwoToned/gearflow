@@ -25,6 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { BarcodeScanner } from "@/components/ui/barcode-scanner";
+import { PhotoGridInput } from "@/components/ui/photo-grid-input";
 import {
   Select,
   SelectContent,
@@ -77,6 +78,7 @@ export function MaintenanceForm({ initialData }: MaintenanceFormProps) {
   });
 
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [photosUploading, setPhotosUploading] = useState(false);
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>(
     initialData?.assetIds?.length
       ? initialData.assetIds
@@ -98,6 +100,7 @@ export function MaintenanceForm({ initialData }: MaintenanceFormProps) {
       completedDate: "",
       cost: undefined,
       partsUsed: "",
+      photos: [],
       result: undefined,
       nextDueDate: "",
     },
@@ -382,6 +385,20 @@ export function MaintenanceForm({ initialData }: MaintenanceFormProps) {
         </div>
       </div>
 
+      {/* Photos — before/after evidence for the workshop card */}
+      <div className="space-y-2">
+        <Label>Photos</Label>
+        <PhotoGridInput
+          value={form.watch("photos") ?? []}
+          onChange={(urls) => form.setValue("photos", urls, { shouldDirty: true })}
+          onUploadingChange={setPhotosUploading}
+        />
+        <p className="text-[11px] text-fg-4">
+          Up to 20 photos. Phones use the rear camera; desktop opens a file
+          picker. Thumbnails show on the workshop kanban card.
+        </p>
+      </div>
+
       {/* Result + Next Due */}
       {statusValue === "COMPLETED" && (
         <div className="grid gap-4 sm:grid-cols-2">
@@ -413,17 +430,24 @@ export function MaintenanceForm({ initialData }: MaintenanceFormProps) {
       )}
 
       {/* Actions */}
-      <div className="flex gap-3">
-        <Button type="submit" disabled={mutation.isPending}>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="submit" disabled={mutation.isPending || photosUploading}>
           {mutation.isPending
             ? "Saving..."
-            : isEdit
-              ? "Update Record"
-              : "Create Record"}
+            : photosUploading
+              ? "Uploading photos..."
+              : isEdit
+                ? "Update Record"
+                : "Create Record"}
         </Button>
         <Button type="button" variant="outline" onClick={() => router.back()}>
           Cancel
         </Button>
+        {photosUploading && (
+          <span className="text-xs text-fg-4">
+            Wait for the photos to finish uploading before saving.
+          </span>
+        )}
       </div>
     </form>
   );

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
-import { X, Zap, ZapOff, Camera, SwitchCamera } from "lucide-react";
+import { useEffect, useId, useRef, useState, useCallback } from "react";
+import { X, Zap, ZapOff, Camera, SwitchCamera, ZoomIn, ZoomOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface BarcodeScannerProps {
@@ -12,14 +12,28 @@ interface BarcodeScannerProps {
   title?: string;
   /** If true, scanner stays open after a scan for continuous scanning */
   continuous?: boolean;
+  /** If true, scan the full camera frame instead of a centered crop box.
+   * Helps with small/offset codes (e.g. asset tags photographed at an angle). */
+  fullFrame?: boolean;
 }
 
 /**
  * Camera barcode/QR scanner overlay.
  * Compact inline mode — not full-screen.
  * Uses html5-qrcode for camera-based scanning.
- * Supports rear camera, torch toggle, camera switching, and continuous mode.
+ *
+ * Wave 2 hardening (2.D):
+ *   - Per-instance DOM id (was hardcoded — two open scanners collided)
+ *   - playsInline / muted forced on the video element before play() so iOS
+ *     Safari actually streams instead of opening a fullscreen black player
+ *   - Last-picked camera persisted to localStorage (resets to rear on first
+ *     mount but remembers a deliberate switch across sessions)
+ *   - Zoom slider when MediaTrackCapabilities.zoom is supported
+ *   - Micro QR added to the supported-formats list
+ *   - Optional fullFrame prop for camera-pointed-at-a-shelf scenarios
  */
+const CAMERA_PREF_KEY = "gearflow.scanner.preferredCameraId";
+
 function playScanChime() {
   try {
     const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
@@ -39,7 +53,26 @@ function playScanChime() {
   }
 }
 
-export function BarcodeScanner({ open, onScan, onClose, title = "Scan barcode or QR code", continuous = false }: BarcodeScannerProps) {
+/** iOS Safari requires playsInline + muted set BEFORE play() — html5-qrcode
+ * doesn't always do this reliably. We belt-and-suspender it post-start. */
+function ensureIOSPlaysInline(viewportEl: HTMLElement | null): HTMLVideoElement | null {
+  if (!viewportEl) return null;
+  const video = viewportEl.querySelector("video") as HTMLVideoElement | null;
+  if (!video) return null;
+  video.setAttribute("playsinline", "true");
+  video.setAttribute("webkit-playsinline", "true");
+  video.muted = true;
+  return video;
+}
+
+export function BarcodeScanner({
+  open,
+  onScan,
+  onClose,
+  title = "Scan barcode or QR code",
+  continuous = false,
+  fullFrame = false,
+}: BarcodeScannerProps) {
   const scannerRef = useRef<HTMLDivElement>(null);
   const html5QrRef = useRef<import("html5-qrcode").Html5Qrcode | null>(null);
   const [torch, setTorch] = useState(false);
@@ -49,8 +82,15 @@ export function BarcodeScanner({ open, onScan, onClose, title = "Scan barcode or
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [lastScanned, setLastScanned] = useState<string | null>(null);
+  const [zoom, setZoom] = useState<{ min: number; max: number; step: number; value: number } | null>(null);
   const cooldownRef = useRef(false);
   const activeRef = useRef(false);
+
+  // Stable per-instance viewport id. Without this, two scanners mounted at
+  // the same time (e.g. mobile-nav scan shortcut + warehouse scan input)
+  // collide on `barcode-scanner-viewport` and one silently fails.
+  const instanceId = useId().replace(/:/g, "");
+  const viewportElementId = `barcode-scanner-viewport-${instanceId}`;
 
   // Stable refs for callbacks so startScanner doesn't depend on them
   const onScanRef = useRef(onScan);
@@ -82,36 +122,42 @@ export function BarcodeScanner({ open, onScan, onClose, title = "Scan barcode or
 
     try {
       // Dynamic import to keep bundle small when scanner isn't used
-      const { Html5Qrcode } = await import("html5-qrcode");
+      const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import("html5-qrcode");
 
       await stopScanner();
 
-      const elementId = "barcode-scanner-viewport";
-      // Ensure the element exists
-      if (!document.getElementById(elementId)) {
+      // Ensure the per-instance viewport exists
+      if (!document.getElementById(viewportElementId)) {
         const div = document.createElement("div");
-        div.id = elementId;
+        div.id = viewportElementId;
         scannerRef.current.appendChild(div);
       }
 
-      const { Html5QrcodeSupportedFormats } = await import("html5-qrcode");
-      const scanner = new Html5Qrcode(elementId, {
+      // Micro QR isn't always exported in every html5-qrcode version — guard with a runtime check.
+      const formats = [
+        Html5QrcodeSupportedFormats.QR_CODE,
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.CODE_93,
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E,
+        Html5QrcodeSupportedFormats.ITF,
+        Html5QrcodeSupportedFormats.CODABAR,
+        Html5QrcodeSupportedFormats.DATA_MATRIX,
+        Html5QrcodeSupportedFormats.PDF_417,
+        Html5QrcodeSupportedFormats.AZTEC,
+      ];
+      const formatsAny = Html5QrcodeSupportedFormats as unknown as Record<string, number | undefined>;
+      if (typeof formatsAny.MICRO_QR_CODE === "number") {
+        formats.push(formatsAny.MICRO_QR_CODE as unknown as typeof Html5QrcodeSupportedFormats.QR_CODE);
+      }
+
+      const scanner = new Html5Qrcode(viewportElementId, {
         verbose: false,
         useBarCodeDetectorIfSupported: true,
-        formatsToSupport: [
-          Html5QrcodeSupportedFormats.QR_CODE,
-          Html5QrcodeSupportedFormats.CODE_128,
-          Html5QrcodeSupportedFormats.CODE_39,
-          Html5QrcodeSupportedFormats.CODE_93,
-          Html5QrcodeSupportedFormats.EAN_13,
-          Html5QrcodeSupportedFormats.EAN_8,
-          Html5QrcodeSupportedFormats.UPC_A,
-          Html5QrcodeSupportedFormats.UPC_E,
-          Html5QrcodeSupportedFormats.ITF,
-          Html5QrcodeSupportedFormats.CODABAR,
-          Html5QrcodeSupportedFormats.DATA_MATRIX,
-          Html5QrcodeSupportedFormats.PDF_417,
-        ],
+        formatsToSupport: formats,
       });
       html5QrRef.current = scanner;
 
@@ -124,25 +170,33 @@ export function BarcodeScanner({ open, onScan, onClose, title = "Scan barcode or
       }
       setCameras(devices);
 
-      // Prefer back/rear camera
-      const backCamera = devices.find(
-        (d) => /back|rear|environment/i.test(d.label)
-      );
-      const selectedCamera = cameraId || backCamera?.id || devices[devices.length - 1].id;
+      // Camera priority: explicit cameraId param → localStorage pref → back/rear → last device.
+      const storedPref = typeof window !== "undefined"
+        ? window.localStorage.getItem(CAMERA_PREF_KEY) ?? undefined
+        : undefined;
+      const storedPrefStillExists = storedPref && devices.some((d) => d.id === storedPref);
+      const backCamera = devices.find((d) => /back|rear|environment/i.test(d.label));
+      const selectedCamera =
+        cameraId ||
+        (storedPrefStillExists ? storedPref : undefined) ||
+        backCamera?.id ||
+        devices[devices.length - 1].id;
       const selectedIdx = devices.findIndex((d) => d.id === selectedCamera);
       if (selectedIdx >= 0) setCurrentCameraIdx(selectedIdx);
 
       activeRef.current = true;
       await scanner.start(
-        selectedCamera,
+        selectedCamera!,
         {
           fps: 15,
-          qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-            // Use most of the viewport — tall enough for QR codes, wide enough for barcodes
-            const width = Math.floor(Math.min(viewfinderWidth * 0.85, 400));
-            const height = Math.floor(Math.min(viewfinderHeight * 0.7, width));
-            return { width, height };
-          },
+          // Full-frame mode skips the centered crop box so off-center codes scan.
+          qrbox: fullFrame
+            ? undefined
+            : (viewfinderWidth: number, viewfinderHeight: number) => {
+                const width = Math.floor(Math.min(viewfinderWidth * 0.85, 400));
+                const height = Math.floor(Math.min(viewfinderHeight * 0.7, width));
+                return { width, height };
+              },
           videoConstraints: {
             facingMode: "environment",
             width: { ideal: 1920 },
@@ -153,21 +207,17 @@ export function BarcodeScanner({ open, onScan, onClose, title = "Scan barcode or
           },
         },
         (decodedText) => {
-          // Guard against callbacks firing after scanner is stopped
           if (!activeRef.current) return;
-          // In continuous mode, debounce same code for 2 seconds
           if (cooldownRef.current) return;
           cooldownRef.current = true;
           setTimeout(() => { cooldownRef.current = false; }, 2000);
 
-          // Feedback on scan
           if (navigator.vibrate) navigator.vibrate(200);
           playScanChime();
           setLastScanned(decodedText);
           onScanRef.current(decodedText);
 
           if (!continuousRef.current) {
-            // Brief delay before closing so user sees the scan registered
             setTimeout(() => {
               stopScanner();
               onCloseRef.current();
@@ -179,7 +229,10 @@ export function BarcodeScanner({ open, onScan, onClose, title = "Scan barcode or
         }
       );
 
-      // Apply continuous autofocus + check torch support on the live video track
+      // iOS: ensure playsInline so the video doesn't go fullscreen
+      const video = ensureIOSPlaysInline(scannerRef.current);
+
+      // Probe torch + zoom support on the live track.
       try {
         const track = scanner.getRunningTrackCameraCapabilities?.();
         if (track && "torchFeature" in track) {
@@ -189,22 +242,30 @@ export function BarcodeScanner({ open, onScan, onClose, title = "Scan barcode or
       } catch {
         setTorchSupported(false);
       }
-      // Belt-and-suspenders: also apply focus directly on the video track
       try {
-        const video = document.querySelector("#barcode-scanner-viewport video") as HTMLVideoElement | null;
         const videoTrack = video?.srcObject instanceof MediaStream
           ? video.srcObject.getVideoTracks()[0]
           : null;
         if (videoTrack) {
-          const caps = videoTrack.getCapabilities?.() as MediaTrackCapabilities & { focusMode?: string[] };
+          const caps = videoTrack.getCapabilities?.() as
+            MediaTrackCapabilities & { focusMode?: string[]; zoom?: { min: number; max: number; step: number } };
           if (caps?.focusMode?.includes("continuous")) {
             void videoTrack.applyConstraints({
               advanced: [{ focusMode: "continuous" } as MediaTrackConstraintSet],
             });
           }
+          if (caps?.zoom && caps.zoom.max > caps.zoom.min) {
+            const settings = videoTrack.getSettings?.() as MediaTrackSettings & { zoom?: number };
+            setZoom({
+              min: caps.zoom.min,
+              max: caps.zoom.max,
+              step: caps.zoom.step || 0.1,
+              value: settings.zoom ?? caps.zoom.min,
+            });
+          }
         }
       } catch {
-        // Focus constraint not supported — no-op
+        // Capabilities probe failed — controls just hide
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Camera access denied";
@@ -216,7 +277,7 @@ export function BarcodeScanner({ open, onScan, onClose, title = "Scan barcode or
     } finally {
       setStarting(false);
     }
-  }, [stopScanner]);
+  }, [stopScanner, viewportElementId, fullFrame]);
 
   useEffect(() => {
     if (open) {
@@ -246,8 +307,27 @@ export function BarcodeScanner({ open, onScan, onClose, title = "Scan barcode or
     if (cameras.length <= 1) return;
     const nextIdx = (currentCameraIdx + 1) % cameras.length;
     setCurrentCameraIdx(nextIdx);
+    // Remember the deliberate switch
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(CAMERA_PREF_KEY, cameras[nextIdx].id);
+    }
     await stopScanner();
     await startScanner(cameras[nextIdx].id);
+  };
+
+  const applyZoom = async (value: number) => {
+    if (!html5QrRef.current || !zoom) return;
+    try {
+      const video = scannerRef.current?.querySelector("video") as HTMLVideoElement | null;
+      const videoTrack = video?.srcObject instanceof MediaStream ? video.srcObject.getVideoTracks()[0] : null;
+      if (!videoTrack) return;
+      await videoTrack.applyConstraints({
+        advanced: [{ zoom: value } as unknown as MediaTrackConstraintSet],
+      });
+      setZoom({ ...zoom, value });
+    } catch {
+      // zoom apply failed — ignore
+    }
   };
 
   if (!open) return null;
@@ -312,6 +392,27 @@ export function BarcodeScanner({ open, onScan, onClose, title = "Scan barcode or
           </div>
         )}
       </div>
+
+      {/* Zoom slider — shown only when the camera supports it */}
+      {zoom && !error && (
+        <div className="flex items-center gap-2 px-3 py-2 border-t bg-bg-inset/30">
+          <ZoomOut className="h-3.5 w-3.5 text-fg-3" />
+          <input
+            type="range"
+            min={zoom.min}
+            max={zoom.max}
+            step={zoom.step}
+            value={zoom.value}
+            onChange={(e) => applyZoom(Number(e.target.value))}
+            className="flex-1 h-1 accent-primary"
+            aria-label="Zoom level"
+          />
+          <ZoomIn className="h-3.5 w-3.5 text-fg-3" />
+          <span className="text-[10px] tabular-nums text-fg-4 w-8 text-right">
+            {zoom.value.toFixed(1)}×
+          </span>
+        </div>
+      )}
 
       {/* Status bar */}
       {continuous && lastScanned && (

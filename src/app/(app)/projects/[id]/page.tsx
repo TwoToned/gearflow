@@ -28,6 +28,8 @@ import { CrewPanel } from "@/components/projects/crew-panel";
 import { CallSheetDialog } from "@/components/projects/call-sheet-dialog";
 import { ServicesPanel } from "@/components/projects/services-panel";
 import { FinancialSummary } from "@/components/projects/financial-summary";
+import { ProjectCostsPanel } from "@/components/projects/project-costs-panel";
+import { ProjectConflictsBanner } from "@/components/projects/project-conflicts-banner";
 import { ProjectManagersPanel } from "@/components/projects/project-managers-panel";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -445,6 +447,9 @@ export default function ProjectDetailPage({
             />
           )}
 
+          {/* Reservation conflict banner — hides itself when clean */}
+          {!project.isTemplate && <ProjectConflictsBanner projectId={id} />}
+
           {/* ── 2-Column Layout ────────────────────────────────────── */}
           <div className="flex flex-col gap-6 lg:flex-row">
             {/* Main content */}
@@ -761,6 +766,14 @@ export default function ProjectDetailPage({
                     </div>
                   );
                 })()}
+
+                {/* Operational P&L — costs roll-up beyond the financial summary.
+                    Hides itself when project has no revenue yet. */}
+                {!project.isTemplate && (
+                  <div className="border-b border-border pb-4">
+                    <ProjectCostsPanel projectId={project.id} />
+                  </div>
+                )}
 
                 {/* Quick Actions */}
                 {!project.isTemplate && (

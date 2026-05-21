@@ -132,6 +132,7 @@ Custom items are ad-hoc line items for gear not in the system — borrowed equip
 - Appear in warehouse (pick/prep, deploy, return tabs) — checked out/in via button, no scan
 - Appear on all PDFs (`getProjectForDocument` fetches all non-cancelled items regardless of type)
 - Appear on pull sheet (`getProjectPullSheet` filters `type: "EQUIPMENT"`)
+- A custom item inside a project group counts as an **extra** on top of the group's bundle price — it is not absorbed into the group total and no longer vanishes from the project total.
 
 **Distinction from sub-hires:** Sub-hires represent formally ordered gear from a supplier with a structured order workflow. Custom items are anonymous ad-hoc entries with no supplier and no order tracking.
 
@@ -327,6 +328,12 @@ Only cancelled projects can be deleted (`deleteProject` in `src/server/projects.
 - `src/lib/validations/line-item.ts` — Line item (includes categoryId, groupId)
 - `src/lib/validations/project-service.ts` — Service (includes billableToClient, costTotal)
 
+## Operational P&L Panel
+The project detail page has a right-rail costs panel (`src/components/projects/project-costs-panel.tsx`, server fn `getProjectOperationalCosts`). It shows revenue minus service / labour / sub-hire / maintenance / damage costs with a net-margin bar. Charge-back-aware: damage marked charged-back to the client is excluded from cost. Operational only — Xero owns invoicing. Hides itself when the project has no revenue.
+
+## Reservation Conflict Resolution
+When a serialized asset is booked on this project AND on another live project whose rental window overlaps, an amber banner (`src/components/projects/project-conflicts-banner.tsx`) surfaces on the project page. Each conflict row expands to a one-click swap picker of free same-model assets. The swap (`swapLineItemAsset`) re-checks free-in-window and reassigns inside one transaction, so a stale candidate can't push through a fresh double-booking. See `src/lib/reservation-conflicts.ts`.
+
 ## Future-Proofing
-- **ROI Tracking**: Asset.purchasePrice supports revenue attribution against rental income
+- **ROI Tracking**: Asset.purchasePrice supports revenue attribution against rental income — see [42. Asset Utilization](./42-asset-utilization.md)
 - **Xero Integration**: Groups as line items + ungrouped standalone assets as separate line items

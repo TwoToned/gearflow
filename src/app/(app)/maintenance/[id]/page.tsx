@@ -174,6 +174,27 @@ export default function MaintenanceDetailPage({
                 </div>
               )}
 
+              {/* Photos */}
+              {Array.isArray(r.photos) && (r.photos as string[]).length > 0 && (
+                <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+                  <SectionHeader label={`Photos (${(r.photos as string[]).length})`} />
+                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+                    {(r.photos as string[]).map((url) => (
+                      <a
+                        key={url}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block aspect-square overflow-hidden rounded-md border bg-bg-inset hover:opacity-90 transition-opacity"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={url} alt="" className="h-full w-full object-cover" />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Affected Assets */}
               <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
                 <SectionHeader label={`Affected Assets (${assetLinks.length})`} />

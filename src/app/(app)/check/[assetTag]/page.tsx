@@ -19,7 +19,7 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import { ItemCheckForm } from "@/components/warehouse/item-check-form";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { ScanInput } from "@/components/ui/scan-input";
 import { PageMeta } from "@/components/layout/page-meta";
 
 export default function AdHocCheckPage({
@@ -170,25 +170,35 @@ function ScanNavInput({ currentTag }: { currentTag: string }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const tag = value.trim();
-    if (tag && tag !== currentTag) {
-      router.push(`/check/${encodeURIComponent(tag)}`);
+  function go(tag: string) {
+    const trimmed = tag.trim();
+    if (trimmed && trimmed !== currentTag) {
+      router.push(`/check/${encodeURIComponent(trimmed)}`);
       setValue("");
     }
   }
 
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    go(value);
+  }
+
+  // Use ScanInput so the camera button is available on phones. The leading
+  // ScanBarcode icon is preserved for typed-input affordance.
   return (
-    <form onSubmit={handleSubmit} className="relative max-w-md">
-      <ScanBarcode className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-3" />
-      <Input
-        ref={inputRef}
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        placeholder="Scan another asset tag..."
-        className="pl-10 text-sm"
-      />
+    <form onSubmit={handleSubmit} className="max-w-md">
+      <div className="relative">
+        <ScanBarcode className="pointer-events-none absolute left-3 top-2.5 z-10 h-4 w-4 text-fg-3" />
+        <ScanInput
+          ref={inputRef}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onScan={(scanned) => go(scanned)}
+          placeholder="Scan another asset tag..."
+          className="pl-10 text-sm"
+          scannerTitle="Scan asset tag"
+        />
+      </div>
     </form>
   );
 }

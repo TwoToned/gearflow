@@ -44,6 +44,7 @@ import { StatusIndicator } from "@/components/ui/status-indicator";
 import { FadeIn } from "@/components/ui/motion";
 import { SectionHeader } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
+import { CustomFieldsDisplay } from "@/components/custom-fields/custom-fields-display";
 
 import { assetStatusLabels, lineItemStatusLabels, maintenanceTypeLabels, maintenanceStatusLabels, mediaTypeLabels, conditionLabels, formatLabel } from "@/lib/status-labels";
 
@@ -578,6 +579,12 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   </div>
                 </div>
               )}
+
+              {/* Operator-defined custom fields */}
+              <CustomFieldsDisplay
+                entityType="ASSET"
+                values={asset.customFieldValues as Record<string, string> | null | undefined}
+              />
 
               {/* Test & Tag / Maintenance */}
               <div className="border-b border-border pb-4 space-y-2">

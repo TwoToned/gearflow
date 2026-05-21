@@ -17,6 +17,7 @@ import {
   ShoppingCart,
   ClipboardCheck,
   Bookmark,
+  SlidersHorizontal,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -58,6 +59,7 @@ const settingsNav: SettingsNavSection[] = [
     label: "OPERATIONS",
     items: [
       { title: "Assets", href: "/settings/assets", icon: Package, permission: "orgSettings" },
+      { title: "Custom Fields", href: "/settings/custom-fields", icon: SlidersHorizontal, permission: "orgSettings" },
       { title: "Test & Tag", href: "/settings/test-and-tag", icon: ShieldCheck, permission: "orgSettings" },
       { title: "Check Items", href: "/settings/check-items", icon: ClipboardCheck, permission: "checkItem" },
       { title: "Group Templates", href: "/settings/group-templates", icon: Bookmark, permission: "project" },

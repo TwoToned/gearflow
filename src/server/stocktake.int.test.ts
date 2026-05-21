@@ -41,10 +41,13 @@ import {
   scanStocktakeItem,
   updateBulkCount,
   completeScanning,
+  resumeScanning,
   resolveDiscrepancy,
   bulkResolveDiscrepancies,
   completeStocktake,
   cancelStocktake,
+  markStocktakeItemFound,
+  unmarkStocktakeItemFound,
 } from "./stocktake";
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
@@ -496,5 +499,111 @@ describe("stocktake — discrepancy resolution (inventory side effects)", () => 
     const after2 = await testPrisma.asset.findUniqueOrThrow({ where: { id: a2.id } });
     expect(after1.status).toBe("LOST");
     expect(after2.status).toBe("LOST");
+  });
+});
+
+describe("stocktake — manual mark / unmark / resume (secondary write paths)", () => {
+  beforeEach(async () => {
+    await setupIntegrationTest();
+  });
+  afterAll(async () => {
+    await testPrisma.$disconnect();
+  });
+
+  it("markStocktakeItemFound flips an expected item to found + MATCH", async () => {
+    const { orgId } = await freshOrg();
+    const model = await createModelFixture(orgId);
+    const loc = await createLocation(orgId);
+    await createAssetAt(orgId, model.id, loc.id, { assetTag: "MARK-1" });
+    const st = await createStocktake({ name: "c", locationId: loc.id, scope: "FULL" });
+
+    const item = await testPrisma.stocktakeItem.findFirstOrThrow({
+      where: { stocktakeId: st.id },
+    });
+    expect(item.found).toBe(false);
+
+    await markStocktakeItemFound(item.id);
+
+    const after = await testPrisma.stocktakeItem.findUniqueOrThrow({ where: { id: item.id } });
+    expect(after.found).toBe(true);
+    expect(after.foundQuantity).toBe(after.expectedQuantity);
+    expect(after.result).toBe("MATCH");
+    expect(after.scannedAt).not.toBeNull();
+  });
+
+  it("markStocktakeItemFound throws when the stocktake is not IN_PROGRESS", async () => {
+    const { orgId } = await freshOrg();
+    const model = await createModelFixture(orgId);
+    const loc = await createLocation(orgId);
+    await createAssetAt(orgId, model.id, loc.id, { assetTag: "MARK-2" });
+    const st = await createStocktake({ name: "c", locationId: loc.id, scope: "FULL" });
+    const item = await testPrisma.stocktakeItem.findFirstOrThrow({ where: { stocktakeId: st.id } });
+    await completeScanning(st.id); // → REVIEWING
+    await expect(markStocktakeItemFound(item.id)).rejects.toThrow(/scanning mode/);
+  });
+
+  it("unmarkStocktakeItemFound resets an expected item to not-found + MATCH", async () => {
+    const { orgId } = await freshOrg();
+    const model = await createModelFixture(orgId);
+    const loc = await createLocation(orgId);
+    await createAssetAt(orgId, model.id, loc.id, { assetTag: "UNMARK-1" });
+    const st = await createStocktake({ name: "c", locationId: loc.id, scope: "FULL" });
+    const item = await testPrisma.stocktakeItem.findFirstOrThrow({ where: { stocktakeId: st.id } });
+
+    await markStocktakeItemFound(item.id);
+    await unmarkStocktakeItemFound(item.id);
+
+    const after = await testPrisma.stocktakeItem.findUniqueOrThrow({ where: { id: item.id } });
+    expect(after.found).toBe(false);
+    expect(after.foundQuantity).toBe(0);
+    expect(after.scannedAt).toBeNull();
+    expect(after.result).toBe("MATCH");
+  });
+
+  it("unmarkStocktakeItemFound preserves an UNEXPECTED item's result (no phantom MATCH row)", async () => {
+    // A stray asset scanned during counting becomes an UNEXPECTED item.
+    // Unmarking it must NOT relabel it MATCH — that would drop it from
+    // discrepancy counts. Regression guard for the 92d8dd5 fix.
+    const { orgId } = await freshOrg();
+    const model = await createModelFixture(orgId);
+    const loc = await createLocation(orgId);
+    await createAssetAt(orgId, model.id, null, { assetTag: "STRAY-U" });
+    const st = await createStocktake({ name: "c", locationId: loc.id, scope: "FULL" });
+
+    const scanned = await scanStocktakeItem({ stocktakeId: st.id, assetTag: "STRAY-U" });
+    expect(scanned.result).toBe("UNEXPECTED");
+
+    await unmarkStocktakeItemFound(scanned.id);
+
+    const after = await testPrisma.stocktakeItem.findUniqueOrThrow({ where: { id: scanned.id } });
+    expect(after.found).toBe(false);
+    expect(after.result).toBe("UNEXPECTED"); // preserved, not corrupted to MATCH
+  });
+
+  it("resumeScanning takes a REVIEWING stocktake back to IN_PROGRESS and resets unactioned MISSING items", async () => {
+    const { orgId } = await freshOrg();
+    const model = await createModelFixture(orgId);
+    const loc = await createLocation(orgId);
+    await createAssetAt(orgId, model.id, loc.id, { assetTag: "MISS-1" });
+    const st = await createStocktake({ name: "c", locationId: loc.id, scope: "FULL" });
+    await completeScanning(st.id); // nothing scanned → item MISSING, status REVIEWING
+
+    const missing = await testPrisma.stocktakeItem.findFirstOrThrow({ where: { stocktakeId: st.id } });
+    expect(missing.result).toBe("MISSING");
+
+    await resumeScanning(st.id);
+
+    const fresh = await testPrisma.stocktake.findUniqueOrThrow({ where: { id: st.id } });
+    expect(fresh.status).toBe("IN_PROGRESS");
+    const item = await testPrisma.stocktakeItem.findUniqueOrThrow({ where: { id: missing.id } });
+    expect(item.result).toBe("MATCH"); // unactioned MISSING reset so it can be re-scanned
+  });
+
+  it("resumeScanning throws when the stocktake is not REVIEWING", async () => {
+    const { orgId } = await freshOrg();
+    const loc = await createLocation(orgId);
+    const st = await createStocktake({ name: "c", locationId: loc.id, scope: "FULL" });
+    // Still IN_PROGRESS.
+    await expect(resumeScanning(st.id)).rejects.toThrow(/REVIEWING/);
   });
 });

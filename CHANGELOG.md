@@ -5,6 +5,78 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0.0] - 2026-05-21
+
+Wave 3 — the AV-rental wedge. Eight new operational features plus an
+app-wide error-UX overhaul. GearFlow now tracks the full asset lifecycle:
+damage at checkin, the repair queue, ROI per asset, periodic inventory
+counts, and reordering — and lets each operator extend the data model
+to fit their shop.
+
+### Added
+- **Damage capture at checkin** — report damage on a returning item
+  straight from the warehouse return flow. Camera-first capture: severity
+  (minor / major / total), notes, photos shot on the rear camera, optional
+  charge-back to the client. Major and total damage auto-creates a linked
+  workshop ticket and holds the asset. Browse every event at `/damage`.
+- **Workshop kanban** — `/workshop` shows the repair queue as a board:
+  Scheduled → Awaiting Parts → In Progress → QA, with a Completed lane.
+  Click a card forward or back a stage; QA cards get Pass / Fail buttons.
+  Pass releases the asset, Fail keeps it held. Two new maintenance
+  statuses (Awaiting Parts, QA) extend the hold/release state machine.
+- **Asset utilization dashboard** — `/utilization` answers "is this gear
+  paying for itself?" Per asset: booking rate, revenue, maintenance cost,
+  damage cost, net contribution. Period selector (30 / 90 / 365 days /
+  all time) and an idle / lossy filter to surface dead stock.
+- **Stocktake / inventory verification** — `/warehouse/stocktake` runs a
+  scan-driven count session. Pick a location, scan everything, and the
+  system flags every discrepancy — missing, unexpected, wrong location,
+  quantity mismatch. Resolve each one (mark lost, adjust quantity, update
+  location) and the inventory updates on completion.
+- **Reorder dashboard** — `/warehouse/reorder` lists every bulk item at or
+  below its reorder threshold, grouped by preferred supplier. Tick items
+  and generate a draft supplier order per supplier in one click. Bulk
+  assets gain a preferred-supplier field and a last-reordered timestamp.
+- **Maintenance photos** — attach before/after photos to any maintenance
+  ticket via a reusable photo-grid input. Workshop cards show thumbnails.
+- **Reservation conflict resolution** — when an asset is double-booked
+  across overlapping projects, the project page shows an amber banner and
+  lets you swap the conflicting line item onto a free asset of the same
+  model in one click.
+- **Custom fields** — define operator-specific asset attributes (rig
+  number, firmware version, road-case colour, anything) at
+  `/settings/custom-fields`. They render on the asset create/edit form and
+  detail page. Text, number, date, dropdown, and yes/no field types.
+- **Operational P&L panel** — the project detail page gains a right-rail
+  costs panel: equipment revenue minus service, labour, sub-hire,
+  maintenance, and damage costs, with charge-back awareness and a net
+  margin bar.
+
+### Changed
+- **Error messages now show context, not raw exceptions.** A new
+  `UserFacingError` type plus a Prisma-error translator turn "Unique
+  constraint failed on the fields: (`assetTag`)" into "Duplicate asset
+  tag — that asset tag is already used. Pick a different value." Asset,
+  project, and line-item actions surface structured title + message +
+  hint. The warehouse return page's error toasts use the same helper.
+- **QR / barcode scanner hardened for iPhone** — per-instance camera
+  viewport, `playsInline` so iOS Safari streams inline instead of going
+  fullscreen, a remembered camera choice, a zoom slider, torch, and Micro
+  QR support. The check-items and warehouse-lookup pages now scan with the
+  camera too.
+
+### Fixed
+- Custom items inside a project group no longer vanish from the project
+  total — they count as extras on top of the group's bundle price.
+- The reservation swap re-check and reassignment now run in one
+  transaction, closing a race where two operators could swap onto the
+  same asset and silently re-create a double-booking.
+- Stocktake discrepancy resolution wraps each inventory mutation in a
+  transaction and floors bulk quantities at zero, so a counted shortfall
+  can't drive stock negative.
+- Maintenance-record deletion releases held assets and deletes the record
+  atomically.
+
 ## [0.5.1] - 2026-05-14
 
 ### Fixed

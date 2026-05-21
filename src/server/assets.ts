@@ -10,6 +10,32 @@ import { backfillTestTagAssets } from "@/server/test-tag-assets";
 import { logActivity } from "@/lib/activity-log";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
+import { validateCustomFieldValues } from "@/lib/validations/custom-field";
+
+/**
+ * Validate + normalise asset custom-field values against the org's active
+ * ASSET custom-field definitions. Throws UserFacingError on a required-field
+ * miss or a bad value. Returns the normalised map (unknown keys dropped).
+ */
+async function resolveAssetCustomFields(
+  organizationId: string,
+  raw: Record<string, string> | null | undefined,
+): Promise<Record<string, string>> {
+  const defs = await prisma.customFieldDefinition.findMany({
+    where: { organizationId, entityType: "ASSET", isActive: true },
+    select: { fieldKey: true, label: true, fieldType: true, options: true, required: true },
+  });
+  if (defs.length === 0) return {};
+  try {
+    return validateCustomFieldValues(defs, raw);
+  } catch (e) {
+    throw new UserFacingError({
+      code: "CUSTOM_FIELD_INVALID",
+      title: "Custom field problem",
+      message: e instanceof Error ? e.message : "A custom field value is invalid.",
+    });
+  }
+}
 
 const assetFilterColumns: FilterColumnDef[] = [
   { id: "status", filterType: "enum" },
@@ -164,6 +190,12 @@ export async function createAsset(data: AssetFormValues) {
   const { organizationId, userId, userName } = await requirePermission("asset", "create");
   const parsed = assetSchema.parse(data);
 
+  // Validate custom fields against org definitions before persisting.
+  const customFieldValues = await resolveAssetCustomFields(
+    organizationId,
+    parsed.customFieldValues,
+  );
+
   // Fetch the model to check T&T requirements
   const model = await prisma.model.findUnique({ where: { id: parsed.modelId } });
 
@@ -185,7 +217,7 @@ export async function createAsset(data: AssetFormValues) {
         warrantyExpiry: parsed.warrantyExpiry,
         notes: parsed.notes,
         locationId: parsed.locationId || null,
-        customFieldValues: parsed.customFieldValues ?? undefined,
+        customFieldValues,
         barcode: parsed.barcode || parsed.assetTag,
         qrCode: parsed.assetTag,
         images: parsed.images,
@@ -247,6 +279,12 @@ export async function createAssets(
   const { organizationId, userId, userName } = await requirePermission("asset", "create");
   const parsed = assetSchema.parse(data);
 
+  // All assets in a bulk create share the same form data → one validation.
+  const customFieldValues = await resolveAssetCustomFields(
+    organizationId,
+    parsed.customFieldValues,
+  );
+
   const model = await prisma.model.findUnique({ where: { id: parsed.modelId } });
 
   let results;
@@ -269,7 +307,7 @@ export async function createAssets(
             warrantyExpiry: parsed.warrantyExpiry,
             notes: parsed.notes,
             locationId: parsed.locationId || null,
-            customFieldValues: parsed.customFieldValues ?? undefined,
+            customFieldValues,
             barcode: parsed.barcode || tag,
             qrCode: tag,
             images: parsed.images,
@@ -337,6 +375,11 @@ export async function updateAsset(id: string, data: AssetFormValues) {
   const { organizationId, userId, userName } = await requirePermission("asset", "update");
   const parsed = assetSchema.parse(data);
 
+  const customFieldValues = await resolveAssetCustomFields(
+    organizationId,
+    parsed.customFieldValues,
+  );
+
   const before = await prisma.asset.findUnique({ where: { id, organizationId } });
 
   let updated;
@@ -357,7 +400,7 @@ export async function updateAsset(id: string, data: AssetFormValues) {
         warrantyExpiry: parsed.warrantyExpiry,
         notes: parsed.notes,
         locationId: parsed.locationId || null,
-        customFieldValues: parsed.customFieldValues ?? undefined,
+        customFieldValues,
         barcode: parsed.barcode || parsed.assetTag,
         images: parsed.images,
         isActive: parsed.isActive,

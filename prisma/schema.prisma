@@ -191,6 +191,7 @@ model Organization {
   notificationDismissals   NotificationDismissal[]
   notificationEmailLogs    NotificationEmailLog[]
   stocktakes               Stocktake[]
+  customFieldDefinitions   CustomFieldDefinition[]
 
   @@map("organization")
 }
@@ -2990,6 +2991,55 @@ enum StocktakeItemResult {
   UNEXPECTED
   QUANTITY_MISMATCH
   WRONG_LOCATION
+}
+
+// ─── Custom Fields (operator-defined entity attributes) ─────────────────────
+
+/**
+ * Org-defined custom fields. Each definition adds an input to an entity's
+ * create/edit form; the value is stored in that entity's existing
+ * `customFieldValues` JSON column keyed by `fieldKey`.
+ *
+ * entityType is an enum for forward-compat — v1 wires ASSET only; KIT /
+ * PROJECT / BULK_ASSET follow once they all carry a values column.
+ */
+model CustomFieldDefinition {
+  id             String            @id @default(cuid())
+  organizationId String
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  entityType     CustomFieldEntity @default(ASSET)
+  /** Human label shown on the form, e.g. "Rig Number". */
+  label          String
+  /** Stable machine key into the customFieldValues JSON. Immutable once set. */
+  fieldKey       String
+  fieldType      CustomFieldType   @default(TEXT)
+  /** Choices for SELECT type. Empty for other types. */
+  options        String[]          @default([])
+  required       Boolean           @default(false)
+  helpText       String?
+  sortOrder      Int               @default(0)
+  isActive       Boolean           @default(true)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@unique([organizationId, entityType, fieldKey])
+  @@index([organizationId, entityType])
+  @@map("custom_field_definition")
+}
+
+enum CustomFieldEntity {
+  ASSET
+  BULK_ASSET
+  KIT
+  PROJECT
+}
+
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  DATE
+  SELECT
+  BOOLEAN
 }
 
 // ─── Prep System (Pre-Packing / Staging) ─────────────────────────────────────

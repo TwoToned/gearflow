@@ -15,11 +15,9 @@ import { requirePermission } from "@/lib/org-context";
 import {
   computeAssetUtilization,
   computeUtilizationSummary,
-  type AssetUtilization,
+  type UtilizationSummaryRow,
 } from "@/lib/utilization";
 import { prisma } from "@/lib/prisma";
-
-export type { AssetUtilization };
 
 /** One asset's utilization — for the asset detail page tab. */
 export async function getAssetUtilization(
@@ -37,15 +35,6 @@ export async function getAssetUtilization(
   const result = await computeAssetUtilization(assetId, organizationId, period);
   if (!result) return null;
   return serialize(result);
-}
-
-export interface UtilizationSummaryRow extends AssetUtilization {
-  assetTag: string;
-  customName: string | null;
-  modelName: string;
-  modelId: string;
-  categoryName: string | null;
-  status: string;
 }
 
 /** Roll-up list for the /utilization page. Joins each row back with the

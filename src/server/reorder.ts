@@ -16,11 +16,8 @@ import { logActivity } from "@/lib/activity-log";
 import {
   getReorderCandidatesCore,
   createReorderDraftCore,
-  type ReorderCandidate,
   type ReorderDraftLine,
 } from "@/lib/reorder";
-
-export type { ReorderCandidate };
 
 export async function getReorderCandidates() {
   const { organizationId } = await requirePermission("bulkAsset", "read");

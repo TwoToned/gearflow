@@ -17,11 +17,7 @@ import {
   findProjectConflictsCore,
   findSwapCandidatesCore,
   swapLineItemAssetCore,
-  type ReservationConflict,
-  type SwapCandidate,
 } from "@/lib/reservation-conflicts";
-
-export type { ReservationConflict, SwapCandidate };
 
 export async function getProjectConflicts(projectId: string) {
   const { organizationId } = await requirePermission("project", "read");

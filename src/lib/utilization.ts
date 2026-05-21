@@ -55,6 +55,17 @@ export interface AssetUtilization {
   lastBookingEnd: Date | null;
 }
 
+/** One row of the /utilization roll-up — an AssetUtilization joined with
+ *  the asset's tag / model / category for display. */
+export interface UtilizationSummaryRow extends AssetUtilization {
+  assetTag: string;
+  customName: string | null;
+  modelName: string;
+  modelId: string;
+  categoryName: string | null;
+  status: string;
+}
+
 /** Inclusive day span between two dates (whole days). */
 function daysBetween(start: Date, end: Date): number {
   const ms = end.getTime() - start.getTime();

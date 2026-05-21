@@ -5,6 +5,22 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0.1] - 2026-05-21
+
+Hotfix for a production crash introduced in 0.6.0.0.
+
+### Fixed
+- **`ReferenceError: ReorderCandidate is not defined` taking down SSR.**
+  Four Wave 3 server-action files (`reorder`, `utilization`,
+  `reservation-conflicts`, `project-costs`) re-exported a type through the
+  `"use server"` boundary via `export type { X }`. Next.js's server-action
+  transform caught those re-exported type names in the module's export
+  list and emitted runtime references to identifiers that, being types,
+  have no value — so the SSR chunk threw on module evaluation and crashed
+  affected routes. Types now live only in their `src/lib/*` modules;
+  `"use server"` files neither re-export them nor serve them to consumers,
+  matching the convention used everywhere else.
+
 ## [0.6.0.0] - 2026-05-21
 
 Wave 3 — the AV-rental wedge. Eight new operational features plus an

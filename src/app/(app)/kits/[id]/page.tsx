@@ -44,7 +44,7 @@ import { BookingCalendar } from "@/components/bookings/booking-calendar";
 import { BarcodeScanner } from "@/components/ui/barcode-scanner";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { FadeIn } from "@/components/ui/motion";
-import { SectionHeader } from "@/components/layout/page-layouts";
+import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { KitChecksTab } from "@/components/kits/kit-checks-tab";
 import { DeleteKitDialog } from "@/components/kits/delete-kit-dialog";
@@ -65,16 +65,8 @@ import {
 } from "@/components/ui/table";
 
 import { kitStatusLabels, lineItemStatusLabels, conditionLabels, formatLabel } from "@/lib/status-labels";
+import { formatDate } from "@/lib/formatters";
 
-
-function formatDate(date: Date | string | null | undefined) {
-  if (!date) return "\u2014";
-  return new Date(date).toLocaleDateString("en-AU", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
 
 export default function KitDetailPage({ params }: { params: Promise<{ id: string }> }) {
   return (
@@ -303,9 +295,9 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
       </div>
 
       {/* ── 2-Column Layout ────────────────────────────────────── */}
-      <div className="flex flex-col gap-6 lg:flex-row">
+      <DetailLayout>
         {/* ── Main Content (left) ──────────────────────────────── */}
-        <div className="min-w-0 flex-1 space-y-6">
+        <DetailMain className="space-y-6">
           {/* Booking Calendar */}
           <BookingCalendar entityType="kit" entityId={id} initialDate={initialDate} />
 
@@ -541,14 +533,12 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
             onSave={(notes) => updateKitNotes(id, notes)}
             placeholder="Add notes about this kit..."
           />
-        </div>
+        </DetailMain>
 
         {/* ── Sidebar (right) ──────────────────────────────────── */}
-        <div className="w-full space-y-4 lg:w-[340px] lg:shrink-0">
-          <div className="lg:sticky lg:top-4 space-y-4">
+        <DetailSidebar>
             {/* Status */}
-            <div className="border-b border-border pb-4 space-y-2">
-              <SectionHeader label="Status" />
+            <SidebarSection title="Status">
               <CanDo
                 resource="kit"
                 action="update"
@@ -572,11 +562,10 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 </select>
               </CanDo>
               <StatusIndicator category="condition" value={kit.condition} label={conditionLabels[kit.condition] || formatLabel(kit.condition)} />
-            </div>
+            </SidebarSection>
 
             {/* Kit Info */}
-            <div className="border-b border-border pb-4 space-y-2">
-              <SectionHeader label="Details" />
+            <SidebarSection title="Details">
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span className="text-fg-3">Asset Tag</span>
@@ -628,11 +617,10 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   <p className="text-fg-3 pt-1">{kit.description}</p>
                 )}
               </div>
-            </div>
+            </SidebarSection>
 
             {/* Contents Summary */}
-            <div className="border-b border-border pb-4 space-y-2">
-              <SectionHeader label="Contents" />
+            <SidebarSection title="Contents">
               <div className="space-y-1.5 text-sm">
                 <div className="flex items-center gap-2">
                   <Package className="h-3.5 w-3.5 text-fg-3" />
@@ -645,11 +633,10 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   <span className="text-fg-3">bulk item{kit.bulkItems.length !== 1 ? "s" : ""}</span>
                 </div>
               </div>
-            </div>
+            </SidebarSection>
 
             {/* Current Assignment */}
-            <div className="border-b border-border pb-4 space-y-2">
-              <SectionHeader label="Assignment" />
+            <SidebarSection title="Assignment">
               {currentAssignment ? (
                 <div className="text-sm space-y-1">
                   <Link
@@ -666,16 +653,14 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
               ) : (
                 <p className="text-sm text-fg-3">Not currently assigned</p>
               )}
-            </div>
+            </SidebarSection>
 
             {/* Activity Timeline */}
-            <div className="space-y-2">
-              <SectionHeader label="Activity" />
+            <SidebarSection title="Activity" divider={false}>
               <ActivityTimeline entityType="kit" entityId={id} />
-            </div>
-          </div>
-        </div>
-      </div>
+            </SidebarSection>
+        </DetailSidebar>
+      </DetailLayout>
     </div>
     </FadeIn>
 

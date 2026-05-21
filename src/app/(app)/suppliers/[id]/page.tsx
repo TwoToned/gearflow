@@ -22,7 +22,7 @@ import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { FadeIn } from "@/components/ui/motion";
-import { SectionHeader } from "@/components/layout/page-layouts";
+import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -143,9 +143,9 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
           </div>
 
           {/* ── 2-Column Layout ────────────────────────────────────── */}
-          <div className="flex flex-col gap-6 lg:flex-row">
+          <DetailLayout>
             {/* Main content */}
-            <div className="min-w-0 flex-1">
+            <DetailMain>
               {/* Tags */}
               {supplier.tags?.length > 0 && (
                 <div className="flex flex-wrap gap-1 mb-6">
@@ -315,14 +315,12 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                   )}
                 </TabsContent>
               </Tabs>
-            </div>
+            </DetailMain>
 
             {/* ── Sidebar ──────────────────────────────────────────── */}
-            <div className="w-full space-y-4 lg:w-[340px] lg:shrink-0">
-              <div className="lg:sticky lg:top-4 space-y-4">
+            <DetailSidebar>
                 {/* Contact Info */}
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Contact" />
+                <SidebarSection title="Contact">
                   <div className="space-y-2 text-sm">
                     {supplier.contactName && (
                       <div className="flex items-center gap-2">
@@ -351,12 +349,11 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                       <p className="text-fg-3">No contact info</p>
                     )}
                   </div>
-                </div>
+                </SidebarSection>
 
                 {/* Address */}
                 {supplier.address && (
-                  <div className="border-b border-border pb-4 space-y-2">
-                    <SectionHeader label="Address" />
+                  <SidebarSection title="Address">
                     <div className="text-sm">
                       <AddressDisplay
                         address={supplier.address}
@@ -366,12 +363,11 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                         compact
                       />
                     </div>
-                  </div>
+                  </SidebarSection>
                 )}
 
                 {/* Account Details */}
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Account Details" />
+                <SidebarSection title="Account Details">
                   <div className="space-y-1.5 text-sm">
                     <div className="flex justify-between">
                       <span className="text-fg-3">Account #</span>
@@ -386,11 +382,10 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                       <span className="font-medium">{supplier.defaultLeadTime || "\u2014"}</span>
                     </div>
                   </div>
-                </div>
+                </SidebarSection>
 
                 {/* Summary */}
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Summary" />
+                <SidebarSection title="Summary">
                   <div className="space-y-1.5 text-sm">
                     <div className="flex justify-between">
                       <span className="text-fg-3">Orders</span>
@@ -405,12 +400,11 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                       <span className="font-medium">{supplier._count?.lineItems ?? 0}</span>
                     </div>
                   </div>
-                </div>
+                </SidebarSection>
 
                 {/* Recent Orders (compact) */}
                 {orders.length > 0 && (
-                  <div className="border-b border-border pb-4 space-y-2">
-                    <SectionHeader label="Recent Orders" />
+                  <SidebarSection title="Recent Orders">
                     <div className="space-y-1">
                       {orders.slice(0, 5).map((order) => (
                         <div
@@ -431,17 +425,15 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                         </div>
                       ))}
                     </div>
-                  </div>
+                  </SidebarSection>
                 )}
 
                 {/* Activity Timeline */}
-                <div className="space-y-2">
-                  <SectionHeader label="Activity" />
+                <SidebarSection title="Activity" divider={false}>
                   <ActivityTimeline entityType="supplier" entityId={id} />
-                </div>
-              </div>
-            </div>
-          </div>
+                </SidebarSection>
+            </DetailSidebar>
+          </DetailLayout>
         </div>
       </FadeIn>
       <DeleteDialog

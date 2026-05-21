@@ -39,7 +39,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { FadeIn } from "@/components/ui/motion";
-import { SectionHeader } from "@/components/layout/page-layouts";
+import { DetailLayout, DetailMain, DetailSidebar, SectionHeader, SidebarSection } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { LabelTemplate } from "@/components/test-tag/label-template";
 import type { ColorIntent } from "@/lib/status-colors";
@@ -255,9 +255,9 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
         </div>
 
         {/* ── 2-Column Layout ────────────────────────────────────── */}
-        <div className="flex flex-col gap-6 lg:flex-row">
+        <DetailLayout>
           {/* ── Main content (~63%) ──────────────────────────────── */}
-          <div className="min-w-0 flex-1 space-y-6">
+          <DetailMain className="space-y-6">
             {/* Equipment Details */}
             <div>
               <SectionHeader label="Equipment Details" />
@@ -501,14 +501,12 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 )}
               </div>
             </div>
-          </div>
+          </DetailMain>
 
           {/* ── Sidebar (~37%) ───────────────────────────────────── */}
-          <div className="w-full space-y-4 lg:w-[340px] lg:shrink-0">
-            <div className="lg:sticky lg:top-4 space-y-4">
+          <DetailSidebar>
               {/* Status */}
-              <div className="border-b border-border pb-4 space-y-2">
-                <SectionHeader label="Status" />
+              <SidebarSection title="Status">
                 <div className="flex items-center gap-2">
                   <StatusIndicator
                     intent={statusIntentMap[item.status] || "neutral"}
@@ -523,11 +521,10 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     />
                   </div>
                 )}
-              </div>
+              </SidebarSection>
 
               {/* Schedule */}
-              <div className="border-b border-border pb-4 space-y-2">
-                <SectionHeader label="Schedule" />
+              <SidebarSection title="Schedule">
                 <div className="space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span className="text-fg-3 flex items-center gap-1">
@@ -551,11 +548,10 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     <span className="font-medium">{formatDate(item.nextDueDate)}</span>
                   </div>
                 </div>
-              </div>
+              </SidebarSection>
 
               {/* Equipment Info */}
-              <div className="border-b border-border pb-4 space-y-2">
-                <SectionHeader label="Equipment Info" />
+              <SidebarSection title="Equipment Info">
                 <div className="space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span className="text-fg-3">Tag ID</span>
@@ -589,12 +585,11 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     </div>
                   )}
                 </div>
-              </div>
+              </SidebarSection>
 
               {/* Linked Asset */}
               {(item.asset || item.bulkAsset) && (
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Linked Asset" />
+                <SidebarSection title="Linked Asset">
                   <div className="text-sm">
                     {item.asset && (
                       <div className="space-y-1">
@@ -636,12 +631,11 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       </div>
                     )}
                   </div>
-                </div>
+                </SidebarSection>
               )}
 
               {/* Dates */}
-              <div className="border-b border-border pb-4 space-y-2">
-                <SectionHeader label="Dates" />
+              <SidebarSection title="Dates">
                 <div className="space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span className="text-fg-3">Created</span>
@@ -652,16 +646,14 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     <span className="font-medium">{formatDate(item.updatedAt)}</span>
                   </div>
                 </div>
-              </div>
+              </SidebarSection>
 
               {/* Activity */}
-              <div className="space-y-2">
-                <SectionHeader label="Activity" />
+              <SidebarSection title="Activity" divider={false}>
                 <ActivityTimeline entityType="testTagAsset" entityId={id} />
-              </div>
-            </div>
-          </div>
-        </div>
+              </SidebarSection>
+          </DetailSidebar>
+        </DetailLayout>
       </div>
       {/* Hidden label for printing */}
       {latestRecord && (

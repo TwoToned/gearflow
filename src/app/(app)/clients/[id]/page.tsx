@@ -21,6 +21,7 @@ import { toast } from "sonner";
 
 import { getClient, archiveClient, updateClientNotes } from "@/server/clients";
 import { projectStatusLabels, clientTypeLabels, formatLabel } from "@/lib/status-labels";
+import { formatCurrency } from "@/lib/formatters";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
@@ -32,7 +33,7 @@ import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { FadeIn } from "@/components/ui/motion";
-import { SectionHeader } from "@/components/layout/page-layouts";
+import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -45,11 +46,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-
-function formatCurrency(value: number | null | undefined): string {
-  if (value == null) return "\u2014";
-  return `$${Number(value).toLocaleString("en-AU", { minimumFractionDigits: 2 })}`;
-}
 
 export default function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -142,9 +138,9 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
           </div>
 
           {/* ── 2-Column Layout ────────────────────────────────────── */}
-          <div className="flex flex-col gap-6 lg:flex-row">
+          <DetailLayout>
             {/* Main content */}
-            <div className="min-w-0 flex-1">
+            <DetailMain>
               <Tabs defaultValue="projects">
                 <TabsList>
                   <TabsTrigger value="projects">
@@ -251,14 +247,12 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                   </div>
                 </TabsContent>
               </Tabs>
-            </div>
+            </DetailMain>
 
             {/* ── Sidebar ──────────────────────────────────────────── */}
-            <div className="w-full space-y-4 lg:w-[340px] lg:shrink-0">
-              <div className="lg:sticky lg:top-4 space-y-4">
+            <DetailSidebar>
                 {/* Contact Info */}
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Contact" />
+                <SidebarSection title="Contact">
                   <div className="space-y-2 text-sm">
                     {client.contactName && (
                       <div className="flex items-center gap-2">
@@ -288,11 +282,10 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                       <p className="text-fg-3">No contact info</p>
                     )}
                   </div>
-                </div>
+                </SidebarSection>
 
                 {/* Addresses */}
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Addresses" />
+                <SidebarSection title="Addresses">
                   <div className="space-y-3 text-sm">
                     {client.billingAddress && (
                       <div>
@@ -328,11 +321,10 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                       <p className="text-fg-3">No addresses</p>
                     )}
                   </div>
-                </div>
+                </SidebarSection>
 
                 {/* Billing / Financial */}
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Billing" />
+                <SidebarSection title="Billing">
                   <div className="space-y-1.5 text-sm">
                     <div className="flex justify-between">
                       <span className="text-fg-3">ABN</span>
@@ -359,12 +351,11 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                       <span className="font-medium">{activeProjects.length}</span>
                     </div>
                   </div>
-                </div>
+                </SidebarSection>
 
                 {/* Recent Projects (compact) */}
                 {client.projects.length > 0 && (
-                  <div className="border-b border-border pb-4 space-y-2">
-                    <SectionHeader label="Recent Projects" />
+                  <SidebarSection title="Recent Projects">
                     <div className="space-y-1">
                       {client.projects.slice(0, 5).map((project) => (
                         <Link
@@ -390,17 +381,15 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                         </Link>
                       ))}
                     </div>
-                  </div>
+                  </SidebarSection>
                 )}
 
                 {/* Activity Timeline */}
-                <div className="space-y-2">
-                  <SectionHeader label="Activity" />
+                <SidebarSection title="Activity" divider={false}>
                   <ActivityTimeline entityType="client" entityId={id} />
-                </div>
-              </div>
-            </div>
-          </div>
+                </SidebarSection>
+            </DetailSidebar>
+          </DetailLayout>
         </div>
       </FadeIn>
       <DeleteDialog

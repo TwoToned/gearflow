@@ -54,41 +54,6 @@ Deferred work items tracked from engineering reviews and planning sessions.
 **Depends on:** Test infrastructure (completed in v0.2.0). Needs test data seeding strategy.
 **Estimate:** human ~3 weeks / CC ~2-3 hours
 
-## UI / UX
-
-### Warehouse "Today" Date Boundary Bug
-**What:** The warehouse urgency grouping uses `tomorrow.setDate(today.getDate() + 2)`, creating a 2-day window for "today" (includes today + tomorrow). The label says "today" but it means "today and tomorrow."
-**Why:** Users may be confused by a project starting tomorrow appearing in the "today" group. Either the window should be 1 day (true "today"), or the label should say "Next 48 hours" / "Today & Tomorrow."
-**Pros:** Clearer urgency grouping, less user confusion.
-**Cons:** Trivial fix. If the 2-day window is intentional (prep window), just relabel.
-**Context:** In `src/app/(app)/warehouse/page.tsx`, function `getProjectUrgency()`. The `+2` was present in the original code before the UX redesign — it's inherited, not new.
-**Depends on:** Nothing.
-**Estimate:** human ~15 min / CC ~2 min
-
-### Extract DetailLayout and SidebarSection Components
-**What:** All 10 detail pages copy-paste the same 2-column layout and sidebar section styling. Extract reusable `DetailLayout` and `SidebarSection` components.
-**Why:** ~80 duplicated border/spacing declarations across 10 files. One styling change requires editing 10 places.
-**Pros:** DRY, consistent styling enforced in one place, each detail page shrinks ~30 lines.
-**Cons:** Adds abstraction layer. Minor risk of over-constraining future detail pages.
-**Context:** Accepted in eng review (issue #2). Pattern: main content (flex-1) + sticky sidebar (lg:w-[340px]) with `border-b border-border pb-4 space-y-2` section dividers.
-**Depends on:** Nothing.
-**Estimate:** human ~3 hours / CC ~15 min
-
-### Extract Shared Formatters *(partially done)*
-**What:** Six+ pages define their own `formatDate()` and `formatCurrency()` with identical AU locale/AUD logic. Extract to `src/lib/formatters.ts`.
-**Status:** `src/lib/formatters.ts` created in v0.2.6 with `formatCurrency`, `formatDate`, and `formatLabel`. Remaining work: migrate existing inline formatters in other files to use the shared module.
-**Depends on:** Nothing.
-**Estimate:** human ~30 min / CC ~5 min
-
-### Add ReducedMotionProvider Context
-**What:** All 6 motion components in `motion.tsx` each call `useReducedMotion()` individually. Extract to a React context provider so it's read once.
-**Why:** DRY — 6 hooks reading the same value. Minor perf improvement (1 media query listener vs 6).
-**Pros:** Cleaner code, single source of truth for motion preference.
-**Cons:** Adds provider wrapper to component tree.
-**Context:** Accepted in eng review (issue #1).
-**Depends on:** Nothing.
-**Estimate:** human ~1 hour / CC ~5 min
-
 ## Warehouse Check System
 
 ### Customer-Facing Inspection Report PDF
@@ -191,4 +156,92 @@ Deferred work items tracked from engineering reviews and planning sessions.
 **Why:** Sometimes gear starts as "custom" (borrowed, untracked) but gets formally added to inventory mid-project. Operators should be able to link the item without re-adding it.
 **Cons:** Edge case for most users. Requires matching the custom item line item to a real Asset.
 **Context:** Deferred from custom items autoplan (Barcode Scanning Phase 2).
+**Priority:** P3
+
+## Wave 3 — Remaining Features
+
+The remaining items from Wave 3 ("Dream Big Inside the Wedge") in
+`docs/designs/app-cleanup-unification.md`. Per that plan, Wave 3 is ongoing
+and ships one feature at a time — each gets its own `/autoplan` review
+pipeline. There is no Wave 4. Cross-warehouse transfers from the original
+Wave 3 list are excluded — Two Toned operates a single warehouse.
+
+### Calibration / Certification Tracking
+**What:** Track calibration and certification profiles for assets beyond the Test & Tag electrical-safety module — custom cert types with their own intervals, due dates, and pass/fail history (e.g. rigging inspections, load-cell calibration, lamp-hours).
+**Why:** Test & Tag only covers AS/NZS 3760 electrical testing. AV inventory has gear with other compliance regimes that currently have no home in the app.
+**Pros:** Extends the compliance moat; reuses the T&T reminder/notification patterns.
+**Cons:** Needs a flexible cert-profile model so operators can define their own types without a schema migration — overlaps with the Custom Fields infrastructure.
+**Context:** Wave 3 AV-differentiator. Model after the existing Test & Tag module (`FEATUREDOCS/14`) and maintenance reminders.
+**Depends on:** Nothing hard; custom-field infrastructure (v0.6.0.0) is a useful base.
+**Estimate:** human ~1.5 weeks / CC ~1-2 hours
+**Priority:** P2
+
+### Self-Service Crew Portal
+**What:** A scoped portal where crew members log in to view their offered assignments, accept or decline them, and log their own time — without giving them full app access.
+**Why:** Crew assignment and timesheets are currently operator-driven. A self-service surface cuts the admin loop and reduces no-shows.
+**Pros:** Biggest operational-leverage item in Wave 3; crew already exist as first-class records with auth tokens (auditor-token pattern is a precedent).
+**Cons:** Largest remaining Wave 3 item. Needs a permission-scoped role/surface, careful auth boundary, and mobile-first UX.
+**Context:** Wave 3 operational quality-of-life. Crew management (`FEATUREDOCS/31`), crew availability, and timesheets already exist; this is the member-facing front-end.
+**Depends on:** Crew management, crew availability, time entries (all shipped).
+**Estimate:** human ~3-4 weeks / CC ~3-4 hours
+**Priority:** P2
+
+### Saved Filters Per Entity
+**What:** Let users save named filter/sort/column configurations on list pages and recall them, with a consistent UX across every list page.
+**Why:** Operators repeatedly re-apply the same filters (e.g. "overdue projects", "assets in maintenance"). Saving them removes repetitive setup.
+**Pros:** Cheap, high-frequency win; touches every list page through the shared DataTable.
+**Cons:** Needs a place to persist configs (per-user, org-scoped) and a tasteful save/recall UI.
+**Context:** Wave 3 operational quality-of-life. Build on the shared DataTable (`FEATUREDOCS/25`) and existing table-preferences hook (`use-table-preferences`).
+**Depends on:** Shared DataTable + table-preferences infrastructure (shipped).
+**Estimate:** human ~1 week / CC ~45 min
+**Priority:** P2
+
+### Bulk Operations Across List Pages
+**What:** Multi-select rows on list pages and apply an action to all of them — bulk status change, bulk delete/archive, bulk tag, bulk export.
+**Why:** Today most mutations are one-record-at-a-time. Bulk actions are a large time-saver for inventory and project housekeeping.
+**Pros:** Cheap, high-frequency win; touches every list page through the shared DataTable.
+**Cons:** Each entity needs its own safe set of bulk actions + permission checks; bulk writes must be transactional and audit-logged.
+**Context:** Wave 3 operational quality-of-life. Build on the shared DataTable (`FEATUREDOCS/25`); follow the server-action pattern (requirePermission → transaction → logActivity).
+**Depends on:** Shared DataTable (shipped).
+**Estimate:** human ~1.5 weeks / CC ~1-2 hours
+**Priority:** P2
+
+### In-App Onboarding Tour
+**What:** A first-run guided tour highlighting key surfaces (catalog, projects, warehouse, settings) for new users/orgs.
+**Why:** New operators currently get no orientation. A tour shortens time-to-value.
+**Pros:** Self-contained; no schema or server work beyond a "tour completed" flag.
+**Cons:** Lower operational leverage than the other items; tour content must be maintained as the UI evolves.
+**Context:** Wave 3 operational quality-of-life.
+**Depends on:** Nothing.
+**Estimate:** human ~3-4 days / CC ~30 min
+**Priority:** P3
+
+### Comments / @Mentions on Projects + Assets
+**What:** Threaded comments on projects and assets with @mention of team members; mentions raise a notification.
+**Why:** Operational discussion currently happens outside the app (chat, email). In-app comments keep context attached to the record.
+**Pros:** Strengthens the app as the single source of truth; reuses the existing notification system.
+**Cons:** New Comment model + mention parsing + notification wiring; needs activity-log and search integration to be first-class.
+**Context:** Wave 3 operational quality-of-life. Wire into notifications (`FEATUREDOCS/17`), activity log (`FEATUREDOCS/24`), and global search (`FEATUREDOCS/16`).
+**Depends on:** Notification system (shipped).
+**Estimate:** human ~2 weeks / CC ~1-2 hours
+**Priority:** P3
+
+### AssetHold Table — Derived Asset Status (architecture)
+**What:** Replace the single mutable `Asset.status` enum with a derived-status model: multiple "hold" rows in an `AssetHold` table (maintenance, checkout, T&T, lost/retired), with the displayed status computed from the active holds.
+**Why:** Multiple workflows mutate `Asset.status` independently and overwrite each other. The Wave 1 guarded-update pattern is a partial mitigation, not a fix.
+**Pros:** Eliminates a whole class of status-overwrite bugs; status becomes auditable.
+**Cons:** Significant migration — every status writer and reader changes. Only worth it if status-overwrite bugs keep recurring.
+**Context:** Flagged "Wave 3+ architectural improvement" by the eng review in `docs/designs/app-cleanup-unification.md`. Do only if the pain shows up.
+**Depends on:** Nothing; large blast radius.
+**Estimate:** human ~2-3 weeks / CC ~2-3 hours
+**Priority:** P3
+
+### InventoryMovement Ledger (architecture)
+**What:** Model bulk-asset availability as a ledger of `InventoryMovement` rows (every check-out, check-in, kit-pack, maintenance-pull is a movement) instead of a mutable `availableQuantity` field; current quantity becomes a sum.
+**Why:** A mutable quantity field drifts and is hard to reconcile. A ledger is self-auditing and never silently wrong.
+**Pros:** Reconciliation becomes trivial; full movement history for free.
+**Cons:** Large migration; every availability read/write changes. Only worth it if reconciliation pain persists.
+**Context:** Flagged "Wave 3+ architectural improvement" by the eng review in `docs/designs/app-cleanup-unification.md`. Do only if reconciliation pain persists.
+**Depends on:** Nothing; large blast radius.
+**Estimate:** human ~2-3 weeks / CC ~2-3 hours
 **Priority:** P3

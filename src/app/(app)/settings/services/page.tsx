@@ -30,6 +30,7 @@ import {
 } from "@/lib/validations/project-service";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useCanDo } from "@/lib/use-permissions";
+import { formatCurrency } from "@/lib/formatters";
 import { FadeIn } from "@/components/ui/motion";
 
 import { Button } from "@/components/ui/button";
@@ -87,11 +88,6 @@ const PRICING_TYPE_LABELS: Record<string, string> = {
   PER_HOUR: "Per Hour",
   PER_DAY: "Per Day",
 };
-
-function formatCurrency(value: number | null | undefined): string {
-  if (value == null) return "—";
-  return `$${Number(value).toLocaleString("en-AU", { minimumFractionDigits: 2 })}`;
-}
 
 export default function ServiceTemplatesPage() {
   const { data: activeOrg } = useActiveOrganization();

@@ -105,8 +105,11 @@ function getProjectUrgency(project: Project): UrgencyGroup {
 
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 2);
+  // The "today" group is a 2-day prep window — it covers today AND
+  // tomorrow (the section header reads "Today / Tomorrow"). The cutoff is
+  // therefore the start of the day after tomorrow.
+  const dayAfterTomorrow = new Date(today);
+  dayAfterTomorrow.setDate(today.getDate() + 2);
   const projectDay = new Date(
     startDate.getFullYear(),
     startDate.getMonth(),
@@ -114,7 +117,7 @@ function getProjectUrgency(project: Project): UrgencyGroup {
   );
 
   if (projectDay < today) return "overdue";
-  if (projectDay < tomorrow) return "today";
+  if (projectDay < dayAfterTomorrow) return "today";
   return "upcoming";
 }
 

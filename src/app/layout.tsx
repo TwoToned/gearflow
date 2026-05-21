@@ -5,6 +5,7 @@ import { QueryProvider } from "@/components/providers/query-provider";
 import { GoogleMapsProvider } from "@/components/providers/google-maps-provider";
 import { GlobalErrorBoundary } from "@/components/error-boundary";
 import { DomPatch } from "@/components/dom-patch";
+import { ReducedMotionProvider } from "@/components/ui/motion";
 import { Toaster } from "@/components/ui/sonner";
 import { getPlatformName } from "@/lib/platform";
 import "./globals.css";
@@ -67,7 +68,9 @@ export default function RootLayout({
         <GlobalErrorBoundary>
           <ThemeProvider>
             <GoogleMapsProvider>
-              <QueryProvider>{children}</QueryProvider>
+              <QueryProvider>
+                <ReducedMotionProvider>{children}</ReducedMotionProvider>
+              </QueryProvider>
             </GoogleMapsProvider>
           </ThemeProvider>
           <Toaster />

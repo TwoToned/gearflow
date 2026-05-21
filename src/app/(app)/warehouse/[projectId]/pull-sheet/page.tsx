@@ -7,6 +7,7 @@ import { ArrowLeft, Printer, Square, Container } from "lucide-react";
 
 import { getProjectPullSheet } from "@/server/warehouse";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { formatDate } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
@@ -32,15 +33,6 @@ const statusLabels: Record<string, string> = {
   ON_SITE: "On Site",
   RETURNED: "Returned",
 };
-
-function formatDate(date: string | null | undefined): string {
-  if (!date) return "—";
-  return new Date(date).toLocaleDateString("en-AU", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
 
 function PullSheetOverbookedBadge({ info }: { info?: { overBy: number; totalStock: number; effectiveStock?: number; totalBooked: number; inherited?: boolean; unavailableAssets?: number; reducedOnly?: boolean; hasOverbookedChildren?: boolean; hasReducedChildren?: boolean } | null }) {
   if (!info) return null;

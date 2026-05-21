@@ -126,8 +126,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { FadeIn } from "@/components/ui/motion";
-import { SectionHeader } from "@/components/layout/page-layouts";
+import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
+import { formatDate } from "@/lib/formatters";
 
 const certStatusColors: Record<string, string> = {
   CURRENT: "bg-green-500/10 text-green-500 border-green-500/20",
@@ -157,15 +158,6 @@ const projectStatusLabels: Record<string, string> = {
   INVOICED: "Invoiced",
   CANCELLED: "Cancelled",
 };
-
-function formatDate(date: string | Date | null | undefined): string {
-  if (!date) return "\u2014";
-  return new Date(date).toLocaleDateString("en-AU", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
 
 export default function CrewMemberDetailPage({
   params,
@@ -570,9 +562,9 @@ export default function CrewMemberDetailPage({
           </div>
 
           {/* ── 2-Column Layout ────────────────────────────────────── */}
-          <div className="flex flex-col gap-6 lg:flex-row">
+          <DetailLayout>
             {/* Main content */}
-            <div className="min-w-0 flex-1">
+            <DetailMain>
               <Tabs value={tabValue} onValueChange={setTabValue}>
                 <TabsList>
                   <TabsTrigger value="assignments">
@@ -1290,14 +1282,12 @@ export default function CrewMemberDetailPage({
                   </div>
                 </TabsContent>
               </Tabs>
-            </div>
+            </DetailMain>
 
             {/* ── Sidebar ──────────────────────────────────────────── */}
-            <div className="w-full space-y-4 lg:w-[340px] lg:shrink-0">
-              <div className="lg:sticky lg:top-4 space-y-4">
+            <DetailSidebar>
                 {/* Contact */}
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Contact" />
+                <SidebarSection title="Contact">
                   <div className="space-y-2 text-sm">
                     {displayEmail && (
                       <div className="flex items-center gap-2 text-fg-3">
@@ -1327,11 +1317,10 @@ export default function CrewMemberDetailPage({
                       <p className="text-fg-3">No contact info</p>
                     )}
                   </div>
-                </div>
+                </SidebarSection>
 
                 {/* Role & Department */}
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Role & Department" />
+                <SidebarSection title="Role & Department">
                   <div className="space-y-1.5 text-sm">
                     <div className="flex justify-between">
                       <span className="text-fg-3">Role</span>
@@ -1367,11 +1356,10 @@ export default function CrewMemberDetailPage({
                       </>
                     )}
                   </div>
-                </div>
+                </SidebarSection>
 
                 {/* Rates */}
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Rates" />
+                <SidebarSection title="Rates">
                   <div className="space-y-1.5 text-sm">
                     <div className="flex justify-between">
                       <span className="text-fg-3">Day Rate</span>
@@ -1398,11 +1386,10 @@ export default function CrewMemberDetailPage({
                       </span>
                     </div>
                   </div>
-                </div>
+                </SidebarSection>
 
                 {/* Certifications Summary */}
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Certifications" />
+                <SidebarSection title="Certifications">
                   {certifications.length === 0 ? (
                     <p className="text-sm text-fg-3">No certifications</p>
                   ) : (
@@ -1429,12 +1416,11 @@ export default function CrewMemberDetailPage({
                       </div>
                     </div>
                   )}
-                </div>
+                </SidebarSection>
 
                 {/* Skills */}
                 {skills.length > 0 && (
-                  <div className="border-b border-border pb-4 space-y-2">
-                    <SectionHeader label="Skills" />
+                  <SidebarSection title="Skills">
                     <div className="flex flex-wrap gap-1">
                       {skills.map(
                         (skill: {
@@ -1448,13 +1434,12 @@ export default function CrewMemberDetailPage({
                         )
                       )}
                     </div>
-                  </div>
+                  </SidebarSection>
                 )}
 
                 {/* Tags */}
                 {member.tags?.length > 0 && (
-                  <div className="border-b border-border pb-4 space-y-2">
-                    <SectionHeader label="Tags" />
+                  <SidebarSection title="Tags">
                     <div className="flex flex-wrap gap-1">
                       {member.tags.map((tag: string) => (
                         <Badge key={tag} variant="outline">
@@ -1462,12 +1447,11 @@ export default function CrewMemberDetailPage({
                         </Badge>
                       ))}
                     </div>
-                  </div>
+                  </SidebarSection>
                 )}
 
                 {/* Availability Status */}
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Availability" />
+                <SidebarSection title="Availability">
                   <div className="text-sm">
                     {activeUnavailable ? (
                       <div className="flex items-center gap-2 text-red-500">
@@ -1486,24 +1470,21 @@ export default function CrewMemberDetailPage({
                       </p>
                     )}
                   </div>
-                </div>
+                </SidebarSection>
 
                 {/* Notes */}
                 {member.notes && (
-                  <div className="border-b border-border pb-4 space-y-2">
-                    <SectionHeader label="Notes" />
+                  <SidebarSection title="Notes">
                     <p className="text-sm whitespace-pre-wrap text-fg-3">{member.notes}</p>
-                  </div>
+                  </SidebarSection>
                 )}
 
                 {/* Activity Timeline */}
-                <div className="space-y-2">
-                  <SectionHeader label="Activity" />
+                <SidebarSection title="Activity" divider={false}>
                   <ActivityTimeline entityType="crew" entityId={id} />
-                </div>
-              </div>
-            </div>
-          </div>
+                </SidebarSection>
+            </DetailSidebar>
+          </DetailLayout>
         </div>
       </FadeIn>
 

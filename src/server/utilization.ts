@@ -50,6 +50,12 @@ export interface UtilizationSummaryRow extends AssetUtilization {
 
 /** Roll-up list for the /utilization page. Joins each row back with the
  *  asset's tag / model / category for display. */
+/** Hard cap on assets scored per request. computeAssetUtilization fires
+ *  ~4 queries each; without a cap a 500-asset catalog issues 2000
+ *  sequential queries and times the request out. The dashboard surfaces
+ *  the highest-signal slice — a deeper view can paginate later. */
+const UTILIZATION_SUMMARY_CAP = 250;
+
 export async function getUtilizationSummary(options?: {
   periodDays?: number;
   modelId?: string;
@@ -69,6 +75,7 @@ export async function getUtilizationSummary(options?: {
     period,
     modelId: options?.modelId,
     categoryId: options?.categoryId,
+    limit: UTILIZATION_SUMMARY_CAP,
   });
 
   if (rows.length === 0) return [];

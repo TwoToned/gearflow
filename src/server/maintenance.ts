@@ -467,21 +467,22 @@ export async function deleteMaintenanceRecord(id: string) {
 
   if (!record) throw new Error("Record not found");
 
-  // If the record was keeping assets in maintenance (any holding status),
-  // release them via the same guarded helper so we don't free an asset
-  // another active record still owns.
-  if (isHoldingStatus(record.status) && record.assets.length > 0) {
-    await prisma.$transaction(async (tx) => {
+  // Release held assets AND delete the record in one transaction. Split
+  // across two transactions, there's a window where releaseAssets has
+  // committed (asset is AVAILABLE) but the record still exists — a
+  // concurrent hold could re-grab the asset and land it in an
+  // inconsistent state.
+  await prisma.$transaction(async (tx) => {
+    if (isHoldingStatus(record.status) && record.assets.length > 0) {
       await releaseAssets(
         tx,
         record.assets.map((a) => a.assetId),
         record.id,
       );
+    }
+    await tx.maintenanceRecord.delete({
+      where: { id, organizationId },
     });
-  }
-
-  await prisma.maintenanceRecord.delete({
-    where: { id, organizationId },
   });
 
   await logActivity({

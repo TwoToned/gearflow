@@ -11,6 +11,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { createId } from "@paralleldrive/cuid2";
 
 export interface ReorderCandidate {
   bulkAssetId: string;
@@ -127,10 +128,13 @@ export async function createReorderDraftCore(
     throw new Error("One or more items could not be found in this organization");
   }
 
-  // Order number: REORDER-{YYYYMMDD}-{short id}
+  // Order number: REORDER-{YYYYMMDD}-{short id}. cuid2 (8 chars) instead of
+  // Math.random's 4 base-36 chars — the latter has only ~1.7M values per
+  // day, so two concurrent drafts on a busy day could collide. orderNumber
+  // has no DB unique constraint, so a collision would silently double up.
   const now = new Date();
   const datePart = now.toISOString().slice(0, 10).replace(/-/g, "");
-  const orderNumber = `REORDER-${datePart}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+  const orderNumber = `REORDER-${datePart}-${createId().slice(0, 8).toUpperCase()}`;
 
   const result = await prisma.$transaction(async (tx) => {
     const order = await tx.supplierOrder.create({

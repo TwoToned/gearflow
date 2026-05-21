@@ -261,33 +261,40 @@ export async function swapLineItemAssetCore(
     throw new Error(`Asset ${newAsset.assetTag} is ${newAsset.status.toLowerCase()}`);
   }
 
-  // Re-verify the target asset is free in the window.
-  if (lineItem.project.rentalStartDate && lineItem.project.rentalEndDate) {
-    const conflict = await prisma.projectLineItem.findFirst({
-      where: {
-        organizationId,
-        assetId: newAssetId,
-        status: { not: "CANCELLED" },
-        id: { not: lineItemId },
-        project: {
-          isTemplate: false,
-          status: { notIn: [...DEAD_PROJECT_STATUSES] },
-          rentalStartDate: { lte: lineItem.project.rentalEndDate },
-          rentalEndDate: { gte: lineItem.project.rentalStartDate },
+  // Re-verify free-in-window AND reassign inside one transaction. Without
+  // the shared transaction the check + update is a TOCTOU window: two
+  // operators swapping onto the same free asset both pass the check, both
+  // write, and the asset ends up double-booked — re-introducing exactly
+  // the conflict this feature exists to resolve.
+  const { rentalStartDate, rentalEndDate } = lineItem.project;
+  await prisma.$transaction(async (tx) => {
+    if (rentalStartDate && rentalEndDate) {
+      const conflict = await tx.projectLineItem.findFirst({
+        where: {
+          organizationId,
+          assetId: newAssetId,
+          status: { not: "CANCELLED" },
+          id: { not: lineItemId },
+          project: {
+            isTemplate: false,
+            status: { notIn: [...DEAD_PROJECT_STATUSES] },
+            rentalStartDate: { lte: rentalEndDate },
+            rentalEndDate: { gte: rentalStartDate },
+          },
         },
-      },
-      select: { project: { select: { projectNumber: true } } },
-    });
-    if (conflict) {
-      throw new Error(
-        `Asset ${newAsset.assetTag} was just booked on ${conflict.project.projectNumber}. Pick another.`,
-      );
+        select: { project: { select: { projectNumber: true } } },
+      });
+      if (conflict) {
+        throw new Error(
+          `Asset ${newAsset.assetTag} was just booked on ${conflict.project.projectNumber}. Pick another.`,
+        );
+      }
     }
-  }
 
-  await prisma.projectLineItem.update({
-    where: { id: lineItemId, organizationId },
-    data: { assetId: newAssetId },
+    await tx.projectLineItem.update({
+      where: { id: lineItemId, organizationId },
+      data: { assetId: newAssetId },
+    });
   });
 
   return { lineItemId, assetId: newAssetId };

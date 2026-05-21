@@ -300,7 +300,7 @@ export async function createStocktake(data: CreateStocktakeValues) {
 export async function updateStocktake(id: string, data: UpdateStocktakeValues) {
   const { organizationId, userId, userName } = await requirePermission(
     "stocktake",
-    "manage",
+    "update",
   );
 
   const parsed = updateStocktakeSchema.parse(data);
@@ -444,7 +444,7 @@ export async function updateStocktake(id: string, data: UpdateStocktakeValues) {
 export async function startStocktake(id: string) {
   const { organizationId, userId, userName } = await requirePermission(
     "stocktake",
-    "manage",
+    "update",
   );
 
   const stocktake = await prisma.stocktake.findUnique({
@@ -482,7 +482,7 @@ export async function startStocktake(id: string) {
 export async function scanStocktakeItem(data: ScanItemValues) {
   const { organizationId, userId } = await requirePermission(
     "stocktake",
-    "manage",
+    "update",
   );
 
   const parsed = scanItemSchema.parse(data);
@@ -603,7 +603,7 @@ export async function scanStocktakeItem(data: ScanItemValues) {
 // ---------------------------------------------------------------------------
 
 export async function updateBulkCount(data: UpdateBulkCountValues) {
-  const { organizationId } = await requirePermission("stocktake", "manage");
+  const { organizationId } = await requirePermission("stocktake", "update");
 
   const parsed = updateBulkCountSchema.parse(data);
 
@@ -639,7 +639,7 @@ export async function updateBulkCount(data: UpdateBulkCountValues) {
 export async function completeScanning(id: string) {
   const { organizationId, userId, userName } = await requirePermission(
     "stocktake",
-    "manage",
+    "update",
   );
 
   const stocktake = await prisma.stocktake.findUnique({
@@ -719,7 +719,7 @@ export async function completeScanning(id: string) {
 export async function resumeScanning(id: string) {
   const { organizationId, userId, userName } = await requirePermission(
     "stocktake",
-    "manage",
+    "update",
   );
 
   const stocktake = await prisma.stocktake.findUnique({
@@ -767,7 +767,7 @@ export async function resumeScanning(id: string) {
 export async function resolveDiscrepancy(data: ResolveDiscrepancyValues) {
   const { organizationId, userId, userName } = await requirePermission(
     "stocktake",
-    "manage",
+    "update",
   );
 
   const parsed = resolveDiscrepancySchema.parse(data);
@@ -785,20 +785,26 @@ export async function resolveDiscrepancy(data: ResolveDiscrepancyValues) {
   if (item.stocktake.status !== "REVIEWING")
     throw new Error("Stocktake must be in REVIEWING status");
 
+  // Each resolution mutates inventory (asset status / bulk quantity /
+  // location) AND stamps the stocktake item's actionTaken. Both writes
+  // must commit together — a crash between them would mutate stock while
+  // leaving actionTaken null, so a re-run would double-apply the change.
   switch (parsed.action) {
     case "MARK_LOST": {
-      if (item.assetId) {
-        await prisma.asset.update({
-          where: { id: item.assetId },
-          data: { status: "LOST" },
+      await prisma.$transaction(async (tx) => {
+        if (item.assetId) {
+          await tx.asset.update({
+            where: { id: item.assetId },
+            data: { status: "LOST" },
+          });
+        }
+        await tx.stocktakeItem.update({
+          where: { id: parsed.itemId },
+          data: {
+            actionTaken: "Marked as LOST",
+            conditionNote: parsed.note,
+          },
         });
-      }
-      await prisma.stocktakeItem.update({
-        where: { id: parsed.itemId },
-        data: {
-          actionTaken: "Marked as LOST",
-          conditionNote: parsed.note,
-        },
       });
 
       await logActivity({
@@ -815,49 +821,52 @@ export async function resolveDiscrepancy(data: ResolveDiscrepancyValues) {
     }
 
     case "UPDATE_LOCATION": {
-      if (item.assetId) {
-        await prisma.asset.update({
-          where: { id: item.assetId },
-          data: { locationId: item.stocktake.locationId },
+      await prisma.$transaction(async (tx) => {
+        if (item.assetId) {
+          await tx.asset.update({
+            where: { id: item.assetId },
+            data: { locationId: item.stocktake.locationId },
+          });
+        }
+        if (item.bulkAssetId) {
+          await tx.bulkAsset.update({
+            where: { id: item.bulkAssetId },
+            data: { locationId: item.stocktake.locationId },
+          });
+        }
+        await tx.stocktakeItem.update({
+          where: { id: parsed.itemId },
+          data: {
+            actionTaken: "Location updated",
+            conditionNote: parsed.note,
+          },
         });
-      }
-      if (item.bulkAssetId) {
-        await prisma.bulkAsset.update({
-          where: { id: item.bulkAssetId },
-          data: { locationId: item.stocktake.locationId },
-        });
-      }
-      await prisma.stocktakeItem.update({
-        where: { id: parsed.itemId },
-        data: {
-          actionTaken: "Location updated",
-          conditionNote: parsed.note,
-        },
       });
       break;
     }
 
     case "ADJUST_QUANTITY": {
-      if (item.bulkAssetId && item.bulkAsset) {
-        const diff = item.foundQuantity - item.expectedQuantity;
-        await prisma.bulkAsset.update({
-          where: { id: item.bulkAssetId },
+      await prisma.$transaction(async (tx) => {
+        if (item.bulkAssetId && item.bulkAsset) {
+          const diff = item.foundQuantity - item.expectedQuantity;
+          // diff is negative for a shortfall (counted fewer than expected).
+          // Floor both quantities at 0 — bulk_asset has no DB CHECK against
+          // negative stock, and a negative quantity corrupts the reorder
+          // dashboard's threshold comparison.
+          const nextAvailable = Math.max(0, item.bulkAsset.availableQuantity + diff);
+          const nextTotal = Math.max(0, item.bulkAsset.totalQuantity + diff);
+          await tx.bulkAsset.update({
+            where: { id: item.bulkAssetId },
+            data: { availableQuantity: nextAvailable, totalQuantity: nextTotal },
+          });
+        }
+        await tx.stocktakeItem.update({
+          where: { id: parsed.itemId },
           data: {
-            availableQuantity: {
-              increment: diff,
-            },
-            totalQuantity: {
-              increment: diff,
-            },
+            actionTaken: `Quantity adjusted (${item.expectedQuantity} → ${item.foundQuantity})`,
+            conditionNote: parsed.note,
           },
         });
-      }
-      await prisma.stocktakeItem.update({
-        where: { id: parsed.itemId },
-        data: {
-          actionTaken: `Quantity adjusted (${item.expectedQuantity} → ${item.foundQuantity})`,
-          conditionNote: parsed.note,
-        },
       });
       break;
     }
@@ -882,7 +891,7 @@ export async function resolveDiscrepancy(data: ResolveDiscrepancyValues) {
 export async function bulkResolveDiscrepancies(data: BulkResolveValues) {
   const { organizationId, userId, userName } = await requirePermission(
     "stocktake",
-    "manage",
+    "update",
   );
 
   const parsed = bulkResolveSchema.parse(data);
@@ -908,20 +917,25 @@ export async function bulkResolveDiscrepancies(data: BulkResolveValues) {
       .map((i) => i.assetId)
       .filter((id): id is string => id !== null);
 
-    if (assetIds.length > 0) {
-      await prisma.asset.updateMany({
-        where: { id: { in: assetIds } },
-        data: { status: "LOST" },
+    // Mark assets LOST and stamp the items in one transaction. Split,
+    // a crash between them leaves assets LOST while the items still show
+    // actionTaken: null — a re-run would re-process them (harmless for
+    // LOST, but the counts and audit trail would be wrong).
+    await prisma.$transaction(async (tx) => {
+      if (assetIds.length > 0) {
+        await tx.asset.updateMany({
+          where: { id: { in: assetIds } },
+          data: { status: "LOST" },
+        });
+      }
+      await tx.stocktakeItem.updateMany({
+        where: {
+          stocktakeId: parsed.stocktakeId,
+          result: "MISSING",
+          actionTaken: null,
+        },
+        data: { actionTaken: "Marked as LOST (bulk)" },
       });
-    }
-
-    await prisma.stocktakeItem.updateMany({
-      where: {
-        stocktakeId: parsed.stocktakeId,
-        result: "MISSING",
-        actionTaken: null,
-      },
-      data: { actionTaken: "Marked as LOST (bulk)" },
     });
 
     await logActivity({
@@ -955,7 +969,7 @@ export async function bulkResolveDiscrepancies(data: BulkResolveValues) {
 export async function completeStocktake(id: string) {
   const { organizationId, userId, userName } = await requirePermission(
     "stocktake",
-    "manage",
+    "update",
   );
 
   const stocktake = await prisma.stocktake.findUnique({
@@ -1007,7 +1021,7 @@ export async function completeStocktake(id: string) {
 export async function cancelStocktake(id: string) {
   const { organizationId, userId, userName } = await requirePermission(
     "stocktake",
-    "manage",
+    "update",
   );
 
   const stocktake = await prisma.stocktake.findUnique({
@@ -1133,7 +1147,7 @@ export async function searchStocktakeAssets(
 export async function markStocktakeItemFound(itemId: string) {
   const { organizationId, userId } = await requirePermission(
     "stocktake",
-    "manage",
+    "update",
   );
 
   const item = await prisma.stocktakeItem.findUnique({
@@ -1172,7 +1186,7 @@ export async function markStocktakeItemFound(itemId: string) {
 // ---------------------------------------------------------------------------
 
 export async function unmarkStocktakeItemFound(itemId: string) {
-  const { organizationId } = await requirePermission("stocktake", "manage");
+  const { organizationId } = await requirePermission("stocktake", "update");
 
   const item = await prisma.stocktakeItem.findUnique({
     where: { id: itemId },
@@ -1183,6 +1197,12 @@ export async function unmarkStocktakeItemFound(itemId: string) {
   if (item.stocktake.status !== "IN_PROGRESS")
     throw new Error("Stocktake is not in scanning mode");
 
+  // An UNEXPECTED item (scanned but not on the expected list) must NOT
+  // be reset to MATCH on unmark — that produces a phantom row
+  // (found:false, expectedAtLocation:false, result:MATCH) which
+  // completeScanning ignores entirely, silently dropping it from the
+  // discrepancy counts. Preserve UNEXPECTED; only expected-at-location
+  // items return to MATCH.
   await prisma.stocktakeItem.update({
     where: { id: itemId },
     data: {
@@ -1190,7 +1210,7 @@ export async function unmarkStocktakeItemFound(itemId: string) {
       foundQuantity: 0,
       scannedAt: null,
       scannedById: null,
-      result: "MATCH",
+      result: item.expectedAtLocation ? "MATCH" : item.result,
     },
   });
 }

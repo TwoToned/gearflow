@@ -1,13 +1,39 @@
 "use client";
 
 import { motion, useReducedMotion } from "framer-motion";
-import { type ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 
 const EASE: [number, number, number, number] = [0.2, 0, 0, 1];
 
+/**
+ * Reduced-motion context. `useReducedMotion()` attaches a media-query
+ * listener; reading it once in the provider and sharing the value via
+ * context means a single listener for the whole tree instead of one per
+ * motion component.
+ */
+const ReducedMotionContext = createContext<boolean>(false);
+
+/**
+ * Provider — mount once near the root. Reads the OS "reduce motion"
+ * preference a single time and shares it with every motion component below.
+ */
+export function ReducedMotionProvider({ children }: { children: ReactNode }) {
+  const reduce = useReduce();
+  return (
+    <ReducedMotionContext.Provider value={reduce ?? false}>
+      {children}
+    </ReducedMotionContext.Provider>
+  );
+}
+
+/** Read the shared reduced-motion preference. */
+function useReduce(): boolean {
+  return useContext(ReducedMotionContext);
+}
+
 // Staggered list container
 export function StaggerList({ children, className, delay = 0 }: { children: ReactNode; className?: string; delay?: number }) {
-  const reduce = useReducedMotion();
+  const reduce = useReduce();
   return (
     <motion.div
       className={className}
@@ -30,7 +56,7 @@ export function StaggerList({ children, className, delay = 0 }: { children: Reac
 
 // Individual stagger item
 export function StaggerItem({ children, className }: { children: ReactNode; className?: string }) {
-  const reduce = useReducedMotion();
+  const reduce = useReduce();
   return (
     <motion.div
       className={className}
@@ -50,7 +76,7 @@ export function StaggerItem({ children, className }: { children: ReactNode; clas
 
 // Fade in on mount
 export function FadeIn({ children, className, delay = 0, duration = 0.3 }: { children: ReactNode; className?: string; delay?: number; duration?: number }) {
-  const reduce = useReducedMotion();
+  const reduce = useReduce();
   return (
     <motion.div
       className={className}
@@ -65,7 +91,7 @@ export function FadeIn({ children, className, delay = 0, duration = 0.3 }: { chi
 
 // Animated number counter
 export function AnimatedNumber({ value, className }: { value: number; className?: string }) {
-  const reduce = useReducedMotion();
+  const reduce = useReduce();
 
   if (reduce || typeof value !== "number") {
     return <span className={className}>{value}</span>;
@@ -86,7 +112,7 @@ export function AnimatedNumber({ value, className }: { value: number; className?
 
 // Surface hover lift (wrap interactive cards)
 export function SurfaceLift({ children, className }: { children: ReactNode; className?: string }) {
-  const reduce = useReducedMotion();
+  const reduce = useReduce();
   return (
     <motion.div
       className={className}
@@ -100,7 +126,7 @@ export function SurfaceLift({ children, className }: { children: ReactNode; clas
 
 // Tab content crossfade
 export function TabFade({ children, className, layoutId }: { children: ReactNode; className?: string; layoutId?: string }) {
-  const reduce = useReducedMotion();
+  const reduce = useReduce();
   return (
     <motion.div
       className={className}

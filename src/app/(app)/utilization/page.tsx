@@ -31,7 +31,8 @@ import {
   AlertCircle,
 } from "lucide-react";
 
-import { getUtilizationSummary, type UtilizationSummaryRow } from "@/server/utilization";
+import { getUtilizationSummary } from "@/server/utilization";
+import type { UtilizationSummaryRow } from "@/lib/utilization";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { RequirePermission } from "@/components/auth/require-permission";

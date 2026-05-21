@@ -23,9 +23,11 @@ import {
   getProjectConflicts,
   getSwapCandidates,
   swapLineItemAsset,
-  type ReservationConflict,
-  type SwapCandidate,
 } from "@/server/reservation-conflicts";
+import type {
+  ReservationConflict,
+  SwapCandidate,
+} from "@/lib/reservation-conflicts";
 import { Button } from "@/components/ui/button";
 import { showError } from "@/lib/show-error";
 import { cn } from "@/lib/utils";

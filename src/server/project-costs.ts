@@ -13,8 +13,6 @@ import {
   type ProjectOperationalCosts,
 } from "@/lib/project-costs";
 
-export type { ProjectOperationalCosts };
-
 export async function getProjectOperationalCosts(
   projectId: string,
 ): Promise<ProjectOperationalCosts> {

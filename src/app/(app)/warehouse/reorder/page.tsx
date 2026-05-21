@@ -27,7 +27,8 @@ import {
   ArrowRight,
 } from "lucide-react";
 
-import { getReorderCandidates, createReorderDraft, type ReorderCandidate } from "@/server/reorder";
+import { getReorderCandidates, createReorderDraft } from "@/server/reorder";
+import type { ReorderCandidate } from "@/lib/reorder";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

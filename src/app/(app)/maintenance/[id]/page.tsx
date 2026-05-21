@@ -26,7 +26,7 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { FadeIn } from "@/components/ui/motion";
-import { SectionHeader } from "@/components/layout/page-layouts";
+import { DetailLayout, DetailMain, DetailSidebar, SectionHeader, SidebarSection } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { PageMeta } from "@/components/layout/page-meta";
 import {
@@ -34,15 +34,7 @@ import {
   maintenanceTypeLabels,
   formatLabel,
 } from "@/lib/status-labels";
-
-function formatDate(date: Date | string | null | undefined) {
-  if (!date) return "—";
-  return new Date(date).toLocaleDateString("en-AU", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
+import { formatDate } from "@/lib/formatters";
 
 const resultLabels: Record<string, string> = {
   PASS: "Pass",
@@ -161,9 +153,9 @@ export default function MaintenanceDetailPage({
           </div>
 
           {/* ── 2-Column Layout ────────────────────────────────────── */}
-          <div className="flex flex-col gap-6 lg:flex-row">
+          <DetailLayout>
             {/* ── Main content (left) ─────────────────────────────── */}
-            <div className="min-w-0 flex-1 space-y-6">
+            <DetailMain className="space-y-6">
               {/* Description */}
               {description && (
                 <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
@@ -280,14 +272,12 @@ export default function MaintenanceDetailPage({
                   </div>
                 </div>
               )}
-            </div>
+            </DetailMain>
 
             {/* ── Sidebar (right) ─────────────────────────────────── */}
-            <div className="w-full space-y-4 lg:w-[340px] lg:shrink-0">
-              <div className="lg:sticky lg:top-4 space-y-4">
+            <DetailSidebar>
                 {/* Status */}
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Status" />
+                <SidebarSection title="Status">
                   <div className="flex items-center gap-2">
                     <StatusIndicator
                       category="maintenance"
@@ -295,19 +285,17 @@ export default function MaintenanceDetailPage({
                       label={maintenanceStatusLabels[status] || formatLabel(status)}
                     />
                   </div>
-                </div>
+                </SidebarSection>
 
                 {/* Type */}
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Type" />
+                <SidebarSection title="Type">
                   <Badge variant="secondary">
                     {maintenanceTypeLabels[type] || formatLabel(type)}
                   </Badge>
-                </div>
+                </SidebarSection>
 
                 {/* Key Dates */}
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Key Dates" />
+                <SidebarSection title="Key Dates">
                   <div className="space-y-1 text-sm">
                     <div className="flex justify-between">
                       <span className="text-fg-3 flex items-center gap-1.5">
@@ -333,22 +321,20 @@ export default function MaintenanceDetailPage({
                       </div>
                     )}
                   </div>
-                </div>
+                </SidebarSection>
 
                 {/* Assigned To */}
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Assigned To" />
+                <SidebarSection title="Assigned To">
                   <div className="flex items-center gap-2 text-sm">
                     <User className="h-3.5 w-3.5 text-fg-3 shrink-0" />
                     <span className="font-medium">
                       {assignedTo?.name || "Unassigned"}
                     </span>
                   </div>
-                </div>
+                </SidebarSection>
 
                 {/* Affected Assets Summary */}
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Affected Assets" />
+                <SidebarSection title="Affected Assets">
                   {assetLinks.length === 0 ? (
                     <p className="text-sm text-fg-3">None</p>
                   ) : (
@@ -367,12 +353,11 @@ export default function MaintenanceDetailPage({
                       )}
                     </div>
                   )}
-                </div>
+                </SidebarSection>
 
                 {/* Result (if present) */}
                 {result && (
-                  <div className="border-b border-border pb-4 space-y-2">
-                    <SectionHeader label="Result" />
+                  <SidebarSection title="Result">
                     <Badge
                       variant={
                         result === "PASS"
@@ -384,17 +369,15 @@ export default function MaintenanceDetailPage({
                     >
                       {resultLabels[result] || formatLabel(result)}
                     </Badge>
-                  </div>
+                  </SidebarSection>
                 )}
 
                 {/* Activity */}
-                <div className="space-y-2">
-                  <SectionHeader label="Activity" />
+                <SidebarSection title="Activity" divider={false}>
                   <ActivityTimeline entityType="maintenance" entityId={id} />
-                </div>
-              </div>
-            </div>
-          </div>
+                </SidebarSection>
+            </DetailSidebar>
+          </DetailLayout>
         </div>
       </FadeIn>
       <DeleteDialog

@@ -52,6 +52,7 @@ import {
   crewRateTypeLabels,
 } from "@/lib/status-labels";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { formatCurrency } from "@/lib/formatters";
 import { CanDo } from "@/components/auth/permission-gate";
 
 import { Button } from "@/components/ui/button";
@@ -116,11 +117,6 @@ function formatDate(date: string | null | undefined): string {
     day: "numeric",
     month: "short",
   });
-}
-
-function formatCurrency(value: number | null | undefined): string {
-  if (value == null) return "—";
-  return `$${Number(value).toLocaleString("en-AU", { minimumFractionDigits: 2 })}`;
 }
 
 export function CrewPanel({ projectId }: CrewPanelProps) {

@@ -33,7 +33,7 @@ import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Badge } from "@/components/ui/badge";
 import { FadeIn } from "@/components/ui/motion";
-import { SectionHeader } from "@/components/layout/page-layouts";
+import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MediaUploader, type MediaItem } from "@/components/media/media-uploader";
@@ -140,9 +140,9 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
           </div>
 
           {/* ── 2-Column Layout ────────────────────────────────────── */}
-          <div className="flex flex-col gap-6 lg:flex-row">
+          <DetailLayout>
             {/* Main content */}
-            <div className="min-w-0 flex-1">
+            <DetailMain>
               {/* Address Map */}
               <div className="mb-6">
                 <AddressDisplay
@@ -303,14 +303,12 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
                   />
                 </TabsContent>
               </Tabs>
-            </div>
+            </DetailMain>
 
             {/* ── Sidebar ──────────────────────────────────────────── */}
-            <div className="w-full space-y-4 lg:w-[340px] lg:shrink-0">
-              <div className="lg:sticky lg:top-4 space-y-4">
+            <DetailSidebar>
                 {/* Location Info */}
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Location Info" />
+                <SidebarSection title="Location Info">
                   <div className="space-y-1.5 text-sm">
                     <div className="flex justify-between">
                       <span className="text-fg-3">Type</span>
@@ -332,12 +330,11 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
                       </div>
                     )}
                   </div>
-                </div>
+                </SidebarSection>
 
                 {/* Parent Location */}
                 {location.parent && (
-                  <div className="border-b border-border pb-4 space-y-2">
-                    <SectionHeader label="Parent Location" />
+                  <SidebarSection title="Parent Location">
                     <Link
                       href={`/locations/${location.parent.id}`}
                       className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-bg-surface transition-colors"
@@ -345,13 +342,12 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
                       <MapPin className="h-3.5 w-3.5 text-fg-3 shrink-0" />
                       <span className="font-medium">{location.parent.name}</span>
                     </Link>
-                  </div>
+                  </SidebarSection>
                 )}
 
                 {/* Sub-locations */}
                 {location.children && location.children.length > 0 && (
-                  <div className="border-b border-border pb-4 space-y-2">
-                    <SectionHeader label={`Sub-locations (${location.children.length})`} />
+                  <SidebarSection title={`Sub-locations (${location.children.length})`}>
                     <div className="space-y-1">
                       {location.children.map((child: { id: string; name: string; _count?: { assets?: number; bulkAssets?: number } }) => (
                         <Link
@@ -369,12 +365,11 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
                         </Link>
                       ))}
                     </div>
-                  </div>
+                  </SidebarSection>
                 )}
 
                 {/* Asset Counts */}
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Inventory" />
+                <SidebarSection title="Inventory">
                   <div className="space-y-1.5 text-sm">
                     <div className="flex justify-between">
                       <div className="flex items-center gap-2 text-fg-3">
@@ -405,16 +400,14 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
                       <span className="font-medium">{location._count?.projects || 0}</span>
                     </div>
                   </div>
-                </div>
+                </SidebarSection>
 
                 {/* Activity Timeline */}
-                <div className="space-y-2">
-                  <SectionHeader label="Activity" />
+                <SidebarSection title="Activity" divider={false}>
                   <ActivityTimeline entityType="location" entityId={id} />
-                </div>
-              </div>
-            </div>
-          </div>
+                </SidebarSection>
+            </DetailSidebar>
+          </DetailLayout>
         </div>
       </FadeIn>
       <DeleteDialog

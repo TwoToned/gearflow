@@ -3,6 +3,7 @@
 import { use, useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Shield, Search, ArrowUpDown, Sun, Moon, Lock } from "lucide-react";
+import { formatDate } from "@/lib/formatters";
 
 const STATUS_LABELS: Record<string, string> = {
   CURRENT: "Current",
@@ -35,15 +36,6 @@ const CLASS_LABELS: Record<string, string> = {
   CLASS_II_DOUBLE_INSULATED: "Class II (DI)",
   LEAD_CORD_ASSEMBLY: "Lead/Cord",
 };
-
-function formatDate(date: string | Date | null): string {
-  if (!date) return "-";
-  return new Date(date).toLocaleDateString("en-AU", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
 
 interface AuditorAsset {
   id: string;

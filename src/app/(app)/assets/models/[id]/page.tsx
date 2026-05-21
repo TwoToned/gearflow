@@ -39,7 +39,7 @@ import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { BookingCalendar } from "@/components/bookings/booking-calendar";
 import { FadeIn } from "@/components/ui/motion";
-import { SectionHeader } from "@/components/layout/page-layouts";
+import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { ModelChecksTab } from "@/components/assets/model-checks-tab";
 import { ModelFailureAnalytics } from "@/components/assets/model-failure-analytics";
@@ -221,9 +221,9 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
         </div>
 
         {/* ── 2-Column Layout ────────────────────────────────────── */}
-        <div className="flex flex-col gap-6 lg:flex-row">
+        <DetailLayout>
           {/* Main content (left) */}
-          <div className="min-w-0 flex-1">
+          <DetailMain>
             <Tabs defaultValue="details">
               <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
                 <TabsList className="w-max sm:w-auto">
@@ -515,11 +515,10 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 </div>
               </TabsContent>
             </Tabs>
-          </div>
+          </DetailMain>
 
           {/* ── Sidebar (right) ──────────────────────────────────── */}
-          <div className="w-full space-y-4 lg:w-[340px] lg:shrink-0">
-            <div className="lg:sticky lg:top-4 space-y-4">
+          <DetailSidebar>
               {/* Photo */}
               {primaryPhotoUrl && (
                 <div className="border-b border-border pb-4">
@@ -533,8 +532,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
               )}
 
               {/* Model Info */}
-              <div className="border-b border-border pb-4 space-y-2">
-                <SectionHeader label="Model Info" />
+              <SidebarSection title="Model Info">
                 <div className="space-y-1 text-sm">
                   {model.manufacturer && (
                     <div className="flex justify-between">
@@ -565,12 +563,11 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     <span className="font-medium">{model.assetType === "SERIALIZED" ? "Serialized" : "Bulk"}</span>
                   </div>
                 </div>
-              </div>
+              </SidebarSection>
 
               {/* Specifications */}
               {Object.keys(specs).length > 0 && (
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Specifications" />
+                <SidebarSection title="Specifications">
                   <div className="space-y-1 text-sm">
                     {Object.entries(specs).map(([key, val]) => (
                       <div key={key} className="flex justify-between">
@@ -579,12 +576,11 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       </div>
                     ))}
                   </div>
-                </div>
+                </SidebarSection>
               )}
 
               {/* Asset Summary */}
-              <div className="border-b border-border pb-4 space-y-2">
-                <SectionHeader label="Asset Summary" />
+              <SidebarSection title="Asset Summary">
                 <div className="space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span className="text-fg-3">Total</span>
@@ -607,26 +603,23 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     </>
                   )}
                 </div>
-              </div>
+              </SidebarSection>
 
               {/* Replacement Cost */}
               {model.replacementCost && (
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Replacement Cost" />
+                <SidebarSection title="Replacement Cost">
                   <p className="text-lg font-semibold t-data">
                     ${Number(model.replacementCost).toFixed(2)}
                   </p>
-                </div>
+                </SidebarSection>
               )}
 
               {/* Activity Timeline */}
-              <div className="space-y-2">
-                <SectionHeader label="Activity" />
+              <SidebarSection title="Activity" divider={false}>
                 <ActivityTimeline entityType="model" entityId={id} />
-              </div>
-            </div>
-          </div>
-        </div>
+              </SidebarSection>
+          </DetailSidebar>
+        </DetailLayout>
       </div>
     </FadeIn>
     <DeleteDialog

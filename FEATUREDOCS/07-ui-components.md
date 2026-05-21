@@ -22,6 +22,17 @@ shadcn/ui v4 uses Base UI, which uses `render` prop for composition (NOT Radix's
 - **AddressMap** (`src/components/ui/address-map.tsx`) — Google Maps via `@vis.gl/react-google-maps` with teal `AdvancedMarker`. Dynamic import (no SSR). Built-in dark/light mode via `colorScheme`. Shows "Get Directions" link (Google Maps / Apple Maps). Props: `latitude`, `longitude`, `address`, `label`, `height`, `zoom`, `interactive`, `showDirectionsLink`.
 - **AddressDisplay** (`src/components/ui/address-display.tsx`) — Conditional wrapper: renders `AddressMap` if coordinates exist, plain text if only address, nothing if empty. Use on all detail pages. Props: `address`, `latitude`, `longitude`, `label`, `compact` (150px non-interactive map for cards).
 
+## Layout Primitives
+
+Shared layout components live in `src/components/layout/page-layouts.tsx`:
+
+- **ListPageLayout** / **FormPageLayout** / **DetailPageLayout** — page-level shells (header + content).
+- **DetailLayout** + **DetailMain** + **DetailSidebar** — the two-column body of a detail page: a flexible main column beside a fixed-width (`lg:w-[340px]`) sticky sidebar, stacking below `lg`. All 10 detail pages use these — never hand-roll the `flex flex-col gap-6 lg:flex-row` shell.
+- **SidebarSection** (`title`, `divider?`) — one block inside a `DetailSidebar`: a `SectionHeader` plus content with a bottom divider. Pass `divider={false}` on the last section to drop the trailing rule.
+- **SectionHeader** — teal overline label chip.
+
+Motion components in `src/components/ui/motion.tsx` (`FadeIn`, `StaggerList`, `StaggerItem`, `AnimatedNumber`, `SurfaceLift`, `TabFade`) read the OS reduced-motion preference from a shared **ReducedMotionProvider** context (mounted once in the root layout) rather than each calling `useReducedMotion()` independently.
+
 ## Dialog vs Sheet
 - **Dialog**: Centered modal. Full-screen on mobile with safe area padding via `style` prop
 - **Sheet**: Side drawer (sidebar). Safe area padding merged into `SheetContent` via extracted `style` prop

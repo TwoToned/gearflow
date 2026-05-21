@@ -52,6 +52,7 @@ import {
 } from "@/lib/validations/project-service";
 import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS } from "@/lib/constants/services";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { formatCurrency } from "@/lib/formatters";
 import { CanDo } from "@/components/auth/permission-gate";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -119,11 +120,6 @@ function formatDateLong(date: string): string {
     day: "numeric",
     month: "long",
   });
-}
-
-function formatCurrency(value: number | null | undefined): string {
-  if (value == null) return "—";
-  return `$${Number(value).toLocaleString("en-AU", { minimumFractionDigits: 2 })}`;
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────

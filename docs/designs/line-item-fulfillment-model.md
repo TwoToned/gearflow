@@ -130,18 +130,26 @@ ignores `groupId`, `categoryId`, `subHireId`, `sortOrder`, `description`,
    rollup counters, and the `lineItemUnitId` FKs on `CheckRecord` /
    `DamageEvent`. During this phase also **stamp a `splitGroupId`** the first
    time a line is split going forward, so future data has explicit lineage.
-2. **Phase 2 — Backfill.** Inventory **every** FK / pseudo-FK to
-   `ProjectLineItem` first (`CheckRecord`, `DamageEvent`, activity-log entity
-   ids, service legacy links). Create one unit row per existing line. Then
-   collapse split siblings using a **strict full-equivalence key** — every
-   order-level field identical (`groupId`, `categoryId`, `subHireId`, supplier
-   fields, `pricingType`, `duration`, `unitPrice`, `discount`, `isOptional`,
-   `isContainerLineItem`, `isCustomItem`, `description`, `notes`). Anything not
-   identical is **flagged, not merged**. Write a permanent
-   `oldLineItemId → canonicalLineItemId + unitId` mapping table; repoint
-   `CheckRecord` / `DamageEvent`; **do not delete** old rows until every
-   reference is migrated and audited. Idempotent script, dry-run against a
-   production data copy, diff docket 260102 before/after.
+2. **Phase 2 — Backfill.** Split into two halves by risk:
+   - **2a — Populate units (safe, additive).** Create one `ProjectLineItemUnit`
+     per line item that has an asset / bulk asset assigned, carrying that
+     line's current per-unit state; recompute the rollup counters. Nothing
+     reads the new rows yet, so this is non-destructive, idempotent, and
+     reversible. Script: `scripts/backfill-line-item-units.ts`
+     (`npm run backfill:line-item-units`, dry-run by default).
+   - **2b — Collapse split siblings (hazardous).** Merge the qty-1 rows a
+     `10x` line was split into back onto one order line, using a **strict
+     full-equivalence key** — every order-level field identical (`groupId`,
+     `categoryId`, `subHireId`, supplier fields, `pricingType`, `duration`,
+     `unitPrice`, `discount`, `isOptional`, `isContainerLineItem`,
+     `isCustomItem`, `description`, `notes`). Anything not identical is
+     **flagged, not merged**. Inventory **every** FK / pseudo-FK first
+     (`CheckRecord`, `DamageEvent`, activity-log entity ids); write a permanent
+     `oldLineItemId → canonicalLineItemId + unitId` mapping table; repoint
+     `CheckRecord` / `DamageEvent`; **do not delete** old rows until audited.
+     **Run 2b adjacent to Phase 3**, not standalone — collapsing data while
+     readers still expect the split shape opens a half-migrated window. Dry-run
+     against a production data copy; diff docket 260102 before/after.
 3. **Phase 3 — Cut over.** Rewrite checkout / check-in / prep / scan-lookup to
    the unit table in one atomic PR; retire `splitLineItem` and its 6 call
    sites; kit children get unit rows created in `checkOutKit`.

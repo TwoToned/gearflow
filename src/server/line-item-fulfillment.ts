@@ -132,3 +132,75 @@ export async function ensureBulkUnit(
   });
   return { id: unit.id, created: true };
 }
+
+/**
+ * Mark a unit prepped/packed (the pick-and-pack step before checkout).
+ * Serialised and bulk lines get a PACKED unit row; a generic line with no
+ * asset assigned just carries prepStatus on the order line. Rolls the line
+ * up and returns it (with model/asset/bulkAsset included).
+ */
+export async function prepUnit(
+  tx: Prisma.TransactionClient,
+  args: {
+    organizationId: string;
+    lineItemId: string;
+    assetId?: string | null;
+    bulkAssetId?: string | null;
+    quantity?: number;
+    prepContainer?: string | null;
+  },
+) {
+  if (args.assetId) {
+    const { id } = await ensureSerialisedUnit(tx, {
+      organizationId: args.organizationId,
+      lineItemId: args.lineItemId,
+      assetId: args.assetId,
+    });
+    await tx.projectLineItemUnit.update({
+      where: { id },
+      data: {
+        status: "CONFIRMED",
+        prepStatus: "PACKED",
+        ...(args.prepContainer !== undefined
+          ? { prepContainer: args.prepContainer }
+          : {}),
+      },
+    });
+  } else if (args.bulkAssetId) {
+    const { id } = await ensureBulkUnit(tx, {
+      organizationId: args.organizationId,
+      lineItemId: args.lineItemId,
+      bulkAssetId: args.bulkAssetId,
+      quantity: args.quantity ?? 1,
+    });
+    await tx.projectLineItemUnit.update({
+      where: { id },
+      data: {
+        status: "CONFIRMED",
+        prepStatus: "PACKED",
+        ...(args.quantity !== undefined ? { quantity: args.quantity } : {}),
+        ...(args.prepContainer !== undefined
+          ? { prepContainer: args.prepContainer }
+          : {}),
+      },
+    });
+  } else {
+    // Generic line, no serial scanned — mark prep state on the line itself.
+    await tx.projectLineItem.update({
+      where: { id: args.lineItemId },
+      data: {
+        status: "CONFIRMED",
+        prepStatus: "PACKED",
+        ...(args.prepContainer !== undefined
+          ? { prepContainer: args.prepContainer }
+          : {}),
+      },
+    });
+  }
+
+  await syncLineItemRollup(tx, args.lineItemId);
+  return tx.projectLineItem.findUniqueOrThrow({
+    where: { id: args.lineItemId },
+    include: { model: true, asset: true, bulkAsset: true },
+  });
+}

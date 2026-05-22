@@ -37,12 +37,15 @@ on top of it.
 
 Small, isolated, do now. No dependency on anything else.
 
-### 0.1 — Checkout duplication bug
-**Effort:** S
-Scanning 16x JAGs to deploy them re-adds all 16 serialised assets as new line
-items at the bottom of the project, double-counting everything already there.
-This corrupts project data on a daily-use path. The acute fix is Phase 0; the
-root cause is the line-item model muddle that Phase 1 resolves properly.
+### 0.1 — Checkout duplication bug → promoted to the fulfillment-model rework
+**Effort:** L (was estimated S) · **Status:** planned, build starting
+Scanning units to deploy them produces one project line-item row per physical
+unit instead of one per ordered line — the docket and project screen fragment.
+Investigated and `/autoplan`-reviewed: this is **not** an acute bug, it is the
+one-asset-per-`ProjectLineItem`-row data model showing through. The fix is the
+order-line / fulfillment-unit split — effectively item 1.2 pulled forward.
+Design: [`docs/designs/line-item-fulfillment-model.md`](./designs/line-item-fulfillment-model.md).
+A multi-week, 4-phase build; it supersedes a render-only patch.
 
 ### 0.2 — iCal timezone correctness
 **Effort:** S

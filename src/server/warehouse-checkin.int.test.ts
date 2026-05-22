@@ -226,6 +226,47 @@ describe("checkInItems — fulfillment model round-trip", () => {
     expect(assets.every((a) => a.status === "AVAILABLE")).toBe(true);
   });
 
+  it("checks in a kit-child line (asset on the line, no unit row)", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id);
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+
+    const model = await createModelFixture(org.id);
+    const project = await createProjectFixture(org.id);
+    const asset = await createAssetFixture(org.id, model.id, {
+      assetTag: "KIT-CHILD-1",
+      status: "CHECKED_OUT",
+    });
+    // A kit child: asset pinned to the line directly, deployed, no unit row.
+    const child = await testPrisma.projectLineItem.create({
+      data: {
+        organizationId: org.id,
+        projectId: project.id,
+        modelId: model.id,
+        quantity: 1,
+        isKitChild: true,
+        assetId: asset.id,
+        status: "CHECKED_OUT",
+      },
+    });
+
+    await checkInItems(project.id, [
+      { lineItemId: child.id, assetId: asset.id, returnCondition: "GOOD" },
+    ]);
+
+    expect(
+      (await testPrisma.asset.findUniqueOrThrow({ where: { id: asset.id } }))
+        .status,
+    ).toBe("AVAILABLE");
+    expect(
+      (
+        await testPrisma.projectLineItem.findUniqueOrThrow({
+          where: { id: child.id },
+        })
+      ).status,
+    ).toBe("RETURNED");
+  });
+
   it("lookupAssetForScan resolves a deployed asset for check-in via its unit", async () => {
     const org = await createOrgFixture();
     const user = await createUserFixture(org.id);

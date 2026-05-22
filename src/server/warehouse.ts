@@ -689,6 +689,13 @@ export async function checkInItems(
 
       if (targetAssetId) {
         // ── Serialised return — flip the unit, restore the asset ─────────
+        const assetStatus: "AVAILABLE" | "IN_MAINTENANCE" | "LOST" =
+          item.returnCondition === "DAMAGED"
+            ? "IN_MAINTENANCE"
+            : item.returnCondition === "MISSING"
+              ? "LOST"
+              : "AVAILABLE";
+
         const unit = await tx.projectLineItemUnit.findUnique({
           where: {
             lineItemId_assetId: {
@@ -698,11 +705,44 @@ export async function checkInItems(
           },
           select: { id: true },
         });
+
         if (!unit) {
-          throw new Error(
-            `That asset is not deployed on line item ${item.lineItemId}`,
+          // No unit row — a kit child or an un-migrated legacy line that
+          // still carries its asset directly. Return the line itself.
+          await tx.projectLineItem.update({
+            where: { id: lineItem.id },
+            data: {
+              status: "RETURNED",
+              returnedQuantity: 1,
+              returnedAt: new Date(),
+              returnedBy: { connect: { id: userId } },
+              returnCondition: item.returnCondition,
+              returnNotes: item.notes || null,
+            },
+          });
+          await tx.asset.update({
+            where: { id: targetAssetId },
+            data: { status: assetStatus, locationId: defaultLocationId },
+          });
+          await tx.assetScanLog.create({
+            data: {
+              organizationId,
+              assetId: targetAssetId,
+              projectId,
+              action: "CHECK_IN",
+              scannedById: userId,
+              notes: item.notes || null,
+            },
+          });
+          updated.push(
+            await tx.projectLineItem.findUnique({
+              where: { id: lineItem.id },
+              include: { model: true, asset: true, bulkAsset: true },
+            }),
           );
+          continue;
         }
+
         // Guarded transition — only return a unit that is still out.
         const flipped = await tx.projectLineItemUnit.updateMany({
           where: { id: unit.id, status: "CHECKED_OUT" },
@@ -716,19 +756,6 @@ export async function checkInItems(
         });
 
         if (flipped.count > 0) {
-          let assetStatus: "AVAILABLE" | "IN_MAINTENANCE" | "LOST";
-          switch (item.returnCondition) {
-            case "DAMAGED":
-              assetStatus = "IN_MAINTENANCE";
-              break;
-            case "MISSING":
-              assetStatus = "LOST";
-              break;
-            case "GOOD":
-            default:
-              assetStatus = "AVAILABLE";
-              break;
-          }
           await tx.asset.update({
             where: { id: targetAssetId },
             data: { status: assetStatus, locationId: defaultLocationId },

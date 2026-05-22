@@ -29,7 +29,11 @@ vi.mock("@/lib/org-context", () => ({
   getOrgContext: async () => h.ctx,
 }));
 
-import { checkOutItems, checkInItems } from "@/server/warehouse";
+import {
+  checkOutItems,
+  checkInItems,
+  lookupAssetForScan,
+} from "@/server/warehouse";
 
 async function createProjectFixture(orgId: string) {
   return testPrisma.project.create({
@@ -188,5 +192,74 @@ describe("checkInItems — fulfillment model round-trip", () => {
     });
     expect(refreshed.status).toBe("RETURNED");
     expect(refreshed.returnedQuantity).toBe(10);
+  });
+
+  it("returning a line with no asset specified returns every out unit", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id);
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+
+    const model = await createModelFixture(org.id);
+    const project = await createProjectFixture(org.id);
+    const line = await createLineItemFixture(org.id, project.id, model.id, {
+      quantity: 2,
+    });
+    const a1 = await createAssetFixture(org.id, model.id, { assetTag: "WL-1" });
+    const a2 = await createAssetFixture(org.id, model.id, { assetTag: "WL-2" });
+
+    await checkOutItems(project.id, [
+      { lineItemId: line.id, assetId: a1.id },
+      { lineItemId: line.id, assetId: a2.id },
+    ]);
+    // "Return whole line" — no assetId given.
+    await checkInItems(project.id, [
+      { lineItemId: line.id, returnCondition: "GOOD" },
+    ]);
+
+    const units = await testPrisma.projectLineItemUnit.findMany({
+      where: { lineItemId: line.id },
+    });
+    expect(units.every((u) => u.status === "RETURNED")).toBe(true);
+    const assets = await testPrisma.asset.findMany({
+      where: { id: { in: [a1.id, a2.id] } },
+    });
+    expect(assets.every((a) => a.status === "AVAILABLE")).toBe(true);
+  });
+
+  it("lookupAssetForScan resolves a deployed asset for check-in via its unit", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id);
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+
+    const model = await createModelFixture(org.id);
+    const project = await createProjectFixture(org.id);
+    const line = await createLineItemFixture(org.id, project.id, model.id, {
+      quantity: 1,
+    });
+    const asset = await createAssetFixture(org.id, model.id, {
+      assetTag: "SCAN-1",
+    });
+
+    // Before deployment: nothing to check in.
+    const before = (await lookupAssetForScan(
+      project.id,
+      "SCAN-1",
+      "checkin",
+    )) as { reason: string | null };
+    expect(before.reason).toBe("not_checked_out");
+
+    await checkOutItems(project.id, [
+      { lineItemId: line.id, assetId: asset.id },
+    ]);
+
+    // After deployment: resolves to the line + asset, ready to return.
+    const after = (await lookupAssetForScan(
+      project.id,
+      "SCAN-1",
+      "checkin",
+    )) as { reason: string | null; lineItemId: string | null; assetId: string | null };
+    expect(after.reason).toBeNull();
+    expect(after.lineItemId).toBe(line.id);
+    expect(after.assetId).toBe(asset.id);
   });
 });

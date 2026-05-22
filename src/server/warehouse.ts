@@ -283,40 +283,112 @@ export async function lookupAssetForScan(
     }
   }
 
-  // For serialized assets, first try to find a line item with this exact asset assigned
+  // ── Resolve which order line this scan applies to ─────────────────────
+  // A deployed/assigned serialised asset is pinned to a line by a
+  // ProjectLineItemUnit, not by ProjectLineItem.assetId.
   let lineItem = null;
+
   if (asset) {
-    lineItem = await prisma.projectLineItem.findFirst({
+    const unit = await prisma.projectLineItemUnit.findFirst({
+      where: {
+        assetId: asset.id,
+        lineItem: {
+          projectId,
+          organizationId,
+          status: { notIn: ["CANCELLED"] },
+        },
+      },
+      select: { lineItemId: true, status: true },
+    });
+
+    if (mode === "checkin") {
+      // Check-in must target a unit that is still out.
+      if (!unit || unit.status !== "CHECKED_OUT") {
+        return serialize({
+          found: true as const, type: "serialized" as const,
+          lineItemId: null, assetId: asset.id, assetName,
+          reason: "not_checked_out" as const,
+        });
+      }
+      return serialize({
+        found: true as const, type: "serialized" as const,
+        lineItemId: unit.lineItemId, assetId: asset.id, assetName, reason: null,
+      });
+    }
+
+    // checkout
+    if (unit) {
+      if (unit.status === "CHECKED_OUT") {
+        return serialize({
+          found: true as const, type: "serialized" as const,
+          lineItemId: null, assetId: null, assetName,
+          reason: "already_checked_out" as const,
+        });
+      }
+      // Already assigned (prepped) to a line — deploy onto that line.
+      return serialize({
+        found: true as const, type: "serialized" as const,
+        lineItemId: unit.lineItemId, assetId: asset.id, assetName, reason: null,
+      });
+    }
+
+    // Not on this project yet — block if it is out on another job.
+    if (asset.status === "CHECKED_OUT") {
+      const otherUnit = await prisma.projectLineItemUnit.findFirst({
+        where: {
+          assetId: asset.id,
+          status: "CHECKED_OUT",
+          lineItem: { projectId: { not: projectId }, organizationId },
+        },
+        select: {
+          lineItem: {
+            select: { project: { select: { name: true, projectNumber: true } } },
+          },
+        },
+      });
+      const otherProject = otherUnit?.lineItem.project;
+      const detail = otherProject
+        ? ` on ${otherProject.name}${otherProject.projectNumber ? ` (${otherProject.projectNumber})` : ""}`
+        : "";
+      return serialize({
+        found: true as const, type: "serialized" as const,
+        lineItemId: null, assetId: null, assetName,
+        reason: "asset_checked_out_elsewhere" as const, detail,
+      });
+    }
+
+    // Find an order line of this model with spare capacity.
+    const candidates = await prisma.projectLineItem.findMany({
       where: {
         projectId,
         organizationId,
-        assetId: asset.id,
+        modelId,
+        isKitChild: false,
         status: { notIn: ["CANCELLED"] },
       },
       orderBy: { sortOrder: "asc" },
     });
-  }
-
-  // If no exact asset match, find by modelId (only for checkout or bulk items — never for serialized check-in)
-  if (!lineItem && !(mode === "checkin" && asset)) {
+    lineItem =
+      candidates.find((li) => li.assignedQuantity < li.quantity) ?? null;
+  } else {
+    // Bulk asset — find its order line on the project.
     lineItem = await prisma.projectLineItem.findFirst({
       where: {
         projectId,
         organizationId,
         modelId,
         isKitChild: false,
-        status: { notIn: ["CANCELLED", ...(mode === "checkout" ? ["CHECKED_OUT" as const] : [])] },
-        // For checkout, don't match a line item that already has a different asset assigned
-        ...(asset ? { assetId: null } : {}),
+        status: { notIn: ["CANCELLED"] },
       },
       orderBy: { sortOrder: "asc" },
     });
   }
 
   if (!lineItem) {
-    const reason = mode === "checkin" && asset
-      ? "not_checked_out" as const  // Serialized asset not assigned/checked out on this project
-      : "not_on_project" as const;
+    const reason =
+      mode === "checkin" && asset
+        ? ("not_checked_out" as const)
+        : ("not_on_project" as const);
     return serialize({
       found: true as const,
       type: null,
@@ -331,68 +403,31 @@ export async function lookupAssetForScan(
     });
   }
 
-  // Determine if the line item is bulk (multi-quantity without serialized asset)
-  // Split items (qty=1) go through the serialized path naturally.
-  // If a serialized asset was scanned, treat it as serialized even if the line item has qty > 1
-  const isBulk = asset
-    ? false
-    : !lineItem.assetId && lineItem.quantity > 1;
-
-  if (isBulk) {
-    if (mode === "checkout") {
-      // In the split flow, all units are split off before checkout.
-      // If qty > 1 still, they haven't all been prepped yet.
-      if (lineItem.status === "CHECKED_OUT") {
-        return serialize({ found: true as const, type: "bulk" as const, lineItemId: null, assetId: null, assetName, reason: "already_checked_out" as const });
-      }
-    } else {
-      // checkin — need units that are checked out but not yet returned
-      if (lineItem.status !== "CHECKED_OUT") {
-        return serialize({ found: true as const, type: "bulk" as const, lineItemId: null, assetId: null, assetName, reason: "already_returned" as const });
+  // Bulk scan
+  if (!asset) {
+    if (mode === "checkin") {
+      const outUnit = await prisma.projectLineItemUnit.findFirst({
+        where: { lineItemId: lineItem.id, status: "CHECKED_OUT" },
+        select: { id: true },
+      });
+      if (!outUnit) {
+        return serialize({
+          found: true as const, type: "bulk" as const, lineItemId: null,
+          assetId: null, assetName, reason: "already_returned" as const,
+        });
       }
     }
-
-    return serialize({ found: true as const, type: "bulk" as const, lineItemId: lineItem.id, assetId: null, assetName, reason: null });
+    return serialize({
+      found: true as const, type: "bulk" as const, lineItemId: lineItem.id,
+      assetId: null, assetName, reason: null,
+    });
   }
 
-  // Serialized asset
-  if (mode === "checkout") {
-    if (lineItem.status === "CHECKED_OUT") {
-      return serialize({ found: true as const, type: "serialized" as const, lineItemId: null, assetId: null, assetName, reason: "already_checked_out" as const });
-    }
-    // Check if the physical asset is already checked out on another project
-    if (asset && asset.status === "CHECKED_OUT") {
-      // Find which project has it
-      const otherLineItem = await prisma.projectLineItem.findFirst({
-        where: {
-          organizationId,
-          assetId: asset.id,
-          status: "CHECKED_OUT",
-          projectId: { not: projectId },
-        },
-        include: { project: { select: { name: true, projectNumber: true } } },
-      });
-      const otherProject = otherLineItem?.project;
-      const detail = otherProject
-        ? ` on ${otherProject.name}${otherProject.projectNumber ? ` (${otherProject.projectNumber})` : ""}`
-        : "";
-      return serialize({
-        found: true as const,
-        type: "serialized" as const,
-        lineItemId: null,
-        assetId: null,
-        assetName,
-        reason: "asset_checked_out_elsewhere" as const,
-        detail,
-      });
-    }
-  } else {
-    if (lineItem.status !== "CHECKED_OUT") {
-      return serialize({ found: true as const, type: "serialized" as const, lineItemId: null, assetId: null, assetName, reason: "not_checked_out" as const });
-    }
-  }
-
-  return serialize({ found: true as const, type: "serialized" as const, lineItemId: lineItem.id, assetId: asset?.id || null, assetName, reason: null });
+  // Serialised checkout onto a line with capacity.
+  return serialize({
+    found: true as const, type: "serialized" as const,
+    lineItemId: lineItem.id, assetId: asset.id, assetName, reason: null,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -744,26 +779,69 @@ export async function checkInItems(
           },
         });
       } else {
-        // No unit to target — flip the order line directly (the
-        // deploy-whole-line edge that checkout handles the same way).
-        await tx.projectLineItem.update({
-          where: { id: lineItem.id },
-          data: {
-            status: "RETURNED",
-            returnedQuantity: lineItem.checkedOutQuantity || lineItem.quantity,
-            returnedAt: new Date(),
-            returnedBy: { connect: { id: userId } },
-            returnCondition: item.returnCondition,
-            returnNotes: item.notes || null,
-          },
+        // No specific asset scanned — the "return whole line" path. Return
+        // every unit still out on this line.
+        const outUnits = await tx.projectLineItemUnit.findMany({
+          where: { lineItemId: lineItem.id, status: "CHECKED_OUT" },
         });
-        updated.push(
-          await tx.projectLineItem.findUnique({
+
+        if (outUnits.length > 0) {
+          for (const u of outUnits) {
+            await tx.projectLineItemUnit.update({
+              where: { id: u.id },
+              data: {
+                status: "RETURNED",
+                returnedAt: new Date(),
+                returnedById: userId,
+                returnCondition: item.returnCondition,
+                returnNotes: item.notes || null,
+                ...(u.bulkAssetId ? { returnedQuantity: u.quantity } : {}),
+              },
+            });
+            if (u.assetId) {
+              const assetStatus =
+                item.returnCondition === "DAMAGED"
+                  ? "IN_MAINTENANCE"
+                  : item.returnCondition === "MISSING"
+                    ? "LOST"
+                    : "AVAILABLE";
+              await tx.asset.update({
+                where: { id: u.assetId },
+                data: { status: assetStatus, locationId: defaultLocationId },
+              });
+            }
+          }
+          await tx.assetScanLog.create({
+            data: {
+              organizationId,
+              projectId,
+              action: "CHECK_IN",
+              scannedById: userId,
+              notes: item.notes || `Returned ${outUnits.length} unit(s)`,
+            },
+          });
+        } else {
+          // Genuinely no units — flip the order line directly.
+          await tx.projectLineItem.update({
             where: { id: lineItem.id },
-            include: { model: true, asset: true, bulkAsset: true },
-          }),
-        );
-        continue;
+            data: {
+              status: "RETURNED",
+              returnedQuantity:
+                lineItem.checkedOutQuantity || lineItem.quantity,
+              returnedAt: new Date(),
+              returnedBy: { connect: { id: userId } },
+              returnCondition: item.returnCondition,
+              returnNotes: item.notes || null,
+            },
+          });
+          updated.push(
+            await tx.projectLineItem.findUnique({
+              where: { id: lineItem.id },
+              include: { model: true, asset: true, bulkAsset: true },
+            }),
+          );
+          continue;
+        }
       }
 
       // Roll the unit change up onto the order line.

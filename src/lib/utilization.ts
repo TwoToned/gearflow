@@ -33,6 +33,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@/generated/prisma/client";
 
 export interface UtilizationPeriod {
   /** Inclusive start. Defaults to asset.createdAt. */
@@ -104,31 +105,86 @@ export async function computeAssetUtilization(
   const period: UtilizationPeriod = { start: periodStart, end: periodEnd };
   const periodDays = daysBetween(period.start, period.end);
 
-  // Bookings: line items with this exact asset assigned, not cancelled,
-  // on projects that aren't templates.
-  const bookings = await prisma.projectLineItem.findMany({
-    where: {
-      assetId,
-      organizationId,
-      status: { not: "CANCELLED" },
-      project: {
-        isTemplate: false,
-        status: { notIn: ["CANCELLED"] },
-        rentalStartDate: { not: null },
-        rentalEndDate: { not: null },
+  // Bookings: this exact asset assigned, not cancelled, on non-template
+  // projects. Assignments live on legacy line.assetId rows AND on
+  // ProjectLineItemUnit rows (the fulfillment model) — both tables count.
+  const projectFilter: Prisma.ProjectWhereInput = {
+    isTemplate: false,
+    status: { notIn: ["CANCELLED"] },
+    rentalStartDate: { not: null },
+    rentalEndDate: { not: null },
+  };
+  const [bookingLines, bookingUnits] = await Promise.all([
+    prisma.projectLineItem.findMany({
+      where: {
+        assetId,
+        organizationId,
+        status: { not: "CANCELLED" },
+        project: projectFilter,
       },
-    },
-    select: {
-      lineTotal: true,
-      project: {
-        select: {
-          id: true,
-          rentalStartDate: true,
-          rentalEndDate: true,
+      select: {
+        id: true,
+        lineTotal: true,
+        project: {
+          select: { id: true, rentalStartDate: true, rentalEndDate: true },
         },
       },
-    },
-  });
+    }),
+    prisma.projectLineItemUnit.findMany({
+      where: {
+        assetId,
+        organizationId,
+        status: { not: "CANCELLED" },
+        lineItem: { status: { not: "CANCELLED" }, project: projectFilter },
+      },
+      select: {
+        lineItemId: true,
+        lineItem: {
+          select: {
+            lineTotal: true,
+            quantity: true,
+            project: {
+              select: { id: true, rentalStartDate: true, rentalEndDate: true },
+            },
+          },
+        },
+      },
+    }),
+  ]);
+
+  // Unify both sources into one booking shape. A line either carries
+  // line.assetId (legacy) or has units (fulfillment model) — disjoint in
+  // practice, but dedup by lineItemId guards against a row in both. Unit
+  // revenue is pro-rated by line quantity so an N-unit line isn't counted
+  // N times; legacy single-asset lines keep their full-lineTotal behaviour.
+  interface Booking {
+    rentalStartDate: Date | null;
+    rentalEndDate: Date | null;
+    revenue: number;
+    projectId: string;
+  }
+  const bookings: Booking[] = [];
+  const seenLineIds = new Set<string>();
+  for (const l of bookingLines) {
+    seenLineIds.add(l.id);
+    bookings.push({
+      rentalStartDate: l.project.rentalStartDate,
+      rentalEndDate: l.project.rentalEndDate,
+      revenue: l.lineTotal != null ? Number(l.lineTotal) : 0,
+      projectId: l.project.id,
+    });
+  }
+  for (const u of bookingUnits) {
+    if (seenLineIds.has(u.lineItemId)) continue;
+    const qty = u.lineItem.quantity > 0 ? u.lineItem.quantity : 1;
+    bookings.push({
+      rentalStartDate: u.lineItem.project.rentalStartDate,
+      rentalEndDate: u.lineItem.project.rentalEndDate,
+      revenue:
+        u.lineItem.lineTotal != null ? Number(u.lineItem.lineTotal) / qty : 0,
+      projectId: u.lineItem.project.id,
+    });
+  }
 
   let bookingDays = 0;
   let revenue = 0;
@@ -136,25 +192,21 @@ export async function computeAssetUtilization(
   const projectIds = new Set<string>();
 
   for (const b of bookings) {
-    if (!b.project.rentalStartDate || !b.project.rentalEndDate) continue;
-    const window = clampWindow(
-      b.project.rentalStartDate,
-      b.project.rentalEndDate,
-      period,
-    );
+    if (!b.rentalStartDate || !b.rentalEndDate) continue;
+    const window = clampWindow(b.rentalStartDate, b.rentalEndDate, period);
     if (!window) continue;
     bookingDays += daysBetween(window.start, window.end);
-    // Revenue attribution: count this asset's line total in full if any
-    // part of the booking overlaps the period. This avoids pro-rating a
-    // bundle price across days, which the operator never sees in their
-    // numbers anyway. For period reporting, this means a booking that
+    // Revenue attribution: count this asset's (pro-rated) line total in
+    // full if any part of the booking overlaps the period. This avoids
+    // pro-rating a bundle price across days, which the operator never
+    // sees in their numbers anyway. For period reporting, a booking that
     // straddles the period boundary lands fully in whichever period
     // you're looking at — acceptable; the operator can shorten the window
     // if precision matters.
-    if (b.lineTotal != null) revenue += Number(b.lineTotal);
-    projectIds.add(b.project.id);
-    if (!lastBookingEnd || b.project.rentalEndDate > lastBookingEnd) {
-      lastBookingEnd = b.project.rentalEndDate;
+    revenue += b.revenue;
+    projectIds.add(b.projectId);
+    if (!lastBookingEnd || b.rentalEndDate > lastBookingEnd) {
+      lastBookingEnd = b.rentalEndDate;
     }
   }
 

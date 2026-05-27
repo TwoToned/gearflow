@@ -59,77 +59,154 @@ export async function findProjectConflictsCore(
   });
   if (!project?.rentalStartDate || !project.rentalEndDate) return [];
 
-  // Asset-bearing line items on this project.
-  const lineItems = await prisma.projectLineItem.findMany({
-    where: {
-      projectId,
-      organizationId,
-      assetId: { not: null },
-      status: { not: "CANCELLED" },
-    },
-    select: {
-      id: true,
-      assetId: true,
-      modelId: true,
-      asset: { select: { assetTag: true, model: { select: { name: true } } } },
-    },
-  });
-  if (lineItems.length === 0) return [];
+  const projectSelect = {
+    id: true,
+    projectNumber: true,
+    name: true,
+    status: true,
+    rentalStartDate: true,
+    rentalEndDate: true,
+  } as const;
 
-  const assetIds = lineItems
-    .map((li) => li.assetId)
-    .filter((id): id is string => id != null);
-
-  // Other-project line items that book any of these assets in an
-  // overlapping window.
-  const overlaps = await prisma.projectLineItem.findMany({
-    where: {
-      organizationId,
-      assetId: { in: assetIds },
-      status: { not: "CANCELLED" },
-      projectId: { not: projectId },
-      project: {
-        isTemplate: false,
-        status: { notIn: [...DEAD_PROJECT_STATUSES] },
-        rentalStartDate: { lte: project.rentalEndDate },
-        rentalEndDate: { gte: project.rentalStartDate },
+  // This project's asset assignments — from legacy line.assetId rows AND
+  // from ProjectLineItemUnit rows (the fulfillment model). Deployed assets
+  // now live on units, so both sources must be checked.
+  const [assetLines, assetUnits] = await Promise.all([
+    prisma.projectLineItem.findMany({
+      where: {
+        projectId,
+        organizationId,
+        assetId: { not: null },
+        status: { not: "CANCELLED" },
       },
-    },
-    select: {
-      id: true,
-      assetId: true,
-      project: {
-        select: {
-          id: true,
-          projectNumber: true,
-          name: true,
-          status: true,
-          rentalStartDate: true,
-          rentalEndDate: true,
+      select: {
+        id: true,
+        assetId: true,
+        modelId: true,
+        asset: { select: { assetTag: true, model: { select: { name: true } } } },
+      },
+    }),
+    prisma.projectLineItemUnit.findMany({
+      where: {
+        organizationId,
+        assetId: { not: null },
+        status: { not: "RETURNED" },
+        lineItem: { projectId, status: { not: "CANCELLED" } },
+      },
+      select: {
+        lineItemId: true,
+        assetId: true,
+        asset: {
+          select: {
+            assetTag: true,
+            modelId: true,
+            model: { select: { name: true } },
+          },
         },
       },
-    },
-  });
+    }),
+  ]);
 
-  // Index overlaps by assetId for the join.
-  const overlapByAsset = new Map<string, (typeof overlaps)[number]>();
-  for (const o of overlaps) {
+  interface AssetRef {
+    lineItemId: string;
+    assetId: string;
+    modelId: string | null;
+    assetTag: string;
+    modelName: string;
+  }
+  const here: AssetRef[] = [
+    ...assetLines
+      .filter((l) => l.assetId)
+      .map((l) => ({
+        lineItemId: l.id,
+        assetId: l.assetId as string,
+        modelId: l.modelId,
+        assetTag: l.asset?.assetTag ?? "—",
+        modelName: l.asset?.model?.name ?? "—",
+      })),
+    ...assetUnits
+      .filter((u) => u.assetId)
+      .map((u) => ({
+        lineItemId: u.lineItemId,
+        assetId: u.assetId as string,
+        modelId: u.asset?.modelId ?? null,
+        assetTag: u.asset?.assetTag ?? "—",
+        modelName: u.asset?.model?.name ?? "—",
+      })),
+  ];
+  if (here.length === 0) return [];
+
+  const assetIds = [...new Set(here.map((r) => r.assetId))];
+  const projectWindow = {
+    isTemplate: false,
+    status: { notIn: [...DEAD_PROJECT_STATUSES] },
+    rentalStartDate: { lte: project.rentalEndDate },
+    rentalEndDate: { gte: project.rentalStartDate },
+  };
+
+  // Overlapping other-project bookings of those assets — both tables.
+  const [overlapLines, overlapUnits] = await Promise.all([
+    prisma.projectLineItem.findMany({
+      where: {
+        organizationId,
+        assetId: { in: assetIds },
+        status: { not: "CANCELLED" },
+        projectId: { not: projectId },
+        project: projectWindow,
+      },
+      select: { id: true, assetId: true, project: { select: projectSelect } },
+    }),
+    prisma.projectLineItemUnit.findMany({
+      where: {
+        organizationId,
+        assetId: { in: assetIds },
+        status: { not: "RETURNED" },
+        lineItem: {
+          projectId: { not: projectId },
+          status: { not: "CANCELLED" },
+          project: projectWindow,
+        },
+      },
+      select: {
+        lineItemId: true,
+        assetId: true,
+        lineItem: { select: { project: { select: projectSelect } } },
+      },
+    }),
+  ]);
+
+  const overlapByAsset = new Map<
+    string,
+    { id: string; project: (typeof overlapLines)[number]["project"] }
+  >();
+  for (const o of overlapLines) {
     if (o.assetId && !overlapByAsset.has(o.assetId)) {
-      overlapByAsset.set(o.assetId, o);
+      overlapByAsset.set(o.assetId, { id: o.id, project: o.project });
+    }
+  }
+  for (const o of overlapUnits) {
+    if (o.assetId && !overlapByAsset.has(o.assetId)) {
+      overlapByAsset.set(o.assetId, {
+        id: o.lineItemId,
+        project: o.lineItem.project,
+      });
     }
   }
 
   const conflicts: ReservationConflict[] = [];
-  for (const li of lineItems) {
-    if (!li.assetId) continue;
-    const overlap = overlapByAsset.get(li.assetId);
+  const seen = new Set<string>();
+  for (const r of here) {
+    const overlap = overlapByAsset.get(r.assetId);
     if (!overlap) continue;
+    const key = `${r.lineItemId}:${r.assetId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     conflicts.push({
-      lineItemId: li.id,
-      assetId: li.assetId,
-      assetTag: li.asset?.assetTag ?? "—",
-      modelId: li.modelId ?? "",
-      modelName: li.asset?.model?.name ?? "—",
+      lineItemId: r.lineItemId,
+      assetId: r.assetId,
+      assetTag: r.assetTag,
+      modelId: r.modelId ?? "",
+      modelName: r.modelName,
       conflictingProject: overlap.project,
       conflictingLineItemId: overlap.id,
     });
@@ -191,23 +268,45 @@ export async function findSwapCandidatesCore(
   });
   if (assets.length === 0) return [];
 
-  // Which of those are booked in an overlapping live project?
-  const booked = await prisma.projectLineItem.findMany({
-    where: {
-      organizationId,
-      assetId: { in: assets.map((a) => a.id) },
-      status: { not: "CANCELLED" },
-      id: { not: lineItemId },
-      project: {
-        isTemplate: false,
-        status: { notIn: [...DEAD_PROJECT_STATUSES] },
-        rentalStartDate: { lte: rentalEndDate },
-        rentalEndDate: { gte: rentalStartDate },
+  // Which of those are booked in an overlapping live project? Bookings
+  // live on legacy line.assetId rows AND on ProjectLineItemUnit rows
+  // (the fulfillment model) — both tables must be checked or a swap
+  // candidate that's actually deployed via a unit looks free.
+  const candidateAssetIds = assets.map((a) => a.id);
+  const projectWindow = {
+    isTemplate: false,
+    status: { notIn: [...DEAD_PROJECT_STATUSES] },
+    rentalStartDate: { lte: rentalEndDate },
+    rentalEndDate: { gte: rentalStartDate },
+  };
+  const [bookedLines, bookedUnits] = await Promise.all([
+    prisma.projectLineItem.findMany({
+      where: {
+        organizationId,
+        assetId: { in: candidateAssetIds },
+        status: { not: "CANCELLED" },
+        id: { not: lineItemId },
+        project: projectWindow,
       },
-    },
-    select: { assetId: true },
-  });
-  const bookedIds = new Set(booked.map((b) => b.assetId));
+      select: { assetId: true },
+    }),
+    prisma.projectLineItemUnit.findMany({
+      where: {
+        organizationId,
+        assetId: { in: candidateAssetIds },
+        status: { not: "RETURNED" },
+        lineItemId: { not: lineItemId },
+        lineItem: {
+          status: { not: "CANCELLED" },
+          project: projectWindow,
+        },
+      },
+      select: { assetId: true },
+    }),
+  ]);
+  const bookedIds = new Set<string>();
+  for (const b of bookedLines) if (b.assetId) bookedIds.add(b.assetId);
+  for (const b of bookedUnits) if (b.assetId) bookedIds.add(b.assetId);
 
   return assets
     .filter((a) => a.id !== lineItem.assetId && !bookedIds.has(a.id))
@@ -269,24 +368,44 @@ export async function swapLineItemAssetCore(
   const { rentalStartDate, rentalEndDate } = lineItem.project;
   await prisma.$transaction(async (tx) => {
     if (rentalStartDate && rentalEndDate) {
-      const conflict = await tx.projectLineItem.findFirst({
-        where: {
-          organizationId,
-          assetId: newAssetId,
-          status: { not: "CANCELLED" },
-          id: { not: lineItemId },
-          project: {
-            isTemplate: false,
-            status: { notIn: [...DEAD_PROJECT_STATUSES] },
-            rentalStartDate: { lte: rentalEndDate },
-            rentalEndDate: { gte: rentalStartDate },
+      const projectWindow = {
+        isTemplate: false,
+        status: { notIn: [...DEAD_PROJECT_STATUSES] },
+        rentalStartDate: { lte: rentalEndDate },
+        rentalEndDate: { gte: rentalStartDate },
+      };
+      // Re-check both the legacy line.assetId rows AND the unit table —
+      // a fresh deployment may have landed on a ProjectLineItemUnit.
+      const [lineConflict, unitConflict] = await Promise.all([
+        tx.projectLineItem.findFirst({
+          where: {
+            organizationId,
+            assetId: newAssetId,
+            status: { not: "CANCELLED" },
+            id: { not: lineItemId },
+            project: projectWindow,
           },
-        },
-        select: { project: { select: { projectNumber: true } } },
-      });
-      if (conflict) {
+          select: { project: { select: { projectNumber: true } } },
+        }),
+        tx.projectLineItemUnit.findFirst({
+          where: {
+            organizationId,
+            assetId: newAssetId,
+            status: { not: "RETURNED" },
+            lineItemId: { not: lineItemId },
+            lineItem: { status: { not: "CANCELLED" }, project: projectWindow },
+          },
+          select: {
+            lineItem: { select: { project: { select: { projectNumber: true } } } },
+          },
+        }),
+      ]);
+      const conflictProjectNumber =
+        lineConflict?.project.projectNumber ??
+        unitConflict?.lineItem.project.projectNumber;
+      if (conflictProjectNumber) {
         throw new Error(
-          `Asset ${newAsset.assetTag} was just booked on ${conflict.project.projectNumber}. Pick another.`,
+          `Asset ${newAsset.assetTag} was just booked on ${conflictProjectNumber}. Pick another.`,
         );
       }
     }

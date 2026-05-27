@@ -79,6 +79,29 @@ async function addLineItem(
   });
 }
 
+/**
+ * Assign an asset to a line item via a ProjectLineItemUnit row — the
+ * fulfillment model. Mirrors what checkout does (ensureSerialisedUnit).
+ */
+async function addUnit(
+  orgId: string,
+  lineItemId: string,
+  assetId: string,
+  status: "CONFIRMED" | "CHECKED_OUT" | "RETURNED" = "CHECKED_OUT",
+  ordinal = 0,
+) {
+  return testPrisma.projectLineItemUnit.create({
+    data: {
+      organizationId: orgId,
+      lineItemId,
+      assetId,
+      ordinal,
+      quantity: 1,
+      status,
+    },
+  });
+}
+
 describe("findProjectConflictsCore", () => {
   beforeEach(async () => {
     await setupIntegrationTest();
@@ -152,6 +175,63 @@ describe("findProjectConflictsCore", () => {
     expect(conflicts).toHaveLength(0);
   });
 
+  it("flags an asset booked via a ProjectLineItemUnit on the other project", async () => {
+    const org = await createOrgFixture();
+    await createUserFixture(org.id);
+    const model = await createModelFixture(org.id);
+    const asset = await createAssetFixture(org.id, model.id, { assetTag: "A1" });
+
+    const projA = await createProject(org.id, new Date("2026-06-01"), new Date("2026-06-10"));
+    const projB = await createProject(org.id, new Date("2026-06-05"), new Date("2026-06-15"));
+    // This project assigns via legacy line.assetId.
+    await addLineItem(org.id, projA.id, model.id, asset.id);
+    // The other project deploys the same asset via a unit (fulfillment model).
+    const liB = await addLineItem(org.id, projB.id, model.id, null);
+    await addUnit(org.id, liB.id, asset.id);
+
+    const conflicts = await findProjectConflictsCore(projA.id, org.id);
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0].assetId).toBe(asset.id);
+    expect(conflicts[0].conflictingProject.id).toBe(projB.id);
+  });
+
+  it("flags when THIS project's assignment is a unit, not line.assetId", async () => {
+    const org = await createOrgFixture();
+    await createUserFixture(org.id);
+    const model = await createModelFixture(org.id);
+    const asset = await createAssetFixture(org.id, model.id, { assetTag: "A1" });
+
+    const projA = await createProject(org.id, new Date("2026-06-01"), new Date("2026-06-10"));
+    const projB = await createProject(org.id, new Date("2026-06-05"), new Date("2026-06-15"));
+    // This project deploys the asset via a unit.
+    const liA = await addLineItem(org.id, projA.id, model.id, null);
+    await addUnit(org.id, liA.id, asset.id);
+    // The other project holds the same asset on a legacy line.
+    await addLineItem(org.id, projB.id, model.id, asset.id);
+
+    const conflicts = await findProjectConflictsCore(projA.id, org.id);
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0].assetId).toBe(asset.id);
+    expect(conflicts[0].lineItemId).toBe(liA.id);
+    expect(conflicts[0].conflictingProject.id).toBe(projB.id);
+  });
+
+  it("does NOT flag a unit whose status is RETURNED", async () => {
+    const org = await createOrgFixture();
+    await createUserFixture(org.id);
+    const model = await createModelFixture(org.id);
+    const asset = await createAssetFixture(org.id, model.id, { assetTag: "A1" });
+
+    const projA = await createProject(org.id, new Date("2026-06-01"), new Date("2026-06-10"));
+    const projB = await createProject(org.id, new Date("2026-06-05"), new Date("2026-06-15"));
+    await addLineItem(org.id, projA.id, model.id, asset.id);
+    const liB = await addLineItem(org.id, projB.id, model.id, null);
+    await addUnit(org.id, liB.id, asset.id, "RETURNED");
+
+    const conflicts = await findProjectConflictsCore(projA.id, org.id);
+    expect(conflicts).toHaveLength(0);
+  });
+
   it("ignores CANCELLED line items on the other project", async () => {
     const org = await createOrgFixture();
     await createUserFixture(org.id);
@@ -206,6 +286,26 @@ describe("findSwapCandidatesCore", () => {
     // alsoBooked is on another overlapping project
     const other = await createProject(org.id, new Date("2026-06-05"), new Date("2026-06-12"));
     await addLineItem(org.id, other.id, model.id, alsoBooked.id);
+
+    const candidates = await findSwapCandidatesCore(li.id, org.id);
+    expect(candidates.map((c) => c.assetId)).toEqual([free.id]);
+  });
+
+  it("excludes assets booked via a unit on an overlapping live project", async () => {
+    const org = await createOrgFixture();
+    await createUserFixture(org.id);
+    const model = await createModelFixture(org.id);
+    const booked = await createAssetFixture(org.id, model.id, { assetTag: "BOOKED" });
+    const unitBooked = await createAssetFixture(org.id, model.id, { assetTag: "UNIT" });
+    const free = await createAssetFixture(org.id, model.id, { assetTag: "FREE" });
+
+    const proj = await createProject(org.id, new Date("2026-06-01"), new Date("2026-06-10"));
+    const li = await addLineItem(org.id, proj.id, model.id, booked.id);
+
+    // unitBooked is deployed via a unit on another overlapping project.
+    const other = await createProject(org.id, new Date("2026-06-05"), new Date("2026-06-12"));
+    const otherLi = await addLineItem(org.id, other.id, model.id, null);
+    await addUnit(org.id, otherLi.id, unitBooked.id);
 
     const candidates = await findSwapCandidatesCore(li.id, org.id);
     expect(candidates.map((c) => c.assetId)).toEqual([free.id]);
@@ -284,6 +384,26 @@ describe("swapLineItemAssetCore", () => {
     // Someone books `raced` on an overlapping project between list + click.
     const other = await createProject(org.id, new Date("2026-06-03"), new Date("2026-06-08"));
     await addLineItem(org.id, other.id, model.id, raced.id);
+
+    await expect(
+      swapLineItemAssetCore(li.id, raced.id, org.id),
+    ).rejects.toThrow(/just booked/i);
+  });
+
+  it("rejects a target booked via a unit in the window (race guard)", async () => {
+    const org = await createOrgFixture();
+    await createUserFixture(org.id);
+    const model = await createModelFixture(org.id);
+    const oldAsset = await createAssetFixture(org.id, model.id, { assetTag: "OLD" });
+    const raced = await createAssetFixture(org.id, model.id, { assetTag: "RACED" });
+
+    const proj = await createProject(org.id, new Date("2026-06-01"), new Date("2026-06-10"));
+    const li = await addLineItem(org.id, proj.id, model.id, oldAsset.id);
+
+    // `raced` gets deployed via a unit on an overlapping project.
+    const other = await createProject(org.id, new Date("2026-06-03"), new Date("2026-06-08"));
+    const otherLi = await addLineItem(org.id, other.id, model.id, null);
+    await addUnit(org.id, otherLi.id, raced.id);
 
     await expect(
       swapLineItemAssetCore(li.id, raced.id, org.id),

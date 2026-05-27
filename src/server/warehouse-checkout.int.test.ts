@@ -234,4 +234,122 @@ describe("checkOutItems — fulfillment model", () => {
     expect(refreshed.status).toBe("CHECKED_OUT");
     expect(refreshed.checkedOutQuantity).toBe(12);
   });
+
+  it("deploy with quantity (deploy-tab path) expands prepped units and flips each asset", async () => {
+    // Regression for the exact dev symptom: operator preps a 10x line
+    // (10 units written with assetIds), then clicks Deploy in the
+    // deploy tab. The UI sends `{ lineItemId, quantity: N }` — it has
+    // no per-unit identity in the selection. Without expansion based
+    // on the line's shape (not the item's), checkOutItems fell into
+    // the "deploy whole line" branch that flipped line.status but
+    // never marked any unit or asset CHECKED_OUT.
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id);
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+
+    const model = await createModelFixture(org.id);
+    const project = await createProjectFixture(org.id);
+    const line = await createLineItemFixture(org.id, project.id, model.id, {
+      quantity: 3,
+    });
+    const a1 = await createAssetFixture(org.id, model.id, { assetTag: "DEP-1" });
+    const a2 = await createAssetFixture(org.id, model.id, { assetTag: "DEP-2" });
+
+    // Simulate prep: two PACKED units exist on the line, with assetIds.
+    await testPrisma.projectLineItemUnit.create({
+      data: {
+        organizationId: org.id, lineItemId: line.id, ordinal: 1,
+        assetId: a1.id, quantity: 1, status: "CONFIRMED", prepStatus: "PACKED",
+      },
+    });
+    await testPrisma.projectLineItemUnit.create({
+      data: {
+        organizationId: org.id, lineItemId: line.id, ordinal: 2,
+        assetId: a2.id, quantity: 1, status: "CONFIRMED", prepStatus: "PACKED",
+      },
+    });
+
+    // Deploy tab's exact call: no item.assetId, quantity = unit count.
+    await checkOutItems(project.id, [{ lineItemId: line.id, quantity: 2 }]);
+
+    // Both units flipped to CHECKED_OUT.
+    const units = await testPrisma.projectLineItemUnit.findMany({
+      where: { lineItemId: line.id }, orderBy: { ordinal: "asc" },
+    });
+    expect(units).toHaveLength(2);
+    expect(units.every((u) => u.status === "CHECKED_OUT")).toBe(true);
+
+    // Physical assets flipped to CHECKED_OUT.
+    const assets = await testPrisma.asset.findMany({
+      where: { id: { in: [a1.id, a2.id] } },
+    });
+    expect(assets.every((a) => a.status === "CHECKED_OUT")).toBe(true);
+
+    // Order line rollup reflects 2 of 3 deployed.
+    const refreshed = await testPrisma.projectLineItem.findUniqueOrThrow({
+      where: { id: line.id },
+    });
+    expect(refreshed.status).toBe("CHECKED_OUT");
+    expect(refreshed.checkedOutQuantity).toBe(2);
+  });
+
+  it("partial-quantity deploy clamps to prepped units in ordinal order", async () => {
+    // Deploy 3 of 10 prepped: only the first 3 ordinals deploy.
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id);
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+    const model = await createModelFixture(org.id);
+    const project = await createProjectFixture(org.id);
+    const line = await createLineItemFixture(org.id, project.id, model.id, {
+      quantity: 10,
+    });
+    const assets = [];
+    for (let i = 0; i < 4; i++) {
+      const a = await createAssetFixture(org.id, model.id, { assetTag: `PT-${i}` });
+      assets.push(a);
+      await testPrisma.projectLineItemUnit.create({
+        data: {
+          organizationId: org.id, lineItemId: line.id, ordinal: i + 1,
+          assetId: a.id, quantity: 1, status: "CONFIRMED", prepStatus: "PACKED",
+        },
+      });
+    }
+
+    await checkOutItems(project.id, [{ lineItemId: line.id, quantity: 3 }]);
+
+    const units = await testPrisma.projectLineItemUnit.findMany({
+      where: { lineItemId: line.id }, orderBy: { ordinal: "asc" },
+    });
+    expect(units.slice(0, 3).every((u) => u.status === "CHECKED_OUT")).toBe(true);
+    expect(units[3].status).toBe("CONFIRMED"); // 4th still prepped
+    const allAssets = await testPrisma.asset.findMany({
+      where: { id: { in: assets.map((a) => a.id) } },
+      orderBy: { assetTag: "asc" },
+    });
+    expect(allAssets[0].status).toBe("CHECKED_OUT");
+    expect(allAssets[1].status).toBe("CHECKED_OUT");
+    expect(allAssets[2].status).toBe("CHECKED_OUT");
+    expect(allAssets[3].status).toBe("AVAILABLE");
+  });
+
+  it("deploy with no units AND no line.assetId still flips the line (deploy-whole-line edge)", async () => {
+    // The pre-existing "no asset assigned anywhere" path must still
+    // work — a generic line with no prep just gets its status flipped.
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id);
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+
+    const model = await createModelFixture(org.id);
+    const project = await createProjectFixture(org.id);
+    const line = await createLineItemFixture(org.id, project.id, model.id, {
+      quantity: 1,
+    });
+
+    await checkOutItems(project.id, [{ lineItemId: line.id }]);
+
+    const refreshed = await testPrisma.projectLineItem.findUniqueOrThrow({
+      where: { id: line.id },
+    });
+    expect(refreshed.status).toBe("CHECKED_OUT");
+  });
 });

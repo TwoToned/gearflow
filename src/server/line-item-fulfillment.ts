@@ -14,6 +14,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import {
   computeRollupCounters,
   deriveOrderLineStatus,
+  deriveOrderLinePrepStatus,
   nextOrdinal,
 } from "@/lib/line-item-units";
 
@@ -38,7 +39,7 @@ export async function syncLineItemRollup(
 ): Promise<void> {
   const line = await tx.projectLineItem.findUnique({
     where: { id: lineItemId },
-    select: { status: true },
+    select: { status: true, prepStatus: true },
   });
   if (!line) return;
 
@@ -52,6 +53,9 @@ export async function syncLineItemRollup(
     data: {
       ...computeRollupCounters(units),
       status: deriveOrderLineStatus(line.status, units),
+      // The warehouse UI routes prep ↔ deploy on line.prepStatus.
+      // Without this, a packed unit never moves the line off PULLED.
+      prepStatus: deriveOrderLinePrepStatus(line.prepStatus, units),
     },
   });
 }

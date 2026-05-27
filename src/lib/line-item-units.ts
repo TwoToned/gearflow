@@ -111,6 +111,42 @@ export function deriveOrderLineStatus(
 }
 
 /**
+ * Derive the order line's `prepStatus` from its units.
+ *
+ * The line's `prepStatus` drives the warehouse UI's prep ↔ deploy
+ * routing — the deploy tab filters `line.prepStatus === "PACKED"`. With
+ * the fulfillment-model cutover, prep writes a unit's `prepStatus` but
+ * leaves the line's old `prepStatus` (often `PULLED` from the earlier
+ * `pullItem` call) untouched. Result: a line whose unit is packed
+ * never moves from the prep tab to the deploy tab. This helper closes
+ * that gap.
+ *
+ * Rules:
+ *   - Manual flags (`FLAGGED_FAULTY`, `FLAGGED_TT_OVERDUE`) survive —
+ *     they're operator overrides set by `completeCheckAndFlag` and
+ *     must not be wiped by a later unit-rollup.
+ *   - Any unit with `prepStatus === "PACKED"` ⇒ line is `PACKED`
+ *     (the deploy tab needs to see it; quantity-aware deploy UX
+ *     handles partial states separately via the rollup counters).
+ *   - Otherwise, the existing `line.prepStatus` survives — preserves
+ *     PULLED while the operator is still scanning, and `PENDING` on
+ *     fresh lines.
+ */
+export function deriveOrderLinePrepStatus(
+  currentPrepStatus: PrepStatus | null,
+  units: readonly UnitLike[],
+): PrepStatus | null {
+  if (
+    currentPrepStatus === "FLAGGED_FAULTY" ||
+    currentPrepStatus === "FLAGGED_TT_OVERDUE"
+  ) {
+    return currentPrepStatus;
+  }
+  if (units.some((u) => u.prepStatus === "PACKED")) return "PACKED";
+  return currentPrepStatus;
+}
+
+/**
  * Next free `ordinal` for a new unit on an order line. Ordinals are a stable
  * 1..N identity within the line; they never reuse a gap, so a unit keeps its
  * number even after siblings are removed.

@@ -26,7 +26,7 @@ vi.mock("@/lib/org-context", () => ({
 }));
 
 import { checkOutItems } from "@/server/warehouse";
-import { prepItemDirect } from "@/server/check-records";
+import { prepItemDirect, pullItem } from "@/server/check-records";
 
 async function createProjectFixture(orgId: string) {
   return testPrisma.project.create({
@@ -130,5 +130,80 @@ describe("prepItemDirect — fulfillment model", () => {
     });
     expect(refreshed.status).toBe("CHECKED_OUT");
     expect(refreshed.checkedOutQuantity).toBe(1);
+  });
+
+  it("prep on a PULLED line transitions line.prepStatus to PACKED", async () => {
+    // Regression for the warehouse-UI symptom: operator clicks Pull
+    // (line.prepStatus → PULLED), opens the check form, completes the
+    // check, prep runs — and the line was stuck at PULLED forever
+    // because syncLineItemRollup never derived prepStatus from units.
+    // The deploy tab filters `prepStatus === "PACKED"`, so the line
+    // never moved off the prep tab.
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id);
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+
+    const model = await createModelFixture(org.id);
+    const project = await createProjectFixture(org.id);
+    const line = await createLineItemFixture(org.id, project.id, model.id, 10);
+    const asset = await createAssetFixture(org.id, model.id, {
+      assetTag: "PREP-PULL-1",
+    });
+
+    // Step 1: operator clicks Pull on the line.
+    await pullItem(project.id, line.id);
+    let refreshed = await testPrisma.projectLineItem.findUniqueOrThrow({
+      where: { id: line.id },
+    });
+    expect(refreshed.prepStatus).toBe("PULLED");
+
+    // Step 2: operator scans the first asset tag, completes the check,
+    // prep runs for that single unit. Without the fix this leaves the
+    // line at PULLED; with the fix the line promotes to PACKED.
+    await prepItemDirect(project.id, line.id, asset.id);
+
+    refreshed = await testPrisma.projectLineItem.findUniqueOrThrow({
+      where: { id: line.id },
+    });
+    expect(refreshed.prepStatus).toBe("PACKED");
+    expect(refreshed.packedQuantity).toBe(1);
+    expect(refreshed.quantity).toBe(10);
+
+    const units = await testPrisma.projectLineItemUnit.findMany({
+      where: { lineItemId: line.id },
+    });
+    expect(units).toHaveLength(1);
+    expect(units[0].assetId).toBe(asset.id);
+    expect(units[0].prepStatus).toBe("PACKED");
+  });
+
+  it("operator-set FLAGGED_FAULTY survives a later unit pack", async () => {
+    // completeCheckAndFlag is the operator override — a later
+    // unit-rollup must not silently wipe it back to PACKED.
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id);
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+
+    const model = await createModelFixture(org.id);
+    const project = await createProjectFixture(org.id);
+    const line = await createLineItemFixture(org.id, project.id, model.id, 1);
+    const asset = await createAssetFixture(org.id, model.id, {
+      assetTag: "PREP-FLAG-1",
+    });
+
+    // Simulate the operator flagging the line.
+    await testPrisma.projectLineItem.update({
+      where: { id: line.id },
+      data: { prepStatus: "FLAGGED_FAULTY" },
+    });
+
+    // A later prep on a different unit (or a stray rollup) must not
+    // overwrite the flag.
+    await prepItemDirect(project.id, line.id, asset.id);
+
+    const refreshed = await testPrisma.projectLineItem.findUniqueOrThrow({
+      where: { id: line.id },
+    });
+    expect(refreshed.prepStatus).toBe("FLAGGED_FAULTY");
   });
 });

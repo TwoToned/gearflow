@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   computeRollupCounters,
   deriveOrderLineStatus,
+  deriveOrderLinePrepStatus,
   nextOrdinal,
   isFullyAssigned,
   type UnitLike,
@@ -102,6 +103,60 @@ describe("deriveOrderLineStatus", () => {
     expect(
       deriveOrderLineStatus("CONFIRMED", [unit({ prepStatus: "PACKED" })]),
     ).toBe("PREPPED");
+  });
+});
+
+describe("deriveOrderLinePrepStatus", () => {
+  it("returns the current prepStatus when no units are packed", () => {
+    expect(deriveOrderLinePrepStatus("PULLED", [])).toBe("PULLED");
+    expect(deriveOrderLinePrepStatus("PENDING", [unit()])).toBe("PENDING");
+    expect(deriveOrderLinePrepStatus(null, [unit()])).toBeNull();
+  });
+
+  it("promotes to PACKED the moment any unit is PACKED", () => {
+    // Regression: a serialised prep packs one unit; the line was stuck
+    // at PULLED so the deploy tab never showed it.
+    expect(
+      deriveOrderLinePrepStatus("PULLED", [unit({ prepStatus: "PACKED" })]),
+    ).toBe("PACKED");
+  });
+
+  it("promotes from null/PENDING to PACKED on any packed unit", () => {
+    expect(
+      deriveOrderLinePrepStatus(null, [unit({ prepStatus: "PACKED" })]),
+    ).toBe("PACKED");
+    expect(
+      deriveOrderLinePrepStatus("PENDING", [unit({ prepStatus: "PACKED" })]),
+    ).toBe("PACKED");
+  });
+
+  it("partial pack on a 10x line: one PACKED unit → line PACKED", () => {
+    // Operator's mental model: as soon as the first unit is prepped,
+    // the line shows up in the deploy tab. Quantity-aware UX handles
+    // "1 of 10 ready" separately via the rollup counters.
+    const units = [
+      unit({ prepStatus: "PACKED" }),
+      ...Array.from({ length: 9 }, () => unit({ prepStatus: null })),
+    ];
+    expect(deriveOrderLinePrepStatus("PULLED", units)).toBe("PACKED");
+  });
+
+  it("preserves FLAGGED_FAULTY override even when units are packed", () => {
+    // completeCheckAndFlag is a manual operator override — a later
+    // unit-rollup must not silently wipe it.
+    expect(
+      deriveOrderLinePrepStatus("FLAGGED_FAULTY", [
+        unit({ prepStatus: "PACKED" }),
+      ]),
+    ).toBe("FLAGGED_FAULTY");
+  });
+
+  it("preserves FLAGGED_TT_OVERDUE override even when units are packed", () => {
+    expect(
+      deriveOrderLinePrepStatus("FLAGGED_TT_OVERDUE", [
+        unit({ prepStatus: "PACKED" }),
+      ]),
+    ).toBe("FLAGGED_TT_OVERDUE");
   });
 });
 

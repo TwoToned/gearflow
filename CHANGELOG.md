@@ -5,6 +5,25 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0.1] - 2026-05-27
+
+Patch release on top of the v0.7.0.0 fulfillment-model cutover.
+
+### Fixed
+- **T&T preflight missed unit-borne assets.** The checkout T&T
+  compliance gate scanned `line.assetId` / `line.bulkAssetId` only.
+  After the cutover those columns are null for most deployed lines —
+  the assignment lives on the unit row — so a prepped asset with a
+  FAILED or OVERDUE T&T record slipped past the gate. Preflight now
+  unions three sources: legacy line columns, `ProjectLineItemUnit`
+  rows on the same lines, and inbound `item.assetId` scans.
+- **Delivery docket / packing list / return sheet showed `-` for
+  multi-unit lines.** The PDF builder included `line.asset` but not
+  `line.units`, so a `10x` deployed line rendered no asset tags. The
+  builder now pulls units (filtered to non-CANCELLED) and the
+  `getAssetTag` helper renders up to two tags, then `+N` for extras,
+  falling back to legacy fields for single-asset and kit-child rows.
+
 ## [0.7.0.0] - 2026-05-27
 
 Line-item fulfillment model — a foundational data-model rework that

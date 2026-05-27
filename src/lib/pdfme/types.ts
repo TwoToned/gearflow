@@ -81,6 +81,18 @@ export interface DocumentLineItem {
   asset: { assetTag: string } | null;
   bulkAsset: { assetTag: string } | null;
   kit?: { assetTag: string; name: string } | null;
+  /**
+   * Per-physical-unit assignments under the fulfillment model. A line
+   * with quantity > 1 that's been deployed has one unit per physical
+   * thing; renderers prefer this list over the legacy `asset` field
+   * when present so docs show every assigned tag, not just the first.
+   */
+  units?: Array<{
+    id: string;
+    asset: { assetTag: string } | null;
+    bulkAsset: { assetTag: string } | null;
+    status: string;
+  }>;
   childLineItems?: DocumentLineItem[];
 }
 

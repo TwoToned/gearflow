@@ -135,10 +135,32 @@ function getItemName(item: DocumentLineItem, isKit: boolean): string {
   return item.description || "-";
 }
 
-/** Get asset tag display */
-function getAssetTag(item: DocumentLineItem, isKit: boolean): string {
+/**
+ * Get asset tag display for a line. Preference order:
+ *   1. Kit row → the kit's own tag
+ *   2. Units present (post-cutover, multi-quantity deployed line) →
+ *      join up to 2 unit tags, then "+N more" if there are extras.
+ *      One unit collapses to its single tag so single-asset lines
+ *      look identical to the pre-cutover output.
+ *   3. Legacy line.asset (kit children, un-migrated splits)
+ *   4. Bulk asset tag
+ *   5. "-"
+ *
+ * The column is 80pt wide at courier-8 — two short tags fit. Anything
+ * longer truncates visually but the data is still in the system; a
+ * future docket revamp can render per-unit rows.
+ */
+export function getAssetTag(item: DocumentLineItem, isKit: boolean): string {
   if (isKit) {
     return item.kit?.assetTag || "-";
+  }
+  const unitTags = (item.units ?? [])
+    .map((u) => u.asset?.assetTag ?? u.bulkAsset?.assetTag)
+    .filter((t): t is string => !!t);
+  if (unitTags.length > 0) {
+    if (unitTags.length === 1) return unitTags[0];
+    if (unitTags.length === 2) return unitTags.join(", ");
+    return `${unitTags[0]}, ${unitTags[1]} +${unitTags.length - 2}`;
   }
   return item.asset?.assetTag || item.bulkAsset?.assetTag || "-";
 }
@@ -722,8 +744,10 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
               }
 
               case "assetTag": {
-                const tag = child.asset?.assetTag || child.bulkAsset?.assetTag
-                  || (isNestedKit ? (child.kit?.assetTag || "-") : "-");
+                // Same unit-aware logic as the top-level row.
+                const tag = isNestedKit
+                  ? (child.kit?.assetTag || "-")
+                  : getAssetTag(child, false);
                 page.drawText(tag, {
                   x: childCellX,
                   y: childTextY,
@@ -884,7 +908,8 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
                   }
 
                   case "assetTag": {
-                    const tag = nested.asset?.assetTag || nested.bulkAsset?.assetTag || "-";
+                    // Nested-kit asset uses the same unit-aware logic.
+                    const tag = getAssetTag(nested, false);
                     page.drawText(tag, {
                       x: nestedCellX,
                       y: nestedTextY,

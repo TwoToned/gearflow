@@ -459,17 +459,36 @@ export async function checkOutItems(
     // every serialized and bulk asset id involved, and assert none have a
     // failed/overdue Test & Tag record. Throws TestTagBlockError on block,
     // rolling back the whole batch (no partial check-out across the items).
-    const preflightLineItems = await tx.projectLineItem.findMany({
-      where: { id: { in: items.map((i) => i.lineItemId) }, organizationId, projectId },
-      select: { id: true, assetId: true, bulkAssetId: true },
-    });
+    //
+    // Three sources contribute to the asset set:
+    //   1) legacy `line.assetId` / `line.bulkAssetId` (kit children + bulk
+    //      lines + un-migrated splits)
+    //   2) ProjectLineItemUnit rows already on the line (prep created
+    //      them; checkout would mark CHECKED_OUT)
+    //   3) `item.assetId` from the incoming scans (post-cutover scans
+    //      land here before the unit is written)
+    // Without (2) a prepped asset on a fresh order line could slip past
+    // the T&T check, since (1) is null on post-cutover lines.
+    const lineItemIds = items.map((i) => i.lineItemId);
+    const [preflightLineItems, preflightUnits] = await Promise.all([
+      tx.projectLineItem.findMany({
+        where: { id: { in: lineItemIds }, organizationId, projectId },
+        select: { id: true, assetId: true, bulkAssetId: true },
+      }),
+      tx.projectLineItemUnit.findMany({
+        where: { lineItemId: { in: lineItemIds }, organizationId },
+        select: { assetId: true, bulkAssetId: true },
+      }),
+    ]);
     const preflightAssetIds = [
-      ...preflightLineItems.map((li) => li.assetId).filter(Boolean) as string[],
-      ...items.map((i) => i.assetId).filter(Boolean) as string[],
+      ...(preflightLineItems.map((li) => li.assetId).filter(Boolean) as string[]),
+      ...(preflightUnits.map((u) => u.assetId).filter(Boolean) as string[]),
+      ...(items.map((i) => i.assetId).filter(Boolean) as string[]),
     ];
-    const preflightBulkIds = preflightLineItems
-      .map((li) => li.bulkAssetId)
-      .filter(Boolean) as string[];
+    const preflightBulkIds = [
+      ...(preflightLineItems.map((li) => li.bulkAssetId).filter(Boolean) as string[]),
+      ...(preflightUnits.map((u) => u.bulkAssetId).filter(Boolean) as string[]),
+    ];
     await assertTestTagAllowsCheckout(tx, organizationId, {
       assetIds: preflightAssetIds,
       bulkAssetIds: preflightBulkIds,

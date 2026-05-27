@@ -156,6 +156,31 @@ ignores `groupId`, `categoryId`, `subHireId`, `sortOrder`, `description`,
 4. **Phase 4 — Drop** the old `assetId` / `bulkAssetId` on `ProjectLineItem`
    once all readers are migrated and verified.
 
+   **Status (post-Phase-3 audit, v0.7.0.0):** The original "drop both
+   columns" framing turned out to be too coarse. The Phase 4 audit
+   surfaced two *legitimate* active uses that aren't legacy:
+
+   - **Kit children** carry their asset directly on `line.assetId` (no
+     unit row) — `checkOutKit` writes it; `checkInItems` has a no-unit
+     fallback that reads it. Dropping the column would break the kit
+     flow.
+   - **Bulk-line order intent** lives on `line.bulkAssetId`. It's set
+     at line creation (the operator picks which bulk to draw from)
+     and consumed at prep/checkout to know which `BulkAsset` the unit
+     should reference. Dropping the column erases the assignment.
+
+   The audit also found one *correctness* gap that was a real Phase 4
+   prerequisite — the checkout T&T preflight (`warehouse.ts:462-478`)
+   only gathered `line.assetId` / `line.bulkAssetId`, so a prepped
+   FAILED-T&T asset that lived on a unit slipped past the gate. Fixed
+   in Phase 4a (v0.7.0.x) by unioning unit-table asset ids into the
+   preflight set.
+
+   Wholesale column drop is **deferred** until a follow-on design
+   answers (a) where kit-children store their asset assignment, and
+   (b) where bulk-line order intent lives. The columns are no longer
+   blocking new development.
+
 Single-tenant data (one company) makes a transactional cutover with a verified
 dry-run feasible; the `oldLineItemId` mapping table is the rollback safety net,
 so a long dual-write window is not required.

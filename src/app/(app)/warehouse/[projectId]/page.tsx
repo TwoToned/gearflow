@@ -520,7 +520,7 @@ function WarehouseProjectPage({
         })().catch((e) => showError(e));
       } else {
         checkInMutation.mutate(
-          { items: checkQueueDirectItems.map((i) => ({ lineItemId: i.lineItemId, returnCondition: (i.returnCondition || "GOOD") as "GOOD" | "DAMAGED" | "MISSING", quantity: i.quantity, notes: i.notes })) },
+          { items: checkQueueDirectItems.map((i) => ({ lineItemId: i.lineItemId, assetId: i.assetId, returnCondition: (i.returnCondition || "GOOD") as "GOOD" | "DAMAGED" | "MISSING", quantity: i.quantity, notes: i.notes })) },
           { onSuccess: () => { toast.success(`Returned remaining items`); setReturnNotes(""); } }
         );
       }
@@ -642,7 +642,7 @@ function WarehouseProjectPage({
 
   const checkInMutation = useMutation({
     mutationFn: async (data: {
-      items: Array<{ lineItemId: string; returnCondition: "GOOD" | "DAMAGED" | "MISSING"; quantity?: number; notes?: string }>;
+      items: Array<{ lineItemId: string; assetId?: string; returnCondition: "GOOD" | "DAMAGED" | "MISSING"; quantity?: number; notes?: string }>;
     }) => {
       const result = await checkInItems(projectId, data.items);
       // Sync container status for affected containers
@@ -1088,6 +1088,7 @@ function WarehouseProjectPage({
             {
               items: [{
                 lineItemId: result.lineItemId,
+                assetId: result.assetId ?? undefined,
                 returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING",
                 notes: returnNotes || undefined,
               }],
@@ -1828,6 +1829,7 @@ function WarehouseProjectPage({
     // Return non-kit items
     const items = Array.from(qtyMap.entries()).map(([lineItemId, qty]) => ({
       lineItemId,
+      assetId: lineItems.find((l) => l.id === lineItemId)?.assetId || undefined,
       returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING",
       quantity: qty,
       notes: returnNotes || undefined,
@@ -1867,7 +1869,7 @@ function WarehouseProjectPage({
       if (queue.length > 0) {
         startCheckQueue(
           queue,
-          withoutCheckItems.map((i) => ({ lineItemId: i.lineItemId, returnCondition: i.returnCondition, quantity: i.quantity, notes: i.notes }))
+          withoutCheckItems.map((i) => ({ lineItemId: i.lineItemId, assetId: i.assetId, returnCondition: i.returnCondition, quantity: i.quantity, notes: i.notes }))
         );
         setReturnNotes("");
         return;

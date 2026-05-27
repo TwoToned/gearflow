@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@/generated/prisma/client";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import {
   lineItemSchema,
@@ -43,27 +44,54 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         });
       }
 
-      // Specific asset — check if it's booked in an overlapping project (only when dates exist)
+      // Specific asset — check if it's booked in an overlapping project
+      // (only when dates exist). The asset may be assigned via a legacy
+      // line.assetId row OR via a ProjectLineItemUnit (the fulfillment
+      // model) — both tables must be checked.
       if (hasDates) {
-        const conflict = await prisma.projectLineItem.findFirst({
-          where: {
-            organizationId,
-            assetId: parsed.assetId,
-            status: { not: "CANCELLED" },
-            project: {
-              status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
-              rentalStartDate: { lte: project!.rentalEndDate! },
-              rentalEndDate: { gte: project!.rentalStartDate! },
-              id: { not: projectId },
+        const conflictWindow: Prisma.ProjectWhereInput = {
+          status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
+          isTemplate: false,
+          rentalStartDate: { lte: project!.rentalEndDate! },
+          rentalEndDate: { gte: project!.rentalStartDate! },
+          id: { not: projectId },
+        };
+        const [lineConflict, unitConflict] = await Promise.all([
+          prisma.projectLineItem.findFirst({
+            where: {
+              organizationId,
+              assetId: parsed.assetId,
+              status: { not: "CANCELLED" },
+              project: conflictWindow,
             },
-          },
-          include: { project: { select: { projectNumber: true, name: true } } },
-        });
-        if (conflict) {
+            select: { project: { select: { projectNumber: true, name: true } } },
+          }),
+          prisma.projectLineItemUnit.findFirst({
+            where: {
+              organizationId,
+              assetId: parsed.assetId,
+              status: { not: "RETURNED" },
+              lineItem: {
+                status: { not: "CANCELLED" },
+                project: conflictWindow,
+              },
+            },
+            select: {
+              lineItem: {
+                select: {
+                  project: { select: { projectNumber: true, name: true } },
+                },
+              },
+            },
+          }),
+        ]);
+        const conflictProject =
+          lineConflict?.project ?? unitConflict?.lineItem.project;
+        if (conflictProject) {
           throw new UserFacingError({
             code: "ASSET_DOUBLE_BOOKED",
             title: "Asset already booked",
-            message: `This asset is booked on ${conflict.project.projectNumber} — ${conflict.project.name} during those dates.`,
+            message: `This asset is booked on ${conflictProject.projectNumber} — ${conflictProject.name} during those dates.`,
             hint: "Pick a different asset, adjust the rental dates, or remove it from the other project.",
           });
         }

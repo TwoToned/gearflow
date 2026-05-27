@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import { prepUnit } from "@/server/line-item-fulfillment";
 import type { Prisma } from "@/generated/prisma/client";
 import {
   completeCheckAndPackSchema,
@@ -18,69 +19,6 @@ import {
 } from "@/lib/validations/check-item";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-
-/**
- * Split a single unit off a multi-quantity line item.
- * Creates a new qty=1 line item copying all shared fields from the original,
- * decrements the original's quantity, and recalculates lineTotal for both.
- *
- * @param tx - Prisma transaction client
- * @param lineItem - The original line item to split from (must have quantity > 1)
- * @param overrides - Fields to set on the new split item (e.g. assetId, status, prepStatus)
- * @returns The newly created qty=1 line item (with model, asset, bulkAsset included)
- */
-export async function splitLineItem(
-  tx: Prisma.TransactionClient,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  lineItem: any,
-  overrides: Record<string, unknown> = {}
-) {
-  const splitItem = await tx.projectLineItem.create({
-    data: {
-      organizationId: lineItem.organizationId,
-      projectId: lineItem.projectId,
-      type: lineItem.type,
-      modelId: lineItem.modelId,
-      description: lineItem.description,
-      quantity: 1,
-      unitPrice: lineItem.unitPrice,
-      pricingType: lineItem.pricingType,
-      duration: lineItem.duration,
-      discount: lineItem.discount,
-      lineTotal: lineItem.unitPrice
-        ? lineItem.unitPrice.toNumber() * lineItem.duration
-        : null,
-      sortOrder: lineItem.sortOrder,
-      groupName: lineItem.groupName,
-      notes: lineItem.notes,
-      isOptional: lineItem.isOptional,
-      isCustomItem: lineItem.isCustomItem,
-      showSubhireOnDocs: lineItem.showSubhireOnDocs,
-      supplierId: lineItem.supplierId,
-      subhireOrderNumber: lineItem.subhireOrderNumber,
-      supplierOrderId: lineItem.supplierOrderId,
-      isKitChild: lineItem.isKitChild,
-      parentLineItemId: lineItem.parentLineItemId,
-      pricingMode: lineItem.pricingMode,
-      ...overrides,
-    },
-    include: { model: true, asset: true, bulkAsset: true },
-  });
-
-  // Decrement original line item's quantity and recalculate lineTotal
-  const newQty = lineItem.quantity - 1;
-  await tx.projectLineItem.update({
-    where: { id: lineItem.id },
-    data: {
-      quantity: newQty,
-      lineTotal: lineItem.unitPrice
-        ? lineItem.unitPrice.toNumber() * newQty * lineItem.duration
-        : null,
-    },
-  });
-
-  return splitItem;
-}
 
 async function saveCheckRecords(
   tx: Prisma.TransactionClient,
@@ -278,57 +216,15 @@ export async function prepItemDirect(
       throw new Error("Line item not found in project");
     }
 
-    // Bulk = any multi-qty item without a specific serialized asset.
-    // Covers items with bulkAssetId AND generic multi-qty items (no assetId).
-    // Uses the same split approach as serialized items: split off qty=1 with PACKED.
-    const isBulk = !assetId && !lineItem.assetId && lineItem.quantity > 1;
-
-    if (isBulk) {
-      return await splitLineItem(tx, lineItem, {
-        bulkAssetId: lineItem.bulkAssetId,
-        status: "CONFIRMED",
-        prepStatus: "PACKED",
-        ...(prepContainer !== undefined ? { prepContainer } : {}),
-      });
-    }
-
-    // Bulk/generic item with qty=1 (last unit or already split): just mark PACKED
-    if (!assetId && !lineItem.assetId && lineItem.quantity === 1) {
-
-      const updated = await tx.projectLineItem.update({
-        where: { id: lineItemId },
-        data: {
-          status: "CONFIRMED",
-          prepStatus: "PACKED",
-          ...(prepContainer !== undefined ? { prepContainer } : {}),
-        },
-        include: { model: true, asset: true, bulkAsset: true },
-      });
-      return updated;
-    }
-
-    // Serialized: if quantity > 1 and assetId provided, split off a line item
-    if (lineItem.quantity > 1 && assetId) {
-      return await splitLineItem(tx, lineItem, {
-        assetId,
-        status: "CONFIRMED",
-        prepStatus: "PACKED",
-        ...(prepContainer !== undefined ? { prepContainer } : {}),
-      });
-    }
-
-    // Normal serialized item (qty=1 with assetId)
-    const updated = await tx.projectLineItem.update({
-      where: { id: lineItemId },
-      data: {
-        ...(assetId ? { asset: { connect: { id: assetId } } } : {}),
-        status: "CONFIRMED",
-        prepStatus: "PACKED",
-        ...(prepContainer !== undefined ? { prepContainer } : {}),
-      },
-      include: { model: true, asset: true, bulkAsset: true },
+    // Prep creates/marks a ProjectLineItemUnit — never splits the line.
+    return prepUnit(tx, {
+      organizationId,
+      lineItemId,
+      assetId: assetId ?? null,
+      bulkAssetId: assetId ? null : lineItem.bulkAssetId,
+      quantity,
+      prepContainer,
     });
-    return updated;
   });
 
   await logActivity({
@@ -719,59 +615,13 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
       parsed.checks
     );
 
-    // 3. Set prepStatus to PACKED (no checkout — deploy is a separate step)
-    // Bulk = any multi-qty item without a specific serialized asset.
-    const isBulk = !parsed.assetId && !lineItem.assetId && lineItem.quantity > 1;
-
-    if (isBulk) {
-      const splitItem = await splitLineItem(tx, lineItem, {
-        bulkAssetId: lineItem.bulkAssetId,
-        status: "CONFIRMED",
-        prepStatus: "PACKED",
-        ...(parsed.prepContainer !== undefined ? { prepContainer: parsed.prepContainer } : {}),
-      });
-      return { updatedItem: splitItem, resolvedAssetId };
-    }
-
-    // Bulk/generic item with qty=1 (last unit): just mark PACKED
-    if (!parsed.assetId && !lineItem.assetId && lineItem.quantity === 1) {
-      await tx.projectLineItem.update({
-        where: { id: parsed.lineItemId },
-        data: {
-          status: "CONFIRMED",
-          prepStatus: "PACKED",
-          ...(parsed.prepContainer !== undefined ? { prepContainer: parsed.prepContainer } : {}),
-        },
-      });
-    } else {
-      // Serialized asset — split if multi-qty with specific asset
-      if (lineItem.quantity > 1 && parsed.assetId) {
-        const splitItem = await splitLineItem(tx, lineItem, {
-          assetId: parsed.assetId,
-          status: "CONFIRMED",
-          prepStatus: "PACKED",
-          ...(parsed.prepContainer !== undefined ? { prepContainer: parsed.prepContainer } : {}),
-        });
-        return { updatedItem: splitItem, resolvedAssetId: parsed.assetId };
-      }
-
-      // Normal serialized prep (quantity == 1)
-      await tx.projectLineItem.update({
-        where: { id: parsed.lineItemId },
-        data: {
-          ...(parsed.assetId
-            ? { asset: { connect: { id: parsed.assetId } } }
-            : {}),
-          status: "CONFIRMED",
-          prepStatus: "PACKED",
-          ...(parsed.prepContainer !== undefined ? { prepContainer: parsed.prepContainer } : {}),
-        },
-      });
-    }
-
-    const updatedItem = await tx.projectLineItem.findUnique({
-      where: { id: parsed.lineItemId },
-      include: { model: true, asset: true, bulkAsset: true },
+    // 3. Prep — create/mark the unit (no checkout; deploy is a separate step).
+    const updatedItem = await prepUnit(tx, {
+      organizationId,
+      lineItemId: parsed.lineItemId,
+      assetId: parsed.assetId ?? null,
+      bulkAssetId: parsed.assetId ? null : lineItem.bulkAssetId,
+      prepContainer: parsed.prepContainer,
     });
 
     return { updatedItem, resolvedAssetId };

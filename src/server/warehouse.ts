@@ -6,7 +6,11 @@ import { serialize } from "@/lib/serialize";
 import { computeOverbookedStatus } from "@/lib/availability";
 import type { Prisma } from "@/generated/prisma/client";
 import { logActivity } from "@/lib/activity-log";
-import { splitLineItem } from "@/server/check-records";
+import {
+  syncLineItemRollup,
+  ensureSerialisedUnit,
+  ensureBulkUnit,
+} from "@/server/line-item-fulfillment";
 import {
   adjustBulkAvailability,
   coalesceAdjustments,
@@ -279,40 +283,112 @@ export async function lookupAssetForScan(
     }
   }
 
-  // For serialized assets, first try to find a line item with this exact asset assigned
+  // ── Resolve which order line this scan applies to ─────────────────────
+  // A deployed/assigned serialised asset is pinned to a line by a
+  // ProjectLineItemUnit, not by ProjectLineItem.assetId.
   let lineItem = null;
+
   if (asset) {
-    lineItem = await prisma.projectLineItem.findFirst({
+    const unit = await prisma.projectLineItemUnit.findFirst({
+      where: {
+        assetId: asset.id,
+        lineItem: {
+          projectId,
+          organizationId,
+          status: { notIn: ["CANCELLED"] },
+        },
+      },
+      select: { lineItemId: true, status: true },
+    });
+
+    if (mode === "checkin") {
+      // Check-in must target a unit that is still out.
+      if (!unit || unit.status !== "CHECKED_OUT") {
+        return serialize({
+          found: true as const, type: "serialized" as const,
+          lineItemId: null, assetId: asset.id, assetName,
+          reason: "not_checked_out" as const,
+        });
+      }
+      return serialize({
+        found: true as const, type: "serialized" as const,
+        lineItemId: unit.lineItemId, assetId: asset.id, assetName, reason: null,
+      });
+    }
+
+    // checkout
+    if (unit) {
+      if (unit.status === "CHECKED_OUT") {
+        return serialize({
+          found: true as const, type: "serialized" as const,
+          lineItemId: null, assetId: null, assetName,
+          reason: "already_checked_out" as const,
+        });
+      }
+      // Already assigned (prepped) to a line — deploy onto that line.
+      return serialize({
+        found: true as const, type: "serialized" as const,
+        lineItemId: unit.lineItemId, assetId: asset.id, assetName, reason: null,
+      });
+    }
+
+    // Not on this project yet — block if it is out on another job.
+    if (asset.status === "CHECKED_OUT") {
+      const otherUnit = await prisma.projectLineItemUnit.findFirst({
+        where: {
+          assetId: asset.id,
+          status: "CHECKED_OUT",
+          lineItem: { projectId: { not: projectId }, organizationId },
+        },
+        select: {
+          lineItem: {
+            select: { project: { select: { name: true, projectNumber: true } } },
+          },
+        },
+      });
+      const otherProject = otherUnit?.lineItem.project;
+      const detail = otherProject
+        ? ` on ${otherProject.name}${otherProject.projectNumber ? ` (${otherProject.projectNumber})` : ""}`
+        : "";
+      return serialize({
+        found: true as const, type: "serialized" as const,
+        lineItemId: null, assetId: null, assetName,
+        reason: "asset_checked_out_elsewhere" as const, detail,
+      });
+    }
+
+    // Find an order line of this model with spare capacity.
+    const candidates = await prisma.projectLineItem.findMany({
       where: {
         projectId,
         organizationId,
-        assetId: asset.id,
+        modelId,
+        isKitChild: false,
         status: { notIn: ["CANCELLED"] },
       },
       orderBy: { sortOrder: "asc" },
     });
-  }
-
-  // If no exact asset match, find by modelId (only for checkout or bulk items — never for serialized check-in)
-  if (!lineItem && !(mode === "checkin" && asset)) {
+    lineItem =
+      candidates.find((li) => li.assignedQuantity < li.quantity) ?? null;
+  } else {
+    // Bulk asset — find its order line on the project.
     lineItem = await prisma.projectLineItem.findFirst({
       where: {
         projectId,
         organizationId,
         modelId,
         isKitChild: false,
-        status: { notIn: ["CANCELLED", ...(mode === "checkout" ? ["CHECKED_OUT" as const] : [])] },
-        // For checkout, don't match a line item that already has a different asset assigned
-        ...(asset ? { assetId: null } : {}),
+        status: { notIn: ["CANCELLED"] },
       },
       orderBy: { sortOrder: "asc" },
     });
   }
 
   if (!lineItem) {
-    const reason = mode === "checkin" && asset
-      ? "not_checked_out" as const  // Serialized asset not assigned/checked out on this project
-      : "not_on_project" as const;
+    const reason =
+      mode === "checkin" && asset
+        ? ("not_checked_out" as const)
+        : ("not_on_project" as const);
     return serialize({
       found: true as const,
       type: null,
@@ -327,68 +403,31 @@ export async function lookupAssetForScan(
     });
   }
 
-  // Determine if the line item is bulk (multi-quantity without serialized asset)
-  // Split items (qty=1) go through the serialized path naturally.
-  // If a serialized asset was scanned, treat it as serialized even if the line item has qty > 1
-  const isBulk = asset
-    ? false
-    : !lineItem.assetId && lineItem.quantity > 1;
-
-  if (isBulk) {
-    if (mode === "checkout") {
-      // In the split flow, all units are split off before checkout.
-      // If qty > 1 still, they haven't all been prepped yet.
-      if (lineItem.status === "CHECKED_OUT") {
-        return serialize({ found: true as const, type: "bulk" as const, lineItemId: null, assetId: null, assetName, reason: "already_checked_out" as const });
-      }
-    } else {
-      // checkin — need units that are checked out but not yet returned
-      if (lineItem.status !== "CHECKED_OUT") {
-        return serialize({ found: true as const, type: "bulk" as const, lineItemId: null, assetId: null, assetName, reason: "already_returned" as const });
+  // Bulk scan
+  if (!asset) {
+    if (mode === "checkin") {
+      const outUnit = await prisma.projectLineItemUnit.findFirst({
+        where: { lineItemId: lineItem.id, status: "CHECKED_OUT" },
+        select: { id: true },
+      });
+      if (!outUnit) {
+        return serialize({
+          found: true as const, type: "bulk" as const, lineItemId: null,
+          assetId: null, assetName, reason: "already_returned" as const,
+        });
       }
     }
-
-    return serialize({ found: true as const, type: "bulk" as const, lineItemId: lineItem.id, assetId: null, assetName, reason: null });
+    return serialize({
+      found: true as const, type: "bulk" as const, lineItemId: lineItem.id,
+      assetId: null, assetName, reason: null,
+    });
   }
 
-  // Serialized asset
-  if (mode === "checkout") {
-    if (lineItem.status === "CHECKED_OUT") {
-      return serialize({ found: true as const, type: "serialized" as const, lineItemId: null, assetId: null, assetName, reason: "already_checked_out" as const });
-    }
-    // Check if the physical asset is already checked out on another project
-    if (asset && asset.status === "CHECKED_OUT") {
-      // Find which project has it
-      const otherLineItem = await prisma.projectLineItem.findFirst({
-        where: {
-          organizationId,
-          assetId: asset.id,
-          status: "CHECKED_OUT",
-          projectId: { not: projectId },
-        },
-        include: { project: { select: { name: true, projectNumber: true } } },
-      });
-      const otherProject = otherLineItem?.project;
-      const detail = otherProject
-        ? ` on ${otherProject.name}${otherProject.projectNumber ? ` (${otherProject.projectNumber})` : ""}`
-        : "";
-      return serialize({
-        found: true as const,
-        type: "serialized" as const,
-        lineItemId: null,
-        assetId: null,
-        assetName,
-        reason: "asset_checked_out_elsewhere" as const,
-        detail,
-      });
-    }
-  } else {
-    if (lineItem.status !== "CHECKED_OUT") {
-      return serialize({ found: true as const, type: "serialized" as const, lineItemId: null, assetId: null, assetName, reason: "not_checked_out" as const });
-    }
-  }
-
-  return serialize({ found: true as const, type: "serialized" as const, lineItemId: lineItem.id, assetId: asset?.id || null, assetName, reason: null });
+  // Serialised checkout onto a line with capacity.
+  return serialize({
+    found: true as const, type: "serialized" as const,
+    lineItemId: lineItem.id, assetId: asset.id, assetName, reason: null,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -452,29 +491,95 @@ export async function checkOutItems(
         throw new Error(`Line item ${item.lineItemId} not found in project`);
       }
 
-      // With the split approach, prepped items are qty=1 and behave like serialized.
-      // Only unsplit multi-qty items without a serialized asset use the bulk checkout path.
-      const isBulk = item.assetId
-        ? false
-        : !lineItem.assetId && lineItem.quantity > 1;
-      const checkoutQty = item.quantity || 1;
+      // Fulfillment model: scanning an asset onto a line creates a
+      // ProjectLineItemUnit, never a split line item. The order line keeps
+      // its quantity; syncLineItemRollup rolls the units back up onto it.
+      const targetAssetId = item.assetId || lineItem.assetId || null;
 
-      if (isBulk) {
-        // Unsplit bulk item — shouldn't normally reach here in the split flow,
-        // but handle gracefully: deploy the whole item at once.
-        const updatedItem = await tx.projectLineItem.update({
-          where: { id: item.lineItemId },
+      if (targetAssetId) {
+        // ── Serialised checkout — one unit per physical asset ────────────
+        const assetRecord = await tx.asset.findUnique({
+          where: { id: targetAssetId },
+          select: { status: true, assetTag: true },
+        });
+        if (assetRecord && assetRecord.status === "CHECKED_OUT") {
+          // Already deployed. Idempotent if it is this line's own unit;
+          // otherwise the asset is genuinely double-booked.
+          const ownUnit = await tx.projectLineItemUnit.findUnique({
+            where: {
+              lineItemId_assetId: {
+                lineItemId: lineItem.id,
+                assetId: targetAssetId,
+              },
+            },
+            select: { status: true },
+          });
+          if (ownUnit && ownUnit.status === "CHECKED_OUT") continue;
+          throw new Error(`Asset ${assetRecord.assetTag} is already deployed`);
+        }
+        if (
+          assetRecord &&
+          (assetRecord.status === "RETIRED" ||
+            assetRecord.status === "IN_MAINTENANCE" ||
+            assetRecord.status === "LOST")
+        ) {
+          throw new Error(
+            `Asset ${assetRecord.assetTag} is ${assetRecord.status
+              .replace("_", " ")
+              .toLowerCase()} and cannot be deployed`,
+          );
+        }
+
+        const { id: unitId } = await ensureSerialisedUnit(tx, {
+          organizationId,
+          lineItemId: lineItem.id,
+          assetId: targetAssetId,
+        });
+        // Guarded transition — only flip a unit that is not already out.
+        await tx.projectLineItemUnit.updateMany({
+          where: { id: unitId, status: { not: "CHECKED_OUT" } },
           data: {
-            checkedOutQuantity: lineItem.quantity,
-            returnedQuantity: lineItem.status === "RETURNED" ? 0 : lineItem.returnedQuantity,
             status: "CHECKED_OUT",
             checkedOutAt: new Date(),
-            checkedOutBy: { connect: { id: userId } },
+            checkedOutById: userId,
           },
-          include: { model: true, asset: true, bulkAsset: true },
         });
 
-        // Create scan log entry
+        await tx.asset.update({
+          where: { id: targetAssetId },
+          data: {
+            status: "CHECKED_OUT",
+            ...(projectLocationId && { locationId: projectLocationId }),
+          },
+        });
+        await tx.assetScanLog.create({
+          data: {
+            organizationId,
+            assetId: targetAssetId,
+            projectId,
+            action: "CHECK_OUT",
+            scannedById: userId,
+            notes: item.notes || null,
+          },
+        });
+      } else if (lineItem.bulkAssetId) {
+        // ── Bulk checkout — one unit row carrying the quantity ───────────
+        const checkoutQty = item.quantity || lineItem.quantity;
+        const { id: unitId } = await ensureBulkUnit(tx, {
+          organizationId,
+          lineItemId: lineItem.id,
+          bulkAssetId: lineItem.bulkAssetId,
+          quantity: checkoutQty,
+        });
+        await tx.projectLineItemUnit.update({
+          where: { id: unitId },
+          data: {
+            status: "CHECKED_OUT",
+            quantity: checkoutQty,
+            checkedOutAt: new Date(),
+            checkedOutById: userId,
+          },
+        });
         await tx.assetScanLog.create({
           data: {
             organizationId,
@@ -482,118 +587,40 @@ export async function checkOutItems(
             projectId,
             action: "CHECK_OUT",
             scannedById: userId,
-            notes: item.notes || `Checked out ${checkoutQty} of ${lineItem.quantity}`,
+            notes:
+              item.notes ||
+              `Checked out ${checkoutQty} of ${lineItem.quantity}`,
           },
         });
-
-        updated.push(updatedItem);
       } else {
-        // Serialized asset checkout
-
-        // Verify the asset isn't already checked out on another project
-        const assetIdToCheck = item.assetId || lineItem.assetId;
-        if (assetIdToCheck) {
-          const assetRecord = await tx.asset.findUnique({
-            where: { id: assetIdToCheck },
-            select: { status: true, assetTag: true },
-          });
-          if (assetRecord && assetRecord.status === "CHECKED_OUT") {
-            if (lineItem.status === "CHECKED_OUT") {
-              continue;
-            }
-            throw new Error(`Asset ${assetRecord.assetTag} is already deployed`);
-          }
-          if (assetRecord && (assetRecord.status === "RETIRED" || assetRecord.status === "IN_MAINTENANCE" || assetRecord.status === "LOST")) {
-            throw new Error(`Asset ${assetRecord.assetTag} is ${assetRecord.status.replace("_", " ").toLowerCase()} and cannot be deployed`);
-          }
-        }
-
-        // If the line item has quantity > 1 and we're assigning a specific asset,
-        // split off a new line item with qty=1 for this asset. This handles the case
-        // where e.g. "4x SM57" gets individual assets assigned during checkout.
-        let targetLineItemId = item.lineItemId;
-        if (lineItem.quantity > 1 && item.assetId) {
-          const splitItem = await splitLineItem(tx, lineItem, {
-            status: "CHECKED_OUT",
-            checkedOutQuantity: 1,
-            checkedOutAt: new Date(),
-            checkedOutById: userId,
-            assetId: item.assetId,
-          });
-
-          // Mark the asset as checked out
-          await tx.asset.update({
-            where: { id: item.assetId },
-            data: {
-              status: "CHECKED_OUT",
-              ...(projectLocationId && { locationId: projectLocationId }),
-            },
-          });
-
-          // Create scan log entry
-          await tx.assetScanLog.create({
-            data: {
-              organizationId,
-              assetId: item.assetId,
-              projectId,
-              action: "CHECK_OUT",
-              scannedById: userId,
-              notes: item.notes || null,
-            },
-          });
-
-          updated.push(splitItem);
-          continue; // Skip the normal update path
-        }
-
-        // Normal serialized checkout (quantity == 1 or no assetId provided)
-        const updateData: Prisma.ProjectLineItemUpdateInput = {
-          status: "CHECKED_OUT",
-          checkedOutQuantity: 1,
-          returnedQuantity: 0,
-          returnCondition: null,
-          returnNotes: null,
-          returnedAt: null,
-          checkedOutAt: new Date(),
-          checkedOutBy: { connect: { id: userId } },
-        };
-
-        if (item.assetId) {
-          updateData.asset = { connect: { id: item.assetId } };
-        }
-
-        const updatedItem = await tx.projectLineItem.update({
-          where: { id: targetLineItemId },
-          data: updateData,
-          include: { model: true, asset: true, bulkAsset: true },
-        });
-
-        // Mark the serialized asset as checked out and update location to project venue
-        const assetIdToUpdate = item.assetId || lineItem.assetId;
-        if (assetIdToUpdate) {
-          await tx.asset.update({
-            where: { id: assetIdToUpdate },
-            data: {
-              status: "CHECKED_OUT",
-              ...(projectLocationId && { locationId: projectLocationId }),
-            },
-          });
-        }
-
-        // Create scan log entry
-        await tx.assetScanLog.create({
+        // No serialised asset and no bulk asset assigned — nothing to make a
+        // unit from. Flip the order line directly (deploy-whole-line edge).
+        await tx.projectLineItem.update({
+          where: { id: lineItem.id },
           data: {
-            organizationId,
-            assetId: assetIdToUpdate || null,
-            projectId,
-            action: "CHECK_OUT",
-            scannedById: userId,
-            notes: item.notes || null,
+            status: "CHECKED_OUT",
+            checkedOutQuantity: lineItem.quantity,
+            checkedOutAt: new Date(),
+            checkedOutBy: { connect: { id: userId } },
           },
         });
-
-        updated.push(updatedItem);
+        updated.push(
+          await tx.projectLineItem.findUnique({
+            where: { id: lineItem.id },
+            include: { model: true, asset: true, bulkAsset: true },
+          }),
+        );
+        continue;
       }
+
+      // Roll the unit change up onto the order line.
+      await syncLineItemRollup(tx, lineItem.id);
+      updated.push(
+        await tx.projectLineItem.findUnique({
+          where: { id: lineItem.id },
+          include: { model: true, asset: true, bulkAsset: true },
+        }),
+      );
     }
 
     return updated;
@@ -625,6 +652,8 @@ export async function checkInItems(
   projectId: string,
   items: Array<{
     lineItemId: string;
+    /** The scanned serialised asset being returned. Omit for bulk returns. */
+    assetId?: string;
     returnCondition: "GOOD" | "DAMAGED" | "MISSING";
     quantity?: number;
     notes?: string;
@@ -656,31 +685,116 @@ export async function checkInItems(
         throw new Error(`Line item ${item.lineItemId} not found in project`);
       }
 
-      // With the split approach, deployed bulk items are qty=1 and behave like serialized.
-      // Only unsplit bulk items (qty > 1 with bulkAssetId) use the bulk return path.
-      const isBulk = !lineItem.assetId && lineItem.quantity > 1;
-      const returnQty = item.quantity || 1;
+      const targetAssetId = item.assetId || lineItem.assetId || null;
 
-      if (isBulk) {
-        // Unsplit bulk item — shouldn't normally reach here in the split flow,
-        // but handle gracefully
-        const newReturnedQty = lineItem.returnedQuantity + returnQty;
-        const fullyReturned = newReturnedQty >= lineItem.checkedOutQuantity;
+      if (targetAssetId) {
+        // ── Serialised return — flip the unit, restore the asset ─────────
+        const assetStatus: "AVAILABLE" | "IN_MAINTENANCE" | "LOST" =
+          item.returnCondition === "DAMAGED"
+            ? "IN_MAINTENANCE"
+            : item.returnCondition === "MISSING"
+              ? "LOST"
+              : "AVAILABLE";
 
-        const updatedItem = await tx.projectLineItem.update({
-          where: { id: item.lineItemId },
-          data: {
-            returnedQuantity: newReturnedQty,
-            status: fullyReturned ? "RETURNED" : "CHECKED_OUT",
-            returnedAt: fullyReturned ? new Date() : lineItem.returnedAt,
-            ...(fullyReturned ? { returnedBy: { connect: { id: userId } } } : {}),
-            returnCondition: fullyReturned ? item.returnCondition : lineItem.returnCondition,
-            returnNotes: item.notes || lineItem.returnNotes,
+        const unit = await tx.projectLineItemUnit.findUnique({
+          where: {
+            lineItemId_assetId: {
+              lineItemId: lineItem.id,
+              assetId: targetAssetId,
+            },
           },
-          include: { model: true, asset: true, bulkAsset: true },
+          select: { id: true },
         });
 
-        // Create scan log entry
+        if (!unit) {
+          // No unit row — a kit child or an un-migrated legacy line that
+          // still carries its asset directly. Return the line itself.
+          await tx.projectLineItem.update({
+            where: { id: lineItem.id },
+            data: {
+              status: "RETURNED",
+              returnedQuantity: 1,
+              returnedAt: new Date(),
+              returnedBy: { connect: { id: userId } },
+              returnCondition: item.returnCondition,
+              returnNotes: item.notes || null,
+            },
+          });
+          await tx.asset.update({
+            where: { id: targetAssetId },
+            data: { status: assetStatus, locationId: defaultLocationId },
+          });
+          await tx.assetScanLog.create({
+            data: {
+              organizationId,
+              assetId: targetAssetId,
+              projectId,
+              action: "CHECK_IN",
+              scannedById: userId,
+              notes: item.notes || null,
+            },
+          });
+          updated.push(
+            await tx.projectLineItem.findUnique({
+              where: { id: lineItem.id },
+              include: { model: true, asset: true, bulkAsset: true },
+            }),
+          );
+          continue;
+        }
+
+        // Guarded transition — only return a unit that is still out.
+        const flipped = await tx.projectLineItemUnit.updateMany({
+          where: { id: unit.id, status: "CHECKED_OUT" },
+          data: {
+            status: "RETURNED",
+            returnedAt: new Date(),
+            returnedById: userId,
+            returnCondition: item.returnCondition,
+            returnNotes: item.notes || null,
+          },
+        });
+
+        if (flipped.count > 0) {
+          await tx.asset.update({
+            where: { id: targetAssetId },
+            data: { status: assetStatus, locationId: defaultLocationId },
+          });
+          await tx.assetScanLog.create({
+            data: {
+              organizationId,
+              assetId: targetAssetId,
+              projectId,
+              action: "CHECK_IN",
+              scannedById: userId,
+              notes: item.notes || null,
+            },
+          });
+        }
+      } else if (lineItem.bulkAssetId) {
+        // ── Bulk return — accumulate onto the bulk unit row ──────────────
+        const returnQty = item.quantity || 1;
+        const unit = await tx.projectLineItemUnit.findFirst({
+          where: { lineItemId: lineItem.id, bulkAssetId: lineItem.bulkAssetId },
+        });
+        if (unit) {
+          const newReturned = Math.min(
+            unit.quantity,
+            unit.returnedQuantity + returnQty,
+          );
+          const fullyReturned = newReturned >= unit.quantity;
+          await tx.projectLineItemUnit.update({
+            where: { id: unit.id },
+            data: {
+              returnedQuantity: newReturned,
+              status: fullyReturned ? "RETURNED" : "CHECKED_OUT",
+              returnedAt: fullyReturned ? new Date() : unit.returnedAt,
+              returnedById: fullyReturned ? userId : unit.returnedById,
+              returnCondition: item.returnCondition,
+              returnNotes: item.notes || unit.returnNotes,
+            },
+          });
+        }
         await tx.assetScanLog.create({
           data: {
             organizationId,
@@ -688,68 +802,83 @@ export async function checkInItems(
             projectId,
             action: "CHECK_IN",
             scannedById: userId,
-            notes: item.notes || `Returned ${returnQty} of ${lineItem.checkedOutQuantity}`,
+            notes: item.notes || `Returned ${returnQty}`,
           },
         });
-
-        updated.push(updatedItem);
       } else {
-        // Serialized asset — unassign the specific asset so any asset of that model can be used next time
-        const updatedItem = await tx.projectLineItem.update({
-          where: { id: item.lineItemId },
-          data: {
-            status: "RETURNED",
-            returnedQuantity: 1,
-            returnedAt: new Date(),
-            returnedBy: { connect: { id: userId } },
-            returnCondition: item.returnCondition,
-            returnNotes: item.notes || null,
-            asset: lineItem.assetId ? { disconnect: true } : undefined,
-          },
-          include: { model: true, asset: true, bulkAsset: true },
+        // No specific asset scanned — the "return whole line" path. Return
+        // every unit still out on this line.
+        const outUnits = await tx.projectLineItemUnit.findMany({
+          where: { lineItemId: lineItem.id, status: "CHECKED_OUT" },
         });
 
-        // Update serialized asset status and restore location based on return condition
-        if (lineItem.assetId) {
-          let assetStatus: "AVAILABLE" | "IN_MAINTENANCE" | "LOST";
-
-          switch (item.returnCondition) {
-            case "DAMAGED":
-              assetStatus = "IN_MAINTENANCE";
-              break;
-            case "MISSING":
-              assetStatus = "LOST";
-              break;
-            case "GOOD":
-            default:
-              assetStatus = "AVAILABLE";
-              break;
+        if (outUnits.length > 0) {
+          for (const u of outUnits) {
+            await tx.projectLineItemUnit.update({
+              where: { id: u.id },
+              data: {
+                status: "RETURNED",
+                returnedAt: new Date(),
+                returnedById: userId,
+                returnCondition: item.returnCondition,
+                returnNotes: item.notes || null,
+                ...(u.bulkAssetId ? { returnedQuantity: u.quantity } : {}),
+              },
+            });
+            if (u.assetId) {
+              const assetStatus =
+                item.returnCondition === "DAMAGED"
+                  ? "IN_MAINTENANCE"
+                  : item.returnCondition === "MISSING"
+                    ? "LOST"
+                    : "AVAILABLE";
+              await tx.asset.update({
+                where: { id: u.assetId },
+                data: { status: assetStatus, locationId: defaultLocationId },
+              });
+            }
           }
-
-          await tx.asset.update({
-            where: { id: lineItem.assetId },
+          await tx.assetScanLog.create({
             data: {
-              status: assetStatus,
-              // Restore location to default, or clear it if no default exists
-              locationId: defaultLocationId,
+              organizationId,
+              projectId,
+              action: "CHECK_IN",
+              scannedById: userId,
+              notes: item.notes || `Returned ${outUnits.length} unit(s)`,
             },
           });
+        } else {
+          // Genuinely no units — flip the order line directly.
+          await tx.projectLineItem.update({
+            where: { id: lineItem.id },
+            data: {
+              status: "RETURNED",
+              returnedQuantity:
+                lineItem.checkedOutQuantity || lineItem.quantity,
+              returnedAt: new Date(),
+              returnedBy: { connect: { id: userId } },
+              returnCondition: item.returnCondition,
+              returnNotes: item.notes || null,
+            },
+          });
+          updated.push(
+            await tx.projectLineItem.findUnique({
+              where: { id: lineItem.id },
+              include: { model: true, asset: true, bulkAsset: true },
+            }),
+          );
+          continue;
         }
-
-        // Create scan log entry
-        await tx.assetScanLog.create({
-          data: {
-            organizationId,
-            assetId: lineItem.assetId || null,
-            projectId,
-            action: "CHECK_IN",
-            scannedById: userId,
-            notes: item.notes || null,
-          },
-        });
-
-        updated.push(updatedItem);
       }
+
+      // Roll the unit change up onto the order line.
+      await syncLineItemRollup(tx, lineItem.id);
+      updated.push(
+        await tx.projectLineItem.findUnique({
+          where: { id: lineItem.id },
+          include: { model: true, asset: true, bulkAsset: true },
+        }),
+      );
     }
 
     return updated;

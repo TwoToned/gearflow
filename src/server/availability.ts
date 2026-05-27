@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@/generated/prisma/client";
 import { serialize } from "@/lib/serialize";
 import { getOrgContext } from "@/lib/org-context";
 
@@ -135,45 +136,82 @@ export async function getAssetBookings(
   const start = new Date(params.startDate);
   const end = new Date(params.endDate);
 
-  const lineItems = await prisma.projectLineItem.findMany({
-    where: {
-      organizationId,
-      assetId,
-      status: { not: "CANCELLED" },
-      project: {
-        isTemplate: false,
-        status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
-        rentalStartDate: { lte: end },
-        rentalEndDate: { gte: start },
-      },
-    },
-    include: {
-      project: {
-        select: {
-          id: true,
-          projectNumber: true,
-          name: true,
-          status: true,
-          rentalStartDate: true,
-          rentalEndDate: true,
-          client: { select: { name: true } },
-        },
-      },
-    },
-    orderBy: { project: { rentalStartDate: "asc" } },
-  });
+  // An asset is booked via a legacy line.assetId row OR via a
+  // ProjectLineItemUnit row (the fulfillment model) — query both.
+  const projectWindow: Prisma.ProjectWhereInput = {
+    isTemplate: false,
+    status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
+    rentalStartDate: { lte: end },
+    rentalEndDate: { gte: start },
+  };
+  const projectSelect = {
+    id: true,
+    projectNumber: true,
+    name: true,
+    status: true,
+    rentalStartDate: true,
+    rentalEndDate: true,
+    client: { select: { name: true } },
+  } as const;
 
-  const bookings: BookingEntry[] = lineItems.map((li) => ({
-    id: li.id,
-    projectId: li.project.id,
-    projectNumber: li.project.projectNumber,
-    projectName: li.project.name,
-    clientName: li.project.client?.name || null,
-    projectStatus: li.project.status,
-    rentalStartDate: li.project.rentalStartDate?.toISOString() || "",
-    rentalEndDate: li.project.rentalEndDate?.toISOString() || "",
-    quantity: li.quantity,
-  }));
+  const [lineItems, units] = await Promise.all([
+    prisma.projectLineItem.findMany({
+      where: {
+        organizationId,
+        assetId,
+        status: { not: "CANCELLED" },
+        project: projectWindow,
+      },
+      include: { project: { select: projectSelect } },
+      orderBy: { project: { rentalStartDate: "asc" } },
+    }),
+    prisma.projectLineItemUnit.findMany({
+      where: {
+        organizationId,
+        assetId,
+        status: { not: "CANCELLED" },
+        lineItem: { status: { not: "CANCELLED" }, project: projectWindow },
+      },
+      select: {
+        lineItemId: true,
+        lineItem: { select: { project: { select: projectSelect } } },
+      },
+      orderBy: { lineItem: { project: { rentalStartDate: "asc" } } },
+    }),
+  ]);
+
+  const seenLineIds = new Set<string>();
+  const bookings: BookingEntry[] = [];
+  for (const li of lineItems) {
+    seenLineIds.add(li.id);
+    bookings.push({
+      id: li.id,
+      projectId: li.project.id,
+      projectNumber: li.project.projectNumber,
+      projectName: li.project.name,
+      clientName: li.project.client?.name || null,
+      projectStatus: li.project.status,
+      rentalStartDate: li.project.rentalStartDate?.toISOString() || "",
+      rentalEndDate: li.project.rentalEndDate?.toISOString() || "",
+      quantity: li.quantity,
+    });
+  }
+  for (const u of units) {
+    if (seenLineIds.has(u.lineItemId)) continue;
+    const p = u.lineItem.project;
+    bookings.push({
+      id: u.lineItemId,
+      projectId: p.id,
+      projectNumber: p.projectNumber,
+      projectName: p.name,
+      clientName: p.client?.name || null,
+      projectStatus: p.status,
+      rentalStartDate: p.rentalStartDate?.toISOString() || "",
+      rentalEndDate: p.rentalEndDate?.toISOString() || "",
+      // One unit == one physical asset booked.
+      quantity: 1,
+    });
+  }
 
   return serialize(bookings) as BookingEntry[];
 }

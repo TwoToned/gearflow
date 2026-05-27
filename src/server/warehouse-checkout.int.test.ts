@@ -149,6 +149,57 @@ describe("checkOutItems — fulfillment model", () => {
     expect(refreshed.assignedQuantity).toBe(1);
   });
 
+  it("T&T preflight blocks when the failed asset lives on a unit (not line.assetId)", async () => {
+    // Phase 4a regression guard. Pre-cutover, checkout's T&T preflight
+    // scanned line.assetId + line.bulkAssetId. Post-cutover a prepped
+    // asset lives on ProjectLineItemUnit and line.assetId is null —
+    // without the unit-aware preflight, a prepped FAILED-T&T asset
+    // would slip past the gate. The preflight now also reads units.
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id);
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+
+    const model = await createModelFixture(org.id);
+    const project = await createProjectFixture(org.id);
+    const line = await createLineItemFixture(org.id, project.id, model.id, {
+      quantity: 1,
+    });
+    const failedAsset = await createAssetFixture(org.id, model.id, {
+      assetTag: "TT-FAIL",
+    });
+    // FAILED T&T record on the asset.
+    await testPrisma.testTagAsset.create({
+      data: {
+        organizationId: org.id,
+        testTagId: `TT-${createId().slice(0, 6)}`,
+        description: "Phase 4a preflight test",
+        status: "FAILED",
+        assetId: failedAsset.id,
+        isActive: true,
+      },
+    });
+    // Prep already created a unit for this line + asset. Line.assetId
+    // stays null (the post-cutover shape).
+    await testPrisma.projectLineItemUnit.create({
+      data: {
+        organizationId: org.id,
+        lineItemId: line.id,
+        ordinal: 1,
+        assetId: failedAsset.id,
+        quantity: 1,
+        status: "CONFIRMED",
+        prepStatus: "PACKED",
+      },
+    });
+
+    // Caller does NOT pass assetId — the unit is supposed to carry it.
+    // Without the fix, the preflight set is empty for this line and
+    // the failed asset gets deployed silently.
+    await expect(
+      checkOutItems(project.id, [{ lineItemId: line.id }]),
+    ).rejects.toMatchObject({ name: "TestTagBlockError" });
+  });
+
   it("bulk checkout creates one bulk unit carrying the quantity", async () => {
     const org = await createOrgFixture();
     const user = await createUserFixture(org.id);

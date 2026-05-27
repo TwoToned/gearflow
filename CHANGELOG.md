@@ -5,6 +5,57 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0.0] - 2026-05-27
+
+Line-item fulfillment model — a foundational data-model rework that
+fixes the long-standing warehouse checkout / docket duplication bug.
+
+The order line (`ProjectLineItem`) now carries the commercial intent
+and never splits: a `10x Powerplay P2` line stays one row with a
+`quantity: 10`. Every assigned physical thing — a serialised asset, a
+bulk slice — gets its own `ProjectLineItemUnit` row carrying its own
+state (assigned / packed / checked-out / damaged / returned). Rollup
+counters on the order line are recomputed from units in the same
+transaction as every write, so order-line state never drifts from
+unit truth.
+
+### Added
+- **`ProjectLineItemUnit` table** — one row per physical fulfilment.
+  Phase 1 schema landed in 0.6.x; Phase 2a backfilled units for every
+  existing line item with an asset assigned.
+- **Unit-aware readers** — `reservation-conflicts.ts`,
+  `utilization.ts`, `availability.getAssetBookings`, and the
+  `addLineItem` double-booked guard all union the legacy
+  `line.assetId` source with the unit table. Detection of
+  unit-deployed assets is now correct; swap-candidate exclusion and
+  the swap-asset TOCTOU re-check handle both shapes.
+- **Split-sibling collapse migration** (`npm run collapse:split-siblings`,
+  dry-run by default) — collapses historic per-asset siblings back
+  onto one canonical order line under a strict full-equivalence key
+  (every order-level field identical or flagged-not-merged). Moves
+  units, repoints `CheckRecord` / `DamageEvent` / `ProjectService`,
+  writes a permanent `LineItemMergeMap` audit row, and deactivates
+  the sibling without deleting it. Operator-gated apply on prod.
+
+### Changed
+- **Checkout / check-in / prep / scan-lookup** rewritten to write and
+  resolve units. `splitLineItem` (the per-asset line-fragmenting
+  function that caused the docket duplication) is retired — zero
+  callers remain.
+- Check-in carries an `assetId` through the warehouse UI so a partial
+  return of a multi-unit line returns the right physical unit.
+- Kit check-in uses a no-unit fallback path for kit children (which
+  carry `line.assetId` directly, no unit row) — both shapes are
+  handled uniformly.
+
+### Notes
+- Test coverage: 45 new unit tests + 37 new integration tests across
+  checkout, check-in, prep, reservation-conflicts, and the collapse
+  migration. Full suite green on merge.
+- Phase 4 (drop the now-redundant `ProjectLineItem.assetId` /
+  `bulkAssetId` columns) intentionally deferred until all readers are
+  observed clean in production.
+
 ## [0.6.0.1] - 2026-05-21
 
 Hotfix for a production crash introduced in 0.6.0.0.

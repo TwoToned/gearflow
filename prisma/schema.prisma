@@ -142,6 +142,7 @@ model Organization {
   projects                 Project[]
   projectLineItems         ProjectLineItem[]
   projectLineItemUnits     ProjectLineItemUnit[]
+  lineItemMergeMaps        LineItemMergeMap[]
   scanLogs                 AssetScanLog[]
   suppliers                Supplier[]
   supplierOrders           SupplierOrder[]
@@ -1503,6 +1504,43 @@ model ProjectLineItemUnit {
   @@index([organizationId, bulkAssetId, status])
   @@index([lineItemId, status])
   @@map("project_line_item_unit")
+}
+
+/// Audit trail for the Phase 3.8 split-sibling collapse migration.
+///
+/// When the historic data has lines that splitLineItem fragmented into
+/// per-asset siblings, the collapse migration merges them back onto one
+/// canonical order line — moving each sibling's ProjectLineItemUnit, its
+/// CheckRecord / DamageEvent rows, and its ProjectService onto the
+/// canonical, then deactivating the old row. This table records the
+/// mapping so the merge can be audited and (if needed) reversed.
+///
+/// Permanent — never auto-cleaned. One row per merged (old) line item.
+model LineItemMergeMap {
+  id                   String   @id @default(cuid())
+  organizationId       String
+  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// The line item that was merged away. Kept in the projectLineItem
+  /// table (status: CANCELLED, quantity: 0, assetId: null) so historical
+  /// data isn't destroyed — only made inert.
+  oldLineItemId        String   @unique
+  /// The line item the units / records were re-pointed to.
+  canonicalLineItemId  String
+  /// The unit row that carried the old line's asset/bulk allocation
+  /// after the move. Null when the old row had no unit (rare —
+  /// pre-Phase-2a rows or kit children).
+  movedUnitId          String?
+  checkRecordsRepointed Int      @default(0)
+  damageEventsRepointed Int      @default(0)
+  serviceRepointed     Boolean  @default(false)
+  /// Free-form notes captured at merge time (eg. the equivalence-key
+  /// snapshot, dry-run vs. apply, the run id).
+  notes                String?
+  mergedAt             DateTime @default(now())
+
+  @@index([organizationId])
+  @@index([canonicalLineItemId])
+  @@map("line_item_merge_map")
 }
 
 // ─── Project Category ───────────────────────────────────────────────────────

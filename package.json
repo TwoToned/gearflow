@@ -16,6 +16,7 @@
     "reconcile:bulk": "tsx --env-file=.env scripts/reconcile-bulk-availability.ts",
     "backfill:line-item-units": "tsx --env-file=.env scripts/backfill-line-item-units.ts",
     "collapse:split-siblings": "tsx --env-file=.env scripts/collapse-split-siblings.ts",
+    "collapse:historic-splits": "tsx --env-file=.env scripts/collapse-historic-splits.ts",
     "migrate:docket-per-unit": "tsx --env-file=.env scripts/migrate-docket-per-unit.ts",
     "lint:server-actions": "tsx scripts/audit-server-actions.ts"
   },

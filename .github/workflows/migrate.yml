@@ -1,0 +1,102 @@
+name: Run migration
+
+# Manually-triggered data migrations. Pick which script to run from the
+# GitHub Actions UI ("Run workflow"). Runs on the same self-hosted
+# runner the deploy workflow uses, so it inherits prod env + DATABASE_URL.
+#
+# Dry-run by default. Set "apply" to true to actually mutate.
+#
+# Security: workflow_dispatch inputs are passed via `env:` and quoted
+# with $"..." so free-text inputs (project_id, org_id) can't inject
+# shell. Script choice is restricted to a fixed enum.
+
+on:
+  workflow_dispatch:
+    inputs:
+      script:
+        description: "Which migration to run"
+        required: true
+        type: choice
+        options:
+          - collapse-historic-splits
+          - collapse-split-siblings
+          - migrate-docket-per-unit
+          - backfill-line-item-units
+      apply:
+        description: "Actually write changes? (default: dry-run only)"
+        required: true
+        type: boolean
+        default: false
+      project_id:
+        description: "Optional: scope to one project id (e.g. cmnsi9uj100dthxbxqnh93ufe). Leave blank for all."
+        required: false
+        type: string
+      org_id:
+        description: "Optional: scope to one organization id. Leave blank for all."
+        required: false
+        type: string
+
+jobs:
+  migrate:
+    name: ${{ inputs.script }} (${{ inputs.apply && 'APPLY' || 'dry-run' }})
+    runs-on: self-hosted
+    timeout-minutes: 15
+
+    steps:
+      - name: Show plan
+        env:
+          SCRIPT: ${{ inputs.script }}
+          APPLY: ${{ inputs.apply }}
+          PROJECT_ID: ${{ inputs.project_id }}
+          ORG_ID: ${{ inputs.org_id }}
+        run: |
+          echo "================================================================"
+          echo "Migration:   $SCRIPT"
+          if [ "$APPLY" = "true" ]; then
+            echo "Mode:        APPLY (will mutate)"
+          else
+            echo "Mode:        dry-run (read-only)"
+          fi
+          echo "Project:     ${PROJECT_ID:-(all)}"
+          echo "Org:         ${ORG_ID:-(all)}"
+          echo "================================================================"
+
+      - name: Pull latest code
+        run: |
+          cd "${{ vars.APP_DIR }}"
+          git pull origin main
+
+      - name: Install dependencies
+        run: |
+          cd "${{ vars.APP_DIR }}"
+          npm ci --ignore-scripts --legacy-peer-deps
+
+      - name: Generate Prisma client
+        run: |
+          cd "${{ vars.APP_DIR }}"
+          npx prisma generate
+
+      - name: Run migration
+        env:
+          SCRIPT: ${{ inputs.script }}
+          APPLY: ${{ inputs.apply }}
+          PROJECT_ID: ${{ inputs.project_id }}
+          ORG_ID: ${{ inputs.org_id }}
+        run: |
+          cd "${{ vars.APP_DIR }}"
+          # Build args array — quoting via "$VAR" prevents any shell
+          # tokenisation of free-text inputs.
+          set --
+          if [ "$APPLY" = "true" ]; then
+            set -- "$@" --apply
+          fi
+          if [ -n "$PROJECT_ID" ]; then
+            set -- "$@" --project "$PROJECT_ID"
+          fi
+          if [ -n "$ORG_ID" ]; then
+            set -- "$@" --org "$ORG_ID"
+          fi
+          # SCRIPT is constrained to the choice enum above so it's safe
+          # to interpolate into the run command.
+          echo "Running: npm run $SCRIPT -- $*"
+          npm run "$SCRIPT" -- "$@"

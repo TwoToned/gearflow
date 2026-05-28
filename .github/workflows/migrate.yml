@@ -18,10 +18,10 @@ on:
         required: true
         type: choice
         options:
-          - collapse-historic-splits
-          - collapse-split-siblings
-          - migrate-docket-per-unit
-          - backfill-line-item-units
+          - "collapse:historic-splits"
+          - "collapse:split-siblings"
+          - "migrate:docket-per-unit"
+          - "backfill:line-item-units"
       apply:
         description: "Actually write changes? (default: dry-run only)"
         required: true

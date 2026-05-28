@@ -599,10 +599,16 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
         currentY -= rowContentHeight;
       } // end if (!isContinuation)
 
-      // === Per-unit checkboxes (packing list, qty > 1, non-kit) ===
+      // === Per-unit checkboxes (packing list / docket / return-sheet) ===
+      // Renders one sub-row per physical unit on a multi-quantity line,
+      // labelled with the unit's actual asset tag (post-cutover, this is
+      // the source of truth — `line.asset` is null on multi-quantity
+      // serialised lines). Falls back to "Item - N" for legacy lines
+      // that have no units yet.
       if (config.showPerUnitCheckboxes && !isKit && item.quantity > 1) {
         const shortName = item.model?.name || item.description || "Item";
         const checkedOut = item.checkedOutQuantity || 0;
+        const units = item.units ?? [];
         // Skip already-rendered sub-items on continuation pages
         const subStart = (isFirstRenderedItem && startSubIndex > 0) ? startSubIndex : 0;
         for (let i = subStart; i < item.quantity; i++) {
@@ -611,11 +617,19 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
           const puY = currentY - puHeight + 3;
           const indentX = tableX + 26;
           drawCheckbox(page, pdfLib, indentX, puY, 7, i < checkedOut);
-          page.drawText(`${shortName} - ${i + 1}`, {
+          const unit = units[i];
+          const tag =
+            unit?.asset?.assetTag ??
+            unit?.bulkAsset?.assetTag ??
+            null;
+          const label = tag
+            ? `Unit ${i + 1} — ${tag}`
+            : `${shortName} - ${i + 1}`;
+          page.drawText(label, {
             x: indentX + 11,
             y: puY,
             size: 7,
-            font: fonts.regular,
+            font: tag ? fonts.courier : fonts.regular,
             color: lightTextColor,
           });
           currentY -= puHeight;
@@ -791,20 +805,27 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
 
           currentY -= childRowHeight;
 
-          // Per-unit checkboxes for child items
+          // Per-unit checkboxes for child items (same unit-aware logic
+          // as the top-level row).
           if (config.showPerUnitCheckboxes && !isNestedKit && child.quantity > 1) {
             const childCheckedOut = child.checkedOutQuantity || 0;
+            const childUnits = child.units ?? [];
             for (let i = 0; i < child.quantity; i++) {
               const puHeight = 10;
               if (currentY - puHeight < bottomBoundary) { overflow = true; break; }
               const puY = currentY - puHeight + 3;
               const indentX = tableX + 38;
               drawCheckbox(page, pdfLib, indentX, puY, 7, i < childCheckedOut);
-              page.drawText(`${childName} - ${i + 1}`, {
+              const unit = childUnits[i];
+              const tag = unit?.asset?.assetTag ?? unit?.bulkAsset?.assetTag ?? null;
+              const label = tag
+                ? `Unit ${i + 1} — ${tag}`
+                : `${childName} - ${i + 1}`;
+              page.drawText(label, {
                 x: indentX + 11,
                 y: puY,
                 size: 7,
-                font: fonts.regular,
+                font: tag ? fonts.courier : fonts.regular,
                 color: lightTextColor,
               });
               currentY -= puHeight;

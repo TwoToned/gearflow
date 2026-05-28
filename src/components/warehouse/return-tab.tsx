@@ -255,6 +255,11 @@ export function ReturnTab({
                     const childKeys = Array.from({ length: entry.unitCount }, (_, i) => bulkUnitKey(entry.item.id, i));
                     const isExpanded = expandedGroups.has(entry.groupKey);
                     const checkedCount = childKeys.filter((k) => selectedIn.has(k)).length;
+                    // Render per-unit asset tags from the fulfillment
+                    // units. Pre-cutover this column was always the
+                    // line-level bulkAsset tag (null for serialised
+                    // multi-quantity lines).
+                    const units = entry.item.units ?? [];
                     return (
                       <Fragment key={entry.groupKey}>
                         {renderGroupHeader(
@@ -269,24 +274,31 @@ export function ReturnTab({
                             )}
                           </TableCell>
                         )}
-                        {isExpanded && childKeys.map((key, idx) => (
-                          <TableRow key={key} className="bg-bg-inset/30">
-                            <TableCell>
-                              <Checkbox
-                                checked={selectedIn.has(key)}
-                                onCheckedChange={() => toggleSelection(selectedIn, setSelectedIn, key)}
-                              />
-                            </TableCell>
-                            <TableCell className="pl-12 text-sm text-fg-3">
-                              Unit {idx + 1}
-                            </TableCell>
-                            <TableCell className="font-mono text-sm text-fg-3">
-                              {entry.item.bulkAsset?.assetTag || "—"}
-                            </TableCell>
-                            <TableCell className="text-center">1</TableCell>
-                            <TableCell />
-                          </TableRow>
-                        ))}
+                        {isExpanded && childKeys.map((key, idx) => {
+                          const unit = units[idx];
+                          const tag = unit?.asset?.assetTag
+                            ?? unit?.bulkAsset?.assetTag
+                            ?? entry.item.bulkAsset?.assetTag
+                            ?? "—";
+                          return (
+                            <TableRow key={key} className="bg-bg-inset/30">
+                              <TableCell>
+                                <Checkbox
+                                  checked={selectedIn.has(key)}
+                                  onCheckedChange={() => toggleSelection(selectedIn, setSelectedIn, key)}
+                                />
+                              </TableCell>
+                              <TableCell className="pl-12 text-sm text-fg-3">
+                                Unit {idx + 1}
+                              </TableCell>
+                              <TableCell className="font-mono text-sm text-fg-3">
+                                {tag}
+                              </TableCell>
+                              <TableCell className="text-center">1</TableCell>
+                              <TableCell />
+                            </TableRow>
+                          );
+                        })}
                       </Fragment>
                     );
                   }

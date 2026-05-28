@@ -530,14 +530,24 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
           }
 
           case "assetTag": {
-            const tag = getAssetTag(item, isKit);
-            page.drawText(tag, {
-              x: cellX,
-              y: textY,
-              size: 8,
-              font: fonts.courier,
-              color: textColor,
-            });
+            // If per-unit sub-rows will render below this parent
+            // (multi-quantity non-kit lines with showPerUnitCheckboxes
+            // on), leave the parent cell blank — every tag is already
+            // listed below, and cramming "TAG1, TAG2 +N" into the
+            // parent is noisy. Single-asset rows + kits still render
+            // their tag here.
+            const willListUnitsBelow =
+              config.showPerUnitCheckboxes && !isKit && item.quantity > 1;
+            const tag = willListUnitsBelow ? "" : getAssetTag(item, isKit);
+            if (tag) {
+              page.drawText(tag, {
+                x: cellX,
+                y: textY,
+                size: 8,
+                font: fonts.courier,
+                color: textColor,
+              });
+            }
             break;
           }
 
@@ -758,17 +768,26 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
               }
 
               case "assetTag": {
-                // Same unit-aware logic as the top-level row.
-                const tag = isNestedKit
-                  ? (child.kit?.assetTag || "-")
-                  : getAssetTag(child, false);
-                page.drawText(tag, {
-                  x: childCellX,
-                  y: childTextY,
-                  size: 7,
-                  font: fonts.courier,
-                  color: childTextColor,
-                });
+                // Blank when per-unit sub-rows will list tags below
+                // this kit child (same logic as top-level rows).
+                const willListUnitsBelow =
+                  config.showPerUnitCheckboxes &&
+                  !isNestedKit &&
+                  child.quantity > 1;
+                const tag = willListUnitsBelow
+                  ? ""
+                  : isNestedKit
+                    ? (child.kit?.assetTag || "-")
+                    : getAssetTag(child, false);
+                if (tag) {
+                  page.drawText(tag, {
+                    x: childCellX,
+                    y: childTextY,
+                    size: 7,
+                    font: fonts.courier,
+                    color: childTextColor,
+                  });
+                }
                 break;
               }
 

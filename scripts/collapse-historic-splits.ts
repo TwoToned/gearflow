@@ -40,6 +40,7 @@ import { nextOrdinal } from "../src/lib/line-item-units";
 
 const args = process.argv.slice(2);
 const apply = args.includes("--apply");
+const diagnose = args.includes("--diagnose");
 const projIdx = args.indexOf("--project");
 const projectFilter = projIdx >= 0 ? args[projIdx + 1] : undefined;
 const runId = `historic-${new Date().toISOString().replace(/[:.]/g, "-")}`;
@@ -149,6 +150,7 @@ async function main() {
 
   const groups: Group[] = [];
   const flagged: { key: string; reason: string; rows: CandidateRow[] }[] = [];
+  const unmatched: { key: string; rows: CandidateRow[]; reason: string }[] = [];
   for (const [key, bucket] of byKey) {
     if (bucket.length < 2) continue;
     const parents = bucket.filter(looksLikePricedParent);
@@ -156,7 +158,18 @@ async function main() {
     const others = bucket.filter(
       (r) => !looksLikePricedParent(r) && !looksLikeSplitChild(r),
     );
-    if (parents.length === 0 || children.length === 0) continue;
+    if (parents.length === 0 || children.length === 0) {
+      // In diagnose mode we surface these so the user can see why
+      // their data didn't match the expected shape.
+      unmatched.push({
+        key,
+        rows: bucket,
+        reason: parents.length === 0
+          ? "no row matches priced-parent shape (qty>=1, unitPrice>0, no assetId, no bulkAssetId)"
+          : "no row matches split-child shape (qty=1, unitPrice=0/null, assetId set, not kit child)",
+      });
+      continue;
+    }
     if (parents.length > 1) {
       flagged.push({
         key,
@@ -191,7 +204,55 @@ async function main() {
   console.log(`Candidate buckets: ${byKey.size}`);
   console.log(`Mergeable groups:  ${groups.length}`);
   console.log(`Flagged:           ${flagged.length}`);
+  console.log(`Unmatched buckets: ${unmatched.length}`);
   console.log();
+
+  // Look up project + model labels up-front so both the diagnostic and
+  // the merge plan output can show human-readable names.
+  const allProjectIds = new Set<string>();
+  const allModelIds = new Set<string>();
+  for (const arr of [groups, flagged.map((f) => ({ canonical: f.rows[0], children: f.rows.slice(1) })), unmatched.map((u) => ({ canonical: u.rows[0], children: u.rows.slice(1) }))]) {
+    for (const g of arr) {
+      if (g.canonical?.projectId) allProjectIds.add(g.canonical.projectId);
+      if (g.canonical?.modelId) allModelIds.add(g.canonical.modelId);
+    }
+  }
+  const [allProjects, allModels] = await Promise.all([
+    allProjectIds.size
+      ? prisma.project.findMany({ where: { id: { in: [...allProjectIds] } }, select: { id: true, projectNumber: true, name: true } })
+      : [],
+    allModelIds.size
+      ? prisma.model.findMany({ where: { id: { in: [...allModelIds] } }, select: { id: true, name: true } })
+      : [],
+  ]);
+  const projById = new Map(allProjects.map((p) => [p.id, p]));
+  const modelById = new Map(allModels.map((m) => [m.id, m]));
+
+  if (diagnose || (groups.length === 0 && flagged.length === 0 && unmatched.length > 0)) {
+    console.log("─── Unmatched bucket diagnostics ─────────────────────────────");
+    console.log("(Buckets where rows shared an order-level key but didn't fit");
+    console.log(" the priced-parent + split-child shape. Useful for tuning the");
+    console.log(" detection heuristics for this data set.)");
+    console.log();
+    for (let i = 0; i < unmatched.length; i++) {
+      const u = unmatched[i];
+      console.log(`[bucket ${i + 1}/${unmatched.length}] ${u.reason}`);
+      for (const r of u.rows) {
+        const proj = projById.get(r.projectId);
+        const model = r.modelId ? modelById.get(r.modelId) : null;
+        const price = r.unitPrice ? r.unitPrice.toString() : "null";
+        const total = r.lineTotal ? r.lineTotal.toString() : "null";
+        const assetTag = r.assetId ? r.assetId.slice(0, 8) + "…" : "—";
+        const bulkTag = r.bulkAssetId ? r.bulkAssetId.slice(0, 8) + "…" : "—";
+        const cat = r.categoryId ? r.categoryId.slice(0, 8) + "…" : "—";
+        const grp = r.groupId ? r.groupId.slice(0, 8) + "…" : "—";
+        console.log(
+          `  ${r.id.slice(0, 10)}…  ${proj?.projectNumber ?? "?"}  ${model?.name ?? "?"}  qty=${r.quantity}  price=${price}  total=${total}  assetId=${assetTag}  bulkId=${bulkTag}  status=${r.status}  cat=${cat}  group=${grp}  kitChild=${r.isKitChild}  parent=${r.parentLineItemId ? r.parentLineItemId.slice(0, 8) + "…" : "—"}`,
+        );
+      }
+      console.log();
+    }
+  }
 
   if (flagged.length > 0) {
     console.log("Flagged groups (NOT merged):");
@@ -205,20 +266,6 @@ async function main() {
     }
     console.log();
   }
-
-  // Project / model display for the action log.
-  const projectIds = [...new Set(groups.map((g) => g.canonical.projectId))];
-  const modelIds = [...new Set(groups.map((g) => g.canonical.modelId).filter(Boolean) as string[])];
-  const [projects, models] = await Promise.all([
-    projectIds.length
-      ? prisma.project.findMany({ where: { id: { in: projectIds } }, select: { id: true, projectNumber: true, name: true } })
-      : [],
-    modelIds.length
-      ? prisma.model.findMany({ where: { id: { in: modelIds } }, select: { id: true, name: true } })
-      : [],
-  ]);
-  const projById = new Map(projects.map((p) => [p.id, p]));
-  const modelById = new Map(models.map((m) => [m.id, m]));
 
   let touched = 0;
   let unitsMoved = 0;

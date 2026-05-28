@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
-import { prepUnit } from "@/server/line-item-fulfillment";
+import { prepUnit, syncLineItemRollup } from "@/server/line-item-fulfillment";
 import type { Prisma } from "@/generated/prisma/client";
 import {
   completeCheckAndPackSchema,
@@ -268,19 +268,71 @@ export async function deprepItem(
       throw new Error("Item is already deployed — return it first");
     }
 
-    // For bulk split items (qty=1 with bulkAssetId), just reset prepStatus like serialized
-    // The split item stays as-is (doesn't merge back into original)
-
-    // Serialized item: clear prepStatus, unassign asset only for non-kit-child items
-    const updated = await tx.projectLineItem.update({
-      where: { id: lineItemId },
-      data: {
-        prepStatus: "PENDING",
-        ...(!lineItem.isKitChild && lineItem.assetId ? { asset: { disconnect: true } } : {}),
+    // Clean up the unit rows. Post-cutover, prep creates a unit per
+    // assigned asset (and marks it PACKED); deprep needs to remove
+    // them or the asset stays "stuck" on the line — visible in the
+    // project view, on dockets, and blocking the asset from being
+    // reassigned to a different line / project. Without this the
+    // line.prepStatus reset is cosmetic.
+    //
+    // asset.status is left alone — prep never marked it CHECKED_OUT,
+    // so it's still AVAILABLE. The unit row carries the assignment;
+    // deleting the unit removes the assignment.
+    const preppedUnits = await tx.projectLineItemUnit.findMany({
+      where: {
+        lineItemId,
+        status: { not: "CHECKED_OUT" },
       },
+      orderBy: { ordinal: "desc" },
+      select: { id: true, quantity: true, bulkAssetId: true, assetId: true },
+    });
+
+    // Partial bulk deprep: a single bulk unit row carries the qty —
+    // reduce its quantity instead of deleting the whole row.
+    const isPartialBulk =
+      preppedUnits.length === 1 &&
+      preppedUnits[0].bulkAssetId &&
+      !preppedUnits[0].assetId &&
+      quantity < preppedUnits[0].quantity;
+    if (isPartialBulk) {
+      await tx.projectLineItemUnit.update({
+        where: { id: preppedUnits[0].id },
+        data: { quantity: preppedUnits[0].quantity - quantity },
+      });
+    } else {
+      // Serialised deprep — remove `quantity` units, highest-ordinal
+      // first (preserves the lower ordinals for staff who already
+      // pulled them physically; also natural LIFO).
+      const removeCount = Math.min(quantity, preppedUnits.length);
+      for (let i = 0; i < removeCount; i++) {
+        await tx.projectLineItemUnit.delete({
+          where: { id: preppedUnits[i].id },
+        });
+      }
+    }
+
+    // Clear legacy line.assetId (kit children excepted — they store
+    // their asset there as an active path, not as a fulfillment row).
+    if (!lineItem.isKitChild && lineItem.assetId) {
+      await tx.projectLineItem.update({
+        where: { id: lineItemId },
+        data: { asset: { disconnect: true } },
+      });
+    }
+
+    // Recompute rollup. With units gone, deriveOrderLinePrepStatus
+    // falls back to whatever was on the line — explicitly reset to
+    // PENDING here so the line returns to the prep tab.
+    await tx.projectLineItem.update({
+      where: { id: lineItemId },
+      data: { prepStatus: "PENDING" },
+    });
+    await syncLineItemRollup(tx, lineItemId);
+
+    return tx.projectLineItem.findUniqueOrThrow({
+      where: { id: lineItemId },
       include: { model: true, asset: true, bulkAsset: true },
     });
-    return updated;
   });
 
   await logActivity({

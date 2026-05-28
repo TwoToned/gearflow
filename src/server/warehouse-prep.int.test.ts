@@ -26,7 +26,7 @@ vi.mock("@/lib/org-context", () => ({
 }));
 
 import { checkOutItems } from "@/server/warehouse";
-import { prepItemDirect, pullItem } from "@/server/check-records";
+import { prepItemDirect, pullItem, deprepItem } from "@/server/check-records";
 
 async function createProjectFixture(orgId: string) {
   return testPrisma.project.create({
@@ -175,6 +175,88 @@ describe("prepItemDirect — fulfillment model", () => {
     expect(units).toHaveLength(1);
     expect(units[0].assetId).toBe(asset.id);
     expect(units[0].prepStatus).toBe("PACKED");
+  });
+
+  it("deprepping a fully-prepped multi-unit line removes its assigned units", async () => {
+    // Regression for the user-reported symptom: prep 10x line (10
+    // units created with asset ids), then click Deprep. Old behaviour
+    // only flipped line.prepStatus — units stayed around with their
+    // asset ids, asset shown as "still assigned" in the project view
+    // and the warehouse couldn't re-prep onto different assets.
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id);
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+
+    const model = await createModelFixture(org.id);
+    const project = await createProjectFixture(org.id);
+    const line = await createLineItemFixture(org.id, project.id, model.id, 3);
+    const a1 = await createAssetFixture(org.id, model.id, { assetTag: "DP-1" });
+    const a2 = await createAssetFixture(org.id, model.id, { assetTag: "DP-2" });
+    const a3 = await createAssetFixture(org.id, model.id, { assetTag: "DP-3" });
+
+    // Prep all 3 units.
+    await prepItemDirect(project.id, line.id, a1.id);
+    await prepItemDirect(project.id, line.id, a2.id);
+    await prepItemDirect(project.id, line.id, a3.id);
+
+    let units = await testPrisma.projectLineItemUnit.findMany({
+      where: { lineItemId: line.id },
+    });
+    expect(units).toHaveLength(3);
+
+    // Deprep all 3 in one call (matches the UI's "deprep selected" path).
+    await deprepItem(project.id, line.id, 3);
+
+    units = await testPrisma.projectLineItemUnit.findMany({
+      where: { lineItemId: line.id },
+    });
+    expect(units).toHaveLength(0);
+
+    const refreshed = await testPrisma.projectLineItem.findUniqueOrThrow({
+      where: { id: line.id },
+    });
+    expect(refreshed.prepStatus).toBe("PENDING");
+    expect(refreshed.assignedQuantity).toBe(0);
+    expect(refreshed.packedQuantity).toBe(0);
+    expect(refreshed.quantity).toBe(3);
+
+    // Assets weren't affected — they were never marked CHECKED_OUT
+    // during prep, so they should still be AVAILABLE.
+    const assets = await testPrisma.asset.findMany({
+      where: { id: { in: [a1.id, a2.id, a3.id] } },
+    });
+    expect(assets.every((a) => a.status === "AVAILABLE")).toBe(true);
+  });
+
+  it("partial deprep keeps remaining prepped units and stays PACKED", async () => {
+    // Deprep 1 of 3 prepped → line still PACKED (2 units left).
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id);
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+
+    const model = await createModelFixture(org.id);
+    const project = await createProjectFixture(org.id);
+    const line = await createLineItemFixture(org.id, project.id, model.id, 3);
+    const assets = [];
+    for (let i = 0; i < 3; i++) {
+      const a = await createAssetFixture(org.id, model.id, { assetTag: `PD-${i}` });
+      assets.push(a);
+      await prepItemDirect(project.id, line.id, a.id);
+    }
+
+    await deprepItem(project.id, line.id, 1);
+
+    const units = await testPrisma.projectLineItemUnit.findMany({
+      where: { lineItemId: line.id }, orderBy: { ordinal: "asc" },
+    });
+    expect(units).toHaveLength(2);
+
+    const refreshed = await testPrisma.projectLineItem.findUniqueOrThrow({
+      where: { id: line.id },
+    });
+    // 2 units still PACKED → line remains PACKED via rollup derivation.
+    expect(refreshed.prepStatus).toBe("PACKED");
+    expect(refreshed.packedQuantity).toBe(2);
   });
 
   it("operator-set FLAGGED_FAULTY survives a later unit pack", async () => {

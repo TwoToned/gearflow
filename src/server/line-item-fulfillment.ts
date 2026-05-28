@@ -138,6 +138,191 @@ export async function ensureBulkUnit(
 }
 
 /**
+ * Map a return condition to the canonical asset status to set on
+ * checkin. Centralised so checkInItems, completeCheckAndStore, and
+ * any future caller stay in sync.
+ */
+export function assetStatusFromReturnCondition(
+  cond: "GOOD" | "DAMAGED" | "MISSING",
+): "AVAILABLE" | "IN_MAINTENANCE" | "LOST" {
+  if (cond === "DAMAGED") return "IN_MAINTENANCE";
+  if (cond === "MISSING") return "LOST";
+  return "AVAILABLE";
+}
+
+/**
+ * Return one or many units on a line. THE single source of truth for
+ * what "returning" means physically: flip the matching unit row(s) to
+ * RETURNED, restore the asset(s), update location.
+ *
+ * Three modes:
+ *   - `assetId` given → return exactly that asset's unit (scan flow).
+ *   - `bulkAssetId` given → accumulate quantity onto the bulk unit row.
+ *   - Neither → "return whole line": find every still-out unit and
+ *     flip each. Falls back to flipping the order line directly if no
+ *     units exist (kit children + legacy lines).
+ *
+ * Caller is responsible for the `requirePermission` check and the
+ * surrounding $transaction. This function MUST run inside one. Caller
+ * also handles syncLineItemRollup at the end (so multiple returns on
+ * the same line in one outer call only re-roll once).
+ *
+ * Returns the count of unit rows that were actually flipped (useful
+ * for scan-log notes; the caller can decide whether to write a log).
+ */
+export async function returnLineUnits(
+  tx: Prisma.TransactionClient,
+  args: {
+    organizationId: string;
+    projectId: string;
+    lineItemId: string;
+    /** Specific asset being returned via a scan. */
+    assetId?: string | null;
+    /** Bulk asset for legacy bulk lines (line.bulkAssetId). */
+    bulkAssetId?: string | null;
+    returnCondition: "GOOD" | "DAMAGED" | "MISSING";
+    quantity?: number;
+    notes?: string | null;
+    /** User performing the return — stamped on unit + asset scan log. */
+    userId: string;
+    /** Where the asset goes back to. */
+    defaultLocationId: string | null;
+  },
+): Promise<{ unitsFlipped: number; assetsTouched: string[] }> {
+  const assetStatus = assetStatusFromReturnCondition(args.returnCondition);
+  const lineItem = await tx.projectLineItem.findFirstOrThrow({
+    where: {
+      id: args.lineItemId,
+      projectId: args.projectId,
+      organizationId: args.organizationId,
+    },
+  });
+
+  // ── 1. Specific asset (scan) ────────────────────────────────────
+  const targetAssetId = args.assetId || lineItem.assetId || null;
+  if (targetAssetId) {
+    const unit = await tx.projectLineItemUnit.findUnique({
+      where: {
+        lineItemId_assetId: {
+          lineItemId: lineItem.id,
+          assetId: targetAssetId,
+        },
+      },
+      select: { id: true, status: true },
+    });
+    if (!unit) {
+      // Kit child / legacy line — no unit; flip the line + asset directly.
+      await tx.projectLineItem.update({
+        where: { id: lineItem.id },
+        data: {
+          status: "RETURNED",
+          returnedQuantity: lineItem.quantity,
+          returnedAt: new Date(),
+          returnedBy: { connect: { id: args.userId } },
+          returnCondition: args.returnCondition,
+          returnNotes: args.notes || null,
+        },
+      });
+      await tx.asset.update({
+        where: { id: targetAssetId },
+        data: { status: assetStatus, locationId: args.defaultLocationId },
+      });
+      return { unitsFlipped: 0, assetsTouched: [targetAssetId] };
+    }
+    // Guarded transition.
+    const flipped = await tx.projectLineItemUnit.updateMany({
+      where: { id: unit.id, status: "CHECKED_OUT" },
+      data: {
+        status: "RETURNED",
+        returnedAt: new Date(),
+        returnedById: args.userId,
+        returnCondition: args.returnCondition,
+        returnNotes: args.notes || null,
+      },
+    });
+    if (flipped.count > 0) {
+      await tx.asset.update({
+        where: { id: targetAssetId },
+        data: { status: assetStatus, locationId: args.defaultLocationId },
+      });
+    }
+    return { unitsFlipped: flipped.count, assetsTouched: [targetAssetId] };
+  }
+
+  // ── 2. Bulk line return ────────────────────────────────────────
+  const targetBulkId = args.bulkAssetId || lineItem.bulkAssetId || null;
+  if (targetBulkId) {
+    const returnQty = args.quantity || 1;
+    const unit = await tx.projectLineItemUnit.findFirst({
+      where: { lineItemId: lineItem.id, bulkAssetId: targetBulkId },
+    });
+    if (unit) {
+      const newReturned = Math.min(
+        unit.quantity,
+        unit.returnedQuantity + returnQty,
+      );
+      const fullyReturned = newReturned >= unit.quantity;
+      await tx.projectLineItemUnit.update({
+        where: { id: unit.id },
+        data: {
+          returnedQuantity: newReturned,
+          status: fullyReturned ? "RETURNED" : "CHECKED_OUT",
+          returnedAt: fullyReturned ? new Date() : unit.returnedAt,
+          returnedById: fullyReturned ? args.userId : unit.returnedById,
+          returnCondition: args.returnCondition,
+          returnNotes: args.notes || unit.returnNotes,
+        },
+      });
+    }
+    return { unitsFlipped: unit ? 1 : 0, assetsTouched: [] };
+  }
+
+  // ── 3. Return-whole-line ───────────────────────────────────────
+  // No specific asset and no line-level bulk: find every still-out
+  // unit on this line and flip each. If there are none, the line is
+  // a kit child / generic — flip the line itself.
+  const outUnits = await tx.projectLineItemUnit.findMany({
+    where: { lineItemId: lineItem.id, status: "CHECKED_OUT" },
+  });
+  if (outUnits.length === 0) {
+    await tx.projectLineItem.update({
+      where: { id: lineItem.id },
+      data: {
+        status: "RETURNED",
+        returnedQuantity: lineItem.checkedOutQuantity || lineItem.quantity,
+        returnedAt: new Date(),
+        returnedBy: { connect: { id: args.userId } },
+        returnCondition: args.returnCondition,
+        returnNotes: args.notes || null,
+      },
+    });
+    return { unitsFlipped: 0, assetsTouched: [] };
+  }
+  const assetsTouched: string[] = [];
+  for (const u of outUnits) {
+    await tx.projectLineItemUnit.update({
+      where: { id: u.id },
+      data: {
+        status: "RETURNED",
+        returnedAt: new Date(),
+        returnedById: args.userId,
+        returnCondition: args.returnCondition,
+        returnNotes: args.notes || null,
+        ...(u.bulkAssetId ? { returnedQuantity: u.quantity } : {}),
+      },
+    });
+    if (u.assetId) {
+      await tx.asset.update({
+        where: { id: u.assetId },
+        data: { status: assetStatus, locationId: args.defaultLocationId },
+      });
+      assetsTouched.push(u.assetId);
+    }
+  }
+  return { unitsFlipped: outUnits.length, assetsTouched };
+}
+
+/**
  * Mark a unit prepped/packed (the pick-and-pack step before checkout).
  * Serialised and bulk lines get a PACKED unit row; a generic line with no
  * asset assigned just carries prepStatus on the order line. Rolls the line

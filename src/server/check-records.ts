@@ -4,7 +4,11 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
-import { prepUnit, syncLineItemRollup } from "@/server/line-item-fulfillment";
+import {
+  prepUnit,
+  syncLineItemRollup,
+  returnLineUnits,
+} from "@/server/line-item-fulfillment";
 import type { Prisma } from "@/generated/prisma/client";
 import {
   completeCheckAndPackSchema,
@@ -826,27 +830,7 @@ export async function completeCheckAndStore(
       parsed.checks
     );
 
-    // 3. Map condition to return status
-    let returnStatus: "STORED" | "DAMAGED" | "LOST";
-    let assetStatus: "AVAILABLE" | "IN_MAINTENANCE" | "LOST";
-
-    switch (parsed.condition) {
-      case "DAMAGED":
-        returnStatus = "DAMAGED";
-        assetStatus = "IN_MAINTENANCE";
-        break;
-      case "MISSING":
-        returnStatus = "LOST";
-        assetStatus = "LOST";
-        break;
-      case "GOOD":
-      default:
-        returnStatus = "STORED";
-        assetStatus = "AVAILABLE";
-        break;
-    }
-
-    // 4. Determine return location
+    // 3. Determine return location
     let locationId = parsed.locationId || null;
     if (!locationId) {
       const defaultLocation = await tx.location.findFirst({
@@ -856,68 +840,41 @@ export async function completeCheckAndStore(
       locationId = defaultLocation?.id || null;
     }
 
-    // 5. Perform checkin (replicates checkInItems internal logic)
-    const resolvedAssetIdForReturn = parsed.assetId || lineItem.assetId;
-    const isBulk = resolvedAssetIdForReturn
-      ? false
-      : (!!lineItem.bulkAssetId || (!lineItem.assetId && lineItem.quantity > 1));
+    // 4. Perform the actual return via the canonical helper — same
+    //    code path checkInItems uses, so a multi-unit line's units
+    //    and assets all get flipped, not just the order-line counter.
+    //    Pre-cutover this function hand-rolled the checkin, which
+    //    only touched `line.returnedQuantity` and left units / assets
+    //    stuck in CHECKED_OUT — the root cause of "return didn't
+    //    release the assets" on multi-quantity serialised lines.
+    const { unitsFlipped, assetsTouched } = await returnLineUnits(tx, {
+      organizationId,
+      projectId: parsed.projectId,
+      lineItemId: parsed.lineItemId,
+      assetId: parsed.assetId,
+      bulkAssetId: parsed.bulkAssetId,
+      returnCondition: parsed.condition,
+      quantity: 1,
+      notes: parsed.notes,
+      userId,
+      defaultLocationId: locationId,
+    });
 
-    if (isBulk) {
-      const newReturnedQty = lineItem.returnedQuantity + 1;
-      const fullyReturned = newReturnedQty >= lineItem.checkedOutQuantity;
+    // 5. Sync rollup counters + derived status.
+    await syncLineItemRollup(tx, parsed.lineItemId);
 
-      await tx.projectLineItem.update({
-        where: { id: parsed.lineItemId },
-        data: {
-          returnedQuantity: newReturnedQty,
-          status: fullyReturned ? "RETURNED" : "CHECKED_OUT",
-          returnedAt: fullyReturned ? new Date() : lineItem.returnedAt,
-          ...(fullyReturned
-            ? { returnedBy: { connect: { id: userId } } }
-            : {}),
-          returnCondition: fullyReturned
-            ? parsed.condition
-            : lineItem.returnCondition,
-          returnNotes: parsed.notes || lineItem.returnNotes,
-          returnStatus,
-        },
-      });
-    } else {
-      await tx.projectLineItem.update({
-        where: { id: parsed.lineItemId },
-        data: {
-          status: "RETURNED",
-          returnedQuantity: 1,
-          returnedAt: new Date(),
-          returnedBy: { connect: { id: userId } },
-          returnCondition: parsed.condition,
-          returnNotes: parsed.notes || null,
-          asset: lineItem.assetId ? { disconnect: true } : undefined,
-          returnStatus,
-        },
-      });
-
-      if (lineItem.assetId) {
-        await tx.asset.update({
-          where: { id: lineItem.assetId },
-          data: {
-            status: assetStatus,
-            locationId,
-          },
-        });
-      }
-    }
-
-    // 6. Create scan log
+    // 6. Scan log
     await tx.assetScanLog.create({
       data: {
         organizationId,
-        assetId: lineItem.assetId || null,
+        assetId: assetsTouched.length === 1 ? assetsTouched[0] : null,
         bulkAssetId: lineItem.bulkAssetId || null,
         projectId: parsed.projectId,
         action: "CHECK_IN",
         scannedById: userId,
-        notes: parsed.notes || `Checked + ${returnStatus.toLowerCase()}`,
+        notes:
+          parsed.notes ||
+          `Checked + returned ${unitsFlipped || assetsTouched.length} unit(s)`,
       },
     });
 

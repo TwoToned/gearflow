@@ -10,6 +10,7 @@ import {
   syncLineItemRollup,
   ensureSerialisedUnit,
   ensureBulkUnit,
+  returnLineUnits,
 } from "@/server/line-item-fulfillment";
 import {
   adjustBulkAvailability,
@@ -786,210 +787,49 @@ export async function checkInItems(
     const defaultLocationId = defaultLocation?.id || null;
 
     for (const item of items) {
-      // Verify line item belongs to this project and org
-      const lineItem = await tx.projectLineItem.findFirst({
-        where: {
-          id: item.lineItemId,
-          projectId,
-          organizationId,
-        },
+      // Delegate the unit / asset surgery to the canonical helper —
+      // also used by completeCheckAndStore so the two paths can't drift.
+      const { unitsFlipped, assetsTouched } = await returnLineUnits(tx, {
+        organizationId,
+        projectId,
+        lineItemId: item.lineItemId,
+        assetId: item.assetId,
+        returnCondition: item.returnCondition,
+        quantity: item.quantity,
+        notes: item.notes,
+        userId,
+        defaultLocationId,
       });
 
-      if (!lineItem) {
-        throw new Error(`Line item ${item.lineItemId} not found in project`);
-      }
-
-      const targetAssetId = item.assetId || lineItem.assetId || null;
-
-      if (targetAssetId) {
-        // ── Serialised return — flip the unit, restore the asset ─────────
-        const assetStatus: "AVAILABLE" | "IN_MAINTENANCE" | "LOST" =
-          item.returnCondition === "DAMAGED"
-            ? "IN_MAINTENANCE"
-            : item.returnCondition === "MISSING"
-              ? "LOST"
-              : "AVAILABLE";
-
-        const unit = await tx.projectLineItemUnit.findUnique({
-          where: {
-            lineItemId_assetId: {
-              lineItemId: lineItem.id,
-              assetId: targetAssetId,
-            },
-          },
-          select: { id: true },
-        });
-
-        if (!unit) {
-          // No unit row — a kit child or an un-migrated legacy line that
-          // still carries its asset directly. Return the line itself.
-          await tx.projectLineItem.update({
-            where: { id: lineItem.id },
-            data: {
-              status: "RETURNED",
-              returnedQuantity: 1,
-              returnedAt: new Date(),
-              returnedBy: { connect: { id: userId } },
-              returnCondition: item.returnCondition,
-              returnNotes: item.notes || null,
-            },
-          });
-          await tx.asset.update({
-            where: { id: targetAssetId },
-            data: { status: assetStatus, locationId: defaultLocationId },
-          });
-          await tx.assetScanLog.create({
-            data: {
-              organizationId,
-              assetId: targetAssetId,
-              projectId,
-              action: "CHECK_IN",
-              scannedById: userId,
-              notes: item.notes || null,
-            },
-          });
-          updated.push(
-            await tx.projectLineItem.findUnique({
-              where: { id: lineItem.id },
-              include: { model: true, asset: true, bulkAsset: true },
-            }),
-          );
-          continue;
-        }
-
-        // Guarded transition — only return a unit that is still out.
-        const flipped = await tx.projectLineItemUnit.updateMany({
-          where: { id: unit.id, status: "CHECKED_OUT" },
-          data: {
-            status: "RETURNED",
-            returnedAt: new Date(),
-            returnedById: userId,
-            returnCondition: item.returnCondition,
-            returnNotes: item.notes || null,
-          },
-        });
-
-        if (flipped.count > 0) {
-          await tx.asset.update({
-            where: { id: targetAssetId },
-            data: { status: assetStatus, locationId: defaultLocationId },
-          });
-          await tx.assetScanLog.create({
-            data: {
-              organizationId,
-              assetId: targetAssetId,
-              projectId,
-              action: "CHECK_IN",
-              scannedById: userId,
-              notes: item.notes || null,
-            },
-          });
-        }
-      } else if (lineItem.bulkAssetId) {
-        // ── Bulk return — accumulate onto the bulk unit row ──────────────
-        const returnQty = item.quantity || 1;
-        const unit = await tx.projectLineItemUnit.findFirst({
-          where: { lineItemId: lineItem.id, bulkAssetId: lineItem.bulkAssetId },
-        });
-        if (unit) {
-          const newReturned = Math.min(
-            unit.quantity,
-            unit.returnedQuantity + returnQty,
-          );
-          const fullyReturned = newReturned >= unit.quantity;
-          await tx.projectLineItemUnit.update({
-            where: { id: unit.id },
-            data: {
-              returnedQuantity: newReturned,
-              status: fullyReturned ? "RETURNED" : "CHECKED_OUT",
-              returnedAt: fullyReturned ? new Date() : unit.returnedAt,
-              returnedById: fullyReturned ? userId : unit.returnedById,
-              returnCondition: item.returnCondition,
-              returnNotes: item.notes || unit.returnNotes,
-            },
-          });
-        }
+      // Scan log: one entry per checkin call, with a useful note for
+      // bulk / line-level returns.
+      if (assetsTouched.length === 1) {
         await tx.assetScanLog.create({
           data: {
             organizationId,
-            bulkAssetId: lineItem.bulkAssetId,
+            assetId: assetsTouched[0],
             projectId,
             action: "CHECK_IN",
             scannedById: userId,
-            notes: item.notes || `Returned ${returnQty}`,
+            notes: item.notes || null,
           },
         });
-      } else {
-        // No specific asset scanned — the "return whole line" path. Return
-        // every unit still out on this line.
-        const outUnits = await tx.projectLineItemUnit.findMany({
-          where: { lineItemId: lineItem.id, status: "CHECKED_OUT" },
+      } else if (unitsFlipped > 0 || assetsTouched.length > 0) {
+        await tx.assetScanLog.create({
+          data: {
+            organizationId,
+            projectId,
+            action: "CHECK_IN",
+            scannedById: userId,
+            notes: item.notes || `Returned ${unitsFlipped} unit(s)`,
+          },
         });
-
-        if (outUnits.length > 0) {
-          for (const u of outUnits) {
-            await tx.projectLineItemUnit.update({
-              where: { id: u.id },
-              data: {
-                status: "RETURNED",
-                returnedAt: new Date(),
-                returnedById: userId,
-                returnCondition: item.returnCondition,
-                returnNotes: item.notes || null,
-                ...(u.bulkAssetId ? { returnedQuantity: u.quantity } : {}),
-              },
-            });
-            if (u.assetId) {
-              const assetStatus =
-                item.returnCondition === "DAMAGED"
-                  ? "IN_MAINTENANCE"
-                  : item.returnCondition === "MISSING"
-                    ? "LOST"
-                    : "AVAILABLE";
-              await tx.asset.update({
-                where: { id: u.assetId },
-                data: { status: assetStatus, locationId: defaultLocationId },
-              });
-            }
-          }
-          await tx.assetScanLog.create({
-            data: {
-              organizationId,
-              projectId,
-              action: "CHECK_IN",
-              scannedById: userId,
-              notes: item.notes || `Returned ${outUnits.length} unit(s)`,
-            },
-          });
-        } else {
-          // Genuinely no units — flip the order line directly.
-          await tx.projectLineItem.update({
-            where: { id: lineItem.id },
-            data: {
-              status: "RETURNED",
-              returnedQuantity:
-                lineItem.checkedOutQuantity || lineItem.quantity,
-              returnedAt: new Date(),
-              returnedBy: { connect: { id: userId } },
-              returnCondition: item.returnCondition,
-              returnNotes: item.notes || null,
-            },
-          });
-          updated.push(
-            await tx.projectLineItem.findUnique({
-              where: { id: lineItem.id },
-              include: { model: true, asset: true, bulkAsset: true },
-            }),
-          );
-          continue;
-        }
       }
 
-      // Roll the unit change up onto the order line.
-      await syncLineItemRollup(tx, lineItem.id);
+      await syncLineItemRollup(tx, item.lineItemId);
       updated.push(
         await tx.projectLineItem.findUnique({
-          where: { id: lineItem.id },
+          where: { id: item.lineItemId },
           include: { model: true, asset: true, bulkAsset: true },
         }),
       );

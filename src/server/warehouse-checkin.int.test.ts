@@ -34,6 +34,7 @@ import {
   checkInItems,
   lookupAssetForScan,
 } from "@/server/warehouse";
+import { completeCheckAndStore } from "@/server/check-records";
 
 async function createProjectFixture(orgId: string) {
   return testPrisma.project.create({
@@ -302,5 +303,94 @@ describe("checkInItems — fulfillment model round-trip", () => {
     expect(after.reason).toBeNull();
     expect(after.lineItemId).toBe(line.id);
     expect(after.assetId).toBe(asset.id);
+  });
+
+  it("completeCheckAndStore on a multi-unit line returns every unit + asset", async () => {
+    // The bug from deep review: completeCheckAndStore hand-rolled its
+    // own checkin logic — only incremented line.returnedQuantity and
+    // flipped line.status. On a multi-unit serialised line the units
+    // and physical assets stayed CHECKED_OUT forever. Fix delegates
+    // to returnLineUnits (the same code path checkInItems uses).
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id);
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+
+    const model = await createModelFixture(org.id);
+    const project = await createProjectFixture(org.id);
+    const line = await createLineItemFixture(org.id, project.id, model.id, {
+      quantity: 3,
+    });
+    const a1 = await createAssetFixture(org.id, model.id, { assetTag: "RX-1" });
+    const a2 = await createAssetFixture(org.id, model.id, { assetTag: "RX-2" });
+    const a3 = await createAssetFixture(org.id, model.id, { assetTag: "RX-3" });
+
+    // Deploy all 3.
+    await checkOutItems(project.id, [
+      { lineItemId: line.id, assetId: a1.id },
+      { lineItemId: line.id, assetId: a2.id },
+      { lineItemId: line.id, assetId: a3.id },
+    ]);
+
+    // Need a CheckItem so completeCheckAndStore's `checks` array is
+    // valid (the schema requires >= 1).
+    const checkItem = await testPrisma.checkItem.create({
+      data: {
+        organizationId: org.id,
+        label: "Visual inspection",
+        type: "PASS_FAIL",
+      },
+    });
+    const checks = [{
+      checkItemId: checkItem.id,
+      result: "PASS" as const,
+      photos: [],
+    }];
+
+    // Pre-cutover the warehouse UI calls this once per unit (queue of
+    // N check forms). Each call should flip exactly one unit + asset.
+    await completeCheckAndStore({
+      projectId: project.id,
+      lineItemId: line.id,
+      assetId: a1.id,
+      checks,
+      condition: "GOOD",
+    });
+    await completeCheckAndStore({
+      projectId: project.id,
+      lineItemId: line.id,
+      assetId: a2.id,
+      checks,
+      condition: "DAMAGED",
+    });
+    await completeCheckAndStore({
+      projectId: project.id,
+      lineItemId: line.id,
+      assetId: a3.id,
+      checks,
+      condition: "MISSING",
+    });
+
+    // Units all RETURNED with the correct condition.
+    const units = await testPrisma.projectLineItemUnit.findMany({
+      where: { lineItemId: line.id },
+      orderBy: { ordinal: "asc" },
+    });
+    expect(units.every((u) => u.status === "RETURNED")).toBe(true);
+
+    // Assets transitioned per their return condition.
+    const a1After = await testPrisma.asset.findUniqueOrThrow({ where: { id: a1.id } });
+    const a2After = await testPrisma.asset.findUniqueOrThrow({ where: { id: a2.id } });
+    const a3After = await testPrisma.asset.findUniqueOrThrow({ where: { id: a3.id } });
+    expect(a1After.status).toBe("AVAILABLE");        // GOOD
+    expect(a2After.status).toBe("IN_MAINTENANCE");   // DAMAGED
+    expect(a3After.status).toBe("LOST");             // MISSING
+
+    // Line rolled up properly.
+    const refreshed = await testPrisma.projectLineItem.findUniqueOrThrow({
+      where: { id: line.id },
+    });
+    expect(refreshed.status).toBe("RETURNED");
+    expect(refreshed.returnedQuantity).toBe(3);
+    expect(refreshed.checkedOutQuantity).toBe(0);
   });
 });

@@ -338,9 +338,19 @@ export async function completeCheckAndDeprep(data: {
         `Deprep return check requires RETURNED status (got ${lineItem.status})`
       );
     }
-    if (lineItem.prepStatus !== "PACKED") {
+    // Idempotent on prepStatus. A multi-unit line generates N sequential
+    // completeCheckAndDeprep calls — the first resets prepStatus from
+    // PACKED to PENDING, and the remaining calls would have failed a
+    // strict PACKED-only precondition. We still want each call to save
+    // its check records (one per asset), and resetting prepStatus to
+    // PENDING is idempotent. Only reject states that indicate the line
+    // never went through prep at all (eg FLAGGED_FAULTY).
+    if (
+      lineItem.prepStatus !== "PACKED" &&
+      lineItem.prepStatus !== "PENDING"
+    ) {
       throw new Error(
-        `Deprep return check requires prepStatus=PACKED (got ${lineItem.prepStatus ?? "null"})`
+        `Deprep return check expected prepStatus=PACKED or PENDING (got ${lineItem.prepStatus ?? "null"})`
       );
     }
 

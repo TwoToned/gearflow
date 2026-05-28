@@ -118,6 +118,14 @@ interface LineItemData {
   supplier?: { name: string } | null;
   model?: { name: string; dailyRate?: unknown; weeklyRate?: unknown; monthlyRate?: unknown } | null;
   asset?: { assetTag?: string | null } | null;
+  /** Post-cutover per-unit assignments. Source of truth for which
+   *  physical assets a multi-quantity line is using. */
+  units?: Array<{
+    id: string;
+    ordinal: number;
+    asset?: { id: string; assetTag: string } | null;
+    bulkAsset?: { id: string; assetTag: string } | null;
+  }>;
   kit?: { name?: string } | null;
   childLineItems?: LineItemData[];
 }
@@ -496,9 +504,30 @@ function SortableLineItemRow({
           {hasChildren && (
             <span className="text-xs text-fg-3">{item.childLineItems!.length} item{item.childLineItems!.length !== 1 ? "s" : ""}</span>
           )}
-          {item.asset?.assetTag && (
-            <span className="text-xs text-fg-3">({item.asset.assetTag})</span>
-          )}
+          {(() => {
+            // Show asset tags from per-unit fulfillment if present
+            // (post-cutover, line.asset is null on multi-quantity
+            // serialised lines — the tags live on units). Single-asset
+            // legacy lines still render via item.asset.assetTag.
+            const unitTags = (item.units ?? [])
+              .map((u) => u.asset?.assetTag ?? u.bulkAsset?.assetTag)
+              .filter((t): t is string => !!t);
+            if (unitTags.length === 1) {
+              return <span className="text-xs text-fg-3">({unitTags[0]})</span>;
+            }
+            if (unitTags.length > 1) {
+              return (
+                <span className="text-xs text-fg-3">
+                  ({unitTags.slice(0, 2).join(", ")}
+                  {unitTags.length > 2 ? ` +${unitTags.length - 2}` : ""})
+                </span>
+              );
+            }
+            if (item.asset?.assetTag) {
+              return <span className="text-xs text-fg-3">({item.asset.assetTag})</span>;
+            }
+            return null;
+          })()}
           {item.kitId && !item.isKitChild && (
             <Badge variant="outline" className="ml-1.5 text-xs bg-indigo-500/10 text-indigo-600 border-indigo-500/20">
               Kit

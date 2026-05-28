@@ -19,6 +19,22 @@ const projectFilterColumns: FilterColumnDef[] = [
   { id: "type", filterType: "enum" },
 ];
 
+/**
+ * Per-unit fulfillment rows to thread through every line-item include
+ * on `getProject`. The project view's equipment tab uses these to show
+ * each physical asset assigned to a multi-quantity line (post-cutover
+ * `line.asset` is null for those — the assignments live on units).
+ * CANCELLED units are filtered out at the query layer.
+ */
+const PROJECT_UNIT_INCLUDE = {
+  orderBy: { ordinal: "asc" as const },
+  where: { status: { not: "CANCELLED" as const } },
+  include: {
+    asset: { select: { id: true, assetTag: true } },
+    bulkAsset: { select: { id: true, assetTag: true } },
+  },
+} as const;
+
 async function generateTemplateCode(organizationId: string): Promise<string> {
   const count = await prisma.project.count({
     where: { organizationId, isTemplate: true },
@@ -200,8 +216,12 @@ export async function getProject(id: string) {
               lineItems: {
                 include: {
                   model: true, asset: true, bulkAsset: true, kit: true,
+                  units: PROJECT_UNIT_INCLUDE,
                   childLineItems: {
-                    include: { model: true, asset: true, bulkAsset: true, kit: true },
+                    include: {
+                      model: true, asset: true, bulkAsset: true, kit: true,
+                      units: PROJECT_UNIT_INCLUDE,
+                    },
                     orderBy: { sortOrder: "asc" },
                   },
                 },
@@ -214,8 +234,12 @@ export async function getProject(id: string) {
             where: { groupId: null },
             include: {
               model: true, asset: true, bulkAsset: true, kit: true,
+              units: PROJECT_UNIT_INCLUDE,
               childLineItems: {
-                include: { model: true, asset: true, bulkAsset: true, kit: true },
+                include: {
+                  model: true, asset: true, bulkAsset: true, kit: true,
+                  units: PROJECT_UNIT_INCLUDE,
+                },
                 orderBy: { sortOrder: "asc" },
               },
             },
@@ -231,11 +255,16 @@ export async function getProject(id: string) {
           bulkAsset: true,
           kit: true,
           supplier: true,
+          units: PROJECT_UNIT_INCLUDE,
           childLineItems: {
             include: {
               model: true, asset: true, bulkAsset: true, kit: true,
+              units: PROJECT_UNIT_INCLUDE,
               childLineItems: {
-                include: { model: true, asset: true, bulkAsset: true },
+                include: {
+                  model: true, asset: true, bulkAsset: true,
+                  units: PROJECT_UNIT_INCLUDE,
+                },
                 orderBy: { sortOrder: "asc" },
               },
             },

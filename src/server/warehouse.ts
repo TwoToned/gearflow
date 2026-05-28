@@ -143,6 +143,17 @@ export async function getProjectForWarehouse(projectId: string) {
           model: { include: { _count: { select: { modelCheckItems: true } } } },
           asset: true,
           bulkAsset: true,
+          // Per-unit assignments (post-cutover, the source of truth for
+          // which physical assets the warehouse is preparing / deploying
+          // / returning on this line).
+          units: {
+            orderBy: { ordinal: "asc" },
+            where: { status: { not: "CANCELLED" } },
+            include: {
+              asset: { select: { id: true, assetTag: true } },
+              bulkAsset: { select: { id: true, assetTag: true } },
+            },
+          },
           kit: { include: { _count: { select: { kitCheckItems: true } } } },
           supplier: { select: { name: true } },
           childLineItems: {
@@ -150,6 +161,14 @@ export async function getProjectForWarehouse(projectId: string) {
             include: {
               model: { include: { _count: { select: { modelCheckItems: true } } } },
               asset: true, bulkAsset: true,
+              units: {
+                orderBy: { ordinal: "asc" },
+                where: { status: { not: "CANCELLED" } },
+                include: {
+                  asset: { select: { id: true, assetTag: true } },
+                  bulkAsset: { select: { id: true, assetTag: true } },
+                },
+              },
               kit: { include: { _count: { select: { kitCheckItems: true } } } },
               supplier: { select: { name: true } },
               childLineItems: {
@@ -157,6 +176,14 @@ export async function getProjectForWarehouse(projectId: string) {
                 include: {
                   model: { include: { _count: { select: { modelCheckItems: true } } } },
                   asset: true, bulkAsset: true,
+                  units: {
+                    orderBy: { ordinal: "asc" },
+                    where: { status: { not: "CANCELLED" } },
+                    include: {
+                      asset: { select: { id: true, assetTag: true } },
+                      bulkAsset: { select: { id: true, assetTag: true } },
+                    },
+                  },
                   kit: { include: { _count: { select: { kitCheckItems: true } } } },
                   supplier: { select: { name: true } },
                 },
@@ -496,7 +523,75 @@ export async function checkOutItems(
       scannedById: userId,
     });
 
+    // Expand any "deploy the whole prepped line" item into one item per
+    // prepped unit. Symptom this fixes: operator preps a 10x line — 10
+    // units exist with assetIds. Operator clicks Deploy, the UI sends
+    // `{ lineItemId, quantity: 10 }` (it has no UI-level identity per
+    // unit — just synthetic "Unit N" rows). Without expansion, the
+    // inner loop fell into the "deploy whole line" branch that flipped
+    // line.status without touching any unit or marking any asset
+    // CHECKED_OUT. The prep work was captured on units; the deploy
+    // ignored them. Now we consult units before the loop and turn each
+    // assigned unit into a typed serialised/bulk item. The decision to
+    // expand is based on the LINE's shape (no line-level asset), NOT
+    // on what the caller put in `item` — because the deploy tab
+    // legitimately sends `quantity: N` for a multi-quantity serialised
+    // line, and that must still expand to N unit deploys.
+    const expandedItems: typeof items = [];
     for (const item of items) {
+      if (item.assetId) {
+        // Explicit single-asset deploy (scan flow) — pass through.
+        expandedItems.push(item);
+        continue;
+      }
+      const lineItemRow = preflightLineItems.find((l) => l.id === item.lineItemId);
+      if (lineItemRow?.assetId || lineItemRow?.bulkAssetId) {
+        // Legacy line carries its own asset/bulk — existing branches
+        // handle it correctly. (Kit children, classic bulk lines.)
+        expandedItems.push(item);
+        continue;
+      }
+      // No item.assetId and no line-level asset/bulk — this is the
+      // post-cutover multi-quantity serialised case. Consult units.
+      const lineUnits = await tx.projectLineItemUnit.findMany({
+        where: {
+          lineItemId: item.lineItemId,
+          organizationId,
+          status: { not: "CHECKED_OUT" },
+          OR: [
+            { assetId: { not: null } },
+            { bulkAssetId: { not: null } },
+          ],
+        },
+        select: { assetId: true, bulkAssetId: true, quantity: true },
+        orderBy: { ordinal: "asc" },
+      });
+      if (lineUnits.length === 0) {
+        // No prepped units to deploy — fall through; the existing
+        // "deploy whole line" edge below flips status (legitimate for
+        // a generic line that's just being marked deployed).
+        expandedItems.push(item);
+        continue;
+      }
+      // If caller asked for fewer than the prepped count (partial
+      // deploy), clamp to that count — preserves the user intent that
+      // `quantity: 3` of 10 prepped should only deploy 3. With no
+      // per-unit selection in the UI today this just deploys the
+      // earliest ordinals; a future UI refactor can pass unit ids.
+      const want = item.quantity ?? lineUnits.length;
+      const toDeploy = lineUnits.slice(0, Math.max(1, Math.min(want, lineUnits.length)));
+      for (const u of toDeploy) {
+        expandedItems.push({
+          lineItemId: item.lineItemId,
+          ...(u.assetId
+            ? { assetId: u.assetId }
+            : { quantity: u.quantity }),
+          notes: item.notes,
+        });
+      }
+    }
+
+    for (const item of expandedItems) {
       // Verify line item belongs to this project and org
       const lineItem = await tx.projectLineItem.findFirst({
         where: {

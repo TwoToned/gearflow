@@ -185,6 +185,53 @@ Single-tenant data (one company) makes a transactional cutover with a verified
 dry-run feasible; the `oldLineItemId` mapping table is the rollback safety net,
 so a long dual-write window is not required.
 
+### Historic splits with no shared key — explicit merge
+
+Phase 2b's strict-equivalence key handles siblings that a `splitLineItem` call
+produced from one order line: they share every order-level field, so the key
+clusters them automatically (`scripts/collapse-split-siblings.ts`). But the
+older production data has a harder shape. On MUSE (project `260304`,
+`cmnsi9uj100dthxbxqnh93ufe`) the priced line is a **free-text parent**
+(`modelId = null`, qty 3, a unit price, status `QUOTED`) and the five physical
+rows were created later by scanning (`modelId = Powerplay-P2`, qty 1, no price,
+`CHECKED_OUT`). Parent and children share **no FK and no `modelId`** — only the
+description string `"Powerplay P2"`. No safe heuristic can cluster them.
+
+`scripts/collapse-historic-splits.ts` (`npm run collapse:historic-splits`)
+covers this in two layers:
+
+- **Heuristic + diagnostic.** Rows with `modelId = null` are keyed
+  `__nullmodel:<rowId>` so each priced free-text parent is a guaranteed
+  singleton — it can never be falsely clustered with an unrelated free-text
+  line. When nothing clusters, the script dumps the singletons (id, qty,
+  price, status, model/description) so the operator can read off the exact ids.
+- **Explicit `--merge-into <canonicalId> --children <id1,id2,...>`.** The
+  operator supplies the canonical (keep) id and the child ids from that dump.
+  The script validates both ends — ids resolve, share `projectId` +
+  `organizationId`, children aren't kit children, have an `assetId`, aren't
+  already cancelled, and `canonical ∉ children` — then folds each child's
+  asset onto a new unit on the canonical, repoints `CheckRecord` /
+  `DamageEvent` / `ProjectService`, writes a `LineItemMergeMap` audit row, and
+  cancels the child (qty 0, `assetId` null). `syncLineItemRollup` then promotes
+  the canonical to `CHECKED_OUT` when the folded units are checked out.
+
+This runs from the GitHub Actions **Run migration** workflow
+(`.github/workflows/migrate.yml`) — `canonical_id` + `children_ids` inputs —
+because the prod SSH session freezes on long-running scripts. Dry-run by
+default; `apply` is a separate, human-gated checkbox.
+
+### Merge tombstones are hidden, not deleted
+
+A collapse leaves the folded child as a `CANCELLED`, qty-0, `assetId`-null row
+so `LineItemMergeMap` history stays reachable. The project **detail** view must
+hide these or a merge just turns N duplicate rows into N "Cancelled" ghost
+rows. `getProject` filters `status != CANCELLED` on all three line-item
+includes (grouped, ungrouped-category, top-level), and `equipment-tab.tsx`
+re-applies the same predicate (`isHiddenFromList`) as defence against a stale
+cache or optimistic update. Normal line-item removal hard-deletes, so a
+`CANCELLED` line item is only ever inert merge residue. PDFs, warehouse, and
+list views already excluded `CANCELLED`.
+
 ## Blast radius
 
 | Area | File(s) | Change |

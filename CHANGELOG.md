@@ -5,6 +5,45 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0.2] - 2026-05-29
+
+Patch release — finishes the historic-split consolidation tooling and
+fixes the residue a merge leaves in the project view.
+
+### Fixed
+- **Merge tombstones showed as "Cancelled" ghost rows.** The
+  split-collapse migrations keep each folded child line as `CANCELLED`,
+  qty 0, `assetId` null so `LineItemMergeMap` history survives. But
+  `getProject` didn't filter them, so a fold turned N duplicate
+  equipment rows into N cancelled rows instead of removing them.
+  `getProject` now filters `status != CANCELLED` on all three line-item
+  includes (grouped, ungrouped-category, top-level), and the equipment
+  tab re-applies the same predicate (`isHiddenFromList`) as defence
+  against a stale cache or optimistic update. Normal line-item removal
+  hard-deletes, so a `CANCELLED` line item is only ever inert merge
+  residue. PDFs, warehouse, and list views already excluded it.
+
+### Added
+- **Explicit merge mode for `collapse:historic-splits`.** Older
+  production data has a priced free-text parent (`modelId` null) whose
+  physical rows were created later by scanning — parent and children
+  share no FK and no `modelId`, only a description string, so no
+  heuristic can safely cluster them. The script now takes
+  `--merge-into <canonicalId> --children <id1,id2,...>`, validates both
+  ends (same project/org, not kit children, have an asset, not already
+  cancelled, canonical ∉ children), folds each child's asset onto a new
+  unit on the canonical, repoints `CheckRecord` / `DamageEvent` /
+  `ProjectService`, and writes the `LineItemMergeMap` audit row. When
+  nothing clusters heuristically the script dumps the singletons (id,
+  qty, price, status, model/description) so the operator can read off
+  the exact ids. modelId-null rows are keyed per-row so a priced parent
+  can never be falsely clustered.
+- **Migration workflow drives the explicit merge.** `migrate.yml` gains
+  optional `canonical_id` + `children_ids` inputs (shell-quoted, applied
+  only for `collapse:historic-splits`) so the consolidation runs from
+  the GitHub Actions UI — the prod SSH session freezes on long scripts.
+  Dry-run by default; `apply` stays a separate human-gated checkbox.
+
 ## [0.7.0.1] - 2026-05-27
 
 Patch release on top of the v0.7.0.0 fulfillment-model cutover.

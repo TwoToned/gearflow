@@ -264,6 +264,154 @@ describe("collapse-historic-splits script", () => {
     expect(out).toContain("Mergeable groups:        0");
   });
 
+  it("explicit --merge-into folds children that share NO modelId with the parent", async () => {
+    // The MUSE 260304 shape: a free-text priced parent (modelId=null)
+    // whose split children were scan-created and DO carry a modelId.
+    // The heuristic can never cluster these (different modelId), so the
+    // operator names the ids explicitly.
+    const org = await createOrgFixture();
+    await createUserFixture(org.id);
+    const model = await createModelFixture(org.id);
+    const project = await createProject(org.id);
+
+    const assets = [];
+    for (let i = 0; i < 3; i++) {
+      assets.push(
+        await createAssetFixture(org.id, model.id, { assetTag: `EX-${i}` }),
+      );
+    }
+
+    // Free-text priced parent — modelId deliberately null.
+    const parent = await testPrisma.projectLineItem.create({
+      data: {
+        organizationId: org.id,
+        projectId: project.id,
+        modelId: null,
+        description: "Powerplay P2",
+        type: "EQUIPMENT",
+        quantity: 3,
+        unitPrice: 27,
+        lineTotal: 81,
+        pricingType: "PER_DAY",
+        duration: 1,
+        status: "QUOTED",
+        sortOrder: 0,
+      },
+    });
+    // Scan-created children — model-pinned, already checked out.
+    const children = [];
+    for (let i = 0; i < 3; i++) {
+      children.push(
+        await testPrisma.projectLineItem.create({
+          data: {
+            organizationId: org.id,
+            projectId: project.id,
+            modelId: model.id,
+            type: "EQUIPMENT",
+            quantity: 1,
+            unitPrice: 0,
+            lineTotal: 0,
+            pricingType: "PER_DAY",
+            duration: 1,
+            assetId: assets[i].id,
+            status: "CHECKED_OUT",
+            sortOrder: i + 1,
+          },
+        }),
+      );
+    }
+
+    // Heuristic mode must NOT cluster them (different modelId).
+    const heuristic = runScript(["--project", project.id]);
+    expect(heuristic).toContain("Mergeable groups:  0");
+
+    // Explicit dry-run shows the plan but writes nothing.
+    const childCsv = children.map((c) => c.id).join(",");
+    const dry = runScript(["--merge-into", parent.id, "--children", childCsv]);
+    expect(dry).toContain("EXPLICIT merge");
+    expect(dry).toContain("Mergeable groups:  1");
+    expect(dry).toContain("Re-run with --apply to execute.");
+    let units = await testPrisma.projectLineItemUnit.findMany({
+      where: { lineItemId: parent.id },
+    });
+    expect(units).toHaveLength(0);
+
+    // Apply.
+    runScript(["--merge-into", parent.id, "--children", childCsv, "--apply"]);
+
+    // Parent now carries 3 units with the children's assets and, because
+    // the units are CHECKED_OUT, the rollup flips the line to CHECKED_OUT.
+    const parentAfter = await testPrisma.projectLineItem.findUniqueOrThrow({
+      where: { id: parent.id },
+    });
+    expect(parentAfter.quantity).toBe(3);
+    expect(parentAfter.status).toBe("CHECKED_OUT");
+    expect(parentAfter.assignedQuantity).toBe(3);
+    expect(parentAfter.checkedOutQuantity).toBe(3);
+
+    units = await testPrisma.projectLineItemUnit.findMany({
+      where: { lineItemId: parent.id },
+    });
+    expect(units).toHaveLength(3);
+    expect(new Set(units.map((u) => u.assetId))).toEqual(
+      new Set(assets.map((a) => a.id)),
+    );
+    expect(units.every((u) => u.status === "CHECKED_OUT")).toBe(true);
+
+    // Children are inert tombstones.
+    for (const c of children) {
+      const refreshed = await testPrisma.projectLineItem.findUniqueOrThrow({
+        where: { id: c.id },
+      });
+      expect(refreshed.status).toBe("CANCELLED");
+      expect(refreshed.quantity).toBe(0);
+      expect(refreshed.assetId).toBeNull();
+    }
+
+    // Audit rows exist.
+    const audit = await testPrisma.lineItemMergeMap.findMany({
+      where: { canonicalLineItemId: parent.id },
+    });
+    expect(audit).toHaveLength(3);
+  });
+
+  it("explicit mode refuses a child in a different project", async () => {
+    const org = await createOrgFixture();
+    await createUserFixture(org.id);
+    const model = await createModelFixture(org.id);
+    const projectA = await createProject(org.id);
+    const projectB = await createProject(org.id);
+
+    const parent = await testPrisma.projectLineItem.create({
+      data: {
+        organizationId: org.id, projectId: projectA.id, modelId: null,
+        description: "Parent", type: "EQUIPMENT", quantity: 1, unitPrice: 10,
+        lineTotal: 10, pricingType: "PER_DAY", duration: 1, status: "QUOTED",
+        sortOrder: 0,
+      },
+    });
+    const asset = await createAssetFixture(org.id, model.id, { assetTag: "XP-1" });
+    // Child lives in a DIFFERENT project — must be refused.
+    const stray = await testPrisma.projectLineItem.create({
+      data: {
+        organizationId: org.id, projectId: projectB.id, modelId: model.id,
+        type: "EQUIPMENT", quantity: 1, unitPrice: 0, lineTotal: 0,
+        pricingType: "PER_DAY", duration: 1, assetId: asset.id,
+        status: "CHECKED_OUT", sortOrder: 0,
+      },
+    });
+
+    expect(() =>
+      runScript(["--merge-into", parent.id, "--children", stray.id, "--apply"]),
+    ).toThrow(/!= canonical project/);
+
+    // Nothing moved.
+    const units = await testPrisma.projectLineItemUnit.findMany({
+      where: { lineItemId: parent.id },
+    });
+    expect(units).toHaveLength(0);
+  });
+
   it("leaves a clean line (no splits) untouched", async () => {
     const org = await createOrgFixture();
     await createUserFixture(org.id);

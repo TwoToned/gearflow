@@ -162,6 +162,20 @@ function isRealKitChild(item: LineItemData) {
   return item.isKitChild === true;
 }
 
+// Merge tombstones (status CANCELLED, qty 0) are inert residue left by the
+// split-collapse migrations. getProject already filters them at the query
+// layer; this is belt-and-suspenders so a stale cache / optimistic update
+// can't resurrect a ghost row. Normal line-item removal hard-deletes, so a
+// CANCELLED line item is never anything but merge residue.
+function isMergeTombstone(item: LineItemData) {
+  return item.status === "CANCELLED";
+}
+
+// One predicate for "should this row appear in the flat list".
+function isHiddenFromList(item: LineItemData) {
+  return isRealKitChild(item) || isMergeTombstone(item);
+}
+
 // ─── Overbooked info type ───────────────────────────────────────────────────
 
 type OverbookedInfo = {
@@ -1345,7 +1359,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
             >
               <TableBody>
                 {typedCategories.map((cat) => {
-                  const standaloneItems = (cat.lineItems ?? []).filter((i: LineItemData) => !isRealKitChild(i));
+                  const standaloneItems = (cat.lineItems ?? []).filter((i: LineItemData) => !isHiddenFromList(i));
 
                   return (
                     <React.Fragment key={cat.id}>
@@ -1363,7 +1377,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                       {cat.groups.map((group) => {
                         const isExpanded = expandedGroups.has(group.id);
                         const priceVal = group.price != null ? Number(group.price) : null;
-                        const groupItems = (group.lineItems ?? []).filter((i: LineItemData) => !isRealKitChild(i));
+                        const groupItems = (group.lineItems ?? []).filter((i: LineItemData) => !isHiddenFromList(i));
                         return (
                           <React.Fragment key={group.id}>
                             <SortableGroupRow
@@ -1473,7 +1487,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                     </TableCell>
                   </TableRow>
                 )}
-                {(uncategorizedItems as LineItemData[]).filter((i) => !isRealKitChild(i)).map((item) => (
+                {(uncategorizedItems as LineItemData[]).filter((i) => !isHiddenFromList(i)).map((item) => (
                   <SortableLineItemRow
                     key={item.id}
                     item={item}

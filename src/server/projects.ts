@@ -214,6 +214,10 @@ export async function getProject(id: string) {
           groups: {
             include: {
               lineItems: {
+                // Hide merge tombstones (status CANCELLED, qty 0) left by
+                // the split-collapse migrations. Normal removal hard-deletes,
+                // so CANCELLED line items are only ever inert merge residue.
+                where: { status: { not: "CANCELLED" } },
                 include: {
                   model: true, asset: true, bulkAsset: true, kit: true,
                   units: PROJECT_UNIT_INCLUDE,
@@ -231,7 +235,7 @@ export async function getProject(id: string) {
             orderBy: { sortOrder: "asc" },
           },
           lineItems: {
-            where: { groupId: null },
+            where: { groupId: null, status: { not: "CANCELLED" } },
             include: {
               model: true, asset: true, bulkAsset: true, kit: true,
               units: PROJECT_UNIT_INCLUDE,
@@ -249,6 +253,7 @@ export async function getProject(id: string) {
         orderBy: { sortOrder: "asc" },
       },
       lineItems: {
+        where: { status: { not: "CANCELLED" } },
         include: {
           model: true,
           asset: true,

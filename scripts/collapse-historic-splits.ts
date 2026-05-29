@@ -78,7 +78,20 @@ interface CandidateRow {
   createdAt: Date;
 }
 
-/** Order-level fields children must share with their canonical. */
+/**
+ * Order-level fields children must share with their canonical.
+ *
+ * Intentionally minimal for this NARROW historic-splits tool — we
+ * already know the target shape (priced parent + qty=1 asset-pinned
+ * children) and `splitLineItem` didn't preserve categorization or
+ * notes on the children. Relaxing these fields lets the parent and
+ * children land in the same bucket. The canonical's values (category,
+ * group, notes, supplier, etc.) survive — children are deactivated.
+ *
+ * The strict full-equivalence key lives in
+ * src/lib/split-sibling-collapse.ts (the other migration) and stays
+ * conservative for the general case.
+ */
 function orderLevelKey(r: CandidateRow): string {
   return JSON.stringify({
     projectId: r.projectId,
@@ -87,18 +100,14 @@ function orderLevelKey(r: CandidateRow): string {
     kitId: r.kitId,
     isKitChild: r.isKitChild,
     parentLineItemId: r.parentLineItemId,
-    groupId: r.groupId,
-    categoryId: r.categoryId,
-    groupName: r.groupName,
-    supplierId: r.supplierId,
     subHireId: r.subHireId,
     subHireItemId: r.subHireItemId,
     subHireGroupId: r.subHireGroupId,
-    isOptional: r.isOptional,
     isContainerLineItem: r.isContainerLineItem,
     isCustomItem: r.isCustomItem,
-    description: r.description,
-    notes: r.notes,
+    // Deliberately omitted (often differ between legacy parent + splits):
+    //   description, notes, groupId, categoryId, groupName, supplierId,
+    //   isOptional
   });
 }
 
@@ -151,8 +160,15 @@ async function main() {
   const groups: Group[] = [];
   const flagged: { key: string; reason: string; rows: CandidateRow[] }[] = [];
   const unmatched: { key: string; rows: CandidateRow[]; reason: string }[] = [];
+  // Optionally collect singletons too — useful when --diagnose is on so
+  // the operator can see rows that DIDN'T cluster (eg a parent whose
+  // categoryId differs from its children).
+  const singletons: { key: string; rows: CandidateRow[] }[] = [];
   for (const [key, bucket] of byKey) {
-    if (bucket.length < 2) continue;
+    if (bucket.length < 2) {
+      if (diagnose) singletons.push({ key, rows: bucket });
+      continue;
+    }
     const parents = bucket.filter(looksLikePricedParent);
     const children = bucket.filter(looksLikeSplitChild);
     const others = bucket.filter(
@@ -211,11 +227,15 @@ async function main() {
   // the merge plan output can show human-readable names.
   const allProjectIds = new Set<string>();
   const allModelIds = new Set<string>();
-  for (const arr of [groups, flagged.map((f) => ({ canonical: f.rows[0], children: f.rows.slice(1) })), unmatched.map((u) => ({ canonical: u.rows[0], children: u.rows.slice(1) }))]) {
-    for (const g of arr) {
-      if (g.canonical?.projectId) allProjectIds.add(g.canonical.projectId);
-      if (g.canonical?.modelId) allModelIds.add(g.canonical.modelId);
-    }
+  const sourceRows: CandidateRow[] = [
+    ...groups.flatMap((g) => [g.canonical, ...g.children]),
+    ...flagged.flatMap((f) => f.rows),
+    ...unmatched.flatMap((u) => u.rows),
+    ...singletons.flatMap((s) => s.rows),
+  ];
+  for (const r of sourceRows) {
+    allProjectIds.add(r.projectId);
+    if (r.modelId) allModelIds.add(r.modelId);
   }
   const [allProjects, allModels] = await Promise.all([
     allProjectIds.size
@@ -228,6 +248,28 @@ async function main() {
   const projById = new Map(allProjects.map((p) => [p.id, p]));
   const modelById = new Map(allModels.map((m) => [m.id, m]));
 
+  if (diagnose && singletons.length > 0) {
+    console.log("─── Singletons (only shown with --diagnose) ──────────────────");
+    console.log("(Buckets that have only one row. Useful for confirming whether");
+    console.log(" a priced parent landed in its own bucket due to differing");
+    console.log(" categorization fields.)");
+    console.log();
+    for (let i = 0; i < singletons.length; i++) {
+      const s = singletons[i];
+      const r = s.rows[0];
+      const proj = projById.get(r.projectId);
+      const model = r.modelId ? modelById.get(r.modelId) : null;
+      const price = r.unitPrice ? r.unitPrice.toString() : "null";
+      const total = r.lineTotal ? r.lineTotal.toString() : "null";
+      const assetTag = r.assetId ? r.assetId.slice(0, 8) + "…" : "—";
+      const cat = r.categoryId ? r.categoryId.slice(0, 8) + "…" : "—";
+      const grp = r.groupId ? r.groupId.slice(0, 8) + "…" : "—";
+      console.log(
+        `  ${r.id.slice(0, 10)}…  ${proj?.projectNumber ?? "?"}  ${model?.name ?? "?"}  qty=${r.quantity}  price=${price}  total=${total}  assetId=${assetTag}  status=${r.status}  cat=${cat}  group=${grp}`,
+      );
+    }
+    console.log();
+  }
   if (diagnose || (groups.length === 0 && flagged.length === 0 && unmatched.length > 0)) {
     console.log("─── Unmatched bucket diagnostics ─────────────────────────────");
     console.log("(Buckets where rows shared an order-level key but didn't fit");

@@ -32,6 +32,16 @@
  *   tsx --env-file=.env scripts/collapse-historic-splits.ts                 # dry-run all
  *   tsx --env-file=.env scripts/collapse-historic-splits.ts --project <id>  # one project
  *   tsx --env-file=.env scripts/collapse-historic-splits.ts --apply         # writes
+ *   tsx --env-file=.env scripts/collapse-historic-splits.ts --diagnose --project <id>
+ *       # dump singletons + unmatched buckets so you can read the ids
+ *
+ * Explicit merge (when parent + children share no FK — eg a free-text
+ * priced parent with model-pinned scan children). Bypasses heuristics
+ * and merges precisely the ids you name:
+ *   tsx ... scripts/collapse-historic-splits.ts \
+ *       --merge-into <canonicalId> --children <c1,c2,c3>            # dry-run
+ *   tsx ... scripts/collapse-historic-splits.ts \
+ *       --merge-into <canonicalId> --children <c1,c2,c3> --apply    # writes
  */
 
 import { prisma } from "../src/lib/prisma";
@@ -43,6 +53,15 @@ const apply = args.includes("--apply");
 const diagnose = args.includes("--diagnose");
 const projIdx = args.indexOf("--project");
 const projectFilter = projIdx >= 0 ? args[projIdx + 1] : undefined;
+// Explicit-merge mode: operator names the canonical row and the exact
+// child ids (comma-separated) to fold into it. Bypasses all heuristics.
+// This is the only safe way to consolidate splits whose parent and
+// children share NO foreign key (eg a free-text priced parent,
+// modelId=null, with scan-created model-pinned children — MUSE 260304).
+const mergeIntoIdx = args.indexOf("--merge-into");
+const canonicalIdArg = mergeIntoIdx >= 0 ? args[mergeIntoIdx + 1] : undefined;
+const childrenIdx = args.indexOf("--children");
+const childrenArg = childrenIdx >= 0 ? args[childrenIdx + 1] : undefined;
 const runId = `historic-${new Date().toISOString().replace(/[:.]/g, "-")}`;
 
 interface CandidateRow {
@@ -137,33 +156,6 @@ async function main() {
   console.log(`Run id:  ${runId}`);
   console.log();
 
-  const rows = (await prisma.projectLineItem.findMany({
-    where: {
-      ...(projectFilter ? { projectId: projectFilter } : {}),
-      type: "EQUIPMENT",
-      isKitChild: false,
-      // Skip already-cancelled rows
-      NOT: { AND: [{ status: "CANCELLED" }, { quantity: 0 }] },
-    },
-    orderBy: [{ projectId: "asc" }, { sortOrder: "asc" }, { createdAt: "asc" }],
-  })) as unknown as CandidateRow[];
-
-  // Bucket by order-level key. Rows with modelId=null are
-  // intentionally bucketed into PER-ROW singletons (unique key per id)
-  // rather than clustered together — multiple free-text lines share
-  // modelId=null but are commercially unrelated, so collapsing them
-  // would be a real bug. They still appear in the singletons dump so
-  // a human can decide if any belong with another row.
-  const byKey = new Map<string, CandidateRow[]>();
-  for (const r of rows) {
-    const k = r.modelId === null
-      ? `__nullmodel:${r.id}` // unique-per-row → guaranteed singleton
-      : orderLevelKey(r);
-    const list = byKey.get(k);
-    if (list) list.push(r);
-    else byKey.set(k, [r]);
-  }
-
   const groups: Group[] = [];
   const flagged: { key: string; reason: string; rows: CandidateRow[] }[] = [];
   const unmatched: { key: string; rows: CandidateRow[]; reason: string }[] = [];
@@ -171,60 +163,179 @@ async function main() {
   // the operator can see rows that DIDN'T cluster (eg a parent whose
   // categoryId differs from its children).
   const singletons: { key: string; rows: CandidateRow[] }[] = [];
-  for (const [key, bucket] of byKey) {
-    if (bucket.length < 2) {
-      if (diagnose) singletons.push({ key, rows: bucket });
-      continue;
+  let bucketCount = 0;
+
+  if (canonicalIdArg) {
+    // ── Explicit merge mode ───────────────────────────────────────────
+    // Trust the operator-supplied ids; validate hard, merge precisely
+    // those rows. No bucketing, no shape heuristics. The validation
+    // below is the only safety net, so it refuses anything sketchy:
+    // missing rows, cross-project/cross-org children, kit children,
+    // children with no assetId, or a cancelled canonical.
+    const childIds = (childrenArg ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (childIds.length === 0) {
+      console.error("ERROR: --merge-into requires --children <id1,id2,...>");
+      process.exit(1);
     }
-    const parents = bucket.filter(looksLikePricedParent);
-    const children = bucket.filter(looksLikeSplitChild);
-    const others = bucket.filter(
-      (r) => !looksLikePricedParent(r) && !looksLikeSplitChild(r),
-    );
-    if (parents.length === 0 || children.length === 0) {
-      // In diagnose mode we surface these so the user can see why
-      // their data didn't match the expected shape.
-      unmatched.push({
-        key,
-        rows: bucket,
-        reason: parents.length === 0
-          ? "no row matches priced-parent shape (qty>=1, unitPrice>0, no assetId, no bulkAssetId)"
-          : "no row matches split-child shape (qty=1, unitPrice=0/null, assetId set, not kit child)",
-      });
-      continue;
+    const dupes = childIds.filter((id, i) => childIds.indexOf(id) !== i);
+    if (dupes.length > 0) {
+      console.error(`ERROR: duplicate child id(s): ${[...new Set(dupes)].join(", ")}`);
+      process.exit(1);
     }
-    if (parents.length > 1) {
-      flagged.push({
-        key,
-        reason: `${parents.length} priced parents (ambiguous canonical)`,
-        rows: bucket,
-      });
-      continue;
+    if (childIds.includes(canonicalIdArg)) {
+      console.error("ERROR: canonical id also appears in --children");
+      process.exit(1);
     }
-    if (others.length > 0) {
-      flagged.push({
-        key,
-        reason: `${others.length} row(s) that aren't priced-parent or split-child shape`,
-        rows: bucket,
-      });
-      continue;
+    const rows = (await prisma.projectLineItem.findMany({
+      where: { id: { in: [canonicalIdArg, ...childIds] } },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    })) as unknown as CandidateRow[];
+
+    const canonical = rows.find((r) => r.id === canonicalIdArg);
+    if (!canonical) {
+      console.error(`ERROR: canonical line item not found: ${canonicalIdArg}`);
+      process.exit(1);
     }
-    // Sanity: total child qty should be ≤ parent qty (children are
-    // peeled-off slices of the parent). If sum exceeds, something
-    // funky happened — flag it.
+    if (canonical.status === "CANCELLED") {
+      console.error(`ERROR: canonical ${canonicalIdArg} is CANCELLED — pick a live row`);
+      process.exit(1);
+    }
+    if (projectFilter && canonical.projectId !== projectFilter) {
+      console.error(`ERROR: canonical project ${canonical.projectId} != --project ${projectFilter}`);
+      process.exit(1);
+    }
+
+    const children: CandidateRow[] = [];
+    for (const cid of childIds) {
+      const c = rows.find((r) => r.id === cid);
+      if (!c) {
+        console.error(`ERROR: child line item not found: ${cid}`);
+        process.exit(1);
+      }
+      if (c.projectId !== canonical.projectId) {
+        console.error(`ERROR: child ${cid} project (${c.projectId}) != canonical project (${canonical.projectId})`);
+        process.exit(1);
+      }
+      if (c.organizationId !== canonical.organizationId) {
+        console.error(`ERROR: child ${cid} org != canonical org`);
+        process.exit(1);
+      }
+      if (c.isKitChild) {
+        console.error(`ERROR: child ${cid} is a kit child — refusing`);
+        process.exit(1);
+      }
+      if (!c.assetId) {
+        console.error(`ERROR: child ${cid} has no assetId — explicit mode only merges serialised, asset-pinned children`);
+        process.exit(1);
+      }
+      if (c.status === "CANCELLED") {
+        console.log(`  (skip) child ${cid} already CANCELLED`);
+        continue;
+      }
+      children.push(c);
+    }
+    if (children.length === 0) {
+      console.error("ERROR: no live children to merge");
+      process.exit(1);
+    }
+
     const childQtySum = children.reduce((n, c) => n + c.quantity, 0);
-    if (childQtySum > parents[0].quantity) {
-      flagged.push({
-        key,
-        reason: `child qty sum (${childQtySum}) > parent qty (${parents[0].quantity})`,
-        rows: bucket,
-      });
-      continue;
+    if (childQtySum > canonical.quantity) {
+      console.log(
+        `  WARNING: child qty sum (${childQtySum}) > canonical qty (${canonical.quantity}). ` +
+        `Proceeding because ids were supplied explicitly — double-check this is intended.`,
+      );
     }
-    groups.push({ key, canonical: parents[0], children });
+    groups.push({ key: `explicit:${canonical.id}`, canonical, children });
+    console.log("Mode:    EXPLICIT merge (operator-supplied ids)");
+  } else {
+    // ── Heuristic mode ────────────────────────────────────────────────
+    const rows = (await prisma.projectLineItem.findMany({
+      where: {
+        ...(projectFilter ? { projectId: projectFilter } : {}),
+        type: "EQUIPMENT",
+        isKitChild: false,
+        // Skip already-cancelled rows
+        NOT: { AND: [{ status: "CANCELLED" }, { quantity: 0 }] },
+      },
+      orderBy: [{ projectId: "asc" }, { sortOrder: "asc" }, { createdAt: "asc" }],
+    })) as unknown as CandidateRow[];
+
+    // Bucket by order-level key. Rows with modelId=null are
+    // intentionally bucketed into PER-ROW singletons (unique key per id)
+    // rather than clustered together — multiple free-text lines share
+    // modelId=null but are commercially unrelated, so collapsing them
+    // would be a real bug. They still appear in the singletons dump so
+    // a human can decide if any belong with another row.
+    const byKey = new Map<string, CandidateRow[]>();
+    for (const r of rows) {
+      const k = r.modelId === null
+        ? `__nullmodel:${r.id}` // unique-per-row → guaranteed singleton
+        : orderLevelKey(r);
+      const list = byKey.get(k);
+      if (list) list.push(r);
+      else byKey.set(k, [r]);
+    }
+    bucketCount = byKey.size;
+
+    for (const [key, bucket] of byKey) {
+      if (bucket.length < 2) {
+        if (diagnose) singletons.push({ key, rows: bucket });
+        continue;
+      }
+      const parents = bucket.filter(looksLikePricedParent);
+      const children = bucket.filter(looksLikeSplitChild);
+      const others = bucket.filter(
+        (r) => !looksLikePricedParent(r) && !looksLikeSplitChild(r),
+      );
+      if (parents.length === 0 || children.length === 0) {
+        // In diagnose mode we surface these so the user can see why
+        // their data didn't match the expected shape.
+        unmatched.push({
+          key,
+          rows: bucket,
+          reason: parents.length === 0
+            ? "no row matches priced-parent shape (qty>=1, unitPrice>0, no assetId, no bulkAssetId)"
+            : "no row matches split-child shape (qty=1, unitPrice=0/null, assetId set, not kit child)",
+        });
+        continue;
+      }
+      if (parents.length > 1) {
+        flagged.push({
+          key,
+          reason: `${parents.length} priced parents (ambiguous canonical)`,
+          rows: bucket,
+        });
+        continue;
+      }
+      if (others.length > 0) {
+        flagged.push({
+          key,
+          reason: `${others.length} row(s) that aren't priced-parent or split-child shape`,
+          rows: bucket,
+        });
+        continue;
+      }
+      // Sanity: total child qty should be ≤ parent qty (children are
+      // peeled-off slices of the parent). If sum exceeds, something
+      // funky happened — flag it.
+      const childQtySum = children.reduce((n, c) => n + c.quantity, 0);
+      if (childQtySum > parents[0].quantity) {
+        flagged.push({
+          key,
+          reason: `child qty sum (${childQtySum}) > parent qty (${parents[0].quantity})`,
+          rows: bucket,
+        });
+        continue;
+      }
+      groups.push({ key, canonical: parents[0], children });
+    }
   }
 
-  console.log(`Candidate buckets: ${byKey.size}`);
+  console.log(`Candidate buckets: ${bucketCount}`);
   console.log(`Mergeable groups:  ${groups.length}`);
   console.log(`Flagged:           ${flagged.length}`);
   console.log(`Unmatched buckets: ${unmatched.length}`);
@@ -328,11 +439,12 @@ async function main() {
   for (const g of groups) {
     const proj = projById.get(g.canonical.projectId);
     const model = g.canonical.modelId ? modelById.get(g.canonical.modelId) : null;
+    const canonLabel = model?.name ?? (g.canonical.description ?? "(no model/desc)");
     console.log(
-      `  ${apply ? "MERGE" : "PLAN "}  ${proj?.projectNumber ?? "?"}  ${model?.name ?? "?"}  canonical=${g.canonical.id} qty=${g.canonical.quantity}  merging ${g.children.length} child(ren)`,
+      `  ${apply ? "MERGE" : "PLAN "}  ${proj?.projectNumber ?? "?"}  ${canonLabel}  canonical=${g.canonical.id} qty=${g.canonical.quantity} price=${g.canonical.unitPrice ? g.canonical.unitPrice.toString() : "null"} status=${g.canonical.status}  merging ${g.children.length} child(ren)`,
     );
     for (const c of g.children) {
-      console.log(`         ← ${c.id} qty=${c.quantity} asset=${c.assetId}`);
+      console.log(`         ← ${c.id} qty=${c.quantity} asset=${c.assetId} status=${c.status}`);
     }
     if (apply) {
       await mergeGroup(g);

@@ -7,8 +7,9 @@ name: Run migration
 # Dry-run by default. Set "apply" to true to actually mutate.
 #
 # Security: workflow_dispatch inputs are passed via `env:` and quoted
-# with $"..." so free-text inputs (project_id, org_id) can't inject
-# shell. Script choice is restricted to a fixed enum.
+# with "$VAR" so free-text inputs (project_id, org_id, canonical_id,
+# children_ids) can't inject shell. Script choice is restricted to a
+# fixed enum.
 
 on:
   workflow_dispatch:
@@ -35,6 +36,14 @@ on:
         description: "Optional: scope to one organization id. Leave blank for all."
         required: false
         type: string
+      canonical_id:
+        description: "Explicit merge (collapse:historic-splits only): canonical line-item id to KEEP. Requires children_ids."
+        required: false
+        type: string
+      children_ids:
+        description: "Explicit merge (collapse:historic-splits only): comma-separated child line-item ids to fold in (e.g. id1,id2,id3)."
+        required: false
+        type: string
 
 jobs:
   migrate:
@@ -49,6 +58,8 @@ jobs:
           APPLY: ${{ inputs.apply }}
           PROJECT_ID: ${{ inputs.project_id }}
           ORG_ID: ${{ inputs.org_id }}
+          CANONICAL_ID: ${{ inputs.canonical_id }}
+          CHILDREN_IDS: ${{ inputs.children_ids }}
         run: |
           echo "================================================================"
           echo "Migration:   $SCRIPT"
@@ -59,6 +70,11 @@ jobs:
           fi
           echo "Project:     ${PROJECT_ID:-(all)}"
           echo "Org:         ${ORG_ID:-(all)}"
+          if [ -n "$CANONICAL_ID" ]; then
+            echo "Merge mode:  EXPLICIT"
+            echo "  Keep:      $CANONICAL_ID"
+            echo "  Fold in:   ${CHILDREN_IDS:-(none — script will error)}"
+          fi
           echo "================================================================"
 
       - name: Pull latest code
@@ -82,6 +98,8 @@ jobs:
           APPLY: ${{ inputs.apply }}
           PROJECT_ID: ${{ inputs.project_id }}
           ORG_ID: ${{ inputs.org_id }}
+          CANONICAL_ID: ${{ inputs.canonical_id }}
+          CHILDREN_IDS: ${{ inputs.children_ids }}
         run: |
           cd "${{ vars.APP_DIR }}"
           # Build args array — quoting via "$VAR" prevents any shell
@@ -95,6 +113,17 @@ jobs:
           fi
           if [ -n "$ORG_ID" ]; then
             set -- "$@" --org "$ORG_ID"
+          fi
+          # Explicit merge mode — collapse:historic-splits only. The script
+          # validates that both ids resolve, share a project/org, etc., and
+          # exits 1 on any mismatch. Passing --merge-into without --children
+          # is a hard error in the script (clear operator feedback). Quoting
+          # via "$VAR" keeps the free-text ids from being shell-tokenised.
+          if [ "$SCRIPT" = "collapse:historic-splits" ] && [ -n "$CANONICAL_ID" ]; then
+            set -- "$@" --merge-into "$CANONICAL_ID"
+            if [ -n "$CHILDREN_IDS" ]; then
+              set -- "$@" --children "$CHILDREN_IDS"
+            fi
           fi
           # SCRIPT is constrained to the choice enum above so it's safe
           # to interpolate into the run command.

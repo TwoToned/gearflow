@@ -148,10 +148,17 @@ async function main() {
     orderBy: [{ projectId: "asc" }, { sortOrder: "asc" }, { createdAt: "asc" }],
   })) as unknown as CandidateRow[];
 
-  // Bucket by order-level key.
+  // Bucket by order-level key. Rows with modelId=null are
+  // intentionally bucketed into PER-ROW singletons (unique key per id)
+  // rather than clustered together — multiple free-text lines share
+  // modelId=null but are commercially unrelated, so collapsing them
+  // would be a real bug. They still appear in the singletons dump so
+  // a human can decide if any belong with another row.
   const byKey = new Map<string, CandidateRow[]>();
   for (const r of rows) {
-    const k = orderLevelKey(r);
+    const k = r.modelId === null
+      ? `__nullmodel:${r.id}` // unique-per-row → guaranteed singleton
+      : orderLevelKey(r);
     const list = byKey.get(k);
     if (list) list.push(r);
     else byKey.set(k, [r]);
@@ -248,11 +255,15 @@ async function main() {
   const projById = new Map(allProjects.map((p) => [p.id, p]));
   const modelById = new Map(allModels.map((m) => [m.id, m]));
 
-  if (diagnose && singletons.length > 0) {
-    console.log("─── Singletons (only shown with --diagnose) ──────────────────");
-    console.log("(Buckets that have only one row. Useful for confirming whether");
-    console.log(" a priced parent landed in its own bucket due to differing");
-    console.log(" categorization fields.)");
+  const showSingletons =
+    diagnose || (groups.length === 0 && flagged.length === 0);
+  if (showSingletons && singletons.length > 0) {
+    console.log("─── Singletons ───────────────────────────────────────────────");
+    console.log("(Buckets that have only one row. A priced parent that landed");
+    console.log(" alone (no children in the same bucket due to a differing");
+    console.log(" modelId, categoryId, or other key field) shows up here. The");
+    console.log(" `desc` field is the line's `description` text — fuzzy-match");
+    console.log(" against it to find related rows.)");
     console.log();
     for (let i = 0; i < singletons.length; i++) {
       const s = singletons[i];
@@ -262,10 +273,10 @@ async function main() {
       const price = r.unitPrice ? r.unitPrice.toString() : "null";
       const total = r.lineTotal ? r.lineTotal.toString() : "null";
       const assetTag = r.assetId ? r.assetId.slice(0, 8) + "…" : "—";
-      const cat = r.categoryId ? r.categoryId.slice(0, 8) + "…" : "—";
-      const grp = r.groupId ? r.groupId.slice(0, 8) + "…" : "—";
+      const desc = (r.description ?? "").slice(0, 40);
+      const modelName = model?.name ?? (r.modelId ? "?" : "(no model)");
       console.log(
-        `  ${r.id.slice(0, 10)}…  ${proj?.projectNumber ?? "?"}  ${model?.name ?? "?"}  qty=${r.quantity}  price=${price}  total=${total}  assetId=${assetTag}  status=${r.status}  cat=${cat}  group=${grp}`,
+        `  ${r.id.slice(0, 10)}…  ${proj?.projectNumber ?? "?"}  model=${modelName}  desc="${desc}"  qty=${r.quantity}  price=${price}  total=${total}  assetId=${assetTag}  status=${r.status}`,
       );
     }
     console.log();

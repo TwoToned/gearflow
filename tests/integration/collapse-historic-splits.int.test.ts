@@ -324,6 +324,15 @@ describe("collapse-historic-splits script", () => {
     // Heuristic mode must NOT cluster them (different modelId).
     const heuristic = runScript(["--project", project.id]);
     expect(heuristic).toContain("Mergeable groups:  0");
+    // A project-scoped dry-run must surface, with FULL ids, both the
+    // free-text priced parent (as a singleton) and its scan-created
+    // children (in the unmatched bucket) — that's how the operator reads
+    // off the ids for the explicit merge. Truncated ids would be useless.
+    expect(heuristic).toContain("Singletons");
+    expect(heuristic).toContain(parent.id);
+    for (const c of children) {
+      expect(heuristic).toContain(c.id);
+    }
 
     // Explicit dry-run shows the plan but writes nothing.
     const childCsv = children.map((c) => c.id).join(",");

@@ -115,6 +115,8 @@ Custom line items (`isCustomItem: true`) appear in all three warehouse tabs with
 
 **Deploy:** Custom items appear in the deploy list. Since `isBulk` check (`!lineItem.assetId && lineItem.quantity > 1`) routes them to the bulk checkout path, all units deploy at once via button press.
 
+**Free-text / custom lines cannot carry asset tags (intended).** A line with no catalog model (`modelId: null`, including `isCustomItem` lines) deploys generically: `lookupAssetForScan` binds a scanned asset to a line by matching `modelId`, so a model-less line can never have a physical asset assigned, and `checkOutItems` falls through to the "deploy whole line" branch (flips status, no unit, no asset). Consequence: such a line shows **no per-unit asset tags on the delivery docket** — only its name + quantity — even with `showPerUnitCheckboxes` on. This is by design: free-text lines are for ad-hoc/consumable items (cables, gaffer). Serialised gear that needs asset-tag tracking must be entered as a **catalog model**, not typed by name. (Product decision 2026-05-30: keep free-text non-tracked rather than override the scan match or add a line→model link flow.)
+
 **Return:** Custom items appear in the return list. They are returned via the return button; no asset tag scan possible.
 
 **Checkout server path:** `checkOutItems()` handles custom items without changes — null `assetId` + qty=1 takes the serialized path (skips asset status checks), qty>1 takes the bulk path (deploys full quantity).

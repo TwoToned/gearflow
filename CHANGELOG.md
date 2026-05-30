@@ -5,6 +5,20 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0.3] - 2026-05-30
+
+Patch release — makes the v0.7.0.2 explicit-merge handoff actually
+usable against production data.
+
+### Fixed
+- **`collapse:historic-splits` hid the ids you need.** A project-scoped
+  dry-run truncated every line-item id to 10 chars and only collected
+  singletons under `--diagnose`, so an operator saw neither the
+  free-text priced parent (a singleton — its `modelId` is null or
+  differs from the scan-created children) nor copyable child ids. The
+  scoped dry-run now auto-dumps singletons + the unmatched bucket with
+  **full ids**, ready to paste into `--merge-into` / `--children`.
+
 ## [0.7.0.2] - 2026-05-29
 
 Patch release — finishes the historic-split consolidation tooling and

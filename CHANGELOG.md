@@ -5,6 +5,28 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0.4] - 2026-05-30
+
+Patch release — delivery dockets now list every assigned asset tag, one
+row per unit, instead of collapsing to "tag, tag +N".
+
+### Fixed
+- **Delivery docket collapsed multi-quantity lines.** A line with qty > 1
+  rendered "TTP00042, TTP00045 +3" instead of one row per assigned unit,
+  so the client had no per-unit list to tick off on receipt. The section
+  render path (`generate-pdf` `loadTemplate` reads `sections` first) is
+  the active path, but `getDefaultSections("delivery-docket")` was the one
+  place `showPerUnitCheckboxes` was missed — the legacy
+  `getDefaultSettings()` blob already had it `true`, so the two default
+  sources disagreed and the section one won at render. Set it `true` on
+  the section default to match packing-list/return-sheet.
+- **`migrate:docket-per-unit` was a no-op for section-based templates.**
+  The original script only flipped the legacy `settings.table` blob, but
+  render reads `sections` first — so org templates customised through the
+  modern editor kept the old single-row layout. The migration now flips
+  both `sections[type=table].settings` and the legacy `settings.table`,
+  with `--org` scoping. Idempotent, dry-run by default, `--apply` to write.
+
 ## [0.7.0.3] - 2026-05-30
 
 Patch release — makes the v0.7.0.2 explicit-merge handoff actually

@@ -35,6 +35,12 @@
  *   tsx --env-file=.env scripts/collapse-historic-splits.ts --diagnose --project <id>
  *       # dump singletons + unmatched buckets so you can read the ids
  *
+ * A project-scoped dry-run (`--project <id>` with no `--merge-into`) now
+ * auto-dumps singletons + unmatched buckets with FULL line-item ids — so a
+ * free-text priced parent that landed alone, and its scan-created children,
+ * are both visible to copy straight into --merge-into / --children below.
+ * No separate --diagnose pass needed when scoped to one project.
+ *
  * Explicit merge (when parent + children share no FK — eg a free-text
  * priced parent with model-pinned scan children). Bypasses heuristics
  * and merges precisely the ids you name:
@@ -283,7 +289,13 @@ async function main() {
 
     for (const [key, bucket] of byKey) {
       if (bucket.length < 2) {
-        if (diagnose) singletons.push({ key, rows: bucket });
+        // Collect singletons when scoped to one project (bounded set) or
+        // when --diagnose is on. This is how a priced parent that landed
+        // ALONE — because its modelId is null (free-text) or differs from
+        // its scan-created children — becomes visible, so the operator can
+        // read its full id for the explicit --merge-into handoff. Skipped
+        // on unscoped full runs to avoid dumping every line in the DB.
+        if (diagnose || projectFilter) singletons.push({ key, rows: bucket });
         continue;
       }
       const parents = bucket.filter(looksLikePricedParent);
@@ -386,8 +398,10 @@ async function main() {
       const assetTag = r.assetId ? r.assetId.slice(0, 8) + "…" : "—";
       const desc = (r.description ?? "").slice(0, 40);
       const modelName = model?.name ?? (r.modelId ? "?" : "(no model)");
+      // FULL id (not truncated) — this dump is meant to be read off and
+      // pasted into --merge-into / --children for the explicit merge.
       console.log(
-        `  ${r.id.slice(0, 10)}…  ${proj?.projectNumber ?? "?"}  model=${modelName}  desc="${desc}"  qty=${r.quantity}  price=${price}  total=${total}  assetId=${assetTag}  status=${r.status}`,
+        `  ${r.id}  ${proj?.projectNumber ?? "?"}  model=${modelName}  desc="${desc}"  qty=${r.quantity}  price=${price}  total=${total}  assetId=${assetTag}  status=${r.status}`,
       );
     }
     console.log();
@@ -410,8 +424,10 @@ async function main() {
         const bulkTag = r.bulkAssetId ? r.bulkAssetId.slice(0, 8) + "…" : "—";
         const cat = r.categoryId ? r.categoryId.slice(0, 8) + "…" : "—";
         const grp = r.groupId ? r.groupId.slice(0, 8) + "…" : "—";
+        // FULL line-item id — these are the child ids to paste into
+        // --children for the explicit merge.
         console.log(
-          `  ${r.id.slice(0, 10)}…  ${proj?.projectNumber ?? "?"}  ${model?.name ?? "?"}  qty=${r.quantity}  price=${price}  total=${total}  assetId=${assetTag}  bulkId=${bulkTag}  status=${r.status}  cat=${cat}  group=${grp}  kitChild=${r.isKitChild}  parent=${r.parentLineItemId ? r.parentLineItemId.slice(0, 8) + "…" : "—"}`,
+          `  ${r.id}  ${proj?.projectNumber ?? "?"}  ${model?.name ?? "?"}  qty=${r.quantity}  price=${price}  total=${total}  assetId=${assetTag}  bulkId=${bulkTag}  status=${r.status}  cat=${cat}  group=${grp}  kitChild=${r.isKitChild}  parent=${r.parentLineItemId ? r.parentLineItemId.slice(0, 8) + "…" : "—"}`,
         );
       }
       console.log();

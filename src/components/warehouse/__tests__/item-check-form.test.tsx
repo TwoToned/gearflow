@@ -113,7 +113,10 @@ import type { CheckRecordFormValues } from "@/lib/validations/check-item";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function renderForm(overrides: Partial<React.ComponentProps<typeof ItemCheckForm>> = {}) {
+function renderForm(
+  overrides: Partial<React.ComponentProps<typeof ItemCheckForm>> = {},
+  seedData: typeof mockItems = mockItems
+) {
   const onSubmit = vi.fn();
   const onCancel = vi.fn();
   const onOpenChange = vi.fn();
@@ -129,7 +132,7 @@ function renderForm(overrides: Partial<React.ComponentProps<typeof ItemCheckForm
     },
   });
   // Pre-seed the cache so the async query resolves immediately
-  client.setQueryData(["model-check-items", "org-1", "model-1"], mockItems);
+  client.setQueryData(["model-check-items", "org-1", "model-1"], seedData);
 
   const utils = render(
     <QueryClientProvider client={client}>
@@ -314,6 +317,46 @@ describe("ItemCheckForm keyboard shortcuts", () => {
     );
 
     key("a");
+    key("Enter");
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+});
+
+// Regression: a model/kit with zero configured check items must NOT be
+// submittable. Array.prototype.every returns true for an empty array, so before
+// the `items.length > 0` guard the submit button was enabled and would POST an
+// empty checks[] — which the server's `.min(1)` Zod schema rejects with an
+// uncaught ZodError → 500. Items with no checks are meant to go through
+// prepItemDirect, not this form.
+describe("ItemCheckForm with zero check items", () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it("renders an empty-state message instead of check rows", () => {
+    renderForm({}, []);
+    expect(screen.getByText(/No check items are configured/i)).toBeTruthy();
+    // None of the mockItems labels should render.
+    expect(screen.queryByText("Power on")).toBeNull();
+  });
+
+  it("disables the submit button when no checks are configured", () => {
+    renderForm({}, []);
+    // PREP context with failCount === 0 → "Pack Item"
+    const submit = screen.getByRole("button", { name: /Pack Item/i }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+  });
+
+  it("does not call onSubmit when clicking submit with zero checks", () => {
+    const { onSubmit } = renderForm({}, []);
+    const submit = screen.getByRole("button", { name: /Pack Item/i });
+    fireEvent.click(submit);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("does not call onSubmit on keyboard Enter with zero checks", () => {
+    const { onSubmit } = renderForm({}, []);
     key("Enter");
     expect(onSubmit).not.toHaveBeenCalled();
   });

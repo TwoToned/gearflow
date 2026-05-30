@@ -138,6 +138,12 @@ The Deploy tab is the staging ground on both sides of the truck. The check alway
 
 Models with 0 check items skip the check form entirely. The `model._count.modelCheckItems` count (included in warehouse queries) is checked before opening the form — preserving existing behavior for models without checks. Kit check items use `kit._count.kitCheckItems` similarly.
 
+### Empty check-list guard (defensive)
+
+The warehouse page routes zero-check items to `prepItemDirect`, but two paths can still mount `ItemCheckForm` with an empty list: the brief window while the `getModelCheckItems`/`getKitCheckItems` query is still loading, and the ad-hoc `/check/[assetTag]` page which has no count gate. The form must therefore guard against an empty submit itself.
+
+`allComplete` is computed as `items.length > 0 && items.every(...)`. The `items.length > 0` clause is load-bearing: `Array.prototype.every` returns `true` for an empty array, so without it the submit button (and the keyboard `Enter` path) would be enabled with zero rows and POST an empty `checks[]`. The server schemas in `src/lib/validations/check-item.ts` declare `checks: z.array(...).min(1)`, so an empty array throws an uncaught `ZodError` (`too_small`) → 500. When `items.length === 0`, the form renders a "No check items are configured for this {kit|model}." empty-state instead of a blank form with a dead button. Regression coverage: `src/components/warehouse/__tests__/item-check-form.test.tsx` ("ItemCheckForm with zero check items").
+
 ## Predictive Maintenance
 
 After saving check records, if any check item has a FAIL result:

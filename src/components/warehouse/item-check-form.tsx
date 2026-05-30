@@ -245,8 +245,14 @@ export function ItemCheckForm({
     return "PASS";
   }
 
-  // Check if all items have results
-  const allComplete = items.every((mci) => {
+  // Check if all items have results.
+  // The `items.length > 0` guard matters: Array.prototype.every returns true for an
+  // empty array, which would make allComplete true (a) while the check-items query is
+  // still loading and (b) for a model/kit with zero configured checks. Either case
+  // lets the user submit an empty checks[] array, which the server's `.min(1)` Zod
+  // schema rejects with an uncaught ZodError → 500. Items with no checks are meant to
+  // go through prepItemDirect, not this form.
+  const allComplete = items.length > 0 && items.every((mci) => {
     const state = checkStates[mci.checkItem.id];
     if (!state) return false;
     if (mci.checkItem.type === "NOTES") return true; // Notes are always optional
@@ -379,6 +385,12 @@ export function ItemCheckForm({
         <div className="flex items-center justify-center py-16 text-fg-3">
           <Loader2 className="mr-2 h-5 w-5 animate-spin" />
           Loading check items...
+        </div>
+      ) : items.length === 0 ? (
+        <div
+          className={`flex items-center justify-center py-16 text-center text-sm text-fg-3 ${embedded ? "px-4" : ""}`}
+        >
+          No check items are configured for this {kitId ? "kit" : "model"}.
         </div>
       ) : (
         <div className={embedded ? "p-4 space-y-1" : "mt-4 space-y-1"}>

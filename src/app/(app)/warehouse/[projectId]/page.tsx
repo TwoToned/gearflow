@@ -2482,6 +2482,56 @@ function WarehouseProjectPage({
                   photos: [],
                 }));
 
+                // Empty-checks guard (mirrors the PR #120 form guard for the
+                // "pass all remaining" path). The completeCheck*/saveKit* server
+                // actions enforce checks.min(1) and 500 on an empty array. The
+                // cached project's _count.modelCheckItems gate that queued this
+                // item can diverge from the live getModelCheckItems fetch above
+                // (e.g. an admin removed the model's check items after the
+                // warehouse page cached the project), leaving `checks` empty.
+                // Route those items through their no-check equivalent instead of
+                // crashing — items with no checks are meant to flow through
+                // prepItemDirect / checkInItems, not the check actions.
+                if (checks.length === 0) {
+                  if (isKitLevelItem || isKitQueueChild) {
+                    // Kit deploy/return is finalized in finishCheckQueue — there
+                    // is nothing to record here, so just skip the save.
+                    continue;
+                  }
+                  if (item.context === "PREP") {
+                    await prepItemDirect(
+                      projectId,
+                      item.lineItemId,
+                      item.assetId || undefined,
+                      item.assetId ? undefined : 1,
+                      selectedContainer || null,
+                    );
+                  } else if (item.fromDeprep) {
+                    // completeCheckAndDeprep tolerates an empty checks[] (it
+                    // does not re-parse against a .min(1) schema).
+                    await completeCheckAndDeprep({
+                      projectId,
+                      lineItemId: item.lineItemId,
+                      assetId: item.assetId,
+                      bulkAssetId: item.bulkAssetId,
+                      checks,
+                    });
+                  } else {
+                    // RETURN store with no checks — return to inventory via the
+                    // no-check check-in path (same as finishCheckQueue's direct
+                    // items) rather than completeCheckAndStore (min(1)).
+                    await checkInItems(projectId, [
+                      {
+                        lineItemId: item.lineItemId,
+                        assetId: item.assetId || undefined,
+                        returnCondition: "GOOD",
+                        quantity: item.assetId ? undefined : 1,
+                      },
+                    ]);
+                  }
+                  continue;
+                }
+
                 if (isKitLevelItem) {
                   // Kit-level: save records only, deploy happens in finishCheckQueue
                   await saveKitLevelChecks(projectId, item.kitId!, item.lineItemId, item.context, checks);

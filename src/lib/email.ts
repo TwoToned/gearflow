@@ -1,7 +1,19 @@
 import { Resend } from "resend";
 import { env } from "@/env";
 
-const resend = new Resend(env.RESEND_API_KEY);
+// Lazily construct the Resend client. Building it at module scope throws
+// "Missing API key" when RESEND_API_KEY is unset, which breaks `next build`
+// page-data collection in CI (no secrets) for any route that transitively
+// imports this module (e.g. /api/auditor/[token]). sendEmail only reaches
+// getResend() after the dev-mock guard below, so the key is present here.
+let resendClient: Resend | null = null;
+
+function getResend(): Resend {
+  if (!resendClient) {
+    resendClient = new Resend(env.RESEND_API_KEY);
+  }
+  return resendClient;
+}
 
 /**
  * Optional attachment payload. Filename is what the recipient sees; content
@@ -34,7 +46,7 @@ export async function sendEmail({
     return { id: "dev-mock" };
   }
 
-  const { data, error } = await resend.emails.send({
+  const { data, error } = await getResend().emails.send({
     from: env.EMAIL_FROM,
     to,
     subject,

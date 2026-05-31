@@ -25,7 +25,7 @@ describe("flattenBlocks", () => {
             id: "col_1",
             type: "column",
             children: [
-              { id: "sec_1", type: "header", settings: { logoMode: "icon" } },
+              { id: "sec_1", type: "header", settings: {} },
             ],
           },
         ],
@@ -94,7 +94,7 @@ describe("flattenBlocks", () => {
               {
                 id: "sec_1",
                 type: "custom-text",
-                settings: { fontSize: 10 },
+                settings: { fontSize: 10, fontWeight: "normal", alignment: "left" },
                 visibility: { docTypes: ["quote"] },
                 content: "Hello {client_name}",
               },
@@ -107,7 +107,7 @@ describe("flattenBlocks", () => {
     const result = flattenBlocks(blocks);
     expect(result[0].content).toBe("Hello {client_name}");
     expect(result[0].visibility).toEqual({ docTypes: ["quote"] });
-    expect(result[0].settings).toEqual({ fontSize: 10 });
+    expect(result[0].settings).toEqual({ fontSize: 10, fontWeight: "normal", alignment: "left" });
   });
 
   it("preserves block styling in layoutHint", () => {
@@ -316,14 +316,14 @@ describe("round-trip conversion", () => {
             id: "col_1",
             type: "column",
             children: [
-              { id: "s1", type: "client-details", settings: { showClientName: true }, visibility: { docTypes: ["quote"] } },
+              { id: "s1", type: "client-details", settings: { showClientName: true, showClientContact: true, showClientEmail: true, showClientAddress: true, showClientTaxId: false }, visibility: { docTypes: ["quote"] } },
             ],
           },
           {
             id: "col_2",
             type: "column",
             children: [
-              { id: "s2", type: "project-details", settings: { showProjectName: true } },
+              { id: "s2", type: "project-details", settings: {} },
             ],
           },
         ],
@@ -354,7 +354,7 @@ describe("round-trip conversion", () => {
     expect(roundTripped[0].columnWidths).toEqual([60, 40]);
     expect(roundTripped[0].children).toHaveLength(2);
     expect(roundTripped[0].children![0].children![0].id).toBe("s1");
-    expect(roundTripped[0].children![0].children![0].settings).toEqual({ showClientName: true });
+    expect(roundTripped[0].children![0].children![0].settings).toEqual({ showClientName: true, showClientContact: true, showClientEmail: true, showClientAddress: true, showClientTaxId: false });
     expect(roundTripped[0].children![1].children![0].id).toBe("s2");
 
     // Second row: 1 column, 100%
@@ -364,8 +364,8 @@ describe("round-trip conversion", () => {
 
   it("flat sections → blocks → sections preserves data", () => {
     const original: TemplateSection[] = [
-      { id: "s1", type: "header", settings: { logoMode: "icon" }, visibility: {}, order: 0 },
-      { id: "s2", type: "custom-text", settings: { fontSize: 10 }, visibility: {}, content: "Hello", order: 1 },
+      { id: "s1", type: "header", settings: { logoMode: "icon", showOrgName: true, showOrgAddress: true, showOrgPhone: true, showOrgEmail: true, showOrgWebsite: true, documentTitle: "" }, visibility: {}, order: 0 },
+      { id: "s2", type: "custom-text", settings: {}, visibility: {}, content: "Hello", order: 1 },
     ];
 
     const blocks = sectionsToBlocks(original);
@@ -373,7 +373,7 @@ describe("round-trip conversion", () => {
 
     expect(sections).toHaveLength(2);
     expect(sections[0].id).toBe("s1");
-    expect(sections[0].settings).toEqual({ logoMode: "icon" });
+    expect(sections[0].settings).toEqual({ logoMode: "icon", showOrgName: true, showOrgAddress: true, showOrgPhone: true, showOrgEmail: true, showOrgWebsite: true, documentTitle: "" });
     expect(sections[1].id).toBe("s2");
     expect(sections[1].content).toBe("Hello");
   });

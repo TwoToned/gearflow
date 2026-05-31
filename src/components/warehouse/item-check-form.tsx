@@ -29,7 +29,6 @@ import {
   SheetContent,
   SheetHeader,
   SheetTitle,
-  SheetFooter,
 } from "@/components/ui/sheet";
 import {
   Select,
@@ -293,11 +292,16 @@ export function ItemCheckForm({
   // Enter         — submit if all complete
   // Guards: ignore when any text input/textarea/select/contenteditable has focus,
   //         and when the form is submitting or loading.
-  // Latest-value refs avoid re-binding the listener on every state tick.
-  // Wire the refs to the latest handlers — both are defined above in render scope.
-  handleSubmitRef.current = handleSubmit;
-  handlePassAllRef.current = handlePassAll;
-  stateRef.current = { items, checkStates, focusedRowIndex, isSubmitting, isLoading };
+  // Latest-value refs avoid re-binding the keydown listener on every state tick.
+  // Assigning during render trips react-hooks/refs (React Compiler), so sync the
+  // refs in an effect with no deps array — it runs after every commit, and the
+  // listener only reads `.current` at event time, so post-commit freshness is
+  // sufficient.
+  useEffect(() => {
+    handleSubmitRef.current = handleSubmit;
+    handlePassAllRef.current = handlePassAll;
+    stateRef.current = { items, checkStates, focusedRowIndex, isSubmitting, isLoading };
+  });
 
   useEffect(() => {
     if (!open || embedded) return;

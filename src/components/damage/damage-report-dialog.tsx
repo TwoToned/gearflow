@@ -396,7 +396,7 @@ export function DamageReportDialog({
                   <div>
                     <div className="text-sm">Create workshop ticket + hold asset</div>
                     <div className="text-[11px] text-fg-4">
-                      Marks the asset IN_MAINTENANCE until repaired. Off only if you're just logging a cosmetic note.
+                      Marks the asset IN_MAINTENANCE until repaired. Off only if you&apos;re just logging a cosmetic note.
                     </div>
                   </div>
                 </label>
@@ -414,7 +414,7 @@ export function DamageReportDialog({
                   <div>
                     <div className="text-sm">Charging back to client</div>
                     <div className="text-[11px] text-fg-4">
-                      Subtracts from project P&L. Remember to add the line in Xero — we don't push automatically.
+                      Subtracts from project P&L. Remember to add the line in Xero — we don&apos;t push automatically.
                     </div>
                   </div>
                 </label>

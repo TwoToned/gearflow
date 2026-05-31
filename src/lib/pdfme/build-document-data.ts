@@ -438,7 +438,7 @@ export async function buildDocumentData(
   };
 
   let crew: CrewEntry[] = [];
-  let crewByDay: CallSheetDayData[] = [];
+  const crewByDay: CallSheetDayData[] = [];
 
   if (docType === "call-sheet") {
     const crewAssignments: CrewAssignmentRow[] =

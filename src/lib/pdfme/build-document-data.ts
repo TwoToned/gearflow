@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { computeOverbookedStatus } from "@/lib/availability";
 import { getFileAsDataUri } from "@/lib/storage";
 import { formatCurrency, formatDate } from "./plugins/helpers";
+import { structureLineItems, type CategoryForStructuring } from "./structure-line-items";
 import type { DocumentData, DocumentLineItem, CrewEntry, CallSheetDayData, DocumentType } from "./types";
 
 const DEFAULT_DOC_COLOR = "#0d4f4f";
@@ -135,6 +136,16 @@ export async function buildDocumentData(
           groups: { orderBy: { sortOrder: "asc" } },
         },
       },
+      // Sub-hires + their groups are loaded for Phase 1+ (sub-hire-as-section
+      // feature). Phase 0 includes them but doesn't consume them yet so the
+      // include shape is locked alongside the snapshot fixtures.
+      // SubHireGroup is nested under SubHire, not directly on Project.
+      subHires: {
+        include: {
+          supplier: { select: { name: true } },
+          groups: { orderBy: { sortOrder: "asc" } },
+        },
+      },
       lineItems: {
         where: { status: { not: "CANCELLED" } },
         orderBy: { sortOrder: "asc" },
@@ -233,94 +244,14 @@ export async function buildDocumentData(
   const rawLineItems: DocumentLineItem[] = serialized.lineItems as any;
 
   // ─── Restructure for categories & groups ─────────────────────────────────
-  // Categories = section headers, Groups = client-facing rows (hide individual items)
+  // Delegated to structureLineItems() so the logic is testable in isolation
+  // and Phase 1's per-template expand toggle has a clean seam to extend.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const categories = (serialized as any).categories as Array<{
-    id: string; name: string; sortOrder: number;
-    groups: Array<{
-      id: string; title: string; description: string | null;
-      quantity: number; price: number | null; rentalPeriod: string | null;
-      rentalQuantity: number | null; billingWeeks: number | null;
-      billingDays: number | null; sortOrder: number;
-    }>;
-  }> | undefined;
+  const categories = (serialized as any).categories as
+    | CategoryForStructuring[]
+    | undefined;
 
-  let lineItems: DocumentLineItem[];
-
-  if (categories && categories.length > 0) {
-    // Build set of groupIds so we can filter out their child line items
-    const groupIds = new Set<string>();
-    for (const cat of categories) {
-      for (const g of cat.groups) {
-        groupIds.add(g.id);
-      }
-    }
-
-    // Build ordered list: categories as headers, groups as rows, ungrouped items inline
-    const structured: DocumentLineItem[] = [];
-
-    for (const cat of categories) {
-      // Ungrouped items in this category (have categoryId but no groupId)
-      const ungroupedInCat = rawLineItems.filter(
-        li => li.categoryName === cat.name && !li.groupTitle && !li.isKitChild && !li.isContainerLineItem
-      );
-
-      // Only emit category if it has groups or ungrouped items
-      if (cat.groups.length === 0 && ungroupedInCat.length === 0) continue;
-
-      // Groups become virtual line item rows (hiding individual equipment)
-      for (const group of cat.groups) {
-        const duration = group.billingDays ?? group.rentalQuantity ?? 1;
-        const price = group.price ?? 0;
-        const total = group.quantity * price * duration;
-
-        structured.push({
-          id: `group-${group.id}`,
-          description: group.description || null,
-          quantity: group.quantity,
-          checkedOutQuantity: 0,
-          unitPrice: price,
-          pricingType: group.rentalPeriod === "WEEKLY" ? "PER_WEEK" : "PER_DAY",
-          duration,
-          discount: null,
-          lineTotal: total,
-          groupName: cat.name,
-          categoryName: cat.name,
-          groupTitle: group.title,
-          isGroupRow: true,
-          isOptional: false,
-          notes: group.description || null,
-          status: "CONFIRMED",
-          model: { name: group.title },
-          asset: null,
-          bulkAsset: null,
-        });
-      }
-
-      // Then any ungrouped items in this category
-      for (const li of ungroupedInCat) {
-        structured.push({ ...li, groupName: cat.name });
-      }
-    }
-
-    // Items not in any category and not inside a group — show as-is
-    const uncategorized = rawLineItems.filter(li => {
-      if (li.isKitChild || li.isContainerLineItem) return false;
-      if (li.categoryName || li.groupTitle) return false;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const groupId = (li as any).groupId as string | null | undefined;
-      if (groupId && groupIds.has(groupId)) return false;
-      return true;
-    });
-    for (const li of uncategorized) {
-      structured.push(li);
-    }
-
-    lineItems = structured;
-  } else {
-    // No categories — pass through as before (legacy projects)
-    lineItems = rawLineItems;
-  }
+  const lineItems: DocumentLineItem[] = structureLineItems(rawLineItems, categories);
 
   // ─── Append billable services as virtual line items ─────────────────────────
   // Services with showOnDocuments appear on quotes/invoices as their own section

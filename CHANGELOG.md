@@ -5,6 +5,60 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0.0] - 2026-06-02
+
+Warehouse-facing PDFs now show every item inside a Project Group, plus
+sub-hire and kit gear get their own clearly-labelled sections. Pick
+lists, return sheets, and delivery dockets render in packer-walk order
+so warehouse staff walk the warehouse rack-by-rack instead of
+ping-ponging across the building.
+
+### Fixed
+- **Pick list, return sheet, and delivery docket now show every line
+  item inside a Project Group.** Previously, any project with Project
+  Groups rendered as just the group title rows on warehouse docs —
+  staff couldn't see the 50 lamps to actually pick. The data builder
+  was collapsing groups into one synthetic row for every doc type;
+  now it's controlled by a per-template `expandProjectGroups`
+  setting, defaulting to expand for warehouse docs and collapse for
+  quote / invoice.
+
+### Added
+- **Sub-Hire Groups render as their own top-level section** on
+  warehouse docs (`Sub-Hire: <Supplier> — <Group Title>`). Packers
+  see what's hired-in vs owned at a glance; clients see the same
+  separation on the delivery docket they sign.
+- **Kit boundary wins over Project Group placement.** A kit that
+  sits inside a Project Group now breaks out into its own `[Kit]
+  <name>` section on warehouse docs. Kit contents stay grouped as a
+  unit instead of getting lost in the surrounding gear.
+- **Packer-walk sort order** within each section: location →
+  category → model name. Bulk items and custom items without a
+  location bucket to the bottom of each section.
+- **Delivery docket expands groups with serials** so the signed
+  handover doc has full evidence of what physically left the
+  building.
+
+### Changed
+- New `TemplateSettings.table.expandProjectGroups` boolean. Defaults
+  true for packing-list, return-sheet, delivery-docket; false for
+  quote, invoice, call-sheet.
+- `resolveTemplateSettings(docType, stored)` deep-merges legacy
+  stored template JSON against the docType defaults so new settings
+  keys pick up safe values automatically. Without this, every
+  existing template would silently regress to today's
+  collapsed-row bug on first deploy.
+- `gearflow-table.ts` delivery-docket grouping respects `groupName`
+  for non-kit items so Project Groups and Sub-Hire Groups get their
+  own section headers. Kit promotion (kit name as header,
+  CHECKED_OUT children as rows) preserved.
+- Pagination orphan check: group headers now reserve space for the
+  header AND at least one body row before drawing, so headers never
+  strand at a page bottom with items continuing onto the next.
+- Both render pipelines (legacy template + section-based) get the
+  fix simultaneously because both consume `data.line_items` from
+  the same builder.
+
 ## [0.7.1.0] - 2026-06-02
 
 iCal feed now shows the right time when subscribed in Google Calendar.

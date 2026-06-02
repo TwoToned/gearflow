@@ -7,6 +7,12 @@ import { prisma } from "@/lib/prisma";
 import { computeOverbookedStatus } from "@/lib/availability";
 import { getFileAsDataUri } from "@/lib/storage";
 import { formatCurrency, formatDate } from "./plugins/helpers";
+import {
+  structureLineItems,
+  type CategoryForStructuring,
+  type SubHireGroupForStructuring,
+} from "./structure-line-items";
+import { getDefaultSettings, type TemplateSettings } from "./template-settings";
 import type { DocumentData, DocumentLineItem, CrewEntry, CallSheetDayData, DocumentType } from "./types";
 
 const DEFAULT_DOC_COLOR = "#0d4f4f";
@@ -29,11 +35,20 @@ const unitInclude = {
   },
 } as const;
 
+/**
+ * Asset include shape with location data attached. Used for both
+ * `asset` (serialised) and `bulkAsset` (bulk) on line items so the
+ * packer-sort logic in `structureLineItems` can read `locationName`.
+ */
+const assetWithLocation = {
+  include: { location: { select: { name: true } } },
+} as const;
+
 /** Deep include for line items — 2 levels of children for nested kits */
 const lineItemInclude = {
   model: { include: { category: true } },
-  asset: true,
-  bulkAsset: true,
+  asset: assetWithLocation,
+  bulkAsset: assetWithLocation,
   kit: true,
   units: unitInclude,
   supplier: { select: { name: true } },
@@ -43,8 +58,8 @@ const lineItemInclude = {
     orderBy: { sortOrder: "asc" as const },
     include: {
       model: { include: { category: true } },
-      asset: true,
-      bulkAsset: true,
+      asset: assetWithLocation,
+      bulkAsset: assetWithLocation,
       kit: true,
       units: unitInclude,
       supplier: { select: { name: true } },
@@ -54,8 +69,8 @@ const lineItemInclude = {
         orderBy: { sortOrder: "asc" as const },
         include: {
           model: { include: { category: true } },
-          asset: true,
-          bulkAsset: true,
+          asset: assetWithLocation,
+          bulkAsset: assetWithLocation,
           units: unitInclude,
           supplier: { select: { name: true } },
         },
@@ -89,8 +104,23 @@ export async function buildDocumentData(
     allDates?: boolean;
     crewMemberId?: string;
     crewRoleId?: string;
+    /**
+     * Pre-resolved template settings (already merged against the docType
+     * defaults). When omitted, the docType defaults are used. The data
+     * builder reads `settings.table.expandProjectGroups` to decide how to
+     * structure line items; downstream renderers consume the same settings
+     * object for visual concerns.
+     */
+    settings?: TemplateSettings;
   }
 ): Promise<DocumentData> {
+  const settings = options?.settings ?? getDefaultSettings(docType);
+  const expandProjectGroups = settings.table.expandProjectGroups;
+  // Packer-walk sort piggy-backs on expandProjectGroups today — every doc
+  // type that expands groups (packing-list, return-sheet, delivery-docket)
+  // also wants packer order. A separate setting can split them later if a
+  // user asks for one without the other.
+  const packerSort = expandProjectGroups;
   // Load org
   const org = await prisma.organization.findUnique({
     where: { id: organizationId },
@@ -132,6 +162,16 @@ export async function buildDocumentData(
       categories: {
         orderBy: { sortOrder: "asc" },
         include: {
+          groups: { orderBy: { sortOrder: "asc" } },
+        },
+      },
+      // Sub-hires + their groups are loaded for Phase 1+ (sub-hire-as-section
+      // feature). Phase 0 includes them but doesn't consume them yet so the
+      // include shape is locked alongside the snapshot fixtures.
+      // SubHireGroup is nested under SubHire, not directly on Project.
+      subHires: {
+        include: {
+          supplier: { select: { name: true } },
           groups: { orderBy: { sortOrder: "asc" } },
         },
       },
@@ -187,8 +227,17 @@ export async function buildDocumentData(
     project.id
   );
 
-  // Enrich line items with overbooking flags + category/group names
+  // Enrich line items with overbooking flags + category/group/location names
   type LineItemRow = (typeof project.lineItems)[number];
+  /**
+   * Pull the physical location name off a line item via its asset or
+   * bulk-asset record. Custom items and services have neither and
+   * return null, sorting to the "No Location" bucket on packer docs.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const deriveLocationName = (row: any): string | null => {
+    return row?.asset?.location?.name ?? row?.bulkAsset?.location?.name ?? null;
+  };
   const enrichedLineItems = project.lineItems.map((li: LineItemRow) => {
     const info = overbookedMap.get(li.id);
     const children = (li as unknown as { childLineItems?: LineItemRow[] }).childLineItems;
@@ -200,6 +249,7 @@ export async function buildDocumentData(
       ...li,
       categoryName,
       groupTitle,
+      locationName: deriveLocationName(liAny),
       supplierName: liAny.supplier?.name ?? null,
       isOverbooked: !!info,
       overbookedInherited: info?.inherited ?? false,
@@ -214,6 +264,7 @@ export async function buildDocumentData(
           ...child,
           categoryName: childAny.category?.name ?? null,
           groupTitle: childAny.group?.title ?? null,
+          locationName: deriveLocationName(childAny),
           supplierName: childAny.supplier?.name ?? null,
           isOverbooked: !!childInfo,
           overbookedReducedOnly: childInfo?.reducedOnly ?? false,
@@ -233,94 +284,42 @@ export async function buildDocumentData(
   const rawLineItems: DocumentLineItem[] = serialized.lineItems as any;
 
   // ─── Restructure for categories & groups ─────────────────────────────────
-  // Categories = section headers, Groups = client-facing rows (hide individual items)
+  // Delegated to structureLineItems() so the logic is testable in isolation
+  // and Phase 1's per-template expand toggle has a clean seam to extend.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const categories = (serialized as any).categories as Array<{
-    id: string; name: string; sortOrder: number;
-    groups: Array<{
-      id: string; title: string; description: string | null;
-      quantity: number; price: number | null; rentalPeriod: string | null;
-      rentalQuantity: number | null; billingWeeks: number | null;
-      billingDays: number | null; sortOrder: number;
-    }>;
-  }> | undefined;
+  const categories = (serialized as any).categories as
+    | CategoryForStructuring[]
+    | undefined;
 
-  let lineItems: DocumentLineItem[];
-
-  if (categories && categories.length > 0) {
-    // Build set of groupIds so we can filter out their child line items
-    const groupIds = new Set<string>();
-    for (const cat of categories) {
-      for (const g of cat.groups) {
-        groupIds.add(g.id);
-      }
+  // Flatten sub-hire groups across all of the project's SubHires so the
+  // structurer can render each one as its own top-level section in
+  // warehouse mode. supplier.name is pre-resolved here so the helper
+  // stays pure (no Prisma lookups in the data-shape transformation).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const subHires = (serialized as any).subHires as
+    | Array<{
+        supplier?: { name: string | null } | null;
+        groups?: Array<{ id: string; title: string; sortOrder: number }>;
+      }>
+    | undefined;
+  const subHireGroups: SubHireGroupForStructuring[] = [];
+  for (const sh of subHires ?? []) {
+    for (const g of sh.groups ?? []) {
+      subHireGroups.push({
+        id: g.id,
+        title: g.title,
+        sortOrder: g.sortOrder,
+        supplierName: sh.supplier?.name ?? null,
+      });
     }
-
-    // Build ordered list: categories as headers, groups as rows, ungrouped items inline
-    const structured: DocumentLineItem[] = [];
-
-    for (const cat of categories) {
-      // Ungrouped items in this category (have categoryId but no groupId)
-      const ungroupedInCat = rawLineItems.filter(
-        li => li.categoryName === cat.name && !li.groupTitle && !li.isKitChild && !li.isContainerLineItem
-      );
-
-      // Only emit category if it has groups or ungrouped items
-      if (cat.groups.length === 0 && ungroupedInCat.length === 0) continue;
-
-      // Groups become virtual line item rows (hiding individual equipment)
-      for (const group of cat.groups) {
-        const duration = group.billingDays ?? group.rentalQuantity ?? 1;
-        const price = group.price ?? 0;
-        const total = group.quantity * price * duration;
-
-        structured.push({
-          id: `group-${group.id}`,
-          description: group.description || null,
-          quantity: group.quantity,
-          checkedOutQuantity: 0,
-          unitPrice: price,
-          pricingType: group.rentalPeriod === "WEEKLY" ? "PER_WEEK" : "PER_DAY",
-          duration,
-          discount: null,
-          lineTotal: total,
-          groupName: cat.name,
-          categoryName: cat.name,
-          groupTitle: group.title,
-          isGroupRow: true,
-          isOptional: false,
-          notes: group.description || null,
-          status: "CONFIRMED",
-          model: { name: group.title },
-          asset: null,
-          bulkAsset: null,
-        });
-      }
-
-      // Then any ungrouped items in this category
-      for (const li of ungroupedInCat) {
-        structured.push({ ...li, groupName: cat.name });
-      }
-    }
-
-    // Items not in any category and not inside a group — show as-is
-    const uncategorized = rawLineItems.filter(li => {
-      if (li.isKitChild || li.isContainerLineItem) return false;
-      if (li.categoryName || li.groupTitle) return false;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const groupId = (li as any).groupId as string | null | undefined;
-      if (groupId && groupIds.has(groupId)) return false;
-      return true;
-    });
-    for (const li of uncategorized) {
-      structured.push(li);
-    }
-
-    lineItems = structured;
-  } else {
-    // No categories — pass through as before (legacy projects)
-    lineItems = rawLineItems;
   }
+
+  const lineItems: DocumentLineItem[] = structureLineItems(
+    rawLineItems,
+    categories,
+    { expandProjectGroups, packerSort },
+    subHireGroups,
+  );
 
   // ─── Append billable services as virtual line items ─────────────────────────
   // Services with showOnDocuments appear on quotes/invoices as their own section

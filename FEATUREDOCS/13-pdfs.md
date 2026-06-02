@@ -35,10 +35,11 @@ All PDF generation uses **pdfme** (`@pdfme/generator` + `@pdfme/common` + custom
 | `src/lib/pdfme/section-types.ts` | Section type definitions, default settings, default section lists per doc type |
 | `src/lib/pdfme/condition-evaluator.ts` | Visibility condition evaluation (doc type filter + data conditions) |
 | `src/lib/pdfme/token-resolver.ts` | `{token}` resolution with whitelist, `resolveTokensInText()`, `getAllowedTokens()` |
-| `src/lib/pdfme/build-document-data.ts` | Assembles `DocumentData` contract for project documents |
+| `src/lib/pdfme/build-document-data.ts` | Assembles `DocumentData` contract for project documents. Loads project + sub-hires + categories with location data. Calls `structureLineItems` |
+| `src/lib/pdfme/structure-line-items.ts` | Pure helper — restructures raw line items into per-bucket arrays for the table plugin. Handles Project Group expand/collapse, sub-hire sections, kit boundary, packer-walk sort |
 | `src/lib/pdfme/templates/index.ts` | Template registry — maps doc types → template builders (legacy) |
 | `src/lib/pdfme/templates/shared-builders.ts` | Shared helpers mapping `TemplateSettings` → plugin configs (legacy) |
-| `src/lib/pdfme/template-settings.ts` | `TemplateSettings` interface + `getDefaultSettings()` per doc type (legacy) |
+| `src/lib/pdfme/template-settings.ts` | `TemplateSettings` interface, `getDefaultSettings()` per doc type, `resolveTemplateSettings()` for legacy-JSON merge |
 | `src/lib/pdfme/sample-document-data.ts` | Sample data generator for preview (real org branding + fake content) |
 | `src/lib/pdfme/types.ts` | `DocumentType`, `TestTagReportType`, `DocumentData`, plugin config types |
 | `src/lib/pdfme/plugins/index.ts` | Plugin registry — all custom + built-in plugins |
@@ -245,6 +246,53 @@ All document templates use a unified line item hierarchy with up to 3 levels:
 | `/api/documents/[projectId]` | GET | Generate project document. Params: `type` (quote/invoice/pull-slip/delivery-docket/return-sheet), `templateId` (optional) |
 | `/api/documents/call-sheet/[projectId]` | GET | Generate call sheet. Params: `date`, `dates` (comma-separated), `allDates=true`, `crewMemberId`, `templateId` (all optional). Multi-day/per-person params trigger `generateCallSheetPdf()` with section expansion. |
 | `/api/test-tag-reports/[reportType]` | GET | Generate T&T report. Params: `format` (pdf/csv), filters (dateFrom, dateTo, status, equipmentClass, etc.) |
+
+## Line item structuring
+
+`structureLineItems(rawItems, categories, options, subHireGroups)` is the
+pure helper that decides how rows bucket on the PDF. It runs once per
+document inside `buildDocumentData`. Both render pipelines (legacy and
+section-based) consume the resulting `data.line_items` array.
+
+Two modes selected by `options.expandProjectGroups`:
+
+- **collapse** (default for `quote`, `invoice`): each Project Group
+  collapses into one synthetic `isGroupRow: true` row. Children dropped
+  so the client sees "Lighting Package x1 @ $5000" rather than every
+  itemised lamp. Sub-hire items stay inside their target category so
+  category subtotals roll up correctly.
+- **expand** (default for `packing-list`, `return-sheet`,
+  `delivery-docket`): each Project Group emits a header row + every
+  child line item underneath. Warehouse staff and the client at the
+  loading bay see every serial number that's leaving the building.
+
+Three additional behaviours layer onto expand mode:
+
+- **Sub-hire as own section**: items with a `subHireGroupId` matching
+  any loaded sub-hire group get pulled out of their target category
+  into a `Sub-Hire: <Supplier> — <Group Title>` section at the bottom
+  of the doc. Owned gear renders first, hired-in second.
+- **Kit boundary wins**: a kit parent (item with `kitId && !isKitChild`)
+  emits with `groupName: "[Kit] <kit.name>"` regardless of which
+  Project Group or Category it would otherwise belong to. Kit
+  children render via the parent's `childLineItems[]` in the table
+  plugin.
+- **Packer-walk sort**: items within each bucket sort by `locationName`
+  then `categoryName` then `model.name`. Null locations go to the
+  bottom of each bucket via a sentinel character. Sort is controlled
+  by `options.packerSort`, currently tied to `expandProjectGroups`
+  (every expand-mode doc also wants packer order).
+
+## Settings resolution
+
+`resolveTemplateSettings(docType, stored)` deep-merges a stored
+`DocumentTemplate.settings` JSON against the docType defaults so new
+keys (added in later releases) pick up safe values automatically. Run
+this once at the top of `generatePdf` before either pipeline starts —
+the data builder reads `settings.table.expandProjectGroups` to decide
+how to structure line items, and legacy stored JSON predates that key.
+Without the merge, every existing template silently regresses to
+collapsed-row output on the first deploy.
 
 ## Constraints
 - **Helvetica only** — no Unicode symbols (use ASCII: `-` not `—`, `|` not `•`)

@@ -59,6 +59,15 @@ export interface TemplateSettings {
     showAssetTags: boolean;
     showCategories: boolean;
     showRowNumbers: boolean;
+    /**
+     * When true, Project Groups expand into a header row + each child line
+     * item below. When false, each Project Group collapses to a single
+     * virtual line item row (the legacy quote/invoice behaviour). Warehouse
+     * doc types default to true so packers see every item to pick.
+     * Client-facing doc types (quote, invoice) default to false so the
+     * client sees a clean "Lighting Package x1" row.
+     */
+    expandProjectGroups: boolean;
   };
 
   // ─── Totals ───────────────────────────────────
@@ -154,6 +163,9 @@ export function getDefaultSettings(docType: DocumentType): TemplateSettings {
       showAssetTags: false,
       showCategories: false,
       showRowNumbers: false,
+      // Client-facing default: collapse Project Groups into a single row
+      // ("Lighting Package x1"). Overridden per docType below.
+      expandProjectGroups: false,
     },
 
     totals: {
@@ -197,6 +209,8 @@ export function getDefaultSettings(docType: DocumentType): TemplateSettings {
       base.table.showPricing = false;
       base.table.showBadges = false;
       base.table.showNotes = false;
+      // Warehouse staff need to see every item to pick — never collapse.
+      base.table.expandProjectGroups = true;
       base.totals.showTotals = false;
       base.other.showSummaryLine = true;
       base.other.showClientNotes = false;
@@ -210,6 +224,8 @@ export function getDefaultSettings(docType: DocumentType): TemplateSettings {
       base.table.showPricing = false;
       base.table.showBadges = false;
       base.table.showNotes = false;
+      // Same as packing list — receivers need item-level detail.
+      base.table.expandProjectGroups = true;
       base.totals.showTotals = false;
       base.other.showSignatureSection = true;
       base.other.signatureColumns = 3;
@@ -227,6 +243,9 @@ export function getDefaultSettings(docType: DocumentType): TemplateSettings {
       base.table.showPricing = false;
       base.table.showBadges = false;
       base.table.showNotes = false;
+      // Per CEO premise D1: delivery docket expands groups with serials
+      // so the signed handover doc has full evidence of what was delivered.
+      base.table.expandProjectGroups = true;
       base.details.showSiteContact = true;
       base.totals.showTotals = false;
       base.other.showSignatureSection = true;
@@ -243,4 +262,62 @@ export function getDefaultSettings(docType: DocumentType): TemplateSettings {
   }
 
   return base;
+}
+
+/**
+ * Resolve a template's settings against the docType defaults so legacy
+ * stored JSON (which predates new settings keys like `expandProjectGroups`)
+ * picks up safe defaults at read time. Per the engineering review's most
+ * critical failure mode: without this, every existing org template would
+ * silently regress to whatever `undefined` falls through to in the new
+ * code path — which for `expandProjectGroups` is the pre-fix collapsed-row
+ * bug.
+ *
+ * Stored values always win over defaults. Pass an object, a JSON string,
+ * or `null` / `undefined` — the latter two yield the bare docType defaults.
+ */
+/**
+ * Deeply-partial shape for stored settings. Top-level groups (header,
+ * footer, details, table, totals, other) are individually optional and,
+ * when present, may contain any subset of their keys. This matches what
+ * a legacy DocumentTemplate.settings JSON could plausibly contain.
+ */
+export type StoredTemplateSettings = {
+  accentColor?: string;
+  header?: Partial<TemplateSettings["header"]>;
+  footer?: Partial<TemplateSettings["footer"]>;
+  details?: Partial<TemplateSettings["details"]>;
+  table?: Partial<TemplateSettings["table"]>;
+  totals?: Partial<TemplateSettings["totals"]>;
+  other?: Partial<TemplateSettings["other"]>;
+};
+
+export function resolveTemplateSettings(
+  docType: DocumentType,
+  stored: StoredTemplateSettings | TemplateSettings | string | null | undefined,
+): TemplateSettings {
+  const defaults = getDefaultSettings(docType);
+  if (!stored) return defaults;
+
+  let parsed: StoredTemplateSettings;
+  if (typeof stored === "string") {
+    try {
+      parsed = JSON.parse(stored) as StoredTemplateSettings;
+    } catch {
+      return defaults;
+    }
+  } else {
+    parsed = stored;
+  }
+
+  return {
+    ...defaults,
+    accentColor: parsed.accentColor ?? defaults.accentColor,
+    header: { ...defaults.header, ...parsed.header },
+    footer: { ...defaults.footer, ...parsed.footer },
+    details: { ...defaults.details, ...parsed.details },
+    table: { ...defaults.table, ...parsed.table },
+    totals: { ...defaults.totals, ...parsed.totals },
+    other: { ...defaults.other, ...parsed.other },
+  };
 }

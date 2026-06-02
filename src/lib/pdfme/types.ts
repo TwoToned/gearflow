@@ -48,6 +48,14 @@ export interface DocumentLineItem {
   groupName: string | null;
   categoryName: string | null;
   groupTitle: string | null;
+  /**
+   * The physical location (warehouse area, rack, shelf) the line item's
+   * gear lives at, derived from the asset / bulk asset record. Null for
+   * custom items, services, and unassigned bulk requests. Used by
+   * `structureLineItems` to order rows in packer-walk order on
+   * warehouse-facing docs. Display rendering is unchanged.
+   */
+  locationName?: string | null;
   /** True for synthetic rows representing a ProjectGroup (hides individual equipment) */
   isGroupRow?: boolean;
   isOptional: boolean;
@@ -66,6 +74,12 @@ export interface DocumentLineItem {
   overbookedHasReduced?: boolean;
   // Subhire — `isSubhire` removed (Wave 2); detect via `subHireId != null`.
   subHireId?: string | null;
+  /**
+   * Specific SubHireGroup the item belongs to (if any). Items with this
+   * field set get pulled into a dedicated Sub-Hire section on warehouse
+   * docs so packers see what's hired-in vs owned at a glance.
+   */
+  subHireGroupId?: string | null;
   showSubhireOnDocs?: boolean;
   supplierName?: string | null;
   // Container

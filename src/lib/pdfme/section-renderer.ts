@@ -77,9 +77,16 @@ function getItemGroupKey(item: DocumentLineItem, ungrouped: string): string {
 }
 
 /**
- * Build kit-based groups for delivery docket.
- * Kit parents become group headers; their CHECKED_OUT children become the rows.
- * Non-kit items go under "General" at the bottom.
+ * Build groups for delivery docket — must mirror gearflow-table.ts:237-275.
+ *
+ * Kit parents promote their CHECKED_OUT children to be section rows under
+ * the kit's name. Non-kit items respect `groupName` so Project Groups and
+ * Sub-Hire Groups get their own section headers. Items with no groupName
+ * fall back to "General" at the bottom.
+ *
+ * Phase 3b will move kit promotion into the data layer and let the
+ * generic `buildGroupedItems` path handle delivery docket like every
+ * other doc type.
  */
 function buildDeliveryDocketGroups(
   data: DocumentData,
@@ -87,8 +94,7 @@ function buildDeliveryDocketGroups(
 ): { groupOrder: string[]; groups: Map<string, DocumentLineItem[]> } {
   const parentItems = getFilteredParentItems(data, docType);
   const groups = new Map<string, DocumentLineItem[]>();
-  const kitOrder: string[] = [];
-  const generalItems: DocumentLineItem[] = [];
+  const groupOrder: string[] = [];
 
   for (const item of parentItems) {
     const isKitParent = !!item.kitId && !item.isKitChild;
@@ -97,20 +103,19 @@ function buildDeliveryDocketGroups(
       const children = (item.childLineItems || []).filter(c => c.status === "CHECKED_OUT");
       if (children.length > 0) {
         if (!groups.has(kitName)) {
-          kitOrder.push(kitName);
+          groupOrder.push(kitName);
           groups.set(kitName, []);
         }
         groups.get(kitName)!.push(...children);
       }
     } else {
-      generalItems.push(item);
+      const key = item.groupName || item.prepContainer || "General";
+      if (!groups.has(key)) {
+        groupOrder.push(key);
+        groups.set(key, []);
+      }
+      groups.get(key)!.push(item);
     }
-  }
-
-  const groupOrder = [...kitOrder];
-  if (generalItems.length > 0) {
-    groups.set("General", generalItems);
-    groupOrder.push("General");
   }
 
   return { groupOrder, groups };

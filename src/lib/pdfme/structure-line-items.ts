@@ -1,17 +1,33 @@
 /**
  * Pure helper that restructures a project's raw line items into the ordered
  * array passed to PDF templates. Extracted from build-document-data.ts so
- * the structuring logic is testable in isolation and downstream changes
- * (per-template expand toggle, sub-hire section, kit boundary) can land
- * with snapshot coverage.
+ * the structuring logic is testable in isolation.
  *
- * Phase 0 invariant: this helper produces IDENTICAL output to the inlined
- * logic at build-document-data.ts:235-323. No behaviour change yet — only
- * the move.
+ * Two modes, selected by `expandProjectGroups`:
  *
- * Phase 1+ adds: an `expandProjectGroups` flag, `subHireGroups` param, and
- * composite Map-key handling. Don't add those here until the snapshot
- * fixtures are locked.
+ * - `false` (default for quote / invoice — client-facing): each Project
+ *   Group collapses into a single virtual line item row with
+ *   `isGroupRow: true`. The group's child line items are dropped because
+ *   the client sees "Lighting Package x1 @ $5000", not 50 itemized rows.
+ *
+ * - `true` (warehouse-facing docs — packing list, return sheet, delivery
+ *   docket): each Project Group becomes a section header (still
+ *   `isGroupRow: true`, with quantity preserved for context) followed by
+ *   every child line item underneath. Warehouse staff and the client at
+ *   the loading bay see every serial number that's leaving the building.
+ *
+ * Bucket-key strategy: the downstream table plugin buckets rows by
+ * `groupName` and also uses it as the visible header text. To keep both
+ * concerns satisfied without changing the plugin contract:
+ *   - Category-bucket rows use `groupName = cat.name` (legacy behaviour).
+ *   - Project-Group-bucket rows (only in expand mode) use
+ *     `groupName = group.title`.
+ *
+ * Theoretical collision: if two distinct categories each have a Project
+ * Group with the same title AND expand mode is on, those two groups
+ * merge into one bucket. This is rare in real data and currently
+ * documented (not prevented) — a future change can introduce explicit
+ * display-label / key separation if it becomes a problem.
  */
 import type { DocumentLineItem } from "./types";
 
@@ -34,22 +50,33 @@ export interface CategoryForStructuring {
   }>;
 }
 
+export interface StructureOptions {
+  /**
+   * When true, emit each Project Group as a header row + child line items
+   * underneath. When false, collapse each group into a single synthetic
+   * row and drop the children. Defaults to false (client-facing legacy
+   * behaviour).
+   */
+  expandProjectGroups?: boolean;
+}
+
 /**
- * Restructure raw line items into the ordered, category-aware array that
- * PDF templates consume. Groups currently collapse into a single
- * `isGroupRow: true` synthetic row; their underlying line items are
- * filtered out. Uncategorized items render last.
+ * Restructure raw line items into the ordered array PDF templates consume.
+ * See file header for the two modes.
  *
- * Returns the rawLineItems unchanged when no categories exist (legacy
- * projects fall through this path).
+ * Returns the rawLineItems unchanged when no categories exist — legacy
+ * projects without any category structure fall through this path.
  */
 export function structureLineItems(
   rawLineItems: DocumentLineItem[],
   categories: CategoryForStructuring[] | undefined,
+  options: StructureOptions = {},
 ): DocumentLineItem[] {
   if (!categories || categories.length === 0) {
     return rawLineItems;
   }
+
+  const expand = options.expandProjectGroups ?? false;
 
   // Build set of groupIds so we can filter out their child line items
   const groupIds = new Set<string>();
@@ -59,7 +86,6 @@ export function structureLineItems(
     }
   }
 
-  // Build ordered list: categories as headers, groups as rows, ungrouped items inline
   const structured: DocumentLineItem[] = [];
 
   for (const cat of categories) {
@@ -72,14 +98,49 @@ export function structureLineItems(
         !li.isContainerLineItem,
     );
 
-    // Only emit category if it has groups or ungrouped items
-    if (cat.groups.length === 0 && ungroupedInCat.length === 0) continue;
+    // Skip categories with no content. In collapse mode that means no
+    // groups and no ungrouped items. In expand mode we still want to
+    // surface a category that has any group content (even empty groups
+    // get skipped later, but the category itself is non-empty if any
+    // group has items).
+    const hasGroupContent = expand
+      ? cat.groups.some(g =>
+          rawLineItems.some(
+            li =>
+              li.groupTitle === g.title &&
+              li.categoryName === cat.name &&
+              !li.isKitChild &&
+              !li.isContainerLineItem,
+          ),
+        )
+      : cat.groups.length > 0;
+    if (!hasGroupContent && ungroupedInCat.length === 0) continue;
 
-    // Groups become virtual line item rows (hiding individual equipment)
+    // Emit each group
     for (const group of cat.groups) {
       const duration = group.billingDays ?? group.rentalQuantity ?? 1;
       const price = group.price ?? 0;
       const total = group.quantity * price * duration;
+
+      // The visible bucket label. In collapse mode, the legacy code put
+      // group rows into the category bucket (so they sat under the
+      // category header). We preserve that. In expand mode, the group
+      // gets its own bucket labelled by group title.
+      const bucketLabel = expand ? group.title : cat.name;
+
+      const groupChildren = expand
+        ? rawLineItems.filter(
+            li =>
+              li.groupTitle === group.title &&
+              li.categoryName === cat.name &&
+              !li.isKitChild &&
+              !li.isContainerLineItem,
+          )
+        : [];
+
+      // Skip empty groups in expand mode — no header for nothing.
+      // In collapse mode we still emit the synthetic row (legacy).
+      if (expand && groupChildren.length === 0) continue;
 
       structured.push({
         id: `group-${group.id}`,
@@ -91,7 +152,7 @@ export function structureLineItems(
         duration,
         discount: null,
         lineTotal: total,
-        groupName: cat.name,
+        groupName: bucketLabel,
         categoryName: cat.name,
         groupTitle: group.title,
         isGroupRow: true,
@@ -102,15 +163,22 @@ export function structureLineItems(
         asset: null,
         bulkAsset: null,
       });
+
+      // Children belong under the group's bucket label.
+      if (expand) {
+        for (const child of groupChildren) {
+          structured.push({ ...child, groupName: bucketLabel });
+        }
+      }
     }
 
-    // Then any ungrouped items in this category
+    // Ungrouped items in this category render under the category bucket.
     for (const li of ungroupedInCat) {
       structured.push({ ...li, groupName: cat.name });
     }
   }
 
-  // Items not in any category and not inside a group — show as-is
+  // Items not in any category and not inside a group — render as-is.
   const uncategorized = rawLineItems.filter(li => {
     if (li.isKitChild || li.isContainerLineItem) return false;
     if (li.categoryName || li.groupTitle) return false;

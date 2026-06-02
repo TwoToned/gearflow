@@ -8,6 +8,7 @@ import { computeOverbookedStatus } from "@/lib/availability";
 import { getFileAsDataUri } from "@/lib/storage";
 import { formatCurrency, formatDate } from "./plugins/helpers";
 import { structureLineItems, type CategoryForStructuring } from "./structure-line-items";
+import { getDefaultSettings, type TemplateSettings } from "./template-settings";
 import type { DocumentData, DocumentLineItem, CrewEntry, CallSheetDayData, DocumentType } from "./types";
 
 const DEFAULT_DOC_COLOR = "#0d4f4f";
@@ -90,8 +91,18 @@ export async function buildDocumentData(
     allDates?: boolean;
     crewMemberId?: string;
     crewRoleId?: string;
+    /**
+     * Pre-resolved template settings (already merged against the docType
+     * defaults). When omitted, the docType defaults are used. The data
+     * builder reads `settings.table.expandProjectGroups` to decide how to
+     * structure line items; downstream renderers consume the same settings
+     * object for visual concerns.
+     */
+    settings?: TemplateSettings;
   }
 ): Promise<DocumentData> {
+  const settings = options?.settings ?? getDefaultSettings(docType);
+  const expandProjectGroups = settings.table.expandProjectGroups;
   // Load org
   const org = await prisma.organization.findUnique({
     where: { id: organizationId },
@@ -251,7 +262,11 @@ export async function buildDocumentData(
     | CategoryForStructuring[]
     | undefined;
 
-  const lineItems: DocumentLineItem[] = structureLineItems(rawLineItems, categories);
+  const lineItems: DocumentLineItem[] = structureLineItems(
+    rawLineItems,
+    categories,
+    { expandProjectGroups },
+  );
 
   // ─── Append billable services as virtual line items ─────────────────────────
   // Services with showOnDocuments appear on quotes/invoices as their own section

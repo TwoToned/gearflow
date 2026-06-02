@@ -225,8 +225,12 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
   }
 
   // === Group items ===
-  // Delivery docket: group by kit (case) name — kit becomes header, its CHECKED_OUT children become rows.
-  // Non-kit items go under "General" at the bottom.
+  // Delivery docket: kit parents promote their CHECKED_OUT children to be
+  // section rows under the kit's name (so the client ticks each item off
+  // on receipt). NON-kit items now respect `groupName` like every other
+  // doc type — this is what unlocks Project Groups + Sub-Hire Groups on
+  // the docket. Phase 3b will pull kit promotion into the data layer
+  // and remove the remaining docType branch.
   // All other doc types: group by groupName / prepContainer.
   const ungroupedKey = config.documentType === "packing-list" ? "Ungrouped"
     : config.documentType === "delivery-docket" ? "General"
@@ -235,9 +239,6 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
   const groups = new Map<string, DocumentLineItem[]>();
 
   if (config.documentType === "delivery-docket") {
-    const kitOrder: string[] = [];
-    const generalItems: DocumentLineItem[] = [];
-
     for (const item of filteredItems) {
       const isKitParent = !!item.kitId && !item.isKitChild;
       if (isKitParent) {
@@ -245,18 +246,18 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
         const children = (item.childLineItems || []).filter(c => c.status === "CHECKED_OUT");
         if (children.length > 0) {
           if (!groups.has(kitName)) {
-            kitOrder.push(kitName);
             groups.set(kitName, []);
           }
           groups.get(kitName)!.push(...children);
         }
       } else {
-        generalItems.push(item);
+        // Respect the structured groupName so Project Groups + Sub-Hire
+        // Groups get their own section headers, not lumped under "General".
+        const key = item.groupName || item.prepContainer || ungroupedKey;
+        const arr = groups.get(key) || [];
+        arr.push(item);
+        groups.set(key, arr);
       }
-    }
-
-    if (generalItems.length > 0) {
-      groups.set(ungroupedKey, generalItems);
     }
   } else {
     for (const item of filteredItems) {
@@ -290,7 +291,14 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
     // Group header — only draw if this group has visible items on this page
     if (groupName !== ungroupedKey && config.showGroupHeaders && hasVisibleItems) {
       const ghHeight = fontSize + rowPadding * 2;
-      if (currentY - ghHeight < bottomBoundary) { overflow = true; break; }
+      // Orphan-check: reserve space for the header AND at least one body
+      // row underneath, so headers never strand at a page bottom with
+      // their items continuing onto the next page (Eng review finding).
+      const minBodyRowHeight = fontSize + rowPadding * 2;
+      if (currentY - (ghHeight + minBodyRowHeight) < bottomBoundary) {
+        overflow = true;
+        break;
+      }
       page.drawRectangle({
         x: tableX,
         y: currentY - ghHeight,

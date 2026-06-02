@@ -344,6 +344,158 @@ describe("structureLineItems — Phase 0 baseline", () => {
     ]);
   });
 
+  // ─── Phase 1 — expandProjectGroups ─────────────────────────────────────
+
+  it("expandProjectGroups=true emits group header + each child line item", () => {
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-1", "Lighting", 0, [
+        makeGroup("grp-1", "Lighting Package", 0, { quantity: 1, price: 500, billingDays: 3 }),
+      ]),
+    ];
+    const raw = [
+      makeLineItem({
+        id: "li-1", categoryName: "Lighting", groupTitle: "Lighting Package",
+        model: { name: "Source 4 Leko" }, quantity: 12,
+      }),
+      makeLineItem({
+        id: "li-2", categoryName: "Lighting", groupTitle: "Lighting Package",
+        model: { name: "Iris kit" }, quantity: 2,
+      }),
+    ];
+    const result = structureLineItems(raw, categories, { expandProjectGroups: true });
+    expect(summarize(result)).toMatchInlineSnapshot(`
+      [
+        "[GROUP] cat=Lighting | group=Lighting Package | Lighting Package x1",
+        "[ITEM] cat=Lighting | group=Lighting Package | Source 4 Leko x12",
+        "[ITEM] cat=Lighting | group=Lighting Package | Iris kit x2",
+      ]
+    `);
+    // All three rows share the same groupName so the table plugin
+    // buckets them under one "Lighting Package" header.
+    const bucketNames = result.map(r => r.groupName);
+    expect(new Set(bucketNames).size).toBe(1);
+    expect(bucketNames[0]).toBe("Lighting Package");
+  });
+
+  it("expandProjectGroups=true skips empty groups (no header for nothing)", () => {
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-1", "Lighting", 0, [
+        makeGroup("grp-empty", "Empty Group", 0, { quantity: 1, price: 100 }),
+        makeGroup("grp-full", "Full Group", 1, { quantity: 1, price: 200 }),
+      ]),
+    ];
+    const raw = [
+      makeLineItem({
+        id: "li-1", categoryName: "Lighting", groupTitle: "Full Group",
+        model: { name: "Lamp" }, quantity: 4,
+      }),
+    ];
+    const result = structureLineItems(raw, categories, { expandProjectGroups: true });
+    // Empty Group has no children to render, so its header is suppressed
+    expect(summarize(result)).toEqual([
+      "[GROUP] cat=Lighting | group=Full Group | Full Group x1",
+      "[ITEM] cat=Lighting | group=Full Group | Lamp x4",
+    ]);
+  });
+
+  it("expandProjectGroups=true: ungrouped items go under category bucket, after groups", () => {
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-1", "Lighting", 0, [
+        makeGroup("grp-1", "Lighting Package", 0, { quantity: 1, price: 500 }),
+      ]),
+    ];
+    const raw = [
+      makeLineItem({
+        id: "li-1", categoryName: "Lighting", groupTitle: "Lighting Package",
+        model: { name: "In group" },
+      }),
+      makeLineItem({
+        id: "li-2", categoryName: "Lighting",
+        model: { name: "Loose lamp" }, quantity: 3,
+      }),
+    ];
+    const result = structureLineItems(raw, categories, { expandProjectGroups: true });
+    expect(summarize(result)).toMatchInlineSnapshot(`
+      [
+        "[GROUP] cat=Lighting | group=Lighting Package | Lighting Package x1",
+        "[ITEM] cat=Lighting | group=Lighting Package | In group x1",
+        "[ITEM] cat=Lighting | group=— | Loose lamp x3",
+      ]
+    `);
+    // Ungrouped item gets the category as its bucket
+    expect(result[2].groupName).toBe("Lighting");
+  });
+
+  it("expandProjectGroups=true: kit children stay filtered (kit boundary preserved)", () => {
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-1", "Lighting", 0, [
+        makeGroup("grp-1", "Kit Group", 0, { quantity: 1, price: 100 }),
+      ]),
+    ];
+    const raw = [
+      makeLineItem({
+        id: "kit-parent", categoryName: "Lighting", groupTitle: "Kit Group",
+        kitId: "kit-1",
+        model: { name: "FOH Kit" },
+      }),
+      makeLineItem({
+        id: "kit-child", categoryName: "Lighting", groupTitle: "Kit Group",
+        kitId: "kit-1", isKitChild: true,
+        model: { name: "Mixer (in kit)" },
+      }),
+    ];
+    const result = structureLineItems(raw, categories, { expandProjectGroups: true });
+    // Kit parent renders under the group; kit child is filtered (it
+    // renders via parent's childLineItems[] in the plugin).
+    expect(summarize(result)).toEqual([
+      "[GROUP] cat=Lighting | group=Kit Group | Kit Group x1",
+      "[ITEM] cat=Lighting | group=Kit Group | FOH Kit x1",
+    ]);
+  });
+
+  it("expandProjectGroups=true: empty category is still skipped", () => {
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-1", "Empty Cat", 0, [
+        makeGroup("grp-empty", "Empty Group", 0, { quantity: 1, price: 100 }),
+      ]),
+      makeCategory("cat-2", "Lighting", 1, [
+        makeGroup("grp-1", "Has items", 0, { quantity: 1, price: 100 }),
+      ]),
+    ];
+    const raw = [
+      makeLineItem({
+        id: "li-1", categoryName: "Lighting", groupTitle: "Has items",
+        model: { name: "Lamp" },
+      }),
+    ];
+    const result = structureLineItems(raw, categories, { expandProjectGroups: true });
+    // "Empty Cat" omitted entirely — no items in any of its groups.
+    expect(summarize(result)).toEqual([
+      "[GROUP] cat=Lighting | group=Has items | Has items x1",
+      "[ITEM] cat=Lighting | group=Has items | Lamp x1",
+    ]);
+  });
+
+  it("expandProjectGroups=false (collapse) is identical to legacy default behaviour", () => {
+    // Regression guard: passing { expandProjectGroups: false } explicitly
+    // matches the legacy default path. Quote/invoice rendering must not
+    // change in Phase 1.
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-1", "Lighting", 0, [
+        makeGroup("grp-1", "Lighting Package", 0, { quantity: 1, price: 500, billingDays: 3 }),
+      ]),
+    ];
+    const raw = [
+      makeLineItem({
+        id: "li-1", categoryName: "Lighting", groupTitle: "Lighting Package",
+        model: { name: "Source 4 Leko" }, quantity: 12,
+      }),
+    ];
+    const collapsed = structureLineItems(raw, categories, { expandProjectGroups: false });
+    const legacy = structureLineItems(raw, categories);
+    expect(collapsed).toEqual(legacy);
+  });
+
   it("50+ item pagination fixture: many groups and ungrouped items, no crashes", () => {
     // Pagination tests live in the plugin; here we just verify the helper
     // produces a stable shape for the fixture the plugin tests will consume.

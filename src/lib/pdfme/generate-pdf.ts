@@ -22,7 +22,7 @@ import { getDefaultSections } from "./section-types";
 import type { TemplateSection } from "./section-types";
 import type { DocumentType, DocumentData, TestTagReportType } from "./types";
 import type { ReportResult } from "@/lib/report-types";
-import type { TemplateSettings } from "./template-settings";
+import { resolveTemplateSettings, type TemplateSettings } from "./template-settings";
 
 // ─── Template Loading ────────────────────────────────────────────────────────
 
@@ -31,8 +31,12 @@ interface LoadedTemplate {
   sections: TemplateSection[] | null;
   /** Legacy pdfme template */
   template: Template | null;
-  /** Legacy settings */
-  settings: TemplateSettings | null;
+  /**
+   * Raw stored settings (or null). Always merge with the docType defaults
+   * via `resolveTemplateSettings(docType, settings)` at the call site
+   * before using.
+   */
+  settings: Partial<TemplateSettings> | null;
   /** Brand template overrides */
   brandAccentColor: string | null;
   brandFooterText: string | null;
@@ -89,7 +93,11 @@ async function loadTemplate(
         basePdf: JSON.parse(record.basePdf),
         schemas: JSON.parse(record.schemas),
       },
-      settings: record.settings ? JSON.parse(record.settings) : null,
+      // NOTE: caller is responsible for merging with `getDefaultSettings(docType)`
+      // via `resolveTemplateSettings` so legacy stored JSON picks up safe
+      // defaults for new settings keys (T1 — every Phase 1+ key would
+      // otherwise silently fall through to JavaScript's `undefined`).
+      settings: record.settings ? (JSON.parse(record.settings) as Partial<TemplateSettings>) : null,
       brandAccentColor: null,
       brandFooterText: null,
       brandFooterSecondLine: null,
@@ -121,11 +129,17 @@ export async function generatePdf(
   callSheetDate?: Date,
   templateId?: string,
 ): Promise<Uint8Array> {
-  // 1. Build data contract
-  const data = await buildDocumentData(projectId, organizationId, docType, callSheetDate);
-
-  // 2. Load template (section-based or legacy)
+  // 1. Load template + resolve settings BEFORE the data builder runs.
+  // The data builder reads `settings.table.expandProjectGroups` to decide
+  // whether to expand or collapse Project Groups, so it must see the
+  // already-merged settings (legacy stored JSON misses new keys).
   const loaded = await loadTemplate(organizationId, docType, templateId);
+  const settings = resolveTemplateSettings(docType, loaded.settings);
+
+  // 2. Build data contract — settings-aware.
+  const data = await buildDocumentData(projectId, organizationId, docType, callSheetDate, {
+    settings,
+  });
 
   // 3. Section-based pipeline (new)
   if (loaded.sections) {
@@ -148,16 +162,15 @@ export async function generatePdf(
     return pdf;
   }
 
-  // 4. Legacy pipeline (fallback)
+  // 4. Legacy pipeline (fallback) — pass the same merged settings.
   const { buildTemplate, buildInputs } = getTemplateBuilder(docType);
-  const templateSettings = loaded.settings || undefined;
-  const inputs = buildInputs(data, callSheetDate, templateSettings);
+  const inputs = buildInputs(data, callSheetDate, settings);
 
   let template: Template;
   if (loaded.template) {
     template = loaded.template;
   } else {
-    template = buildTemplate(templateSettings);
+    template = buildTemplate(settings);
   }
 
   const pdf = await generate({

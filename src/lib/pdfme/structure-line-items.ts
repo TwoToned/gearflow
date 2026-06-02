@@ -50,6 +50,17 @@ export interface CategoryForStructuring {
   }>;
 }
 
+/**
+ * SubHireGroup metadata flattened across all SubHires on the project,
+ * with the supplier name pre-resolved for the section header.
+ */
+export interface SubHireGroupForStructuring {
+  id: string;
+  title: string;
+  sortOrder: number;
+  supplierName: string | null;
+}
+
 export interface StructureOptions {
   /**
    * When true, emit each Project Group as a header row + child line items
@@ -103,11 +114,19 @@ export function getPackerSortOrder(): (
  *
  * Returns the rawLineItems unchanged when no categories exist — legacy
  * projects without any category structure fall through this path.
+ *
+ * When `expandProjectGroups` is true AND `subHireGroups` are passed in,
+ * items belonging to any sub-hire group get pulled out of their target
+ * category and rendered in dedicated "Sub-Hire: <supplier> — <group>"
+ * sections at the end. This lets warehouse staff see what's hired-in
+ * vs owned at a glance, and lets the client at the loading bay see
+ * the same separation on the delivery docket.
  */
 export function structureLineItems(
   rawLineItems: DocumentLineItem[],
   categories: CategoryForStructuring[] | undefined,
   options: StructureOptions = {},
+  subHireGroups: SubHireGroupForStructuring[] = [],
 ): DocumentLineItem[] {
   if (!categories || categories.length === 0) {
     return rawLineItems;
@@ -123,6 +142,20 @@ export function structureLineItems(
     return [...items].sort(packerCompare);
   };
 
+  // Sub-hire extraction is only active in expand mode (warehouse docs).
+  // Client-facing quote / invoice keep sub-hire items inside their target
+  // category so the line totals roll up against the category subtotals.
+  const subHireGroupIds = new Set(
+    expand ? subHireGroups.map(g => g.id) : [],
+  );
+
+  /** True if the item should be pulled into a sub-hire section. */
+  const isInSubHireSection = (li: DocumentLineItem): boolean => {
+    if (!expand) return false;
+    if (!li.subHireGroupId) return false;
+    return subHireGroupIds.has(li.subHireGroupId);
+  };
+
   // Build set of groupIds so we can filter out their child line items
   const groupIds = new Set<string>();
   for (const cat of categories) {
@@ -134,20 +167,21 @@ export function structureLineItems(
   const structured: DocumentLineItem[] = [];
 
   for (const cat of categories) {
-    // Ungrouped items in this category (have categoryId but no groupId)
+    // Ungrouped items in this category (have categoryId but no groupId).
+    // Sub-hire items are excluded — they get their own section below.
     const ungroupedInCat = rawLineItems.filter(
       li =>
         li.categoryName === cat.name &&
         !li.groupTitle &&
         !li.isKitChild &&
-        !li.isContainerLineItem,
+        !li.isContainerLineItem &&
+        !isInSubHireSection(li),
     );
 
     // Skip categories with no content. In collapse mode that means no
-    // groups and no ungrouped items. In expand mode we still want to
-    // surface a category that has any group content (even empty groups
-    // get skipped later, but the category itself is non-empty if any
-    // group has items).
+    // groups and no ungrouped items. In expand mode we want to surface
+    // a category that has any group content (sub-hire items are
+    // excluded from the count — they render in their own section).
     const hasGroupContent = expand
       ? cat.groups.some(g =>
           rawLineItems.some(
@@ -155,7 +189,8 @@ export function structureLineItems(
               li.groupTitle === g.title &&
               li.categoryName === cat.name &&
               !li.isKitChild &&
-              !li.isContainerLineItem,
+              !li.isContainerLineItem &&
+              !isInSubHireSection(li),
           ),
         )
       : cat.groups.length > 0;
@@ -179,7 +214,8 @@ export function structureLineItems(
               li.groupTitle === group.title &&
               li.categoryName === cat.name &&
               !li.isKitChild &&
-              !li.isContainerLineItem,
+              !li.isContainerLineItem &&
+              !isInSubHireSection(li),
           )
         : [];
 
@@ -226,10 +262,12 @@ export function structureLineItems(
   }
 
   // Items not in any category and not inside a group — render as-is,
-  // sorted in packer-walk order when the option is on.
+  // sorted in packer-walk order when the option is on. Sub-hire items
+  // are excluded so they don't double-appear (they render below).
   const uncategorized = rawLineItems.filter(li => {
     if (li.isKitChild || li.isContainerLineItem) return false;
     if (li.categoryName || li.groupTitle) return false;
+    if (isInSubHireSection(li)) return false;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const groupId = (li as any).groupId as string | null | undefined;
     if (groupId && groupIds.has(groupId)) return false;
@@ -237,6 +275,28 @@ export function structureLineItems(
   });
   for (const li of maybeSort(uncategorized)) {
     structured.push(li);
+  }
+
+  // Sub-hire sections — one per SubHireGroup that has actual items.
+  // Sections render AFTER all categories so the org's owned gear comes
+  // first on the doc and hired-in gear is clearly separated below.
+  if (expand && subHireGroups.length > 0) {
+    for (const shg of subHireGroups) {
+      const items = rawLineItems.filter(
+        li =>
+          li.subHireGroupId === shg.id &&
+          !li.isKitChild &&
+          !li.isContainerLineItem,
+      );
+      if (items.length === 0) continue;
+
+      const supplierPart = shg.supplierName ? `${shg.supplierName} — ` : "";
+      const bucketLabel = `Sub-Hire: ${supplierPart}${shg.title}`;
+
+      for (const li of maybeSort(items)) {
+        structured.push({ ...li, groupName: bucketLabel });
+      }
+    }
   }
 
   return structured;

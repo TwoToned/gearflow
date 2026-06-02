@@ -7,7 +7,11 @@ import { prisma } from "@/lib/prisma";
 import { computeOverbookedStatus } from "@/lib/availability";
 import { getFileAsDataUri } from "@/lib/storage";
 import { formatCurrency, formatDate } from "./plugins/helpers";
-import { structureLineItems, type CategoryForStructuring } from "./structure-line-items";
+import {
+  structureLineItems,
+  type CategoryForStructuring,
+  type SubHireGroupForStructuring,
+} from "./structure-line-items";
 import { getDefaultSettings, type TemplateSettings } from "./template-settings";
 import type { DocumentData, DocumentLineItem, CrewEntry, CallSheetDayData, DocumentType } from "./types";
 
@@ -287,10 +291,34 @@ export async function buildDocumentData(
     | CategoryForStructuring[]
     | undefined;
 
+  // Flatten sub-hire groups across all of the project's SubHires so the
+  // structurer can render each one as its own top-level section in
+  // warehouse mode. supplier.name is pre-resolved here so the helper
+  // stays pure (no Prisma lookups in the data-shape transformation).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const subHires = (serialized as any).subHires as
+    | Array<{
+        supplier?: { name: string | null } | null;
+        groups?: Array<{ id: string; title: string; sortOrder: number }>;
+      }>
+    | undefined;
+  const subHireGroups: SubHireGroupForStructuring[] = [];
+  for (const sh of subHires ?? []) {
+    for (const g of sh.groups ?? []) {
+      subHireGroups.push({
+        id: g.id,
+        title: g.title,
+        sortOrder: g.sortOrder,
+        supplierName: sh.supplier?.name ?? null,
+      });
+    }
+  }
+
   const lineItems: DocumentLineItem[] = structureLineItems(
     rawLineItems,
     categories,
     { expandProjectGroups, packerSort },
+    subHireGroups,
   );
 
   // ─── Append billable services as virtual line items ─────────────────────────

@@ -74,6 +74,12 @@ export interface DocumentLineItem {
   overbookedHasReduced?: boolean;
   // Subhire — `isSubhire` removed (Wave 2); detect via `subHireId != null`.
   subHireId?: string | null;
+  /**
+   * Specific SubHireGroup the item belongs to (if any). Items with this
+   * field set get pulled into a dedicated Sub-Hire section on warehouse
+   * docs so packers see what's hired-in vs owned at a glance.
+   */
+  subHireGroupId?: string | null;
   showSubhireOnDocs?: boolean;
   supplierName?: string | null;
   // Container

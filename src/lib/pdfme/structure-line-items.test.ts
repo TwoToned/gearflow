@@ -13,6 +13,7 @@ import {
   structureLineItems,
   getPackerSortOrder,
   type CategoryForStructuring,
+  type SubHireGroupForStructuring,
 } from "./structure-line-items";
 import type { DocumentLineItem } from "./types";
 
@@ -631,6 +632,204 @@ describe("structureLineItems — Phase 0 baseline", () => {
     ];
     const sorted = [...items].sort(cmp);
     expect(sorted.map(i => i.id)).toEqual(["2", "3", "1"]);
+  });
+
+  // ─── Phase 3a — sub-hire groups ────────────────────────────────────────
+
+  it("sub-hire group items render as their own section AFTER all categories (warehouse mode)", () => {
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-1", "Lighting", 0, []),
+    ];
+    const subHireGroups: SubHireGroupForStructuring[] = [
+      { id: "shg-1", title: "Moving Lights", sortOrder: 0, supplierName: "Mainstage AV" },
+    ];
+    const raw = [
+      makeLineItem({
+        id: "owned",
+        categoryName: "Lighting",
+        model: { name: "Source 4 Leko" },
+      }),
+      makeLineItem({
+        id: "hired-1",
+        categoryName: "Lighting", // sub-hire's targetCategory
+        subHireGroupId: "shg-1",
+        model: { name: "Robe Pointe" },
+      }),
+      makeLineItem({
+        id: "hired-2",
+        categoryName: "Lighting",
+        subHireGroupId: "shg-1",
+        model: { name: "Hog 4 console" },
+      }),
+    ];
+    const result = structureLineItems(
+      raw,
+      categories,
+      { expandProjectGroups: true },
+      subHireGroups,
+    );
+    expect(summarize(result)).toEqual([
+      // Owned gear in its category first
+      "[ITEM] cat=Lighting | group=— | Source 4 Leko x1",
+      // Sub-hire section after
+      "[ITEM] cat=Lighting | group=— | Robe Pointe x1",
+      "[ITEM] cat=Lighting | group=— | Hog 4 console x1",
+    ]);
+    // Sub-hire items have the composite section label as their groupName
+    expect(result[1].groupName).toBe("Sub-Hire: Mainstage AV — Moving Lights");
+    expect(result[2].groupName).toBe("Sub-Hire: Mainstage AV — Moving Lights");
+    // Owned item kept its category bucket
+    expect(result[0].groupName).toBe("Lighting");
+  });
+
+  it("sub-hire section is suppressed when expandProjectGroups=false (client view)", () => {
+    // Quote / invoice keep sub-hire items inside their target category
+    // so the category subtotals stay correct.
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-1", "Lighting", 0, []),
+    ];
+    const subHireGroups: SubHireGroupForStructuring[] = [
+      { id: "shg-1", title: "Moving Lights", sortOrder: 0, supplierName: "Mainstage AV" },
+    ];
+    const raw = [
+      makeLineItem({
+        id: "hired-1",
+        categoryName: "Lighting",
+        subHireGroupId: "shg-1",
+        model: { name: "Robe Pointe" },
+      }),
+    ];
+    const result = structureLineItems(
+      raw,
+      categories,
+      { expandProjectGroups: false },
+      subHireGroups,
+    );
+    expect(summarize(result)).toEqual([
+      "[ITEM] cat=Lighting | group=— | Robe Pointe x1",
+    ]);
+    expect(result[0].groupName).toBe("Lighting");
+  });
+
+  it("multiple sub-hire groups each get their own section, with supplier per group", () => {
+    const categories: CategoryForStructuring[] = [];
+    const subHireGroups: SubHireGroupForStructuring[] = [
+      { id: "shg-a", title: "Trussing", sortOrder: 0, supplierName: "Steeldeck" },
+      { id: "shg-b", title: "Power Distro", sortOrder: 1, supplierName: "BTR Sparks" },
+    ];
+    const raw = [
+      makeLineItem({ id: "a1", subHireGroupId: "shg-a", model: { name: "Pre-rig truss" } }),
+      makeLineItem({ id: "b1", subHireGroupId: "shg-b", model: { name: "63A distro" } }),
+      makeLineItem({ id: "b2", subHireGroupId: "shg-b", model: { name: "Cable run" } }),
+    ];
+    // Add a dummy category to avoid early-return fallback
+    const result = structureLineItems(
+      raw,
+      [makeCategory("dummy", "Dummy", 0, [])],
+      { expandProjectGroups: true },
+      subHireGroups,
+    );
+    const labels = result.map(r => r.groupName);
+    expect(labels).toEqual([
+      "Sub-Hire: Steeldeck — Trussing",
+      "Sub-Hire: BTR Sparks — Power Distro",
+      "Sub-Hire: BTR Sparks — Power Distro",
+    ]);
+  });
+
+  it("sub-hire group with no items is silently skipped (no orphan section header)", () => {
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-1", "Lighting", 0, []),
+    ];
+    const subHireGroups: SubHireGroupForStructuring[] = [
+      { id: "shg-empty", title: "Empty SH", sortOrder: 0, supplierName: "Nobody" },
+      { id: "shg-full", title: "Full SH", sortOrder: 1, supplierName: "Real Supplier" },
+    ];
+    const raw = [
+      makeLineItem({
+        id: "owned", categoryName: "Lighting", model: { name: "Lamp" },
+      }),
+      makeLineItem({
+        id: "hired", subHireGroupId: "shg-full",
+        categoryName: "Lighting", model: { name: "Mic" },
+      }),
+    ];
+    const result = structureLineItems(
+      raw,
+      categories,
+      { expandProjectGroups: true },
+      subHireGroups,
+    );
+    // Empty SH absent; Full SH renders
+    expect(result.map(r => r.groupName)).toEqual([
+      "Lighting",
+      "Sub-Hire: Real Supplier — Full SH",
+    ]);
+  });
+
+  it("sub-hire item with NO matching SubHireGroup in the param list stays in its category", () => {
+    // Edge: a line item references a sub-hire group that wasn't loaded
+    // (deleted SubHire, draft data, etc.). It falls back to category
+    // rendering rather than disappearing.
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-1", "Lighting", 0, []),
+    ];
+    const raw = [
+      makeLineItem({
+        id: "orphan", subHireGroupId: "missing",
+        categoryName: "Lighting", model: { name: "Orphan item" },
+      }),
+    ];
+    const result = structureLineItems(
+      raw,
+      categories,
+      { expandProjectGroups: true },
+      [], // no sub-hire groups loaded
+    );
+    expect(result.map(r => r.groupName)).toEqual(["Lighting"]);
+  });
+
+  it("category-total invariant: sub-hire extraction does not change quote/invoice output", () => {
+    // Category-total regression guard per Eng review. In collapse mode
+    // (quote/invoice), the structured output must be byte-identical to
+    // the pre-Phase-3a baseline so category subtotals stay correct.
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-1", "Lighting", 0, [
+        makeGroup("grp-1", "Lighting Package", 0, { quantity: 1, price: 500 }),
+      ]),
+    ];
+    const subHireGroups: SubHireGroupForStructuring[] = [
+      { id: "shg-1", title: "Hire", sortOrder: 0, supplierName: "Vendor" },
+    ];
+    const raw = [
+      makeLineItem({
+        id: "owned-grouped", categoryName: "Lighting", groupTitle: "Lighting Package",
+        model: { name: "Source 4" },
+      }),
+      makeLineItem({
+        id: "hired-grouped", categoryName: "Lighting", groupTitle: "Lighting Package",
+        subHireGroupId: "shg-1", model: { name: "Robe Pointe" },
+      }),
+      makeLineItem({
+        id: "hired-ungrouped", categoryName: "Lighting",
+        subHireGroupId: "shg-1", model: { name: "Hog Console" },
+      }),
+    ];
+    // Quote/invoice path: collapse mode + sub-hire groups passed but ignored
+    const collapsed = structureLineItems(
+      raw,
+      categories,
+      { expandProjectGroups: false },
+      subHireGroups,
+    );
+    // Same path without sub-hire groups
+    const collapsedNoSh = structureLineItems(
+      raw,
+      categories,
+      { expandProjectGroups: false },
+      [],
+    );
+    expect(collapsed).toEqual(collapsedNoSh);
   });
 
   it("50+ item pagination fixture: many groups and ungrouped items, no crashes", () => {

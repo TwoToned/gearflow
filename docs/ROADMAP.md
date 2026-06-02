@@ -47,10 +47,16 @@ order-line / fulfillment-unit split — effectively item 1.2 pulled forward.
 Design: [`docs/designs/line-item-fulfillment-model.md`](./designs/line-item-fulfillment-model.md).
 A multi-week, 4-phase build; it supersedes a render-only patch.
 
-### 0.2 — iCal timezone correctness
+### 0.2 — iCal timezone correctness ✅ Shipped v0.7.1.0
 **Effort:** S
-Crew calendar feeds show wrong times in Google Calendar — a timezone offset bug.
-Crew acting on wrong call times is an operational hazard. Isolated fix.
+Crew calendar feeds showed wrong times in Google Calendar — a timezone offset
+bug. Root cause: `formatICalDate` used server-local time and emitted unanchored
+floating-time DATE-TIMEs. Fix: TZID + VTIMEZONE block anchoring (AU, NZ, UK,
+US zones, UTC fallback), UTC DTSTAMP per RFC 5545, `Intl.DateTimeFormat`-based
+tz conversion (no new deps), org timezone read from `OrgSettings.timezone`.
+16 regression tests in `src/lib/ical.test.ts`. See
+[FEATUREDOCS/31](../FEATUREDOCS/31-crew-management.md) for the library
+reference.
 
 ---
 

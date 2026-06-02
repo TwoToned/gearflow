@@ -933,6 +933,161 @@ describe("structureLineItems — Phase 0 baseline", () => {
     expect(result[0].groupName).toBe("[Kit] DJ Setup Kit");
   });
 
+  // ─── Phase 4 — comprehensive integration snapshot ──────────────────────
+
+  it("integration: complete fixture (groups + kits + sub-hire + custom + uncategorized)", () => {
+    // The fixture the Eng review called for — every feature interacting
+    // in one structure call. Used as a regression net for any future
+    // change to structureLineItems(). Mirrors the realistic shape of a
+    // project assembled for a real gig (lighting package with loose
+    // items, a kit, a sub-hire group, and an uncategorized custom item).
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-lighting", "Lighting", 0, [
+        makeGroup("grp-lights", "Lighting Package", 0, {
+          quantity: 1, price: 500, billingDays: 3,
+        }),
+      ]),
+      makeCategory("cat-audio", "Audio", 1, []),
+    ];
+    const subHireGroups: SubHireGroupForStructuring[] = [
+      { id: "shg-moving", title: "Moving Lights", sortOrder: 0, supplierName: "Mainstage AV" },
+    ];
+    const raw = [
+      // Lighting Package contents
+      makeLineItem({
+        id: "owned-1", categoryName: "Lighting", groupTitle: "Lighting Package",
+        model: { name: "Source 4 Leko" }, quantity: 12, locationName: "Lighting Cage",
+      }),
+      makeLineItem({
+        id: "owned-2", categoryName: "Lighting", groupTitle: "Lighting Package",
+        model: { name: "Iris kit" }, quantity: 2, locationName: "Lighting Cage",
+      }),
+      // Ungrouped in Lighting
+      makeLineItem({
+        id: "owned-loose", categoryName: "Lighting",
+        model: { name: "Strobe" }, quantity: 1, locationName: "Effects Shelf",
+      }),
+      // Audio category — has a kit
+      makeLineItem({
+        id: "kit-foh", categoryName: "Audio", kitId: "kit-1",
+        kit: { assetTag: "K-001", name: "FOH Rack" },
+        model: { name: "FOH Rack" },
+      }),
+      makeLineItem({
+        id: "kit-foh-child", categoryName: "Audio", kitId: "kit-1", isKitChild: true,
+        model: { name: "DiGiCo SD12" },
+      }),
+      // Sub-hire
+      makeLineItem({
+        id: "hired-1", categoryName: "Lighting", subHireGroupId: "shg-moving",
+        model: { name: "Robe Pointe" }, quantity: 4,
+      }),
+      // Uncategorized custom item
+      makeLineItem({
+        id: "custom-1", description: "Borrowed cable drum",
+        model: { name: "Custom item" },
+      }),
+    ];
+
+    const result = structureLineItems(
+      raw,
+      categories,
+      { expandProjectGroups: true, packerSort: true },
+      subHireGroups,
+    );
+
+    // Verify each item went to its expected bucket
+    expect(result.find(r => r.id === "owned-1")?.groupName).toBe("Lighting Package");
+    expect(result.find(r => r.id === "owned-2")?.groupName).toBe("Lighting Package");
+    expect(result.find(r => r.id === "owned-loose")?.groupName).toBe("Lighting");
+    expect(result.find(r => r.id === "kit-foh")?.groupName).toBe("[Kit] FOH Rack");
+    expect(result.find(r => r.id === "hired-1")?.groupName).toBe("Sub-Hire: Mainstage AV — Moving Lights");
+    expect(result.find(r => r.id === "custom-1")?.groupName).toBeNull(); // uncategorized
+
+    // Kit child is filtered out of top-level structuring
+    expect(result.find(r => r.id === "kit-foh-child")).toBeUndefined();
+
+    // The group header row for Lighting Package is emitted
+    const groupRow = result.find(r => r.isGroupRow && r.groupTitle === "Lighting Package");
+    expect(groupRow).toBeTruthy();
+    expect(groupRow?.groupName).toBe("Lighting Package");
+  });
+
+  it("category-total regression: collapse-mode output unchanged by Phase 1-3b features", () => {
+    // The single most important regression guard in this file: quote and
+    // invoice rendering must NOT change when expandProjectGroups=false,
+    // regardless of which new features (sub-hire sections, kit boundary,
+    // packer sort) get passed. Otherwise category subtotals drift and
+    // every existing org's quote/invoice changes silently on first
+    // deploy. Eng review flagged this as the most critical failure mode.
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-1", "Lighting", 0, [
+        makeGroup("grp-1", "Package A", 0, { quantity: 1, price: 500 }),
+      ]),
+    ];
+    const subHireGroups: SubHireGroupForStructuring[] = [
+      { id: "shg-1", title: "Hire", sortOrder: 0, supplierName: "Vendor" },
+    ];
+    const raw = [
+      makeLineItem({
+        id: "owned", categoryName: "Lighting", groupTitle: "Package A",
+        model: { name: "Lamp" },
+      }),
+      makeLineItem({
+        id: "hired", categoryName: "Lighting", subHireGroupId: "shg-1",
+        model: { name: "Hired moving light" },
+      }),
+      makeLineItem({
+        id: "kit", categoryName: "Lighting", kitId: "kit-1",
+        kit: { assetTag: "K", name: "DJ Rack" },
+        model: { name: "DJ Rack" },
+      }),
+    ];
+
+    // Three flavors of collapse-mode invocation. The critical invariant
+    // is that THE SAME ITEMS appear in THE SAME CATEGORY — order can
+    // change (packerSort reorders) but no item gets removed, duplicated,
+    // or moved to a different category. Category subtotals depend on
+    // membership, not order.
+    const baseline = structureLineItems(raw, categories, { expandProjectGroups: false });
+    const withSubHires = structureLineItems(
+      raw, categories,
+      { expandProjectGroups: false },
+      subHireGroups,
+    );
+    const withPackerSort = structureLineItems(
+      raw, categories,
+      { expandProjectGroups: false, packerSort: true },
+      subHireGroups,
+    );
+
+    // Without packerSort, the result is byte-identical to baseline.
+    expect(withSubHires).toEqual(baseline);
+
+    // With packerSort, the SET of items per category is identical (only
+    // order changes). Convert each result to a category→item-id-set map
+    // and compare those.
+    const byCategory = (items: typeof baseline): Map<string | null, Set<string>> => {
+      const map = new Map<string | null, Set<string>>();
+      for (const li of items) {
+        const cat = li.categoryName;
+        if (!map.has(cat)) map.set(cat, new Set());
+        map.get(cat)!.add(li.id);
+      }
+      return map;
+    };
+    expect(byCategory(withPackerSort)).toEqual(byCategory(baseline));
+
+    // Specifically: sub-hire items remain in their target category in
+    // collapse mode (so category subtotals roll up correctly).
+    const hired = baseline.find(r => r.id === "hired");
+    expect(hired?.categoryName).toBe("Lighting");
+    // The kit also stays in its category bucket in collapse mode.
+    const kit = baseline.find(r => r.id === "kit");
+    expect(kit?.categoryName).toBe("Lighting");
+    expect(kit?.groupName).not.toMatch(/^\[Kit\]/);
+  });
+
   it("50+ item pagination fixture: many groups and ungrouped items, no crashes", () => {
     // Pagination tests live in the plugin; here we just verify the helper
     // produces a stable shape for the fixture the plugin tests will consume.

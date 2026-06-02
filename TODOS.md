@@ -170,15 +170,37 @@ Deferred work items tracked from engineering reviews and planning sessions.
 
 ## Warehouse Documents
 
-### Pick Slip + Delivery Docket Group/Category Awareness
-**What:** Rework the pick slip and delivery docket to be group- and category-aware. Pick slip should be optimised for packing (grouped by location/case/category in a packer-friendly order). Delivery docket categories should be smarter — respect project groups, sub-hire groups, kit boundaries.
-**Why:** Currently both documents treat line items as a flat list with basic category sorting. Pick slip doesn't help packers find gear efficiently; delivery docket groups don't match what's on the project. Linked to the checkout-logic rework — now that fulfillment is unit-based, these PDFs can render unit-level detail intelligently.
-**Pros:** Faster packing, fewer mis-picks, clearer client docs, consistent grouping across all project documents.
-**Cons:** Section-based template builder must support new section types for grouped layouts. Need to define the "packer order" heuristic (location? category? case?).
-**Context:** Follow-on from the line-item fulfillment model rework. Pick slip and delivery docket are currently in the section-based PDF builder but use generic list renderers that don't know about groups/sub-hire-groups/kits.
-**Depends on:** PDF template builder section-based architecture (shipped).
-**Estimate:** human ~1 week / CC ~45 min
-**Priority:** P1
+### ~~Pick Slip + Delivery Docket Group/Category Awareness~~ ✅ SHIPPED
+Branch `feat/pick-list-grouping-rework`. Phases 0-5, 7 commits, /autoplan-reviewed.
+Per-template `expandProjectGroups` boolean (default true for warehouse types, false
+for quote/invoice via `getDefaultSettings`). Read-time merge in `resolveTemplateSettings`
+so legacy stored JSON picks up the new key safely. Sub-hire groups render as their
+own "Sub-Hire: <Supplier> — <Group>" section. Kit boundary wins over Project Group
+placement (`[Kit] <name>` section). Packer-walk sort (location → category → model
+name) inside every bucket. Pagination orphan check (header + 1 body row reservation).
+Both legacy and section-renderer pipelines updated. 48 new tests covering edge
+cases the engineering review flagged. Follow-up: Cross-Type Group/Category
+Unification (next branch, see [user-flagged] note below).
+
+### Follow-ups from this PR
+- **Template editor UI for `expandProjectGroups` toggle** — P3. The setting exists
+  in `TemplateSettings.table.expandProjectGroups`; no UI to flip it per template
+  yet. Orgs that want custom behaviour need a DB edit today.
+- **Configurable packer sort order per org** — P3. `getPackerSortOrder()` returns
+  a hard-coded `[location, category, modelName]` comparator. Two Toned might
+  later want true rack-walk order (e.g. "Truss Room before Warehouse A" by route,
+  not alphabetical).
+- **Map-key collision composite keys** — P3. Theoretical bug: if two categories
+  share an identically-named Project Group AND expand mode is on, those groups
+  merge silently in the table plugin's bucket Map. Eng review flagged it; current
+  state documents the case (no fix needed unless a user reports). Fix would need
+  separate (key, displayLabel) fields on the plugin contract.
+- **Delete delivery-docket kit special cases entirely** — P3. Both pipelines
+  still special-case delivery-docket to promote kit children to top-level rows
+  under a kit-name section. Phase 3b moved kit boundary into the data layer,
+  but the special cases still run alongside (their CHECKED_OUT filter is the
+  remaining bit of unique logic). A future cleanup can pull that into
+  `structureLineItems` too.
 
 ### Bulk Check-In Totals Screen
 **What:** Add a bulk check-in mode that shows child/bulk assets as totals across the whole job, not broken down per parent. Example: 50 lights each with 2 clamps + 1 true con — show "100 clamps to check in" and "50 true cons to check in" as single rows, let the operator enter how many they have in front of them and tick them off in one action.

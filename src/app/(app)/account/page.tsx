@@ -624,9 +624,8 @@ export default function AccountPage() {
           <p className="t-body text-fg-3">
             Devices where you&apos;re currently logged in.
           </p>
-          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
           {sessionsQuery.data?.map(
-            (s: any) => (
+            (s) => (
               <div
                 key={s.id}
                 className="flex items-center justify-between rounded-md border p-3"

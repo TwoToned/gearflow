@@ -717,7 +717,7 @@ describe("computePageLayout", () => {
       );
       const projectSection = makeSection(
         "project-details",
-        { showProjectName: true, showVenue: true, showRentalDates: true, showEventDates: false, showPaymentTerms: false, showSiteContact: false, showDocumentDate: true },
+        { showProjectName: true, showProjectNumber: true, showVenue: true, showRentalDates: true, showEventDates: false, showPaymentTerms: false, showSiteContact: false, showDocumentDate: true },
         { order: 2 },
       );
 

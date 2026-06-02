@@ -78,6 +78,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [lint, typecheck, test]
+    # `next build` prerenders DB-backed routes (e.g. the (auth) layout reads
+    # siteSettings / SSO providers), so the build needs a reachable database.
+    # A throwaway Postgres service + `prisma db push` gives an empty schema
+    # matching schema.prisma; the build-time queries return null/[] and succeed.
+    # NB: `db push` (not `migrate deploy`) — the migration history isn't
+    # replayable from scratch (early tables like crew_role were created via
+    # db push and never captured as migrations), so a from-zero `migrate
+    # deploy` fails. The build only needs the current schema, which db push
+    # provisions directly without touching the (prod-only) migration history.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: gearflow_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/gearflow_ci
     steps:
       - uses: actions/checkout@v4
 
@@ -91,13 +116,13 @@ jobs:
 
       - name: Generate Prisma client
         run: npx prisma generate
-        env:
-          DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
+
+      - name: Sync schema to throwaway DB
+        run: npx prisma db push --skip-generate
 
       - name: Build
         run: npm run build
         env:
-          DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
           BETTER_AUTH_SECRET: ci-dummy-secret
           BETTER_AUTH_URL: http://localhost:3000
           NEXT_PUBLIC_APP_URL: http://localhost:3000

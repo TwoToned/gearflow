@@ -57,8 +57,8 @@ const resultColors: Record<string, string> = {
 
 type FilterType = "ALL" | "MISSING" | "UNEXPECTED" | "QUANTITY_MISMATCH" | "WRONG_LOCATION";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 interface StocktakeReviewProps {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   stocktake: Record<string, any>;
   onUpdate: () => void;
 }
@@ -321,12 +321,12 @@ export function StocktakeReview({ stocktake, onUpdate }: StocktakeReviewProps) {
   );
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function DiscrepancyRow({
   item,
   onResolve,
   isPending,
 }: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   item: Record<string, any>;
   onResolve: (
     action: "MARK_LOST" | "UPDATE_LOCATION" | "ADJUST_QUANTITY" | "IGNORE",

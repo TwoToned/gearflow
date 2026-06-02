@@ -240,7 +240,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
   let optimizedPricingType = parsed.pricingType;
   let optimizedDuration = parsed.duration;
   let priceBreakdown: string | null = null;
-  let priceOverridden = false;
+  const priceOverridden = false;
 
   if (parsed.modelId && parsed.pricingType === "PER_DAY" && !parsed.unitPrice) {
     try {

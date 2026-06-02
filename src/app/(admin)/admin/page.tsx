@@ -58,9 +58,8 @@ export default function AdminDashboardPage() {
               <p className="text-sm text-fg-3">No users yet.</p>
             ) : (
               <div className="space-y-3">
-                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                 {data?.recentUsers?.map(
-                  (u: any) => (
+                  (u) => (
                     <div key={u.id} className="flex items-center justify-between text-sm">
                       <div>
                         <div className="font-medium">{u.name}</div>
@@ -85,9 +84,8 @@ export default function AdminDashboardPage() {
               </p>
             ) : (
               <div className="space-y-3">
-                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                 {data?.recentOrgs?.map(
-                  (o: any) => (
+                  (o) => (
                     <div key={o.id} className="flex items-center justify-between text-sm">
                       <div>
                         <div className="font-medium">{o.name}</div>

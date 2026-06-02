@@ -170,7 +170,7 @@ function FieldDialog({
               <Label htmlFor="cf-key">Key</Label>
               <Input id="cf-key" {...form.register("fieldKey")} className="font-mono text-sm" />
               <p className="text-[11px] text-fg-4">
-                Stable identifier — auto-filled from the label{label ? "" : ""}. Can't change later.
+                Stable identifier — auto-filled from the label{label ? "" : ""}. Can&apos;t change later.
               </p>
               {form.formState.errors.fieldKey && (
                 <p className="text-xs text-destructive">{form.formState.errors.fieldKey.message}</p>
@@ -285,7 +285,7 @@ export default function CustomFieldsSettingsPage() {
         <p className="text-sm text-fg-3">Loading…</p>
       ) : list.length === 0 ? (
         <div className="rounded-md border bg-bg-surface p-6 text-center text-sm text-fg-3">
-          No custom fields yet. Add one and it'll appear on every asset's
+          No custom fields yet. Add one and it&apos;ll appear on every asset&apos;s
           create and edit form.
         </div>
       ) : (

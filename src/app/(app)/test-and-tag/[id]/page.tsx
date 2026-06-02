@@ -466,6 +466,7 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
                                         <div className="sm:col-span-2 lg:col-span-3 space-y-2">
                                           <h4 className="font-medium text-fg-1">Sub-Tests</h4>
                                           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                                            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                                             {record.subTestRecords.map((st: any) => (
                                               <div key={st.id} className="border rounded p-2 text-xs">
                                                 <div className="flex items-center justify-between mb-1">

@@ -224,10 +224,11 @@ Assignment rate is resolved in this order:
 | `getAssignmentIcsData(assignmentId)` | crew.read | Full assignment data for .ics |
 
 ### iCal Library (`src/lib/ical.ts`)
-- `generateVCalendar(calName, events)` — RFC 5545 compliant VCALENDAR
-- `generateVEvent(event)` — single VEVENT with proper line folding
-- `buildDateTime(date, time?)` — combine date + optional "HH:mm" time string
-- Supports all-day events and timed events
+- `generateVCalendar(calName, events, tzid)` — RFC 5545 compliant VCALENDAR with VTIMEZONE block for the org's IANA timezone (default `Australia/Sydney`)
+- `generateVEvent(event, tzid)` — single VEVENT with TZID-anchored DTSTART/DTEND and UTC DTSTAMP
+- `buildDateTime(date, time?, tzid)` — combine date + optional "HH:mm" wall-clock time, interpreted in the given timezone
+- Supports all-day events (`allDay: true` → emits `VALUE=DATE`) and timed events (TZID-anchored)
+- **Timezone handling:** events are anchored with `TZID=<zone>` plus a hardcoded VTIMEZONE block in the calendar header (Australia/Sydney/Melbourne/Hobart/Adelaide/Brisbane/Perth/Darwin, Pacific/Auckland, Europe/London, America/Los_Angeles/New_York, UTC). Unknown zones fall back to UTC `Z`-form output. Uses `Intl.DateTimeFormat` for tz conversion — no external dep, DST-aware, no server-tz leakage. Org's timezone read from `OrgSettings.timezone` (defaults to Australia/Sydney).
 
 ## Communication & Offers (Phase 5)
 

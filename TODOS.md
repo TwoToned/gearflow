@@ -192,3 +192,132 @@ Deferred work items tracked from engineering reviews and planning sessions.
 **Cons:** Edge case for most users. Requires matching the custom item line item to a real Asset.
 **Context:** Deferred from custom items autoplan (Barcode Scanning Phase 2).
 **Priority:** P3
+
+### Child Assets / Accessories
+**What:** Allow serialised and bulk assets to be permanently attached to other serialised assets as children/accessories. E.g. "IEC cable" attached to "Mixer", "Adaptor" attached to "JAG Headset Mic". When the parent asset is added to a project, children come with it automatically. When the parent is checked out/in, children move with it.
+**Why:** Lots of gear has fixed accessories that always travel together but aren't really kits (no formal container, no separate pricing). Currently operators either add accessories as separate line items (clutter) or omit them and hope they ship with the parent (errors).
+**Pros:** Models reality of how gear actually moves, reduces line-item clutter, fewer missed accessories at deploy, no need to build a kit for every cable.
+**Cons:** New schema relationship (`Asset.parentAssetId`?), needs UI on asset form to attach/detach children, warehouse flows need to propagate parent → children scans, PDFs need to decide whether to show children indented or hide them.
+**Context:** Different from kits — kits are containers with their own asset tag and rental contract; accessories are inseparable from their parent. Bulk asset children (e.g. 1 mixer always ships with 1 IEC) and serialised children (specific IEC tracked individually) both need to work.
+**Depends on:** Nothing (greenfield feature, but touches warehouse, pull sheet, delivery docket, kit boundary).
+**Estimate:** human ~2 weeks / CC ~2-3 hours
+**Priority:** P1
+
+## Warehouse Documents
+
+### Pick Slip + Delivery Docket Group/Category Awareness
+**What:** Rework the pick slip and delivery docket to be group- and category-aware. Pick slip should be optimised for packing (grouped by location/case/category in a packer-friendly order). Delivery docket categories should be smarter — respect project groups, sub-hire groups, kit boundaries.
+**Why:** Currently both documents treat line items as a flat list with basic category sorting. Pick slip doesn't help packers find gear efficiently; delivery docket groups don't match what's on the project. Linked to the checkout-logic rework — now that fulfillment is unit-based, these PDFs can render unit-level detail intelligently.
+**Pros:** Faster packing, fewer mis-picks, clearer client docs, consistent grouping across all project documents.
+**Cons:** Section-based template builder must support new section types for grouped layouts. Need to define the "packer order" heuristic (location? category? case?).
+**Context:** Follow-on from the line-item fulfillment model rework. Pick slip and delivery docket are currently in the section-based PDF builder but use generic list renderers that don't know about groups/sub-hire-groups/kits.
+**Depends on:** PDF template builder section-based architecture (shipped).
+**Estimate:** human ~1 week / CC ~45 min
+**Priority:** P1
+
+### Bulk Check-In Totals Screen
+**What:** Add a bulk check-in mode that shows child/bulk assets as totals across the whole job, not broken down per parent. Example: 50 lights each with 2 clamps + 1 true con — show "100 clamps to check in" and "50 true cons to check in" as single rows, let the operator enter how many they have in front of them and tick them off in one action.
+**Why:** Current check-in requires checking in each accessory per parent asset. For a job with 50 lights, that's 150 individual check-ins instead of 3 totals. Painfully slow for accessory-heavy gigs.
+**Pros:** Order-of-magnitude faster check-in for accessory-heavy jobs, matches how warehouse staff actually count (pile of clamps, count the pile).
+**Cons:** New screen and reconciliation logic — once totals are entered, the system has to distribute them back to parent units (or accept that accessories are tracked at the aggregate level for this job). Need to handle partial shortfalls cleanly.
+**Context:** Closely tied to the child-assets / accessories feature — only makes sense once accessories are modelled as children. Also dovetails with the unit-based fulfillment model.
+**Depends on:** [[child-assets-accessories]] (this todo's accessory model). Fulfillment model rework (shipped).
+**Estimate:** human ~1 week / CC ~30 min
+**Priority:** P1
+
+## Project Asset Management UX
+
+### Cross-Type Group/Category Unification
+**What:** Unify how groups and categories work across asset, sub-hire, and custom line items on a project. Today each type has its own UX patterns — adding groups, moving items between groups, setting pricing per group all feel different. Make creating new groups and reorganising assets fast and obvious. Eliminate the need to delete and re-add items to reorganise.
+**Why:** Currently this is confusing and slow. Small changes (move an item to a different group) require deleting and re-adding. Pricing is set in different places depending on type. New users don't know which "add" button does what.
+**Pros:** Massive UX win on the most-used screen, reduces support questions, makes complex jobs faster to build.
+**Cons:** Touches a lot of code — line items, groups, sub-hire groups, custom items, pricing modes, and every component that renders the project equipment table. Risk of regression in pricing/totals.
+**Context:** Sub-hire groups shipped (a3f5a02, ccbe715). Asset groups and custom-item groupings still uneven. User flagged this as "currently feels super clunky and unfinished."
+**Depends on:** Nothing (refactor of existing surface).
+**Estimate:** human ~2-3 weeks / CC ~3-4 hours
+**Priority:** P1
+
+## Project Management
+
+### Project Todo Lists (Asana-Style)
+**What:** Add a todo/task list to each project. Tasks have title, assignee (org member or crew), due date, status, optional description, optional checklist. Project detail page gets a Tasks tab. Optional: dashboard view of "my open tasks across projects."
+**Why:** Operators currently use external tools (Asana, Notion, Slack threads) to track project-specific to-dos. Pulling this into the platform means tasks are linked to the project, visible to the team, and don't fall through the cracks.
+**Pros:** Single source of truth for project work, reduces tool switching, can surface overdue tasks on dashboards.
+**Cons:** New schema (Task model with relations to Project, User/CrewMember). Needs notification integration. Risk of half-baked "task manager" that nobody uses if it's not as fast as Asana.
+**Context:** User asked for this in their Gearflow TODO. Start minimal — title, assignee, due date, status — and expand only if used.
+**Depends on:** Nothing.
+**Estimate:** human ~2 weeks / CC ~2 hours
+**Priority:** P2
+
+## Calendar Integration
+
+### ~~iCal Timezone Audit~~ ✅ FIXED
+Shipped on branch `fix/ical-timezone`. Root cause: `formatICalDate` used `Date.getHours()` (server-local time) and emitted unanchored "floating time" DATE-TIMEs with no TZID, VTIMEZONE block, or `Z` suffix. On Vercel (UTC server) a Sydney 9am event became `DTSTART:...T230000` floating — Google Calendar rendered it at 11pm in the viewer's local zone, shifted by ~10–11h. Fix: TZID-anchored DTSTART/DTEND with hardcoded VTIMEZONE blocks for AU + common intl zones (DST-aware via RRULE), UTC DTSTAMP per RFC 5545, `Intl.DateTimeFormat`-based tz conversion (no new deps), org timezone read from `OrgSettings.timezone` (default Australia/Sydney). 16-test regression suite in `src/lib/ical.test.ts`.
+
+## Platform Integrations
+
+### Public REST/GraphQL API
+**What:** Build a public API for integrating with external tools. Read endpoints for projects, assets, availability; write endpoints for creating projects, line items, checkouts. Auth via API keys scoped per organisation. Rate limiting, audit logging, OpenAPI spec.
+**Why:** Operators want to integrate with their accounting (Xero), CRM (HubSpot), or custom dashboards. Currently the only integration is WooCommerce. A general API unlocks every other workflow.
+**Pros:** Unlocks third-party integrations, makes the platform a hub instead of a silo, enables enterprise deals that require integration.
+**Cons:** Large surface to design, document, version, and maintain. Need API key management UI, rate limits, scopes, versioning strategy. Security review essential.
+**Context:** User flagged this in their Gearflow TODO. Existing server actions follow consistent patterns (permission check → query → log → serialize) which makes API wrappers straightforward, but the actions are RPC-shaped, not REST-shaped — wrapping vs. rewriting is a design call.
+**Depends on:** Nothing (greenfield).
+**Estimate:** human ~6-8 weeks / CC ~1 day for scaffolding
+**Priority:** P2
+
+## Documentation
+
+### User Guide (Docusaurus, Separate Repo)
+**What:** Build a public user-facing documentation site with Docusaurus (or similar). Covers onboarding, every major feature (assets, projects, warehouse flow, kits, sub-hires, reports), troubleshooting, and a "what's new" changelog. Hosted at docs.gearflow.app or similar. Likely a separate repo.
+**Why:** Operators currently have no self-serve documentation. Every question is a support touch. A real user guide lets new orgs onboard themselves and reduces support load.
+**Pros:** Reduces support burden, improves onboarding, marketing value (SEO, demos), credibility for enterprise sales.
+**Cons:** Significant ongoing maintenance cost — docs go stale fast. Needs writer time, screenshots, and a workflow for keeping docs in sync with releases.
+**Context:** User flagged this in their Gearflow TODO. Separate repo recommended to keep the main app's CI fast and let docs ship independently.
+**Depends on:** Nothing.
+**Estimate:** human ~4-6 weeks initial / ongoing maintenance
+**Priority:** P2
+
+### Dev / Internal Documentation Overhaul
+**What:** Pass through every FEATUREDOCS file plus CLAUDE.md and ARCHITECTURE.md. Verify accuracy against current code, prune stale sections, fill gaps (new features added without doc updates), and re-link cross-references. Improve the index in ARCHITECTURE.md.
+**Why:** Docs drift. FEATUREDOCS has 30+ files but coverage is uneven — some features have extensive docs, others are stubs. A periodic audit keeps the docs trustworthy for both humans and the agent.
+**Pros:** Faster onboarding for new contributors, better agent context, surfaces dead code / orphaned features.
+**Cons:** Time investment with no user-visible output. Easy to defer indefinitely.
+**Context:** User flagged this in their Gearflow TODO. Run after a release cluster, not mid-feature.
+**Depends on:** Nothing.
+**Estimate:** human ~1 week / CC ~3-4 hours
+**Priority:** P3
+
+## UI / UX
+
+### System-Wide UI/UX Overhaul
+**What:** Full pass across every page to make the app feel cohesive. Audit spacing, typography, component patterns, empty states, loading states, error states, microcopy, iconography, motion. Surface inconsistencies (different buttons in similar slots, off-by-default-rhythm spacing, mixed metaphors). Fix them.
+**Why:** App has grown organically across 30+ features. Individual pages are polished but they don't all feel like they belong to the same product. Operators notice this — it erodes trust.
+**Pros:** Product feels professional and intentional, fewer "this feels different from the other screen" support tickets, better foundation for marketing screenshots.
+**Cons:** Hard to scope — could be 2 weeks or 2 months. Easy to spiral into rewrites. Needs a design lead + a strict cutoff.
+**Context:** User flagged this. DESIGN.md is the source of truth for visual decisions — overhaul should enforce DESIGN.md compliance, not relitigate it. Wave 1/2 cleanup (StatusIndicator, DeleteDialog, DESIGN.md typography sweep) is good groundwork — extend the same approach to the whole app.
+**Depends on:** Nothing (but `/design-review` is the tool to use).
+**Estimate:** human ~4-6 weeks / CC ~1-2 days per surface
+**Priority:** P2
+
+### Mobile-First Overhaul
+**What:** Full mobile pass beyond the current scanner/PWA work. Audit every page on mobile, fix tap targets, sticky bars, modal sizing, table responsiveness, sidebar behavior, scan-to-action flows. Make warehouse staff and on-site PMs first-class users on phones.
+**Why:** Half of warehouse work happens on phones — scanner, checkin, lookup. Office/PM work increasingly happens on phones too. Some screens are still desktop-first with mobile as an afterthought.
+**Pros:** Unlocks field-first workflows, faster warehouse ops, better on-site PM experience.
+**Cons:** Touches every page. Some patterns (dense tables, side-by-side detail layouts) need genuine redesign, not just CSS tweaks.
+**Context:** Partial groundwork done — PWA, scanner reliability, safe-area fixes (732b97b, b30dfcc, e645b4b). Full per-page audit hasn't happened.
+**Depends on:** Nothing.
+**Estimate:** human ~3-4 weeks / CC ~1 day per surface
+**Priority:** P2
+
+## Services & Crewing
+
+### Big-Picture Services & Crewing Rethink
+**What:** Step back from the existing crewing/services system and rethink it. How should services, crew, projects, schedules, availability, pay rates, travel, and notifications integrate? Today they're a collection of features that work but don't feel like one system. Design a unified model and migrate.
+**Why:** User flagged this as "revise this and think big on how it can be way smarter and integrate together better." The smaller crewing TODOs (travel distance, availability index) are tactical — this is the strategic rework.
+**Pros:** Aligns the whole crew/services surface, unlocks the smaller deferred items as natural consequences instead of bolt-ons.
+**Cons:** Strategy task, not an implementation task. Easy to over-scope. Needs `/office-hours` or `/plan-ceo-review` before any code is written.
+**Context:** User flagged this in their Gearflow TODO. Existing surface: CrewMember, CrewAssignment, ProjectService, service categories, schedule view, call sheets. Pay rates and travel exist but aren't fully wired into assignment decisions.
+**Depends on:** Nothing (planning task).
+**Estimate:** planning ~1 week / implementation depends on outcome
+**Priority:** P2

@@ -832,6 +832,107 @@ describe("structureLineItems — Phase 0 baseline", () => {
     expect(collapsed).toEqual(collapsedNoSh);
   });
 
+  // ─── Phase 3b — kit boundary ───────────────────────────────────────────
+
+  it("kit parent in warehouse mode gets its own `[Kit] <name>` section", () => {
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-1", "Audio", 0, []),
+    ];
+    const raw = [
+      makeLineItem({
+        id: "k1", categoryName: "Audio", kitId: "kit-1",
+        kit: { assetTag: "K-001", name: "DJ Setup Kit" },
+        model: { name: "DJ Setup Kit" },
+      }),
+      makeLineItem({
+        id: "loose", categoryName: "Audio",
+        model: { name: "Cable" },
+      }),
+    ];
+    const result = structureLineItems(raw, categories, { expandProjectGroups: true });
+    // The kit gets the special section name, the loose item stays in the
+    // category bucket. The downstream table plugin buckets by groupName
+    // at render time, so the array emission order doesn't strictly
+    // determine the rendered section order (Map iteration handles that).
+    expect(result.find(r => r.id === "k1")?.groupName).toBe("[Kit] DJ Setup Kit");
+    expect(result.find(r => r.id === "loose")?.groupName).toBe("Audio");
+    expect(result).toHaveLength(2);
+  });
+
+  it("kit parent INSIDE a Project Group: kit boundary wins (warehouse mode)", () => {
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-1", "Audio", 0, [
+        makeGroup("grp-1", "Stage Package", 0, { quantity: 1, price: 1000 }),
+      ]),
+    ];
+    const raw = [
+      makeLineItem({
+        id: "k1", categoryName: "Audio", groupTitle: "Stage Package",
+        kitId: "kit-1", kit: { assetTag: "K-001", name: "FOH Rack" },
+        model: { name: "FOH Rack" },
+      }),
+      makeLineItem({
+        id: "loose-in-grp", categoryName: "Audio", groupTitle: "Stage Package",
+        model: { name: "Snake cable" },
+      }),
+    ];
+    const result = structureLineItems(raw, categories, { expandProjectGroups: true });
+    // Project Group header still emits, both group children render. Kit
+    // parent's groupName overrides to "[Kit] FOH Rack" so the table
+    // plugin pulls it into its own section at render time. Loose item
+    // keeps the Project Group bucket. Order within `structured[]`
+    // doesn't strictly determine render order — the plugin re-buckets
+    // by groupName when drawing.
+    expect(result.find(r => r.id === "k1")?.groupName).toBe("[Kit] FOH Rack");
+    expect(result.find(r => r.id === "loose-in-grp")?.groupName).toBe("Stage Package");
+    expect(result.find(r => r.isGroupRow)?.groupName).toBe("Stage Package");
+    expect(result).toHaveLength(3);
+  });
+
+  it("kit boundary is suppressed in collapse mode (quote/invoice keep kits inline)", () => {
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-1", "Audio", 0, []),
+    ];
+    const raw = [
+      makeLineItem({
+        id: "k1", categoryName: "Audio", kitId: "kit-1",
+        kit: { assetTag: "K-001", name: "DJ Setup Kit" },
+        model: { name: "DJ Setup Kit" },
+      }),
+    ];
+    const result = structureLineItems(raw, categories, { expandProjectGroups: false });
+    // Collapse mode: kit stays in category bucket, no special section.
+    expect(result.find(r => r.id === "k1")?.groupName).toBe("Audio");
+  });
+
+  it("kit children are still filtered out of top-level structuring (rendered via parent)", () => {
+    // Kit boundary changes ONLY the parent's bucket — children are still
+    // filtered. They render via the plugin's childLineItems[] codepath
+    // under the parent's row.
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-1", "Audio", 0, []),
+    ];
+    const raw = [
+      makeLineItem({
+        id: "k1", categoryName: "Audio", kitId: "kit-1",
+        kit: { assetTag: "K-001", name: "DJ Setup Kit" },
+        model: { name: "DJ Setup Kit" },
+      }),
+      makeLineItem({
+        id: "kc1", categoryName: "Audio", kitId: "kit-1", isKitChild: true,
+        model: { name: "DJM-900NXS2" },
+      }),
+      makeLineItem({
+        id: "kc2", categoryName: "Audio", kitId: "kit-1", isKitChild: true,
+        model: { name: "CDJ-2000NXS2" },
+      }),
+    ];
+    const result = structureLineItems(raw, categories, { expandProjectGroups: true });
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("k1");
+    expect(result[0].groupName).toBe("[Kit] DJ Setup Kit");
+  });
+
   it("50+ item pagination fixture: many groups and ungrouped items, no crashes", () => {
     // Pagination tests live in the plugin; here we just verify the helper
     // produces a stable shape for the fixture the plugin tests will consume.

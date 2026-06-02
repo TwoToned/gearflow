@@ -156,6 +156,24 @@ export function structureLineItems(
     return subHireGroupIds.has(li.subHireGroupId);
   };
 
+  /**
+   * Resolve the bucket label for an item — `[Kit] <name>` for kit
+   * parents (warehouse mode only), otherwise the provided category /
+   * group label. Kit boundary wins over Project Group placement so a
+   * kit parent that ALSO sits inside a Project Group renders under
+   * its own kit section, not under the group.
+   *
+   * Only active in expand mode — quote / invoice keep kits inside
+   * their category so subtotals roll up correctly.
+   */
+  const kitBucketLabel = (li: DocumentLineItem, fallback: string): string => {
+    if (!expand) return fallback;
+    const isKitParent = !!li.kitId && !li.isKitChild;
+    if (!isKitParent) return fallback;
+    const kitName = li.kit?.name ?? li.description ?? "Kit";
+    return `[Kit] ${kitName}`;
+  };
+
   // Build set of groupIds so we can filter out their child line items
   const groupIds = new Set<string>();
   for (const cat of categories) {
@@ -246,18 +264,21 @@ export function structureLineItems(
       });
 
       // Children belong under the group's bucket label, sorted in
-      // packer-walk order when the option is on.
+      // packer-walk order when the option is on. Kit parents override
+      // the bucket so they break out into their own `[Kit] <name>`
+      // section even when they sit inside a Project Group.
       if (expand) {
         for (const child of maybeSort(groupChildren)) {
-          structured.push({ ...child, groupName: bucketLabel });
+          structured.push({ ...child, groupName: kitBucketLabel(child, bucketLabel) });
         }
       }
     }
 
     // Ungrouped items in this category render under the category bucket,
-    // sorted in packer-walk order when the option is on.
+    // sorted in packer-walk order when the option is on. Kit parents
+    // get promoted to a `[Kit] <name>` section instead.
     for (const li of maybeSort(ungroupedInCat)) {
-      structured.push({ ...li, groupName: cat.name });
+      structured.push({ ...li, groupName: kitBucketLabel(li, cat.name) });
     }
   }
 

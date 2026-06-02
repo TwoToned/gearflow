@@ -6,6 +6,7 @@ import {
   buildDateTime,
   type ICalEvent,
 } from "@/lib/ical";
+import type { OrgSettings } from "@/server/settings";
 
 /**
  * GET /api/crew/calendar/assignment/[id]
@@ -20,6 +21,20 @@ export async function GET(
   try {
     const { organizationId } = await getOrgContext();
     const { id } = await params;
+
+    const org = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { metadata: true },
+    });
+    let tzid = "Australia/Sydney";
+    if (org?.metadata) {
+      try {
+        const settings = JSON.parse(org.metadata) as OrgSettings;
+        tzid = settings.timezone || "Australia/Sydney";
+      } catch {
+        // ignore
+      }
+    }
 
     const assignment = await prisma.crewAssignment.findUnique({
       where: { id, organizationId },
@@ -77,10 +92,10 @@ export async function GET(
 
     if (assignment.shifts.length > 0) {
       for (const shift of assignment.shifts) {
-        const dtstart = buildDateTime(shift.date, shift.callTime);
+        const dtstart = buildDateTime(shift.date, shift.callTime, tzid);
         const dtend = shift.endTime
-          ? buildDateTime(shift.date, shift.endTime)
-          : buildDateTime(shift.date, "23:59");
+          ? buildDateTime(shift.date, shift.endTime, tzid)
+          : buildDateTime(shift.date, "23:59", tzid);
 
         events.push({
           uid: `shift-${shift.id}@gearflow`,
@@ -99,11 +114,13 @@ export async function GET(
     } else {
       const dtstart = buildDateTime(
         assignment.startDate || new Date(),
-        assignment.startTime
+        assignment.startTime,
+        tzid
       );
       const dtend = buildDateTime(
         assignment.endDate || assignment.startDate || new Date(),
-        assignment.endTime || assignment.startTime || "23:59"
+        assignment.endTime || assignment.startTime || "23:59",
+        tzid
       );
 
       events.push({
@@ -119,7 +136,7 @@ export async function GET(
       });
     }
 
-    const icsContent = generateVCalendar(calName, events);
+    const icsContent = generateVCalendar(calName, events, tzid);
     const filename = `${project.projectNumber}-${crew.firstName}-${crew.lastName}.ics`;
 
     return new NextResponse(icsContent, {

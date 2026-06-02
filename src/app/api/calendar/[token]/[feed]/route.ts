@@ -12,7 +12,9 @@ type FeedType = (typeof VALID_FEEDS)[number];
 
 /**
  * Look up organization by iCal token stored in metadata JSON.
- * Returns null if not found or feed is disabled.
+ * Returns null if not found or feed is disabled. Includes the org's
+ * configured IANA timezone (default Australia/Sydney) so the iCal feed
+ * is anchored correctly.
  */
 async function findOrgByToken(token: string) {
   // icalToken is stored in Organization.metadata JSON — query all orgs with metadata containing the token
@@ -28,7 +30,11 @@ async function findOrgByToken(token: string) {
     try {
       const settings = JSON.parse(org.metadata) as OrgSettings;
       if (settings.icalToken === token && settings.icalEnabled) {
-        return { id: org.id, name: org.name };
+        return {
+          id: org.id,
+          name: org.name,
+          tzid: settings.timezone || "Australia/Sydney",
+        };
       }
     } catch {
       continue;
@@ -41,7 +47,8 @@ async function findOrgByToken(token: string) {
 
 async function buildProjectsFeed(
   orgId: string,
-  orgName: string
+  orgName: string,
+  tzid: string
 ): Promise<string> {
   const projects = await prisma.project.findMany({
     where: {
@@ -77,8 +84,10 @@ async function buildProjectsFeed(
         ? null
         : p.eventEndTime;
 
-    const dtstart = buildDateTime(startDate, startTime);
-    let dtend = buildDateTime(endDate || startDate, endTime);
+    const dtstart = buildDateTime(startDate, startTime, tzid);
+    let dtend = buildDateTime(endDate || startDate, endTime, tzid);
+    // No times anywhere → treat as an all-day event in the org's tz.
+    const allDay = !startTime && !endTime;
 
     // Ensure dtend >= dtstart (can happen when end date/time is missing)
     if (dtend.getTime() < dtstart.getTime()) {
@@ -116,17 +125,19 @@ async function buildProjectsFeed(
       location: location || undefined,
       dtstart,
       dtend,
+      allDay,
       status: icalStatus,
       categories: ["GearFlow", p.status.replace(/_/g, " ")],
     });
   }
 
-  return generateVCalendar(`${orgName} — Projects`, events);
+  return generateVCalendar(`${orgName} — Projects`, events, tzid);
 }
 
 async function buildServicesFeed(
   orgId: string,
-  orgName: string
+  orgName: string,
+  tzid: string
 ): Promise<string> {
   const services = await prisma.projectService.findMany({
     where: {
@@ -151,12 +162,16 @@ async function buildServicesFeed(
   for (const s of services) {
     if (!s.date) continue;
 
-    const dtstart = buildDateTime(s.date, s.startTime || s.scheduledTime);
+    const dtstart = buildDateTime(s.date, s.startTime || s.scheduledTime, tzid);
     const dtend = s.endDate
-      ? buildDateTime(s.endDate, s.endTime)
+      ? buildDateTime(s.endDate, s.endTime, tzid)
       : s.endTime
-        ? buildDateTime(s.date, s.endTime)
-        : buildDateTime(s.date, s.startTime ? undefined : s.scheduledTime);
+        ? buildDateTime(s.date, s.endTime, tzid)
+        : buildDateTime(
+            s.date,
+            s.startTime ? undefined : s.scheduledTime,
+            tzid
+          );
 
     // If dtend <= dtstart (no end info), make it 1 hour
     if (dtend.getTime() <= dtstart.getTime()) {
@@ -187,12 +202,13 @@ async function buildServicesFeed(
     });
   }
 
-  return generateVCalendar(`${orgName} — Services`, events);
+  return generateVCalendar(`${orgName} — Services`, events, tzid);
 }
 
 async function buildMaintenanceFeed(
   orgId: string,
-  orgName: string
+  orgName: string,
+  tzid: string
 ): Promise<string> {
   const records = await prisma.maintenanceRecord.findMany({
     where: {
@@ -222,8 +238,8 @@ async function buildMaintenanceFeed(
   for (const r of records) {
     if (!r.scheduledDate) continue;
 
-    const dtstart = buildDateTime(r.scheduledDate);
-    const dtend = new Date(dtstart); // Same day, midnight — triggers all-day format
+    const dtstart = buildDateTime(r.scheduledDate, null, tzid);
+    const dtend = new Date(dtstart); // Same day — flagged as all-day below
 
     const assetNames = r.assets
       .map(
@@ -247,14 +263,15 @@ async function buildMaintenanceFeed(
       description: descLines.join("\n"),
       dtstart,
       dtend,
+      allDay: true,
       status: r.status === "IN_PROGRESS" ? "CONFIRMED" : "TENTATIVE",
       categories: ["GearFlow", r.type.replace(/_/g, " ")],
     });
 
     // Add a separate event for nextDueDate if set
     if (r.nextDueDate) {
-      const dueStart = buildDateTime(r.nextDueDate);
-      const dueEnd = new Date(dueStart); // Same day, midnight — triggers all-day format
+      const dueStart = buildDateTime(r.nextDueDate, null, tzid);
+      const dueEnd = new Date(dueStart);
 
       events.push({
         uid: `maintenance-due-${r.id}@gearflow`,
@@ -262,18 +279,20 @@ async function buildMaintenanceFeed(
         description: `Next due date for: ${r.title}\n${assetNames ? `Assets: ${assetNames}` : ""}`,
         dtstart: dueStart,
         dtend: dueEnd,
+        allDay: true,
         status: "TENTATIVE",
         categories: ["GearFlow", "Maintenance Due"],
       });
     }
   }
 
-  return generateVCalendar(`${orgName} — Maintenance`, events);
+  return generateVCalendar(`${orgName} — Maintenance`, events, tzid);
 }
 
 async function buildCrewOverviewFeed(
   orgId: string,
-  orgName: string
+  orgName: string,
+  tzid: string
 ): Promise<string> {
   const assignments = await prisma.crewAssignment.findMany({
     where: {
@@ -325,10 +344,10 @@ async function buildCrewOverviewFeed(
 
     if (a.shifts.length > 0) {
       for (const shift of a.shifts) {
-        const dtstart = buildDateTime(shift.date, shift.callTime);
+        const dtstart = buildDateTime(shift.date, shift.callTime, tzid);
         const dtend = shift.endTime
-          ? buildDateTime(shift.date, shift.endTime)
-          : buildDateTime(shift.date, "23:59");
+          ? buildDateTime(shift.date, shift.endTime, tzid)
+          : buildDateTime(shift.date, "23:59", tzid);
 
         events.push({
           uid: `crew-shift-${shift.id}@gearflow`,
@@ -342,10 +361,15 @@ async function buildCrewOverviewFeed(
         });
       }
     } else {
-      const dtstart = buildDateTime(a.startDate || new Date(), a.startTime);
+      const dtstart = buildDateTime(
+        a.startDate || new Date(),
+        a.startTime,
+        tzid
+      );
       let dtend = buildDateTime(
         a.endDate || a.startDate || new Date(),
-        a.endTime || a.startTime
+        a.endTime || a.startTime,
+        tzid
       );
 
       // Ensure dtend >= dtstart
@@ -366,14 +390,14 @@ async function buildCrewOverviewFeed(
     }
   }
 
-  return generateVCalendar(`${orgName} — Crew Overview`, events);
+  return generateVCalendar(`${orgName} — Crew Overview`, events, tzid);
 }
 
 // ─── Route Handler ──────────────────────────────────────────────────────────
 
 const FEED_BUILDERS: Record<
   FeedType,
-  (orgId: string, orgName: string) => Promise<string>
+  (orgId: string, orgName: string, tzid: string) => Promise<string>
 > = {
   projects: buildProjectsFeed,
   services: buildServicesFeed,
@@ -406,7 +430,7 @@ export async function GET(
     );
   }
 
-  const icsContent = await FEED_BUILDERS[feed](org.id, org.name);
+  const icsContent = await FEED_BUILDERS[feed](org.id, org.name, org.tzid);
 
   return new NextResponse(icsContent, {
     headers: {

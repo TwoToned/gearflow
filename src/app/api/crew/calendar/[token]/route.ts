@@ -5,6 +5,22 @@ import {
   buildDateTime,
   type ICalEvent,
 } from "@/lib/ical";
+import type { OrgSettings } from "@/server/settings";
+
+/** Read the org's configured IANA timezone (default Australia/Sydney). */
+async function getOrgTimezone(organizationId: string): Promise<string> {
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { metadata: true },
+  });
+  if (!org?.metadata) return "Australia/Sydney";
+  try {
+    const settings = JSON.parse(org.metadata) as OrgSettings;
+    return settings.timezone || "Australia/Sydney";
+  } catch {
+    return "Australia/Sydney";
+  }
+}
 
 /**
  * GET /api/crew/calendar/[token].ics
@@ -60,6 +76,7 @@ export async function GET(
     );
   }
 
+  const tzid = await getOrgTimezone(member.organizationId);
   const events: ICalEvent[] = [];
   const calName = `GearFlow - ${member.firstName} ${member.lastName}`;
 
@@ -89,10 +106,10 @@ export async function GET(
     // If there are shifts, create one event per shift
     if (a.shifts.length > 0) {
       for (const shift of a.shifts) {
-        const dtstart = buildDateTime(shift.date, shift.callTime);
+        const dtstart = buildDateTime(shift.date, shift.callTime, tzid);
         const dtend = shift.endTime
-          ? buildDateTime(shift.date, shift.endTime)
-          : buildDateTime(shift.date, "23:59");
+          ? buildDateTime(shift.date, shift.endTime, tzid)
+          : buildDateTime(shift.date, "23:59", tzid);
 
         events.push({
           uid: `shift-${shift.id}@gearflow`,
@@ -109,11 +126,13 @@ export async function GET(
       // No shifts — use assignment dates
       const dtstart = buildDateTime(
         a.startDate || new Date(),
-        a.startTime
+        a.startTime,
+        tzid
       );
       const dtend = buildDateTime(
         a.endDate || a.startDate || new Date(),
-        a.endTime || a.startTime || "23:59"
+        a.endTime || a.startTime || "23:59",
+        tzid
       );
 
       events.push({
@@ -129,7 +148,7 @@ export async function GET(
     }
   }
 
-  const icsContent = generateVCalendar(calName, events);
+  const icsContent = generateVCalendar(calName, events, tzid);
 
   return new NextResponse(icsContent, {
     headers: {

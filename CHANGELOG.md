@@ -5,6 +5,31 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1.0] - 2026-06-02
+
+iCal feed now shows the right time when subscribed in Google Calendar.
+Previously, every event was shifted by the org's UTC offset (about 10–11
+hours for Australia/Sydney) and often landed on the wrong day.
+
+### Fixed
+- **iCal feed times were off by the org's UTC offset on Google Calendar.**
+  The generator used the server's local time and emitted "floating"
+  DATE-TIMEs with no timezone anchor. On Vercel (UTC) a 9am Sydney event
+  came out as `DTSTART:...T230000` floating, so Google rendered it at
+  11pm in the viewer's local zone. The feed now anchors every DTSTART /
+  DTEND with `TZID=<org-timezone>` and ships a matching `VTIMEZONE` block
+  for AU (Sydney, Melbourne, Hobart, Adelaide, Brisbane, Perth, Darwin),
+  NZ (Auckland), UK (London), US (LA / NY), and UTC. DST is handled by
+  embedded `RRULE`s so events render correctly across the daylight-saving
+  transition. `DTSTAMP` is now UTC with the mandatory `Z` suffix per RFC
+  5545. The org timezone comes from `OrgSettings.timezone` (default
+  Australia/Sydney) on the projects, services, maintenance, crew, per-
+  crew-member, and per-assignment feeds. All-day events use explicit
+  `VALUE=DATE` instead of relying on midnight detection. Backed by 16
+  regression tests covering winter (AEST), summer (AEDT), Brisbane
+  no-DST, unknown-zone fallback, all-day rendering, and the original
+  floating-time bug shape.
+
 ## [0.7.0.4] - 2026-05-30
 
 Patch release — delivery dockets now list every assigned asset tag, one

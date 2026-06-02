@@ -11,6 +11,7 @@
 import { describe, it, expect } from "vitest";
 import {
   structureLineItems,
+  getPackerSortOrder,
   type CategoryForStructuring,
 } from "./structure-line-items";
 import type { DocumentLineItem } from "./types";
@@ -494,6 +495,142 @@ describe("structureLineItems — Phase 0 baseline", () => {
     const collapsed = structureLineItems(raw, categories, { expandProjectGroups: false });
     const legacy = structureLineItems(raw, categories);
     expect(collapsed).toEqual(legacy);
+  });
+
+  // ─── Phase 2 — packerSort ──────────────────────────────────────────────
+
+  it("packerSort=true sorts items within each group by location, then name", () => {
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-1", "Lighting", 0, [
+        makeGroup("grp-1", "Lighting Package", 0, { quantity: 1, price: 100 }),
+      ]),
+    ];
+    const raw = [
+      makeLineItem({
+        id: "li-a", categoryName: "Lighting", groupTitle: "Lighting Package",
+        model: { name: "Source 4 Leko" }, locationName: "Warehouse B",
+      }),
+      makeLineItem({
+        id: "li-b", categoryName: "Lighting", groupTitle: "Lighting Package",
+        model: { name: "Iris kit" }, locationName: "Truss Room",
+      }),
+      makeLineItem({
+        id: "li-c", categoryName: "Lighting", groupTitle: "Lighting Package",
+        model: { name: "Gobo holder" }, locationName: "Truss Room",
+      }),
+    ];
+    const result = structureLineItems(raw, categories, {
+      expandProjectGroups: true,
+      packerSort: true,
+    });
+    // Truss Room first (alphabetical), then Warehouse B. Within Truss
+    // Room: Gobo holder before Iris kit (alphabetical model name).
+    expect(summarize(result)).toEqual([
+      "[GROUP] cat=Lighting | group=Lighting Package | Lighting Package x1",
+      "[ITEM] cat=Lighting | group=Lighting Package | Gobo holder x1",
+      "[ITEM] cat=Lighting | group=Lighting Package | Iris kit x1",
+      "[ITEM] cat=Lighting | group=Lighting Package | Source 4 Leko x1",
+    ]);
+  });
+
+  it("packerSort=true: null locations sort to the bottom of each bucket", () => {
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-1", "Audio", 0, [
+        makeGroup("grp-1", "Mics", 0, { quantity: 1, price: 50 }),
+      ]),
+    ];
+    const raw = [
+      makeLineItem({
+        id: "li-a", categoryName: "Audio", groupTitle: "Mics",
+        model: { name: "Shure SM58" }, // no locationName — custom item
+      }),
+      makeLineItem({
+        id: "li-b", categoryName: "Audio", groupTitle: "Mics",
+        model: { name: "Sennheiser e835" }, locationName: "Mic Drawer",
+      }),
+    ];
+    const result = structureLineItems(raw, categories, {
+      expandProjectGroups: true,
+      packerSort: true,
+    });
+    expect(summarize(result)).toEqual([
+      "[GROUP] cat=Audio | group=Mics | Mics x1",
+      "[ITEM] cat=Audio | group=Mics | Sennheiser e835 x1",
+      "[ITEM] cat=Audio | group=Mics | Shure SM58 x1",
+    ]);
+  });
+
+  it("packerSort=false preserves input order (no sort)", () => {
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-1", "Lighting", 0, [
+        makeGroup("grp-1", "Lighting Package", 0, { quantity: 1, price: 100 }),
+      ]),
+    ];
+    const raw = [
+      makeLineItem({
+        id: "li-a", categoryName: "Lighting", groupTitle: "Lighting Package",
+        model: { name: "Source 4 Leko" }, locationName: "Warehouse B",
+      }),
+      makeLineItem({
+        id: "li-b", categoryName: "Lighting", groupTitle: "Lighting Package",
+        model: { name: "Iris kit" }, locationName: "Truss Room",
+      }),
+    ];
+    const result = structureLineItems(raw, categories, {
+      expandProjectGroups: true,
+      packerSort: false,
+    });
+    // Input order preserved: Source 4 Leko before Iris kit
+    expect(summarize(result)).toEqual([
+      "[GROUP] cat=Lighting | group=Lighting Package | Lighting Package x1",
+      "[ITEM] cat=Lighting | group=Lighting Package | Source 4 Leko x1",
+      "[ITEM] cat=Lighting | group=Lighting Package | Iris kit x1",
+    ]);
+  });
+
+  it("packerSort also sorts ungrouped items within a category and uncategorized items", () => {
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-1", "Lighting", 0, []),
+    ];
+    const raw = [
+      makeLineItem({
+        id: "li-a", categoryName: "Lighting",
+        model: { name: "Z lamp" }, locationName: "Warehouse B",
+      }),
+      makeLineItem({
+        id: "li-b", categoryName: "Lighting",
+        model: { name: "A lamp" }, locationName: "Truss Room",
+      }),
+      makeLineItem({
+        id: "li-c",
+        model: { name: "Random thing" }, locationName: "Storeroom",
+      }),
+      makeLineItem({
+        id: "li-d",
+        model: { name: "Aardvark" }, locationName: "Office",
+      }),
+    ];
+    const result = structureLineItems(raw, categories, {
+      expandProjectGroups: true,
+      packerSort: true,
+    });
+    expect(summarize(result)).toEqual([
+      "[ITEM] cat=Lighting | group=— | A lamp x1",
+      "[ITEM] cat=Lighting | group=— | Z lamp x1",
+      "[ITEM] cat=— | group=— | Aardvark x1", // Office < Storeroom
+      "[ITEM] cat=— | group=— | Random thing x1",
+    ]);
+  });
+
+  it("getPackerSortOrder is exposed and pure", () => {
+    const cmp = getPackerSortOrder();
+    const items = [
+      makeLineItem({ id: "1", model: { name: "Z" }, locationName: "B" }),
+      makeLineItem({ id: "2", model: { name: "A" }, locationName: "A" }),
+      makeLineItem({ id: "3", model: { name: "B" }, locationName: "A" }),
+    ];
+    const sorted = [...items].sort(cmp);
+    expect(sorted.map(i => i.id)).toEqual(["2", "3", "1"]);
   });
 
   it("50+ item pagination fixture: many groups and ungrouped items, no crashes", () => {

@@ -48,6 +48,14 @@ export interface DocumentLineItem {
   groupName: string | null;
   categoryName: string | null;
   groupTitle: string | null;
+  /**
+   * The physical location (warehouse area, rack, shelf) the line item's
+   * gear lives at, derived from the asset / bulk asset record. Null for
+   * custom items, services, and unassigned bulk requests. Used by
+   * `structureLineItems` to order rows in packer-walk order on
+   * warehouse-facing docs. Display rendering is unchanged.
+   */
+  locationName?: string | null;
   /** True for synthetic rows representing a ProjectGroup (hides individual equipment) */
   isGroupRow?: boolean;
   isOptional: boolean;

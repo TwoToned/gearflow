@@ -22,7 +22,7 @@ import { getDefaultSections } from "./section-types";
 import type { TemplateSection } from "./section-types";
 import type { DocumentType, DocumentData, TestTagReportType } from "./types";
 import type { ReportResult } from "@/lib/report-types";
-import { resolveTemplateSettings, type TemplateSettings } from "./template-settings";
+import { resolveTemplateSettings, type StoredTemplateSettings, type TemplateSettings } from "./template-settings";
 
 // ─── Template Loading ────────────────────────────────────────────────────────
 
@@ -36,7 +36,7 @@ interface LoadedTemplate {
    * via `resolveTemplateSettings(docType, settings)` at the call site
    * before using.
    */
-  settings: Partial<TemplateSettings> | null;
+  settings: StoredTemplateSettings | null;
   /** Brand template overrides */
   brandAccentColor: string | null;
   brandFooterText: string | null;
@@ -97,7 +97,7 @@ async function loadTemplate(
       // via `resolveTemplateSettings` so legacy stored JSON picks up safe
       // defaults for new settings keys (T1 — every Phase 1+ key would
       // otherwise silently fall through to JavaScript's `undefined`).
-      settings: record.settings ? (JSON.parse(record.settings) as Partial<TemplateSettings>) : null,
+      settings: record.settings ? (JSON.parse(record.settings) as StoredTemplateSettings) : null,
       brandAccentColor: null,
       brandFooterText: null,
       brandFooterSecondLine: null,

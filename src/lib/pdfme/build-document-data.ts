@@ -31,11 +31,20 @@ const unitInclude = {
   },
 } as const;
 
+/**
+ * Asset include shape with location data attached. Used for both
+ * `asset` (serialised) and `bulkAsset` (bulk) on line items so the
+ * packer-sort logic in `structureLineItems` can read `locationName`.
+ */
+const assetWithLocation = {
+  include: { location: { select: { name: true } } },
+} as const;
+
 /** Deep include for line items — 2 levels of children for nested kits */
 const lineItemInclude = {
   model: { include: { category: true } },
-  asset: true,
-  bulkAsset: true,
+  asset: assetWithLocation,
+  bulkAsset: assetWithLocation,
   kit: true,
   units: unitInclude,
   supplier: { select: { name: true } },
@@ -45,8 +54,8 @@ const lineItemInclude = {
     orderBy: { sortOrder: "asc" as const },
     include: {
       model: { include: { category: true } },
-      asset: true,
-      bulkAsset: true,
+      asset: assetWithLocation,
+      bulkAsset: assetWithLocation,
       kit: true,
       units: unitInclude,
       supplier: { select: { name: true } },
@@ -56,8 +65,8 @@ const lineItemInclude = {
         orderBy: { sortOrder: "asc" as const },
         include: {
           model: { include: { category: true } },
-          asset: true,
-          bulkAsset: true,
+          asset: assetWithLocation,
+          bulkAsset: assetWithLocation,
           units: unitInclude,
           supplier: { select: { name: true } },
         },
@@ -103,6 +112,11 @@ export async function buildDocumentData(
 ): Promise<DocumentData> {
   const settings = options?.settings ?? getDefaultSettings(docType);
   const expandProjectGroups = settings.table.expandProjectGroups;
+  // Packer-walk sort piggy-backs on expandProjectGroups today — every doc
+  // type that expands groups (packing-list, return-sheet, delivery-docket)
+  // also wants packer order. A separate setting can split them later if a
+  // user asks for one without the other.
+  const packerSort = expandProjectGroups;
   // Load org
   const org = await prisma.organization.findUnique({
     where: { id: organizationId },
@@ -209,8 +223,17 @@ export async function buildDocumentData(
     project.id
   );
 
-  // Enrich line items with overbooking flags + category/group names
+  // Enrich line items with overbooking flags + category/group/location names
   type LineItemRow = (typeof project.lineItems)[number];
+  /**
+   * Pull the physical location name off a line item via its asset or
+   * bulk-asset record. Custom items and services have neither and
+   * return null, sorting to the "No Location" bucket on packer docs.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const deriveLocationName = (row: any): string | null => {
+    return row?.asset?.location?.name ?? row?.bulkAsset?.location?.name ?? null;
+  };
   const enrichedLineItems = project.lineItems.map((li: LineItemRow) => {
     const info = overbookedMap.get(li.id);
     const children = (li as unknown as { childLineItems?: LineItemRow[] }).childLineItems;
@@ -222,6 +245,7 @@ export async function buildDocumentData(
       ...li,
       categoryName,
       groupTitle,
+      locationName: deriveLocationName(liAny),
       supplierName: liAny.supplier?.name ?? null,
       isOverbooked: !!info,
       overbookedInherited: info?.inherited ?? false,
@@ -236,6 +260,7 @@ export async function buildDocumentData(
           ...child,
           categoryName: childAny.category?.name ?? null,
           groupTitle: childAny.group?.title ?? null,
+          locationName: deriveLocationName(childAny),
           supplierName: childAny.supplier?.name ?? null,
           isOverbooked: !!childInfo,
           overbookedReducedOnly: childInfo?.reducedOnly ?? false,
@@ -265,7 +290,7 @@ export async function buildDocumentData(
   const lineItems: DocumentLineItem[] = structureLineItems(
     rawLineItems,
     categories,
-    { expandProjectGroups },
+    { expandProjectGroups, packerSort },
   );
 
   // ─── Append billable services as virtual line items ─────────────────────────

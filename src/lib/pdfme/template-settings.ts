@@ -276,17 +276,33 @@ export function getDefaultSettings(docType: DocumentType): TemplateSettings {
  * Stored values always win over defaults. Pass an object, a JSON string,
  * or `null` / `undefined` — the latter two yield the bare docType defaults.
  */
+/**
+ * Deeply-partial shape for stored settings. Top-level groups (header,
+ * footer, details, table, totals, other) are individually optional and,
+ * when present, may contain any subset of their keys. This matches what
+ * a legacy DocumentTemplate.settings JSON could plausibly contain.
+ */
+export type StoredTemplateSettings = {
+  accentColor?: string;
+  header?: Partial<TemplateSettings["header"]>;
+  footer?: Partial<TemplateSettings["footer"]>;
+  details?: Partial<TemplateSettings["details"]>;
+  table?: Partial<TemplateSettings["table"]>;
+  totals?: Partial<TemplateSettings["totals"]>;
+  other?: Partial<TemplateSettings["other"]>;
+};
+
 export function resolveTemplateSettings(
   docType: DocumentType,
-  stored: Partial<TemplateSettings> | TemplateSettings | string | null | undefined,
+  stored: StoredTemplateSettings | TemplateSettings | string | null | undefined,
 ): TemplateSettings {
   const defaults = getDefaultSettings(docType);
   if (!stored) return defaults;
 
-  let parsed: Partial<TemplateSettings>;
+  let parsed: StoredTemplateSettings;
   if (typeof stored === "string") {
     try {
-      parsed = JSON.parse(stored) as Partial<TemplateSettings>;
+      parsed = JSON.parse(stored) as StoredTemplateSettings;
     } catch {
       return defaults;
     }
@@ -296,7 +312,7 @@ export function resolveTemplateSettings(
 
   return {
     ...defaults,
-    ...parsed,
+    accentColor: parsed.accentColor ?? defaults.accentColor,
     header: { ...defaults.header, ...parsed.header },
     footer: { ...defaults.footer, ...parsed.footer },
     details: { ...defaults.details, ...parsed.details },

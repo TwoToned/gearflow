@@ -58,6 +58,43 @@ export interface StructureOptions {
    * behaviour).
    */
   expandProjectGroups?: boolean;
+  /**
+   * When true, sort line items within each bucket (group children,
+   * ungrouped-in-category items) in packer-walk order: location, then
+   * category, then model name. Designed for warehouse docs where the
+   * pick order matters. When false, preserves the user-defined
+   * sortOrder from the project. Defaults to false. Wrapped behind
+   * `getPackerSortOrder` so a future per-org config (P3) is a small
+   * change.
+   */
+  packerSort?: boolean;
+}
+
+/**
+ * Returns the comparator used to sort line items in packer-walk order.
+ * Currently a hard-coded [location → category → model name] sequence.
+ * Per-org override is a P3 follow-up — wrap any future config in this
+ * helper so callers don't need to change.
+ */
+export function getPackerSortOrder(): (
+  a: import("./types").DocumentLineItem,
+  b: import("./types").DocumentLineItem,
+) => number {
+  return (a, b) => {
+    // null/undefined location sorts AFTER any named location so
+    // unassigned bulk and custom items collect at the bottom.
+    const locA = a.locationName ?? "￿";
+    const locB = b.locationName ?? "￿";
+    if (locA !== locB) return locA.localeCompare(locB);
+
+    const catA = a.categoryName ?? "";
+    const catB = b.categoryName ?? "";
+    if (catA !== catB) return catA.localeCompare(catB);
+
+    const nameA = a.model?.name ?? a.description ?? "";
+    const nameB = b.model?.name ?? b.description ?? "";
+    return nameA.localeCompare(nameB);
+  };
 }
 
 /**
@@ -77,6 +114,14 @@ export function structureLineItems(
   }
 
   const expand = options.expandProjectGroups ?? false;
+  const packerSort = options.packerSort ?? false;
+  const packerCompare = packerSort ? getPackerSortOrder() : null;
+
+  /** Sort a slice in place when packerSort is on; no-op otherwise. */
+  const maybeSort = (items: DocumentLineItem[]): DocumentLineItem[] => {
+    if (!packerCompare) return items;
+    return [...items].sort(packerCompare);
+  };
 
   // Build set of groupIds so we can filter out their child line items
   const groupIds = new Set<string>();
@@ -164,21 +209,24 @@ export function structureLineItems(
         bulkAsset: null,
       });
 
-      // Children belong under the group's bucket label.
+      // Children belong under the group's bucket label, sorted in
+      // packer-walk order when the option is on.
       if (expand) {
-        for (const child of groupChildren) {
+        for (const child of maybeSort(groupChildren)) {
           structured.push({ ...child, groupName: bucketLabel });
         }
       }
     }
 
-    // Ungrouped items in this category render under the category bucket.
-    for (const li of ungroupedInCat) {
+    // Ungrouped items in this category render under the category bucket,
+    // sorted in packer-walk order when the option is on.
+    for (const li of maybeSort(ungroupedInCat)) {
       structured.push({ ...li, groupName: cat.name });
     }
   }
 
-  // Items not in any category and not inside a group — render as-is.
+  // Items not in any category and not inside a group — render as-is,
+  // sorted in packer-walk order when the option is on.
   const uncategorized = rawLineItems.filter(li => {
     if (li.isKitChild || li.isContainerLineItem) return false;
     if (li.categoryName || li.groupTitle) return false;
@@ -187,7 +235,7 @@ export function structureLineItems(
     if (groupId && groupIds.has(groupId)) return false;
     return true;
   });
-  for (const li of uncategorized) {
+  for (const li of maybeSort(uncategorized)) {
     structured.push(li);
   }
 

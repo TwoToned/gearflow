@@ -12,11 +12,28 @@ import { computeOverbookedStatus } from "@/lib/availability";
 import { recalculateProjectTotals } from "@/server/line-items";
 import { logActivity } from "@/lib/activity-log";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
+import { translatePrismaError, UserFacingError } from "@/lib/errors";
 
 const projectFilterColumns: FilterColumnDef[] = [
   { id: "status", filterType: "enum" },
   { id: "type", filterType: "enum" },
 ];
+
+/**
+ * Per-unit fulfillment rows to thread through every line-item include
+ * on `getProject`. The project view's equipment tab uses these to show
+ * each physical asset assigned to a multi-quantity line (post-cutover
+ * `line.asset` is null for those — the assignments live on units).
+ * CANCELLED units are filtered out at the query layer.
+ */
+const PROJECT_UNIT_INCLUDE = {
+  orderBy: { ordinal: "asc" as const },
+  where: { status: { not: "CANCELLED" as const } },
+  include: {
+    asset: { select: { id: true, assetTag: true } },
+    bulkAsset: { select: { id: true, assetTag: true } },
+  },
+} as const;
 
 async function generateTemplateCode(organizationId: string): Promise<string> {
   const count = await prisma.project.count({
@@ -197,10 +214,18 @@ export async function getProject(id: string) {
           groups: {
             include: {
               lineItems: {
+                // Hide merge tombstones (status CANCELLED, qty 0) left by
+                // the split-collapse migrations. Normal removal hard-deletes,
+                // so CANCELLED line items are only ever inert merge residue.
+                where: { status: { not: "CANCELLED" } },
                 include: {
                   model: true, asset: true, bulkAsset: true, kit: true,
+                  units: PROJECT_UNIT_INCLUDE,
                   childLineItems: {
-                    include: { model: true, asset: true, bulkAsset: true, kit: true },
+                    include: {
+                      model: true, asset: true, bulkAsset: true, kit: true,
+                      units: PROJECT_UNIT_INCLUDE,
+                    },
                     orderBy: { sortOrder: "asc" },
                   },
                 },
@@ -210,11 +235,15 @@ export async function getProject(id: string) {
             orderBy: { sortOrder: "asc" },
           },
           lineItems: {
-            where: { groupId: null },
+            where: { groupId: null, status: { not: "CANCELLED" } },
             include: {
               model: true, asset: true, bulkAsset: true, kit: true,
+              units: PROJECT_UNIT_INCLUDE,
               childLineItems: {
-                include: { model: true, asset: true, bulkAsset: true, kit: true },
+                include: {
+                  model: true, asset: true, bulkAsset: true, kit: true,
+                  units: PROJECT_UNIT_INCLUDE,
+                },
                 orderBy: { sortOrder: "asc" },
               },
             },
@@ -224,17 +253,23 @@ export async function getProject(id: string) {
         orderBy: { sortOrder: "asc" },
       },
       lineItems: {
+        where: { status: { not: "CANCELLED" } },
         include: {
           model: true,
           asset: true,
           bulkAsset: true,
           kit: true,
           supplier: true,
+          units: PROJECT_UNIT_INCLUDE,
           childLineItems: {
             include: {
               model: true, asset: true, bulkAsset: true, kit: true,
+              units: PROJECT_UNIT_INCLUDE,
               childLineItems: {
-                include: { model: true, asset: true, bulkAsset: true },
+                include: {
+                  model: true, asset: true, bulkAsset: true,
+                  units: PROJECT_UNIT_INCLUDE,
+                },
                 orderBy: { sortOrder: "asc" },
               },
             },
@@ -299,7 +334,12 @@ export async function createProject(data: ProjectFormValues & { isTemplate?: boo
   const isTemplate = data.isTemplate ?? false;
 
   if (!isTemplate && !parsed.projectNumber) {
-    throw new Error("Project code is required");
+    throw new UserFacingError({
+      code: "MISSING_PROJECT_CODE",
+      title: "Project code is required",
+      message: "Enter a project code (e.g. P-2024-001) before saving.",
+      field: "projectNumber",
+    });
   }
 
   const projectNumber = isTemplate && !parsed.projectNumber
@@ -361,9 +401,8 @@ export async function createProject(data: ProjectFormValues & { isTemplate?: boo
 
     return serialize(result);
   } catch (e: unknown) {
-    if (e instanceof Error && e.message.includes("Unique constraint")) {
-      throw new Error(`Project code "${parsed.projectNumber}" already exists`);
-    }
+    const translated = translatePrismaError(e);
+    if (translated) throw translated;
     throw e;
   }
 }
@@ -437,8 +476,20 @@ export async function updateProjectStatus(
 ) {
   const { organizationId, userId, userName } = await requirePermission("project", "update");
   const project = await prisma.project.findUnique({ where: { id, organizationId } });
-  if (!project) throw new Error("Project not found");
-  if (project.isTemplate) throw new Error("Cannot change status of a template");
+  if (!project) {
+    throw new UserFacingError({
+      code: "NOT_FOUND",
+      title: "Project not found",
+      message: "This project was deleted or moved. Refresh the page to see the latest state.",
+    });
+  }
+  if (project.isTemplate) {
+    throw new UserFacingError({
+      code: "TEMPLATE_STATUS",
+      title: "Cannot change template status",
+      message: "Templates don't have a status — they're a starting point for creating projects.",
+    });
+  }
   const updated = await prisma.project.update({
     where: { id, organizationId },
     data: { status },
@@ -675,9 +726,8 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
 
     return serialize(result);
   } catch (e: unknown) {
-    if (e instanceof Error && e.message.includes("Unique constraint")) {
-      throw new Error(`Project code "${newProjectNumber}" already exists`);
-    }
+    const translated = translatePrismaError(e);
+    if (translated) throw translated;
     throw e;
   }
 }
@@ -696,7 +746,13 @@ export async function saveAsTemplate(projectId: string, templateName: string) {
     },
   });
 
-  if (!source) throw new Error("Project not found");
+  if (!source) {
+    throw new UserFacingError({
+      code: "NOT_FOUND",
+      title: "Project not found",
+      message: "This project was deleted or moved. Refresh the page to see the latest state.",
+    });
+  }
 
   const templateNumber = await generateTemplateCode(organizationId);
 
@@ -789,9 +845,8 @@ export async function saveAsTemplate(projectId: string, templateName: string) {
 
     return serialize(result);
   } catch (e: unknown) {
-    if (e instanceof Error && e.message.includes("Unique constraint")) {
-      throw new Error("Template code conflict, please try again");
-    }
+    const translated = translatePrismaError(e);
+    if (translated) throw translated;
     throw e;
   }
 }
@@ -818,8 +873,20 @@ export async function deleteTemplate(id: string) {
   const template = await prisma.project.findUnique({
     where: { id, organizationId },
   });
-  if (!template) throw new Error("Template not found");
-  if (!template.isTemplate) throw new Error("This is not a template");
+  if (!template) {
+    throw new UserFacingError({
+      code: "NOT_FOUND",
+      title: "Template not found",
+      message: "This template was deleted or moved. Refresh the page to see the latest state.",
+    });
+  }
+  if (!template.isTemplate) {
+    throw new UserFacingError({
+      code: "NOT_A_TEMPLATE",
+      title: "Not a template",
+      message: "That ID points at a project, not a template.",
+    });
+  }
 
   await prisma.project.delete({ where: { id, organizationId } });
   return { success: true };
@@ -844,8 +911,21 @@ export async function deleteProject(id: string) {
     },
   });
 
-  if (!project) throw new Error("Project not found");
-  if (project.status !== "CANCELLED") throw new Error("Only cancelled projects can be deleted");
+  if (!project) {
+    throw new UserFacingError({
+      code: "NOT_FOUND",
+      title: "Project not found",
+      message: "This project was deleted or moved. Refresh the page to see the latest state.",
+    });
+  }
+  if (project.status !== "CANCELLED") {
+    throw new UserFacingError({
+      code: "DELETE_GUARD",
+      title: "Cannot delete this project",
+      message: "Only cancelled projects can be deleted.",
+      hint: "Set the project status to Cancelled first, then try again.",
+    });
+  }
 
   // Collect IDs to reset
   const checkedOutAssetIds: string[] = [];
@@ -946,7 +1026,13 @@ export async function getCallSheetDates(projectId: string) {
       orderBy: { date: "asc" },
     }),
   ]);
-  if (!project) throw new Error("Project not found");
+  if (!project) {
+    throw new UserFacingError({
+      code: "NOT_FOUND",
+      title: "Project not found",
+      message: "This project was deleted or moved. Refresh the page to see the latest state.",
+    });
+  }
   return serialize({
     ...project,
     serviceDates: services

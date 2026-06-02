@@ -42,19 +42,12 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import { BookingCalendar } from "@/components/bookings/booking-calendar";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { FadeIn } from "@/components/ui/motion";
-import { SectionHeader } from "@/components/layout/page-layouts";
+import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
+import { CustomFieldsDisplay } from "@/components/custom-fields/custom-fields-display";
 
 import { assetStatusLabels, lineItemStatusLabels, maintenanceTypeLabels, maintenanceStatusLabels, mediaTypeLabels, conditionLabels, formatLabel } from "@/lib/status-labels";
-
-function formatDate(date: Date | string | null | undefined) {
-  if (!date) return "—";
-  return new Date(date).toLocaleDateString("en-AU", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
+import { formatDate } from "@/lib/formatters";
 
 export default function AssetDetailPage({ params }: { params: Promise<{ id: string }> }) {
   return (
@@ -250,9 +243,9 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
         </div>
 
         {/* ── 2-Column Layout ────────────────────────────────────── */}
-        <div className="flex flex-col gap-6 lg:flex-row">
+        <DetailLayout>
           {/* Main content */}
-          <div className="min-w-0 flex-1">
+          <DetailMain>
             <Tabs defaultValue="availability">
               <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
                 <TabsList className="w-max sm:w-auto">
@@ -465,14 +458,12 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 </div>
               </TabsContent>
             </Tabs>
-          </div>
+          </DetailMain>
 
           {/* ── Sidebar ──────────────────────────────────────────── */}
-          <div className="w-full space-y-4 lg:w-[340px] lg:shrink-0">
-            <div className="lg:sticky lg:top-4 space-y-4">
+          <DetailSidebar>
               {/* Status */}
-              <div className="border-b border-border pb-4 space-y-2">
-                <SectionHeader label="Status" />
+              <SidebarSection title="Status">
                 <div className="flex items-center gap-2">
                   <StatusIndicator
                     category="asset"
@@ -487,11 +478,10 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     label={conditionLabels[asset.condition] || asset.condition}
                   />
                 </div>
-              </div>
+              </SidebarSection>
 
               {/* Asset Info */}
-              <div className="border-b border-border pb-4 space-y-2">
-                <SectionHeader label="Asset Info" />
+              <SidebarSection title="Asset Info">
                 <div className="space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span className="text-fg-3">Asset Tag</span>
@@ -526,11 +516,10 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     </div>
                   )}
                 </div>
-              </div>
+              </SidebarSection>
 
               {/* Purchase */}
-              <div className="border-b border-border pb-4 space-y-2">
-                <SectionHeader label="Purchase" />
+              <SidebarSection title="Purchase">
                 <div className="space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span className="text-fg-3">Date</span>
@@ -551,23 +540,21 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     <span className="font-medium">{formatDate(asset.warrantyExpiry)}</span>
                   </div>
                 </div>
-              </div>
+              </SidebarSection>
 
               {/* Location */}
               {asset.location && (
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Location" />
+                <SidebarSection title="Location">
                   <div className="flex items-center gap-2 text-sm">
                     <MapPin className="h-3.5 w-3.5 text-fg-3 shrink-0" />
                     <span className="font-medium">{asset.location.name}</span>
                   </div>
-                </div>
+                </SidebarSection>
               )}
 
               {/* Specifications */}
               {specs.length > 0 && (
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Specifications" />
+                <SidebarSection title="Specifications">
                   <div className="space-y-1 text-sm">
                     {specs.map((spec, i) => (
                       <div key={i} className="flex justify-between">
@@ -576,12 +563,17 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       </div>
                     ))}
                   </div>
-                </div>
+                </SidebarSection>
               )}
 
+              {/* Operator-defined custom fields */}
+              <CustomFieldsDisplay
+                entityType="ASSET"
+                values={asset.customFieldValues as Record<string, string> | null | undefined}
+              />
+
               {/* Test & Tag / Maintenance */}
-              <div className="border-b border-border pb-4 space-y-2">
-                <SectionHeader label="Test & Tag" />
+              <SidebarSection title="Test & Tag">
                 {asset.testTagAsset ? (
                   <div className="space-y-1 text-sm">
                     <div className="flex justify-between">
@@ -626,16 +618,14 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     )}
                   </div>
                 )}
-              </div>
+              </SidebarSection>
 
               {/* Activity */}
-              <div className="space-y-2">
-                <SectionHeader label="Activity" />
+              <SidebarSection title="Activity" divider={false}>
                 <ActivityTimeline entityType="asset" entityId={id} />
-              </div>
-            </div>
-          </div>
-        </div>
+              </SidebarSection>
+          </DetailSidebar>
+        </DetailLayout>
       </div>
       <DeleteDialog
         open={forceReturnOpen}

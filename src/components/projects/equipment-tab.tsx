@@ -118,6 +118,14 @@ interface LineItemData {
   supplier?: { name: string } | null;
   model?: { name: string; dailyRate?: unknown; weeklyRate?: unknown; monthlyRate?: unknown } | null;
   asset?: { assetTag?: string | null } | null;
+  /** Post-cutover per-unit assignments. Source of truth for which
+   *  physical assets a multi-quantity line is using. */
+  units?: Array<{
+    id: string;
+    ordinal: number;
+    asset?: { id: string; assetTag: string } | null;
+    bulkAsset?: { id: string; assetTag: string } | null;
+  }>;
   kit?: { name?: string } | null;
   childLineItems?: LineItemData[];
 }
@@ -152,6 +160,20 @@ const COL_COUNT = 6;
 // filter them from flat rendering so they only appear nested under their parent.
 function isRealKitChild(item: LineItemData) {
   return item.isKitChild === true;
+}
+
+// Merge tombstones (status CANCELLED, qty 0) are inert residue left by the
+// split-collapse migrations. getProject already filters them at the query
+// layer; this is belt-and-suspenders so a stale cache / optimistic update
+// can't resurrect a ghost row. Normal line-item removal hard-deletes, so a
+// CANCELLED line item is never anything but merge residue.
+function isMergeTombstone(item: LineItemData) {
+  return item.status === "CANCELLED";
+}
+
+// One predicate for "should this row appear in the flat list".
+function isHiddenFromList(item: LineItemData) {
+  return isRealKitChild(item) || isMergeTombstone(item);
 }
 
 // ─── Overbooked info type ───────────────────────────────────────────────────
@@ -496,9 +518,30 @@ function SortableLineItemRow({
           {hasChildren && (
             <span className="text-xs text-fg-3">{item.childLineItems!.length} item{item.childLineItems!.length !== 1 ? "s" : ""}</span>
           )}
-          {item.asset?.assetTag && (
-            <span className="text-xs text-fg-3">({item.asset.assetTag})</span>
-          )}
+          {(() => {
+            // Show asset tags from per-unit fulfillment if present
+            // (post-cutover, line.asset is null on multi-quantity
+            // serialised lines — the tags live on units). Single-asset
+            // legacy lines still render via item.asset.assetTag.
+            const unitTags = (item.units ?? [])
+              .map((u) => u.asset?.assetTag ?? u.bulkAsset?.assetTag)
+              .filter((t): t is string => !!t);
+            if (unitTags.length === 1) {
+              return <span className="text-xs text-fg-3">({unitTags[0]})</span>;
+            }
+            if (unitTags.length > 1) {
+              return (
+                <span className="text-xs text-fg-3">
+                  ({unitTags.slice(0, 2).join(", ")}
+                  {unitTags.length > 2 ? ` +${unitTags.length - 2}` : ""})
+                </span>
+              );
+            }
+            if (item.asset?.assetTag) {
+              return <span className="text-xs text-fg-3">({item.asset.assetTag})</span>;
+            }
+            return null;
+          })()}
           {item.kitId && !item.isKitChild && (
             <Badge variant="outline" className="ml-1.5 text-xs bg-indigo-500/10 text-indigo-600 border-indigo-500/20">
               Kit
@@ -1316,7 +1359,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
             >
               <TableBody>
                 {typedCategories.map((cat) => {
-                  const standaloneItems = (cat.lineItems ?? []).filter((i: LineItemData) => !isRealKitChild(i));
+                  const standaloneItems = (cat.lineItems ?? []).filter((i: LineItemData) => !isHiddenFromList(i));
 
                   return (
                     <React.Fragment key={cat.id}>
@@ -1334,7 +1377,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                       {cat.groups.map((group) => {
                         const isExpanded = expandedGroups.has(group.id);
                         const priceVal = group.price != null ? Number(group.price) : null;
-                        const groupItems = (group.lineItems ?? []).filter((i: LineItemData) => !isRealKitChild(i));
+                        const groupItems = (group.lineItems ?? []).filter((i: LineItemData) => !isHiddenFromList(i));
                         return (
                           <React.Fragment key={group.id}>
                             <SortableGroupRow
@@ -1444,7 +1487,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                     </TableCell>
                   </TableRow>
                 )}
-                {(uncategorizedItems as LineItemData[]).filter((i) => !isRealKitChild(i)).map((item) => (
+                {(uncategorizedItems as LineItemData[]).filter((i) => !isHiddenFromList(i)).map((item) => (
                   <SortableLineItemRow
                     key={item.id}
                     item={item}

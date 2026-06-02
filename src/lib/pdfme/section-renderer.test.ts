@@ -12,7 +12,9 @@ import {
   TABLE_ROW_HEIGHT_MM,
   CREW_ROW_HEIGHT_MM,
   SECTION_HEIGHT_ESTIMATES,
+  getDefaultSections,
 } from "./section-types";
+import type { TableSectionSettings } from "./section-types";
 import { PAGE_HEIGHT, MARGIN, FOOTER_HEIGHT, SECTION_GAP } from "./template-constants";
 
 // ─── Mock Factories ───────────────────────────────────────────────────────────
@@ -715,7 +717,7 @@ describe("computePageLayout", () => {
       );
       const projectSection = makeSection(
         "project-details",
-        { showProjectName: true, showVenue: true, showRentalDates: true, showEventDates: false, showPaymentTerms: false, showSiteContact: false, showDocumentDate: true },
+        { showProjectName: true, showProjectNumber: true, showVenue: true, showRentalDates: true, showEventDates: false, showPaymentTerms: false, showSiteContact: false, showDocumentDate: true },
         { order: 2 },
       );
 
@@ -1151,5 +1153,42 @@ describe("docType integration", () => {
       // Formula: 8 + crewCount * CREW_ROW_HEIGHT_MM + 4
       expect(height).toBe(8 + 2 * CREW_ROW_HEIGHT_MM + 4);
     });
+  });
+});
+
+describe("getDefaultSections per-unit defaults", () => {
+  // Helper: pull the table section's settings out of a default section list.
+  function tableSettings(docType: Parameters<typeof getDefaultSections>[0]): TableSectionSettings {
+    const sections = getDefaultSections(docType);
+    const table = sections.find((s) => s.type === "table");
+    expect(table, `${docType} should have a table section`).toBeDefined();
+    return table!.settings as TableSectionSettings;
+  }
+
+  // Regression: the delivery-docket section default was the one place
+  // showPerUnitCheckboxes was missed, so multi-quantity lines collapsed to
+  // "tag, tag +N" instead of listing every assigned asset tag on its own row.
+  // The section render path (generate-pdf loadTemplate) reads `sections`
+  // first, so this default — not the legacy settings blob — is what renders.
+  it("delivery-docket lists one row per unit (showPerUnitCheckboxes: true)", () => {
+    expect(tableSettings("delivery-docket").showPerUnitCheckboxes).toBe(true);
+  });
+
+  it("packing-list keeps per-unit rows", () => {
+    expect(tableSettings("packing-list").showPerUnitCheckboxes).toBe(true);
+  });
+
+  it("return-sheet keeps per-unit rows", () => {
+    expect(tableSettings("return-sheet").showPerUnitCheckboxes).toBe(true);
+  });
+
+  // Quote/invoice are commercial documents — they price the line, not the
+  // physical units, so they should NOT expand to one row per asset tag.
+  it("quote does not expand to per-unit rows", () => {
+    expect(tableSettings("quote").showPerUnitCheckboxes).toBe(false);
+  });
+
+  it("invoice does not expand to per-unit rows", () => {
+    expect(tableSettings("invoice").showPerUnitCheckboxes).toBe(false);
   });
 });

@@ -4,6 +4,7 @@ import {
   getStatusColor,
   intentStyles,
   type ColorIntent,
+  type StatusCategory,
 } from "./status-colors";
 
 describe("status-colors", () => {
@@ -55,7 +56,7 @@ describe("status-colors", () => {
         ["project", "CHECKED_OUT"],   // primary
       ];
       for (const [cat, val] of testCases) {
-        allIntents.add(getStatusIntent(cat as any, val));
+        allIntents.add(getStatusIntent(cat as StatusCategory, val));
       }
       expect(allIntents.size).toBe(6);
     });

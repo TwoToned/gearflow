@@ -48,6 +48,8 @@ model User {
   crewMembers               CrewMember[]
   confirmedAssignments      CrewAssignment[]            @relation("ConfirmedBy")
   approvedTimeEntries       CrewTimeEntry[]             @relation("TimeEntryApprovedBy")
+  stocktakesStarted         Stocktake[]                 @relation("StocktakeStarted")
+  stocktakesReviewed        Stocktake[]                 @relation("StocktakeReviewed")
   ssoProviders              SsoProvider[]
   pendingSSOApprovals       PendingSSOApproval[]
   reviewedSSOApprovals      PendingSSOApproval[]        @relation("SSOReviewer")
@@ -139,6 +141,8 @@ model Organization {
   clients                  Client[]
   projects                 Project[]
   projectLineItems         ProjectLineItem[]
+  projectLineItemUnits     ProjectLineItemUnit[]
+  lineItemMergeMaps        LineItemMergeMap[]
   scanLogs                 AssetScanLog[]
   suppliers                Supplier[]
   supplierOrders           SupplierOrder[]
@@ -188,6 +192,8 @@ model Organization {
   supplierModelRates       SupplierModelRate[]
   notificationDismissals   NotificationDismissal[]
   notificationEmailLogs    NotificationEmailLog[]
+  stocktakes               Stocktake[]
+  customFieldDefinitions   CustomFieldDefinition[]
 
   @@map("organization")
 }
@@ -340,7 +346,9 @@ enum MaintenanceType {
 
 enum MaintenanceStatus {
   SCHEDULED
+  AWAITING_PARTS
   IN_PROGRESS
+  QA
   COMPLETED
   CANCELLED
 }
@@ -696,11 +704,12 @@ model Supplier {
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
-  assets             Asset[]
-  lineItems          ProjectLineItem[]
-  orders             SupplierOrder[]
-  subHires           SubHire[]
-  supplierModelRates SupplierModelRate[]
+  assets              Asset[]
+  lineItems           ProjectLineItem[]
+  orders              SupplierOrder[]
+  subHires            SubHire[]
+  supplierModelRates  SupplierModelRate[]
+  preferredBulkAssets BulkAsset[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -1015,12 +1024,14 @@ model Asset {
 
   maintenanceLinks   MaintenanceRecordAsset[]
   lineItems          ProjectLineItem[]
+  lineItemUnits      ProjectLineItemUnit[]
   scanLogs           AssetScanLog[]
   media              AssetMedia[]
   testTagAsset       TestTagAsset?
   supplierOrderItems SupplierOrderItem[]
   checkRecords       CheckRecord[]
   damageEvents       DamageEvent[]
+  stocktakeItems     StocktakeItem[]
 
   @@unique([organizationId, assetTag])
   @@index([organizationId])
@@ -1050,24 +1061,39 @@ model BulkAsset {
   location             Location?       @relation(fields: [locationId], references: [id])
   status               BulkAssetStatus @default(ACTIVE)
   reorderThreshold     Int?
+  /**
+   * Preferred supplier for reorder. Drives the supplier grouping on
+   * /warehouse/reorder and pre-fills the draft SupplierOrder.
+   */
+  preferredSupplierId  String?
+  preferredSupplier    Supplier?       @relation(fields: [preferredSupplierId], references: [id], onDelete: SetNull)
+  /**
+   * Last time a SupplierOrder containing this bulk asset was created.
+   * Populated lazily by createReorderDraft so the dashboard can show
+   * "ordered 12 days ago" alongside current stock.
+   */
+  lastReorderedAt      DateTime?
   notes                String?
   tags                 String[]        @default([])
   isActive             Boolean         @default(true)
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
 
-  kitBulkItems  KitBulkItem[]
-  lineItems     ProjectLineItem[]
-  scanLogs      AssetScanLog[]
-  testTagAssets TestTagAsset[]
-  checkRecords  CheckRecord[]
-  damageEvents  DamageEvent[]
+  kitBulkItems   KitBulkItem[]
+  lineItems      ProjectLineItem[]
+  lineItemUnits  ProjectLineItemUnit[]
+  scanLogs       AssetScanLog[]
+  testTagAssets  TestTagAsset[]
+  checkRecords   CheckRecord[]
+  damageEvents   DamageEvent[]
+  stocktakeItems StocktakeItem[]
 
   @@unique([organizationId, assetTag])
   @@index([organizationId])
   @@index([status])
   @@index([modelId])
   @@index([isActive])
+  @@index([preferredSupplierId])
   @@map("bulk_asset")
 }
 
@@ -1097,6 +1123,7 @@ model Location {
   projects                 Project[]
   media                    LocationMedia[]
   warehouseDashboardTokens WarehouseDashboardToken[]
+  stocktakes               Stocktake[]
 
   @@index([organizationId])
   @@index([parentId])
@@ -1130,6 +1157,12 @@ model MaintenanceRecord {
   cost           Decimal?           @db.Decimal(10, 2)
   partsUsed      String?
   attachments    String[]           @default([])
+  /**
+   * Before/after photos uploaded during repair. Mirrors DamageEvent.photos
+   * shape — string URLs from /api/uploads. Workshop kanban cards render
+   * up to 4 thumbnails.
+   */
+  photos         String[]           @default([])
   result         MaintenanceResult?
   nextDueDate    DateTime?
   tags           String[]           @default([])
@@ -1152,35 +1185,38 @@ model MaintenanceRecord {
 /// enum stays as a fast filter; this row is source of truth for the damage
 /// event itself. UI to capture damage events is Wave 3 (damage-capture flow).
 model DamageEvent {
-  id                  String             @id @default(cuid())
+  id                  String               @id @default(cuid())
   organizationId      String
-  organization        Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   projectId           String?
-  project             Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  project             Project?             @relation(fields: [projectId], references: [id], onDelete: SetNull)
   lineItemId          String?
-  lineItem            ProjectLineItem?   @relation(fields: [lineItemId], references: [id], onDelete: SetNull)
+  lineItem            ProjectLineItem?     @relation(fields: [lineItemId], references: [id], onDelete: SetNull)
+  lineItemUnitId      String?
+  lineItemUnit        ProjectLineItemUnit? @relation(fields: [lineItemUnitId], references: [id], onDelete: SetNull)
   assetId             String?
-  asset               Asset?             @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  asset               Asset?               @relation(fields: [assetId], references: [id], onDelete: SetNull)
   bulkAssetId         String?
-  bulkAsset           BulkAsset?         @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
+  bulkAsset           BulkAsset?           @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
   severity            DamageSeverity
-  status              DamageStatus       @default(OPEN)
+  status              DamageStatus         @default(OPEN)
   notes               String?
-  photos              String[]           @default([])
-  estimatedCost       Decimal?           @db.Decimal(10, 2)
-  actualCost          Decimal?           @db.Decimal(10, 2)
-  chargedBack         Boolean            @default(false)
+  photos              String[]             @default([])
+  estimatedCost       Decimal?             @db.Decimal(10, 2)
+  actualCost          Decimal?             @db.Decimal(10, 2)
+  chargedBack         Boolean              @default(false)
   maintenanceRecordId String?
-  maintenanceRecord   MaintenanceRecord? @relation(fields: [maintenanceRecordId], references: [id], onDelete: SetNull)
+  maintenanceRecord   MaintenanceRecord?   @relation(fields: [maintenanceRecordId], references: [id], onDelete: SetNull)
   createdById         String
-  createdBy           User               @relation("DamageEventCreatedBy", fields: [createdById], references: [id])
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
+  createdBy           User                 @relation("DamageEventCreatedBy", fields: [createdById], references: [id])
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 
   @@index([organizationId, status])
   @@index([projectId])
   @@index([assetId])
   @@index([bulkAssetId])
+  @@index([lineItemUnitId])
   @@map("damage_event")
 }
 
@@ -1328,80 +1364,87 @@ model Project {
 // ─── Project Line Item ───────────────────────────────────────────────────────
 
 model ProjectLineItem {
-  id                  String            @id @default(cuid())
+  id                  String                @id @default(cuid())
   organizationId      String
-  organization        Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization        Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   projectId           String
-  project             Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  type                LineItemType      @default(EQUIPMENT)
+  project             Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type                LineItemType          @default(EQUIPMENT)
   modelId             String?
-  model               Model?            @relation(fields: [modelId], references: [id])
+  model               Model?                @relation(fields: [modelId], references: [id])
   assetId             String?
-  asset               Asset?            @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  asset               Asset?                @relation(fields: [assetId], references: [id], onDelete: SetNull)
   bulkAssetId         String?
-  bulkAsset           BulkAsset?        @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
+  bulkAsset           BulkAsset?            @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
   kitId               String?
-  kit                 Kit?              @relation(fields: [kitId], references: [id], onDelete: SetNull)
-  isKitChild          Boolean           @default(false)
+  kit                 Kit?                  @relation(fields: [kitId], references: [id], onDelete: SetNull)
+  isKitChild          Boolean               @default(false)
   parentLineItemId    String?
-  parentLineItem      ProjectLineItem?  @relation("KitLineItemChildren", fields: [parentLineItemId], references: [id], onDelete: Cascade)
-  childLineItems      ProjectLineItem[] @relation("KitLineItemChildren")
+  parentLineItem      ProjectLineItem?      @relation("KitLineItemChildren", fields: [parentLineItemId], references: [id], onDelete: Cascade)
+  childLineItems      ProjectLineItem[]     @relation("KitLineItemChildren")
   pricingMode         KitPricingMode?
   description         String?
-  quantity            Int               @default(1)
-  unitPrice           Decimal?          @db.Decimal(10, 2)
-  pricingType         PricingType       @default(PER_DAY)
-  duration            Int               @default(1)
-  discount            Decimal?          @db.Decimal(10, 2)
-  lineTotal           Decimal?          @db.Decimal(12, 2)
+  quantity            Int                   @default(1)
+  unitPrice           Decimal?              @db.Decimal(10, 2)
+  pricingType         PricingType           @default(PER_DAY)
+  duration            Int                   @default(1)
+  discount            Decimal?              @db.Decimal(10, 2)
+  lineTotal           Decimal?              @db.Decimal(12, 2)
   priceBreakdown      String?
-  priceOverridden     Boolean           @default(false)
+  priceOverridden     Boolean               @default(false)
   overrideReason      String?
-  sortOrder           Int               @default(0)
+  sortOrder           Int                   @default(0)
   groupName           String?
   categoryId          String?
-  category            ProjectCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  category            ProjectCategory?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   groupId             String?
-  group               ProjectGroup?     @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  group               ProjectGroup?         @relation(fields: [groupId], references: [id], onDelete: SetNull)
   notes               String?
-  isOptional          Boolean           @default(false)
-  status              LineItemStatus    @default(QUOTED)
-  checkedOutQuantity  Int               @default(0)
-  returnedQuantity    Int               @default(0)
+  isOptional          Boolean               @default(false)
+  status              LineItemStatus        @default(QUOTED)
+  checkedOutQuantity  Int                   @default(0)
+  returnedQuantity    Int                   @default(0)
+  // Rollup counters derived from ProjectLineItemUnit rows. Kept in sync
+  // transactionally on every unit write once Phase 3 lands.
+  assignedQuantity    Int                   @default(0)
+  packedQuantity      Int                   @default(0)
+  damagedQuantity     Int                   @default(0)
+  lostQuantity        Int                   @default(0)
   checkedOutAt        DateTime?
   checkedOutById      String?
-  checkedOutBy        User?             @relation("CheckedOutBy", fields: [checkedOutById], references: [id])
+  checkedOutBy        User?                 @relation("CheckedOutBy", fields: [checkedOutById], references: [id])
   returnedAt          DateTime?
   returnedById        String?
-  returnedBy          User?             @relation("ReturnedBy", fields: [returnedById], references: [id])
+  returnedBy          User?                 @relation("ReturnedBy", fields: [returnedById], references: [id])
   returnCondition     ReturnCondition?
   returnNotes         String?
   prepStatus          PrepStatus?
   prepContainer       String?
-  isContainerLineItem Boolean           @default(false)
-  isCustomItem        Boolean           @default(false)
+  isContainerLineItem Boolean               @default(false)
+  isCustomItem        Boolean               @default(false)
   returnStatus        ReturnStatus?
   // `isSubhire` removed (Wave 2). Sub-hire detection is now
   // `subHireId != null` — single source of truth. Production
   // verified to have 0 legacy-only rows before drop. See
   // 20260514XXXXXX_drop_line_item_isSubhire migration.
-  showSubhireOnDocs   Boolean           @default(false)
+  showSubhireOnDocs   Boolean               @default(false)
   supplierId          String?
-  supplier            Supplier?         @relation(fields: [supplierId], references: [id])
+  supplier            Supplier?             @relation(fields: [supplierId], references: [id])
   subhireOrderNumber  String?
   supplierOrderId     String?
-  supplierOrder       SupplierOrder?    @relation(fields: [supplierOrderId], references: [id], onDelete: SetNull)
+  supplierOrder       SupplierOrder?        @relation(fields: [supplierOrderId], references: [id], onDelete: SetNull)
   subHireId           String?
-  subHire             SubHire?          @relation(fields: [subHireId], references: [id], onDelete: SetNull)
+  subHire             SubHire?              @relation(fields: [subHireId], references: [id], onDelete: SetNull)
   subHireItemId       String?
-  subHireItem         SubHireItem?      @relation(fields: [subHireItemId], references: [id], onDelete: SetNull)
+  subHireItem         SubHireItem?          @relation(fields: [subHireItemId], references: [id], onDelete: SetNull)
   subHireGroupId      String?
-  subHireGroup        SubHireGroup?     @relation(fields: [subHireGroupId], references: [id], onDelete: SetNull)
+  subHireGroup        SubHireGroup?         @relation(fields: [subHireGroupId], references: [id], onDelete: SetNull)
   service             ProjectService?
   checkRecords        CheckRecord[]
   damageEvents        DamageEvent[]
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
+  units               ProjectLineItemUnit[]
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
 
   @@index([organizationId])
   @@index([projectId])
@@ -1418,6 +1461,86 @@ model ProjectLineItem {
   @@index([categoryId])
   @@index([groupId])
   @@map("project_line_item")
+}
+
+// ─── Project Line-Item Unit ─────────────────────────────────────────────────
+// One physical unit assigned to an order line. Replaces the old "split a
+// qty-N line into N qty-1 rows" mechanism: serialised assets get one row each
+// (quantity 1), bulk assets get one row carrying a quantity. Per-unit deploy /
+// return state lives here, not on the order line.
+// See docs/designs/line-item-fulfillment-model.md.
+
+model ProjectLineItemUnit {
+  id               String           @id @default(cuid())
+  organizationId   String
+  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lineItemId       String
+  lineItem         ProjectLineItem  @relation(fields: [lineItemId], references: [id], onDelete: Cascade)
+  ordinal          Int
+  assetId          String?
+  asset            Asset?           @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  bulkAssetId      String?
+  bulkAsset        BulkAsset?       @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
+  quantity         Int              @default(1)
+  returnedQuantity Int              @default(0)
+  status           LineItemStatus   @default(CONFIRMED)
+  prepStatus       PrepStatus?
+  prepContainer    String?
+  checkedOutAt     DateTime?
+  checkedOutById   String?
+  returnedAt       DateTime?
+  returnedById     String?
+  returnCondition  ReturnCondition?
+  returnStatus     ReturnStatus?
+  returnNotes      String?
+  checkRecords     CheckRecord[]
+  damageEvents     DamageEvent[]
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@unique([lineItemId, assetId])
+  @@unique([lineItemId, ordinal])
+  @@index([organizationId, assetId, status])
+  @@index([organizationId, bulkAssetId, status])
+  @@index([lineItemId, status])
+  @@map("project_line_item_unit")
+}
+
+/// Audit trail for the Phase 3.8 split-sibling collapse migration.
+///
+/// When the historic data has lines that splitLineItem fragmented into
+/// per-asset siblings, the collapse migration merges them back onto one
+/// canonical order line — moving each sibling's ProjectLineItemUnit, its
+/// CheckRecord / DamageEvent rows, and its ProjectService onto the
+/// canonical, then deactivating the old row. This table records the
+/// mapping so the merge can be audited and (if needed) reversed.
+///
+/// Permanent — never auto-cleaned. One row per merged (old) line item.
+model LineItemMergeMap {
+  id                   String   @id @default(cuid())
+  organizationId       String
+  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// The line item that was merged away. Kept in the projectLineItem
+  /// table (status: CANCELLED, quantity: 0, assetId: null) so historical
+  /// data isn't destroyed — only made inert.
+  oldLineItemId        String   @unique
+  /// The line item the units / records were re-pointed to.
+  canonicalLineItemId  String
+  /// The unit row that carried the old line's asset/bulk allocation
+  /// after the move. Null when the old row had no unit (rare —
+  /// pre-Phase-2a rows or kit children).
+  movedUnitId          String?
+  checkRecordsRepointed Int      @default(0)
+  damageEventsRepointed Int      @default(0)
+  serviceRepointed     Boolean  @default(false)
+  /// Free-form notes captured at merge time (eg. the equivalence-key
+  /// snapshot, dry-run vs. apply, the run id).
+  notes                String?
+  mergedAt             DateTime @default(now())
+
+  @@index([organizationId])
+  @@index([canonicalLineItemId])
+  @@map("line_item_merge_map")
 }
 
 // ─── Project Category ───────────────────────────────────────────────────────
@@ -2760,34 +2883,37 @@ model KitCheckItem {
 }
 
 model CheckRecord {
-  id                     String           @id @default(cuid())
+  id                     String               @id @default(cuid())
   organizationId         String
-  organization           Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization           Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   context                CheckContext
   lineItemId             String? // null for AD_HOC
-  lineItem               ProjectLineItem? @relation(fields: [lineItemId], references: [id], onDelete: SetNull)
+  lineItem               ProjectLineItem?     @relation(fields: [lineItemId], references: [id], onDelete: SetNull)
+  lineItemUnitId         String?
+  lineItemUnit           ProjectLineItemUnit? @relation(fields: [lineItemUnitId], references: [id], onDelete: SetNull)
   assetId                String? // null when no serialized asset assigned
-  asset                  Asset?           @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  asset                  Asset?               @relation(fields: [assetId], references: [id], onDelete: Cascade)
   bulkAssetId            String? // for bulk asset checks
-  bulkAsset              BulkAsset?       @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
+  bulkAsset              BulkAsset?           @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
   kitId                  String? // for kit-level checks
-  kit                    Kit?             @relation(fields: [kitId], references: [id], onDelete: SetNull)
+  kit                    Kit?                 @relation(fields: [kitId], references: [id], onDelete: SetNull)
   checkItemId            String
-  checkItem              CheckItem        @relation(fields: [checkItemId], references: [id], onDelete: Cascade)
+  checkItem              CheckItem            @relation(fields: [checkItemId], references: [id], onDelete: Cascade)
   checkItemLabelSnapshot String
   checkItemTypeSnapshot  CheckItemType
   result                 CheckResult
   value                  String? // measurement reading or dropdown selection
   notes                  String?
-  photos                 String[]         @default([]) // S3 keys
+  photos                 String[]             @default([]) // S3 keys
   performedById          String
-  performedBy            User             @relation("CheckRecordPerformedBy", fields: [performedById], references: [id], onDelete: Cascade)
-  performedAt            DateTime         @default(now())
+  performedBy            User                 @relation("CheckRecordPerformedBy", fields: [performedById], references: [id], onDelete: Cascade)
+  performedAt            DateTime             @default(now())
 
   @@index([organizationId])
   @@index([organizationId, assetId])
   @@index([organizationId, checkItemId])
   @@index([lineItemId])
+  @@index([lineItemUnitId])
   @@map("check_record")
 }
 
@@ -2880,6 +3006,149 @@ model NotificationEmailLog {
   @@unique([userId, notificationKey])
   @@index([organizationId, sentAt])
   @@map("notification_email_log")
+}
+
+// ─── Stocktake / Inventory Verification ─────────────────────────────────────
+
+model Stocktake {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name       String
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  scope      StocktakeScope
+  categoryId String?
+  status     StocktakeStatus @default(DRAFT)
+
+  startedAt    DateTime?
+  startedById  String?
+  startedBy    User?     @relation("StocktakeStarted", fields: [startedById], references: [id], onDelete: SetNull)
+  completedAt  DateTime?
+  reviewedById String?
+  reviewedBy   User?     @relation("StocktakeReviewed", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  expectedCount    Int @default(0)
+  foundCount       Int @default(0)
+  missingCount     Int @default(0)
+  unexpectedCount  Int @default(0)
+  discrepancyCount Int @default(0)
+
+  notes String?
+  items StocktakeItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([locationId])
+  @@map("stocktake")
+}
+
+model StocktakeItem {
+  id          String    @id @default(cuid())
+  stocktakeId String
+  stocktake   Stocktake @relation(fields: [stocktakeId], references: [id], onDelete: Cascade)
+
+  assetId     String?
+  asset       Asset?     @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  bulkAssetId String?
+  bulkAsset   BulkAsset? @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
+
+  expectedAtLocation Boolean @default(true)
+  expectedQuantity   Int     @default(1)
+
+  found         Boolean   @default(false)
+  foundQuantity Int       @default(0)
+  scannedAt     DateTime?
+  scannedById   String?
+
+  result        StocktakeItemResult @default(MATCH)
+  conditionNote String?
+  actionTaken   String?
+
+  @@index([stocktakeId])
+  @@index([assetId])
+  @@index([bulkAssetId])
+  @@map("stocktake_item")
+}
+
+enum StocktakeScope {
+  FULL
+  CATEGORY
+  SPOT_CHECK
+}
+
+enum StocktakeStatus {
+  DRAFT
+  IN_PROGRESS
+  REVIEWING
+  COMPLETED
+  CANCELLED
+}
+
+enum StocktakeItemResult {
+  MATCH
+  MISSING
+  UNEXPECTED
+  QUANTITY_MISMATCH
+  WRONG_LOCATION
+}
+
+// ─── Custom Fields (operator-defined entity attributes) ─────────────────────
+
+/**
+ * Org-defined custom fields. Each definition adds an input to an entity's
+ * create/edit form; the value is stored in that entity's existing
+ * `customFieldValues` JSON column keyed by `fieldKey`.
+ * entityType is an enum for forward-compat — v1 wires ASSET only; KIT /
+ * PROJECT / BULK_ASSET follow once they all carry a values column.
+ */
+model CustomFieldDefinition {
+  id             String            @id @default(cuid())
+  organizationId String
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  entityType     CustomFieldEntity @default(ASSET)
+  /**
+   * Human label shown on the form, e.g. "Rig Number".
+   */
+  label          String
+  /**
+   * Stable machine key into the customFieldValues JSON. Immutable once set.
+   */
+  fieldKey       String
+  fieldType      CustomFieldType   @default(TEXT)
+  /**
+   * Choices for SELECT type. Empty for other types.
+   */
+  options        String[]          @default([])
+  required       Boolean           @default(false)
+  helpText       String?
+  sortOrder      Int               @default(0)
+  isActive       Boolean           @default(true)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@unique([organizationId, entityType, fieldKey])
+  @@index([organizationId, entityType])
+  @@map("custom_field_definition")
+}
+
+enum CustomFieldEntity {
+  ASSET
+  BULK_ASSET
+  KIT
+  PROJECT
+}
+
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  DATE
+  SELECT
+  BOOLEAN
 }
 
 // ─── Prep System (Pre-Packing / Staging) ─────────────────────────────────────

@@ -11,12 +11,31 @@ import type { DocumentData, DocumentLineItem, CrewEntry, CallSheetDayData, Docum
 
 const DEFAULT_DOC_COLOR = "#0d4f4f";
 
+/**
+ * Per-unit asset selection. The line item include below pulls these in
+ * so renderers can show every physical asset assigned to a multi-qty
+ * line — not just the legacy `line.asset` (which is null post-cutover).
+ * CANCELLED units are filtered out; everything else is included so the
+ * docket reflects what's actually packed.
+ */
+const unitInclude = {
+  orderBy: { ordinal: "asc" as const },
+  where: { status: { not: "CANCELLED" as const } },
+  select: {
+    id: true,
+    status: true,
+    asset: { select: { assetTag: true } },
+    bulkAsset: { select: { assetTag: true } },
+  },
+} as const;
+
 /** Deep include for line items — 2 levels of children for nested kits */
 const lineItemInclude = {
   model: { include: { category: true } },
   asset: true,
   bulkAsset: true,
   kit: true,
+  units: unitInclude,
   supplier: { select: { name: true } },
   category: { select: { id: true, name: true, sortOrder: true } },
   group: { select: { id: true, title: true, sortOrder: true, categoryId: true } },
@@ -27,6 +46,7 @@ const lineItemInclude = {
       asset: true,
       bulkAsset: true,
       kit: true,
+      units: unitInclude,
       supplier: { select: { name: true } },
       category: { select: { id: true, name: true, sortOrder: true } },
       group: { select: { id: true, title: true, sortOrder: true, categoryId: true } },
@@ -36,6 +56,7 @@ const lineItemInclude = {
           model: { include: { category: true } },
           asset: true,
           bulkAsset: true,
+          units: unitInclude,
           supplier: { select: { name: true } },
         },
       },
@@ -417,7 +438,7 @@ export async function buildDocumentData(
   };
 
   let crew: CrewEntry[] = [];
-  let crewByDay: CallSheetDayData[] = [];
+  const crewByDay: CallSheetDayData[] = [];
 
   if (docType === "call-sheet") {
     const crewAssignments: CrewAssignmentRow[] =

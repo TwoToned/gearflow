@@ -28,6 +28,8 @@ import { CrewPanel } from "@/components/projects/crew-panel";
 import { CallSheetDialog } from "@/components/projects/call-sheet-dialog";
 import { ServicesPanel } from "@/components/projects/services-panel";
 import { FinancialSummary } from "@/components/projects/financial-summary";
+import { ProjectCostsPanel } from "@/components/projects/project-costs-panel";
+import { ProjectConflictsBanner } from "@/components/projects/project-conflicts-banner";
 import { ProjectManagersPanel } from "@/components/projects/project-managers-panel";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -72,8 +74,9 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import type { ProjectMediaType } from "@/generated/prisma/client";
 import { FadeIn } from "@/components/ui/motion";
 import { DateRangeBar } from "@/components/ui/sparkline";
-import { SectionHeader } from "@/components/layout/page-layouts";
+import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
+import { formatCurrency, formatDate } from "@/lib/formatters";
 
 const projectStatusLabels: Record<string, string> = {
   ENQUIRY: "Enquiry",
@@ -120,20 +123,6 @@ function formatLabel(value: string): string {
     .replace(/_/g, " ")
     .toLowerCase()
     .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function formatDate(date: string | null | undefined): string {
-  if (!date) return "\u2014";
-  return new Date(date).toLocaleDateString("en-AU", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-function formatCurrency(value: number | null | undefined): string {
-  if (value == null) return "\u2014";
-  return `$${Number(value).toLocaleString("en-AU", { minimumFractionDigits: 2 })}`;
 }
 
 export default function ProjectDetailPage({
@@ -445,10 +434,13 @@ export default function ProjectDetailPage({
             />
           )}
 
+          {/* Reservation conflict banner — hides itself when clean */}
+          {!project.isTemplate && <ProjectConflictsBanner projectId={id} />}
+
           {/* ── 2-Column Layout ────────────────────────────────────── */}
-          <div className="flex flex-col gap-6 lg:flex-row">
+          <DetailLayout>
             {/* Main content */}
-            <div className="min-w-0 flex-1">
+            <DetailMain>
               <Tabs defaultValue="equipment">
                 <TabsList>
                   <TabsTrigger value="equipment">Equipment</TabsTrigger>
@@ -535,15 +527,13 @@ export default function ProjectDetailPage({
                   </div>
                 </TabsContent>
               </Tabs>
-            </div>
+            </DetailMain>
 
             {/* ── Sidebar ──────────────────────────────────────────── */}
-            <div className="w-full space-y-4 lg:w-[340px] lg:shrink-0">
-              <div className="lg:sticky lg:top-4 space-y-4">
+            <DetailSidebar>
                 {/* Status */}
                 {!project.isTemplate && (
-                  <div className="border-b border-border pb-4 space-y-2">
-                    <SectionHeader label="Status" />
+                  <SidebarSection title="Status">
                     <CanDo
                       resource="project"
                       action="update"
@@ -570,7 +560,7 @@ export default function ProjectDetailPage({
                         ))}
                       </select>
                     </CanDo>
-                  </div>
+                  </SidebarSection>
                 )}
 
                 {/* Project Managers */}
@@ -590,8 +580,7 @@ export default function ProjectDetailPage({
                 />
 
                 {/* Client */}
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Client" />
+                <SidebarSection title="Client">
                   {project.client ? (
                     <div className="space-y-1 text-sm">
                       <Link
@@ -616,12 +605,11 @@ export default function ProjectDetailPage({
                   ) : (
                     <p className="text-sm text-fg-3">No client assigned</p>
                   )}
-                </div>
+                </SidebarSection>
 
                 {/* Dates */}
                 {!project.isTemplate && (
-                  <div className="border-b border-border pb-4 space-y-2">
-                    <SectionHeader label="Dates" />
+                  <SidebarSection title="Dates">
                     {rentalStart && rentalEnd && rangeStart && rangeEnd && (
                       <DateRangeBar
                         start={rentalStart}
@@ -671,12 +659,11 @@ export default function ProjectDetailPage({
                         </span>
                       </div>
                     </div>
-                  </div>
+                  </SidebarSection>
                 )}
 
                 {/* Location & Site Contact */}
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Location" />
+                <SidebarSection title="Location">
                   <div className="space-y-1 text-sm">
                     {project.location ? (
                       <>
@@ -720,7 +707,7 @@ export default function ProjectDetailPage({
                       </div>
                     )}
                   </div>
-                </div>
+                </SidebarSection>
 
                 {/* Financial Summary */}
                 {!project.isTemplate && (() => {
@@ -762,10 +749,17 @@ export default function ProjectDetailPage({
                   );
                 })()}
 
+                {/* Operational P&L — costs roll-up beyond the financial summary.
+                    Hides itself when project has no revenue yet. */}
+                {!project.isTemplate && (
+                  <div className="border-b border-border pb-4">
+                    <ProjectCostsPanel projectId={project.id} />
+                  </div>
+                )}
+
                 {/* Quick Actions */}
                 {!project.isTemplate && (
-                  <div className="border-b border-border pb-4 space-y-2">
-                    <SectionHeader label="Quick Actions" />
+                  <SidebarSection title="Quick Actions">
                     <div className="flex flex-wrap gap-2">
                       <Button
                         variant="outline"
@@ -786,12 +780,11 @@ export default function ProjectDetailPage({
                         Send Invoice
                       </Button>
                     </div>
-                  </div>
+                  </SidebarSection>
                 )}
 
                 {/* Project Info */}
-                <div className="border-b border-border pb-4 space-y-2">
-                  <SectionHeader label="Details" />
+                <SidebarSection title="Details">
                   <div className="text-sm space-y-1">
                     <div className="flex justify-between">
                       <span className="text-fg-3">Type</span>
@@ -809,16 +802,14 @@ export default function ProjectDetailPage({
                       <span className="font-medium">{formatDate(project.updatedAt as unknown as string)}</span>
                     </div>
                   </div>
-                </div>
+                </SidebarSection>
 
                 {/* Activity Timeline */}
-                <div className="space-y-2">
-                  <SectionHeader label="Activity" />
+                <SidebarSection title="Activity" divider={false}>
                   <ActivityTimeline entityType="project" entityId={id} />
-                </div>
-              </div>
-            </div>
-          </div>
+                </SidebarSection>
+            </DetailSidebar>
+          </DetailLayout>
         </div>
       </FadeIn>
 

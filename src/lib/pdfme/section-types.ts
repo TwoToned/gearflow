@@ -444,6 +444,12 @@ export function getDefaultSections(docType: DocumentType): TemplateSection[] {
           showCheckboxes: true,
           showRowNumbers: true,
           showAssetTags: true,
+          // Per-unit sub-rows so a multi-quantity line lists every assigned
+          // asset tag (Unit 1 — TTP00042, Unit 2 — TTP00045, …) for the
+          // client to tick off on receipt. Matches packing-list/return-sheet
+          // and the legacy getDefaultSettings("delivery-docket") default —
+          // this section default was the one place it was missed.
+          showPerUnitCheckboxes: true,
           showPricing: false,
           showBadges: false,
           showNotes: false,

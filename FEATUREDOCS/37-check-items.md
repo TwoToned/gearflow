@@ -138,6 +138,14 @@ The Deploy tab is the staging ground on both sides of the truck. The check alway
 
 Models with 0 check items skip the check form entirely. The `model._count.modelCheckItems` count (included in warehouse queries) is checked before opening the form — preserving existing behavior for models without checks. Kit check items use `kit._count.kitCheckItems` similarly.
 
+### Empty check-list guard (defensive)
+
+The warehouse page routes zero-check items to `prepItemDirect`, but two paths can still mount `ItemCheckForm` with an empty list: the brief window while the `getModelCheckItems`/`getKitCheckItems` query is still loading, and the ad-hoc `/check/[assetTag]` page which has no count gate. The form must therefore guard against an empty submit itself.
+
+`allComplete` is computed as `items.length > 0 && items.every(...)`. The `items.length > 0` clause is load-bearing: `Array.prototype.every` returns `true` for an empty array, so without it the submit button (and the keyboard `Enter` path) would be enabled with zero rows and POST an empty `checks[]`. The server schemas in `src/lib/validations/check-item.ts` declare `checks: z.array(...).min(1)`, so an empty array throws an uncaught `ZodError` (`too_small`) → 500. When `items.length === 0`, the form renders a "No check items are configured for this {kit|model}." empty-state instead of a blank form with a dead button. Regression coverage: `src/components/warehouse/__tests__/item-check-form.test.tsx` ("ItemCheckForm with zero check items").
+
+The `ItemCheckForm` is not the only client path that can produce an empty `checks[]`. The **"Pass all remaining"** action (`onPassAllRemaining` on the warehouse page) bypasses the form entirely: for each queued item it fetches `getModelCheckItems`/`getKitCheckItems` live and maps the result straight into `checks`, then calls `completeCheckAndPack` / `completeCheckAndStore` / `saveKitLevelChecks` / `saveChildItemChecks` (all `.min(1)`). The queue itself is built from the **cached** project snapshot's `model._count.modelCheckItems > 0` gate, which can diverge from that live fetch — e.g. an admin removes a model's check items after the warehouse page cached the project. The gate then says "has checks" (queues the item) while the live fetch returns `[]`, so the mapped `checks` is empty and the PREP path 500s with `ZodError` `path: ["checks"]` `too_small min 1`. This bit bulk checkout in production (a bulk line of quantity N queues N units, and a single empty fetch crashes the whole "pass all"). `onPassAllRemaining` now guards `checks.length === 0` and routes each item to its no-check equivalent — `prepItemDirect` (PREP), `completeCheckAndDeprep` (return deprep, which tolerates an empty `checks[]`), `checkInItems` (return store), or a skip for kit-level / kit PER_ITEM children (their deploy/return is finalized in `finishCheckQueue`).
+
 ## Predictive Maintenance
 
 After saving check records, if any check item has a FAIL result:

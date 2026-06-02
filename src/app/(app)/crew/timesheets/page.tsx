@@ -67,18 +67,10 @@ import {
   type CrewTimeEntryFormValues,
 } from "@/lib/validations/crew";
 import { timeEntryStatusLabels, formatLabel } from "@/lib/status-labels";
+import { formatDate } from "@/lib/formatters";
 import { toast } from "sonner";
 import { FadeIn } from "@/components/ui/motion";
 
-
-function formatDate(date: string | Date | null | undefined): string {
-  if (!date) return "\u2014";
-  return new Date(date).toLocaleDateString("en-AU", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export default function TimesheetsPage() {

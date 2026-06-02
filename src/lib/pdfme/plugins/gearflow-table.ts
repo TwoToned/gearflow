@@ -135,10 +135,32 @@ function getItemName(item: DocumentLineItem, isKit: boolean): string {
   return item.description || "-";
 }
 
-/** Get asset tag display */
-function getAssetTag(item: DocumentLineItem, isKit: boolean): string {
+/**
+ * Get asset tag display for a line. Preference order:
+ *   1. Kit row → the kit's own tag
+ *   2. Units present (post-cutover, multi-quantity deployed line) →
+ *      join up to 2 unit tags, then "+N more" if there are extras.
+ *      One unit collapses to its single tag so single-asset lines
+ *      look identical to the pre-cutover output.
+ *   3. Legacy line.asset (kit children, un-migrated splits)
+ *   4. Bulk asset tag
+ *   5. "-"
+ *
+ * The column is 80pt wide at courier-8 — two short tags fit. Anything
+ * longer truncates visually but the data is still in the system; a
+ * future docket revamp can render per-unit rows.
+ */
+export function getAssetTag(item: DocumentLineItem, isKit: boolean): string {
   if (isKit) {
     return item.kit?.assetTag || "-";
+  }
+  const unitTags = (item.units ?? [])
+    .map((u) => u.asset?.assetTag ?? u.bulkAsset?.assetTag)
+    .filter((t): t is string => !!t);
+  if (unitTags.length > 0) {
+    if (unitTags.length === 1) return unitTags[0];
+    if (unitTags.length === 2) return unitTags.join(", ");
+    return `${unitTags[0]}, ${unitTags[1]} +${unitTags.length - 2}`;
   }
   return item.asset?.assetTag || item.bulkAsset?.assetTag || "-";
 }
@@ -508,14 +530,24 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
           }
 
           case "assetTag": {
-            const tag = getAssetTag(item, isKit);
-            page.drawText(tag, {
-              x: cellX,
-              y: textY,
-              size: 8,
-              font: fonts.courier,
-              color: textColor,
-            });
+            // If per-unit sub-rows will render below this parent
+            // (multi-quantity non-kit lines with showPerUnitCheckboxes
+            // on), leave the parent cell blank — every tag is already
+            // listed below, and cramming "TAG1, TAG2 +N" into the
+            // parent is noisy. Single-asset rows + kits still render
+            // their tag here.
+            const willListUnitsBelow =
+              config.showPerUnitCheckboxes && !isKit && item.quantity > 1;
+            const tag = willListUnitsBelow ? "" : getAssetTag(item, isKit);
+            if (tag) {
+              page.drawText(tag, {
+                x: cellX,
+                y: textY,
+                size: 8,
+                font: fonts.courier,
+                color: textColor,
+              });
+            }
             break;
           }
 
@@ -577,10 +609,16 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
         currentY -= rowContentHeight;
       } // end if (!isContinuation)
 
-      // === Per-unit checkboxes (packing list, qty > 1, non-kit) ===
+      // === Per-unit checkboxes (packing list / docket / return-sheet) ===
+      // Renders one sub-row per physical unit on a multi-quantity line,
+      // labelled with the unit's actual asset tag (post-cutover, this is
+      // the source of truth — `line.asset` is null on multi-quantity
+      // serialised lines). Falls back to "Item - N" for legacy lines
+      // that have no units yet.
       if (config.showPerUnitCheckboxes && !isKit && item.quantity > 1) {
         const shortName = item.model?.name || item.description || "Item";
         const checkedOut = item.checkedOutQuantity || 0;
+        const units = item.units ?? [];
         // Skip already-rendered sub-items on continuation pages
         const subStart = (isFirstRenderedItem && startSubIndex > 0) ? startSubIndex : 0;
         for (let i = subStart; i < item.quantity; i++) {
@@ -589,11 +627,19 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
           const puY = currentY - puHeight + 3;
           const indentX = tableX + 26;
           drawCheckbox(page, pdfLib, indentX, puY, 7, i < checkedOut);
-          page.drawText(`${shortName} - ${i + 1}`, {
+          const unit = units[i];
+          const tag =
+            unit?.asset?.assetTag ??
+            unit?.bulkAsset?.assetTag ??
+            null;
+          const label = tag
+            ? `Unit ${i + 1} — ${tag}`
+            : `${shortName} - ${i + 1}`;
+          page.drawText(label, {
             x: indentX + 11,
             y: puY,
             size: 7,
-            font: fonts.regular,
+            font: tag ? fonts.courier : fonts.regular,
             color: lightTextColor,
           });
           currentY -= puHeight;
@@ -722,15 +768,26 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
               }
 
               case "assetTag": {
-                const tag = child.asset?.assetTag || child.bulkAsset?.assetTag
-                  || (isNestedKit ? (child.kit?.assetTag || "-") : "-");
-                page.drawText(tag, {
-                  x: childCellX,
-                  y: childTextY,
-                  size: 7,
-                  font: fonts.courier,
-                  color: childTextColor,
-                });
+                // Blank when per-unit sub-rows will list tags below
+                // this kit child (same logic as top-level rows).
+                const willListUnitsBelow =
+                  config.showPerUnitCheckboxes &&
+                  !isNestedKit &&
+                  child.quantity > 1;
+                const tag = willListUnitsBelow
+                  ? ""
+                  : isNestedKit
+                    ? (child.kit?.assetTag || "-")
+                    : getAssetTag(child, false);
+                if (tag) {
+                  page.drawText(tag, {
+                    x: childCellX,
+                    y: childTextY,
+                    size: 7,
+                    font: fonts.courier,
+                    color: childTextColor,
+                  });
+                }
                 break;
               }
 
@@ -767,20 +824,27 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
 
           currentY -= childRowHeight;
 
-          // Per-unit checkboxes for child items
+          // Per-unit checkboxes for child items (same unit-aware logic
+          // as the top-level row).
           if (config.showPerUnitCheckboxes && !isNestedKit && child.quantity > 1) {
             const childCheckedOut = child.checkedOutQuantity || 0;
+            const childUnits = child.units ?? [];
             for (let i = 0; i < child.quantity; i++) {
               const puHeight = 10;
               if (currentY - puHeight < bottomBoundary) { overflow = true; break; }
               const puY = currentY - puHeight + 3;
               const indentX = tableX + 38;
               drawCheckbox(page, pdfLib, indentX, puY, 7, i < childCheckedOut);
-              page.drawText(`${childName} - ${i + 1}`, {
+              const unit = childUnits[i];
+              const tag = unit?.asset?.assetTag ?? unit?.bulkAsset?.assetTag ?? null;
+              const label = tag
+                ? `Unit ${i + 1} — ${tag}`
+                : `${childName} - ${i + 1}`;
+              page.drawText(label, {
                 x: indentX + 11,
                 y: puY,
                 size: 7,
-                font: fonts.regular,
+                font: tag ? fonts.courier : fonts.regular,
                 color: lightTextColor,
               });
               currentY -= puHeight;
@@ -884,7 +948,8 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
                   }
 
                   case "assetTag": {
-                    const tag = nested.asset?.assetTag || nested.bulkAsset?.assetTag || "-";
+                    // Nested-kit asset uses the same unit-aware logic.
+                    const tag = getAssetTag(nested, false);
                     page.drawText(tag, {
                       x: nestedCellX,
                       y: nestedTextY,

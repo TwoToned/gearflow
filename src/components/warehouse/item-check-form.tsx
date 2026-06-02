@@ -29,7 +29,6 @@ import {
   SheetContent,
   SheetHeader,
   SheetTitle,
-  SheetFooter,
 } from "@/components/ui/sheet";
 import {
   Select,
@@ -245,8 +244,14 @@ export function ItemCheckForm({
     return "PASS";
   }
 
-  // Check if all items have results
-  const allComplete = items.every((mci) => {
+  // Check if all items have results.
+  // The `items.length > 0` guard matters: Array.prototype.every returns true for an
+  // empty array, which would make allComplete true (a) while the check-items query is
+  // still loading and (b) for a model/kit with zero configured checks. Either case
+  // lets the user submit an empty checks[] array, which the server's `.min(1)` Zod
+  // schema rejects with an uncaught ZodError → 500. Items with no checks are meant to
+  // go through prepItemDirect, not this form.
+  const allComplete = items.length > 0 && items.every((mci) => {
     const state = checkStates[mci.checkItem.id];
     if (!state) return false;
     if (mci.checkItem.type === "NOTES") return true; // Notes are always optional
@@ -287,11 +292,16 @@ export function ItemCheckForm({
   // Enter         — submit if all complete
   // Guards: ignore when any text input/textarea/select/contenteditable has focus,
   //         and when the form is submitting or loading.
-  // Latest-value refs avoid re-binding the listener on every state tick.
-  // Wire the refs to the latest handlers — both are defined above in render scope.
-  handleSubmitRef.current = handleSubmit;
-  handlePassAllRef.current = handlePassAll;
-  stateRef.current = { items, checkStates, focusedRowIndex, isSubmitting, isLoading };
+  // Latest-value refs avoid re-binding the keydown listener on every state tick.
+  // Assigning during render trips react-hooks/refs (React Compiler), so sync the
+  // refs in an effect with no deps array — it runs after every commit, and the
+  // listener only reads `.current` at event time, so post-commit freshness is
+  // sufficient.
+  useEffect(() => {
+    handleSubmitRef.current = handleSubmit;
+    handlePassAllRef.current = handlePassAll;
+    stateRef.current = { items, checkStates, focusedRowIndex, isSubmitting, isLoading };
+  });
 
   useEffect(() => {
     if (!open || embedded) return;
@@ -379,6 +389,12 @@ export function ItemCheckForm({
         <div className="flex items-center justify-center py-16 text-fg-3">
           <Loader2 className="mr-2 h-5 w-5 animate-spin" />
           Loading check items...
+        </div>
+      ) : items.length === 0 ? (
+        <div
+          className={`flex items-center justify-center py-16 text-center text-sm text-fg-3 ${embedded ? "px-4" : ""}`}
+        >
+          No check items are configured for this {kitId ? "kit" : "model"}.
         </div>
       ) : (
         <div className={embedded ? "p-4 space-y-1" : "mt-4 space-y-1"}>

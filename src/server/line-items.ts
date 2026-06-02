@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@/generated/prisma/client";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import {
   lineItemSchema,
@@ -13,6 +14,7 @@ import { logActivity } from "@/lib/activity-log";
 import { roundCurrency } from "@/lib/formatters";
 import { calculateSuggestedPrice, getGroupBillingPeriod } from "./project-groups";
 import { optimizePrice, computeTotalDays } from "@/lib/pricing";
+import { UserFacingError } from "@/lib/errors";
 import { computeStockBreakdown } from "@/lib/availability";
 
 export async function addLineItem(projectId: string, data: LineItemFormValues, allowOverbook = false, forceSeparate = false) {
@@ -34,34 +36,78 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
       // Check if asset is in a kit
       const assetCheck = await prisma.asset.findUnique({ where: { id: parsed.assetId }, include: { kit: { select: { assetTag: true } } } });
       if (assetCheck?.kitId) {
-        throw new Error(`Asset is part of Kit ${assetCheck.kit?.assetTag}. Remove it from the Kit first, or add the Kit to the project instead.`);
+        throw new UserFacingError({
+          code: "ASSET_IN_KIT",
+          title: "Asset is in a kit",
+          message: `This asset belongs to Kit ${assetCheck.kit?.assetTag}.`,
+          hint: "Add the Kit to the project instead, or remove the asset from the Kit first.",
+        });
       }
 
-      // Specific asset — check if it's booked in an overlapping project (only when dates exist)
+      // Specific asset — check if it's booked in an overlapping project
+      // (only when dates exist). The asset may be assigned via a legacy
+      // line.assetId row OR via a ProjectLineItemUnit (the fulfillment
+      // model) — both tables must be checked.
       if (hasDates) {
-        const conflict = await prisma.projectLineItem.findFirst({
-          where: {
-            organizationId,
-            assetId: parsed.assetId,
-            status: { not: "CANCELLED" },
-            project: {
-              status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
-              rentalStartDate: { lte: project!.rentalEndDate! },
-              rentalEndDate: { gte: project!.rentalStartDate! },
-              id: { not: projectId },
+        const conflictWindow: Prisma.ProjectWhereInput = {
+          status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
+          isTemplate: false,
+          rentalStartDate: { lte: project!.rentalEndDate! },
+          rentalEndDate: { gte: project!.rentalStartDate! },
+          id: { not: projectId },
+        };
+        const [lineConflict, unitConflict] = await Promise.all([
+          prisma.projectLineItem.findFirst({
+            where: {
+              organizationId,
+              assetId: parsed.assetId,
+              status: { not: "CANCELLED" },
+              project: conflictWindow,
             },
-          },
-          include: { project: { select: { projectNumber: true, name: true } } },
-        });
-        if (conflict) {
-          throw new Error(`Asset is already booked on ${conflict.project.projectNumber} - ${conflict.project.name}`);
+            select: { project: { select: { projectNumber: true, name: true } } },
+          }),
+          prisma.projectLineItemUnit.findFirst({
+            where: {
+              organizationId,
+              assetId: parsed.assetId,
+              status: { not: "RETURNED" },
+              lineItem: {
+                status: { not: "CANCELLED" },
+                project: conflictWindow,
+              },
+            },
+            select: {
+              lineItem: {
+                select: {
+                  project: { select: { projectNumber: true, name: true } },
+                },
+              },
+            },
+          }),
+        ]);
+        const conflictProject =
+          lineConflict?.project ?? unitConflict?.lineItem.project;
+        if (conflictProject) {
+          throw new UserFacingError({
+            code: "ASSET_DOUBLE_BOOKED",
+            title: "Asset already booked",
+            message: `This asset is booked on ${conflictProject.projectNumber} — ${conflictProject.name} during those dates.`,
+            hint: "Pick a different asset, adjust the rental dates, or remove it from the other project.",
+          });
         }
       }
 
       // Block truly unavailable assets (retired, lost) but allow checked-out ones
       const asset = await prisma.asset.findUnique({ where: { id: parsed.assetId } });
       if (asset && (asset.status === "RETIRED" || asset.status === "LOST")) {
-        throw new Error(`Asset is ${asset.status.replace("_", " ").toLowerCase()} and cannot be added`);
+        throw new UserFacingError({
+          code: "ASSET_UNAVAILABLE",
+          title: "Asset cannot be added",
+          message: `This asset is marked ${asset.status.replace("_", " ").toLowerCase()}.`,
+          hint: asset.status === "LOST"
+            ? "Find the asset and mark it Available, or pick a different one."
+            : "Retired assets cannot be booked. Pick a different asset.",
+        });
       }
     } else {
       // Model-level — check quantity against available stock
@@ -111,7 +157,12 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
           const detail = unavailable > 0
             ? `${booked} booked, ${unavailable} unavailable, ${totalStock} total`
             : `${booked} already booked out of ${totalStock} total`;
-          throw new Error(`Only ${available} available (${detail})`);
+          throw new UserFacingError({
+            code: "INSUFFICIENT_STOCK",
+            title: "Not enough available",
+            message: `Only ${available} of ${parsed.quantity} requested are free during those dates.`,
+            hint: `Stock: ${detail}. Reduce the quantity, change the dates, or add a sub-hire to cover the gap.`,
+          });
         }
       }
     }
@@ -189,7 +240,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
   let optimizedPricingType = parsed.pricingType;
   let optimizedDuration = parsed.duration;
   let priceBreakdown: string | null = null;
-  let priceOverridden = false;
+  const priceOverridden = false;
 
   if (parsed.modelId && parsed.pricingType === "PER_DAY" && !parsed.unitPrice) {
     try {
@@ -396,7 +447,12 @@ export async function updateLineItem(id: string, data: LineItemFormValues, allow
         const detail = unavailable > 0
           ? `${booked} booked, ${unavailable} unavailable, ${totalStock} total`
           : `${booked} already booked out of ${totalStock} total`;
-        throw new Error(`Only ${available} available (${detail})`);
+        throw new UserFacingError({
+          code: "INSUFFICIENT_STOCK",
+          title: "Not enough available",
+          message: `Only ${available} of ${parsed.quantity} requested are free during those dates.`,
+          hint: `Stock: ${detail}. Reduce the quantity, change the dates, or add a sub-hire to cover the gap.`,
+        });
       }
     }
   }
@@ -485,10 +541,23 @@ export async function addKitLineItem(
       bulkItems: { include: { bulkAsset: { include: { model: true } } }, orderBy: { sortOrder: "asc" } },
     },
   });
-  if (!kit) throw new Error("Kit not found");
+  if (!kit) {
+    throw new UserFacingError({
+      code: "NOT_FOUND",
+      title: "Kit not found",
+      message: "This kit was deleted or moved. Refresh and try again.",
+    });
+  }
   // Block truly unavailable kits but allow checked-out ones — date overlap check below handles real conflicts
   if (kit.status === "IN_MAINTENANCE" || kit.status === "INCOMPLETE") {
-    throw new Error(`Kit is ${kit.status.replace("_", " ").toLowerCase()} and cannot be added`);
+    throw new UserFacingError({
+      code: "KIT_UNAVAILABLE",
+      title: "Kit cannot be added",
+      message: `Kit ${kit.assetTag} is ${kit.status.replace("_", " ").toLowerCase()}.`,
+      hint: kit.status === "IN_MAINTENANCE"
+        ? "Wait for maintenance to finish, or pick a different kit."
+        : "Complete the kit's missing items before booking it.",
+    });
   }
 
   // Check not already on an overlapping project
@@ -504,7 +573,14 @@ export async function addKitLineItem(
       },
       include: { project: { select: { projectNumber: true, name: true } } },
     });
-    if (conflict) throw new Error(`Kit is already on ${conflict.project.projectNumber} - ${conflict.project.name}`);
+    if (conflict) {
+      throw new UserFacingError({
+        code: "KIT_DOUBLE_BOOKED",
+        title: "Kit already booked",
+        message: `Kit ${kit.assetTag} is on ${conflict.project.projectNumber} — ${conflict.project.name} during those dates.`,
+        hint: "Pick a different kit, adjust the rental dates, or remove it from the other project.",
+      });
+    }
   }
 
   const maxSort = await prisma.projectLineItem.aggregate({ where: { projectId, organizationId }, _max: { sortOrder: true } });
@@ -567,7 +643,13 @@ export async function addCustomLineItem(projectId: string, data: CustomLineItemF
 
   // Validate project belongs to this org before writing
   const project = await prisma.project.findFirst({ where: { id: projectId, organizationId } });
-  if (!project) throw new Error("Project not found");
+  if (!project) {
+    throw new UserFacingError({
+      code: "NOT_FOUND",
+      title: "Project not found",
+      message: "This project was deleted or moved. Refresh the page and try again.",
+    });
+  }
 
   // Resolve groupName from groupId if provided
   let groupName: string | undefined;
@@ -629,11 +711,22 @@ export async function removeLineItem(id: string) {
   const item = await prisma.projectLineItem.findFirst({
     where: { id, organizationId },
   });
-  if (!item) throw new Error("Line item not found");
+  if (!item) {
+    throw new UserFacingError({
+      code: "NOT_FOUND",
+      title: "Line item not found",
+      message: "This item was deleted by someone else. Refresh the page.",
+    });
+  }
 
   // Block removal of kit child items
   if (item.isKitChild) {
-    throw new Error("This item is part of a Kit. Remove the Kit instead.");
+    throw new UserFacingError({
+      code: "KIT_CHILD",
+      title: "Cannot remove this item",
+      message: "This item is part of a Kit.",
+      hint: "Remove the Kit from the project instead — that will remove all its members at once.",
+    });
   }
 
   // If this is a kit parent, cascade delete children

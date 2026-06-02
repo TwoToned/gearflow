@@ -221,6 +221,10 @@ export function PickPrepTab({
                     const childKeys = Array.from({ length: entry.unitCount }, (_, i) => bulkUnitKey(entry.item.id, i));
                     const isExpanded = expandedGroups.has(entry.groupKey);
                     const checkedCount = childKeys.filter((k) => selectedPrep.has(k)).length;
+                    // Per-unit assignments — show the actual asset tag
+                    // chosen during prep, not the line-level bulk tag
+                    // (which is null for multi-quantity serialised lines).
+                    const units = entry.item.units ?? [];
                     return (
                       <Fragment key={entry.groupKey}>
                         {renderGroupHeader(
@@ -235,24 +239,31 @@ export function PickPrepTab({
                             )}
                           </TableCell>
                         )}
-                        {isExpanded && childKeys.map((key, idx) => (
-                          <TableRow key={key} className="bg-bg-inset/30">
-                            <TableCell>
-                              <Checkbox
-                                checked={selectedPrep.has(key)}
-                                onCheckedChange={() => toggleSelection(selectedPrep, setSelectedPrep, key)}
-                              />
-                            </TableCell>
-                            <TableCell className="pl-12 text-sm text-fg-3">
-                              Unit {idx + 1}
-                            </TableCell>
-                            <TableCell className="font-mono text-sm text-fg-3">
-                              {entry.item.bulkAsset?.assetTag || "—"}
-                            </TableCell>
-                            <TableCell className="text-center">1</TableCell>
-                            <TableCell />
-                          </TableRow>
-                        ))}
+                        {isExpanded && childKeys.map((key, idx) => {
+                          const unit = units[idx];
+                          const tag = unit?.asset?.assetTag
+                            ?? unit?.bulkAsset?.assetTag
+                            ?? entry.item.bulkAsset?.assetTag
+                            ?? "—";
+                          return (
+                            <TableRow key={key} className="bg-bg-inset/30">
+                              <TableCell>
+                                <Checkbox
+                                  checked={selectedPrep.has(key)}
+                                  onCheckedChange={() => toggleSelection(selectedPrep, setSelectedPrep, key)}
+                                />
+                              </TableCell>
+                              <TableCell className="pl-12 text-sm text-fg-3">
+                                Unit {idx + 1}
+                              </TableCell>
+                              <TableCell className="font-mono text-sm text-fg-3">
+                                {tag}
+                              </TableCell>
+                              <TableCell className="text-center">1</TableCell>
+                              <TableCell />
+                            </TableRow>
+                          );
+                        })}
                       </Fragment>
                     );
                   }

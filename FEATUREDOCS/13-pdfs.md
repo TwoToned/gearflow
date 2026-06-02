@@ -190,7 +190,7 @@ The block editor provides a Notion-like editing experience with a 2-level block 
 | `invoice` | header, client-details (+ tax ID), project-details (+ terms), table, totals (+ deposit/balance), notes |
 | `packing-list` | header, client-details, project-details, table (checkboxes, per-unit, asset tags), custom-text (total items) |
 | `return-sheet` | header, client-details, project-details, table (checkboxes, conditions, asset tags), signature (3 cols) |
-| `delivery-docket` | header, client-details, project-details (+ site contact), table (checkboxes, row numbers), signature (3 cols) |
+| `delivery-docket` | header, client-details, project-details (+ site contact), table (checkboxes, row numbers, per-unit, asset tags), signature (3 cols) |
 | `call-sheet` | header, call-sheet-info, crew-table, notes (crew only) |
 
 ### Template Picker
@@ -252,3 +252,4 @@ All document templates use a unified line item hierarchy with up to 3 levels:
 - Line item notes shown as subtitles
 - Badges: red "OVERBOOKED", purple "REDUCED STOCK"
 - Pull slip: per-unit checkboxes for qty > 1 items, ticked for already-deployed units
+- Per-unit rows (`showPerUnitCheckboxes`): a qty > 1 line expands to one row per assigned unit ("Unit 1 — TTP00042", …) instead of collapsing tags to "tag, tag +N". Default-on for `packing-list`, `return-sheet`, and `delivery-docket`. Two default sources must agree: `getDefaultSettings()` (legacy blob) **and** `getDefaultSections()` (section path — the active render path via `generate-pdf` `loadTemplate`). Templates customised before this was set on the section path keep the old single-row blob; `scripts/migrate-docket-per-unit.ts` (`npm run migrate:docket-per-unit`) flips both `sections[type=table].settings` and the legacy `settings.table` to `true` (dry-run by default, `--apply` to write, `--org <id>` to scope).

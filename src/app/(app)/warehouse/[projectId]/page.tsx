@@ -19,6 +19,8 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
+import { showError } from "@/lib/show-error";
+import { DamageReportDialog } from "@/components/damage/damage-report-dialog";
 
 import {
   getProjectForWarehouse,
@@ -311,6 +313,16 @@ function WarehouseProjectPage({
   // Kit verification — track which child assets have been scanned to confirm presence
   const [verifiedKitItems, setVerifiedKitItems] = useState<Set<string>>(new Set());
 
+  // Damage report queue — populated when an item is returned with
+  // returnCondition === "DAMAGED". We surface a single dialog at a time
+  // so a 5-item DAMAGED return doesn't open 5 dialogs at once.
+  const [damageQueue, setDamageQueue] = useState<Array<{
+    lineItemId: string;
+    assetId: string | null;
+    bulkAssetId: string | null;
+    itemLabel: string;
+  }>>([]);
+
   // "Add to project" prompt state (when scanned asset is not on the project)
   const [addPromptOpen, setAddPromptOpen] = useState(false);
   const [addPromptData, setAddPromptData] = useState<{
@@ -471,7 +483,7 @@ function WarehouseProjectPage({
               toast.success("Kit prepped — ready to deploy");
               invalidate();
             })
-            .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to prep kit"));
+            .catch((e) => showError(e, { fallbackTitle: "Failed to prep kit" }));
         } else {
           toast.success("Kit prepped — ready to deploy");
           invalidate();
@@ -485,7 +497,7 @@ function WarehouseProjectPage({
               toast.success("Kit deprep checked — returned to inventory");
               invalidate();
             })
-            .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to deprep kit"));
+            .catch((e) => showError(e, { fallbackTitle: "Failed to deprep kit" }));
         }
       } else {
         kitCheckInMutation.mutate(
@@ -505,10 +517,10 @@ function WarehouseProjectPage({
           }
           toast.success("Items prepped — ready to deploy");
           invalidate();
-        })().catch((e) => toast.error(e.message));
+        })().catch((e) => showError(e));
       } else {
         checkInMutation.mutate(
-          { items: checkQueueDirectItems.map((i) => ({ lineItemId: i.lineItemId, returnCondition: (i.returnCondition || "GOOD") as "GOOD" | "DAMAGED" | "MISSING", quantity: i.quantity, notes: i.notes })) },
+          { items: checkQueueDirectItems.map((i) => ({ lineItemId: i.lineItemId, assetId: i.assetId, returnCondition: (i.returnCondition || "GOOD") as "GOOD" | "DAMAGED" | "MISSING", quantity: i.quantity, notes: i.notes })) },
           { onSuccess: () => { toast.success(`Returned remaining items`); setReturnNotes(""); } }
         );
       }
@@ -625,12 +637,12 @@ function WarehouseProjectPage({
       return result;
     },
     onSuccess: invalidate,
-    onError: (e) => toast.error(e.message),
+    onError: (e) => showError(e),
   });
 
   const checkInMutation = useMutation({
     mutationFn: async (data: {
-      items: Array<{ lineItemId: string; returnCondition: "GOOD" | "DAMAGED" | "MISSING"; quantity?: number; notes?: string }>;
+      items: Array<{ lineItemId: string; assetId?: string; returnCondition: "GOOD" | "DAMAGED" | "MISSING"; quantity?: number; notes?: string }>;
     }) => {
       const result = await checkInItems(projectId, data.items);
       // Sync container status for affected containers
@@ -640,8 +652,34 @@ function WarehouseProjectPage({
       for (const c of containers) await syncContainerStatus(projectId, c);
       return result;
     },
-    onSuccess: invalidate,
-    onError: (e) => toast.error(e.message),
+    onSuccess: (_data, variables) => {
+      invalidate();
+      // Surface a damage-capture dialog for any items the operator marked
+      // DAMAGED on check-in. We queue them up so a multi-item return shows
+      // one dialog at a time instead of stacking them.
+      const damaged = variables.items.filter((i) => i.returnCondition === "DAMAGED");
+      if (damaged.length > 0) {
+        const enriched = damaged
+          .map((i) => {
+            const li = lineItems.find((l) => l.id === i.lineItemId);
+            if (!li) return null;
+            const label = li.asset?.assetTag
+              ? `${li.model?.name ?? "Item"} — ${li.asset.assetTag}`
+              : li.bulkAsset?.assetTag
+                ? `${li.model?.name ?? "Bulk item"} — ${li.bulkAsset.assetTag}`
+                : (li.description ?? "Custom item");
+            return {
+              lineItemId: li.id,
+              assetId: li.assetId,
+              bulkAssetId: li.bulkAssetId,
+              itemLabel: label,
+            };
+          })
+          .filter((v): v is NonNullable<typeof v> => v != null);
+        if (enriched.length > 0) setDamageQueue((prev) => [...prev, ...enriched]);
+      }
+    },
+    onError: (e) => showError(e),
   });
 
   const quickAddMutation = useMutation({
@@ -681,24 +719,24 @@ function WarehouseProjectPage({
             toast.success(`Added and prepped: ${assetName}`);
             invalidate();
           })
-          .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to prep"));
+          .catch((e) => showError(e, { fallbackTitle: "Failed to prep" }));
         scanInputRef.current?.focus();
       }
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => showError(e),
   });
 
   const kitCheckOutMutation = useMutation({
     mutationFn: (kitId: string) => checkOutKit(projectId, kitId),
     onSuccess: () => invalidate(),
-    onError: (e) => toast.error(e.message),
+    onError: (e) => showError(e),
   });
 
   const kitCheckInMutation = useMutation({
     mutationFn: (data: { kitId: string; returnCondition: "GOOD" | "DAMAGED" | "MISSING" }) =>
       checkInKit(projectId, data.kitId, data.returnCondition),
     onSuccess: () => invalidate(),
-    onError: (e) => toast.error(e.message),
+    onError: (e) => showError(e),
   });
 
   const deprepMutation = useMutation({
@@ -711,7 +749,7 @@ function WarehouseProjectPage({
       toast.success("Item removed from prep");
       invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => showError(e),
   });
 
   const clearContainerMutation = useMutation({
@@ -720,7 +758,7 @@ function WarehouseProjectPage({
       toast.success("Container removed");
       invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => showError(e),
   });
 
   // --- Scan mutations ---
@@ -758,7 +796,7 @@ function WarehouseProjectPage({
                   toast.success(`Kit prepped: ${kitResult.assetName}`);
                   invalidate();
                 })
-                .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to prep kit"));
+                .catch((e) => showError(e, { fallbackTitle: "Failed to prep kit" }));
               setScanValue("");
               scanInputRef.current?.focus();
             }
@@ -837,7 +875,7 @@ function WarehouseProjectPage({
               scanInputRef.current?.focus();
               invalidate();
             })
-            .catch((e) => toast.error(e.message));
+            .catch((e) => showError(e));
         }
       } else if (result.found && !result.lineItemId) {
         if (result.reason === "not_on_project" && "modelId" in result && result.modelId) {
@@ -879,7 +917,7 @@ function WarehouseProjectPage({
       }
     },
     onError: (e) => {
-      toast.error(e.message);
+      showError(e);
       setScanValue("");
       scanInputRef.current?.focus();
     },
@@ -935,7 +973,7 @@ function WarehouseProjectPage({
       deployScanInputRef.current?.focus();
     },
     onError: (e) => {
-      toast.error(e.message);
+      showError(e);
       setDeployScanValue("");
       deployScanInputRef.current?.focus();
     },
@@ -1050,6 +1088,7 @@ function WarehouseProjectPage({
             {
               items: [{
                 lineItemId: result.lineItemId,
+                assetId: result.assetId ?? undefined,
                 returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING",
                 notes: returnNotes || undefined,
               }],
@@ -1081,7 +1120,7 @@ function WarehouseProjectPage({
       }
     },
     onError: (e) => {
-      toast.error(e.message);
+      showError(e);
       setReturnScanValue("");
       returnScanInputRef.current?.focus();
     },
@@ -1528,7 +1567,7 @@ function WarehouseProjectPage({
                 toast.success(`Kit prepped: ${li.description || li.kit?.name || "Kit"}`);
                 invalidate();
               })
-              .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to prep kit"));
+              .catch((e) => showError(e, { fallbackTitle: "Failed to prep kit" }));
           }
         }
       }
@@ -1604,7 +1643,7 @@ function WarehouseProjectPage({
       setSelectedPrep(new Set());
       invalidate();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Prep failed");
+      showError(e, { fallbackTitle: "Prep failed" });
       invalidate();
     }
   };
@@ -1741,7 +1780,7 @@ function WarehouseProjectPage({
       }
       toast.success("Items prepped — ready to deploy");
       invalidate();
-    })().catch((e) => toast.error(e.message));
+    })().catch((e) => showError(e));
   };
 
   const handleReturnSelected = () => {
@@ -1790,6 +1829,7 @@ function WarehouseProjectPage({
     // Return non-kit items
     const items = Array.from(qtyMap.entries()).map(([lineItemId, qty]) => ({
       lineItemId,
+      assetId: lineItems.find((l) => l.id === lineItemId)?.assetId || undefined,
       returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING",
       quantity: qty,
       notes: returnNotes || undefined,
@@ -1829,7 +1869,7 @@ function WarehouseProjectPage({
       if (queue.length > 0) {
         startCheckQueue(
           queue,
-          withoutCheckItems.map((i) => ({ lineItemId: i.lineItemId, returnCondition: i.returnCondition, quantity: i.quantity, notes: i.notes }))
+          withoutCheckItems.map((i) => ({ lineItemId: i.lineItemId, assetId: i.assetId, returnCondition: i.returnCondition, quantity: i.quantity, notes: i.notes }))
         );
         setReturnNotes("");
         return;
@@ -2139,7 +2179,7 @@ function WarehouseProjectPage({
                     toast.success("Kit removed from prep");
                     invalidate();
                   })
-                  .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to deprep kit"));
+                  .catch((e) => showError(e, { fallbackTitle: "Failed to deprep kit" }));
               } else if (d.quantity) {
                 deprepMutation.mutate({ lineItemId: d.lineItemId, quantity: d.quantity });
               } else {
@@ -2235,7 +2275,7 @@ function WarehouseProjectPage({
                       ).then(() => {
                         toast.success(`Prepped ${kitConfirm.verifiedCount} verified items`);
                         invalidate();
-                      }).catch((e) => toast.error(e.message));
+                      }).catch((e) => showError(e));
                     } else {
                       // Return only verified children — kit parent stays deployed until all returned
                       checkInMutation.mutate(
@@ -2442,6 +2482,56 @@ function WarehouseProjectPage({
                   photos: [],
                 }));
 
+                // Empty-checks guard (mirrors the PR #120 form guard for the
+                // "pass all remaining" path). The completeCheck*/saveKit* server
+                // actions enforce checks.min(1) and 500 on an empty array. The
+                // cached project's _count.modelCheckItems gate that queued this
+                // item can diverge from the live getModelCheckItems fetch above
+                // (e.g. an admin removed the model's check items after the
+                // warehouse page cached the project), leaving `checks` empty.
+                // Route those items through their no-check equivalent instead of
+                // crashing — items with no checks are meant to flow through
+                // prepItemDirect / checkInItems, not the check actions.
+                if (checks.length === 0) {
+                  if (isKitLevelItem || isKitQueueChild) {
+                    // Kit deploy/return is finalized in finishCheckQueue — there
+                    // is nothing to record here, so just skip the save.
+                    continue;
+                  }
+                  if (item.context === "PREP") {
+                    await prepItemDirect(
+                      projectId,
+                      item.lineItemId,
+                      item.assetId || undefined,
+                      item.assetId ? undefined : 1,
+                      selectedContainer || null,
+                    );
+                  } else if (item.fromDeprep) {
+                    // completeCheckAndDeprep tolerates an empty checks[] (it
+                    // does not re-parse against a .min(1) schema).
+                    await completeCheckAndDeprep({
+                      projectId,
+                      lineItemId: item.lineItemId,
+                      assetId: item.assetId,
+                      bulkAssetId: item.bulkAssetId,
+                      checks,
+                    });
+                  } else {
+                    // RETURN store with no checks — return to inventory via the
+                    // no-check check-in path (same as finishCheckQueue's direct
+                    // items) rather than completeCheckAndStore (min(1)).
+                    await checkInItems(projectId, [
+                      {
+                        lineItemId: item.lineItemId,
+                        assetId: item.assetId || undefined,
+                        returnCondition: "GOOD",
+                        quantity: item.assetId ? undefined : 1,
+                      },
+                    ]);
+                  }
+                  continue;
+                }
+
                 if (isKitLevelItem) {
                   // Kit-level: save records only, deploy happens in finishCheckQueue
                   await saveKitLevelChecks(projectId, item.kitId!, item.lineItemId, item.context, checks);
@@ -2481,7 +2571,7 @@ function WarehouseProjectPage({
               toast.success(`Passed all checks for ${remaining.length} item${remaining.length !== 1 ? "s" : ""}`);
               finishCheckQueue();
             } catch (e) {
-              toast.error(e instanceof Error ? e.message : "Pass all failed");
+              showError(e, { fallbackTitle: "Pass all failed" });
             } finally {
               setCheckFormSubmitting(false);
             }
@@ -2566,11 +2656,27 @@ function WarehouseProjectPage({
                 finishCheckQueue();
               }
             } catch (e) {
-              toast.error(e instanceof Error ? e.message : "Check submission failed");
+              showError(e, { fallbackTitle: "Check submission failed" });
             } finally {
               setCheckFormSubmitting(false);
             }
           }}
+        />
+      )}
+
+      {/* Damage report queue — one dialog at a time per damaged return */}
+      {damageQueue.length > 0 && (
+        <DamageReportDialog
+          open={true}
+          onOpenChange={(next) => {
+            if (!next) setDamageQueue((q) => q.slice(1));
+          }}
+          assetId={damageQueue[0].assetId}
+          bulkAssetId={damageQueue[0].bulkAssetId}
+          lineItemId={damageQueue[0].lineItemId}
+          projectId={projectId}
+          itemLabel={damageQueue[0].itemLabel}
+          onCreated={() => setDamageQueue((q) => q.slice(1))}
         />
       )}
     </div>

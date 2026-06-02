@@ -30,7 +30,7 @@ import {
 import { getProjectCategories } from "@/server/project-categories";
 import { getSuppliers } from "@/server/suppliers";
 import { getModels } from "@/server/models";
-import { formatCurrency } from "@/lib/formatters";
+import { formatCurrency, formatDate } from "@/lib/formatters";
 import { subHireStatusLabels, formatLabel } from "@/lib/status-labels";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { CanDo } from "@/components/auth/permission-gate";
@@ -230,11 +230,6 @@ const VALID_TRANSITIONS: Record<string, { forward?: { status: SubHireStatus; lab
   RETURNED: {},
   CANCELLED: {},
 };
-
-function formatDate(date: Date | string | null | undefined) {
-  if (!date) return "\u2014";
-  return new Date(date).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
-}
 
 // ─── Main Dialog ─────────────────────────────────────────────────────────────
 

@@ -5,6 +5,8 @@
 - **`ARCHITECTURE.md`** — High-level overview with links to all feature docs
 - **`FEATUREDOCS/`** — Individual markdown files for each feature/system
 - **`PROMPT.md`** — Full product spec
+- **`docs/ROADMAP.md`** — Prioritised roadmap: phases, sequencing, effort
+- **`docs/designs/`** — Per-initiative design docs (one per major feature/program)
 
 **When making changes**: Read the relevant `FEATUREDOCS/` file(s) for the feature you're touching. Update them after. Don't read everything — just what's relevant. The [Integration Checklist](./FEATUREDOCS/29-integration-checklist.md) tells you what to wire up for new features.
 
@@ -105,6 +107,7 @@ npx prisma migrate dev   # Apply all migrations + generate client
 - Write ops use `requirePermission(resource, action)`
 - Read ops use `getOrgContext()` for org scoping
 - All writes must call `logActivity()` for audit trail
+- **NEVER re-export a type from a `"use server"` file** via `export type { X }`. Next's server-action transform catches the re-exported name in the export list and emits a runtime reference to it — but a type has no value, so SSR crashes with `ReferenceError: X is not defined` on module evaluation. Declare the type in a plain `src/lib/*` module and have consumers `import type` it from there directly. (Local `export interface X {}` / `export type X = ...` declarations are fine — only re-export specifiers break.)
 
 ### Forms & Validation
 - Zod schemas in `src/lib/validations/` (CANNOT be in `"use server"` files)

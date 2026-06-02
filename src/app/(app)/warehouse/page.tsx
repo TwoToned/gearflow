@@ -19,7 +19,7 @@ import { format } from "date-fns";
 
 import { getProjects, updateProjectStatus } from "@/server/projects";
 import { batchCloseOut } from "@/server/warehouse-close";
-import { Input } from "@/components/ui/input";
+import { ScanInput } from "@/components/ui/scan-input";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Button } from "@/components/ui/button";
 import {
@@ -105,8 +105,11 @@ function getProjectUrgency(project: Project): UrgencyGroup {
 
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 2);
+  // The "today" group is a 2-day prep window — it covers today AND
+  // tomorrow (the section header reads "Today / Tomorrow"). The cutoff is
+  // therefore the start of the day after tomorrow.
+  const dayAfterTomorrow = new Date(today);
+  dayAfterTomorrow.setDate(today.getDate() + 2);
   const projectDay = new Date(
     startDate.getFullYear(),
     startDate.getMonth(),
@@ -114,7 +117,7 @@ function getProjectUrgency(project: Project): UrgencyGroup {
   );
 
   if (projectDay < today) return "overdue";
-  if (projectDay < tomorrow) return "today";
+  if (projectDay < dayAfterTomorrow) return "today";
   return "upcoming";
 }
 
@@ -316,21 +319,23 @@ export default function WarehousePage() {
         </div>
       </FadeIn>
 
-      {/* Prominent scanner input */}
+      {/* Prominent scanner input — text + camera scan for project lookup. */}
       <FadeIn delay={0.05}>
         <div className="relative max-w-lg">
-          <ScanBarcode className="absolute left-3 top-1/2 h-4.5 w-4.5 -translate-y-1/2 text-fg-3" />
-          <Input
+          <ScanBarcode className="pointer-events-none absolute left-3 top-2.5 z-10 h-4.5 w-4.5 text-fg-3" />
+          <ScanInput
             placeholder="Scan barcode or search by project name / number..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onScan={(scanned) => setSearch(scanned)}
             className="h-10 pl-10 text-[13.5px]"
             autoFocus
+            scannerTitle="Scan project barcode"
           />
           {search && (
             <button
               onClick={() => setSearch("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-4 hover:text-fg-2 transition-colors"
+              className="absolute right-10 top-2.5 text-fg-4 hover:text-fg-2 transition-colors"
             >
               <span className="text-xs">Clear</span>
             </button>

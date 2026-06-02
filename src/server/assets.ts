@@ -9,6 +9,33 @@ import { reserveAssetTags, getOrgTestTagSettings } from "@/server/settings";
 import { backfillTestTagAssets } from "@/server/test-tag-assets";
 import { logActivity } from "@/lib/activity-log";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
+import { translatePrismaError, UserFacingError } from "@/lib/errors";
+import { validateCustomFieldValues } from "@/lib/validations/custom-field";
+
+/**
+ * Validate + normalise asset custom-field values against the org's active
+ * ASSET custom-field definitions. Throws UserFacingError on a required-field
+ * miss or a bad value. Returns the normalised map (unknown keys dropped).
+ */
+async function resolveAssetCustomFields(
+  organizationId: string,
+  raw: Record<string, string> | null | undefined,
+): Promise<Record<string, string>> {
+  const defs = await prisma.customFieldDefinition.findMany({
+    where: { organizationId, entityType: "ASSET", isActive: true },
+    select: { fieldKey: true, label: true, fieldType: true, options: true, required: true },
+  });
+  if (defs.length === 0) return {};
+  try {
+    return validateCustomFieldValues(defs, raw);
+  } catch (e) {
+    throw new UserFacingError({
+      code: "CUSTOM_FIELD_INVALID",
+      title: "Custom field problem",
+      message: e instanceof Error ? e.message : "A custom field value is invalid.",
+    });
+  }
+}
 
 const assetFilterColumns: FilterColumnDef[] = [
   { id: "status", filterType: "enum" },
@@ -163,6 +190,12 @@ export async function createAsset(data: AssetFormValues) {
   const { organizationId, userId, userName } = await requirePermission("asset", "create");
   const parsed = assetSchema.parse(data);
 
+  // Validate custom fields against org definitions before persisting.
+  const customFieldValues = await resolveAssetCustomFields(
+    organizationId,
+    parsed.customFieldValues,
+  );
+
   // Fetch the model to check T&T requirements
   const model = await prisma.model.findUnique({ where: { id: parsed.modelId } });
 
@@ -184,7 +217,7 @@ export async function createAsset(data: AssetFormValues) {
         warrantyExpiry: parsed.warrantyExpiry,
         notes: parsed.notes,
         locationId: parsed.locationId || null,
-        customFieldValues: parsed.customFieldValues ?? undefined,
+        customFieldValues,
         barcode: parsed.barcode || parsed.assetTag,
         qrCode: parsed.assetTag,
         images: parsed.images,
@@ -233,9 +266,8 @@ export async function createAsset(data: AssetFormValues) {
 
     return serialize(result);
   } catch (e: unknown) {
-    if (e instanceof Error && e.message.includes("Unique constraint")) {
-      throw new Error(`Asset tag "${parsed.assetTag}" already exists`);
-    }
+    const translated = translatePrismaError(e);
+    if (translated) throw translated;
     throw e;
   }
 }
@@ -247,36 +279,49 @@ export async function createAssets(
   const { organizationId, userId, userName } = await requirePermission("asset", "create");
   const parsed = assetSchema.parse(data);
 
+  // All assets in a bulk create share the same form data → one validation.
+  const customFieldValues = await resolveAssetCustomFields(
+    organizationId,
+    parsed.customFieldValues,
+  );
+
   const model = await prisma.model.findUnique({ where: { id: parsed.modelId } });
 
-  const results = await prisma.$transaction(
-    assets.map(({ tag, serialNumber }) =>
-      prisma.asset.create({
-        data: {
-          organizationId,
-          modelId: parsed.modelId,
-          assetTag: tag,
-          serialNumber: serialNumber || parsed.serialNumber,
-          customName: parsed.customName,
-          status: parsed.status,
-          condition: parsed.condition,
-          purchaseDate: parsed.purchaseDate,
-          purchasePrice: parsed.purchasePrice,
-          purchaseSupplier: parsed.purchaseSupplier,
-          supplierId: parsed.supplierId || null,
-          warrantyExpiry: parsed.warrantyExpiry,
-          notes: parsed.notes,
-          locationId: parsed.locationId || null,
-          customFieldValues: parsed.customFieldValues ?? undefined,
-          barcode: parsed.barcode || tag,
-          qrCode: tag,
-          images: parsed.images,
-          isActive: parsed.isActive,
-          tags: parsed.tags,
-        },
-      })
-    )
-  );
+  let results;
+  try {
+    results = await prisma.$transaction(
+      assets.map(({ tag, serialNumber }) =>
+        prisma.asset.create({
+          data: {
+            organizationId,
+            modelId: parsed.modelId,
+            assetTag: tag,
+            serialNumber: serialNumber || parsed.serialNumber,
+            customName: parsed.customName,
+            status: parsed.status,
+            condition: parsed.condition,
+            purchaseDate: parsed.purchaseDate,
+            purchasePrice: parsed.purchasePrice,
+            purchaseSupplier: parsed.purchaseSupplier,
+            supplierId: parsed.supplierId || null,
+            warrantyExpiry: parsed.warrantyExpiry,
+            notes: parsed.notes,
+            locationId: parsed.locationId || null,
+            customFieldValues,
+            barcode: parsed.barcode || tag,
+            qrCode: tag,
+            images: parsed.images,
+            isActive: parsed.isActive,
+            tags: parsed.tags,
+          },
+        })
+      )
+    );
+  } catch (e: unknown) {
+    const translated = translatePrismaError(e);
+    if (translated) throw translated;
+    throw e;
+  }
 
   // Advance the counter now that assets are actually created
   await reserveAssetTags(assets.length);
@@ -330,31 +375,43 @@ export async function updateAsset(id: string, data: AssetFormValues) {
   const { organizationId, userId, userName } = await requirePermission("asset", "update");
   const parsed = assetSchema.parse(data);
 
+  const customFieldValues = await resolveAssetCustomFields(
+    organizationId,
+    parsed.customFieldValues,
+  );
+
   const before = await prisma.asset.findUnique({ where: { id, organizationId } });
 
-  const updated = await prisma.asset.update({
-    where: { id, organizationId },
-    data: {
-      modelId: parsed.modelId,
-      assetTag: parsed.assetTag,
-      serialNumber: parsed.serialNumber,
-      customName: parsed.customName,
-      status: parsed.status,
-      condition: parsed.condition,
-      purchaseDate: parsed.purchaseDate,
-      purchasePrice: parsed.purchasePrice,
-      purchaseSupplier: parsed.purchaseSupplier,
-      supplierId: parsed.supplierId || null,
-      warrantyExpiry: parsed.warrantyExpiry,
-      notes: parsed.notes,
-      locationId: parsed.locationId || null,
-      customFieldValues: parsed.customFieldValues ?? undefined,
-      barcode: parsed.barcode || parsed.assetTag,
-      images: parsed.images,
-      isActive: parsed.isActive,
-      tags: parsed.tags,
-    },
-  });
+  let updated;
+  try {
+    updated = await prisma.asset.update({
+      where: { id, organizationId },
+      data: {
+        modelId: parsed.modelId,
+        assetTag: parsed.assetTag,
+        serialNumber: parsed.serialNumber,
+        customName: parsed.customName,
+        status: parsed.status,
+        condition: parsed.condition,
+        purchaseDate: parsed.purchaseDate,
+        purchasePrice: parsed.purchasePrice,
+        purchaseSupplier: parsed.purchaseSupplier,
+        supplierId: parsed.supplierId || null,
+        warrantyExpiry: parsed.warrantyExpiry,
+        notes: parsed.notes,
+        locationId: parsed.locationId || null,
+        customFieldValues,
+        barcode: parsed.barcode || parsed.assetTag,
+        images: parsed.images,
+        isActive: parsed.isActive,
+        tags: parsed.tags,
+      },
+    });
+  } catch (e: unknown) {
+    const translated = translatePrismaError(e);
+    if (translated) throw translated;
+    throw e;
+  }
 
   await logActivity({
     organizationId,
@@ -386,14 +443,26 @@ export async function bulkUpdateAssets(
   },
 ) {
   const { organizationId } = await requirePermission("asset", "update");
-  if (ids.length === 0) throw new Error("No assets selected");
+  if (ids.length === 0) {
+    throw new UserFacingError({
+      code: "NO_SELECTION",
+      title: "Nothing selected",
+      message: "Select at least one asset before applying a bulk change.",
+    });
+  }
 
   const updateData: Record<string, unknown> = {};
   if (data.status) updateData.status = data.status;
   if (data.condition) updateData.condition = data.condition;
   if (data.locationId !== undefined) updateData.locationId = data.locationId || null;
 
-  if (Object.keys(updateData).length === 0) throw new Error("No changes specified");
+  if (Object.keys(updateData).length === 0) {
+    throw new UserFacingError({
+      code: "NO_CHANGES",
+      title: "No changes specified",
+      message: "Pick a field to change (status, condition, or location) before applying.",
+    });
+  }
 
   const result = await prisma.asset.updateMany({
     where: { id: { in: ids }, organizationId },
@@ -413,13 +482,29 @@ export async function deleteAsset(id: string) {
       kitItem: true,
     },
   });
-  if (!asset) throw new Error("Asset not found");
+  if (!asset) {
+    throw new UserFacingError({
+      code: "NOT_FOUND",
+      title: "Asset not found",
+      message: "This asset was deleted or moved. Refresh the page to see the latest state.",
+    });
+  }
 
   if (asset._count.lineItems > 0) {
-    throw new Error("Cannot delete — this asset is referenced by project line items. Archive it instead.");
+    throw new UserFacingError({
+      code: "ASSET_IN_USE",
+      title: "Cannot delete",
+      message: "This asset is referenced by project line items.",
+      hint: "Archive it instead so the history stays intact.",
+    });
   }
   if (asset.kitItem) {
-    throw new Error("Cannot delete — this asset is part of a kit. Remove it from the kit first.");
+    throw new UserFacingError({
+      code: "ASSET_IN_KIT",
+      title: "Cannot delete",
+      message: "This asset is part of a kit.",
+      hint: "Remove it from the kit first, then delete.",
+    });
   }
 
   // Retire linked T&T entry if one exists

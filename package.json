@@ -1,6 +1,6 @@
 {
   "name": "gearflow-init",
-  "version": "0.5.1",
+  "version": "0.7.0.4",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -14,6 +14,10 @@
     "test:e2e:ui": "playwright test --ui",
     "test:integration": "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/gearflow_test vitest run --config vitest.integration.config.ts",
     "reconcile:bulk": "tsx --env-file=.env scripts/reconcile-bulk-availability.ts",
+    "backfill:line-item-units": "tsx --env-file=.env scripts/backfill-line-item-units.ts",
+    "collapse:split-siblings": "tsx --env-file=.env scripts/collapse-split-siblings.ts",
+    "collapse:historic-splits": "tsx --env-file=.env scripts/collapse-historic-splits.ts",
+    "migrate:docket-per-unit": "tsx --env-file=.env scripts/migrate-docket-per-unit.ts",
     "lint:server-actions": "tsx scripts/audit-server-actions.ts"
   },
   "dependencies": {

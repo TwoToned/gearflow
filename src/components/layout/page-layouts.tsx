@@ -71,6 +71,66 @@ export function DetailPageLayout({
   );
 }
 
+// ─── Detail Two-Column Layout ───────────────────────────────────
+
+/**
+ * Two-column body for detail pages: a flexible main column beside a
+ * fixed-width (340px) sticky sidebar, stacking vertically below `lg`.
+ *
+ * Distinct from DetailPageLayout (which owns the title/header row): a
+ * detail page's header sits above, this 2-column body sits below it.
+ * Compose with DetailMain + DetailSidebar:
+ *
+ *   <DetailLayout>
+ *     <DetailMain>{tabs / content}</DetailMain>
+ *     <DetailSidebar>
+ *       <SidebarSection title="…">…</SidebarSection>
+ *     </DetailSidebar>
+ *   </DetailLayout>
+ */
+export function DetailLayout({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex flex-col gap-6 lg:flex-row", className)}>
+      {children}
+    </div>
+  );
+}
+
+/** Main (left) column of a DetailLayout — flexes to fill remaining width. */
+export function DetailMain({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return <div className={cn("min-w-0 flex-1", className)}>{children}</div>;
+}
+
+/**
+ * Sidebar (right) column of a DetailLayout — fixed 340px on `lg`, sticky
+ * to the top while the main column scrolls.
+ */
+export function DetailSidebar({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("w-full space-y-4 lg:w-[340px] lg:shrink-0", className)}>
+      <div className="lg:sticky lg:top-4 space-y-4">{children}</div>
+    </div>
+  );
+}
+
 // ─── Form Page Layout ───────────────────────────────────────────
 
 interface FormSectionProps {
@@ -162,6 +222,43 @@ export function SectionHeader({ label, className }: SectionHeaderProps) {
       <span className="t-overline shrink-0 rounded-sm bg-teal-subtle px-2 py-0.5 text-primary">
         {label}
       </span>
+    </div>
+  );
+}
+
+// ─── Sidebar Section ────────────────────────────────────────────
+
+interface SidebarSectionProps {
+  /** Section label, rendered via SectionHeader. */
+  title: string;
+  children: React.ReactNode;
+  /**
+   * Bottom divider. Keep `true` (default) for every section except the
+   * last one in a sidebar, which omits the trailing rule.
+   */
+  divider?: boolean;
+  className?: string;
+}
+
+/**
+ * One block inside a DetailSidebar: a SectionHeader plus content, with a
+ * bottom divider separating it from the next block.
+ */
+export function SidebarSection({
+  title,
+  children,
+  divider = true,
+  className,
+}: SidebarSectionProps) {
+  return (
+    <div
+      className={cn(
+        divider ? "border-b border-border pb-4 space-y-2" : "space-y-2",
+        className,
+      )}
+    >
+      <SectionHeader label={title} />
+      {children}
     </div>
   );
 }

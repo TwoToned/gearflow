@@ -4,6 +4,11 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import {
+  prepUnit,
+  syncLineItemRollup,
+  returnLineUnits,
+} from "@/server/line-item-fulfillment";
 import type { Prisma } from "@/generated/prisma/client";
 import {
   completeCheckAndPackSchema,
@@ -18,69 +23,6 @@ import {
 } from "@/lib/validations/check-item";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-
-/**
- * Split a single unit off a multi-quantity line item.
- * Creates a new qty=1 line item copying all shared fields from the original,
- * decrements the original's quantity, and recalculates lineTotal for both.
- *
- * @param tx - Prisma transaction client
- * @param lineItem - The original line item to split from (must have quantity > 1)
- * @param overrides - Fields to set on the new split item (e.g. assetId, status, prepStatus)
- * @returns The newly created qty=1 line item (with model, asset, bulkAsset included)
- */
-export async function splitLineItem(
-  tx: Prisma.TransactionClient,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  lineItem: any,
-  overrides: Record<string, unknown> = {}
-) {
-  const splitItem = await tx.projectLineItem.create({
-    data: {
-      organizationId: lineItem.organizationId,
-      projectId: lineItem.projectId,
-      type: lineItem.type,
-      modelId: lineItem.modelId,
-      description: lineItem.description,
-      quantity: 1,
-      unitPrice: lineItem.unitPrice,
-      pricingType: lineItem.pricingType,
-      duration: lineItem.duration,
-      discount: lineItem.discount,
-      lineTotal: lineItem.unitPrice
-        ? lineItem.unitPrice.toNumber() * lineItem.duration
-        : null,
-      sortOrder: lineItem.sortOrder,
-      groupName: lineItem.groupName,
-      notes: lineItem.notes,
-      isOptional: lineItem.isOptional,
-      isCustomItem: lineItem.isCustomItem,
-      showSubhireOnDocs: lineItem.showSubhireOnDocs,
-      supplierId: lineItem.supplierId,
-      subhireOrderNumber: lineItem.subhireOrderNumber,
-      supplierOrderId: lineItem.supplierOrderId,
-      isKitChild: lineItem.isKitChild,
-      parentLineItemId: lineItem.parentLineItemId,
-      pricingMode: lineItem.pricingMode,
-      ...overrides,
-    },
-    include: { model: true, asset: true, bulkAsset: true },
-  });
-
-  // Decrement original line item's quantity and recalculate lineTotal
-  const newQty = lineItem.quantity - 1;
-  await tx.projectLineItem.update({
-    where: { id: lineItem.id },
-    data: {
-      quantity: newQty,
-      lineTotal: lineItem.unitPrice
-        ? lineItem.unitPrice.toNumber() * newQty * lineItem.duration
-        : null,
-    },
-  });
-
-  return splitItem;
-}
 
 async function saveCheckRecords(
   tx: Prisma.TransactionClient,
@@ -278,57 +220,15 @@ export async function prepItemDirect(
       throw new Error("Line item not found in project");
     }
 
-    // Bulk = any multi-qty item without a specific serialized asset.
-    // Covers items with bulkAssetId AND generic multi-qty items (no assetId).
-    // Uses the same split approach as serialized items: split off qty=1 with PACKED.
-    const isBulk = !assetId && !lineItem.assetId && lineItem.quantity > 1;
-
-    if (isBulk) {
-      return await splitLineItem(tx, lineItem, {
-        bulkAssetId: lineItem.bulkAssetId,
-        status: "CONFIRMED",
-        prepStatus: "PACKED",
-        ...(prepContainer !== undefined ? { prepContainer } : {}),
-      });
-    }
-
-    // Bulk/generic item with qty=1 (last unit or already split): just mark PACKED
-    if (!assetId && !lineItem.assetId && lineItem.quantity === 1) {
-
-      const updated = await tx.projectLineItem.update({
-        where: { id: lineItemId },
-        data: {
-          status: "CONFIRMED",
-          prepStatus: "PACKED",
-          ...(prepContainer !== undefined ? { prepContainer } : {}),
-        },
-        include: { model: true, asset: true, bulkAsset: true },
-      });
-      return updated;
-    }
-
-    // Serialized: if quantity > 1 and assetId provided, split off a line item
-    if (lineItem.quantity > 1 && assetId) {
-      return await splitLineItem(tx, lineItem, {
-        assetId,
-        status: "CONFIRMED",
-        prepStatus: "PACKED",
-        ...(prepContainer !== undefined ? { prepContainer } : {}),
-      });
-    }
-
-    // Normal serialized item (qty=1 with assetId)
-    const updated = await tx.projectLineItem.update({
-      where: { id: lineItemId },
-      data: {
-        ...(assetId ? { asset: { connect: { id: assetId } } } : {}),
-        status: "CONFIRMED",
-        prepStatus: "PACKED",
-        ...(prepContainer !== undefined ? { prepContainer } : {}),
-      },
-      include: { model: true, asset: true, bulkAsset: true },
+    // Prep creates/marks a ProjectLineItemUnit — never splits the line.
+    return prepUnit(tx, {
+      organizationId,
+      lineItemId,
+      assetId: assetId ?? null,
+      bulkAssetId: assetId ? null : lineItem.bulkAssetId,
+      quantity,
+      prepContainer,
     });
-    return updated;
   });
 
   await logActivity({
@@ -372,19 +272,71 @@ export async function deprepItem(
       throw new Error("Item is already deployed — return it first");
     }
 
-    // For bulk split items (qty=1 with bulkAssetId), just reset prepStatus like serialized
-    // The split item stays as-is (doesn't merge back into original)
-
-    // Serialized item: clear prepStatus, unassign asset only for non-kit-child items
-    const updated = await tx.projectLineItem.update({
-      where: { id: lineItemId },
-      data: {
-        prepStatus: "PENDING",
-        ...(!lineItem.isKitChild && lineItem.assetId ? { asset: { disconnect: true } } : {}),
+    // Clean up the unit rows. Post-cutover, prep creates a unit per
+    // assigned asset (and marks it PACKED); deprep needs to remove
+    // them or the asset stays "stuck" on the line — visible in the
+    // project view, on dockets, and blocking the asset from being
+    // reassigned to a different line / project. Without this the
+    // line.prepStatus reset is cosmetic.
+    //
+    // asset.status is left alone — prep never marked it CHECKED_OUT,
+    // so it's still AVAILABLE. The unit row carries the assignment;
+    // deleting the unit removes the assignment.
+    const preppedUnits = await tx.projectLineItemUnit.findMany({
+      where: {
+        lineItemId,
+        status: { not: "CHECKED_OUT" },
       },
+      orderBy: { ordinal: "desc" },
+      select: { id: true, quantity: true, bulkAssetId: true, assetId: true },
+    });
+
+    // Partial bulk deprep: a single bulk unit row carries the qty —
+    // reduce its quantity instead of deleting the whole row.
+    const isPartialBulk =
+      preppedUnits.length === 1 &&
+      preppedUnits[0].bulkAssetId &&
+      !preppedUnits[0].assetId &&
+      quantity < preppedUnits[0].quantity;
+    if (isPartialBulk) {
+      await tx.projectLineItemUnit.update({
+        where: { id: preppedUnits[0].id },
+        data: { quantity: preppedUnits[0].quantity - quantity },
+      });
+    } else {
+      // Serialised deprep — remove `quantity` units, highest-ordinal
+      // first (preserves the lower ordinals for staff who already
+      // pulled them physically; also natural LIFO).
+      const removeCount = Math.min(quantity, preppedUnits.length);
+      for (let i = 0; i < removeCount; i++) {
+        await tx.projectLineItemUnit.delete({
+          where: { id: preppedUnits[i].id },
+        });
+      }
+    }
+
+    // Clear legacy line.assetId (kit children excepted — they store
+    // their asset there as an active path, not as a fulfillment row).
+    if (!lineItem.isKitChild && lineItem.assetId) {
+      await tx.projectLineItem.update({
+        where: { id: lineItemId },
+        data: { asset: { disconnect: true } },
+      });
+    }
+
+    // Recompute rollup. With units gone, deriveOrderLinePrepStatus
+    // falls back to whatever was on the line — explicitly reset to
+    // PENDING here so the line returns to the prep tab.
+    await tx.projectLineItem.update({
+      where: { id: lineItemId },
+      data: { prepStatus: "PENDING" },
+    });
+    await syncLineItemRollup(tx, lineItemId);
+
+    return tx.projectLineItem.findUniqueOrThrow({
+      where: { id: lineItemId },
       include: { model: true, asset: true, bulkAsset: true },
     });
-    return updated;
   });
 
   await logActivity({
@@ -442,9 +394,19 @@ export async function completeCheckAndDeprep(data: {
         `Deprep return check requires RETURNED status (got ${lineItem.status})`
       );
     }
-    if (lineItem.prepStatus !== "PACKED") {
+    // Idempotent on prepStatus. A multi-unit line generates N sequential
+    // completeCheckAndDeprep calls — the first resets prepStatus from
+    // PACKED to PENDING, and the remaining calls would have failed a
+    // strict PACKED-only precondition. We still want each call to save
+    // its check records (one per asset), and resetting prepStatus to
+    // PENDING is idempotent. Only reject states that indicate the line
+    // never went through prep at all (eg FLAGGED_FAULTY).
+    if (
+      lineItem.prepStatus !== "PACKED" &&
+      lineItem.prepStatus !== "PENDING"
+    ) {
       throw new Error(
-        `Deprep return check requires prepStatus=PACKED (got ${lineItem.prepStatus ?? "null"})`
+        `Deprep return check expected prepStatus=PACKED or PENDING (got ${lineItem.prepStatus ?? "null"})`
       );
     }
 
@@ -719,59 +681,13 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
       parsed.checks
     );
 
-    // 3. Set prepStatus to PACKED (no checkout — deploy is a separate step)
-    // Bulk = any multi-qty item without a specific serialized asset.
-    const isBulk = !parsed.assetId && !lineItem.assetId && lineItem.quantity > 1;
-
-    if (isBulk) {
-      const splitItem = await splitLineItem(tx, lineItem, {
-        bulkAssetId: lineItem.bulkAssetId,
-        status: "CONFIRMED",
-        prepStatus: "PACKED",
-        ...(parsed.prepContainer !== undefined ? { prepContainer: parsed.prepContainer } : {}),
-      });
-      return { updatedItem: splitItem, resolvedAssetId };
-    }
-
-    // Bulk/generic item with qty=1 (last unit): just mark PACKED
-    if (!parsed.assetId && !lineItem.assetId && lineItem.quantity === 1) {
-      await tx.projectLineItem.update({
-        where: { id: parsed.lineItemId },
-        data: {
-          status: "CONFIRMED",
-          prepStatus: "PACKED",
-          ...(parsed.prepContainer !== undefined ? { prepContainer: parsed.prepContainer } : {}),
-        },
-      });
-    } else {
-      // Serialized asset — split if multi-qty with specific asset
-      if (lineItem.quantity > 1 && parsed.assetId) {
-        const splitItem = await splitLineItem(tx, lineItem, {
-          assetId: parsed.assetId,
-          status: "CONFIRMED",
-          prepStatus: "PACKED",
-          ...(parsed.prepContainer !== undefined ? { prepContainer: parsed.prepContainer } : {}),
-        });
-        return { updatedItem: splitItem, resolvedAssetId: parsed.assetId };
-      }
-
-      // Normal serialized prep (quantity == 1)
-      await tx.projectLineItem.update({
-        where: { id: parsed.lineItemId },
-        data: {
-          ...(parsed.assetId
-            ? { asset: { connect: { id: parsed.assetId } } }
-            : {}),
-          status: "CONFIRMED",
-          prepStatus: "PACKED",
-          ...(parsed.prepContainer !== undefined ? { prepContainer: parsed.prepContainer } : {}),
-        },
-      });
-    }
-
-    const updatedItem = await tx.projectLineItem.findUnique({
-      where: { id: parsed.lineItemId },
-      include: { model: true, asset: true, bulkAsset: true },
+    // 3. Prep — create/mark the unit (no checkout; deploy is a separate step).
+    const updatedItem = await prepUnit(tx, {
+      organizationId,
+      lineItemId: parsed.lineItemId,
+      assetId: parsed.assetId ?? null,
+      bulkAssetId: parsed.assetId ? null : lineItem.bulkAssetId,
+      prepContainer: parsed.prepContainer,
     });
 
     return { updatedItem, resolvedAssetId };
@@ -914,27 +830,7 @@ export async function completeCheckAndStore(
       parsed.checks
     );
 
-    // 3. Map condition to return status
-    let returnStatus: "STORED" | "DAMAGED" | "LOST";
-    let assetStatus: "AVAILABLE" | "IN_MAINTENANCE" | "LOST";
-
-    switch (parsed.condition) {
-      case "DAMAGED":
-        returnStatus = "DAMAGED";
-        assetStatus = "IN_MAINTENANCE";
-        break;
-      case "MISSING":
-        returnStatus = "LOST";
-        assetStatus = "LOST";
-        break;
-      case "GOOD":
-      default:
-        returnStatus = "STORED";
-        assetStatus = "AVAILABLE";
-        break;
-    }
-
-    // 4. Determine return location
+    // 3. Determine return location
     let locationId = parsed.locationId || null;
     if (!locationId) {
       const defaultLocation = await tx.location.findFirst({
@@ -944,68 +840,41 @@ export async function completeCheckAndStore(
       locationId = defaultLocation?.id || null;
     }
 
-    // 5. Perform checkin (replicates checkInItems internal logic)
-    const resolvedAssetIdForReturn = parsed.assetId || lineItem.assetId;
-    const isBulk = resolvedAssetIdForReturn
-      ? false
-      : (!!lineItem.bulkAssetId || (!lineItem.assetId && lineItem.quantity > 1));
+    // 4. Perform the actual return via the canonical helper — same
+    //    code path checkInItems uses, so a multi-unit line's units
+    //    and assets all get flipped, not just the order-line counter.
+    //    Pre-cutover this function hand-rolled the checkin, which
+    //    only touched `line.returnedQuantity` and left units / assets
+    //    stuck in CHECKED_OUT — the root cause of "return didn't
+    //    release the assets" on multi-quantity serialised lines.
+    const { unitsFlipped, assetsTouched } = await returnLineUnits(tx, {
+      organizationId,
+      projectId: parsed.projectId,
+      lineItemId: parsed.lineItemId,
+      assetId: parsed.assetId,
+      bulkAssetId: parsed.bulkAssetId,
+      returnCondition: parsed.condition,
+      quantity: 1,
+      notes: parsed.notes,
+      userId,
+      defaultLocationId: locationId,
+    });
 
-    if (isBulk) {
-      const newReturnedQty = lineItem.returnedQuantity + 1;
-      const fullyReturned = newReturnedQty >= lineItem.checkedOutQuantity;
+    // 5. Sync rollup counters + derived status.
+    await syncLineItemRollup(tx, parsed.lineItemId);
 
-      await tx.projectLineItem.update({
-        where: { id: parsed.lineItemId },
-        data: {
-          returnedQuantity: newReturnedQty,
-          status: fullyReturned ? "RETURNED" : "CHECKED_OUT",
-          returnedAt: fullyReturned ? new Date() : lineItem.returnedAt,
-          ...(fullyReturned
-            ? { returnedBy: { connect: { id: userId } } }
-            : {}),
-          returnCondition: fullyReturned
-            ? parsed.condition
-            : lineItem.returnCondition,
-          returnNotes: parsed.notes || lineItem.returnNotes,
-          returnStatus,
-        },
-      });
-    } else {
-      await tx.projectLineItem.update({
-        where: { id: parsed.lineItemId },
-        data: {
-          status: "RETURNED",
-          returnedQuantity: 1,
-          returnedAt: new Date(),
-          returnedBy: { connect: { id: userId } },
-          returnCondition: parsed.condition,
-          returnNotes: parsed.notes || null,
-          asset: lineItem.assetId ? { disconnect: true } : undefined,
-          returnStatus,
-        },
-      });
-
-      if (lineItem.assetId) {
-        await tx.asset.update({
-          where: { id: lineItem.assetId },
-          data: {
-            status: assetStatus,
-            locationId,
-          },
-        });
-      }
-    }
-
-    // 6. Create scan log
+    // 6. Scan log
     await tx.assetScanLog.create({
       data: {
         organizationId,
-        assetId: lineItem.assetId || null,
+        assetId: assetsTouched.length === 1 ? assetsTouched[0] : null,
         bulkAssetId: lineItem.bulkAssetId || null,
         projectId: parsed.projectId,
         action: "CHECK_IN",
         scannedById: userId,
-        notes: parsed.notes || `Checked + ${returnStatus.toLowerCase()}`,
+        notes:
+          parsed.notes ||
+          `Checked + returned ${unitsFlipped || assetsTouched.length} unit(s)`,
       },
     });
 

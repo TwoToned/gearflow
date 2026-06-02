@@ -70,6 +70,13 @@ Detailed docs for each system are in the [`FEATUREDOCS/`](./FEATUREDOCS/) folder
 | 37 | [Check Items](./FEATUREDOCS/37-check-items.md) | Quality checks, check item library, warehouse integration, close-out |
 | 38 | [Pricing Optimization](./FEATUREDOCS/38-pricing-optimization.md) | Auto min-cost pricing from daily/weekly/monthly rates + billing periods |
 | 39 | [Sub-Hires](./FEATUREDOCS/39-sub-hires.md) | First-class sub-hire orders with dual pricing, margin analysis, and supplier rate memory |
+| 40 | [Damage Capture](./FEATUREDOCS/40-damage-capture.md) | Camera-first damage reporting at checkin, severity, charge-back, auto workshop ticket |
+| 41 | [Workshop Kanban](./FEATUREDOCS/41-workshop-kanban.md) | Repair queue board, extended maintenance state machine (Awaiting Parts, QA) |
+| 42 | [Asset Utilization](./FEATUREDOCS/42-asset-utilization.md) | Booking rate, revenue, cost, net contribution per asset; idle/lossy filters |
+| 43 | [Stocktake](./FEATUREDOCS/43-stocktake.md) | Scan-driven inventory counts, discrepancy resolution, state machine |
+| 44 | [Reorder Dashboard](./FEATUREDOCS/44-reorder.md) | Low-stock items grouped by preferred supplier, one-click draft supplier orders |
+| 45 | [Error UX](./FEATUREDOCS/45-error-ux.md) | UserFacingError, Prisma-error translator, showError client helper |
+| 46 | [Custom Fields](./FEATUREDOCS/46-custom-fields.md) | Operator-defined entity attributes, definition CRUD, form rendering |
 
 **When making changes**: Read the relevant feature doc(s) first, follow documented patterns, and update the relevant doc(s) after. If no doc exists for the feature you're working on, create a new numbered file in `FEATUREDOCS/` and add it to the table above.
 

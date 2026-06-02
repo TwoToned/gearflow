@@ -220,6 +220,10 @@ export function getDefaultSettings(docType: DocumentType): TemplateSettings {
       base.table.showCheckboxes = true;
       base.table.showRowNumbers = true;
       base.table.showAssetTags = true;
+      // Per-unit sub-rows so a 10x line lists every assigned asset tag
+      // for the client to tick off on receipt — the whole reason the
+      // line-item fulfillment rework happened.
+      base.table.showPerUnitCheckboxes = true;
       base.table.showPricing = false;
       base.table.showBadges = false;
       base.table.showNotes = false;

@@ -39,9 +39,19 @@ const statusConfig: Record<
     color: "bg-blue-500/10 text-blue-500 border-blue-500/20",
     icon: CalendarClock,
   },
+  AWAITING_PARTS: {
+    label: "Awaiting Parts",
+    color: "bg-purple-500/10 text-purple-500 border-purple-500/20",
+    icon: CalendarClock,
+  },
   IN_PROGRESS: {
     label: "In Progress",
     color: "bg-amber-500/10 text-amber-500 border-amber-500/20",
+    icon: Wrench,
+  },
+  QA: {
+    label: "QA",
+    color: "bg-cyan-500/10 text-cyan-500 border-cyan-500/20",
     icon: Wrench,
   },
   COMPLETED: {
@@ -148,7 +158,9 @@ function useMaintenanceColumns(
       filterType: "enum",
       filterOptions: [
         { value: "SCHEDULED", label: "Scheduled", color: "bg-blue-500" },
+        { value: "AWAITING_PARTS", label: "Awaiting Parts", color: "bg-purple-500" },
         { value: "IN_PROGRESS", label: "In Progress", color: "bg-amber-500" },
+        { value: "QA", label: "QA", color: "bg-cyan-500" },
         { value: "COMPLETED", label: "Completed", color: "bg-green-500" },
         { value: "CANCELLED", label: "Cancelled", color: "bg-red-500" },
       ],

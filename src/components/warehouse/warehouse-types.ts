@@ -18,6 +18,24 @@ export interface LineItem {
   asset: { assetTag: string } | null;
   bulkAsset: { assetTag: string } | null;
   kit: { id: string; assetTag: string; name: string; checkMode?: string; _count?: { kitCheckItems: number } } | null;
+  /**
+   * Per-unit fulfillment rows (one per assigned physical asset). The
+   * source of truth post-cutover. Renderers should prefer `units` when
+   * showing a multi-quantity line's actual assignments — `asset` /
+   * `bulkAsset` on the line is null for non-kit non-bulk lines.
+   * Filtered to non-CANCELLED at the query layer.
+   */
+  units?: Array<{
+    id: string;
+    ordinal: number;
+    assetId: string | null;
+    bulkAssetId: string | null;
+    quantity: number;
+    status: string;
+    prepStatus: string | null;
+    asset: { id: string; assetTag: string } | null;
+    bulkAsset: { id: string; assetTag: string } | null;
+  }>;
   prepStatus: string | null;
   prepContainer: string | null;
   isContainerLineItem: boolean;

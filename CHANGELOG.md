@@ -5,6 +5,239 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0.4] - 2026-05-30
+
+Patch release — delivery dockets now list every assigned asset tag, one
+row per unit, instead of collapsing to "tag, tag +N".
+
+### Fixed
+- **Delivery docket collapsed multi-quantity lines.** A line with qty > 1
+  rendered "TTP00042, TTP00045 +3" instead of one row per assigned unit,
+  so the client had no per-unit list to tick off on receipt. The section
+  render path (`generate-pdf` `loadTemplate` reads `sections` first) is
+  the active path, but `getDefaultSections("delivery-docket")` was the one
+  place `showPerUnitCheckboxes` was missed — the legacy
+  `getDefaultSettings()` blob already had it `true`, so the two default
+  sources disagreed and the section one won at render. Set it `true` on
+  the section default to match packing-list/return-sheet.
+- **`migrate:docket-per-unit` was a no-op for section-based templates.**
+  The original script only flipped the legacy `settings.table` blob, but
+  render reads `sections` first — so org templates customised through the
+  modern editor kept the old single-row layout. The migration now flips
+  both `sections[type=table].settings` and the legacy `settings.table`,
+  with `--org` scoping. Idempotent, dry-run by default, `--apply` to write.
+
+## [0.7.0.3] - 2026-05-30
+
+Patch release — makes the v0.7.0.2 explicit-merge handoff actually
+usable against production data.
+
+### Fixed
+- **`collapse:historic-splits` hid the ids you need.** A project-scoped
+  dry-run truncated every line-item id to 10 chars and only collected
+  singletons under `--diagnose`, so an operator saw neither the
+  free-text priced parent (a singleton — its `modelId` is null or
+  differs from the scan-created children) nor copyable child ids. The
+  scoped dry-run now auto-dumps singletons + the unmatched bucket with
+  **full ids**, ready to paste into `--merge-into` / `--children`.
+
+## [0.7.0.2] - 2026-05-29
+
+Patch release — finishes the historic-split consolidation tooling and
+fixes the residue a merge leaves in the project view.
+
+### Fixed
+- **Merge tombstones showed as "Cancelled" ghost rows.** The
+  split-collapse migrations keep each folded child line as `CANCELLED`,
+  qty 0, `assetId` null so `LineItemMergeMap` history survives. But
+  `getProject` didn't filter them, so a fold turned N duplicate
+  equipment rows into N cancelled rows instead of removing them.
+  `getProject` now filters `status != CANCELLED` on all three line-item
+  includes (grouped, ungrouped-category, top-level), and the equipment
+  tab re-applies the same predicate (`isHiddenFromList`) as defence
+  against a stale cache or optimistic update. Normal line-item removal
+  hard-deletes, so a `CANCELLED` line item is only ever inert merge
+  residue. PDFs, warehouse, and list views already excluded it.
+
+### Added
+- **Explicit merge mode for `collapse:historic-splits`.** Older
+  production data has a priced free-text parent (`modelId` null) whose
+  physical rows were created later by scanning — parent and children
+  share no FK and no `modelId`, only a description string, so no
+  heuristic can safely cluster them. The script now takes
+  `--merge-into <canonicalId> --children <id1,id2,...>`, validates both
+  ends (same project/org, not kit children, have an asset, not already
+  cancelled, canonical ∉ children), folds each child's asset onto a new
+  unit on the canonical, repoints `CheckRecord` / `DamageEvent` /
+  `ProjectService`, and writes the `LineItemMergeMap` audit row. When
+  nothing clusters heuristically the script dumps the singletons (id,
+  qty, price, status, model/description) so the operator can read off
+  the exact ids. modelId-null rows are keyed per-row so a priced parent
+  can never be falsely clustered.
+- **Migration workflow drives the explicit merge.** `migrate.yml` gains
+  optional `canonical_id` + `children_ids` inputs (shell-quoted, applied
+  only for `collapse:historic-splits`) so the consolidation runs from
+  the GitHub Actions UI — the prod SSH session freezes on long scripts.
+  Dry-run by default; `apply` stays a separate human-gated checkbox.
+
+## [0.7.0.1] - 2026-05-27
+
+Patch release on top of the v0.7.0.0 fulfillment-model cutover.
+
+### Fixed
+- **T&T preflight missed unit-borne assets.** The checkout T&T
+  compliance gate scanned `line.assetId` / `line.bulkAssetId` only.
+  After the cutover those columns are null for most deployed lines —
+  the assignment lives on the unit row — so a prepped asset with a
+  FAILED or OVERDUE T&T record slipped past the gate. Preflight now
+  unions three sources: legacy line columns, `ProjectLineItemUnit`
+  rows on the same lines, and inbound `item.assetId` scans.
+- **Delivery docket / packing list / return sheet showed `-` for
+  multi-unit lines.** The PDF builder included `line.asset` but not
+  `line.units`, so a `10x` deployed line rendered no asset tags. The
+  builder now pulls units (filtered to non-CANCELLED) and the
+  `getAssetTag` helper renders up to two tags, then `+N` for extras,
+  falling back to legacy fields for single-asset and kit-child rows.
+
+## [0.7.0.0] - 2026-05-27
+
+Line-item fulfillment model — a foundational data-model rework that
+fixes the long-standing warehouse checkout / docket duplication bug.
+
+The order line (`ProjectLineItem`) now carries the commercial intent
+and never splits: a `10x Powerplay P2` line stays one row with a
+`quantity: 10`. Every assigned physical thing — a serialised asset, a
+bulk slice — gets its own `ProjectLineItemUnit` row carrying its own
+state (assigned / packed / checked-out / damaged / returned). Rollup
+counters on the order line are recomputed from units in the same
+transaction as every write, so order-line state never drifts from
+unit truth.
+
+### Added
+- **`ProjectLineItemUnit` table** — one row per physical fulfilment.
+  Phase 1 schema landed in 0.6.x; Phase 2a backfilled units for every
+  existing line item with an asset assigned.
+- **Unit-aware readers** — `reservation-conflicts.ts`,
+  `utilization.ts`, `availability.getAssetBookings`, and the
+  `addLineItem` double-booked guard all union the legacy
+  `line.assetId` source with the unit table. Detection of
+  unit-deployed assets is now correct; swap-candidate exclusion and
+  the swap-asset TOCTOU re-check handle both shapes.
+- **Split-sibling collapse migration** (`npm run collapse:split-siblings`,
+  dry-run by default) — collapses historic per-asset siblings back
+  onto one canonical order line under a strict full-equivalence key
+  (every order-level field identical or flagged-not-merged). Moves
+  units, repoints `CheckRecord` / `DamageEvent` / `ProjectService`,
+  writes a permanent `LineItemMergeMap` audit row, and deactivates
+  the sibling without deleting it. Operator-gated apply on prod.
+
+### Changed
+- **Checkout / check-in / prep / scan-lookup** rewritten to write and
+  resolve units. `splitLineItem` (the per-asset line-fragmenting
+  function that caused the docket duplication) is retired — zero
+  callers remain.
+- Check-in carries an `assetId` through the warehouse UI so a partial
+  return of a multi-unit line returns the right physical unit.
+- Kit check-in uses a no-unit fallback path for kit children (which
+  carry `line.assetId` directly, no unit row) — both shapes are
+  handled uniformly.
+
+### Notes
+- Test coverage: 45 new unit tests + 37 new integration tests across
+  checkout, check-in, prep, reservation-conflicts, and the collapse
+  migration. Full suite green on merge.
+- Phase 4 (drop the now-redundant `ProjectLineItem.assetId` /
+  `bulkAssetId` columns) intentionally deferred until all readers are
+  observed clean in production.
+
+## [0.6.0.1] - 2026-05-21
+
+Hotfix for a production crash introduced in 0.6.0.0.
+
+### Fixed
+- **`ReferenceError: ReorderCandidate is not defined` taking down SSR.**
+  Four Wave 3 server-action files (`reorder`, `utilization`,
+  `reservation-conflicts`, `project-costs`) re-exported a type through the
+  `"use server"` boundary via `export type { X }`. Next.js's server-action
+  transform caught those re-exported type names in the module's export
+  list and emitted runtime references to identifiers that, being types,
+  have no value — so the SSR chunk threw on module evaluation and crashed
+  affected routes. Types now live only in their `src/lib/*` modules;
+  `"use server"` files neither re-export them nor serve them to consumers,
+  matching the convention used everywhere else.
+
+## [0.6.0.0] - 2026-05-21
+
+Wave 3 — the AV-rental wedge. Eight new operational features plus an
+app-wide error-UX overhaul. GearFlow now tracks the full asset lifecycle:
+damage at checkin, the repair queue, ROI per asset, periodic inventory
+counts, and reordering — and lets each operator extend the data model
+to fit their shop.
+
+### Added
+- **Damage capture at checkin** — report damage on a returning item
+  straight from the warehouse return flow. Camera-first capture: severity
+  (minor / major / total), notes, photos shot on the rear camera, optional
+  charge-back to the client. Major and total damage auto-creates a linked
+  workshop ticket and holds the asset. Browse every event at `/damage`.
+- **Workshop kanban** — `/workshop` shows the repair queue as a board:
+  Scheduled → Awaiting Parts → In Progress → QA, with a Completed lane.
+  Click a card forward or back a stage; QA cards get Pass / Fail buttons.
+  Pass releases the asset, Fail keeps it held. Two new maintenance
+  statuses (Awaiting Parts, QA) extend the hold/release state machine.
+- **Asset utilization dashboard** — `/utilization` answers "is this gear
+  paying for itself?" Per asset: booking rate, revenue, maintenance cost,
+  damage cost, net contribution. Period selector (30 / 90 / 365 days /
+  all time) and an idle / lossy filter to surface dead stock.
+- **Stocktake / inventory verification** — `/warehouse/stocktake` runs a
+  scan-driven count session. Pick a location, scan everything, and the
+  system flags every discrepancy — missing, unexpected, wrong location,
+  quantity mismatch. Resolve each one (mark lost, adjust quantity, update
+  location) and the inventory updates on completion.
+- **Reorder dashboard** — `/warehouse/reorder` lists every bulk item at or
+  below its reorder threshold, grouped by preferred supplier. Tick items
+  and generate a draft supplier order per supplier in one click. Bulk
+  assets gain a preferred-supplier field and a last-reordered timestamp.
+- **Maintenance photos** — attach before/after photos to any maintenance
+  ticket via a reusable photo-grid input. Workshop cards show thumbnails.
+- **Reservation conflict resolution** — when an asset is double-booked
+  across overlapping projects, the project page shows an amber banner and
+  lets you swap the conflicting line item onto a free asset of the same
+  model in one click.
+- **Custom fields** — define operator-specific asset attributes (rig
+  number, firmware version, road-case colour, anything) at
+  `/settings/custom-fields`. They render on the asset create/edit form and
+  detail page. Text, number, date, dropdown, and yes/no field types.
+- **Operational P&L panel** — the project detail page gains a right-rail
+  costs panel: equipment revenue minus service, labour, sub-hire,
+  maintenance, and damage costs, with charge-back awareness and a net
+  margin bar.
+
+### Changed
+- **Error messages now show context, not raw exceptions.** A new
+  `UserFacingError` type plus a Prisma-error translator turn "Unique
+  constraint failed on the fields: (`assetTag`)" into "Duplicate asset
+  tag — that asset tag is already used. Pick a different value." Asset,
+  project, and line-item actions surface structured title + message +
+  hint. The warehouse return page's error toasts use the same helper.
+- **QR / barcode scanner hardened for iPhone** — per-instance camera
+  viewport, `playsInline` so iOS Safari streams inline instead of going
+  fullscreen, a remembered camera choice, a zoom slider, torch, and Micro
+  QR support. The check-items and warehouse-lookup pages now scan with the
+  camera too.
+
+### Fixed
+- Custom items inside a project group no longer vanish from the project
+  total — they count as extras on top of the group's bundle price.
+- The reservation swap re-check and reassignment now run in one
+  transaction, closing a race where two operators could swap onto the
+  same asset and silently re-create a double-booking.
+- Stocktake discrepancy resolution wraps each inventory mutation in a
+  transaction and floors bulk quantities at zero, so a counted shortfall
+  can't drive stock negative.
+- Maintenance-record deletion releases held assets and deletes the record
+  atomically.
+
 ## [0.5.1] - 2026-05-14
 
 ### Fixed

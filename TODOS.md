@@ -24,15 +24,11 @@ Deferred work items tracked from engineering reviews and planning sessions.
 **Estimate:** human ~3 days / CC ~30 min
 **Priority:** P2
 
-### Configurable Days-Per-Month
-**What:** Make the "1 month = X days" constant configurable at the org level (stored in Organization.metadata). Default 28.
-**Why:** Rental companies use 28, 30, or calendar-month billing depending on market norms. Currently hardcoded as `DAYS_PER_BILLING_MONTH = 28`.
-**Pros:** Supports different industry conventions without code changes.
-**Cons:** Adds a setting most orgs won't change.
-**Context:** Deferred during /autoplan eng review. Named constant in src/lib/pricing.ts.
-**Depends on:** Pricing optimization feature.
-**Estimate:** human ~2 hours / CC ~10 min
-**Priority:** P3
+### ~~Configurable Days-Per-Month~~ ✅ SHIPPED
+Shipped in v0.8.2.0. `OrgSettings.daysPerMonth` (validated 20-31, default 28),
+`resolveDaysPerMonth()` guards against corrupt metadata, threaded through
+`optimizePrice` + `computeTotalDays`, UI field in Settings → Project Defaults
+with onChange clamping. 10 new pricing tests + 2 resolver tests.
 
 ## Testing Expansion
 
@@ -68,15 +64,13 @@ Deferred work items tracked from engineering reviews and planning sessions.
 
 ## Call Sheet
 
-### Template Editor Settings for New Section Types
-**What:** Add settings panels in the template builder for `call-sheet-info` and `day-header` section types. Currently these sections work with default settings but can't be customized through the template editor UI.
-**Why:** Users should be able to toggle visibility of PM contact, venue details, schedule times, equipment summary, phases, and crew count in the template builder.
-**Pros:** Full customizability of call sheet layouts.
-**Cons:** Sections already work with sensible defaults.
-**Context:** Deferred from call sheet enhancement plan (Phase 6). Section types are registered, plugins work, Zod schemas exist. Just needs the SectionSettingsPanel cases and editor sidebar entries.
-**Depends on:** Nothing (infrastructure is complete).
-**Estimate:** human ~2 hours / CC ~15 min
-**Priority:** P3
+### ~~Template Editor Settings for New Section Types~~ ✅ SHIPPED
+Shipped in v0.8.2.0. `CallSheetInfoSettings` + `DayHeaderSettings` panels
+in `SectionSettingsPanel`, default-settings dispatch wired into both
+`section-builder.tsx` and `block-editor.tsx`. Day-header toggles flow
+through `expandSectionsForDates` so phases/crewCount can be hidden on
+auto-injected per-day headers. Renderer also merges defaults at read
+time so legacy `{}` settings don't render blank sections.
 
 ## PDF Template System
 
@@ -123,15 +117,11 @@ Deferred work items tracked from engineering reviews and planning sessions.
 **Estimate:** human ~2 days / CC ~20 min
 **Priority:** P3
 
-### Crew Availability Composite Index
-**What:** Add a composite index on `CrewAssignment(crewMemberId, startDate, endDate)` to optimize the cross-project availability overlap query.
-**Why:** The inline crew assignment feature queries all assignments for a set of crew members across all projects, filtering by date range overlap. Without a composite index, this becomes a sequential scan as the assignment table grows.
-**Pros:** Prevents slow availability lookups when crew assignment count exceeds ~10K rows.
-**Cons:** Adds a write-time index maintenance cost. Negligible for this table's write volume.
-**Context:** Identified during eng review of services/crewing rework. The availability query uses `WHERE crewMemberId IN (...) AND startDate <= :endDate AND endDate >= :startDate`. Prisma auto-creates an index on `crewMemberId` (foreign key) but not the composite with date fields.
-**Depends on:** Services/crewing rework (cross-project availability check).
-**Estimate:** human ~15 min / CC ~2 min
-**Priority:** P3
+### ~~Crew Availability Composite Index~~ ✅ SHIPPED
+Shipped in v0.8.2.0. Added `@@index([crewMemberId, startDate, endDate])`
+on `CrewAssignment` via migration `20260603000000_crew_assignment_composite_idx`.
+The existing `(crewMemberId, startDate)` index is kept; Postgres uses
+the leading prefix where it's narrower.
 
 ## Equipment & Line Items
 

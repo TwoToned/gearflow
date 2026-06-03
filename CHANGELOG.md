@@ -5,6 +5,39 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2.0] - 2026-06-03
+
+Quick-wins bundle: three TODOs knocked out plus follow-up polish from
+an adversarial review pass.
+
+### Added
+- **Configurable days-per-month for billing.** The pricing optimiser
+  treated a "month" as exactly 28 days. Orgs whose customers use 30 or
+  calendar-month conventions can now set it in Settings → Project
+  Defaults. Values are clamped to 20-31 in the form, and the server
+  defensively re-validates on read so corrupt metadata can never
+  produce a degenerate optimiser run.
+- **Template builder settings for `call-sheet-info` and `day-header`.**
+  The two section types rendered with hard-coded defaults; now the
+  toggles (PM contact, client contact, venue details, schedule times,
+  equipment summary, phases, crew count) are editable in the builder
+  UI. Day-header toggles flow through to every per-day section the
+  call-sheet pipeline injects.
+
+### Changed
+- The crew availability overlap query now backs onto a composite
+  `(crewMemberId, startDate, endDate)` index so look-ups stay
+  index-only once the assignment table grows past the point where the
+  existing `(crewMemberId, startDate)` index forces a row scan to
+  evaluate `endDate`.
+
+### Fixed
+- Pre-existing call-sheet-info sections persisted with empty settings
+  (a legacy bug where the dispatcher returned `{}`) used to render a
+  blank section because every toggle read as `undefined`. The renderer
+  now merges defaults at read time so old data still renders the
+  expected fields.
+
 ## [0.8.1.2] - 2026-06-03
 
 Second hotfix in the v0.8.1.x series — delivery dockets and return

@@ -262,9 +262,16 @@ Two modes selected by `options.expandProjectGroups`:
   itemised lamp. Sub-hire items stay inside their target category so
   category subtotals roll up correctly.
 - **expand** (default for `packing-list`, `return-sheet`,
-  `delivery-docket`): each Project Group emits a header row + every
-  child line item underneath. Warehouse staff and the client at the
-  loading bay see every serial number that's leaving the building.
+  `delivery-docket`): each Project Group emits a synthetic
+  `isGroupRow: true` row bucketed under its **category** (not its own
+  section), with its non-kit members attached as `childLineItems`. The
+  table plugin renders the group row bold (kit-style) and indents its
+  members underneath — so "Drum Kit Mic Set" appears as a bold
+  sub-header inside the "Band" category section, not as its own
+  top-level section. Kit parents that lived inside the group still
+  break out into their own `[Kit] <name>` section per the kit-boundary
+  rule below. Warehouse staff still see every serial number, organised
+  by category → group → item.
 
 Three additional behaviours layer onto expand mode:
 

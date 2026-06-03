@@ -330,6 +330,13 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
       // Stop rendering past endIndex (prevent overflow into next page's items)
       if (endIndex !== undefined && globalIdx > endIndex) { overflow = true; break; }
       const isKit = !!item.kitId && !item.isKitChild;
+      // A synthetic Project Group row with attached members. Renders bold
+      // like a kit parent and fans out indented members underneath via
+      // the same childLineItems path as kits — no [Kit] prefix because
+      // it isn't one.
+      const isGroupParent =
+        !!item.isGroupRow && (item.childLineItems?.length ?? 0) > 0;
+      const isParentWithChildren = isKit || isGroupParent;
       const isItemized = isKit && item.pricingMode === "ITEMIZED";
       const itemName = getItemName(item, isKit);
 
@@ -402,12 +409,13 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
           case "description": {
             const descX = cellX;
 
-            // Kit prefix for packing list
+            // Kit prefix for packing list. Group parents get bold but
+            // no prefix — the category bucket already labels them.
             const displayName = (config.documentType === "packing-list" && isKit)
               ? `[Kit] ${itemName}`
               : itemName;
 
-            const font = isKit ? fonts.bold : fonts.regular;
+            const font = isParentWithChildren ? fonts.bold : fonts.regular;
             page.drawText(displayName, {
               x: descX,
               y: textY,
@@ -654,8 +662,11 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
         }
       }
 
-      // === Kit children ===
-      if (isKit && config.showKitChildren) {
+      // === Kit children / Group members ===
+      // Same indented-children rendering for both kit parents (when
+      // showKitChildren is on) and synthetic Project Group rows whose
+      // members were attached as childLineItems by structureLineItems().
+      if ((isKit && config.showKitChildren) || isGroupParent) {
         let children = item.childLineItems || [];
 
         // Filter children by deployment status for return sheet / delivery docket

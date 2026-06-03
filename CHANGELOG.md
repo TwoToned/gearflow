@@ -5,6 +5,50 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1.0] - 2026-06-03
+
+Project Groups on warehouse PDFs now look like kits — bold parent rows
+with their members indented underneath — and sit inside their category
+section. The previous version turned every group into its own
+top-level teal section header, which doubled-up against the group's
+own row and lost the category context warehouse staff use to walk the
+warehouse.
+
+### Fixed
+- **Project Groups on pick lists, return sheets, and delivery dockets
+  now render inside their category.** "Drum Kit Mic Set" shows up as a
+  bold sub-header inside the "Band" category section, with its mics
+  indented underneath, instead of breaking out as its own top-level
+  section. The data builder now buckets group rows under `cat.name`
+  and attaches non-kit members as `childLineItems` on the synthetic
+  group row; the renderer treats group rows with attached members the
+  same as kit parents (bold name, indented children).
+- Removed the duplicate "group title" rows that appeared both as a
+  section header AND as the first row inside the section.
+
+### Changed
+- Kit parents that live inside a Project Group still break out into
+  their own `[Kit] <name>` section — the kit-boundary contract is
+  preserved end-to-end.
+- `gearflow-table.ts` adds an `isGroupParent` detection so the
+  existing kit-children rendering path (indent, smaller font, per-unit
+  checkboxes for multi-quantity members) extends to group members
+  with zero new rendering code.
+
+### Added
+- **PDF renderer test harness** (`src/lib/pdfme/plugins/test-utils.ts`).
+  Wraps a real `@pdfme/pdf-lib` page with capturing proxies on
+  `drawText`, `drawRectangle`, and `drawLine` so plugin tests can
+  assert font choice (bold vs regular), text content, and indent
+  positions without producing a PDF on disk. Closes the long-standing
+  "no unit tests for PDF rendering" gap.
+- 7 harness-based tests in `gearflow-table.test.ts` covering: group
+  parent renders bold, regular rows stay regular (control), children
+  indent right of parent and stack below, child order preserved, group
+  row without children stays regular (collapse-mode parity), kit
+  parents still bold (regression), category section header sits above
+  group contents.
+
 ## [0.8.0.0] - 2026-06-02
 
 Warehouse-facing PDFs now show every item inside a Project Group, plus

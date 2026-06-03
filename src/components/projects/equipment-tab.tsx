@@ -38,7 +38,11 @@ import {
   getUncategorizedLineItems,
   getProjectOverbookedStatus,
 } from "@/server/project-categories";
-import { getUncategorizedSubHireGroups, reorderMixedGroupsInCategory } from "@/server/category-slots";
+import {
+  getUncategorizedSubHireGroups,
+  moveSubHireGroupToCategory,
+  reorderMixedGroupsInCategory,
+} from "@/server/category-slots";
 import { getGroupTemplates, applyGroupTemplate, saveGroupAsTemplate } from "@/server/group-templates";
 import { removeLineItem, updateLineItem, reorderLineItems, checkAvailability } from "@/server/line-items";
 import { Button } from "@/components/ui/button";
@@ -464,12 +468,73 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
 
   // ─── DnD handlers ─────────────────────────────────────────────────────────
 
+  /** Resolve the category id of whatever sortable row the drag landed on.
+   *  Returns the cat id, `null` for the uncategorised zone, or "unknown"
+   *  if the over id doesn't map to a known row (defensive). */
+  function findCategoryOfOverId(overId: string): string | null | "unknown" {
+    const cats = categories as CategoryData[];
+    if (overId.startsWith("cat-")) return overId.slice(4);
+    if (overId.startsWith("grp-")) {
+      const id = overId.slice(4);
+      const cat = cats.find((c) => c.groups.some((g) => g.id === id));
+      return cat ? cat.id : "unknown";
+    }
+    if (overId.startsWith("shg-")) {
+      const id = overId.slice(4);
+      const cat = cats.find((c) => (c.subHireGroupTargets ?? []).some((g) => g.id === id));
+      if (cat) return cat.id;
+      const orphans = uncategorizedSubHireGroups as SubHireGroupData[];
+      if (orphans.some((g) => g.id === id)) return null;
+      return "unknown";
+    }
+    if (overId.startsWith("li-")) {
+      const id = overId.slice(3);
+      for (const cat of cats) {
+        if ((cat.lineItems ?? []).some((i) => i.id === id)) return cat.id;
+        for (const group of cat.groups) {
+          if ((group.lineItems ?? []).some((i) => i.id === id)) return cat.id;
+        }
+      }
+      const uncat = uncategorizedItems as LineItemData[];
+      if (uncat.some((i) => i.id === id)) return null;
+      return "unknown";
+    }
+    return "unknown";
+  }
+
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
     const activeId = String(active.id);
     const overId = String(over.id);
+
+    // Cross-category sub-hire group move (Phase 5d.b — Drop Matrix 8C row
+    // "SubHireGroup → ProjectCategory" allowed). Fires before the
+    // within-category reorder branch below so dragging a sub-hire group
+    // from cat A to cat B issues a placement write, not a reorder.
+    if (activeId.startsWith("shg-")) {
+      const activeRealId = activeId.slice(4);
+      const cats = categories as CategoryData[];
+      const sourceCat = cats.find((c) =>
+        (c.subHireGroupTargets ?? []).some((g) => g.id === activeRealId),
+      );
+      const sourceCatId: string | null = sourceCat?.id ?? null;
+      const targetCatId = findCategoryOfOverId(overId);
+      if (targetCatId !== "unknown" && sourceCatId !== targetCatId) {
+        moveSubHireGroupToCategory({ groupId: activeRealId, categoryId: targetCatId })
+          .then(() => {
+            toast.success(
+              targetCatId === null
+                ? "Moved sub-hire group to uncategorised"
+                : "Moved sub-hire group",
+            );
+          })
+          .catch((e: Error) => toast.error(e.message));
+        invalidate();
+        return;
+      }
+    }
 
     // Category reorder
     if (activeId.startsWith("cat-") && overId.startsWith("cat-")) {

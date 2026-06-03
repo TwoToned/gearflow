@@ -864,6 +864,10 @@ model SubHireGroup {
   targetGroup      ProjectGroup?     @relation("SubHireGroupTargetGroup", fields: [targetGroupId], references: [id], onDelete: SetNull)
   items            SubHireItem[]
   lineItems        ProjectLineItem[]
+  // Cross-type category ordering. Optional — sub-hire groups can live
+  // uncategorised (no slot row). When categorised, the slot owns sortOrder
+  // across the mixed ProjectGroup + SubHireGroup list in that category.
+  slot             CategorySlot?
 
   @@index([subHireId])
   @@map("sub_hire_group")
@@ -1562,10 +1566,37 @@ model ProjectCategory {
   subHireDefaults     SubHire[]
   subHireGroupTargets SubHireGroup[]
   subHireItemTargets  SubHireItem[]
+  // Cross-type ordering: project + sub-hire groups share one sort sequence per category
+  slots               CategorySlot[]
 
   @@index([projectId])
   @@index([organizationId])
   @@map("project_category")
+}
+
+// ─── Category Slot ──────────────────────────────────────────────────────────
+//
+// Cross-type ordering for ProjectGroup + SubHireGroup within a ProjectCategory.
+// Each slot points at exactly one group (XOR enforced by DB check constraint
+// added in the migration SQL — Prisma doesn't support CHECK in schema.prisma).
+// The slot's sortOrder is the canonical ordering for queries that need a
+// unified group list per category.
+
+model CategorySlot {
+  id                String           @id @default(cuid())
+  projectCategoryId String
+  projectCategory   ProjectCategory  @relation(fields: [projectCategoryId], references: [id], onDelete: Cascade)
+  sortOrder         Int
+  projectGroupId    String?          @unique
+  projectGroup      ProjectGroup?    @relation(fields: [projectGroupId], references: [id], onDelete: Cascade)
+  subHireGroupId    String?          @unique
+  subHireGroup      SubHireGroup?    @relation(fields: [subHireGroupId], references: [id], onDelete: Cascade)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@unique([projectCategoryId, sortOrder])
+  @@index([projectCategoryId])
+  @@map("category_slot")
 }
 
 // ─── Project Group ──────────────────────────────────────────────────────────
@@ -1597,6 +1628,9 @@ model ProjectGroup {
   subHireDefaults     SubHire[]         @relation("SubHireDefaultTargetGroup")
   subHireGroupTargets SubHireGroup[]    @relation("SubHireGroupTargetGroup")
   subHireItemTargets  SubHireItem[]     @relation("SubHireItemTargetGroup")
+  // Cross-type category ordering. At most one slot per group; created when the
+  // group is placed in a category (which all ProjectGroups are).
+  slot                CategorySlot?
 
   @@index([projectId])
   @@index([categoryId])

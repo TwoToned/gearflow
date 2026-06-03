@@ -40,6 +40,8 @@ import {
   SECTION_HEIGHT_ESTIMATES,
   TABLE_ROW_HEIGHT_MM,
   CREW_ROW_HEIGHT_MM,
+  getDefaultCallSheetInfoSettings,
+  getDefaultDayHeaderSettings,
 } from "./section-types";
 import {
   PAGE_WIDTH,
@@ -1286,7 +1288,10 @@ function buildSectionInput(
     }
 
     case "call-sheet-info": {
-      const csi = section.settings as CallSheetInfoSectionSettings;
+      // Merge defaults — legacy sections persisted via a broken dispatch may
+      // have `settings: {}`, which would otherwise toggle every field off and
+      // render a blank section.
+      const csi = { ...getDefaultCallSheetInfoSettings(), ...(section.settings as Partial<CallSheetInfoSectionSettings>) };
       const infoConfig = {
         pmName: data.pm_name || "",
         pmPhone: data.pm_phone || "",

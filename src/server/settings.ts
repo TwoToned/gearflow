@@ -47,6 +47,8 @@ export interface OrgSettings {
   assetTagPrefix?: string;
   assetTagCounter?: number;
   assetTagDigits?: number;
+  /** Days a "month" bills as for pricing optimisation. Default 28; common alternatives are 30 or 31. */
+  daysPerMonth?: number;
   branding?: OrgBranding;
   testTag?: TestTagSettings;
   icalToken?: string;

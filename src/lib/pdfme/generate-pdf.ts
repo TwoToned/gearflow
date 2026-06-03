@@ -229,6 +229,16 @@ export function expandSectionsForDates(
   // If no crew-table sections, nothing to expand
   if (crewTableIndices.length === 0) return sections;
 
+  // Inherit day-header settings from a user-added day-header in the template,
+  // otherwise default to showing both fields. The toggles in the template
+  // builder UI flow through here.
+  const userDayHeader = sections.find((s) => s.type === "day-header");
+  const dhSettings = userDayHeader?.settings as
+    | { showPhases?: boolean; showCrewCount?: boolean }
+    | undefined;
+  const showPhases = dhSettings?.showPhases ?? true;
+  const showCrewCount = dhSettings?.showCrewCount ?? true;
+
   const expanded: TemplateSection[] = [];
   let skipUntilAfterLastCrewTable = false;
 
@@ -246,15 +256,15 @@ export function expandSectionsForDates(
           if (crewByDay.length > 1 || day.date === "") {
             const dayHeaderConfig = JSON.stringify({
               dayLabel: day.dayLabel,
-              phases: day.phases,
-              crewCount: day.crew.length,
+              phases: showPhases ? day.phases : [],
+              crewCount: showCrewCount ? day.crew.length : undefined,
               documentColor: data.org_document_color,
             });
 
             expanded.push({
               id: `day-header-${day.date || "unscheduled"}`,
               type: "day-header",
-              settings: { showPhases: true, showCrewCount: true },
+              settings: { showPhases, showCrewCount },
               visibility: {},
               content: dayHeaderConfig,
               order: expanded.length,

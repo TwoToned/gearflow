@@ -13,6 +13,7 @@ import { logActivity } from "@/lib/activity-log";
 import { roundCurrency } from "@/lib/formatters";
 import { recalculateProjectTotals } from "./line-items";
 import { optimizePrice, computeTotalDays } from "@/lib/pricing";
+import { getOrgDaysPerMonth } from "@/lib/org-pricing";
 
 /**
  * Get the billing period for a group, falling back to project-level settings.
@@ -47,7 +48,8 @@ export async function getGroupBillingPeriod(groupId: string): Promise<{
 
   if (!hasGroupBilling && !hasProjectBilling) return null;
 
-  const totalDays = computeTotalDays(months, weeks, days);
+  const daysPerMonth = await getOrgDaysPerMonth(group.organizationId);
+  const totalDays = computeTotalDays(months, weeks, days, daysPerMonth);
   return { months, weeks, days, totalDays };
 }
 
@@ -92,7 +94,8 @@ export async function calculateSuggestedPrice(groupId: string): Promise<number> 
   // double-counts when the user clicks Accept Suggested Price — the
   // suggestion becomes `g.price`, and the extras get added again.
   if (hasNewBilling) {
-    const totalDays = computeTotalDays(months, weeks, days);
+    const daysPerMonth = await getOrgDaysPerMonth(group.organizationId);
+    const totalDays = computeTotalDays(months, weeks, days, daysPerMonth);
     for (const item of group.lineItems) {
       if (item.isCustomItem) continue;
 
@@ -100,7 +103,7 @@ export async function calculateSuggestedPrice(groupId: string): Promise<number> 
       const weeklyRate = item.model?.weeklyRate != null ? Number(item.model.weeklyRate) : null;
       const monthlyRate = item.model?.monthlyRate != null ? Number(item.model.monthlyRate) : null;
 
-      const result = optimizePrice(dailyRate, weeklyRate, monthlyRate, totalDays);
+      const result = optimizePrice(dailyRate, weeklyRate, monthlyRate, totalDays, daysPerMonth);
       if (result) {
         total += result.grandTotal * item.quantity;
       }
@@ -148,6 +151,7 @@ export async function recalculateGroupPrices(groupId: string): Promise<number> {
   });
 
   const updates: Array<ReturnType<typeof prisma.projectLineItem.update>> = [];
+  const daysPerMonth = await getOrgDaysPerMonth(organizationId);
 
   for (const item of group.lineItems) {
     // Skip kit children when parent uses KIT_PRICE mode
@@ -159,7 +163,7 @@ export async function recalculateGroupPrices(groupId: string): Promise<number> {
     const weeklyRate = item.model.weeklyRate != null ? Number(item.model.weeklyRate) : null;
     const monthlyRate = item.model.monthlyRate != null ? Number(item.model.monthlyRate) : null;
 
-    const result = optimizePrice(dailyRate, weeklyRate, monthlyRate, billingPeriod.totalDays);
+    const result = optimizePrice(dailyRate, weeklyRate, monthlyRate, billingPeriod.totalDays, daysPerMonth);
     if (!result) continue;
 
     updates.push(

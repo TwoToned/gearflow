@@ -14,6 +14,7 @@ import { logActivity } from "@/lib/activity-log";
 import { roundCurrency } from "@/lib/formatters";
 import { calculateSuggestedPrice, getGroupBillingPeriod } from "./project-groups";
 import { optimizePrice, computeTotalDays } from "@/lib/pricing";
+import { getOrgDaysPerMonth } from "@/lib/org-pricing";
 import { UserFacingError } from "@/lib/errors";
 import { computeStockBreakdown } from "@/lib/availability";
 
@@ -244,6 +245,8 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
 
   if (parsed.modelId && parsed.pricingType === "PER_DAY" && !parsed.unitPrice) {
     try {
+      const daysPerMonth = await getOrgDaysPerMonth(organizationId);
+
       // Get billing period from group or project
       let billingTotalDays: number | null = null;
 
@@ -262,7 +265,8 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
           billingTotalDays = computeTotalDays(
             proj.billingMonths ?? 0,
             proj.billingWeeks ?? 0,
-            proj.billingDays ?? 0
+            proj.billingDays ?? 0,
+            daysPerMonth
           );
         }
       }
@@ -278,7 +282,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
           const weeklyRate = model.weeklyRate != null ? Number(model.weeklyRate) : null;
           const monthlyRate = model.monthlyRate != null ? Number(model.monthlyRate) : null;
 
-          const result = optimizePrice(dailyRate, weeklyRate, monthlyRate, billingTotalDays);
+          const result = optimizePrice(dailyRate, weeklyRate, monthlyRate, billingTotalDays, daysPerMonth);
           if (result) {
             optimizedUnitPrice = result.grandTotal;
             optimizedPricingType = "OPTIMIZED";

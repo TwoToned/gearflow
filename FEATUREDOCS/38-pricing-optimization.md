@@ -42,11 +42,21 @@ Model (rates) + Project/Group (billing period)
 Minimum-cost enumeration over all valid (months, weeks, days) splits:
 
 1. Only use weekly rate if cheaper than 7 × daily
-2. Only use monthly rate if cheaper than 4 × weekly (or 28 × daily)
+2. Only use monthly rate if cheaper than the equivalent weekly+daily coverage of one "month"
 3. Enumerate all month/week combinations, compute remaining days
 4. Pick the cheapest total
 
-Constants: `DAYS_PER_BILLING_MONTH = 28`, `DAYS_PER_BILLING_WEEK = 7`
+Constants: `DEFAULT_DAYS_PER_BILLING_MONTH = 28`, `DAYS_PER_BILLING_WEEK = 7`
+
+### Configurable days-per-month (v0.8.2.0+)
+
+Orgs can override the days-per-month value in Settings → Project Defaults
+(range 20-31, default 28). Stored as `OrgSettings.daysPerMonth` on
+`Organization.metadata`. `getOrgDaysPerMonth(organizationId)` reads it
+defensively (`resolveDaysPerMonth` clamps and rounds; corrupt metadata
+falls back to 28). Server actions thread the value through to
+`optimizePrice` and `computeTotalDays` so the math agrees with the org's
+billing convention.
 
 ## Pricing Flow
 

@@ -56,7 +56,6 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-  DialogDescription,
 } from "@/components/ui/dialog";
 import {
   Table,
@@ -78,6 +77,7 @@ import { DeleteGroupDialog } from "./delete-group-dialog";
 import { SaveAsTemplateDialog } from "./save-as-template-dialog";
 import { AddCategoryDialog } from "./add-category-dialog";
 import { RenameCategoryDialog } from "./rename-category-dialog";
+import { AddGroupToolbarDialog } from "./add-group-toolbar-dialog";
 import { SubHireOrderDialog } from "./sub-hire-order-dialog";
 import { getSubHires } from "@/server/sub-hires";
 import { subHireStatusLabels, formatLabel } from "@/lib/status-labels";
@@ -187,9 +187,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
 
   // Add group from toolbar state
   const [showAddGroupFromToolbar, setShowAddGroupFromToolbar] = useState(false);
-  const [toolbarGroupTitle, setToolbarGroupTitle] = useState("");
-  const [toolbarGroupCategoryId, setToolbarGroupCategoryId] = useState("");
-  const [toolbarGroupTemplateId, setToolbarGroupTemplateId] = useState("");
 
   // Save group as template dialog state
   const [saveAsTemplateGroup, setSaveAsTemplateGroup] = useState<{ id: string; title: string } | null>(null);
@@ -1355,109 +1352,17 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
       />
 
       {/* Add group from toolbar dialog */}
-      <Dialog open={showAddGroupFromToolbar} onOpenChange={(open) => {
-        setShowAddGroupFromToolbar(open);
-        if (!open) { setToolbarGroupTitle(""); setToolbarGroupCategoryId(""); setToolbarGroupTemplateId(""); }
-      }}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Add Group</DialogTitle>
-            <DialogDescription>
-              Choose a category and name for the new group. Optionally start from a template.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-2">
-              <Label>Category</Label>
-              <select
-                value={toolbarGroupCategoryId}
-                onChange={(e) => setToolbarGroupCategoryId(e.target.value)}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                <option value="">Select category...</option>
-                {typedCategories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>{cat.name}</option>
-                ))}
-              </select>
-            </div>
-            {templateOptions.length > 0 && (
-              <div className="space-y-2">
-                <Label>Template (optional)</Label>
-                <select
-                  value={toolbarGroupTemplateId}
-                  onChange={(e) => {
-                    const id = e.target.value;
-                    setToolbarGroupTemplateId(id);
-                    if (id && !toolbarGroupTitle.trim()) {
-                      const t = templateOptions.find((o) => o.id === id);
-                      if (t) setToolbarGroupTitle(t.name);
-                    }
-                  }}
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                >
-                  <option value="">None (empty group)</option>
-                  {templateOptions.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} ({t.itemCount} {t.itemCount === 1 ? "item" : "items"})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <div className="space-y-2">
-              <Label>Group Title</Label>
-              <Input
-                value={toolbarGroupTitle}
-                onChange={(e) => setToolbarGroupTitle(e.target.value)}
-                placeholder="e.g. PA System, Lighting Rig"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && toolbarGroupTitle.trim() && toolbarGroupCategoryId) {
-                    createGroupMut.mutate({
-                      categoryId: toolbarGroupCategoryId,
-                      title: toolbarGroupTitle.trim(),
-                      templateId: toolbarGroupTemplateId || undefined,
-                    });
-                    setShowAddGroupFromToolbar(false);
-                    setToolbarGroupTitle("");
-                    setToolbarGroupCategoryId("");
-                    setToolbarGroupTemplateId("");
-                  }
-                }}
-                autoFocus
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setShowAddGroupFromToolbar(false);
-              setToolbarGroupTitle("");
-              setToolbarGroupCategoryId("");
-              setToolbarGroupTemplateId("");
-            }}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (toolbarGroupTitle.trim() && toolbarGroupCategoryId) {
-                  createGroupMut.mutate({
-                    categoryId: toolbarGroupCategoryId,
-                    title: toolbarGroupTitle.trim(),
-                    templateId: toolbarGroupTemplateId || undefined,
-                  });
-                  setShowAddGroupFromToolbar(false);
-                  setToolbarGroupTitle("");
-                  setToolbarGroupCategoryId("");
-                  setToolbarGroupTemplateId("");
-                }
-              }}
-              disabled={!toolbarGroupTitle.trim() || !toolbarGroupCategoryId || createGroupMut.isPending}
-            >
-              {toolbarGroupTemplateId ? "Create from Template" : "Create"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
+      <AddGroupToolbarDialog
+        open={showAddGroupFromToolbar}
+        isPending={createGroupMut.isPending}
+        categories={typedCategories.map((c) => ({ id: c.id, name: c.name }))}
+        templates={templateOptions}
+        onOpenChange={setShowAddGroupFromToolbar}
+        onSubmit={(values) => {
+          createGroupMut.mutate(values);
+          setShowAddGroupFromToolbar(false);
+        }}
+      />
       {/* Delete confirmation dialog (Phase 7 — extracted) */}
       <DeleteGroupDialog
         groupId={deleteGroupId}

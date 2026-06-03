@@ -21,6 +21,8 @@ import {
   type SignatureSectionSettings,
   type CustomTextSectionSettings,
   type CrewTableSectionSettings,
+  type CallSheetInfoSectionSettings,
+  type DayHeaderSectionSettings,
   type SpacerSectionSettings,
   type SectionSettings,
   type SectionVisibility,
@@ -182,6 +184,10 @@ function SettingsForType({
       );
     case "crew-table":
       return <CrewTableSettings settings={settings as CrewTableSectionSettings} onUpdate={onUpdateSettings} />;
+    case "call-sheet-info":
+      return <CallSheetInfoSettings settings={settings as CallSheetInfoSectionSettings} onUpdate={onUpdateSettings} />;
+    case "day-header":
+      return <DayHeaderSettings settings={settings as DayHeaderSectionSettings} onUpdate={onUpdateSettings} />;
     case "spacer":
       return <SpacerSettings settings={settings as SpacerSectionSettings} onUpdate={onUpdateSettings} />;
     case "page-break":
@@ -799,6 +805,43 @@ function CrewTableSettings({
       <ToggleRow label="Phone" checked={settings.showPhone} onChange={(v) => onUpdate({ showPhone: v })} />
       <ToggleRow label="Email" checked={settings.showEmail} onChange={(v) => onUpdate({ showEmail: v })} />
       <ToggleRow label="Notes" checked={settings.showNotes} onChange={(v) => onUpdate({ showNotes: v })} />
+    </>
+  );
+}
+
+// ─── Call Sheet Info ────────────────────────────────────────────────────────
+
+function CallSheetInfoSettings({
+  settings,
+  onUpdate,
+}: {
+  settings: CallSheetInfoSectionSettings;
+  onUpdate: (u: Partial<CallSheetInfoSectionSettings>) => void;
+}) {
+  return (
+    <>
+      <ToggleRow label="PM Contact" checked={settings.showPmContact} onChange={(v) => onUpdate({ showPmContact: v })} />
+      <ToggleRow label="Client Contact" checked={settings.showClientContact} onChange={(v) => onUpdate({ showClientContact: v })} />
+      <ToggleRow label="Venue Details" checked={settings.showVenueDetails} onChange={(v) => onUpdate({ showVenueDetails: v })} />
+      <ToggleRow label="Schedule Times" checked={settings.showScheduleTimes} onChange={(v) => onUpdate({ showScheduleTimes: v })} />
+      <ToggleRow label="Equipment Summary" checked={settings.showEquipmentSummary} onChange={(v) => onUpdate({ showEquipmentSummary: v })} />
+    </>
+  );
+}
+
+// ─── Day Header ─────────────────────────────────────────────────────────────
+
+function DayHeaderSettings({
+  settings,
+  onUpdate,
+}: {
+  settings: DayHeaderSectionSettings;
+  onUpdate: (u: Partial<DayHeaderSectionSettings>) => void;
+}) {
+  return (
+    <>
+      <ToggleRow label="Phases" checked={settings.showPhases} onChange={(v) => onUpdate({ showPhases: v })} />
+      <ToggleRow label="Crew Count" checked={settings.showCrewCount} onChange={(v) => onUpdate({ showCrewCount: v })} />
     </>
   );
 }

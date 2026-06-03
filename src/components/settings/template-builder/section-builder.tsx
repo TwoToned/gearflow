@@ -44,6 +44,8 @@ import {
   getDefaultSignatureSettings,
   getDefaultCustomTextSettings,
   getDefaultCrewTableSettings,
+  getDefaultCallSheetInfoSettings,
+  getDefaultDayHeaderSettings,
 } from "@/lib/pdfme/section-types";
 import {
   saveTemplateSections,
@@ -466,6 +468,10 @@ function getDefaultSettingsForType(type: SectionType): SectionSettings {
       return getDefaultCustomTextSettings();
     case "crew-table":
       return getDefaultCrewTableSettings();
+    case "call-sheet-info":
+      return getDefaultCallSheetInfoSettings();
+    case "day-header":
+      return getDefaultDayHeaderSettings();
     case "spacer":
       return { height: 10 };
     case "page-break":

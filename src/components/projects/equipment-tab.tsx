@@ -76,6 +76,8 @@ import { MoveLineItemDialog } from "./move-line-item-dialog";
 import { EditGroupDialog } from "./edit-group-dialog";
 import { DeleteGroupDialog } from "./delete-group-dialog";
 import { SaveAsTemplateDialog } from "./save-as-template-dialog";
+import { AddCategoryDialog } from "./add-category-dialog";
+import { RenameCategoryDialog } from "./rename-category-dialog";
 import { SubHireOrderDialog } from "./sub-hire-order-dialog";
 import { getSubHires } from "@/server/sub-hires";
 import { subHireStatusLabels, formatLabel } from "@/lib/status-labels";
@@ -148,7 +150,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   const colCount = COL_COUNT + (showCostColumn ? 1 : 0);
 
   const [showAddCategory, setShowAddCategory] = useState(false);
-  const [newCategoryName, setNewCategoryName] = useState("");
 
   // Unified add dialog state (own-stock / kit / sub-hire / custom)
   const [showUnifiedAdd, setShowUnifiedAdd] = useState(false);
@@ -335,7 +336,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     onSuccess: () => {
       invalidate();
       setShowAddCategory(false);
-      setNewCategoryName("");
       toast.success("Category created");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -1325,79 +1325,20 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
       {/* ─── Dialogs ────────────────────────────────────────────────────────── */}
 
       {/* Add category dialog */}
-      <Dialog open={showAddCategory} onOpenChange={setShowAddCategory}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>New category</DialogTitle>
-            <DialogDescription>
-              Categories organize equipment into sections (e.g. RF, IEM, PA).
-            </DialogDescription>
-          </DialogHeader>
-          <Input
-            placeholder="Category name"
-            value={newCategoryName}
-            onChange={(e) => setNewCategoryName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && newCategoryName.trim()) {
-                createCategoryMut.mutate(newCategoryName.trim());
-              }
-            }}
-            autoFocus
-          />
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowAddCategory(false);
-                setNewCategoryName("");
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => createCategoryMut.mutate(newCategoryName.trim())}
-              disabled={!newCategoryName.trim() || createCategoryMut.isPending}
-            >
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AddCategoryDialog
+        open={showAddCategory}
+        isPending={createCategoryMut.isPending}
+        onOpenChange={setShowAddCategory}
+        onSubmit={(name) => createCategoryMut.mutate(name)}
+      />
 
-      {/* Rename category dialog */}
-      <Dialog open={renameCategoryId != null} onOpenChange={(open) => { if (!open) setRenameCategoryId(null); }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Rename category</DialogTitle>
-          </DialogHeader>
-          <Input
-            placeholder="Category name"
-            value={renameCategoryValue}
-            onChange={(e) => setRenameCategoryValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && renameCategoryValue.trim() && renameCategoryId) {
-                renameCategoryMut.mutate({ id: renameCategoryId, name: renameCategoryValue.trim() });
-              }
-            }}
-            autoFocus
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRenameCategoryId(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (renameCategoryId && renameCategoryValue.trim()) {
-                  renameCategoryMut.mutate({ id: renameCategoryId, name: renameCategoryValue.trim() });
-                }
-              }}
-              disabled={!renameCategoryValue.trim() || renameCategoryMut.isPending}
-            >
-              Rename
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <RenameCategoryDialog
+        categoryId={renameCategoryId}
+        initialValue={renameCategoryValue}
+        isPending={renameCategoryMut.isPending}
+        onClose={() => setRenameCategoryId(null)}
+        onSubmit={(id, name) => renameCategoryMut.mutate({ id, name })}
+      />
 
       {/* Save group as template dialog */}
       <SaveAsTemplateDialog

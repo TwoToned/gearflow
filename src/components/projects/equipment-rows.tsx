@@ -343,6 +343,7 @@ export function GroupRow({
   isExpanded,
   indented,
   isRejectedDropTarget,
+  showCostColumn,
   onToggle,
   onDelete,
   onEdit,
@@ -358,6 +359,9 @@ export function GroupRow({
   /** Drop Matrix 8C — render the disallowed-drop rejection bar when a
    *  drag of an incompatible source is currently hovering this row. */
   isRejectedDropTarget?: boolean;
+  /** 8H — render the Cost column cell. Project groups don't have a
+   *  separate cost concept, so the cell renders an em-dash. */
+  showCostColumn?: boolean;
   onToggle: () => void;
   onDelete: () => void;
   onEdit: () => void;
@@ -426,6 +430,11 @@ export function GroupRow({
       <TableCell className="text-center hidden lg:table-cell t-data">
         {group.rentalQuantity ?? "--"}
       </TableCell>
+      {showCostColumn && (
+        <TableCell className="text-right hidden md:table-cell t-data text-fg-3">
+          —
+        </TableCell>
+      )}
       <TableCell className="text-right font-medium hidden sm:table-cell t-data">
         {priceVal != null ? formatCurrency(priceVal * group.quantity) : "--"}
       </TableCell>
@@ -498,6 +507,7 @@ export function SubHireGroupRow({
   isExpanded,
   indented,
   isRejectedDropTarget,
+  showCostColumn,
   onToggle,
   onEdit,
   onEditPrice,
@@ -510,6 +520,8 @@ export function SubHireGroupRow({
    *  of a disallowed drag. Renders a 2px red left edge + not-allowed
    *  cursor as the visual cue. */
   isRejectedDropTarget?: boolean;
+  /** 8H — render the Cost column cell showing the supplier cost. */
+  showCostColumn?: boolean;
   onToggle: () => void;
   /** Open the existing SubHireOrderDialog for this group's parent sub-hire. */
   onEdit: () => void;
@@ -593,6 +605,11 @@ export function SubHireGroupRow({
         {charge != null ? formatCurrency(charge) : "--"}
       </TableCell>
       <TableCell className="text-center hidden lg:table-cell t-data">--</TableCell>
+      {showCostColumn && (
+        <TableCell className="text-right hidden md:table-cell t-data">
+          {cost != null ? formatCurrency(cost) : "--"}
+        </TableCell>
+      )}
       <TableCell className="text-right font-medium hidden sm:table-cell t-data">
         {charge != null ? formatCurrency(charge * group.quantity) : "--"}
       </TableCell>
@@ -701,6 +718,7 @@ export function LineItemRow({
   overbookedInfo,
   isUnconfirmed,
   isExpanded,
+  showCostColumn,
   onToggle,
   onEdit,
   onMove,
@@ -711,6 +729,9 @@ export function LineItemRow({
   overbookedInfo?: OverbookedInfo | null;
   isUnconfirmed?: boolean;
   isExpanded?: boolean;
+  /** 8H — render the Cost column cell. Standalone line items don't carry
+   *  a supplier-cost concept, so the cell renders an em-dash. */
+  showCostColumn?: boolean;
   onToggle?: () => void;
   onEdit: () => void;
   onMove: () => void;
@@ -865,6 +886,11 @@ export function LineItemRow({
           <p className="text-[11px] text-green-500">-{formatCurrency(Number(item.discount))} disc.</p>
         )}
       </TableCell>
+      {showCostColumn && (
+        <TableCell className="text-right hidden md:table-cell t-data text-fg-3">
+          —
+        </TableCell>
+      )}
       <TableCell className="text-right font-medium hidden sm:table-cell t-data">
         {formatCurrency(item.lineTotal != null ? Number(item.lineTotal) : null)}
       </TableCell>

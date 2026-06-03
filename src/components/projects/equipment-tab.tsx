@@ -119,6 +119,30 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   // both project groups and sub-hire groups).
   const [priceEditTarget, setPriceEditTarget] = useState<PriceEditTarget | null>(null);
 
+  // 8H — "Show margin" toggle reveals a Cost column. Persisted to
+  // localStorage so each user keeps the column they prefer. Default OFF.
+  const SHOW_COST_KEY = "gearflow-projects-show-cost";
+  const [showCostColumn, setShowCostColumn] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return localStorage.getItem(SHOW_COST_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
+  const toggleShowCostColumn = useCallback(() => {
+    setShowCostColumn((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(SHOW_COST_KEY, String(next));
+      } catch {
+        // ignore — localStorage may be disabled
+      }
+      return next;
+    });
+  }, []);
+  const colCount = COL_COUNT + (showCostColumn ? 1 : 0);
+
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
 
@@ -825,6 +849,15 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
         </Button>
         <div className="flex-1" />
         <Button
+          variant={showCostColumn ? "default" : "outline"}
+          size="sm"
+          className="gap-1.5"
+          onClick={toggleShowCostColumn}
+          title="Toggle the supplier-cost column so margin is visible at a glance"
+        >
+          {showCostColumn ? "Hide margin" : "Show margin"}
+        </Button>
+        <Button
           variant="outline"
           size="sm"
           className="gap-1.5"
@@ -855,6 +888,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
               <col className="w-16" />
               <col className="w-28 hidden md:table-column" />
               <col className="w-20 hidden lg:table-column" />
+              {showCostColumn && <col className="w-24 hidden md:table-column" />}
               <col className="w-28 hidden sm:table-column" />
               <col className="w-20" />
             </colgroup>
@@ -864,6 +898,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
               <TableHead>Item</TableHead>
               <TableHead className="text-center">Qty</TableHead>
               <TableHead className="text-right hidden md:table-cell">Unit Price</TableHead>
+              {showCostColumn && (
+                <TableHead className="text-right hidden md:table-cell">Cost</TableHead>
+              )}
               <TableHead className="text-right hidden sm:table-cell">Total</TableHead>
               <TableHead />
             </TableRow>
@@ -918,6 +955,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                 group={shGroup}
                                 isExpanded={isExpanded}
                                 isRejectedDropTarget={rejectedDropTargetId === `shg-${shGroup.id}`}
+                                showCostColumn={showCostColumn}
                                 indented
                                 onToggle={() => toggleGroup(shGroup.id)}
                                 onEdit={() => {
@@ -936,7 +974,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                               />
                               {isExpanded && childItems.length === 0 && (
                                 <TableRow className="hover:bg-transparent">
-                                  <TableCell colSpan={COL_COUNT} className="py-3 text-center text-xs text-fg-4">
+                                  <TableCell colSpan={colCount} className="py-3 text-center text-xs text-fg-4">
                                     No items in this sub-hire group yet.
                                   </TableCell>
                                 </TableRow>
@@ -948,6 +986,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                   indent="ml-12"
                                   overbookedInfo={undefined}
                                   isUnconfirmed={!!shGroup.subHire && draftSubHireIds.has(shGroup.subHire.id)}
+                                  showCostColumn={showCostColumn}
                                   isExpanded={expandedParents.has(item.id)}
                                   onToggle={() => toggleParent(item.id)}
                                   onEdit={() => {
@@ -976,6 +1015,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                               isExpanded={isExpanded}
                               indented
                               isRejectedDropTarget={rejectedDropTargetId === `grp-${group.id}`}
+                              showCostColumn={showCostColumn}
                               onToggle={() => toggleGroup(group.id)}
                               onDelete={() => {
                                 setDeleteGroupId(group.id);
@@ -1034,7 +1074,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                             {/* Expanded line items */}
                             {isExpanded && groupItems.length === 0 && (
                               <TableRow className="hover:bg-transparent">
-                                <TableCell colSpan={COL_COUNT} className="py-3 text-center text-xs text-fg-4">
+                                <TableCell colSpan={colCount} className="py-3 text-center text-xs text-fg-4">
                                   No items in this group yet. Add equipment to get started.
                                 </TableCell>
                               </TableRow>
@@ -1046,6 +1086,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                 indent="ml-12"
                                 overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                                 isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
+                                showCostColumn={showCostColumn}
                                 isExpanded={expandedParents.has(item.id)}
                                 onToggle={() => toggleParent(item.id)}
                                 onEdit={() => openEditLineItem(item)}
@@ -1065,6 +1106,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                           indent="ml-3"
                           overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                           isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
+                          showCostColumn={showCostColumn}
                           isExpanded={expandedParents.has(item.id)}
                           onToggle={() => toggleParent(item.id)}
                           onEdit={() => openEditLineItem(item)}
@@ -1079,7 +1121,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                 {/* Uncategorized items */}
                 {hasCategories && hasUncategorized && (
                   <TableRow className="bg-bg-inset/30">
-                    <TableCell colSpan={COL_COUNT} className="py-2 px-1">
+                    <TableCell colSpan={colCount} className="py-2 px-1">
                       <div className="flex items-center gap-1.5">
                         <div className="w-6" />
                         <h3 className="text-sm font-semibold text-fg-4">Uncategorized</h3>
@@ -1094,6 +1136,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                     indent=""
                     overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                     isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
+                    showCostColumn={showCostColumn}
                     isExpanded={expandedParents.has(item.id)}
                     onToggle={() => toggleParent(item.id)}
                     onEdit={() => openEditLineItem(item)}
@@ -1113,6 +1156,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                         group={shGroup}
                         isExpanded={isExpanded}
                         isRejectedDropTarget={rejectedDropTargetId === `shg-${shGroup.id}`}
+                        showCostColumn={showCostColumn}
                         onToggle={() => toggleGroup(shGroup.id)}
                         onEdit={() => {
                           setManagingSubHireId(shGroup.subHire.id);
@@ -1130,7 +1174,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                       />
                       {isExpanded && childItems.length === 0 && (
                         <TableRow className="hover:bg-transparent">
-                          <TableCell colSpan={COL_COUNT} className="py-3 text-center text-xs text-fg-4">
+                          <TableCell colSpan={colCount} className="py-3 text-center text-xs text-fg-4">
                             No items in this sub-hire group yet.
                           </TableCell>
                         </TableRow>
@@ -1142,6 +1186,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                           indent="ml-8"
                           overbookedInfo={undefined}
                           isUnconfirmed={!!shGroup.subHire && draftSubHireIds.has(shGroup.subHire.id)}
+                          showCostColumn={showCostColumn}
                           isExpanded={expandedParents.has(item.id)}
                           onToggle={() => toggleParent(item.id)}
                           onEdit={() => {

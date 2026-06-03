@@ -204,13 +204,17 @@ Unification (next branch, see [user-flagged] note below).
 
 ## Project Asset Management UX
 
-### Cross-Type Group/Category Unification — ✅ PLANNED (autoplan 2026-06-03)
+### ~~Cross-Type Group/Category Unification~~ ✅ SHIPPED
+Shipped in v0.9.0.0. Approach B as planned: `CategorySlot` table owns cross-type
+sort order, `SubHireGroup.targetCategoryId` repurposed for placement,
+`UnifiedAddDialog` replaces four separate per-kind dialogs, `SubHireGroupRow`
+renders sub-hire groups as first-class table rows, `PriceEditDialog` covers both
+group kinds, cross-type DnD with Drop Matrix 8C rejection, per-row keyboard
+shortcuts e/m/d, show-margin Cost column toggle, inline "Create category"
+from the Move dialog. Test gates S1, S2, S7, S8, S9, S10, S11, S15 all green
+(1974 unit + 235 integration tests pass).
 Plan at [~/.gstack/projects/TwoToned-gearflow/jayden-main-plan-20260603-164457.md].
-Test plan at [~/.gstack/projects/TwoToned-gearflow/jayden-main-test-plan-20260603-164457.md].
-Revised estimate: human ~3-4 weeks / CC ~3-4 days (not hours).
-Approach B: UI primitives extraction + CategorySlot ordering table + use existing
-`SubHireGroup.targetCategoryId` (already in schema, NOT a new field).
-Mode: SELECTIVE EXPANSION. P1.
+Full feature doc: [FEATUREDOCS/47-cross-type-equipment-unification.md].
 
 ### Multi-Select Drag (broken out from Cross-Type Unification scope)
 **What:** Drag-select multiple line items in the project equipment table and move them between groups/categories in one action. Cmd/Shift-click adds rows to a persistent selection; the cursor shows a count badge during drag; on disallowed-target drops, a partial-reject toast lists which rows succeeded vs failed.

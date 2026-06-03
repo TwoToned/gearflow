@@ -37,6 +37,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/formatters";
+import { useRowShortcuts } from "./use-row-shortcuts";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -380,6 +381,7 @@ export function GroupRow({
   const rejectionClasses = isRejectedDropTarget
     ? "border-l-2 border-l-red-500 cursor-not-allowed"
     : "";
+  const shortcuts = useRowShortcuts({ e: onEdit, d: onDelete });
 
   return (
     <TableRow
@@ -387,6 +389,7 @@ export function GroupRow({
       style={style}
       data-rejected-drop={isRejectedDropTarget ? "true" : undefined}
       className={`group/row ${isDragging ? "opacity-30" : ""} ${rejectionClasses}`}
+      {...shortcuts}
     >
       <TableCell className="px-0">
         <div className={`flex justify-end ${indented ? "ml-3" : "px-1"}`}>
@@ -533,6 +536,7 @@ export function SubHireGroupRow({
   const rejectionClasses = isRejectedDropTarget
     ? "border-l-2 border-l-red-500 cursor-not-allowed"
     : "";
+  const shortcuts = useRowShortcuts({ e: onEdit, m: onMove });
 
   return (
     <TableRow
@@ -540,6 +544,7 @@ export function SubHireGroupRow({
       style={style}
       data-rejected-drop={isRejectedDropTarget ? "true" : undefined}
       className={`group/row ${isDragging ? "opacity-30" : ""} ${rejectionClasses}`}
+      {...shortcuts}
     >
       <TableCell className="px-0">
         <div className={`flex justify-end ${indented ? "ml-3" : "px-1"}`}>
@@ -728,9 +733,11 @@ export function LineItemRow({
   // Deeper indent for child rows
   const childIndent = indent === "ml-12" ? "ml-16" : indent === "ml-3" ? "ml-8" : "ml-6";
 
+  const shortcuts = useRowShortcuts({ e: onEdit, m: onMove, d: onRemove });
+
   return (
     <>
-    <TableRow ref={setNodeRef} style={style} className={isDragging ? "opacity-30" : ""}>
+    <TableRow ref={setNodeRef} style={style} className={isDragging ? "opacity-30" : ""} {...shortcuts}>
       <TableCell className="px-0">
         <div className={`flex justify-end ${gripIndent || "px-1"}`}>
           <button

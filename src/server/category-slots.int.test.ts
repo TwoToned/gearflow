@@ -380,3 +380,91 @@ describe("reorderMixedGroupsInCategory — basic sort write", () => {
     expect(slots[1].sortOrder).toBe(1);
   });
 });
+
+// ── S15 — inline create-category-and-place ──────────────────────────────────
+
+describe("S15 — createCategoryAndPlaceGroup atomic create + place", () => {
+  beforeEach(async () => {
+    await setupIntegrationTest();
+  });
+  afterAll(async () => {
+    await testPrisma.$disconnect();
+  });
+
+  it("creates the category at the end of the project's category list (8E.c)", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id, "owner");
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+    const supplier = await createSupplierFixture(org.id);
+    const project = await createProjectFixture(org.id);
+    await createCategoryFixture(org.id, project.id, "First", 0);
+    await createCategoryFixture(org.id, project.id, "Second", 1);
+    const subHire = await createSubHireFixture(org.id, supplier.id, user.id, project.id);
+    const shg = await createSubHireGroupFixture(subHire.id, { targetCategoryId: null });
+
+    await createCategoryAndPlaceGroup({
+      projectId: project.id,
+      name: "Inline-created",
+      slot: { subHireGroupId: shg.id },
+    });
+
+    const cats = await testPrisma.projectCategory.findMany({
+      where: { projectId: project.id },
+      orderBy: { sortOrder: "asc" },
+    });
+    expect(cats.map((c) => c.name)).toEqual(["First", "Second", "Inline-created"]);
+    expect(cats[cats.length - 1].sortOrder).toBe(2);
+  });
+
+  it("places the sub-hire group inside the new category atomically (all-or-nothing)", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id, "owner");
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+    const supplier = await createSupplierFixture(org.id);
+    const project = await createProjectFixture(org.id);
+    const subHire = await createSubHireFixture(org.id, supplier.id, user.id, project.id);
+    const shg = await createSubHireGroupFixture(subHire.id, { targetCategoryId: null });
+
+    await createCategoryAndPlaceGroup({
+      projectId: project.id,
+      name: "Audio",
+      slot: { subHireGroupId: shg.id },
+    });
+
+    const cat = await testPrisma.projectCategory.findFirstOrThrow({
+      where: { projectId: project.id, name: "Audio" },
+    });
+    const groupAfter = await testPrisma.subHireGroup.findUniqueOrThrow({ where: { id: shg.id } });
+    expect(groupAfter.targetCategoryId).toBe(cat.id);
+    const slot = await testPrisma.categorySlot.findFirstOrThrow({
+      where: { subHireGroupId: shg.id },
+    });
+    expect(slot.projectCategoryId).toBe(cat.id);
+    expect(slot.sortOrder).toBe(0);
+  });
+
+  it("places a project group via the same atomic path", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id, "owner");
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+    const project = await createProjectFixture(org.id);
+    const sourceCat = await createCategoryFixture(org.id, project.id, "Source", 0);
+    const pg = await createGroupFixture(org.id, project.id, sourceCat.id);
+
+    await createCategoryAndPlaceGroup({
+      projectId: project.id,
+      name: "New",
+      slot: { projectGroupId: pg.id },
+    });
+
+    const newCat = await testPrisma.projectCategory.findFirstOrThrow({
+      where: { projectId: project.id, name: "New" },
+    });
+    const pgAfter = await testPrisma.projectGroup.findUniqueOrThrow({ where: { id: pg.id } });
+    expect(pgAfter.categoryId).toBe(newCat.id);
+    const slot = await testPrisma.categorySlot.findFirstOrThrow({
+      where: { projectGroupId: pg.id },
+    });
+    expect(slot.projectCategoryId).toBe(newCat.id);
+  });
+});

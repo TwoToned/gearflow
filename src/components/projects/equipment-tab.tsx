@@ -1901,6 +1901,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
         }}
         groupId={moveSubHireGroup?.id ?? null}
         groupTitle={moveSubHireGroup?.title}
+        projectId={projectId}
         categories={(categories as CategoryData[]).map((c) => ({ id: c.id, name: c.name }))}
         onInvalidate={invalidate}
       />

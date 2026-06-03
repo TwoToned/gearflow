@@ -5,10 +5,11 @@
  * (or "Uncategorised") for a sub-hire group and routes to the Phase 5a
  * moveSubHireGroupToCategory server action.
  *
- * Mirrors the kebab "Move" action that LineItemRow / GroupRow already
- * surface, so the kebab on a sub-hire group row points at a real flow
- * instead of a stub. Used by Phase 6b to complete the symmetric kebab
- * promise from the cross-type unification plan.
+ * The destination picker is a ComboboxPicker rather than a plain Select
+ * so the user can type a not-yet-existing category name and hit Enter
+ * to trigger Section 8E.b: createCategoryAndPlaceGroup runs atomically
+ * (new category + slot placement + sync of the synthetic parent line
+ * item) and the dialog closes. Implements test plan item S15.
  */
 
 import { useState } from "react";
@@ -16,7 +17,10 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { moveSubHireGroupToCategory } from "@/server/category-slots";
+import {
+  moveSubHireGroupToCategory,
+  createCategoryAndPlaceGroup,
+} from "@/server/category-slots";
 import {
   Dialog,
   DialogContent,
@@ -26,13 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { ComboboxPicker } from "@/components/ui/combobox-picker";
 
 interface CategoryOption {
   id: string;
@@ -46,6 +44,9 @@ interface MoveSubHireGroupDialogProps {
   groupId: string | null;
   /** Currently rendered title of the group (for the dialog header). */
   groupTitle?: string;
+  /** Owning project id — needed for the "create category" branch so the
+   *  new category is scoped to this project. */
+  projectId: string;
   /** Project's categories — the destination picker offers these plus
    *  "Uncategorised". */
   categories: CategoryOption[];
@@ -71,13 +72,20 @@ function MoveSubHireGroupDialogBody({
   onOpenChange,
   groupId,
   groupTitle,
+  projectId,
   categories,
   onInvalidate,
 }: MoveSubHireGroupDialogProps) {
   const queryClient = useQueryClient();
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>(UNCATEGORISED_VALUE);
 
-  const mutation = useMutation({
+  function refreshCaches() {
+    onInvalidate();
+    queryClient.invalidateQueries({ queryKey: ["project-categories"] });
+    queryClient.invalidateQueries({ queryKey: ["uncategorized-subhire-groups"] });
+  }
+
+  const moveMut = useMutation({
     mutationFn: async () => {
       if (!groupId) throw new Error("No sub-hire group selected");
       const categoryId =
@@ -85,9 +93,7 @@ function MoveSubHireGroupDialogBody({
       return moveSubHireGroupToCategory({ groupId, categoryId });
     },
     onSuccess: () => {
-      onInvalidate();
-      queryClient.invalidateQueries({ queryKey: ["project-categories"] });
-      queryClient.invalidateQueries({ queryKey: ["uncategorized-subhire-groups"] });
+      refreshCaches();
       toast.success(
         selectedCategoryId === UNCATEGORISED_VALUE
           ? "Moved sub-hire group to uncategorised"
@@ -98,10 +104,41 @@ function MoveSubHireGroupDialogBody({
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const selectedLabel =
-    selectedCategoryId === UNCATEGORISED_VALUE
-      ? "Uncategorised"
-      : categories.find((c) => c.id === selectedCategoryId)?.name ?? "Uncategorised";
+  const createMut = useMutation({
+    mutationFn: async (name: string) => {
+      if (!groupId) throw new Error("No sub-hire group selected");
+      return createCategoryAndPlaceGroup({
+        projectId,
+        name,
+        slot: { subHireGroupId: groupId },
+      });
+    },
+    onSuccess: (created) => {
+      refreshCaches();
+      // The action creates + places atomically, so we're done — close
+      // the dialog. The new category lives at the end of the project's
+      // category list per 8E.c.
+      toast.success(`Created category "${(created as { name: string }).name}" and moved sub-hire group`);
+      onOpenChange(false);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  function handlePickValue(value: string) {
+    // The picker only emits ids from its options list — the "Use '<name>'"
+    // footer branch routes through handleCreate via the ComboboxPicker's
+    // creatable + onChange semantics. If somehow a non-id falls through,
+    // treat it as a create intent.
+    const matched = categories.find((c) => c.id === value);
+    if (matched || value === UNCATEGORISED_VALUE) {
+      setSelectedCategoryId(value);
+      return;
+    }
+    // Fall-through: treat as create-by-name.
+    createMut.mutate(value);
+  }
+
+  const isPending = moveMut.isPending || createMut.isPending;
 
   return (
     <>
@@ -113,21 +150,22 @@ function MoveSubHireGroupDialogBody({
       <div className="space-y-4 py-2">
         <div className="space-y-2">
           <Label>Destination category</Label>
-          <Select value={selectedCategoryId} onValueChange={(v) => setSelectedCategoryId(v ?? UNCATEGORISED_VALUE)}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select a category">
-                {selectedLabel}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={UNCATEGORISED_VALUE}>Uncategorised</SelectItem>
-              {categories.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <ComboboxPicker
+            value={selectedCategoryId}
+            onChange={handlePickValue}
+            options={[
+              { value: UNCATEGORISED_VALUE, label: "Uncategorised" },
+              ...categories.map((c) => ({ value: c.id, label: c.name })),
+            ]}
+            placeholder="Select or type to create"
+            searchPlaceholder="Search categories or type a new name..."
+            emptyMessage="No matching category."
+            creatable
+          />
+          <p className="text-xs text-fg-3">
+            Type a new name and press Enter to create the category and move
+            this group into it.
+          </p>
         </div>
       </div>
       <DialogFooter>
@@ -135,10 +173,10 @@ function MoveSubHireGroupDialogBody({
           Cancel
         </Button>
         <Button
-          onClick={() => mutation.mutate()}
-          disabled={mutation.isPending || !groupId}
+          onClick={() => moveMut.mutate()}
+          disabled={isPending || !groupId}
         >
-          {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Move
         </Button>
       </DialogFooter>

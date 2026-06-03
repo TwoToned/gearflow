@@ -1098,6 +1098,78 @@ describe("getFilteredParentItems", () => {
     const result = getFilteredParentItems(data, "delivery-docket");
     expect(result).toHaveLength(0);
   });
+
+  it("delivery-docket: group row passes filter if ANY attached child is CHECKED_OUT", () => {
+    // Regression: synthetic group rows have status CONFIRMED (they're
+    // labels, not real items). Without special-casing isGroupRow, the
+    // status filter would drop the parent — and with it, every group
+    // member — from delivery dockets. The fix lets the group row pass
+    // through if at least one child meets the filter criteria.
+    const groupWithCheckedOutChild = makeLineItem({
+      id: "g1",
+      status: "CONFIRMED",
+      isGroupRow: true,
+      childLineItems: [
+        makeLineItem({ id: "g1-c1", status: "CHECKED_OUT" }),
+        makeLineItem({ id: "g1-c2", status: "CONFIRMED" }),
+      ],
+    });
+    const groupWithNoCheckedOut = makeLineItem({
+      id: "g2",
+      status: "CONFIRMED",
+      isGroupRow: true,
+      childLineItems: [
+        makeLineItem({ id: "g2-c1", status: "CONFIRMED" }),
+      ],
+    });
+    const data = makeData({
+      line_items: [groupWithCheckedOutChild, groupWithNoCheckedOut],
+    });
+    const result = getFilteredParentItems(data, "delivery-docket");
+    // g1 passes (one CHECKED_OUT child), g2 doesn't (none).
+    expect(result.map(i => i.id)).toEqual(["g1"]);
+  });
+
+  it("return-sheet: group row passes if ANY child is CHECKED_OUT or RETURNED", () => {
+    const data = makeData({
+      line_items: [
+        makeLineItem({
+          id: "g1", status: "CONFIRMED", isGroupRow: true,
+          childLineItems: [makeLineItem({ id: "c", status: "RETURNED" })],
+        }),
+      ],
+    });
+    const result = getFilteredParentItems(data, "return-sheet");
+    expect(result.map(i => i.id)).toEqual(["g1"]);
+  });
+
+  it("delivery-docket: group row with bulk child uses checkedOutQuantity", () => {
+    // Group whose only child is a bulk line with partial checkout.
+    const data = makeData({
+      line_items: [
+        makeLineItem({
+          id: "g1", status: "CONFIRMED", isGroupRow: true,
+          childLineItems: [
+            makeLineItem({
+              id: "bulk-c", status: "CONFIRMED",
+              quantity: 5, checkedOutQuantity: 2, bulkAssetId: "b1",
+            }),
+          ],
+        }),
+        makeLineItem({
+          id: "g2", status: "CONFIRMED", isGroupRow: true,
+          childLineItems: [
+            makeLineItem({
+              id: "bulk-untouched", status: "CONFIRMED",
+              quantity: 5, checkedOutQuantity: 0, bulkAssetId: "b2",
+            }),
+          ],
+        }),
+      ],
+    });
+    const result = getFilteredParentItems(data, "delivery-docket");
+    expect(result.map(i => i.id)).toEqual(["g1"]);
+  });
 });
 
 // ─── docType integration ──────────────────────────────────────────────────────

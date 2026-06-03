@@ -73,6 +73,7 @@ import { UnifiedAddDialog, type UnifiedAddKind } from "./unified-add-dialog";
 import { MoveSubHireGroupDialog } from "./move-sub-hire-group-dialog";
 import { PriceEditDialog, type PriceEditTarget } from "./price-edit-dialog";
 import { MoveLineItemDialog } from "./move-line-item-dialog";
+import { EditGroupDialog } from "./edit-group-dialog";
 import { SubHireOrderDialog } from "./sub-hire-order-dialog";
 import { getSubHires } from "@/server/sub-hires";
 import { subHireStatusLabels, formatLabel } from "@/lib/status-labels";
@@ -208,14 +209,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   const [editOverbookConfirmed, setEditOverbookConfirmed] = useState(false);
 
   // Group edit dialog state
+  // EditGroupDialog target — body owns its own form state, keyed by group.id.
   const [editGroupData, setEditGroupData] = useState<GroupData | null>(null);
-  const [editGroupTitle, setEditGroupTitle] = useState("");
-  const [editGroupDescription, setEditGroupDescription] = useState("");
-  const [editGroupQuantity, setEditGroupQuantity] = useState("1");
-  const [editGroupBillingMonths, setEditGroupBillingMonths] = useState("");
-  const [editGroupBillingWeeks, setEditGroupBillingWeeks] = useState("");
-  const [editGroupBillingDays, setEditGroupBillingDays] = useState("");
-  const [editGroupPrice, setEditGroupPrice] = useState("");
 
   // Category rename state
   const [renameCategoryId, setRenameCategoryId] = useState<string | null>(null);
@@ -1026,16 +1021,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                   itemCount: groupItems.length,
                                 });
                               }}
-                              onEdit={() => {
-                                setEditGroupData(group);
-                                setEditGroupTitle(group.title);
-                                setEditGroupDescription(group.description ?? "");
-                                setEditGroupQuantity(String(group.quantity));
-                                setEditGroupBillingMonths(group.billingMonths != null ? String(group.billingMonths) : "");
-                                setEditGroupBillingWeeks(group.billingWeeks != null ? String(group.billingWeeks) : "");
-                                setEditGroupBillingDays(group.billingDays != null ? String(group.billingDays) : "");
-                                setEditGroupPrice(priceVal != null ? String(priceVal) : "");
-                              }}
+                              onEdit={() => setEditGroupData(group)}
                               onEditPrice={() => setPriceEditTarget({
                                 kind: "project",
                                 groupId: group.id,
@@ -1909,136 +1895,20 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
         subHireId={managingSubHireId}
       />
 
-      {/* Edit group dialog */}
-      <Dialog
-        open={editGroupData != null}
-        onOpenChange={(open) => {
-          if (!open) setEditGroupData(null);
+      {/* Edit group dialog (Phase 7 — extracted) */}
+      <EditGroupDialog
+        group={editGroupData}
+        isPending={updateGroupMut.isPending}
+        onClose={() => setEditGroupData(null)}
+        onSubmit={(groupId, values, price) => {
+          updateGroupMut.mutate({ groupId, data: values });
+          if (price !== undefined) {
+            updateGroupPrice(groupId, price)
+              .then(() => invalidate())
+              .catch((e: Error) => toast.error(e.message));
+          }
         }}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Edit Group</DialogTitle>
-            <DialogDescription>
-              Update the group&apos;s title, description, and quantity.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Title</Label>
-              <Input
-                value={editGroupTitle}
-                onChange={(e) => setEditGroupTitle(e.target.value)}
-                placeholder="Group title"
-                autoFocus
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Description</Label>
-              <Textarea
-                value={editGroupDescription}
-                onChange={(e) => setEditGroupDescription(e.target.value)}
-                placeholder="Optional description..."
-                rows={3}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Quantity</Label>
-              <Input
-                type="number"
-                min="1"
-                value={editGroupQuantity}
-                onChange={(e) => setEditGroupQuantity(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Price</Label>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={editGroupPrice}
-                onChange={(e) => setEditGroupPrice(e.target.value)}
-                placeholder="Leave blank for no price"
-              />
-              {editGroupData?.suggestedPrice != null && (
-                <button
-                  type="button"
-                  className="text-xs text-fg-3 hover:text-fg transition-colors"
-                  onClick={() => setEditGroupPrice(String(Number(editGroupData.suggestedPrice)))}
-                >
-                  Suggested: {formatCurrency(Number(editGroupData.suggestedPrice))}
-                </button>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label className="text-muted-foreground text-xs">Billing Override (leave blank to use project defaults)</Label>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="space-y-1">
-                  <Label>Months</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={editGroupBillingMonths}
-                    onChange={(e) => setEditGroupBillingMonths(e.target.value)}
-                    placeholder="—"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label>Weeks</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={editGroupBillingWeeks}
-                    onChange={(e) => setEditGroupBillingWeeks(e.target.value)}
-                    placeholder="—"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label>Days</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={editGroupBillingDays}
-                    onChange={(e) => setEditGroupBillingDays(e.target.value)}
-                    placeholder="—"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditGroupData(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (editGroupData && editGroupTitle.trim()) {
-                  updateGroupMut.mutate({
-                    groupId: editGroupData.id,
-                    data: {
-                      title: editGroupTitle.trim(),
-                      description: editGroupDescription.trim() || undefined,
-                      quantity: parseInt(editGroupQuantity) || 1,
-                      billingMonths: editGroupBillingMonths !== "" ? parseInt(editGroupBillingMonths) : undefined,
-                      billingWeeks: editGroupBillingWeeks !== "" ? parseInt(editGroupBillingWeeks) : undefined,
-                      billingDays: editGroupBillingDays !== "" ? parseInt(editGroupBillingDays) : undefined,
-                    },
-                  });
-                  if (editGroupPrice !== "") {
-                    updateGroupPrice(editGroupData.id, parseFloat(editGroupPrice) || 0)
-                      .then(() => invalidate())
-                      .catch((e: Error) => toast.error(e.message));
-                  }
-                }
-              }}
-              disabled={!editGroupTitle.trim() || updateGroupMut.isPending}
-            >
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      />
     </div>
   );
 }

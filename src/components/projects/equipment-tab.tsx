@@ -10,6 +10,7 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragOverEvent,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -82,6 +83,7 @@ import {
   CategoryRow,
   LineItemRow,
   SubHireGroupRow,
+  getDisallowedDropReason,
   type LineItemData,
   type GroupData,
   type CategoryData,
@@ -102,6 +104,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+
+  // The sortable ID currently being hovered with a disallowed drop (Drop
+  // Matrix 8C). Cleared on drag end / leave. Row components read this to
+  // render the red left-edge rejection bar + not-allowed cursor.
+  const [rejectedDropTargetId, setRejectedDropTargetId] = useState<string | null>(null);
 
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -502,12 +509,32 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     return "unknown";
   }
 
+  function handleDragOver(event: DragOverEvent) {
+    const { active, over } = event;
+    if (!over) {
+      if (rejectedDropTargetId !== null) setRejectedDropTargetId(null);
+      return;
+    }
+    const reason = getDisallowedDropReason(String(active.id), String(over.id));
+    const next = reason ? String(over.id) : null;
+    if (next !== rejectedDropTargetId) setRejectedDropTargetId(next);
+  }
+
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
+    setRejectedDropTargetId(null);
     if (!over || active.id === over.id) return;
 
     const activeId = String(active.id);
     const overId = String(over.id);
+
+    // Drop Matrix 8C — reject disallowed combinations with an explanatory
+    // toast before any mutation runs.
+    const disallowedReason = getDisallowedDropReason(activeId, overId);
+    if (disallowedReason) {
+      toast.error(disallowedReason);
+      return;
+    }
 
     // Cross-category sub-hire group move (Phase 5d.b — Drop Matrix 8C row
     // "SubHireGroup → ProjectCategory" allowed). Fires before the
@@ -848,7 +875,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
+            onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}
+            onDragCancel={() => setRejectedDropTargetId(null)}
           >
             <SortableContext
               items={allSortableIds}
@@ -892,6 +921,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                               <SubHireGroupRow
                                 group={shGroup}
                                 isExpanded={isExpanded}
+                                isRejectedDropTarget={rejectedDropTargetId === `shg-${shGroup.id}`}
                                 indented
                                 onToggle={() => toggleGroup(shGroup.id)}
                                 onEdit={() => {
@@ -940,6 +970,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                               group={group}
                               isExpanded={isExpanded}
                               indented
+                              isRejectedDropTarget={rejectedDropTargetId === `grp-${group.id}`}
                               onToggle={() => toggleGroup(group.id)}
                               onDelete={() => {
                                 setDeleteGroupId(group.id);
@@ -1070,6 +1101,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                       <SubHireGroupRow
                         group={shGroup}
                         isExpanded={isExpanded}
+                        isRejectedDropTarget={rejectedDropTargetId === `shg-${shGroup.id}`}
                         onToggle={() => toggleGroup(shGroup.id)}
                         onEdit={() => {
                           setManagingSubHireId(shGroup.subHire.id);

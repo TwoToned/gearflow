@@ -132,6 +132,39 @@ export type MixedGroupSlot =
   | { kind: "project"; sortOrder: number; projectGroupId: string }
   | { kind: "subHire"; sortOrder: number; subHireGroupId: string };
 
+/**
+ * Drop Matrix 8C from the cross-type unification plan. Returns a reason
+ * string when the active row is NOT allowed to land on the over target,
+ * or null when the drop is allowed (or out of this matrix's scope —
+ * positive-path moves are decided downstream by handleDragEnd).
+ *
+ * The matrix rejects:
+ *   - line items (own-stock, custom, kit) dropped onto a sub-hire group
+ *   - project groups dropped onto a sub-hire group (no nested groups)
+ *   - sub-hire groups dropped onto a project group (no nested groups)
+ *
+ * It deliberately does NOT reject:
+ *   - line items onto categories or project groups (existing flow)
+ *   - sub-hire groups dropped onto a category (Drop Matrix row allows the
+ *     cross-category move, even though the visual target is a row
+ *     belonging to a different kind)
+ */
+export function getDisallowedDropReason(
+  activeId: string,
+  overId: string,
+): string | null {
+  if (activeId.startsWith("li-") && overId.startsWith("shg-")) {
+    return "Own-stock, custom, and kit items can't enter a sub-hire group.";
+  }
+  if (activeId.startsWith("grp-") && overId.startsWith("shg-")) {
+    return "Project groups can't be nested inside a sub-hire group.";
+  }
+  if (activeId.startsWith("shg-") && overId.startsWith("grp-")) {
+    return "Sub-hire groups can't be nested inside a project group.";
+  }
+  return null;
+}
+
 export interface CategoryData {
   id: string;
   name: string;
@@ -307,6 +340,7 @@ export function GroupRow({
   group,
   isExpanded,
   indented,
+  isRejectedDropTarget,
   onToggle,
   onDelete,
   onEdit,
@@ -318,6 +352,9 @@ export function GroupRow({
   group: GroupData;
   isExpanded: boolean;
   indented?: boolean;
+  /** Drop Matrix 8C — render the disallowed-drop rejection bar when a
+   *  drag of an incompatible source is currently hovering this row. */
+  isRejectedDropTarget?: boolean;
   onToggle: () => void;
   onDelete: () => void;
   onEdit: () => void;
@@ -336,9 +373,17 @@ export function GroupRow({
   };
 
   const priceVal = group.price != null ? Number(group.price) : null;
+  const rejectionClasses = isRejectedDropTarget
+    ? "border-l-2 border-l-red-500 cursor-not-allowed"
+    : "";
 
   return (
-    <TableRow ref={setNodeRef} style={style} className={`group/row ${isDragging ? "opacity-30" : ""}`}>
+    <TableRow
+      ref={setNodeRef}
+      style={style}
+      data-rejected-drop={isRejectedDropTarget ? "true" : undefined}
+      className={`group/row ${isDragging ? "opacity-30" : ""} ${rejectionClasses}`}
+    >
       <TableCell className="px-0">
         <div className={`flex justify-end ${indented ? "ml-3" : "px-1"}`}>
           <button
@@ -439,6 +484,7 @@ export function SubHireGroupRow({
   group,
   isExpanded,
   indented,
+  isRejectedDropTarget,
   onToggle,
   onEdit,
   onMove,
@@ -446,6 +492,10 @@ export function SubHireGroupRow({
   group: SubHireGroupData;
   isExpanded: boolean;
   indented?: boolean;
+  /** Drop Matrix 8C — when true this row is the current hovered target
+   *  of a disallowed drag. Renders a 2px red left edge + not-allowed
+   *  cursor as the visual cue. */
+  isRejectedDropTarget?: boolean;
   onToggle: () => void;
   /** Open the existing SubHireOrderDialog for this group's parent sub-hire. */
   onEdit: () => void;
@@ -466,9 +516,17 @@ export function SubHireGroupRow({
   const cost = group.cost != null ? Number(group.cost) : null;
   const margin = charge != null && cost != null ? charge - cost : null;
   const supplierName = group.subHire.supplier?.name ?? "Supplier";
+  const rejectionClasses = isRejectedDropTarget
+    ? "border-l-2 border-l-red-500 cursor-not-allowed"
+    : "";
 
   return (
-    <TableRow ref={setNodeRef} style={style} className={`group/row ${isDragging ? "opacity-30" : ""}`}>
+    <TableRow
+      ref={setNodeRef}
+      style={style}
+      data-rejected-drop={isRejectedDropTarget ? "true" : undefined}
+      className={`group/row ${isDragging ? "opacity-30" : ""} ${rejectionClasses}`}
+    >
       <TableCell className="px-0">
         <div className={`flex justify-end ${indented ? "ml-3" : "px-1"}`}>
           <button

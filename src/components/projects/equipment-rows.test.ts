@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { describeRow, type LineItemData } from "./equipment-rows";
+import { describeRow, getDisallowedDropReason, type LineItemData } from "./equipment-rows";
 
 function item(overrides: Partial<LineItemData>): LineItemData {
   return {
@@ -92,5 +92,54 @@ describe("describeRow", () => {
   it("custom item never reads as sub-hire even if type is stale", () => {
     const d = describeRow(item({ isCustomItem: true, type: "EQUIPMENT" }));
     expect(d.source).toBe("custom");
+  });
+});
+
+/**
+ * S7 from the cross-type unification test plan — Drop Matrix 8C.
+ * The predicate behind the rejection visual (red border-l + cursor
+ * not-allowed) AND the toast-on-drop refusal both consume this
+ * function, so locking its outputs is the cheapest way to keep the
+ * disallow rules honest.
+ */
+describe("getDisallowedDropReason — Drop Matrix 8C", () => {
+  it("rejects own-stock line item dropped onto a sub-hire group", () => {
+    const reason = getDisallowedDropReason("li-abc", "shg-xyz");
+    expect(reason).toBeTruthy();
+    expect(reason).toMatch(/sub-hire group/i);
+  });
+
+  it("rejects a project group dropped onto a sub-hire group", () => {
+    const reason = getDisallowedDropReason("grp-pg1", "shg-sh1");
+    expect(reason).toBeTruthy();
+    expect(reason).toMatch(/nested/i);
+  });
+
+  it("rejects a sub-hire group dropped onto a project group (no nested)", () => {
+    const reason = getDisallowedDropReason("shg-sh1", "grp-pg1");
+    expect(reason).toBeTruthy();
+    expect(reason).toMatch(/nested/i);
+  });
+
+  it("allows a sub-hire group dropped on a category (cross-category move)", () => {
+    expect(getDisallowedDropReason("shg-sh1", "cat-c1")).toBeNull();
+  });
+
+  it("allows a project group dropped on a category", () => {
+    expect(getDisallowedDropReason("grp-pg1", "cat-c1")).toBeNull();
+  });
+
+  it("allows a line item dropped on a project group", () => {
+    expect(getDisallowedDropReason("li-abc", "grp-pg1")).toBeNull();
+  });
+
+  it("allows a line item dropped on another line item (existing reorder)", () => {
+    expect(getDisallowedDropReason("li-a", "li-b")).toBeNull();
+  });
+
+  it("allows a sub-hire group dropped onto another sub-hire group (reorder candidate)", () => {
+    // The reorder/move decision is made downstream by handleDragEnd —
+    // the disallow predicate only flags structural impossibilities.
+    expect(getDisallowedDropReason("shg-a", "shg-b")).toBeNull();
   });
 });

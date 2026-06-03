@@ -138,6 +138,42 @@ describe("expandSectionsForDates", () => {
     expect(config.documentColor).toBe("#0d4f4f");
   });
 
+  it("inherits showPhases/showCrewCount from user-added day-header section", () => {
+    const userDayHeader: TemplateSection = {
+      id: "user-dh",
+      type: "day-header",
+      settings: { showPhases: false, showCrewCount: true },
+      visibility: {},
+      order: 0,
+    };
+    const sections = [userDayHeader, makeSection("crew-table")];
+    const days: CallSheetDayData[] = [
+      { date: "2026-04-07", dayLabel: "Mon", phases: ["BUMP_IN", "SHOW"], crew: [makeCrewEntry("A")] },
+      { date: "2026-04-08", dayLabel: "Tue", phases: ["BUMP_OUT"], crew: [makeCrewEntry("B")] },
+    ];
+    const result = expandSectionsForDates(sections, days, stubData);
+
+    const injectedDayHeader = result.find(
+      (s) => s.type === "day-header" && s.id.startsWith("day-header-"),
+    );
+    expect(injectedDayHeader).toBeDefined();
+    const cfg = JSON.parse(injectedDayHeader!.content!);
+    expect(cfg.phases).toEqual([]); // hidden via toggle
+    expect(cfg.crewCount).toBe(1);  // still shown
+  });
+
+  it("defaults day-header toggles to true when no user-added day-header section exists", () => {
+    const sections = [makeSection("crew-table")];
+    const days: CallSheetDayData[] = [
+      { date: "2026-04-07", dayLabel: "Mon", phases: ["BUMP_IN"], crew: [makeCrewEntry("A")] },
+      { date: "2026-04-08", dayLabel: "Tue", phases: [], crew: [makeCrewEntry("B")] },
+    ];
+    const result = expandSectionsForDates(sections, days, stubData);
+    const cfg = JSON.parse(result[0].content!);
+    expect(cfg.phases).toEqual(["BUMP_IN"]);
+    expect(cfg.crewCount).toBe(1);
+  });
+
   it("handles multiple crew-table sections (clones all per day)", () => {
     const sections = [
       makeSection("crew-table", "ct-1"),

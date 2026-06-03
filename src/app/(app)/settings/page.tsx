@@ -233,17 +233,22 @@ export default function GeneralSettingsPage() {
                 min="20"
                 max="31"
                 value={settings.daysPerMonth ?? ""}
-                onChange={(e) =>
-                  setSettings((prev) => ({
-                    ...prev,
-                    daysPerMonth: e.target.value === "" ? undefined : Number(e.target.value),
-                  }))
-                }
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  if (raw === "") {
+                    setSettings((prev) => ({ ...prev, daysPerMonth: undefined }));
+                    return;
+                  }
+                  const n = Number(raw);
+                  if (!Number.isFinite(n)) return;
+                  const clamped = Math.max(20, Math.min(31, Math.round(n)));
+                  setSettings((prev) => ({ ...prev, daysPerMonth: clamped }));
+                }}
                 placeholder="28"
                 disabled={!canEdit}
               />
               <p className="t-micro text-fg-3">
-                How many days a &ldquo;month&rdquo; bills as in the pricing optimiser. Default 28; common alternatives are 30 or calendar (31).
+                How many days a &ldquo;month&rdquo; bills as in the pricing optimiser. Default 28; common alternatives are 30 or calendar (31). Values are clamped to 20-31.
               </p>
             </div>
           </div>

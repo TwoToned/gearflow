@@ -345,6 +345,7 @@ export function GroupRow({
   onToggle,
   onDelete,
   onEdit,
+  onEditPrice,
   onAddEquipment,
   onAddKit,
   onRecalculate,
@@ -359,6 +360,8 @@ export function GroupRow({
   onToggle: () => void;
   onDelete: () => void;
   onEdit: () => void;
+  /** Phase 6c — opens the unified PriceEditDialog in project-group mode. */
+  onEditPrice?: () => void;
   onAddEquipment: () => void;
   onAddKit: () => void;
   onRecalculate?: () => void;
@@ -435,6 +438,12 @@ export function GroupRow({
             <DropdownMenuContent align="end">
               <DropdownMenuGroup>
                 <DropdownMenuLabel>Group</DropdownMenuLabel>
+                {onEditPrice && (
+                  <DropdownMenuItem onClick={onEditPrice}>
+                    <Pencil className="mr-2 h-3.5 w-3.5" />
+                    Edit price
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onClick={onAddEquipment}>
                   <Plus className="mr-2 h-3.5 w-3.5" />
                   Add Equipment
@@ -488,6 +497,7 @@ export function SubHireGroupRow({
   isRejectedDropTarget,
   onToggle,
   onEdit,
+  onEditPrice,
   onMove,
 }: {
   group: SubHireGroupData;
@@ -500,6 +510,9 @@ export function SubHireGroupRow({
   onToggle: () => void;
   /** Open the existing SubHireOrderDialog for this group's parent sub-hire. */
   onEdit: () => void;
+  /** Phase 6c — opens the unified PriceEditDialog in sub-hire mode
+   *  (charge + cost). */
+  onEditPrice?: () => void;
   /** Open the move dialog so the group can be reassigned to a different
    *  category (or uncategorised). */
   onMove?: () => void;
@@ -590,6 +603,12 @@ export function SubHireGroupRow({
             <DropdownMenuContent align="end">
               <DropdownMenuGroup>
                 <DropdownMenuLabel>Sub-hire</DropdownMenuLabel>
+                {onEditPrice && (
+                  <DropdownMenuItem onClick={onEditPrice}>
+                    <Pencil className="mr-2 h-3.5 w-3.5" />
+                    Edit price
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onClick={onEdit}>
                   <Pencil className="mr-2 h-3.5 w-3.5" />
                   Edit in sub-hire order

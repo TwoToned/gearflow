@@ -25,11 +25,11 @@ import { getProjectServices } from "@/server/project-services";
 import {
   createProjectGroup,
   updateProjectGroup,
-  updateGroupPrice,
   deleteProjectGroup,
   reorderProjectGroups,
   moveLineItemToGroup,
   recalculateGroupPrices,
+  updateGroupPrice,
 } from "@/server/project-groups";
 import {
   createProjectCategory,
@@ -71,6 +71,7 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
 import { UnifiedAddDialog, type UnifiedAddKind } from "./unified-add-dialog";
 import { MoveSubHireGroupDialog } from "./move-sub-hire-group-dialog";
+import { PriceEditDialog, type PriceEditTarget } from "./price-edit-dialog";
 import { SubHireOrderDialog } from "./sub-hire-order-dialog";
 import { getSubHires } from "@/server/sub-hires";
 import { subHireStatusLabels, formatLabel } from "@/lib/status-labels";
@@ -114,6 +115,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   // Move-sub-hire-group dialog state (Phase 6b kebab action).
   const [moveSubHireGroup, setMoveSubHireGroup] = useState<{ id: string; title: string } | null>(null);
 
+  // Unified PriceEditDialog target (Phase 6c kebab action — works for
+  // both project groups and sub-hire groups).
+  const [priceEditTarget, setPriceEditTarget] = useState<PriceEditTarget | null>(null);
+
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
 
@@ -142,9 +147,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   }, []);
 
 
-  // Price edit dialog state
-  const [priceEditGroupId, setPriceEditGroupId] = useState<string | null>(null);
-  const [priceEditValue, setPriceEditValue] = useState("");
 
   // Delete confirmation state
   const [deleteGroupId, setDeleteGroupId] = useState<string | null>(null);
@@ -444,16 +446,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const updatePriceMut = useMutation({
-    mutationFn: ({ groupId, price }: { groupId: string; price: number }) =>
-      updateGroupPrice(groupId, price),
-    onSuccess: () => {
-      invalidate();
-      setPriceEditGroupId(null);
-      toast.success("Price updated");
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
 
   const deleteGroupMut = useMutation({
     mutationFn: (groupId: string) => deleteProjectGroup(groupId),
@@ -932,6 +924,14 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                   setManagingSubHireId(shGroup.subHire.id);
                                   setShowSubHireOrderDialog(true);
                                 }}
+                                onEditPrice={() => setPriceEditTarget({
+                                  kind: "subHire",
+                                  groupId: shGroup.id,
+                                  title: shGroup.title,
+                                  quantity: shGroup.quantity,
+                                  cost: shGroup.cost != null ? Number(shGroup.cost) : null,
+                                  charge: shGroup.charge != null ? Number(shGroup.charge) : null,
+                                })}
                                 onMove={() => setMoveSubHireGroup({ id: shGroup.id, title: shGroup.title })}
                               />
                               {isExpanded && childItems.length === 0 && (
@@ -995,6 +995,12 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                 setEditGroupBillingDays(group.billingDays != null ? String(group.billingDays) : "");
                                 setEditGroupPrice(priceVal != null ? String(priceVal) : "");
                               }}
+                              onEditPrice={() => setPriceEditTarget({
+                                kind: "project",
+                                groupId: group.id,
+                                title: group.title,
+                                price: priceVal,
+                              })}
                               onAddEquipment={() => {
                                 setUnifiedAddTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
                                 setUnifiedAddKind("own-stock");
@@ -1112,6 +1118,14 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                           setManagingSubHireId(shGroup.subHire.id);
                           setShowSubHireOrderDialog(true);
                         }}
+                        onEditPrice={() => setPriceEditTarget({
+                          kind: "subHire",
+                          groupId: shGroup.id,
+                          title: shGroup.title,
+                          quantity: shGroup.quantity,
+                          cost: shGroup.cost != null ? Number(shGroup.cost) : null,
+                          charge: shGroup.charge != null ? Number(shGroup.charge) : null,
+                        })}
                         onMove={() => setMoveSubHireGroup({ id: shGroup.id, title: shGroup.title })}
                       />
                       {isExpanded && childItems.length === 0 && (
@@ -1529,57 +1543,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
         </DialogContent>
       </Dialog>
 
-      {/* Price edit dialog */}
-      <Dialog
-        open={priceEditGroupId != null}
-        onOpenChange={(open) => {
-          if (!open) setPriceEditGroupId(null);
-        }}
-      >
-        <DialogContent className="max-w-xs">
-          <DialogHeader>
-            <DialogTitle>Set group price</DialogTitle>
-          </DialogHeader>
-          <div className="flex items-center gap-2">
-            <span className="text-fg-3">$</span>
-            <Input
-              type="number"
-              step="0.01"
-              min="0"
-              value={priceEditValue}
-              onChange={(e) => setPriceEditValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && priceEditGroupId) {
-                  updatePriceMut.mutate({
-                    groupId: priceEditGroupId,
-                    price: parseFloat(priceEditValue) || 0,
-                  });
-                }
-              }}
-              autoFocus
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPriceEditGroupId(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (priceEditGroupId) {
-                  updatePriceMut.mutate({
-                    groupId: priceEditGroupId,
-                    price: parseFloat(priceEditValue) || 0,
-                  });
-                }
-              }}
-              disabled={updatePriceMut.isPending}
-            >
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* Delete confirmation dialog */}
       <Dialog
         open={deleteGroupId != null}
@@ -1878,6 +1841,13 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
         </DialogContent>
       </Dialog>
 
+      {/* Unified price-edit dialog (Phase 6c — works for both kinds of group). */}
+      <PriceEditDialog
+        target={priceEditTarget}
+        onClose={() => setPriceEditTarget(null)}
+        onInvalidate={invalidate}
+      />
+
       {/* Move-sub-hire-group dialog (kebab → "Move to category") */}
       <MoveSubHireGroupDialog
         open={moveSubHireGroup != null}
@@ -2041,10 +2011,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                     },
                   });
                   if (editGroupPrice !== "") {
-                    updatePriceMut.mutate({
-                      groupId: editGroupData.id,
-                      price: parseFloat(editGroupPrice) || 0,
-                    });
+                    updateGroupPrice(editGroupData.id, parseFloat(editGroupPrice) || 0)
+                      .then(() => invalidate())
+                      .catch((e: Error) => toast.error(e.message));
                   }
                 }
               }}

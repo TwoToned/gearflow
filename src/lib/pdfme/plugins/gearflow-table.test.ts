@@ -176,6 +176,71 @@ describe("gearflowTable — Project Group rendering", () => {
     expect(parent?.fontName).toBe("Helvetica-Bold");
   });
 
+  it("delivery-docket: group row renders when ANY child is CHECKED_OUT", async () => {
+    // Status filter must pass synthetic group rows through if at least
+    // one child meets the criteria — otherwise the parent + all its
+    // members would silently drop from the docket.
+    const items = [
+      makeLineItem({
+        id: "g1",
+        groupName: "Band",
+        groupTitle: "Drum Kit Mic Set",
+        isGroupRow: true,
+        status: "CONFIRMED",
+        quantity: 1,
+        model: { name: "Drum Kit Mic Set" },
+        childLineItems: [
+          makeLineItem({ id: "deployed", status: "CHECKED_OUT", model: { name: "e602 ii (DEPLOYED)" } }),
+          makeLineItem({ id: "pending", status: "CONFIRMED", model: { name: "e904 (NOT YET)" } }),
+        ],
+      }),
+    ];
+
+    const calls = await runTablePlugin(items, {
+      documentType: "delivery-docket",
+      filterByStatus: ["CHECKED_OUT"],
+    });
+
+    // Group parent renders (passes filter via its CHECKED_OUT child)
+    const parent = calls.drawText.find(c => c.text === "Drum Kit Mic Set");
+    expect(parent).toBeDefined();
+    expect(parent?.fontName).toBe("Helvetica-Bold");
+
+    // CHECKED_OUT child renders; CONFIRMED child filtered by the
+    // children-loop's own status filter (independent of the parent gate).
+    const deployedChild = calls.drawText.find(c => c.text === "e602 ii (DEPLOYED)");
+    const pendingChild = calls.drawText.find(c => c.text === "e904 (NOT YET)");
+    expect(deployedChild).toBeDefined();
+    expect(pendingChild).toBeUndefined();
+  });
+
+  it("delivery-docket: group row with NO checked-out children is dropped entirely", async () => {
+    const items = [
+      makeLineItem({
+        id: "g1",
+        groupName: "Band",
+        groupTitle: "Drum Kit Mic Set",
+        isGroupRow: true,
+        status: "CONFIRMED",
+        quantity: 1,
+        model: { name: "Drum Kit Mic Set" },
+        childLineItems: [
+          makeLineItem({ id: "c1", status: "CONFIRMED", model: { name: "e602 ii" } }),
+          makeLineItem({ id: "c2", status: "CONFIRMED", model: { name: "e904" } }),
+        ],
+      }),
+    ];
+
+    const calls = await runTablePlugin(items, {
+      documentType: "delivery-docket",
+      filterByStatus: ["CHECKED_OUT"],
+    });
+
+    // Neither parent nor children render — nothing is checked out.
+    expect(calls.drawText.find(c => c.text === "Drum Kit Mic Set")).toBeUndefined();
+    expect(calls.drawText.find(c => c.text === "e602 ii")).toBeUndefined();
+  });
+
   it("section header for the bucket renders above the group's contents", async () => {
     // The category bucket ("Band") becomes the section header. The
     // group row ("Drum Kit Mic Set") and its members render under it.

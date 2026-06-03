@@ -221,6 +221,16 @@ export function getFilteredParentItems(
     const statuses = filterByStatus;
     items = items.filter((i) => {
       if (isBulk(i)) return i.checkedOutQuantity > 0;
+      // Synthetic Project Group row: pass through if ANY attached child
+      // passes the filter. Otherwise the height calc and pagination
+      // would drop the group entirely, taking every member with it.
+      // Must mirror gearflow-table.ts:219-235.
+      if (i.isGroupRow && (i.childLineItems?.length ?? 0) > 0) {
+        return i.childLineItems!.some((c) => {
+          if (isBulk(c)) return c.checkedOutQuantity > 0;
+          return statuses.includes(c.status);
+        });
+      }
       return statuses.includes(i.status);
     });
   }

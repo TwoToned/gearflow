@@ -220,6 +220,16 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
     const statuses = config.filterByStatus;
     filteredItems = filteredItems.filter(i => {
       if (isBulk(i)) return i.checkedOutQuantity > 0;
+      // Synthetic Project Group row: its own status field is meaningless
+      // (it's a label, not a real line item). Pass through if ANY attached
+      // child passes the filter — otherwise the parent + all members
+      // would silently drop from delivery dockets / return sheets.
+      if (i.isGroupRow && (i.childLineItems?.length ?? 0) > 0) {
+        return i.childLineItems!.some(c => {
+          if (isBulk(c)) return c.checkedOutQuantity > 0;
+          return statuses.includes(c.status);
+        });
+      }
       return statuses.includes(i.status);
     });
   }

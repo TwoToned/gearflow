@@ -151,6 +151,17 @@ export async function moveSubHireGroupToCategory(
   // Run all writes in one transaction so the SubHireGroup, its synthetic
   // parent line item, and the CategorySlot stay consistent on failure.
   await prisma.$transaction(async (tx) => {
+    // Serialize concurrent moves into the SAME destination category.
+    // Without this, two parallel moves both read max(sortOrder) and try
+    // to INSERT at sortOrder = N + 1, racing on
+    // UNIQUE(projectCategoryId, sortOrder). Mirrors the lock used by
+    // reorderMixedGroupsInCategory (Finding 7.2 / S11). Null destination
+    // (move to uncategorised) bypasses the lock since there's no slot
+    // to insert.
+    if (destCategoryId) {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${destCategoryId})::bigint)`;
+    }
+
     // 1. Update the group's placement field.
     await tx.subHireGroup.update({
       where: { id: parsed.groupId },
@@ -229,17 +240,54 @@ export async function reorderMixedGroupsInCategory(
 
   const category = await prisma.projectCategory.findFirst({
     where: { id: parsed.categoryId, organizationId },
-    select: { id: true },
+    select: { id: true, projectId: true },
   });
   if (!category) {
     throw new Error("Category not found");
   }
 
-  // Sort prefixed IDs ascending before issuing UPDATEs to avoid deadlock
-  // between two concurrent reorders of overlapping lists.
+  // Cross-org slot-ID validation. Every parsed pg-/shg- ID must reference
+  // a group that belongs to this org AND this project. Without this check
+  // a malicious caller could craft a payload like
+  // `orderedIds=[pg-<otherOrgGroupId>]` and reparent another org's slot
+  // under our category via the upsert path below.
   const sortedByPrefixedId = parsed.orderedIds
     .map((prefixedId, displayIndex) => ({ prefixedId, displayIndex }))
     .sort((a, b) => (a.prefixedId < b.prefixedId ? -1 : a.prefixedId > b.prefixedId ? 1 : 0));
+
+  const parsedSlots = sortedByPrefixedId
+    .map(({ prefixedId }) => parseSlotId(prefixedId))
+    .filter((s): s is NonNullable<typeof s> => s != null);
+  const projectGroupIds = parsedSlots
+    .filter((s) => s.kind === "projectGroup")
+    .map((s) => s.id);
+  const subHireGroupIds = parsedSlots
+    .filter((s) => s.kind === "subHireGroup")
+    .map((s) => s.id);
+
+  if (projectGroupIds.length > 0) {
+    const pgCount = await prisma.projectGroup.count({
+      where: {
+        id: { in: projectGroupIds },
+        organizationId,
+        projectId: category.projectId,
+      },
+    });
+    if (pgCount !== projectGroupIds.length) {
+      throw new Error("One or more project groups do not belong to this project");
+    }
+  }
+  if (subHireGroupIds.length > 0) {
+    const shgCount = await prisma.subHireGroup.count({
+      where: {
+        id: { in: subHireGroupIds },
+        subHire: { organizationId, projectId: category.projectId },
+      },
+    });
+    if (shgCount !== subHireGroupIds.length) {
+      throw new Error("One or more sub-hire groups do not belong to this project");
+    }
+  }
 
   await prisma.$transaction(async (tx) => {
     // Serialize concurrent reorders of the SAME category. UNIQUE

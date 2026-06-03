@@ -381,6 +381,90 @@ describe("reorderMixedGroupsInCategory — basic sort write", () => {
   });
 });
 
+// ── /review F1 — cross-org slot ID validation in reorder ───────────────────
+
+describe("reorderMixedGroupsInCategory — cross-org slot ID validation (/review F1)", () => {
+  beforeEach(async () => {
+    await setupIntegrationTest();
+  });
+  afterAll(async () => {
+    await testPrisma.$disconnect();
+  });
+
+  it("rejects a pg- slot ID that belongs to a project group in another org", async () => {
+    const orgA = await createOrgFixture({ slug: "org-a" });
+    const orgB = await createOrgFixture({ slug: "org-b" });
+    const userA = await createUserFixture(orgA.id, "owner");
+    h.ctx = { organizationId: orgA.id, userId: userA.id, userName: "A" };
+
+    const projectA = await createProjectFixture(orgA.id);
+    const catA = await createCategoryFixture(orgA.id, projectA.id);
+
+    // Other org's project group — must NOT be slottable into orgA's category.
+    const projectB = await createProjectFixture(orgB.id);
+    const catB = await createCategoryFixture(orgB.id, projectB.id);
+    const pgB = await createGroupFixture(orgB.id, projectB.id, catB.id);
+
+    await expect(
+      reorderMixedGroupsInCategory({
+        categoryId: catA.id,
+        orderedIds: [`pg-${pgB.id}`],
+      }),
+    ).rejects.toThrow(/project groups do not belong/i);
+
+    // No CategorySlot row should have been written in orgA's category.
+    const slots = await testPrisma.categorySlot.findMany({
+      where: { projectCategoryId: catA.id },
+    });
+    expect(slots).toHaveLength(0);
+  });
+
+  it("rejects an shg- slot ID that belongs to a sub-hire group in another org", async () => {
+    const orgA = await createOrgFixture({ slug: "org-a" });
+    const orgB = await createOrgFixture({ slug: "org-b" });
+    const userA = await createUserFixture(orgA.id, "owner");
+    h.ctx = { organizationId: orgA.id, userId: userA.id, userName: "A" };
+
+    const projectA = await createProjectFixture(orgA.id);
+    const catA = await createCategoryFixture(orgA.id, projectA.id);
+
+    const supplierB = await createSupplierFixture(orgB.id);
+    const userB = await createUserFixture(orgB.id, "owner");
+    const projectB = await createProjectFixture(orgB.id);
+    const subHireB = await createSubHireFixture(orgB.id, supplierB.id, userB.id, projectB.id);
+    const shgB = await createSubHireGroupFixture(subHireB.id);
+
+    await expect(
+      reorderMixedGroupsInCategory({
+        categoryId: catA.id,
+        orderedIds: [`shg-${shgB.id}`],
+      }),
+    ).rejects.toThrow(/sub-hire groups do not belong/i);
+  });
+
+  it("rejects a pg- slot ID from a project in the same org but different project", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id, "owner");
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+
+    const projectA = await createProjectFixture(org.id);
+    const catA = await createCategoryFixture(org.id, projectA.id);
+
+    const projectB = await createProjectFixture(org.id);
+    const catB = await createCategoryFixture(org.id, projectB.id);
+    const pgB = await createGroupFixture(org.id, projectB.id, catB.id);
+
+    // Same org, different project — should still be rejected because
+    // the parsed group's projectId !== category.projectId.
+    await expect(
+      reorderMixedGroupsInCategory({
+        categoryId: catA.id,
+        orderedIds: [`pg-${pgB.id}`],
+      }),
+    ).rejects.toThrow(/project groups do not belong/i);
+  });
+});
+
 // ── S11 — concurrent reorder atomicity ──────────────────────────────────────
 
 describe("S11 — reorderMixedGroupsInCategory under concurrent load", () => {
@@ -455,6 +539,58 @@ describe("S11 — reorderMixedGroupsInCategory under concurrent load", () => {
         `Final order ${JSON.stringify(finalOrder)} does not match either reorder request. Expected one of: ${JSON.stringify(orderA)} or ${JSON.stringify(orderB)}`,
       );
     }
+  });
+});
+
+// ── /review F2 — concurrent moveSubHireGroupToCategory advisory lock ───────
+
+describe("moveSubHireGroupToCategory — concurrent move serialization (/review F2)", () => {
+  beforeEach(async () => {
+    await setupIntegrationTest();
+    h.recalcSpy.mockClear();
+  });
+  afterAll(async () => {
+    await testPrisma.$disconnect();
+  });
+
+  it("two concurrent moves of the same group both complete without UNIQUE violation", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id, "owner");
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+    const supplier = await createSupplierFixture(org.id);
+    const project = await createProjectFixture(org.id);
+    const catA = await createCategoryFixture(org.id, project.id, "A", 0);
+    const catB = await createCategoryFixture(org.id, project.id, "B", 1);
+    const subHire = await createSubHireFixture(org.id, supplier.id, user.id, project.id);
+    const shg = await createSubHireGroupFixture(subHire.id, { targetCategoryId: catA.id });
+    await createSyntheticParentLineItem(org.id, project.id, shg.id, catA.id);
+
+    // Pre-existing slot in catA — both concurrent moves will delete it and
+    // try to create a new one in catB, racing on
+    // UNIQUE(projectCategoryId, sortOrder).
+    await testPrisma.categorySlot.create({
+      data: { projectCategoryId: catA.id, sortOrder: 0, subHireGroupId: shg.id },
+    });
+
+    const results = await Promise.allSettled([
+      moveSubHireGroupToCategory({ groupId: shg.id, categoryId: catB.id }),
+      moveSubHireGroupToCategory({ groupId: shg.id, categoryId: catB.id }),
+    ]);
+
+    const rejected = results.filter((r) => r.status === "rejected");
+    if (rejected.length > 0) {
+      const reasons = rejected.map((r) =>
+        r.status === "rejected" ? (r.reason as Error).message : "",
+      );
+      throw new Error(`Expected both moves to succeed; rejected: ${reasons.join(" | ")}`);
+    }
+
+    // Final state: exactly one slot for the group, in catB.
+    const slots = await testPrisma.categorySlot.findMany({
+      where: { subHireGroupId: shg.id },
+    });
+    expect(slots).toHaveLength(1);
+    expect(slots[0].projectCategoryId).toBe(catB.id);
   });
 });
 

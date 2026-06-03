@@ -63,7 +63,7 @@ import {
 import { formatCurrency } from "@/lib/formatters";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
-import { AddEquipmentDialog } from "./add-equipment-dialog";
+import { UnifiedAddDialog, type UnifiedAddKind } from "./unified-add-dialog";
 import { SubHireOrderDialog } from "./sub-hire-order-dialog";
 import { getSubHires } from "@/server/sub-hires";
 import { subHireStatusLabels, formatLabel } from "@/lib/status-labels";
@@ -81,8 +81,6 @@ import {
   type CategoryData,
   type OverbookedInfo,
 } from "./equipment-rows";
-import { CustomItemAddForm } from "./custom-item-add-form";
-import { KitAddForm } from "./kit-add-form";
 
 interface EquipmentTabProps {
   projectId: string;
@@ -99,18 +97,15 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
 
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
-  const [showAddEquipment, setShowAddEquipment] = useState(false);
-  const [addEquipmentTarget, setAddEquipmentTarget] = useState<{
+
+  // Unified add dialog state (own-stock / kit / sub-hire / custom)
+  const [showUnifiedAdd, setShowUnifiedAdd] = useState(false);
+  const [unifiedAddKind, setUnifiedAddKind] = useState<UnifiedAddKind>("own-stock");
+  const [unifiedAddTarget, setUnifiedAddTarget] = useState<{
     categoryId?: string;
     groupId?: string;
     label?: string;
   }>({});
-
-  // Kit dialog state
-  const [showKitDialog, setShowKitDialog] = useState(false);
-
-  // Custom item dialog state
-  const [showCustomItemDialog, setShowCustomItemDialog] = useState(false);
 
   // Sub-hire order dialog state
   const [showSubHireOrderDialog, setShowSubHireOrderDialog] = useState(false);
@@ -127,13 +122,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     });
   }, []);
 
-
-  // Kit target state (for adding kits to specific groups)
-  const [kitTarget, setKitTarget] = useState<{
-    categoryId?: string;
-    groupId?: string;
-    label?: string;
-  }>({});
 
   // Price edit dialog state
   const [priceEditGroupId, setPriceEditGroupId] = useState<string | null>(null);
@@ -615,8 +603,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
           size="sm"
           className="gap-1.5"
           onClick={() => {
-            setAddEquipmentTarget({});
-            setShowAddEquipment(true);
+            setUnifiedAddTarget({});
+            setUnifiedAddKind("own-stock");
+            setShowUnifiedAdd(true);
           }}
         >
           <Plus className="h-3.5 w-3.5" />
@@ -627,8 +616,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
           size="sm"
           className="gap-1.5"
           onClick={() => {
-            setKitTarget({});
-            setShowKitDialog(true);
+            setUnifiedAddTarget({});
+            setUnifiedAddKind("kit");
+            setShowUnifiedAdd(true);
           }}
         >
           <Package className="h-3.5 w-3.5" />
@@ -638,7 +628,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
           variant="outline"
           size="sm"
           className="gap-1.5"
-          onClick={() => setShowCustomItemDialog(true)}
+          onClick={() => {
+            setUnifiedAddTarget({});
+            setUnifiedAddKind("custom");
+            setShowUnifiedAdd(true);
+          }}
         >
           <Plus className="h-3.5 w-3.5" />
           Custom Item
@@ -653,7 +647,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
           }}
         >
           <ArrowLeftRight className="h-3.5 w-3.5" />
-          Sub-Hire Orders
+          Sub-Hire
         </Button>
         <Button
           variant="outline"
@@ -765,12 +759,14 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                 setEditGroupPrice(priceVal != null ? String(priceVal) : "");
                               }}
                               onAddEquipment={() => {
-                                setAddEquipmentTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
-                                setShowAddEquipment(true);
+                                setUnifiedAddTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
+                                setUnifiedAddKind("own-stock");
+                                setShowUnifiedAdd(true);
                               }}
                               onAddKit={() => {
-                                setKitTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
-                                setShowKitDialog(true);
+                                setUnifiedAddTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
+                                setUnifiedAddKind("kit");
+                                setShowUnifiedAdd(true);
                               }}
                               onRecalculate={async () => {
                                 try {
@@ -1596,44 +1592,28 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
         </DialogContent>
       </Dialog>
 
-      {/* Add custom item dialog */}
-      <Dialog open={showCustomItemDialog} onOpenChange={setShowCustomItemDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Custom Item</DialogTitle>
-            <DialogDescription>
-              Add a free-text item not in your inventory. It will appear on documents and in the warehouse.
-            </DialogDescription>
-          </DialogHeader>
-          {showCustomItemDialog && (
-            <CustomItemAddForm
-              projectId={projectId}
-              categories={categories as CategoryData[]}
-              onInvalidate={invalidate}
-              onClose={() => setShowCustomItemDialog(false)}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Add equipment dialog */}
-      {showAddEquipment && (
-        <AddEquipmentDialog
-          projectId={projectId}
-          rentalStartDate={rentalStartDate ?? undefined}
-          rentalEndDate={rentalEndDate ?? undefined}
-          open={showAddEquipment}
-          onOpenChange={setShowAddEquipment}
-          categoryId={addEquipmentTarget.categoryId}
-          groupId={addEquipmentTarget.groupId}
-          targetLabel={addEquipmentTarget.label}
-          onOpenSubHire={() => {
-            setManagingSubHireId(null);
-            setShowSubHireOrderDialog(true);
-          }}
-        />
-      )}
-
+      {/* Unified add dialog (own-stock / kit / sub-hire / custom) */}
+      <UnifiedAddDialog
+        open={showUnifiedAdd}
+        onOpenChange={(open) => {
+          setShowUnifiedAdd(open);
+          if (!open) setUnifiedAddTarget({});
+        }}
+        kind={unifiedAddKind}
+        onKindChange={setUnifiedAddKind}
+        projectId={projectId}
+        rentalStartDate={rentalStartDate ?? undefined}
+        rentalEndDate={rentalEndDate ?? undefined}
+        categoryId={unifiedAddTarget.categoryId}
+        groupId={unifiedAddTarget.groupId}
+        targetLabel={unifiedAddTarget.label}
+        categories={categories as CategoryData[]}
+        onInvalidate={invalidate}
+        onOpenSubHire={() => {
+          setManagingSubHireId(null);
+          setShowSubHireOrderDialog(true);
+        }}
+      />
 
       {/* Sub-hire order dialog */}
       <SubHireOrderDialog
@@ -1645,33 +1625,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
         }}
         subHireId={managingSubHireId}
       />
-
-      {/* Add kit dialog */}
-      <Dialog
-        open={showKitDialog}
-        onOpenChange={(open) => {
-          setShowKitDialog(open);
-          if (!open) setKitTarget({});
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Kit to Project</DialogTitle>
-          </DialogHeader>
-          {showKitDialog && (
-            <KitAddForm
-              projectId={projectId}
-              rentalStartDate={rentalStartDate ?? undefined}
-              rentalEndDate={rentalEndDate ?? undefined}
-              categoryId={kitTarget.categoryId}
-              groupId={kitTarget.groupId}
-              targetLabel={kitTarget.label}
-              onInvalidate={invalidate}
-              onClose={() => setShowKitDialog(false)}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
 
       {/* Edit group dialog */}
       <Dialog

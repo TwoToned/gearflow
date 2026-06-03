@@ -14,7 +14,6 @@
  * (onAddEquipment / onAddKit).
  */
 
-import { useEffect, useState } from "react";
 
 import {
   Dialog,
@@ -32,8 +31,12 @@ export type UnifiedAddKind = "own-stock" | "kit" | "sub-hire" | "custom";
 interface UnifiedAddDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Which kind to show on open. Defaults to own-stock per the 8G decision. */
-  initialKind?: UnifiedAddKind;
+  /** Active kind. Parent owns it so the four toolbar buttons can each
+   *  open the dialog on their respective tab. */
+  kind: UnifiedAddKind;
+  /** Called when the user picks a different kind via the segmented switcher.
+   *  Implementations should ignore "sub-hire" — see onOpenSubHire below. */
+  onKindChange: (kind: UnifiedAddKind) => void;
   projectId: string;
   rentalStartDate?: Date;
   rentalEndDate?: Date;
@@ -75,7 +78,8 @@ const KIND_TITLES: Record<UnifiedAddKind, string> = {
 export function UnifiedAddDialog({
   open,
   onOpenChange,
-  initialKind = "own-stock",
+  kind,
+  onKindChange,
   projectId,
   rentalStartDate,
   rentalEndDate,
@@ -86,25 +90,19 @@ export function UnifiedAddDialog({
   onInvalidate,
   onOpenSubHire,
 }: UnifiedAddDialogProps) {
-  const [kind, setKind] = useState<UnifiedAddKind>(initialKind);
-
-  // Reset to the requested initial kind every time the dialog opens.
-  useEffect(() => {
-    if (open) setKind(initialKind);
-  }, [open, initialKind]);
-
-  // Sub-hire is a bounce — close this dialog and open the existing
-  // SubHireOrderDialog (PO workflow). Done in an effect so the user sees
-  // the segmented switcher highlight briefly before the bounce.
-  useEffect(() => {
-    if (open && kind === "sub-hire") {
-      onOpenChange(false);
-      onOpenSubHire();
-    }
-  }, [open, kind, onOpenChange, onOpenSubHire]);
-
   function handleClose() {
     onOpenChange(false);
+  }
+
+  function handlePickKind(next: UnifiedAddKind) {
+    // Sub-hire is a bounce: close this dialog and open the existing
+    // SubHireOrderDialog (PO workflow stays separate per plan 4B).
+    if (next === "sub-hire") {
+      onOpenChange(false);
+      onOpenSubHire();
+      return;
+    }
+    onKindChange(next);
   }
 
   return (
@@ -124,7 +122,7 @@ export function UnifiedAddDialog({
                 type="button"
                 role="tab"
                 aria-selected={active}
-                onClick={() => setKind(opt.value)}
+                onClick={() => handlePickKind(opt.value)}
                 className={`flex-1 px-3 py-1.5 text-sm font-medium transition-colors ${
                   active ? "bg-primary text-primary-foreground" : "hover:bg-accent"
                 }`}

@@ -135,6 +135,21 @@ npx prisma migrate dev   # Apply all migrations + generate client
 ### Design System
 Always read `DESIGN.md` before making any visual or UI decisions. All font choices, colors, spacing, component patterns, and aesthetic direction are defined there. Do not deviate without explicit user approval. In QA mode, flag any code that doesn't match DESIGN.md.
 
+### PDF generation — data-shape changes need cross-cutting audits
+The PDF pipeline has **five independent consumers** of the `DocumentLineItem` shape. Any change to the shape (new field, new synthetic row type, new relationship between parent and children) must be verified against ALL of them — fixing one and shipping leaves silent bugs in the others:
+
+1. **`gearflow-table.ts` rendering** — what gets drawn (bold, indented, etc.)
+2. **`section-renderer.ts` `calculateItemHeight`** — pagination space reservation (miss this → silent tail-drop)
+3. **`section-renderer.ts` `getFilteredParentItems`** — top-level status filter (miss this → items disappear from docket / return-sheet)
+4. **`gearflow-table.ts` top-level filter** — plugin-level status filter (mirrors #3, must stay in sync)
+5. **`gearflow-table.ts` `buildDeliveryDocketGroups`** + plugin docket bucketing — custom kit-promotion logic
+
+**Synthetic rows (e.g. `isGroupRow: true`) are footguns.** Their hard-coded fields (`status: "CONFIRMED"`, etc.) silently fail any filter that compares against them. Every status/filter site must special-case the synthetic row type, or compute the field dynamically from children.
+
+**Test coverage rule:** unit tests at the plugin layer alone are NOT enough. For any data-shape change, write at least one integration test that exercises the full pipeline (structureLineItems → calculateItemHeight → filter → plugin render) against a realistic fixture. The plugin-only harness in `src/lib/pdfme/plugins/test-utils.ts` is great for rendering assertions but misses the pipeline bugs.
+
+History: v0.8.1.0 added group-as-kit rendering. v0.8.1.1 fixed the height-calc miss (tail items dropped). v0.8.1.2 fixed the status-filter miss (groups invisible on dockets). Each was a separate user-impacting deploy that an upfront cross-cutting audit would have caught.
+
 ### Key Gotchas
 - No `AlertDialog` — use `Dialog` with confirm/cancel buttons
 - `DropdownMenuLabel` must be inside `DropdownMenuGroup`

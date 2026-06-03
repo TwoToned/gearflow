@@ -204,15 +204,43 @@ Unification (next branch, see [user-flagged] note below).
 
 ## Project Asset Management UX
 
-### Cross-Type Group/Category Unification
-**What:** Unify how groups and categories work across asset, sub-hire, and custom line items on a project. Today each type has its own UX patterns — adding groups, moving items between groups, setting pricing per group all feel different. Make creating new groups and reorganising assets fast and obvious. Eliminate the need to delete and re-add items to reorganise.
-**Why:** Currently this is confusing and slow. Small changes (move an item to a different group) require deleting and re-adding. Pricing is set in different places depending on type. New users don't know which "add" button does what.
-**Pros:** Massive UX win on the most-used screen, reduces support questions, makes complex jobs faster to build.
-**Cons:** Touches a lot of code — line items, groups, sub-hire groups, custom items, pricing modes, and every component that renders the project equipment table. Risk of regression in pricing/totals.
-**Context:** Sub-hire groups shipped (a3f5a02, ccbe715). Asset groups and custom-item groupings still uneven. User flagged this as "currently feels super clunky and unfinished."
-**Depends on:** Nothing (refactor of existing surface).
-**Estimate:** human ~2-3 weeks / CC ~3-4 hours
-**Priority:** P1
+### Cross-Type Group/Category Unification — ✅ PLANNED (autoplan 2026-06-03)
+Plan at [~/.gstack/projects/TwoToned-gearflow/jayden-main-plan-20260603-164457.md].
+Test plan at [~/.gstack/projects/TwoToned-gearflow/jayden-main-test-plan-20260603-164457.md].
+Revised estimate: human ~3-4 weeks / CC ~3-4 days (not hours).
+Approach B: UI primitives extraction + CategorySlot ordering table + use existing
+`SubHireGroup.targetCategoryId` (already in schema, NOT a new field).
+Mode: SELECTIVE EXPANSION. P1.
+
+### Multi-Select Drag (broken out from Cross-Type Unification scope)
+**What:** Drag-select multiple line items in the project equipment table and move them between groups/categories in one action. Cmd/Shift-click adds rows to a persistent selection; the cursor shows a count badge during drag; on disallowed-target drops, a partial-reject toast lists which rows succeeded vs failed.
+**Why:** Bulk reorganising is currently one item at a time — slow when restructuring a large project.
+**Pros:** Quality-of-life win on the equipment tab; complements cross-type DnD.
+**Cons:** New interaction model not yet in DESIGN.md (selection visual state needs a primitive). Half-feature if shipped underspecified.
+**Context:** Originally scope-expansion for cross-type unification; pulled out during design review (Finding 11) as needing its own spec.
+**Depends on:** Cross-Type Group/Category Unification (above).
+**Estimate:** human ~3-5 days / CC ~45 min
+**Priority:** P2
+
+### Mixed-Type Group Templates
+**What:** Extend group templates so they can capture asset items, sub-hire items, AND custom items inside a single template. Save a project group as a template and apply it to a future project with the same mix of types.
+**Why:** Group templates today only capture asset items. Operators repeatedly recreate sub-hire + custom + asset combos for similar gigs.
+**Pros:** Faster project building for repeat gig shapes (e.g., "Corporate AV — small").
+**Cons:** Template apply must handle missing sub-hire suppliers (template captures supplier names; apply must let user re-pick).
+**Context:** Deferred from Cross-Type Group/Category Unification autoplan (out of blast radius per P3).
+**Depends on:** Cross-Type Group/Category Unification.
+**Estimate:** human ~1 week / CC ~1-2 hours
+**Priority:** P2
+
+### Polymorphic LineItem Model (architectural re-evaluation trigger)
+**What:** Collapse `ProjectLineItem`, `SubHireItem`, custom items into one `LineItem` table with an `ownership: owned | sub-hired | custom` discriminator. Sub-hire's PO workflow becomes a view over line items, not a parallel data universe.
+**Why:** The 6-month regret scenario from the autoplan CEO review: if a 4th line-item type appears (loaner gear, freight, consignment, venue-provided), the current 3-parallel-models approach requires another schema delta, another row kind, another conditional branch. The polymorphic approach pays the migration once.
+**Pros:** True architectural unification. Future types add without UI rework. Eliminates the schism the cross-type unification is papering over.
+**Cons:** Large blast radius (~5-6 weeks human / 1-2 CC days). Touches every query, every PDF, every server action that reads project structure. Polymorphic queries in Prisma are awkward.
+**Context:** Deferred during the cross-type unification autoplan (2026-06-03). **Re-evaluation trigger:** if a 4th line-item type request appears, OR if the post-ship review of the cross-type unification reveals that the symmetry promise still feels half-kept, revisit this. Subagent's strongest critique during CEO review.
+**Depends on:** Nothing (large blast radius).
+**Estimate:** human ~5-6 weeks / CC ~1-2 days
+**Priority:** P3 (re-evaluate on trigger)
 
 ## Project Management
 

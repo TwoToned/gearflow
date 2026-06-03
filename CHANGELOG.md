@@ -5,6 +5,37 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1.2] - 2026-06-03
+
+Second hotfix in the v0.8.1.x series — delivery dockets and return
+sheets were silently dropping every Project Group from the doc. The
+status filter (CHECKED_OUT for dockets; CHECKED_OUT + RETURNED for
+return sheets) compared against the synthetic group row's status field,
+which is hard-coded to CONFIRMED because the row is a label, not a
+real line item. Result: the parent failed the filter, took its
+attached members with it, and the entire group vanished from the doc
+the warehouse hands to the client.
+
+### Fixed
+- **Status filter now passes synthetic Project Group rows through if
+  ANY attached child meets the filter criteria.** The kit-style
+  children-loop inside the parent's row still filters each member
+  individually, so only checked-out (or returned, for return sheets)
+  members indent under the group. Groups with zero passing members
+  drop entirely — no empty group headers stranded on the doc.
+- Mirrors the same isGroupRow special case in both the plugin filter
+  (`gearflow-table.ts`) and the section-renderer's
+  `getFilteredParentItems` (used for height calc + pagination).
+- Bulk children of a group respect `checkedOutQuantity > 0` instead of
+  the parent's status, matching how top-level bulk items are filtered.
+
+### Added
+- 5 regression tests across `section-renderer.test.ts` (group filter
+  with bulk children, any-child-passes for both docket and return
+  sheet) and `gearflow-table.test.ts` (docket renders group parent
+  with only checked-out children indented; group with zero checked-out
+  children drops entirely).
+
 ## [0.8.1.1] - 2026-06-03
 
 Hotfix for v0.8.1.0: warehouse PDFs were silently dropping tail items

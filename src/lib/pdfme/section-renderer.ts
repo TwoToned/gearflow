@@ -246,14 +246,21 @@ function calculateItemHeight(
   }
 
   const isKit = !!item.kitId;
+  // Synthetic Project Group row whose members ride along as childLineItems.
+  // The plugin renders these the same way it renders kit children (indented,
+  // smaller font, per-unit sub-rows for multi-quantity members) — so the
+  // height calculation must mirror that or the section will under-estimate
+  // its space and the plugin will overflow and silently drop tail items.
+  const isGroupParent =
+    !!item.isGroupRow && (item.childLineItems?.length ?? 0) > 0;
 
-  // Per-unit checkbox rows for bulk items (qty > 1, non-kit)
-  if (settings.showPerUnitCheckboxes && !isKit && item.quantity > 1) {
+  // Per-unit checkbox rows for bulk items (qty > 1, non-kit, non-group-parent)
+  if (settings.showPerUnitCheckboxes && !isKit && !isGroupParent && item.quantity > 1) {
     heightPt += item.quantity * PER_UNIT_ROW_PT;
   }
 
-  // Kit children
-  if (isKit && settings.showKitChildren) {
+  // Kit children / group members — same indented-child rendering path in the plugin
+  if ((isKit && settings.showKitChildren) || isGroupParent) {
     const children = item.childLineItems || [];
     for (const child of children) {
       heightPt += CHILD_ROW_PT;

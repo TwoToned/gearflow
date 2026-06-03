@@ -5,6 +5,32 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1.1] - 2026-06-03
+
+Hotfix for v0.8.1.0: warehouse PDFs were silently dropping tail items
+when groups carried members as `childLineItems`. The section-renderer
+height calculator only counted attached children for kit parents — not
+group parents — so the table under-estimated its space, the plugin
+ran out of vertical room, and everything past the first page (or past
+the first oversized group) just vanished from the doc instead of
+paginating onto a second page.
+
+### Fixed
+- **Section-renderer pagination now accounts for `childLineItems` on
+  Project Group rows.** `calculateItemHeight` treats `isGroupRow` +
+  attached `childLineItems` the same as `isKit` + `showKitChildren`:
+  the parent row's reserved height includes every indented member.
+  Without this, an entire warehouse doc could lose its tail content
+  on the first deploy of v0.8.1.0 — the "Drum Kit Mic Set" group
+  rendered fine, then everything after it (other groups, ungrouped
+  items, kit breakouts) was silently dropped.
+
+### Added
+- 2 height-calc regression tests in `section-renderer.test.ts`:
+  group row with N children reserves strictly more space than a plain
+  row (by at least N child rows worth), and a group row with EMPTY
+  `childLineItems` uses plain-row height (collapse-mode parity).
+
 ## [0.8.1.0] - 2026-06-03
 
 Project Groups on warehouse PDFs now look like kits — bold parent rows

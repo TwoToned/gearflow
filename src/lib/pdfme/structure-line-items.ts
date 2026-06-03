@@ -11,23 +11,25 @@
  *   the client sees "Lighting Package x1 @ $5000", not 50 itemized rows.
  *
  * - `true` (warehouse-facing docs — packing list, return sheet, delivery
- *   docket): each Project Group becomes a section header (still
- *   `isGroupRow: true`, with quantity preserved for context) followed by
- *   every child line item underneath. Warehouse staff and the client at
- *   the loading bay see every serial number that's leaving the building.
+ *   docket): each Project Group emits a synthetic parent row with
+ *   `isGroupRow: true` AND `childLineItems: [...]` carrying its non-kit
+ *   members. The table plugin renders the parent bold (kit-style) and
+ *   its members indented underneath. The group lives in its category's
+ *   bucket so the warehouse sees "Band → Drum Kit Mic Set → e602 ii"
+ *   rather than the group breaking out as its own top-level section.
  *
  * Bucket-key strategy: the downstream table plugin buckets rows by
- * `groupName` and also uses it as the visible header text. To keep both
- * concerns satisfied without changing the plugin contract:
- *   - Category-bucket rows use `groupName = cat.name` (legacy behaviour).
- *   - Project-Group-bucket rows (only in expand mode) use
- *     `groupName = group.title`.
+ * `groupName` and uses it as the visible section-header text.
+ *   - Category-bucket rows use `groupName = cat.name`.
+ *   - Kit parents (warehouse mode only) break out to
+ *     `groupName = "[Kit] <kit.name>"` — kit boundary wins over Project
+ *     Group placement so a kit nested inside a group still surfaces as
+ *     its own labelled section.
  *
- * Theoretical collision: if two distinct categories each have a Project
- * Group with the same title AND expand mode is on, those two groups
- * merge into one bucket. This is rare in real data and currently
- * documented (not prevented) — a future change can introduce explicit
- * display-label / key separation if it becomes a problem.
+ * Kit children inside a group: a kit parent that lives inside a Project
+ * Group is hoisted out of the group's `childLineItems` and emitted at
+ * the top level under its own `[Kit] <name>` bucket. This preserves the
+ * existing kit-boundary contract.
  */
 import type { DocumentLineItem } from "./types";
 
@@ -220,11 +222,11 @@ export function structureLineItems(
       const price = group.price ?? 0;
       const total = group.quantity * price * duration;
 
-      // The visible bucket label. In collapse mode, the legacy code put
-      // group rows into the category bucket (so they sat under the
-      // category header). We preserve that. In expand mode, the group
-      // gets its own bucket labelled by group title.
-      const bucketLabel = expand ? group.title : cat.name;
+      // Both modes bucket group rows under the category. In expand mode
+      // the group renders as a bold parent row (kit-style) followed by
+      // its members indented; the category bucket gives the warehouse
+      // doc its outer section header.
+      const bucketLabel = cat.name;
 
       const groupChildren = expand
         ? rawLineItems.filter(
@@ -235,6 +237,16 @@ export function structureLineItems(
               !li.isContainerLineItem &&
               !isInSubHireSection(li),
           )
+        : [];
+
+      // Kit parents inside the group break out to their own `[Kit] X`
+      // section at the top level. Non-kit members render indented under
+      // the synthetic group parent via childLineItems.
+      const groupKitParents = expand
+        ? groupChildren.filter(c => !!c.kitId && !c.isKitChild)
+        : [];
+      const groupInlineMembers = expand
+        ? groupChildren.filter(c => !(!!c.kitId && !c.isKitChild))
         : [];
 
       // Skip empty groups in expand mode — no header for nothing.
@@ -261,14 +273,15 @@ export function structureLineItems(
         model: { name: group.title },
         asset: null,
         bulkAsset: null,
+        // Attach non-kit members so the renderer indents them under the
+        // group parent. Empty array in collapse mode (children dropped).
+        childLineItems: expand ? maybeSort(groupInlineMembers) : undefined,
       });
 
-      // Children belong under the group's bucket label, sorted in
-      // packer-walk order when the option is on. Kit parents override
-      // the bucket so they break out into their own `[Kit] <name>`
-      // section even when they sit inside a Project Group.
+      // Kit parents that lived inside this group still get their own
+      // `[Kit] <name>` section per the kit-boundary contract.
       if (expand) {
-        for (const child of maybeSort(groupChildren)) {
+        for (const child of groupKitParents) {
           structured.push({ ...child, groupName: kitBucketLabel(child, bucketLabel) });
         }
       }

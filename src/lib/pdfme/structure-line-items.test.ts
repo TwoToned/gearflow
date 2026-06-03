@@ -348,7 +348,7 @@ describe("structureLineItems — Phase 0 baseline", () => {
 
   // ─── Phase 1 — expandProjectGroups ─────────────────────────────────────
 
-  it("expandProjectGroups=true emits group header + each child line item", () => {
+  it("expandProjectGroups=true emits group row with members attached as childLineItems", () => {
     const categories: CategoryForStructuring[] = [
       makeCategory("cat-1", "Lighting", 0, [
         makeGroup("grp-1", "Lighting Package", 0, { quantity: 1, price: 500, billingDays: 3 }),
@@ -365,18 +365,16 @@ describe("structureLineItems — Phase 0 baseline", () => {
       }),
     ];
     const result = structureLineItems(raw, categories, { expandProjectGroups: true });
-    expect(summarize(result)).toMatchInlineSnapshot(`
-      [
-        "[GROUP] cat=Lighting | group=Lighting Package | Lighting Package x1",
-        "[ITEM] cat=Lighting | group=Lighting Package | Source 4 Leko x12",
-        "[ITEM] cat=Lighting | group=Lighting Package | Iris kit x2",
-      ]
-    `);
-    // All three rows share the same groupName so the table plugin
-    // buckets them under one "Lighting Package" header.
-    const bucketNames = result.map(r => r.groupName);
-    expect(new Set(bucketNames).size).toBe(1);
-    expect(bucketNames[0]).toBe("Lighting Package");
+    // Top-level result is just the synthetic group row — its members
+    // ride along as childLineItems so the renderer can indent them.
+    expect(summarize(result)).toEqual([
+      "[GROUP] cat=Lighting | group=Lighting Package | Lighting Package x1",
+    ]);
+    // Group row is bucketed under the category — the warehouse section
+    // header is the category name, not the group title.
+    expect(result[0].groupName).toBe("Lighting");
+    // Both group members are attached, in input order.
+    expect(result[0].childLineItems?.map(c => c.id)).toEqual(["li-1", "li-2"]);
   });
 
   it("expandProjectGroups=true skips empty groups (no header for nothing)", () => {
@@ -393,11 +391,12 @@ describe("structureLineItems — Phase 0 baseline", () => {
       }),
     ];
     const result = structureLineItems(raw, categories, { expandProjectGroups: true });
-    // Empty Group has no children to render, so its header is suppressed
+    // Empty Group has no children to render, so its row is suppressed.
+    // Full Group emits one synthetic row carrying the Lamp as a child.
     expect(summarize(result)).toEqual([
       "[GROUP] cat=Lighting | group=Full Group | Full Group x1",
-      "[ITEM] cat=Lighting | group=Full Group | Lamp x4",
     ]);
+    expect(result[0].childLineItems?.map(c => c.id)).toEqual(["li-1"]);
   });
 
   it("expandProjectGroups=true: ungrouped items go under category bucket, after groups", () => {
@@ -417,15 +416,17 @@ describe("structureLineItems — Phase 0 baseline", () => {
       }),
     ];
     const result = structureLineItems(raw, categories, { expandProjectGroups: true });
+    // Group row + its members-as-children come first; ungrouped category
+    // items follow, both bucketed under the category.
     expect(summarize(result)).toMatchInlineSnapshot(`
       [
         "[GROUP] cat=Lighting | group=Lighting Package | Lighting Package x1",
-        "[ITEM] cat=Lighting | group=Lighting Package | In group x1",
         "[ITEM] cat=Lighting | group=— | Loose lamp x3",
       ]
     `);
-    // Ungrouped item gets the category as its bucket
-    expect(result[2].groupName).toBe("Lighting");
+    expect(result[0].groupName).toBe("Lighting");
+    expect(result[0].childLineItems?.map(c => c.id)).toEqual(["li-1"]);
+    expect(result[1].groupName).toBe("Lighting");
   });
 
   it("expandProjectGroups=true: kit children stay filtered (kit boundary preserved)", () => {
@@ -447,12 +448,19 @@ describe("structureLineItems — Phase 0 baseline", () => {
       }),
     ];
     const result = structureLineItems(raw, categories, { expandProjectGroups: true });
-    // Kit parent renders under the group; kit child is filtered (it
-    // renders via parent's childLineItems[] in the plugin).
+    // The kit parent still breaks out to its own `[Kit] X` bucket per
+    // the kit-boundary contract (even though it lived inside the
+    // group). The group row sits in the category bucket with no
+    // non-kit members of its own.
     expect(summarize(result)).toEqual([
       "[GROUP] cat=Lighting | group=Kit Group | Kit Group x1",
       "[ITEM] cat=Lighting | group=Kit Group | FOH Kit x1",
     ]);
+    expect(result[0].groupName).toBe("Lighting");
+    expect(result[0].childLineItems).toEqual([]);
+    // kitBucketLabel uses kit.name → description → "Kit". This fixture
+    // sets neither kit nor description, so the fallback "Kit" applies.
+    expect(result[1].groupName).toBe("[Kit] Kit");
   });
 
   it("expandProjectGroups=true: empty category is still skipped", () => {
@@ -474,8 +482,8 @@ describe("structureLineItems — Phase 0 baseline", () => {
     // "Empty Cat" omitted entirely — no items in any of its groups.
     expect(summarize(result)).toEqual([
       "[GROUP] cat=Lighting | group=Has items | Has items x1",
-      "[ITEM] cat=Lighting | group=Has items | Lamp x1",
     ]);
+    expect(result[0].childLineItems?.map(c => c.id)).toEqual(["li-1"]);
   });
 
   it("expandProjectGroups=false (collapse) is identical to legacy default behaviour", () => {
@@ -524,13 +532,17 @@ describe("structureLineItems — Phase 0 baseline", () => {
       expandProjectGroups: true,
       packerSort: true,
     });
-    // Truss Room first (alphabetical), then Warehouse B. Within Truss
-    // Room: Gobo holder before Iris kit (alphabetical model name).
+    // The synthetic group row sits at top level; its members are sorted
+    // in packer-walk order inside childLineItems. Truss Room first
+    // (alphabetical), then Warehouse B. Within Truss Room: Gobo holder
+    // before Iris kit (alphabetical model name).
     expect(summarize(result)).toEqual([
       "[GROUP] cat=Lighting | group=Lighting Package | Lighting Package x1",
-      "[ITEM] cat=Lighting | group=Lighting Package | Gobo holder x1",
-      "[ITEM] cat=Lighting | group=Lighting Package | Iris kit x1",
-      "[ITEM] cat=Lighting | group=Lighting Package | Source 4 Leko x1",
+    ]);
+    expect(result[0].childLineItems?.map(c => c.model?.name)).toEqual([
+      "Gobo holder",
+      "Iris kit",
+      "Source 4 Leko",
     ]);
   });
 
@@ -556,8 +568,11 @@ describe("structureLineItems — Phase 0 baseline", () => {
     });
     expect(summarize(result)).toEqual([
       "[GROUP] cat=Audio | group=Mics | Mics x1",
-      "[ITEM] cat=Audio | group=Mics | Sennheiser e835 x1",
-      "[ITEM] cat=Audio | group=Mics | Shure SM58 x1",
+    ]);
+    // Null-location item sorts to the bottom of the group's members.
+    expect(result[0].childLineItems?.map(c => c.model?.name)).toEqual([
+      "Sennheiser e835",
+      "Shure SM58",
     ]);
   });
 
@@ -581,11 +596,13 @@ describe("structureLineItems — Phase 0 baseline", () => {
       expandProjectGroups: true,
       packerSort: false,
     });
-    // Input order preserved: Source 4 Leko before Iris kit
+    // Input order preserved inside childLineItems: Source 4 Leko before Iris kit.
     expect(summarize(result)).toEqual([
       "[GROUP] cat=Lighting | group=Lighting Package | Lighting Package x1",
-      "[ITEM] cat=Lighting | group=Lighting Package | Source 4 Leko x1",
-      "[ITEM] cat=Lighting | group=Lighting Package | Iris kit x1",
+    ]);
+    expect(result[0].childLineItems?.map(c => c.model?.name)).toEqual([
+      "Source 4 Leko",
+      "Iris kit",
     ]);
   });
 
@@ -877,16 +894,15 @@ describe("structureLineItems — Phase 0 baseline", () => {
       }),
     ];
     const result = structureLineItems(raw, categories, { expandProjectGroups: true });
-    // Project Group header still emits, both group children render. Kit
-    // parent's groupName overrides to "[Kit] FOH Rack" so the table
-    // plugin pulls it into its own section at render time. Loose item
-    // keeps the Project Group bucket. Order within `structured[]`
-    // doesn't strictly determine render order — the plugin re-buckets
-    // by groupName when drawing.
+    // Kit parent breaks out to its own `[Kit] FOH Rack` bucket per the
+    // kit-boundary contract. The loose snake cable rides along inside
+    // the group row's childLineItems so it indents under the group on
+    // the doc. The group row itself sits in the category bucket.
     expect(result.find(r => r.id === "k1")?.groupName).toBe("[Kit] FOH Rack");
-    expect(result.find(r => r.id === "loose-in-grp")?.groupName).toBe("Stage Package");
-    expect(result.find(r => r.isGroupRow)?.groupName).toBe("Stage Package");
-    expect(result).toHaveLength(3);
+    const groupRow = result.find(r => r.isGroupRow);
+    expect(groupRow?.groupName).toBe("Audio");
+    expect(groupRow?.childLineItems?.map(c => c.id)).toEqual(["loose-in-grp"]);
+    expect(result).toHaveLength(2);
   });
 
   it("kit boundary is suppressed in collapse mode (quote/invoice keep kits inline)", () => {
@@ -996,9 +1012,11 @@ describe("structureLineItems — Phase 0 baseline", () => {
       subHireGroups,
     );
 
-    // Verify each item went to its expected bucket
-    expect(result.find(r => r.id === "owned-1")?.groupName).toBe("Lighting Package");
-    expect(result.find(r => r.id === "owned-2")?.groupName).toBe("Lighting Package");
+    // Top-level rows: group row, ungrouped loose item, kit breakout,
+    // sub-hire items, uncategorized custom. Grouped owned items now
+    // live inside the group row's childLineItems.
+    expect(result.find(r => r.id === "owned-1")).toBeUndefined();
+    expect(result.find(r => r.id === "owned-2")).toBeUndefined();
     expect(result.find(r => r.id === "owned-loose")?.groupName).toBe("Lighting");
     expect(result.find(r => r.id === "kit-foh")?.groupName).toBe("[Kit] FOH Rack");
     expect(result.find(r => r.id === "hired-1")?.groupName).toBe("Sub-Hire: Mainstage AV — Moving Lights");
@@ -1007,10 +1025,15 @@ describe("structureLineItems — Phase 0 baseline", () => {
     // Kit child is filtered out of top-level structuring
     expect(result.find(r => r.id === "kit-foh-child")).toBeUndefined();
 
-    // The group header row for Lighting Package is emitted
+    // The group header row is emitted in the category bucket — the
+    // section header on the doc is the category, not the group title.
     const groupRow = result.find(r => r.isGroupRow && r.groupTitle === "Lighting Package");
     expect(groupRow).toBeTruthy();
-    expect(groupRow?.groupName).toBe("Lighting Package");
+    expect(groupRow?.groupName).toBe("Lighting");
+    // Group members ride along as children, sorted in packer-walk order.
+    // Both share locationName=Lighting Cage so the tie-breaker is model
+    // name: "Iris kit" (owned-2) sorts before "Source 4 Leko" (owned-1).
+    expect(groupRow?.childLineItems?.map(c => c.id)).toEqual(["owned-2", "owned-1"]);
   });
 
   it("category-total regression: collapse-mode output unchanged by Phase 1-3b features", () => {

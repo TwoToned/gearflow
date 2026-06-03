@@ -17,7 +17,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { Plus, FolderPlus, Package, Pencil, Loader2, AlertTriangle } from "lucide-react";
+import { Plus, FolderPlus, Package, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
 import { getProjectCategories } from "@/server/project-categories";
@@ -45,18 +45,8 @@ import {
   reorderMixedGroupsInCategory,
 } from "@/server/category-slots";
 import { getGroupTemplates, applyGroupTemplate, saveGroupAsTemplate } from "@/server/group-templates";
-import { removeLineItem, updateLineItem, reorderLineItems, checkAvailability } from "@/server/line-items";
+import { removeLineItem, updateLineItem, reorderLineItems } from "@/server/line-items";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -78,6 +68,7 @@ import { SaveAsTemplateDialog } from "./save-as-template-dialog";
 import { AddCategoryDialog } from "./add-category-dialog";
 import { RenameCategoryDialog } from "./rename-category-dialog";
 import { AddGroupToolbarDialog } from "./add-group-toolbar-dialog";
+import { EditLineItemDialog } from "./edit-line-item-dialog";
 import { SubHireOrderDialog } from "./sub-hire-order-dialog";
 import { getSubHires } from "@/server/sub-hires";
 import { subHireStatusLabels, formatLabel } from "@/lib/status-labels";
@@ -195,16 +186,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   const [moveLineItemId, setMoveLineItemId] = useState<string | null>(null);
   const [moveTargetGroupId, setMoveTargetGroupId] = useState<string>("__uncategorized__");
 
-  // Line item edit dialog state
+  // EditLineItemDialog target — body owns its own form state + availability query.
   const [editLineItem, setEditLineItem] = useState<LineItemData | null>(null);
-  const [editQuantity, setEditQuantity] = useState("1");
-  const [editUnitPrice, setEditUnitPrice] = useState("");
-  const [editDescription, setEditDescription] = useState("");
-  const [editDiscount, setEditDiscount] = useState("");
-  const [editDiscountMode, setEditDiscountMode] = useState<"$" | "%">("$");
-  const [editPriceMode, setEditPriceMode] = useState<"auto" | "manual">("auto");
-  const [editNotes, setEditNotes] = useState("");
-  const [editOverbookConfirmed, setEditOverbookConfirmed] = useState(false);
 
   // Group edit dialog state
   // EditGroupDialog target — body owns its own form state, keyed by group.id.
@@ -273,37 +256,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   });
 
   // Availability check for the currently-edited line item (equipment w/ modelId only)
-  const { data: editAvailability } = useQuery({
-    queryKey: [
-      "availability",
-      orgId,
-      editLineItem?.modelId ?? null,
-      rentalStartDate?.toISOString() ?? null,
-      rentalEndDate?.toISOString() ?? null,
-      projectId,
-    ],
-    queryFn: () =>
-      checkAvailability(
-        editLineItem!.modelId!,
-        rentalStartDate ?? null,
-        rentalEndDate ?? null,
-        projectId,
-      ),
-    enabled: !!editLineItem && !!editLineItem.modelId,
-  });
-
-  // "Available for this edit" = the server-computed usable pool (effectiveStock
-  // minus all overlapping bookings, including this item) plus the current
-  // item's own quantity added back. This matches the add dialog's semantics
-  // and agrees with the overbook badge.
-  const editAvailableForEdit =
-    editAvailability && editLineItem
-      ? editAvailability.available + editLineItem.quantity
-      : null;
-  const editRequestedQty = Number(editQuantity) || 1;
-  const editIsOverbooked =
-    editAvailableForEdit != null && editRequestedQty > editAvailableForEdit;
-
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: projectSubHires = [] } = useQuery<any[]>({
     queryKey: ["project-sub-hires", orgId, projectId],
@@ -391,49 +343,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     onError: (e: Error) => toast.error(e.message),
   });
 
-  function openEditLineItem(item: LineItemData) {
-    setEditLineItem(item);
-    setEditQuantity(String(item.quantity));
-    setEditUnitPrice(item.unitPrice != null ? String(Number(item.unitPrice)) : "");
-    setEditDescription(item.description ?? item.model?.name ?? "");
-    setEditDiscount(item.discount != null && Number(item.discount) > 0 ? String(Number(item.discount)) : "");
-    setEditDiscountMode("$");
-    setEditPriceMode(item.pricingType === "OPTIMIZED" && !item.priceOverridden ? "auto" : "manual");
-    setEditNotes(item.notes ?? "");
-    setEditOverbookConfirmed(false);
-  }
-
-  function handleSaveEditLineItem() {
-    if (!editLineItem) return;
-    const qty = Number(editQuantity) || 1;
-    const isAuto = editPriceMode === "auto";
-    const price = isAuto
-      ? (editLineItem.unitPrice != null ? Number(editLineItem.unitPrice) : undefined)
-      : (editUnitPrice ? Number(editUnitPrice) : undefined);
-    const dur = editLineItem.duration ?? 1;
-    let disc: number | undefined;
-    if (editDiscount && Number(editDiscount) > 0) {
-      if (editDiscountMode === "%" && price != null) {
-        disc = Math.round((price * qty * dur * Number(editDiscount)) / 100 * 100) / 100;
-      } else {
-        disc = Number(editDiscount);
-      }
-    }
-    updateLineItemMut.mutate({
-      id: editLineItem.id,
-      data: {
-        type: editLineItem.type ?? "EQUIPMENT",
-        quantity: qty,
-        unitPrice: price,
-        description: editDescription,
-        pricingType: editLineItem.pricingType ?? "PER_DAY",
-        duration: dur,
-        discount: disc,
-        notes: editNotes || undefined,
-      },
-      allowOverbook: editOverbookConfirmed,
-    });
-  }
 
   const saveAsTemplateMut = useMutation({
     mutationFn: ({ groupId, name, description }: { groupId: string; name: string; description?: string }) =>
@@ -1067,7 +976,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                 showCostColumn={showCostColumn}
                                 isExpanded={expandedParents.has(item.id)}
                                 onToggle={() => toggleParent(item.id)}
-                                onEdit={() => openEditLineItem(item)}
+                                onEdit={() => setEditLineItem(item)}
                                 onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId(group.id); }}
                                 onRemove={() => removeMut.mutate(item.id)}
                               />
@@ -1087,7 +996,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                           showCostColumn={showCostColumn}
                           isExpanded={expandedParents.has(item.id)}
                           onToggle={() => toggleParent(item.id)}
-                          onEdit={() => openEditLineItem(item)}
+                          onEdit={() => setEditLineItem(item)}
                           onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
                           onRemove={() => removeMut.mutate(item.id)}
                         />
@@ -1117,7 +1026,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                     showCostColumn={showCostColumn}
                     isExpanded={expandedParents.has(item.id)}
                     onToggle={() => toggleParent(item.id)}
-                    onEdit={() => openEditLineItem(item)}
+                    onEdit={() => setEditLineItem(item)}
                     onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
                     onRemove={() => removeMut.mutate(item.id)}
                   />
@@ -1375,201 +1284,24 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
         onConfirm={(id) => deleteGroupMut.mutate(id)}
       />
 
-      {/* Edit line item dialog */}
-      <Dialog open={editLineItem != null} onOpenChange={(open) => { if (!open) setEditLineItem(null); }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit Item</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="edit-description">Description</Label>
-              <Input
-                id="edit-description"
-                value={editDescription}
-                onChange={(e) => setEditDescription(e.target.value)}
-              />
-            </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="edit-quantity">Quantity</Label>
-              <Input
-                id="edit-quantity"
-                type="number"
-                min={1}
-                value={editQuantity}
-                onChange={(e) => setEditQuantity(e.target.value)}
-              />
-              {editAvailability && editLineItem?.modelId && (
-                <div className="space-y-1 pt-1">
-                  <p className={editIsOverbooked ? "text-sm text-red-600 dark:text-red-400" : "text-sm text-fg-3"}>
-                    <span className="font-semibold">{editAvailableForEdit ?? 0}</span>{" "}
-                    available out of{" "}
-                    <span className="font-semibold">{editAvailability.effectiveStock ?? editAvailability.totalStock}</span>{" "}
-                    {editAvailability.dateless ? "in stock" : "usable"}
-                    {editAvailability.dateless && (
-                      <span className="text-fg-3 font-normal">
-                        {" "}(no dates set — showing stock only)
-                      </span>
-                    )}
-                  </p>
-                  {(editAvailability.unavailable ?? 0) > 0 && (
-                    <p className="text-purple-600 dark:text-purple-400 text-xs">
-                      {editAvailability.unavailable} of {editAvailability.totalStock} total not usable
-                      {" "}({[
-                        editAvailability.inMaintenance ? `${editAvailability.inMaintenance} in maintenance` : "",
-                        editAvailability.lost ? `${editAvailability.lost} lost` : "",
-                      ].filter(Boolean).join(", ")})
-                    </p>
-                  )}
-                  {editAvailability.conflicts && editAvailability.conflicts.length > 0 && (
-                    <div className="flex items-start gap-2 text-amber-600 dark:text-amber-400">
-                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                      <div>
-                        <p className="text-xs font-medium">Conflicts:</p>
-                        <ul className="list-disc pl-4 text-xs">
-                          {editAvailability.conflicts.map((c: string) => (
-                            <li key={c}>{c}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Pricing section */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label>Pricing</Label>
-                {editLineItem?.pricingType === "OPTIMIZED" && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (editPriceMode === "auto") {
-                        setEditPriceMode("manual");
-                        setEditUnitPrice(editLineItem.unitPrice != null ? String(Number(editLineItem.unitPrice)) : "");
-                      } else {
-                        setEditPriceMode("auto");
-                        setEditUnitPrice("");
-                      }
-                    }}
-                    className="text-xs text-primary hover:underline"
-                  >
-                    {editPriceMode === "auto" ? "Set manual price" : "Revert to auto"}
-                  </button>
-                )}
-              </div>
-
-              {editPriceMode === "auto" && editLineItem?.pricingType === "OPTIMIZED" ? (
-                <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-primary">Auto-priced</span>
-                    <span className="text-sm font-semibold">
-                      {formatCurrency(editLineItem.unitPrice != null ? Number(editLineItem.unitPrice) : null)}
-                    </span>
-                  </div>
-                  {editLineItem.priceBreakdown && (
-                    <p className="text-xs text-fg-3 mt-0.5">{editLineItem.priceBreakdown}</p>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <Input
-                    id="edit-unitPrice"
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    value={editUnitPrice}
-                    onChange={(e) => setEditUnitPrice(e.target.value)}
-                    placeholder="Enter price"
-                  />
-                  {editLineItem?.pricingType === "OPTIMIZED" && (
-                    <p className="text-xs text-amber-500">This will override the auto-calculated price</p>
-                  )}
-                </div>
-              )}
-
-              {/* Discount row */}
-              <div className="flex items-center gap-2">
-                <Label htmlFor="edit-discount" className="shrink-0 text-sm">Discount</Label>
-                <div className="flex gap-1 flex-1">
-                  <Input
-                    id="edit-discount"
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    placeholder="0"
-                    value={editDiscount}
-                    onChange={(e) => setEditDiscount(e.target.value)}
-                    className="flex-1"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setEditDiscountMode(editDiscountMode === "$" ? "%" : "$")}
-                    className="shrink-0 w-9 h-9 rounded-md border border-input text-sm font-medium hover:bg-accent transition-colors"
-                  >
-                    {editDiscountMode}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="edit-notes">Notes</Label>
-              <Textarea
-                id="edit-notes"
-                value={editNotes}
-                onChange={(e) => setEditNotes(e.target.value)}
-                rows={2}
-              />
-            </div>
-
-            {editIsOverbooked && (
-              <div className="rounded-md border border-red-500/50 bg-red-500/10 p-3 space-y-2">
-                <p className="text-sm font-medium text-red-600 dark:text-red-400">
-                  <AlertTriangle className="inline-block mr-1.5 h-3.5 w-3.5" />
-                  {rentalStartDate && rentalEndDate
-                    ? `This will overbook ${editRequestedQty} units with only ${editAvailableForEdit ?? 0} available across overlapping projects`
-                    : `Only ${editAvailableForEdit ?? 0} in stock — requesting ${editRequestedQty}`}
-                </p>
-                {editAvailability?.dateless && (
-                  <p className="text-xs text-red-600/80 dark:text-red-400/80">
-                    No dates set — checking stock only (not cross-project conflicts)
-                  </p>
-                )}
-                {editAvailability?.conflicts && editAvailability.conflicts.length > 0 && (
-                  <p className="text-xs text-red-600/80 dark:text-red-400/80">
-                    Conflicts with: {editAvailability.conflicts.join(", ")}
-                  </p>
-                )}
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editOverbookConfirmed}
-                    onChange={(e) => setEditOverbookConfirmed(e.target.checked)}
-                    className="accent-red-500"
-                  />
-                  <span className="text-red-600 dark:text-red-400">I understand, overbook anyway</span>
-                </label>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditLineItem(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSaveEditLineItem}
-              disabled={updateLineItemMut.isPending || (editIsOverbooked && !editOverbookConfirmed)}
-            >
-              {updateLineItemMut.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Edit line item dialog (Phase 7 — extracted) */}
+      <EditLineItemDialog
+        item={editLineItem}
+        projectId={projectId}
+        rentalStartDate={rentalStartDate}
+        rentalEndDate={rentalEndDate}
+        orgId={orgId}
+        isPending={updateLineItemMut.isPending}
+        onClose={() => setEditLineItem(null)}
+        onSubmit={(id, data, allowOverbook) =>
+          updateLineItemMut.mutate({
+            id,
+            data: data as unknown as Record<string, unknown>,
+            allowOverbook,
+          })
+        }
+      />
 
       {/* Move line item dialog */}
       <MoveLineItemDialog

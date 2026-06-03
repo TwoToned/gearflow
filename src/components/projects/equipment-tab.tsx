@@ -75,6 +75,7 @@ import { PriceEditDialog, type PriceEditTarget } from "./price-edit-dialog";
 import { MoveLineItemDialog } from "./move-line-item-dialog";
 import { EditGroupDialog } from "./edit-group-dialog";
 import { DeleteGroupDialog } from "./delete-group-dialog";
+import { SaveAsTemplateDialog } from "./save-as-template-dialog";
 import { SubHireOrderDialog } from "./sub-hire-order-dialog";
 import { getSubHires } from "@/server/sub-hires";
 import { subHireStatusLabels, formatLabel } from "@/lib/status-labels";
@@ -191,8 +192,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
 
   // Save group as template dialog state
   const [saveAsTemplateGroup, setSaveAsTemplateGroup] = useState<{ id: string; title: string } | null>(null);
-  const [saveAsTemplateName, setSaveAsTemplateName] = useState("");
-  const [saveAsTemplateDescription, setSaveAsTemplateDescription] = useState("");
 
   // Move line item dialog state
   const [moveLineItemId, setMoveLineItemId] = useState<string | null>(null);
@@ -447,8 +446,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
       toast.success(`Saved as template "${name}"`);
       queryClient.invalidateQueries({ queryKey: ["group-templates"] });
       setSaveAsTemplateGroup(null);
-      setSaveAsTemplateName("");
-      setSaveAsTemplateDescription("");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -1053,11 +1050,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                   toast.error(e instanceof Error ? e.message : "Failed to recalculate");
                                 }
                               }}
-                              onSaveAsTemplate={() => {
-                                setSaveAsTemplateGroup({ id: group.id, title: group.title });
-                                setSaveAsTemplateName(group.title);
-                                setSaveAsTemplateDescription(group.description ?? "");
-                              }}
+                              onSaveAsTemplate={() => setSaveAsTemplateGroup({ id: group.id, title: group.title })}
                             />
                             {/* Expanded line items */}
                             {isExpanded && groupItems.length === 0 && (
@@ -1407,70 +1400,18 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
       </Dialog>
 
       {/* Save group as template dialog */}
-      <Dialog
-        open={saveAsTemplateGroup != null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setSaveAsTemplateGroup(null);
-            setSaveAsTemplateName("");
-            setSaveAsTemplateDescription("");
-          }
-        }}
-      >
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Save as Template</DialogTitle>
-            <DialogDescription>
-              Save &quot;{saveAsTemplateGroup?.title}&quot; as a reusable template. Only model- and kit-backed items are captured; free-text lines are skipped.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-2">
-              <Label>Template name</Label>
-              <Input
-                value={saveAsTemplateName}
-                onChange={(e) => setSaveAsTemplateName(e.target.value)}
-                placeholder="e.g. Drum Mic Pack"
-                autoFocus
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Description (optional)</Label>
-              <Input
-                value={saveAsTemplateDescription}
-                onChange={(e) => setSaveAsTemplateDescription(e.target.value)}
-                placeholder="When to use this template..."
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setSaveAsTemplateGroup(null);
-                setSaveAsTemplateName("");
-                setSaveAsTemplateDescription("");
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (saveAsTemplateGroup && saveAsTemplateName.trim()) {
-                  saveAsTemplateMut.mutate({
-                    groupId: saveAsTemplateGroup.id,
-                    name: saveAsTemplateName.trim(),
-                    description: saveAsTemplateDescription.trim() || undefined,
-                  });
-                }
-              }}
-              disabled={!saveAsTemplateName.trim() || saveAsTemplateMut.isPending}
-            >
-              {saveAsTemplateMut.isPending ? "Saving..." : "Save Template"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <SaveAsTemplateDialog
+        group={saveAsTemplateGroup}
+        isPending={saveAsTemplateMut.isPending}
+        onClose={() => setSaveAsTemplateGroup(null)}
+        onSubmit={(groupId, values) =>
+          saveAsTemplateMut.mutate({
+            groupId,
+            name: values.name,
+            description: values.description,
+          })
+        }
+      />
 
       {/* Add group from toolbar dialog */}
       <Dialog open={showAddGroupFromToolbar} onOpenChange={(open) => {

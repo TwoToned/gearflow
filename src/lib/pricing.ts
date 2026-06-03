@@ -5,8 +5,11 @@
  * finds the cheapest combination of months + weeks + days.
  */
 
-export const DAYS_PER_BILLING_MONTH = 28
+export const DEFAULT_DAYS_PER_BILLING_MONTH = 28
 export const DAYS_PER_BILLING_WEEK = 7
+
+/** @deprecated Use DEFAULT_DAYS_PER_BILLING_MONTH or the org-configured value. */
+export const DAYS_PER_BILLING_MONTH = DEFAULT_DAYS_PER_BILLING_MONTH
 
 export interface OptimizedPrice {
   months: number
@@ -22,12 +25,16 @@ export interface OptimizedPrice {
 /**
  * Find the minimum-cost combination of monthly/weekly/daily billing units
  * for a given rental duration. Returns null if no rates are available.
+ *
+ * @param daysPerMonth How many days a "month" bills as (default 28). Orgs may
+ *   override this in settings to match their market norm (28/30/calendar).
  */
 export function optimizePrice(
   dailyRate: number | null,
   weeklyRate: number | null,
   monthlyRate: number | null,
-  totalDays: number
+  totalDays: number,
+  daysPerMonth: number = DEFAULT_DAYS_PER_BILLING_MONTH
 ): OptimizedPrice | null {
   if (totalDays === 0) {
     return {
@@ -58,21 +65,21 @@ export function optimizePrice(
       ? weeklyRate
       : null
 
-  // Only consider monthly if it's actually cheaper than 4 weekly (or 28 daily)
+  // Only consider monthly if it's actually cheaper than the equivalent weekly+daily
+  // coverage of `daysPerMonth` days.
+  const monthlyWeeks = Math.floor(daysPerMonth / DAYS_PER_BILLING_WEEK)
+  const monthlyRemainder = daysPerMonth - monthlyWeeks * DAYS_PER_BILLING_WEEK
   const effectiveMonthlyRate =
     monthlyRate != null &&
     (effectiveWeeklyRate == null
-      ? dailyRate == null || monthlyRate < dailyRate * DAYS_PER_BILLING_MONTH
-      : monthlyRate < effectiveWeeklyRate * 4)
+      ? dailyRate == null || monthlyRate < dailyRate * daysPerMonth
+      : monthlyRate <
+        effectiveWeeklyRate * monthlyWeeks + (dailyRate ?? 0) * monthlyRemainder)
       ? monthlyRate
       : null
 
   const maxMonths = effectiveMonthlyRate != null
-    ? Math.floor(totalDays / DAYS_PER_BILLING_MONTH)
-    : 0
-
-  const maxWeeks = effectiveWeeklyRate != null
-    ? Math.floor(totalDays / DAYS_PER_BILLING_WEEK)
+    ? Math.floor(totalDays / daysPerMonth)
     : 0
 
   let bestCost = Infinity
@@ -81,7 +88,7 @@ export function optimizePrice(
   let bestDays = totalDays
 
   for (let m = 0; m <= maxMonths; m++) {
-    const afterMonths = totalDays - m * DAYS_PER_BILLING_MONTH
+    const afterMonths = totalDays - m * daysPerMonth
     const weeksLimit = effectiveWeeklyRate != null
       ? Math.floor(afterMonths / DAYS_PER_BILLING_WEEK)
       : 0
@@ -129,13 +136,16 @@ export function optimizePrice(
 
 /**
  * Convert billing period fields to total days.
+ *
+ * @param daysPerMonth How many days a "month" bills as (default 28).
  */
 export function computeTotalDays(
   months: number,
   weeks: number,
-  days: number
+  days: number,
+  daysPerMonth: number = DEFAULT_DAYS_PER_BILLING_MONTH
 ): number {
-  return months * DAYS_PER_BILLING_MONTH + weeks * DAYS_PER_BILLING_WEEK + days
+  return months * daysPerMonth + weeks * DAYS_PER_BILLING_WEEK + days
 }
 
 /**
@@ -160,4 +170,20 @@ export function formatBreakdown(
   }
 
   return parts.length > 0 ? parts.join(" + ") : "0 days"
+}
+
+/**
+ * Resolve and validate a days-per-month value from org settings.
+ * Falls back to the default (28) if unset, non-numeric, or out of range.
+ * Range: 20-31 to cover common conventions (28-day, 30-day, calendar-month).
+ */
+export function resolveDaysPerMonth(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_DAYS_PER_BILLING_MONTH
+  }
+  const rounded = Math.round(value)
+  if (rounded < 20 || rounded > 31) {
+    return DEFAULT_DAYS_PER_BILLING_MONTH
+  }
+  return rounded
 }

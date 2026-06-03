@@ -224,6 +224,28 @@ export default function GeneralSettingsPage() {
                 Applied to new projects unless overridden. Used for GST/VAT calculation.
               </p>
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="daysPerMonth">Days per billing month</Label>
+              <Input
+                id="daysPerMonth"
+                type="number"
+                step="1"
+                min="20"
+                max="31"
+                value={settings.daysPerMonth ?? ""}
+                onChange={(e) =>
+                  setSettings((prev) => ({
+                    ...prev,
+                    daysPerMonth: e.target.value === "" ? undefined : Number(e.target.value),
+                  }))
+                }
+                placeholder="28"
+                disabled={!canEdit}
+              />
+              <p className="t-micro text-fg-3">
+                How many days a &ldquo;month&rdquo; bills as in the pricing optimiser. Default 28; common alternatives are 30 or calendar (31).
+              </p>
+            </div>
           </div>
         </section>
       </div>

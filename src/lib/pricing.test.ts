@@ -3,8 +3,10 @@ import {
   computeTotalDays,
   DAYS_PER_BILLING_MONTH,
   DAYS_PER_BILLING_WEEK,
+  DEFAULT_DAYS_PER_BILLING_MONTH,
   formatBreakdown,
   optimizePrice,
+  resolveDaysPerMonth,
 } from "./pricing"
 
 describe("optimizePrice", () => {
@@ -117,6 +119,68 @@ describe("computeTotalDays", () => {
 
   it("only days → days value unchanged", () => {
     expect(computeTotalDays(0, 0, 5)).toBe(5)
+  })
+
+  it("respects custom daysPerMonth (30): 1 month → 30", () => {
+    expect(computeTotalDays(1, 0, 0, 30)).toBe(30)
+  })
+
+  it("respects custom daysPerMonth (31): 2 months + 1 week → 69", () => {
+    expect(computeTotalDays(2, 1, 0, 31)).toBe(69)
+  })
+})
+
+describe("optimizePrice with custom daysPerMonth", () => {
+  it("30-day month: 30 days picks 1 month when cheaper", () => {
+    // monthly 2000 < 30 * 100 = 3000 daily, so monthly wins
+    const result = optimizePrice(100, null, 2000, 30, 30)
+    expect(result).not.toBeNull()
+    expect(result!.months).toBe(1)
+    expect(result!.days).toBe(0)
+    expect(result!.grandTotal).toBe(2000)
+  })
+
+  it("30-day month: 60 days picks 2 months", () => {
+    const result = optimizePrice(100, 500, 2000, 60, 30)
+    expect(result).not.toBeNull()
+    expect(result!.months).toBe(2)
+    expect(result!.grandTotal).toBe(4000)
+  })
+
+  it("default 28-day month still works when daysPerMonth omitted", () => {
+    const result = optimizePrice(100, 500, 1500, 28)
+    expect(result).not.toBeNull()
+    expect(result!.months).toBe(1)
+    expect(result!.grandTotal).toBe(1500)
+  })
+})
+
+describe("resolveDaysPerMonth", () => {
+  it("returns default for undefined", () => {
+    expect(resolveDaysPerMonth(undefined)).toBe(DEFAULT_DAYS_PER_BILLING_MONTH)
+  })
+
+  it("returns default for null", () => {
+    expect(resolveDaysPerMonth(null)).toBe(DEFAULT_DAYS_PER_BILLING_MONTH)
+  })
+
+  it("returns default for non-numeric", () => {
+    expect(resolveDaysPerMonth("28")).toBe(DEFAULT_DAYS_PER_BILLING_MONTH)
+    expect(resolveDaysPerMonth(NaN)).toBe(DEFAULT_DAYS_PER_BILLING_MONTH)
+  })
+
+  it("returns default for out-of-range values", () => {
+    expect(resolveDaysPerMonth(0)).toBe(DEFAULT_DAYS_PER_BILLING_MONTH)
+    expect(resolveDaysPerMonth(19)).toBe(DEFAULT_DAYS_PER_BILLING_MONTH)
+    expect(resolveDaysPerMonth(32)).toBe(DEFAULT_DAYS_PER_BILLING_MONTH)
+  })
+
+  it("returns rounded value for in-range numerics", () => {
+    expect(resolveDaysPerMonth(28)).toBe(28)
+    expect(resolveDaysPerMonth(30)).toBe(30)
+    expect(resolveDaysPerMonth(31)).toBe(31)
+    expect(resolveDaysPerMonth(30.4)).toBe(30)
+    expect(resolveDaysPerMonth(30.6)).toBe(31)
   })
 })
 

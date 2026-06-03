@@ -50,17 +50,45 @@ import {
  */
 export async function getUncategorizedSubHireGroups(projectId: string) {
   const { organizationId } = await requirePermission("project", "read");
+  // Mirrors the lineItem include used by getProjectCategories so the
+  // equipment tab can render orphan sub-hire groups with full child
+  // expansion without an additional query.
+  const lineItemInclude = {
+    model: true,
+    asset: true,
+    bulkAsset: true,
+    kit: true,
+    supplier: { select: { name: true } },
+    childLineItems: {
+      include: {
+        model: true,
+        asset: true,
+        bulkAsset: true,
+        kit: true,
+        supplier: { select: { name: true } },
+      },
+      orderBy: { sortOrder: "asc" as const },
+    },
+  };
   const groups = await prisma.subHireGroup.findMany({
     where: {
       targetCategoryId: null,
       subHire: { projectId, organizationId },
     },
     include: {
-      subHire: { select: { id: true, orderNumber: true, status: true, supplier: { select: { id: true, name: true } } } },
+      subHire: {
+        select: {
+          id: true,
+          orderNumber: true,
+          status: true,
+          supplier: { select: { id: true, name: true } },
+        },
+      },
       items: true,
       lineItems: {
         where: { isKitChild: false, parentLineItemId: null },
-        select: { id: true },
+        include: lineItemInclude,
+        orderBy: { sortOrder: "asc" },
       },
     },
     orderBy: { sortOrder: "asc" },

@@ -38,6 +38,7 @@ import {
   getUncategorizedLineItems,
   getProjectOverbookedStatus,
 } from "@/server/project-categories";
+import { getUncategorizedSubHireGroups } from "@/server/category-slots";
 import { getGroupTemplates, applyGroupTemplate, saveGroupAsTemplate } from "@/server/group-templates";
 import { removeLineItem, updateLineItem, reorderLineItems, checkAvailability } from "@/server/line-items";
 import { Button } from "@/components/ui/button";
@@ -76,9 +77,12 @@ import {
   GroupRow,
   CategoryRow,
   LineItemRow,
+  SubHireGroupRow,
   type LineItemData,
   type GroupData,
   type CategoryData,
+  type SubHireGroupData,
+  type MixedGroupSlot,
   type OverbookedInfo,
 } from "./equipment-rows";
 
@@ -209,6 +213,12 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     staleTime: 60_000,
   });
 
+  const { data: uncategorizedSubHireGroups = [] } = useQuery({
+    queryKey: ["uncategorized-subhire-groups", projectId],
+    queryFn: () => getUncategorizedSubHireGroups(projectId),
+    staleTime: 60_000,
+  });
+
   const { data: templates = [] } = useQuery({
     queryKey: ["group-templates"],
     queryFn: () => getGroupTemplates(),
@@ -272,6 +282,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   const invalidate = useCallback(() => {
     queryClient.invalidateQueries({ queryKey });
     queryClient.invalidateQueries({ queryKey: ["uncategorized-items", projectId] });
+    queryClient.invalidateQueries({ queryKey: ["uncategorized-subhire-groups", projectId] });
     queryClient.invalidateQueries({ queryKey: ["project", projectId] });
     queryClient.invalidateQueries({ queryKey: ["project-overbooked", projectId] });
     // Any mutation that changes line item quantity/presence must refresh
@@ -567,7 +578,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
 
   const typedCategories = categories as CategoryData[];
   const hasCategories = typedCategories.length > 0;
-  const hasUncategorized = (uncategorizedItems as LineItemData[]).length > 0;
+  const orphanSubHireGroups = uncategorizedSubHireGroups as SubHireGroupData[];
+  const hasUncategorized =
+    (uncategorizedItems as LineItemData[]).length > 0 || orphanSubHireGroups.length > 0;
 
   // Build a set of draft sub-hire IDs so we can badge unconfirmed items
   const draftSubHireIds = new Set<string>();
@@ -575,16 +588,30 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     if (sh.status === "DRAFT") draftSubHireIds.add(sh.id as string);
   }
 
-  // Build flat list of all sortable IDs for the single DndContext
+  // Build flat list of all sortable IDs for the single DndContext.
+  // Walks each category's mixed group list in canonical (CategorySlot)
+  // order so the DnD context sees sub-hire group rows interleaved with
+  // project group rows. Falls back to cat.groups when mixedGroups isn't
+  // present (e.g. an HMR-stale cached response).
   const allSortableIds: string[] = [];
   for (const cat of typedCategories) {
     allSortableIds.push(`cat-${cat.id}`);
-    for (const group of cat.groups) {
-      allSortableIds.push(`grp-${group.id}`);
-      if (expandedGroups.has(group.id)) {
-        for (const item of group.lineItems ?? []) {
-          if (!isRealKitChild(item as LineItemData)) allSortableIds.push(`li-${item.id}`);
+    const mixed: MixedGroupSlot[] = cat.mixedGroups ?? cat.groups.map((g) => ({
+      kind: "project" as const,
+      sortOrder: g.sortOrder,
+      projectGroupId: g.id,
+    }));
+    for (const slot of mixed) {
+      if (slot.kind === "project") {
+        allSortableIds.push(`grp-${slot.projectGroupId}`);
+        const group = cat.groups.find((g) => g.id === slot.projectGroupId);
+        if (group && expandedGroups.has(group.id)) {
+          for (const item of group.lineItems ?? []) {
+            if (!isRealKitChild(item as LineItemData)) allSortableIds.push(`li-${item.id}`);
+          }
         }
+      } else {
+        allSortableIds.push(`shg-${slot.subHireGroupId}`);
       }
     }
     for (const item of cat.lineItems ?? []) {
@@ -593,6 +620,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   }
   for (const item of uncategorizedItems as LineItemData[]) {
     if (!isRealKitChild(item)) allSortableIds.push(`li-${item.id}`);
+  }
+  for (const shGroup of orphanSubHireGroups) {
+    allSortableIds.push(`shg-${shGroup.id}`);
   }
 
   return (
@@ -728,8 +758,67 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                         onDelete={() => deleteCategoryMut.mutate(cat.id)}
                       />
 
-                      {/* Groups within category */}
-                      {cat.groups.map((group) => {
+                      {/* Mixed groups within category (CategorySlot order; falls back
+                          to cat.groups when mixedGroups hasn't been computed). */}
+                      {(cat.mixedGroups ?? cat.groups.map<MixedGroupSlot>((g) => ({
+                        kind: "project" as const,
+                        sortOrder: g.sortOrder,
+                        projectGroupId: g.id,
+                      }))).map((slot) => {
+                        if (slot.kind === "subHire") {
+                          const shGroup = (cat.subHireGroupTargets ?? []).find(
+                            (g: SubHireGroupData) => g.id === slot.subHireGroupId,
+                          );
+                          if (!shGroup) return null;
+                          const isExpanded = expandedGroups.has(shGroup.id);
+                          // Synthetic parent line item — its childLineItems are
+                          // the kit-style children rendered on expand.
+                          const parentLi = (shGroup.lineItems ?? [])[0];
+                          const childItems = (parentLi?.childLineItems ?? []) as LineItemData[];
+                          return (
+                            <React.Fragment key={`shg-${shGroup.id}`}>
+                              <SubHireGroupRow
+                                group={shGroup}
+                                isExpanded={isExpanded}
+                                indented
+                                onToggle={() => toggleGroup(shGroup.id)}
+                                onEdit={() => {
+                                  setManagingSubHireId(shGroup.subHire.id);
+                                  setShowSubHireOrderDialog(true);
+                                }}
+                              />
+                              {isExpanded && childItems.length === 0 && (
+                                <TableRow className="hover:bg-transparent">
+                                  <TableCell colSpan={COL_COUNT} className="py-3 text-center text-xs text-fg-4">
+                                    No items in this sub-hire group yet.
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                              {isExpanded && childItems.map((item) => (
+                                <LineItemRow
+                                  key={item.id}
+                                  item={item}
+                                  indent="ml-12"
+                                  overbookedInfo={undefined}
+                                  isUnconfirmed={!!shGroup.subHire && draftSubHireIds.has(shGroup.subHire.id)}
+                                  isExpanded={expandedParents.has(item.id)}
+                                  onToggle={() => toggleParent(item.id)}
+                                  onEdit={() => {
+                                    setManagingSubHireId(shGroup.subHire.id);
+                                    setShowSubHireOrderDialog(true);
+                                  }}
+                                  onMove={() => {
+                                    setManagingSubHireId(shGroup.subHire.id);
+                                    setShowSubHireOrderDialog(true);
+                                  }}
+                                  onRemove={() => removeMut.mutate(item.id)}
+                                />
+                              ))}
+                            </React.Fragment>
+                          );
+                        }
+                        const group = cat.groups.find((g) => g.id === slot.projectGroupId);
+                        if (!group) return null;
                         const isExpanded = expandedGroups.has(group.id);
                         const priceVal = group.price != null ? Number(group.price) : null;
                         const groupItems = (group.lineItems ?? []).filter((i: LineItemData) => !isHiddenFromList(i));
@@ -858,6 +947,53 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                     onRemove={() => removeMut.mutate(item.id)}
                   />
                 ))}
+                {/* Orphan sub-hire groups — targetCategoryId IS NULL.
+                    S13 from the test plan: must surface here, not vanish. */}
+                {orphanSubHireGroups.map((shGroup) => {
+                  const isExpanded = expandedGroups.has(shGroup.id);
+                  const parentLi = (shGroup.lineItems ?? [])[0];
+                  const childItems = (parentLi?.childLineItems ?? []) as LineItemData[];
+                  return (
+                    <React.Fragment key={`shg-${shGroup.id}`}>
+                      <SubHireGroupRow
+                        group={shGroup}
+                        isExpanded={isExpanded}
+                        onToggle={() => toggleGroup(shGroup.id)}
+                        onEdit={() => {
+                          setManagingSubHireId(shGroup.subHire.id);
+                          setShowSubHireOrderDialog(true);
+                        }}
+                      />
+                      {isExpanded && childItems.length === 0 && (
+                        <TableRow className="hover:bg-transparent">
+                          <TableCell colSpan={COL_COUNT} className="py-3 text-center text-xs text-fg-4">
+                            No items in this sub-hire group yet.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      {isExpanded && childItems.map((item) => (
+                        <LineItemRow
+                          key={item.id}
+                          item={item}
+                          indent="ml-8"
+                          overbookedInfo={undefined}
+                          isUnconfirmed={!!shGroup.subHire && draftSubHireIds.has(shGroup.subHire.id)}
+                          isExpanded={expandedParents.has(item.id)}
+                          onToggle={() => toggleParent(item.id)}
+                          onEdit={() => {
+                            setManagingSubHireId(shGroup.subHire.id);
+                            setShowSubHireOrderDialog(true);
+                          }}
+                          onMove={() => {
+                            setManagingSubHireId(shGroup.subHire.id);
+                            setShowSubHireOrderDialog(true);
+                          }}
+                          onRemove={() => removeMut.mutate(item.id)}
+                        />
+                      ))}
+                    </React.Fragment>
+                  );
+                })}
               </TableBody>
             </SortableContext>
           </DndContext>

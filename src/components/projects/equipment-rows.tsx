@@ -21,6 +21,7 @@ import {
   RefreshCw,
   AlertTriangle,
   BookmarkPlus,
+  Handshake,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -57,6 +58,10 @@ export interface LineItemData {
   isCustomItem?: boolean;
   isKitChild?: boolean;
   subHireId?: string | null;
+  /** Sub-hire group this synthetic line item belongs to. Used by the
+   *  flat-list filter to suppress sub-hire group parent rows now that
+   *  SubHireGroupRow renders the group itself (Phase 5c). */
+  subHireGroupId?: string | null;
   kitId?: string | null;
   pricingMode?: string | null;
   status?: string;
@@ -92,11 +97,48 @@ export interface GroupData {
   lineItems?: LineItemData[];
 }
 
+export interface SubHireGroupData {
+  id: string;
+  title: string;
+  quantity: number;
+  cost: unknown;
+  charge: unknown;
+  sortOrder: number;
+  targetCategoryId: string | null;
+  showOnQuote?: boolean;
+  showOnDocs?: boolean;
+  subHire: {
+    id: string;
+    orderNumber: string;
+    status: string;
+    supplier?: { id: string; name: string } | null;
+  };
+  items?: Array<{
+    id: string;
+    description?: string | null;
+    quantity: number;
+    unitCost?: unknown;
+    unitCharge?: unknown;
+  }>;
+  /** Synthetic parent ProjectLineItem(s) — usually 0 or 1. The parent's
+   *  childLineItems are what the row renders when expanded. */
+  lineItems?: LineItemData[];
+}
+
+/** Discriminated slot used by equipment-tab to iterate the mixed
+ *  ProjectGroup + SubHireGroup list inside a category in CategorySlot
+ *  order (Phase 5b). */
+export type MixedGroupSlot =
+  | { kind: "project"; sortOrder: number; projectGroupId: string }
+  | { kind: "subHire"; sortOrder: number; subHireGroupId: string };
+
 export interface CategoryData {
   id: string;
   name: string;
   sortOrder: number;
   groups: GroupData[];
+  subHireGroupTargets?: SubHireGroupData[];
+  mixedGroups?: MixedGroupSlot[];
   lineItems?: LineItemData[];
 }
 
@@ -117,9 +159,18 @@ function isMergeTombstone(item: LineItemData) {
   return item.status === "CANCELLED";
 }
 
+// The synthetic parent ProjectLineItem of a sub-hire group has
+// `subHireGroupId` set, `isKitChild=false`, and no parent. From Phase 5c
+// onwards the equipment tab renders that group as a SubHireGroupRow
+// instead — so this parent line item must NOT also show up as a flat
+// row, or every sub-hire group would appear twice.
+function isSubHireGroupParent(item: LineItemData) {
+  return item.subHireGroupId != null && item.isKitChild !== true;
+}
+
 // One predicate for "should this row appear in the flat list".
 export function isHiddenFromList(item: LineItemData) {
-  return isRealKitChild(item) || isMergeTombstone(item);
+  return isRealKitChild(item) || isMergeTombstone(item) || isSubHireGroupParent(item);
 }
 
 // ─── Row descriptor (cross-type unification) ─────────────────────────────────
@@ -365,6 +416,131 @@ export function GroupRow({
                   <Trash2 className="mr-2 h-3.5 w-3.5" />
                   Delete
                 </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+// ─── Sortable sub-hire group row ────────────────────────────────────────────
+//
+// Mirrors GroupRow's table shape but with sub-hire-specific affordances:
+// Handshake icon, "via Supplier" sub-line, charge in the unit-price column
+// (decision 8H — margin is shown as a sub-line under the title), and a
+// kebab limited to actions that make sense for a PO-owned group.
+//
+// Drag handle uses the `shg-<id>` prefix so the unified DnD context can
+// distinguish sub-hire groups from project groups (`grp-<id>`).
+
+export function SubHireGroupRow({
+  group,
+  isExpanded,
+  indented,
+  onToggle,
+  onEdit,
+  onMove,
+}: {
+  group: SubHireGroupData;
+  isExpanded: boolean;
+  indented?: boolean;
+  onToggle: () => void;
+  /** Open the existing SubHireOrderDialog for this group's parent sub-hire. */
+  onEdit: () => void;
+  /** Open the move dialog so the group can be reassigned to a different
+   *  category (or uncategorised). */
+  onMove?: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: `shg-${group.id}` });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const charge = group.charge != null ? Number(group.charge) : null;
+  const cost = group.cost != null ? Number(group.cost) : null;
+  const margin = charge != null && cost != null ? charge - cost : null;
+  const supplierName = group.subHire.supplier?.name ?? "Supplier";
+
+  return (
+    <TableRow ref={setNodeRef} style={style} className={`group/row ${isDragging ? "opacity-30" : ""}`}>
+      <TableCell className="px-0">
+        <div className={`flex justify-end ${indented ? "ml-3" : "px-1"}`}>
+          <button
+            type="button"
+            className="flex cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+        </div>
+      </TableCell>
+      <TableCell>
+        <div className={`flex items-start gap-1.5 ${indented ? "ml-2" : ""}`}>
+          <button
+            type="button"
+            onClick={onToggle}
+            className="flex items-start gap-1.5 text-left"
+          >
+            <ChevronRight
+              className={`mt-0.5 h-4 w-4 shrink-0 text-fg-3 transition-transform ${
+                isExpanded ? "rotate-90" : ""
+              }`}
+            />
+            <div className="flex flex-col">
+              <span className="flex items-center gap-1.5 font-semibold">
+                <Handshake className="h-3.5 w-3.5 text-fg-3" />
+                {group.title}
+              </span>
+              <span className="text-xs text-fg-3">
+                via {supplierName}
+                {margin != null && (
+                  <>
+                    {" · "}
+                    {formatCurrency(margin * group.quantity)} margin
+                  </>
+                )}
+              </span>
+            </div>
+          </button>
+        </div>
+      </TableCell>
+      <TableCell className="text-center t-data">{group.quantity}</TableCell>
+      <TableCell className="text-right hidden md:table-cell t-data">
+        {charge != null ? formatCurrency(charge) : "--"}
+      </TableCell>
+      <TableCell className="text-center hidden lg:table-cell t-data">--</TableCell>
+      <TableCell className="text-right font-medium hidden sm:table-cell t-data">
+        {charge != null ? formatCurrency(charge * group.quantity) : "--"}
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon-sm" onClick={onEdit}>
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" />}>
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Sub-hire</DropdownMenuLabel>
+                <DropdownMenuItem onClick={onEdit}>
+                  <Pencil className="mr-2 h-3.5 w-3.5" />
+                  Edit in sub-hire order
+                </DropdownMenuItem>
+                {onMove && (
+                  <DropdownMenuItem onClick={onMove}>
+                    <Package className="mr-2 h-3.5 w-3.5" />
+                    Move to category
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>

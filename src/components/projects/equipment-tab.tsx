@@ -72,6 +72,7 @@ import { CanDo } from "@/components/auth/permission-gate";
 import { UnifiedAddDialog, type UnifiedAddKind } from "./unified-add-dialog";
 import { MoveSubHireGroupDialog } from "./move-sub-hire-group-dialog";
 import { PriceEditDialog, type PriceEditTarget } from "./price-edit-dialog";
+import { MoveLineItemDialog } from "./move-line-item-dialog";
 import { SubHireOrderDialog } from "./sub-hire-order-dialog";
 import { getSubHires } from "@/server/sub-hires";
 import { subHireStatusLabels, formatLabel } from "@/lib/status-labels";
@@ -1839,52 +1840,20 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
       </Dialog>
 
       {/* Move line item dialog */}
-      <Dialog open={moveLineItemId != null} onOpenChange={(open) => { if (!open) setMoveLineItemId(null); }}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Move Item</DialogTitle>
-            <DialogDescription>
-              Choose a destination group for this item.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2 py-2">
-            <select
-              value={moveTargetGroupId}
-              onChange={(e) => setMoveTargetGroupId(e.target.value)}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            >
-              <option value="__uncategorized__">Uncategorized (no group)</option>
-              {typedCategories.map((cat) =>
-                cat.groups.map((g) => (
-                  <option key={g.id} value={`${cat.id}|${g.id}`}>
-                    {cat.name} &gt; {g.title}
-                  </option>
-                ))
-              )}
-            </select>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setMoveLineItemId(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (!moveLineItemId) return;
-                if (moveTargetGroupId === "__uncategorized__") {
-                  moveLineItemMut.mutate({ lineItemId: moveLineItemId, targetGroupId: null, targetCategoryId: null });
-                } else {
-                  const [catId, grpId] = moveTargetGroupId.split("|");
-                  moveLineItemMut.mutate({ lineItemId: moveLineItemId, targetGroupId: grpId, targetCategoryId: catId });
-                }
-              }}
-              disabled={moveLineItemMut.isPending}
-            >
-              {moveLineItemMut.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Move
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <MoveLineItemDialog
+        lineItemId={moveLineItemId}
+        initialEncoded={moveTargetGroupId}
+        categories={typedCategories}
+        isPending={moveLineItemMut.isPending}
+        onClose={() => setMoveLineItemId(null)}
+        onSubmit={(lineItemId, target) =>
+          moveLineItemMut.mutate({
+            lineItemId,
+            targetGroupId: target.groupId,
+            targetCategoryId: target.categoryId,
+          })
+        }
+      />
 
       {/* Unified price-edit dialog (Phase 6c — works for both kinds of group). */}
       <PriceEditDialog

@@ -252,6 +252,78 @@ describe("estimateSectionHeight", () => {
       expect(estimateSectionHeight(section, d)).toBeCloseTo(13.7, 0);
     });
 
+    it("includes group-row childLineItems in height (kit-style group parents)", () => {
+      // Regression: structureLineItems attaches non-kit group members as
+      // childLineItems on the synthetic group row. The plugin renders those
+      // children indented like kit children; the height calculator must
+      // mirror that or the table will under-estimate its space and the
+      // plugin will overflow and silently drop tail items.
+      const section = makeSection("table", {
+        showGroupHeaders: false,
+        showKitChildren: true,
+        showCheckboxes: false,
+        showConditionColumns: false,
+        showPricing: true,
+        showBadges: true,
+        showNotes: true,
+        showPerUnitCheckboxes: false,
+        showAssetTags: false,
+        showCategories: false,
+        showRowNumbers: false,
+      });
+
+      const groupParent = makeLineItem({
+        id: "grp-1",
+        isGroupRow: true,
+        childLineItems: [
+          makeLineItem({ id: "c1" }),
+          makeLineItem({ id: "c2" }),
+          makeLineItem({ id: "c3" }),
+        ],
+      });
+      const plain = makeLineItem({ id: "plain" });
+
+      const heightWithChildren = estimateSectionHeight(
+        section,
+        makeData({ line_items: [groupParent] }),
+      );
+      const heightPlain = estimateSectionHeight(
+        section,
+        makeData({ line_items: [plain] }),
+      );
+
+      // The group parent must reserve space for its 3 attached children —
+      // strictly more than a plain row, by roughly 3 child rows worth.
+      expect(heightWithChildren).toBeGreaterThan(heightPlain);
+      expect(heightWithChildren - heightPlain).toBeGreaterThan(8);
+    });
+
+    it("group-row with EMPTY childLineItems uses plain-row height (no children to indent)", () => {
+      // Collapse-mode shape: group row emitted with no childLineItems.
+      // Should not reserve extra space.
+      const section = makeSection("table", {
+        showGroupHeaders: false,
+        showKitChildren: true,
+        showCheckboxes: false,
+        showConditionColumns: false,
+        showPricing: true,
+        showBadges: true,
+        showNotes: true,
+        showPerUnitCheckboxes: false,
+        showAssetTags: false,
+        showCategories: false,
+        showRowNumbers: false,
+      });
+      const groupRowNoChildren = makeLineItem({
+        id: "grp-1",
+        isGroupRow: true,
+      });
+      const plain = makeLineItem({ id: "plain" });
+      const a = estimateSectionHeight(section, makeData({ line_items: [groupRowNoChildren] }));
+      const b = estimateSectionHeight(section, makeData({ line_items: [plain] }));
+      expect(a).toBeCloseTo(b, 1);
+    });
+
     it("excludes kit children from height when showKitChildren is false", () => {
       const section = makeSection("table", {
         showGroupHeaders: false,

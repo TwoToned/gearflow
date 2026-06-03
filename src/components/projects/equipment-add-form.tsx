@@ -1,12 +1,12 @@
 "use client";
 
 /**
- * Equipment add form — the body of the "Add Equipment" flow, extracted
- * from add-equipment-dialog.tsx so it can be embedded both in its own dialog
- * and in the unified add dialog (Phase 4 of cross-type unification).
+ * Equipment add form — the body of the "Add Equipment" flow. Mounted by
+ * UnifiedAddDialog (Phase 4d) when the user picks the "Own stock" tab.
  *
- * Renders the mode toggle (By Model / By Asset Tag), the form fields, and
- * the footer (Add to Project). No Dialog wrapper — the caller supplies that.
+ * Renders the mode toggle (By Model / By Asset Tag), the form fields,
+ * and the footer (Add to Project). No Dialog wrapper — the caller
+ * supplies that.
  */
 
 import { useEffect, useState } from "react";

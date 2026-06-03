@@ -70,6 +70,7 @@ import { formatCurrency } from "@/lib/formatters";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
 import { UnifiedAddDialog, type UnifiedAddKind } from "./unified-add-dialog";
+import { MoveSubHireGroupDialog } from "./move-sub-hire-group-dialog";
 import { SubHireOrderDialog } from "./sub-hire-order-dialog";
 import { getSubHires } from "@/server/sub-hires";
 import { subHireStatusLabels, formatLabel } from "@/lib/status-labels";
@@ -109,6 +110,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   // Matrix 8C). Cleared on drag end / leave. Row components read this to
   // render the red left-edge rejection bar + not-allowed cursor.
   const [rejectedDropTargetId, setRejectedDropTargetId] = useState<string | null>(null);
+
+  // Move-sub-hire-group dialog state (Phase 6b kebab action).
+  const [moveSubHireGroup, setMoveSubHireGroup] = useState<{ id: string; title: string } | null>(null);
 
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -928,6 +932,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                   setManagingSubHireId(shGroup.subHire.id);
                                   setShowSubHireOrderDialog(true);
                                 }}
+                                onMove={() => setMoveSubHireGroup({ id: shGroup.id, title: shGroup.title })}
                               />
                               {isExpanded && childItems.length === 0 && (
                                 <TableRow className="hover:bg-transparent">
@@ -1107,6 +1112,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                           setManagingSubHireId(shGroup.subHire.id);
                           setShowSubHireOrderDialog(true);
                         }}
+                        onMove={() => setMoveSubHireGroup({ id: shGroup.id, title: shGroup.title })}
                       />
                       {isExpanded && childItems.length === 0 && (
                         <TableRow className="hover:bg-transparent">
@@ -1871,6 +1877,18 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Move-sub-hire-group dialog (kebab → "Move to category") */}
+      <MoveSubHireGroupDialog
+        open={moveSubHireGroup != null}
+        onOpenChange={(open) => {
+          if (!open) setMoveSubHireGroup(null);
+        }}
+        groupId={moveSubHireGroup?.id ?? null}
+        groupTitle={moveSubHireGroup?.title}
+        categories={(categories as CategoryData[]).map((c) => ({ id: c.id, name: c.name }))}
+        onInvalidate={invalidate}
+      />
 
       {/* Unified add dialog (own-stock / kit / sub-hire / custom) */}
       <UnifiedAddDialog

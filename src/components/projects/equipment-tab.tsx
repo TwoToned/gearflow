@@ -39,7 +39,7 @@ import {
   getProjectOverbookedStatus,
 } from "@/server/project-categories";
 import { getGroupTemplates, applyGroupTemplate, saveGroupAsTemplate } from "@/server/group-templates";
-import { removeLineItem, updateLineItem, addKitLineItem, checkKitAvailability, reorderLineItems, checkAvailability, addCustomLineItem } from "@/server/line-items";
+import { removeLineItem, updateLineItem, addKitLineItem, checkKitAvailability, reorderLineItems, checkAvailability } from "@/server/line-items";
 import { getKits } from "@/server/kits";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -83,6 +83,7 @@ import {
   type CategoryData,
   type OverbookedInfo,
 } from "./equipment-rows";
+import { CustomItemAddForm } from "./custom-item-add-form";
 
 interface EquipmentTabProps {
   projectId: string;
@@ -114,16 +115,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
 
   // Custom item dialog state
   const [showCustomItemDialog, setShowCustomItemDialog] = useState(false);
-  const [customItemName, setCustomItemName] = useState("");
-  const [customItemQty, setCustomItemQty] = useState("1");
-  const [customItemPrice, setCustomItemPrice] = useState("");
-  const [customItemPricingType, setCustomItemPricingType] = useState<"PER_DAY" | "PER_WEEK" | "FLAT" | "PER_HOUR">("FLAT");
-  const [customItemDuration, setCustomItemDuration] = useState("1");
-  const [customItemDiscount, setCustomItemDiscount] = useState("");
-  const [customItemIsOptional, setCustomItemIsOptional] = useState(false);
-  const [customItemNotes, setCustomItemNotes] = useState("");
-  const [customItemCategoryId, setCustomItemCategoryId] = useState("");
-  const [customItemGroupId, setCustomItemGroupId] = useState("");
 
   // Sub-hire order dialog state
   const [showSubHireOrderDialog, setShowSubHireOrderDialog] = useState(false);
@@ -306,24 +297,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   }, [queryClient, queryKey, projectId]);
 
   // ─── Mutations ───────────────────────────────────────────────────────────
-
-  const addCustomItemMut = useMutation({
-    mutationFn: (data: Parameters<typeof addCustomLineItem>[1]) => addCustomLineItem(projectId, data),
-    onSuccess: () => {
-      invalidate();
-      setShowCustomItemDialog(false);
-      setCustomItemName("");
-      setCustomItemQty("1");
-      setCustomItemPrice("");
-      setCustomItemPricingType("FLAT");
-      setCustomItemDuration("1");
-      setCustomItemNotes("");
-      setCustomItemCategoryId("");
-      setCustomItemGroupId("");
-      toast.success("Custom item added");
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
 
   const createCategoryMut = useMutation({
     mutationFn: (name: string) => createProjectCategory(projectId, { name }),
@@ -1664,24 +1637,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
       </Dialog>
 
       {/* Add custom item dialog */}
-      <Dialog
-        open={showCustomItemDialog}
-        onOpenChange={(open) => {
-          setShowCustomItemDialog(open);
-          if (!open) {
-            setCustomItemName("");
-            setCustomItemQty("1");
-            setCustomItemPrice("");
-            setCustomItemPricingType("FLAT");
-            setCustomItemDuration("1");
-            setCustomItemDiscount("");
-            setCustomItemIsOptional(false);
-            setCustomItemNotes("");
-            setCustomItemCategoryId("");
-            setCustomItemGroupId("");
-          }
-        }}
-      >
+      <Dialog open={showCustomItemDialog} onOpenChange={setShowCustomItemDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add Custom Item</DialogTitle>
@@ -1689,163 +1645,14 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
               Add a free-text item not in your inventory. It will appear on documents and in the warehouse.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="custom-item-name">Name <span className="text-error">*</span></Label>
-              <Input
-                id="custom-item-name"
-                placeholder="e.g. 2x SM58 (borrowed), Client cable drum"
-                value={customItemName}
-                onChange={(e) => setCustomItemName(e.target.value)}
-                maxLength={200}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Category</Label>
-                <select
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={customItemCategoryId}
-                  onChange={(e) => {
-                    setCustomItemCategoryId(e.target.value);
-                    setCustomItemGroupId("");
-                  }}
-                >
-                  <option value="">Uncategorized</option>
-                  {(categories as CategoryData[]).map((cat) => (
-                    <option key={cat.id} value={cat.id}>{cat.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Group</Label>
-                <select
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={customItemGroupId}
-                  onChange={(e) => setCustomItemGroupId(e.target.value)}
-                  disabled={!customItemCategoryId}
-                >
-                  <option value="">No group</option>
-                  {customItemCategoryId && (categories as CategoryData[])
-                    .find((c) => c.id === customItemCategoryId)
-                    ?.groups.map((g) => (
-                      <option key={g.id} value={g.id}>{g.title}</option>
-                    ))}
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="custom-item-qty">Quantity</Label>
-                <Input
-                  id="custom-item-qty"
-                  type="number"
-                  min="1"
-                  value={customItemQty}
-                  onChange={(e) => setCustomItemQty(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="custom-item-price">Unit Price</Label>
-                <Input
-                  id="custom-item-price"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={customItemPrice}
-                  onChange={(e) => setCustomItemPrice(e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Pricing Type</Label>
-                <select
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={customItemPricingType}
-                  onChange={(e) => setCustomItemPricingType(e.target.value as typeof customItemPricingType)}
-                >
-                  <option value="FLAT">Flat</option>
-                  <option value="PER_DAY">Per Day</option>
-                  <option value="PER_WEEK">Per Week</option>
-                  <option value="PER_HOUR">Per Hour</option>
-                </select>
-              </div>
-              {customItemPricingType !== "FLAT" && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="custom-item-duration">Duration</Label>
-                  <Input
-                    id="custom-item-duration"
-                    type="number"
-                    min="1"
-                    value={customItemDuration}
-                    onChange={(e) => setCustomItemDuration(e.target.value)}
-                  />
-                </div>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="custom-item-discount">Discount</Label>
-                <Input
-                  id="custom-item-discount"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={customItemDiscount}
-                  onChange={(e) => setCustomItemDiscount(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="flex items-center gap-2 pt-7">
-                  <input
-                    type="checkbox"
-                    className="rounded border-border"
-                    checked={customItemIsOptional}
-                    onChange={(e) => setCustomItemIsOptional(e.target.checked)}
-                  />
-                  Optional (excluded from project total)
-                </Label>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="custom-item-notes">Notes</Label>
-              <Textarea
-                id="custom-item-notes"
-                placeholder="Optional notes..."
-                value={customItemNotes}
-                onChange={(e) => setCustomItemNotes(e.target.value)}
-                rows={2}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCustomItemDialog(false)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={!customItemName.trim() || addCustomItemMut.isPending}
-              onClick={() => {
-                addCustomItemMut.mutate({
-                  description: customItemName.trim(),
-                  quantity: parseInt(customItemQty) || 1,
-                  unitPrice: customItemPrice !== "" ? parseFloat(customItemPrice) : undefined,
-                  pricingType: customItemPricingType,
-                  duration: customItemPricingType !== "FLAT" ? (parseInt(customItemDuration) || 1) : 1,
-                  discount: customItemDiscount !== "" ? parseFloat(customItemDiscount) : undefined,
-                  isOptional: customItemIsOptional,
-                  notes: customItemNotes.trim() || undefined,
-                  categoryId: customItemCategoryId || undefined,
-                  groupId: customItemGroupId || undefined,
-                });
-              }}
-            >
-              {addCustomItemMut.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Add Item
-            </Button>
-          </DialogFooter>
+          {showCustomItemDialog && (
+            <CustomItemAddForm
+              projectId={projectId}
+              categories={categories as CategoryData[]}
+              onInvalidate={invalidate}
+              onClose={() => setShowCustomItemDialog(false)}
+            />
+          )}
         </DialogContent>
       </Dialog>
 

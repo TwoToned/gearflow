@@ -74,6 +74,7 @@ import { MoveSubHireGroupDialog } from "./move-sub-hire-group-dialog";
 import { PriceEditDialog, type PriceEditTarget } from "./price-edit-dialog";
 import { MoveLineItemDialog } from "./move-line-item-dialog";
 import { EditGroupDialog } from "./edit-group-dialog";
+import { DeleteGroupDialog } from "./delete-group-dialog";
 import { SubHireOrderDialog } from "./sub-hire-order-dialog";
 import { getSubHires } from "@/server/sub-hires";
 import { subHireStatusLabels, formatLabel } from "@/lib/status-labels";
@@ -1575,59 +1576,17 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
         </DialogContent>
       </Dialog>
 
-      {/* Delete confirmation dialog */}
-      <Dialog
-        open={deleteGroupId != null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setDeleteGroupId(null);
-            setDeleteGroupInfo(null);
-          }
+      {/* Delete confirmation dialog (Phase 7 — extracted) */}
+      <DeleteGroupDialog
+        groupId={deleteGroupId}
+        info={deleteGroupInfo}
+        isPending={deleteGroupMut.isPending}
+        onClose={() => {
+          setDeleteGroupId(null);
+          setDeleteGroupInfo(null);
         }}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Delete group</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete &ldquo;{deleteGroupInfo?.title}&rdquo;?
-            </DialogDescription>
-          </DialogHeader>
-          {deleteGroupInfo && (
-            <div className="rounded-lg bg-bg-inset p-3 text-xs space-y-1">
-              <div className="flex justify-between">
-                <span className="text-fg-3">Items</span>
-                <span className="text-fg-2">{deleteGroupInfo.itemCount} will become standalone</span>
-              </div>
-              {deleteGroupInfo.price > 0 && (
-                <div className="flex justify-between">
-                  <span className="text-fg-3">Revenue impact</span>
-                  <span className="font-medium text-[oklch(0.58_0.22_27)]">
-                    -{formatCurrency(deleteGroupInfo.price)}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setDeleteGroupId(null);
-                setDeleteGroupInfo(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => deleteGroupId && deleteGroupMut.mutate(deleteGroupId)}
-              disabled={deleteGroupMut.isPending}
-            >
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        onConfirm={(id) => deleteGroupMut.mutate(id)}
+      />
 
       {/* Edit line item dialog */}
       <Dialog open={editLineItem != null} onOpenChange={(open) => { if (!open) setEditLineItem(null); }}>

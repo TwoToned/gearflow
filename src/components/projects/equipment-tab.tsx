@@ -39,8 +39,7 @@ import {
   getProjectOverbookedStatus,
 } from "@/server/project-categories";
 import { getGroupTemplates, applyGroupTemplate, saveGroupAsTemplate } from "@/server/group-templates";
-import { removeLineItem, updateLineItem, addKitLineItem, checkKitAvailability, reorderLineItems, checkAvailability } from "@/server/line-items";
-import { getKits } from "@/server/kits";
+import { removeLineItem, updateLineItem, reorderLineItems, checkAvailability } from "@/server/line-items";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -61,7 +60,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { formatCurrency } from "@/lib/formatters";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
@@ -84,6 +82,7 @@ import {
   type OverbookedInfo,
 } from "./equipment-rows";
 import { CustomItemAddForm } from "./custom-item-add-form";
+import { KitAddForm } from "./kit-add-form";
 
 interface EquipmentTabProps {
   projectId: string;
@@ -109,9 +108,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
 
   // Kit dialog state
   const [showKitDialog, setShowKitDialog] = useState(false);
-  const [selectedKitId, setSelectedKitId] = useState("");
-  const [kitPricingMode, setKitPricingMode] = useState<"KIT_PRICE" | "ITEMIZED">("KIT_PRICE");
-  const [kitUnitPrice, setKitUnitPrice] = useState("");
 
   // Custom item dialog state
   const [showCustomItemDialog, setShowCustomItemDialog] = useState(false);
@@ -463,42 +459,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
       invalidate();
       setEditGroupData(null);
       toast.success("Group updated");
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  // Kit queries and mutations
-  const { data: kitsData } = useQuery({
-    queryKey: ["kits", orgId],
-    queryFn: () => getKits({ pageSize: 200 }),
-    enabled: showKitDialog,
-  });
-
-  const { data: kitAvailability } = useQuery({
-    queryKey: ["kit-availability", orgId, selectedKitId, projectId],
-    queryFn: () => checkKitAvailability(selectedKitId, new Date(), new Date(), projectId),
-    enabled: showKitDialog && !!selectedKitId,
-  });
-
-  const addKitMut = useMutation({
-    mutationFn: () =>
-      addKitLineItem(
-        projectId,
-        selectedKitId,
-        kitPricingMode,
-        kitPricingMode === "KIT_PRICE" && kitUnitPrice ? parseFloat(kitUnitPrice) : undefined,
-        undefined, // groupName
-        kitTarget.categoryId,
-        kitTarget.groupId,
-      ),
-    onSuccess: () => {
-      invalidate();
-      setShowKitDialog(false);
-      setSelectedKitId("");
-      setKitPricingMode("KIT_PRICE");
-      setKitUnitPrice("");
-      setKitTarget({});
-      toast.success("Kit added to project");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -1691,105 +1651,25 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
         open={showKitDialog}
         onOpenChange={(open) => {
           setShowKitDialog(open);
-          if (!open) {
-            setSelectedKitId("");
-            setKitPricingMode("KIT_PRICE");
-            setKitUnitPrice("");
-            setKitTarget({});
-          }
+          if (!open) setKitTarget({});
         }}
       >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add Kit to Project</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            {kitTarget.label && (
-              <div className="rounded-md bg-accent/50 px-3 py-2 text-xs text-fg-3">
-                Adding to <span className="font-medium text-fg">{kitTarget.label}</span>
-              </div>
-            )}
-            <div className="space-y-2">
-              <Label>Kit</Label>
-              <ComboboxPicker
-                value={selectedKitId}
-                onChange={setSelectedKitId}
-                options={(kitsData?.kits || []).map((kit: { id: string; assetTag: string; name: string; category?: { name: string } | null }) => ({
-                  value: kit.id,
-                  label: `${kit.assetTag} - ${kit.name}`,
-                  description: kit.category?.name,
-                }))}
-                placeholder="Select a kit..."
-                searchPlaceholder="Search kits..."
-                emptyMessage="No kits found."
-              />
-            </div>
-
-            {selectedKitId && kitAvailability && !kitAvailability.available && (
-              <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-                Kit is unavailable: {kitAvailability.conflictsWith}
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label>Pricing Mode</Label>
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input
-                    type="radio"
-                    name="kitPricingMode"
-                    value="KIT_PRICE"
-                    checked={kitPricingMode === "KIT_PRICE"}
-                    onChange={() => setKitPricingMode("KIT_PRICE")}
-                    className="accent-primary"
-                  />
-                  Kit Price
-                </label>
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input
-                    type="radio"
-                    name="kitPricingMode"
-                    value="ITEMIZED"
-                    checked={kitPricingMode === "ITEMIZED"}
-                    onChange={() => setKitPricingMode("ITEMIZED")}
-                    className="accent-primary"
-                  />
-                  Itemized
-                </label>
-              </div>
-              <p className="text-xs text-fg-3">
-                {kitPricingMode === "KIT_PRICE"
-                  ? "One price for the whole kit."
-                  : "Each item in the kit priced individually."}
-              </p>
-            </div>
-
-            {kitPricingMode === "KIT_PRICE" && (
-              <div className="space-y-2">
-                <Label>Unit Price</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={kitUnitPrice}
-                  onChange={(e) => setKitUnitPrice(e.target.value)}
-                />
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button
-              onClick={() => addKitMut.mutate()}
-              disabled={
-                !selectedKitId ||
-                addKitMut.isPending ||
-                (kitAvailability && !kitAvailability.available)
-              }
-            >
-              {addKitMut.isPending ? "Adding..." : "Add Kit"}
-            </Button>
-          </DialogFooter>
+          {showKitDialog && (
+            <KitAddForm
+              projectId={projectId}
+              rentalStartDate={rentalStartDate ?? undefined}
+              rentalEndDate={rentalEndDate ?? undefined}
+              categoryId={kitTarget.categoryId}
+              groupId={kitTarget.groupId}
+              targetLabel={kitTarget.label}
+              onInvalidate={invalidate}
+              onClose={() => setShowKitDialog(false)}
+            />
+          )}
         </DialogContent>
       </Dialog>
 

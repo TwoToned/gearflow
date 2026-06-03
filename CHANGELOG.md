@@ -5,6 +5,74 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0.0] - 2026-06-04
+
+Cross-type group/category unification for the project equipment tab.
+Own-stock items, sub-hires, and custom items now live in the same
+ordered list per category, share the same dialogs, and respond to
+the same kebab actions and keyboard shortcuts.
+
+### Added
+
+- **Unified "Add" surface.** One dialog with a segmented switcher
+  (Own stock / Kit / Sub-hire / Custom). Picking Own-stock, Kit, or
+  Custom reshapes the body inline; Sub-hire bounces to the existing
+  sub-hire order workflow. Four toolbar buttons and the two group
+  kebab actions all open the same dialog with the right tab pre-set.
+- **Sub-hire groups in the main table.** Sub-hire groups now render
+  as first-class rows interleaved with project groups in each
+  category, complete with handshake icon, "via Supplier" sub-line,
+  and a "$N margin" tail. Orphan sub-hire groups (no
+  `targetCategoryId`) surface in the Uncategorized zone instead of
+  vanishing.
+- **Cross-type drag-and-drop.** Reorder mixed lists within a
+  category; drag a sub-hire group across categories or to the
+  Uncategorized zone. Drop Matrix 8C rejects disallowed combinations
+  (own-stock items onto sub-hire groups, group-into-group nesting)
+  with a 2px red left-edge bar plus an explanatory toast.
+- **Move dialog for sub-hire groups.** Kebab "Move to category"
+  opens a category picker. Typing a new category name and pressing
+  Enter creates the category at the end of the project's list AND
+  places the sub-hire group inside it in a single atomic transaction.
+- **Unified price-edit dialog.** One dialog covers both group kinds:
+  project groups get a single Price input, sub-hire groups get
+  Charge + Cost inputs with an auto-computed Margin per unit.
+- **Show-margin column toggle.** "Show margin" toolbar button
+  reveals an optional Cost column showing supplier cost on sub-hire
+  rows. Preference persists per-user in localStorage; default OFF.
+- **Per-row keyboard shortcuts.** Hovering a row and pressing `e`,
+  `m`, or `d` triggers Edit / Move / Delete. Suppressed when focus
+  is in an input, contentEditable element, or open dialog/menu.
+
+### Changed
+
+- Equipment-tab.tsx slimmed from 2148 LOC to 1393 LOC (-35%) by
+  extracting 10 dialog and helper components into dedicated files.
+  Same behavior — easier to navigate, easier to test.
+- `getProjectCategories` now returns a `mixedGroups` array per
+  category that interleaves project and sub-hire groups in
+  CategorySlot order. Existing consumers (sub-hire order dialog,
+  equipment add form) read only the unchanged `groups` field.
+
+### Fixed
+
+- **Concurrent reorder race.** Two simultaneous reorders of the same
+  category previously hit `UNIQUE(projectCategoryId, sortOrder)`.
+  `reorderMixedGroupsInCategory` now acquires a Postgres advisory
+  lock keyed on the category id and runs a phase-1 negation pass
+  before the upsert loop. Both reorders complete; last write wins on
+  sortOrder.
+- **Sub-hire group placement query.** Sub-hire group availability
+  now threads `rentalStartDate`/`rentalEndDate` through to
+  `checkKitAvailability` instead of always passing `new Date()`.
+
+### Removed
+
+- Standalone `AddEquipmentDialog` wrapper file — superseded by the
+  unified add dialog.
+- Inline `Set group price` dialog in equipment-tab — superseded by
+  the unified `PriceEditDialog`.
+
 ## [0.8.2.0] - 2026-06-03
 
 Quick-wins bundle: three TODOs knocked out plus follow-up polish from

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Fragment, useState, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   DndContext,
@@ -10,15 +10,14 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragOverEvent,
 } from "@dnd-kit/core";
 import {
   SortableContext,
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
-  useSortable,
 } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { Plus, FolderPlus, Package, MoreHorizontal, Trash2, Pencil, Loader2, ChevronRight, GripVertical, RefreshCw, AlertTriangle, BookmarkPlus } from "lucide-react";
+import { Plus, FolderPlus, Package, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
 import { getProjectCategories } from "@/server/project-categories";
@@ -26,11 +25,11 @@ import { getProjectServices } from "@/server/project-services";
 import {
   createProjectGroup,
   updateProjectGroup,
-  updateGroupPrice,
   deleteProjectGroup,
   reorderProjectGroups,
   moveLineItemToGroup,
   recalculateGroupPrices,
+  updateGroupPrice,
 } from "@/server/project-groups";
 import {
   createProjectCategory,
@@ -40,31 +39,14 @@ import {
   getUncategorizedLineItems,
   getProjectOverbookedStatus,
 } from "@/server/project-categories";
+import {
+  getUncategorizedSubHireGroups,
+  moveSubHireGroupToCategory,
+  reorderMixedGroupsInCategory,
+} from "@/server/category-slots";
 import { getGroupTemplates, applyGroupTemplate, saveGroupAsTemplate } from "@/server/group-templates";
-import { removeLineItem, updateLineItem, addKitLineItem, checkKitAvailability, reorderLineItems, checkAvailability, addCustomLineItem } from "@/server/line-items";
-import { getKits } from "@/server/kits";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuLabel,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { removeLineItem, updateLineItem, reorderLineItems } from "@/server/line-items";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -73,593 +55,47 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { formatCurrency } from "@/lib/formatters";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
-import { AddEquipmentDialog } from "./add-equipment-dialog";
+import { UnifiedAddDialog, type UnifiedAddKind } from "./unified-add-dialog";
+import { MoveSubHireGroupDialog } from "./move-sub-hire-group-dialog";
+import { PriceEditDialog, type PriceEditTarget } from "./price-edit-dialog";
+import { MoveLineItemDialog } from "./move-line-item-dialog";
+import { EditGroupDialog } from "./edit-group-dialog";
+import { DeleteGroupDialog } from "./delete-group-dialog";
+import { SaveAsTemplateDialog } from "./save-as-template-dialog";
+import { AddCategoryDialog } from "./add-category-dialog";
+import { RenameCategoryDialog } from "./rename-category-dialog";
+import { AddGroupToolbarDialog } from "./add-group-toolbar-dialog";
+import { EditLineItemDialog } from "./edit-line-item-dialog";
+import { SubHireExpandedItems } from "./sub-hire-expanded-items";
 import { SubHireOrderDialog } from "./sub-hire-order-dialog";
 import { getSubHires } from "@/server/sub-hires";
 import { subHireStatusLabels, formatLabel } from "@/lib/status-labels";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { ArrowLeftRight, ChevronDown } from "lucide-react";
+import {
+  COL_COUNT,
+  isRealKitChild,
+  isHiddenFromList,
+  GroupRow,
+  CategoryRow,
+  LineItemRow,
+  SubHireGroupRow,
+  getDisallowedDropReason,
+  type LineItemData,
+  type GroupData,
+  type CategoryData,
+  type SubHireGroupData,
+  type MixedGroupSlot,
+  type OverbookedInfo,
+} from "./equipment-rows";
 
 interface EquipmentTabProps {
   projectId: string;
   rentalStartDate?: Date | null;
   rentalEndDate?: Date | null;
-}
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-interface LineItemData {
-  id: string;
-  modelId?: string | null;
-  description: string | null;
-  quantity: number;
-  unitPrice: unknown;
-  lineTotal: unknown;
-  pricingType?: string;
-  duration?: number;
-  discount?: unknown;
-  notes?: string | null;
-  isOptional?: boolean;
-  type?: string;
-  priceBreakdown?: string | null;
-  priceOverridden?: boolean;
-  // `isSubhire` removed (Wave 2). Use `subHireId != null` to detect sub-hire items.
-  isCustomItem?: boolean;
-  isKitChild?: boolean;
-  subHireId?: string | null;
-  kitId?: string | null;
-  pricingMode?: string | null;
-  status?: string;
-  prepStatus?: string | null;
-  supplier?: { name: string } | null;
-  model?: { name: string; dailyRate?: unknown; weeklyRate?: unknown; monthlyRate?: unknown } | null;
-  asset?: { assetTag?: string | null } | null;
-  /** Post-cutover per-unit assignments. Source of truth for which
-   *  physical assets a multi-quantity line is using. */
-  units?: Array<{
-    id: string;
-    ordinal: number;
-    asset?: { id: string; assetTag: string } | null;
-    bulkAsset?: { id: string; assetTag: string } | null;
-  }>;
-  kit?: { name?: string } | null;
-  childLineItems?: LineItemData[];
-}
-
-interface GroupData {
-  id: string;
-  title: string;
-  description: string | null;
-  quantity: number;
-  price: unknown;
-  suggestedPrice: unknown;
-  rentalPeriod: string | null;
-  rentalQuantity: number | null;
-  billingMonths: number | null;
-  billingWeeks: number | null;
-  billingDays: number | null;
-  sortOrder: number;
-  lineItems?: LineItemData[];
-}
-
-interface CategoryData {
-  id: string;
-  name: string;
-  sortOrder: number;
-  groups: GroupData[];
-  lineItems?: LineItemData[];
-}
-
-const COL_COUNT = 6;
-
-// Kit children and sub-hire group children both have isKitChild=true —
-// filter them from flat rendering so they only appear nested under their parent.
-function isRealKitChild(item: LineItemData) {
-  return item.isKitChild === true;
-}
-
-// Merge tombstones (status CANCELLED, qty 0) are inert residue left by the
-// split-collapse migrations. getProject already filters them at the query
-// layer; this is belt-and-suspenders so a stale cache / optimistic update
-// can't resurrect a ghost row. Normal line-item removal hard-deletes, so a
-// CANCELLED line item is never anything but merge residue.
-function isMergeTombstone(item: LineItemData) {
-  return item.status === "CANCELLED";
-}
-
-// One predicate for "should this row appear in the flat list".
-function isHiddenFromList(item: LineItemData) {
-  return isRealKitChild(item) || isMergeTombstone(item);
-}
-
-// ─── Overbooked info type ───────────────────────────────────────────────────
-
-type OverbookedInfo = {
-  overBy: number;
-  totalStock: number;
-  effectiveStock?: number;
-  totalBooked: number;
-  inherited?: boolean;
-  unavailableAssets?: number;
-  reducedOnly?: boolean;
-  hasOverbookedChildren?: boolean;
-  hasReducedChildren?: boolean;
-};
-
-function OverbookedBadge({ info }: { info?: OverbookedInfo | null }) {
-  if (!info) return null;
-
-  const effective = info.effectiveStock ?? info.totalStock;
-  const unavail = info.unavailableAssets || 0;
-
-  // Kit parents with BOTH overbooked and reduced children show two badges
-  if (info.inherited && info.hasOverbookedChildren && info.hasReducedChildren) {
-    return (
-      <>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Badge variant="outline" className="ml-1.5 cursor-help text-xs bg-red-500/10 text-red-600 border-red-500/20">
-                  Overbooked
-                </Badge>
-              }
-            />
-            <TooltipContent>Contains items that are over capacity</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Badge variant="outline" className="ml-1.5 cursor-help text-xs bg-purple-500/10 text-purple-600 border-purple-500/20">
-                  Reduced Stock
-                </Badge>
-              }
-            />
-            <TooltipContent>
-              Contains items with {unavail} asset{unavail !== 1 ? "s" : ""} in maintenance or lost
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      </>
-    );
-  }
-
-  const isReduced = info.reducedOnly;
-  const colorClass = isReduced
-    ? "bg-purple-500/10 text-purple-600 border-purple-500/20"
-    : info.inherited
-      ? "bg-amber-500/10 text-amber-600 border-amber-500/20"
-      : "bg-red-500/10 text-red-600 border-red-500/20";
-  const label = isReduced ? "Reduced Stock" : "Overbooked";
-
-  function getTooltip() {
-    if (info!.inherited) {
-      return isReduced
-        ? `Contains items with ${unavail} asset${unavail !== 1 ? "s" : ""} in maintenance or lost`
-        : `Contains items that are ${info!.overBy} over capacity`;
-    }
-    if (isReduced) {
-      return `${info!.overBy} over usable stock — ${unavail} of ${info!.totalStock} in maintenance or lost (${effective} usable, ${info!.totalBooked} booked)`;
-    }
-    return `${info!.overBy} over capacity (${info!.totalBooked} booked / ${effective} usable${unavail > 0 ? `, ${unavail} unavailable` : ""})`;
-  }
-
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Badge variant="outline" className={`ml-1.5 cursor-help text-xs ${colorClass}`}>
-              {label}
-            </Badge>
-          }
-        />
-        <TooltipContent>{getTooltip()}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-}
-
-// ─── Sortable group row ─────────────────────────────────────────────────────
-
-function SortableGroupRow({
-  group,
-  isExpanded,
-  indented,
-  onToggle,
-  onDelete,
-  onEdit,
-  onAddEquipment,
-  onAddKit,
-  onRecalculate,
-  onSaveAsTemplate,
-}: {
-  group: GroupData;
-  isExpanded: boolean;
-  indented?: boolean;
-  onToggle: () => void;
-  onDelete: () => void;
-  onEdit: () => void;
-  onAddEquipment: () => void;
-  onAddKit: () => void;
-  onRecalculate?: () => void;
-  onSaveAsTemplate?: () => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: `grp-${group.id}` });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  const priceVal = group.price != null ? Number(group.price) : null;
-
-  return (
-    <TableRow ref={setNodeRef} style={style} className={`group/row ${isDragging ? "opacity-30" : ""}`}>
-      <TableCell className="px-0">
-        <div className={`flex justify-end ${indented ? "ml-3" : "px-1"}`}>
-          <button
-            type="button"
-            className="flex cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
-            {...attributes}
-            {...listeners}
-          >
-            <GripVertical className="h-4 w-4" />
-          </button>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className={`flex items-center gap-1.5 ${indented ? "ml-2" : ""}`}>
-          <button
-            type="button"
-            onClick={onToggle}
-            className="flex items-center gap-1.5 text-left"
-          >
-            <ChevronRight
-              className={`h-4 w-4 shrink-0 text-fg-3 transition-transform ${
-                isExpanded ? "rotate-90" : ""
-              }`}
-            />
-            <span className="font-semibold">{group.title}</span>
-          </button>
-        </div>
-      </TableCell>
-      <TableCell className="text-center t-data">{group.quantity}</TableCell>
-      <TableCell className="text-right hidden md:table-cell t-data">
-        {priceVal != null ? formatCurrency(priceVal) : "--"}
-      </TableCell>
-      <TableCell className="text-center hidden lg:table-cell t-data">
-        {group.rentalQuantity ?? "--"}
-      </TableCell>
-      <TableCell className="text-right font-medium hidden sm:table-cell t-data">
-        {priceVal != null ? formatCurrency(priceVal * group.quantity) : "--"}
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon-sm" onClick={onEdit}>
-            <Pencil className="h-3.5 w-3.5" />
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" />}>
-              <MoreHorizontal className="h-3.5 w-3.5" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>Group</DropdownMenuLabel>
-                <DropdownMenuItem onClick={onAddEquipment}>
-                  <Plus className="mr-2 h-3.5 w-3.5" />
-                  Add Equipment
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={onAddKit}>
-                  <Package className="mr-2 h-3.5 w-3.5" />
-                  Add Kit
-                </DropdownMenuItem>
-                {onRecalculate && (
-                  <DropdownMenuItem onClick={onRecalculate}>
-                    <RefreshCw className="mr-2 h-3.5 w-3.5" />
-                    Recalculate Prices
-                  </DropdownMenuItem>
-                )}
-                {onSaveAsTemplate && (
-                  <DropdownMenuItem onClick={onSaveAsTemplate}>
-                    <BookmarkPlus className="mr-2 h-3.5 w-3.5" />
-                    Save as Template
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem
-                  onClick={onDelete}
-                  className="text-[oklch(0.58_0.22_27)]"
-                >
-                  <Trash2 className="mr-2 h-3.5 w-3.5" />
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </TableCell>
-    </TableRow>
-  );
-}
-
-// ─── Sortable category row ──────────────────────────────────────────────────
-
-function SortableCategoryRow({
-  cat,
-  onRename,
-  onDelete,
-}: {
-  cat: CategoryData;
-  onRename: () => void;
-  onDelete: () => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: `cat-${cat.id}` });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  return (
-    <TableRow ref={setNodeRef} style={style} className={`group/cat border-b-0 bg-bg-inset/50 ${isDragging ? "opacity-30" : ""}`}>
-      <TableCell colSpan={COL_COUNT} className="py-2 px-1">
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            className="flex cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
-            {...attributes}
-            {...listeners}
-          >
-            <GripVertical className="h-4 w-4" />
-          </button>
-          <h3 className="text-sm font-semibold text-fg-3">{cat.name}</h3>
-          <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="opacity-0 group-hover/cat:opacity-100 transition-opacity" />}>
-              <MoreHorizontal className="h-3.5 w-3.5" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>Category</DropdownMenuLabel>
-                <DropdownMenuItem onClick={onRename}>
-                  <Pencil className="mr-2 h-3.5 w-3.5" />
-                  Rename
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={onDelete}
-                  className="text-[oklch(0.58_0.22_27)]"
-                >
-                  <Trash2 className="mr-2 h-3.5 w-3.5" />
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </TableCell>
-    </TableRow>
-  );
-}
-
-// ─── Sortable line item row ──────────────────────────────────────────────────
-
-function SortableLineItemRow({
-  item,
-  indent,
-  overbookedInfo,
-  isUnconfirmed,
-  isExpanded,
-  onToggle,
-  onEdit,
-  onMove,
-  onRemove,
-}: {
-  item: LineItemData;
-  indent: string;
-  overbookedInfo?: OverbookedInfo | null;
-  isUnconfirmed?: boolean;
-  isExpanded?: boolean;
-  onToggle?: () => void;
-  onEdit: () => void;
-  onMove: () => void;
-  onRemove: () => void;
-}) {
-  // Show expand/collapse for kits and sub-hire group parents
-  const hasChildren = (item.childLineItems?.length ?? 0) > 0 && (!!item.kitId || (item.subHireId != null && !item.isKitChild));
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: `li-${item.id}` });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  // Map content indent to grip indent (margin-based to avoid affecting column width)
-  const gripIndent = indent === "ml-12" ? "ml-8" : indent === "ml-3" ? "ml-1" : "";
-
-  // Deeper indent for child rows
-  const childIndent = indent === "ml-12" ? "ml-16" : indent === "ml-3" ? "ml-8" : "ml-6";
-
-  return (
-    <>
-    <TableRow ref={setNodeRef} style={style} className={isDragging ? "opacity-30" : ""}>
-      <TableCell className="px-0">
-        <div className={`flex justify-end ${gripIndent || "px-1"}`}>
-          <button
-            type="button"
-            className="flex cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
-            {...attributes}
-            {...listeners}
-          >
-            <GripVertical className="h-4 w-4" />
-          </button>
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className={`flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 ${indent}`}>
-          {hasChildren && (
-            <button type="button" onClick={onToggle} className="shrink-0 text-fg-3 hover:text-fg transition-transform" style={{ transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}>
-              <ChevronRight className="h-3.5 w-3.5" />
-            </button>
-          )}
-          <span className="font-medium break-words">
-            {item.model?.name ?? item.description ?? "—"}
-          </span>
-          {hasChildren && (
-            <span className="text-xs text-fg-3">{item.childLineItems!.length} item{item.childLineItems!.length !== 1 ? "s" : ""}</span>
-          )}
-          {(() => {
-            // Show asset tags from per-unit fulfillment if present
-            // (post-cutover, line.asset is null on multi-quantity
-            // serialised lines — the tags live on units). Single-asset
-            // legacy lines still render via item.asset.assetTag.
-            const unitTags = (item.units ?? [])
-              .map((u) => u.asset?.assetTag ?? u.bulkAsset?.assetTag)
-              .filter((t): t is string => !!t);
-            if (unitTags.length === 1) {
-              return <span className="text-xs text-fg-3">({unitTags[0]})</span>;
-            }
-            if (unitTags.length > 1) {
-              return (
-                <span className="text-xs text-fg-3">
-                  ({unitTags.slice(0, 2).join(", ")}
-                  {unitTags.length > 2 ? ` +${unitTags.length - 2}` : ""})
-                </span>
-              );
-            }
-            if (item.asset?.assetTag) {
-              return <span className="text-xs text-fg-3">({item.asset.assetTag})</span>;
-            }
-            return null;
-          })()}
-          {item.kitId && !item.isKitChild && (
-            <Badge variant="outline" className="ml-1.5 text-xs bg-indigo-500/10 text-indigo-600 border-indigo-500/20">
-              Kit
-            </Badge>
-          )}
-          {item.kitId && !item.isKitChild && item.pricingMode === "ITEMIZED" && (
-            <Badge variant="outline" className="ml-1 text-xs">
-              Itemized
-            </Badge>
-          )}
-          {item.isOptional && (
-            <Badge variant="outline" className="ml-1.5 text-xs bg-amber-500/10 text-amber-600 border-amber-500/20">
-              Optional
-            </Badge>
-          )}
-          {(item.subHireId != null || item.type === "SUBHIRE") && (
-            <Badge variant="outline" className="ml-1.5 text-xs bg-cyan-500/10 text-cyan-600 border-cyan-500/20">
-              Subhire
-            </Badge>
-          )}
-          {item.isCustomItem && (
-            <Badge variant="outline" className="ml-1.5 text-xs bg-muted text-fg-3 border-border/60">
-              Custom
-            </Badge>
-          )}
-          {isUnconfirmed && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger render={
-                  <span className="ml-1.5 inline-flex items-center justify-center w-5 h-5 rounded bg-amber-500/15">
-                    <AlertTriangle className="h-3 w-3 text-amber-500" />
-                  </span>
-                } />
-                <TooltipContent>
-                  <p className="text-xs">Sub-hire order not yet confirmed — costs and items may change</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
-          {item.status === "CANCELLED" && (
-            <Badge variant="outline" className="ml-1.5 text-xs bg-red-500/10 text-red-600 border-red-500/20">
-              Cancelled
-            </Badge>
-          )}
-          {item.prepStatus === "PREPPED" && (
-            <Badge variant="outline" className="ml-1.5 text-xs bg-green-500/10 text-green-600 border-green-500/20">
-              Prepped
-            </Badge>
-          )}
-          <OverbookedBadge info={overbookedInfo} />
-        </div>
-        {(item.subHireId != null || item.type === "SUBHIRE") && item.supplier && (
-          <p className={`text-xs text-fg-3 mt-0.5 ${indent}`}>via {item.supplier.name}</p>
-        )}
-        {item.notes && (
-          <p className={`text-xs text-fg-3 mt-0.5 truncate max-w-[300px] ${indent}`} title={item.notes}>{item.notes}</p>
-        )}
-      </TableCell>
-      <TableCell className="text-center t-data">{item.quantity}</TableCell>
-      <TableCell className="text-right hidden md:table-cell t-data">
-        <div className="flex items-center justify-end gap-1">
-          {formatCurrency(item.unitPrice != null ? Number(item.unitPrice) : null)}
-          {item.pricingType === "OPTIMIZED" && !item.priceOverridden && (
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0" title="Auto-priced from rates" />
-          )}
-          {item.priceOverridden && (
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" title="Manually set price" />
-          )}
-        </div>
-        {item.priceBreakdown && !item.priceOverridden && (
-          <p className="text-[11px] text-fg-3 truncate max-w-[140px]" title={item.priceBreakdown}>
-            {item.priceBreakdown}
-          </p>
-        )}
-        {item.discount != null && Number(item.discount) > 0 && (
-          <p className="text-[11px] text-green-500">-{formatCurrency(Number(item.discount))} disc.</p>
-        )}
-      </TableCell>
-      <TableCell className="text-right font-medium hidden sm:table-cell t-data">
-        {formatCurrency(item.lineTotal != null ? Number(item.lineTotal) : null)}
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon-sm" onClick={onEdit}>
-            <Pencil className="h-3.5 w-3.5" />
-          </Button>
-          <Button variant="ghost" size="icon-sm" onClick={onRemove}>
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-      </TableCell>
-    </TableRow>
-    {/* Expanded child items (kit children / sub-hire group children) */}
-    {isExpanded && hasChildren && item.childLineItems!.map((child) => (
-      <TableRow key={child.id} className="bg-muted/30">
-        <TableCell className="px-0" />
-        <TableCell>
-          <div className={`${childIndent}`}>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-fg-2">{child.model?.name ?? child.description ?? "—"}</span>
-            </div>
-            {child.notes && (
-              <p className="text-xs text-fg-3 mt-0.5 truncate max-w-[300px]">{child.notes}</p>
-            )}
-          </div>
-        </TableCell>
-        <TableCell className="text-center t-data text-fg-2">{child.quantity}</TableCell>
-        <TableCell className="text-right hidden md:table-cell t-data text-fg-2">
-          {formatCurrency(child.unitPrice != null ? Number(child.unitPrice) : null)}
-        </TableCell>
-        <TableCell className="text-right hidden sm:table-cell t-data text-fg-2">
-          {formatCurrency(child.lineTotal != null ? Number(child.lineTotal) : null)}
-        </TableCell>
-        <TableCell />
-      </TableRow>
-    ))}
-    </>
-  );
 }
 
 // ─── Main component ──────────────────────────────────────────────────────────
@@ -669,33 +105,52 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
+  // The sortable ID currently being hovered with a disallowed drop (Drop
+  // Matrix 8C). Cleared on drag end / leave. Row components read this to
+  // render the red left-edge rejection bar + not-allowed cursor.
+  const [rejectedDropTargetId, setRejectedDropTargetId] = useState<string | null>(null);
+
+  // Move-sub-hire-group dialog state (Phase 6b kebab action).
+  const [moveSubHireGroup, setMoveSubHireGroup] = useState<{ id: string; title: string } | null>(null);
+
+  // Unified PriceEditDialog target (Phase 6c kebab action — works for
+  // both project groups and sub-hire groups).
+  const [priceEditTarget, setPriceEditTarget] = useState<PriceEditTarget | null>(null);
+
+  // 8H — "Show margin" toggle reveals a Cost column. Persisted to
+  // localStorage so each user keeps the column they prefer. Default OFF.
+  const SHOW_COST_KEY = "gearflow-projects-show-cost";
+  const [showCostColumn, setShowCostColumn] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return localStorage.getItem(SHOW_COST_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
+  const toggleShowCostColumn = useCallback(() => {
+    setShowCostColumn((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(SHOW_COST_KEY, String(next));
+      } catch {
+        // ignore — localStorage may be disabled
+      }
+      return next;
+    });
+  }, []);
+  const colCount = COL_COUNT + (showCostColumn ? 1 : 0);
+
   const [showAddCategory, setShowAddCategory] = useState(false);
-  const [newCategoryName, setNewCategoryName] = useState("");
-  const [showAddEquipment, setShowAddEquipment] = useState(false);
-  const [addEquipmentTarget, setAddEquipmentTarget] = useState<{
+
+  // Unified add dialog state (own-stock / kit / sub-hire / custom)
+  const [showUnifiedAdd, setShowUnifiedAdd] = useState(false);
+  const [unifiedAddKind, setUnifiedAddKind] = useState<UnifiedAddKind>("own-stock");
+  const [unifiedAddTarget, setUnifiedAddTarget] = useState<{
     categoryId?: string;
     groupId?: string;
     label?: string;
   }>({});
-
-  // Kit dialog state
-  const [showKitDialog, setShowKitDialog] = useState(false);
-  const [selectedKitId, setSelectedKitId] = useState("");
-  const [kitPricingMode, setKitPricingMode] = useState<"KIT_PRICE" | "ITEMIZED">("KIT_PRICE");
-  const [kitUnitPrice, setKitUnitPrice] = useState("");
-
-  // Custom item dialog state
-  const [showCustomItemDialog, setShowCustomItemDialog] = useState(false);
-  const [customItemName, setCustomItemName] = useState("");
-  const [customItemQty, setCustomItemQty] = useState("1");
-  const [customItemPrice, setCustomItemPrice] = useState("");
-  const [customItemPricingType, setCustomItemPricingType] = useState<"PER_DAY" | "PER_WEEK" | "FLAT" | "PER_HOUR">("FLAT");
-  const [customItemDuration, setCustomItemDuration] = useState("1");
-  const [customItemDiscount, setCustomItemDiscount] = useState("");
-  const [customItemIsOptional, setCustomItemIsOptional] = useState(false);
-  const [customItemNotes, setCustomItemNotes] = useState("");
-  const [customItemCategoryId, setCustomItemCategoryId] = useState("");
-  const [customItemGroupId, setCustomItemGroupId] = useState("");
 
   // Sub-hire order dialog state
   const [showSubHireOrderDialog, setShowSubHireOrderDialog] = useState(false);
@@ -713,16 +168,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   }, []);
 
 
-  // Kit target state (for adding kits to specific groups)
-  const [kitTarget, setKitTarget] = useState<{
-    categoryId?: string;
-    groupId?: string;
-    label?: string;
-  }>({});
-
-  // Price edit dialog state
-  const [priceEditGroupId, setPriceEditGroupId] = useState<string | null>(null);
-  const [priceEditValue, setPriceEditValue] = useState("");
 
   // Delete confirmation state
   const [deleteGroupId, setDeleteGroupId] = useState<string | null>(null);
@@ -734,39 +179,20 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
 
   // Add group from toolbar state
   const [showAddGroupFromToolbar, setShowAddGroupFromToolbar] = useState(false);
-  const [toolbarGroupTitle, setToolbarGroupTitle] = useState("");
-  const [toolbarGroupCategoryId, setToolbarGroupCategoryId] = useState("");
-  const [toolbarGroupTemplateId, setToolbarGroupTemplateId] = useState("");
 
   // Save group as template dialog state
   const [saveAsTemplateGroup, setSaveAsTemplateGroup] = useState<{ id: string; title: string } | null>(null);
-  const [saveAsTemplateName, setSaveAsTemplateName] = useState("");
-  const [saveAsTemplateDescription, setSaveAsTemplateDescription] = useState("");
 
   // Move line item dialog state
   const [moveLineItemId, setMoveLineItemId] = useState<string | null>(null);
   const [moveTargetGroupId, setMoveTargetGroupId] = useState<string>("__uncategorized__");
 
-  // Line item edit dialog state
+  // EditLineItemDialog target — body owns its own form state + availability query.
   const [editLineItem, setEditLineItem] = useState<LineItemData | null>(null);
-  const [editQuantity, setEditQuantity] = useState("1");
-  const [editUnitPrice, setEditUnitPrice] = useState("");
-  const [editDescription, setEditDescription] = useState("");
-  const [editDiscount, setEditDiscount] = useState("");
-  const [editDiscountMode, setEditDiscountMode] = useState<"$" | "%">("$");
-  const [editPriceMode, setEditPriceMode] = useState<"auto" | "manual">("auto");
-  const [editNotes, setEditNotes] = useState("");
-  const [editOverbookConfirmed, setEditOverbookConfirmed] = useState(false);
 
   // Group edit dialog state
+  // EditGroupDialog target — body owns its own form state, keyed by group.id.
   const [editGroupData, setEditGroupData] = useState<GroupData | null>(null);
-  const [editGroupTitle, setEditGroupTitle] = useState("");
-  const [editGroupDescription, setEditGroupDescription] = useState("");
-  const [editGroupQuantity, setEditGroupQuantity] = useState("1");
-  const [editGroupBillingMonths, setEditGroupBillingMonths] = useState("");
-  const [editGroupBillingWeeks, setEditGroupBillingWeeks] = useState("");
-  const [editGroupBillingDays, setEditGroupBillingDays] = useState("");
-  const [editGroupPrice, setEditGroupPrice] = useState("");
 
   // Category rename state
   const [renameCategoryId, setRenameCategoryId] = useState<string | null>(null);
@@ -806,6 +232,12 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     staleTime: 60_000,
   });
 
+  const { data: uncategorizedSubHireGroups = [] } = useQuery({
+    queryKey: ["uncategorized-subhire-groups", projectId],
+    queryFn: () => getUncategorizedSubHireGroups(projectId),
+    staleTime: 60_000,
+  });
+
   const { data: templates = [] } = useQuery({
     queryKey: ["group-templates"],
     queryFn: () => getGroupTemplates(),
@@ -825,37 +257,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   });
 
   // Availability check for the currently-edited line item (equipment w/ modelId only)
-  const { data: editAvailability } = useQuery({
-    queryKey: [
-      "availability",
-      orgId,
-      editLineItem?.modelId ?? null,
-      rentalStartDate?.toISOString() ?? null,
-      rentalEndDate?.toISOString() ?? null,
-      projectId,
-    ],
-    queryFn: () =>
-      checkAvailability(
-        editLineItem!.modelId!,
-        rentalStartDate ?? null,
-        rentalEndDate ?? null,
-        projectId,
-      ),
-    enabled: !!editLineItem && !!editLineItem.modelId,
-  });
-
-  // "Available for this edit" = the server-computed usable pool (effectiveStock
-  // minus all overlapping bookings, including this item) plus the current
-  // item's own quantity added back. This matches the add dialog's semantics
-  // and agrees with the overbook badge.
-  const editAvailableForEdit =
-    editAvailability && editLineItem
-      ? editAvailability.available + editLineItem.quantity
-      : null;
-  const editRequestedQty = Number(editQuantity) || 1;
-  const editIsOverbooked =
-    editAvailableForEdit != null && editRequestedQty > editAvailableForEdit;
-
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: projectSubHires = [] } = useQuery<any[]>({
     queryKey: ["project-sub-hires", orgId, projectId],
@@ -869,6 +270,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   const invalidate = useCallback(() => {
     queryClient.invalidateQueries({ queryKey });
     queryClient.invalidateQueries({ queryKey: ["uncategorized-items", projectId] });
+    queryClient.invalidateQueries({ queryKey: ["uncategorized-subhire-groups", projectId] });
     queryClient.invalidateQueries({ queryKey: ["project", projectId] });
     queryClient.invalidateQueries({ queryKey: ["project-overbooked", projectId] });
     // Any mutation that changes line item quantity/presence must refresh
@@ -879,30 +281,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
 
   // ─── Mutations ───────────────────────────────────────────────────────────
 
-  const addCustomItemMut = useMutation({
-    mutationFn: (data: Parameters<typeof addCustomLineItem>[1]) => addCustomLineItem(projectId, data),
-    onSuccess: () => {
-      invalidate();
-      setShowCustomItemDialog(false);
-      setCustomItemName("");
-      setCustomItemQty("1");
-      setCustomItemPrice("");
-      setCustomItemPricingType("FLAT");
-      setCustomItemDuration("1");
-      setCustomItemNotes("");
-      setCustomItemCategoryId("");
-      setCustomItemGroupId("");
-      toast.success("Custom item added");
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
   const createCategoryMut = useMutation({
     mutationFn: (name: string) => createProjectCategory(projectId, { name }),
     onSuccess: () => {
       invalidate();
       setShowAddCategory(false);
-      setNewCategoryName("");
       toast.success("Category created");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -961,49 +344,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     onError: (e: Error) => toast.error(e.message),
   });
 
-  function openEditLineItem(item: LineItemData) {
-    setEditLineItem(item);
-    setEditQuantity(String(item.quantity));
-    setEditUnitPrice(item.unitPrice != null ? String(Number(item.unitPrice)) : "");
-    setEditDescription(item.description ?? item.model?.name ?? "");
-    setEditDiscount(item.discount != null && Number(item.discount) > 0 ? String(Number(item.discount)) : "");
-    setEditDiscountMode("$");
-    setEditPriceMode(item.pricingType === "OPTIMIZED" && !item.priceOverridden ? "auto" : "manual");
-    setEditNotes(item.notes ?? "");
-    setEditOverbookConfirmed(false);
-  }
-
-  function handleSaveEditLineItem() {
-    if (!editLineItem) return;
-    const qty = Number(editQuantity) || 1;
-    const isAuto = editPriceMode === "auto";
-    const price = isAuto
-      ? (editLineItem.unitPrice != null ? Number(editLineItem.unitPrice) : undefined)
-      : (editUnitPrice ? Number(editUnitPrice) : undefined);
-    const dur = editLineItem.duration ?? 1;
-    let disc: number | undefined;
-    if (editDiscount && Number(editDiscount) > 0) {
-      if (editDiscountMode === "%" && price != null) {
-        disc = Math.round((price * qty * dur * Number(editDiscount)) / 100 * 100) / 100;
-      } else {
-        disc = Number(editDiscount);
-      }
-    }
-    updateLineItemMut.mutate({
-      id: editLineItem.id,
-      data: {
-        type: editLineItem.type ?? "EQUIPMENT",
-        quantity: qty,
-        unitPrice: price,
-        description: editDescription,
-        pricingType: editLineItem.pricingType ?? "PER_DAY",
-        duration: dur,
-        discount: disc,
-        notes: editNotes || undefined,
-      },
-      allowOverbook: editOverbookConfirmed,
-    });
-  }
 
   const saveAsTemplateMut = useMutation({
     mutationFn: ({ groupId, name, description }: { groupId: string; name: string; description?: string }) =>
@@ -1013,8 +353,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
       toast.success(`Saved as template "${name}"`);
       queryClient.invalidateQueries({ queryKey: ["group-templates"] });
       setSaveAsTemplateGroup(null);
-      setSaveAsTemplateName("");
-      setSaveAsTemplateDescription("");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -1033,16 +371,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const updatePriceMut = useMutation({
-    mutationFn: ({ groupId, price }: { groupId: string; price: number }) =>
-      updateGroupPrice(groupId, price),
-    onSuccess: () => {
-      invalidate();
-      setPriceEditGroupId(null);
-      toast.success("Price updated");
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
 
   const deleteGroupMut = useMutation({
     mutationFn: (groupId: string) => deleteProjectGroup(groupId),
@@ -1066,50 +394,95 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     onError: (e: Error) => toast.error(e.message),
   });
 
-  // Kit queries and mutations
-  const { data: kitsData } = useQuery({
-    queryKey: ["kits", orgId],
-    queryFn: () => getKits({ pageSize: 200 }),
-    enabled: showKitDialog,
-  });
-
-  const { data: kitAvailability } = useQuery({
-    queryKey: ["kit-availability", orgId, selectedKitId, projectId],
-    queryFn: () => checkKitAvailability(selectedKitId, new Date(), new Date(), projectId),
-    enabled: showKitDialog && !!selectedKitId,
-  });
-
-  const addKitMut = useMutation({
-    mutationFn: () =>
-      addKitLineItem(
-        projectId,
-        selectedKitId,
-        kitPricingMode,
-        kitPricingMode === "KIT_PRICE" && kitUnitPrice ? parseFloat(kitUnitPrice) : undefined,
-        undefined, // groupName
-        kitTarget.categoryId,
-        kitTarget.groupId,
-      ),
-    onSuccess: () => {
-      invalidate();
-      setShowKitDialog(false);
-      setSelectedKitId("");
-      setKitPricingMode("KIT_PRICE");
-      setKitUnitPrice("");
-      setKitTarget({});
-      toast.success("Kit added to project");
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
   // ─── DnD handlers ─────────────────────────────────────────────────────────
+
+  /** Resolve the category id of whatever sortable row the drag landed on.
+   *  Returns the cat id, `null` for the uncategorised zone, or "unknown"
+   *  if the over id doesn't map to a known row (defensive). */
+  function findCategoryOfOverId(overId: string): string | null | "unknown" {
+    const cats = categories as CategoryData[];
+    if (overId.startsWith("cat-")) return overId.slice(4);
+    if (overId.startsWith("grp-")) {
+      const id = overId.slice(4);
+      const cat = cats.find((c) => c.groups.some((g) => g.id === id));
+      return cat ? cat.id : "unknown";
+    }
+    if (overId.startsWith("shg-")) {
+      const id = overId.slice(4);
+      const cat = cats.find((c) => (c.subHireGroupTargets ?? []).some((g) => g.id === id));
+      if (cat) return cat.id;
+      const orphans = uncategorizedSubHireGroups as SubHireGroupData[];
+      if (orphans.some((g) => g.id === id)) return null;
+      return "unknown";
+    }
+    if (overId.startsWith("li-")) {
+      const id = overId.slice(3);
+      for (const cat of cats) {
+        if ((cat.lineItems ?? []).some((i) => i.id === id)) return cat.id;
+        for (const group of cat.groups) {
+          if ((group.lineItems ?? []).some((i) => i.id === id)) return cat.id;
+        }
+      }
+      const uncat = uncategorizedItems as LineItemData[];
+      if (uncat.some((i) => i.id === id)) return null;
+      return "unknown";
+    }
+    return "unknown";
+  }
+
+  function handleDragOver(event: DragOverEvent) {
+    const { active, over } = event;
+    if (!over) {
+      if (rejectedDropTargetId !== null) setRejectedDropTargetId(null);
+      return;
+    }
+    const reason = getDisallowedDropReason(String(active.id), String(over.id));
+    const next = reason ? String(over.id) : null;
+    if (next !== rejectedDropTargetId) setRejectedDropTargetId(next);
+  }
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
+    setRejectedDropTargetId(null);
     if (!over || active.id === over.id) return;
 
     const activeId = String(active.id);
     const overId = String(over.id);
+
+    // Drop Matrix 8C — reject disallowed combinations with an explanatory
+    // toast before any mutation runs.
+    const disallowedReason = getDisallowedDropReason(activeId, overId);
+    if (disallowedReason) {
+      toast.error(disallowedReason);
+      return;
+    }
+
+    // Cross-category sub-hire group move (Phase 5d.b — Drop Matrix 8C row
+    // "SubHireGroup → ProjectCategory" allowed). Fires before the
+    // within-category reorder branch below so dragging a sub-hire group
+    // from cat A to cat B issues a placement write, not a reorder.
+    if (activeId.startsWith("shg-")) {
+      const activeRealId = activeId.slice(4);
+      const cats = categories as CategoryData[];
+      const sourceCat = cats.find((c) =>
+        (c.subHireGroupTargets ?? []).some((g) => g.id === activeRealId),
+      );
+      const sourceCatId: string | null = sourceCat?.id ?? null;
+      const targetCatId = findCategoryOfOverId(overId);
+      if (targetCatId !== "unknown" && sourceCatId !== targetCatId) {
+        moveSubHireGroupToCategory({ groupId: activeRealId, categoryId: targetCatId })
+          .then(() => {
+            toast.success(
+              targetCatId === null
+                ? "Moved sub-hire group to uncategorised"
+                : "Moved sub-hire group",
+            );
+          })
+          .catch((e: Error) => toast.error(e.message));
+        invalidate();
+        return;
+      }
+    }
 
     // Category reorder
     if (activeId.startsWith("cat-") && overId.startsWith("cat-")) {
@@ -1131,26 +504,73 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
       return;
     }
 
-    // Group reorder
-    if (activeId.startsWith("grp-") && overId.startsWith("grp-")) {
-      const activeRealId = activeId.slice(4);
-      const overRealId = overId.slice(4);
-      // Find which category contains these groups
-      const cats = categories as CategoryData[];
-      const cat = cats.find((c) => c.groups.some((g) => g.id === activeRealId));
-      if (!cat) return;
+    // Group-level reorder (project group OR sub-hire group, in any
+    // combination). Within the same category, both move types route
+    // through reorderMixedGroupsInCategory which owns the cross-type
+    // CategorySlot sortOrder. If the destination category has no
+    // sub-hire groups (and neither active nor over is a sub-hire group),
+    // we keep the lighter reorderProjectGroups path so categories that
+    // never touch the unified shape don't pay for CategorySlot writes.
+    const activeIsGroupSlot = activeId.startsWith("grp-") || activeId.startsWith("shg-");
+    const overIsGroupSlot = overId.startsWith("grp-") || overId.startsWith("shg-");
+    if (activeIsGroupSlot && overIsGroupSlot) {
+      const activeKind: "project" | "subHire" = activeId.startsWith("grp-") ? "project" : "subHire";
+      const overKind: "project" | "subHire" = overId.startsWith("grp-") ? "project" : "subHire";
+      const activeRealId = activeId.startsWith("grp-") ? activeId.slice(4) : activeId.slice(4);
+      const overRealId = overId.startsWith("grp-") ? overId.slice(4) : overId.slice(4);
 
-      const oldIndex = cat.groups.findIndex((g) => g.id === activeRealId);
-      const newIndex = cat.groups.findIndex((g) => g.id === overRealId);
+      const cats = categories as CategoryData[];
+      const findCatForGroup = (kind: "project" | "subHire", id: string) => {
+        if (kind === "project") {
+          return cats.find((c) => c.groups.some((g) => g.id === id));
+        }
+        return cats.find((c) => (c.subHireGroupTargets ?? []).some((g) => g.id === id));
+      };
+      const activeCat = findCatForGroup(activeKind, activeRealId);
+      const overCat = findCatForGroup(overKind, overRealId);
+      if (!activeCat || !overCat) return;
+      // Cross-category moves are handled in Phase 5d.b — for 5d.a we only
+      // wire within-category reorders. Bail out cleanly if cats differ.
+      if (activeCat.id !== overCat.id) return;
+
+      const cat = activeCat;
+      // Build current mixed-ordered slot list for this category.
+      const mixed: MixedGroupSlot[] = cat.mixedGroups ?? cat.groups.map((g) => ({
+        kind: "project" as const,
+        sortOrder: g.sortOrder,
+        projectGroupId: g.id,
+      }));
+      const oldIndex = mixed.findIndex((s) =>
+        s.kind === "project"
+          ? activeKind === "project" && s.projectGroupId === activeRealId
+          : activeKind === "subHire" && s.subHireGroupId === activeRealId,
+      );
+      const newIndex = mixed.findIndex((s) =>
+        s.kind === "project"
+          ? overKind === "project" && s.projectGroupId === overRealId
+          : overKind === "subHire" && s.subHireGroupId === overRealId,
+      );
       if (oldIndex === -1 || newIndex === -1) return;
 
-      const reordered = [...cat.groups];
+      const reordered = [...mixed];
       const [moved] = reordered.splice(oldIndex, 1);
       reordered.splice(newIndex, 0, moved);
 
-      reorderProjectGroups(cat.id, reordered.map((g) => g.id)).catch(() => {
-        toast.error("Failed to reorder groups");
-      });
+      const hasAnySubHire = reordered.some((s) => s.kind === "subHire");
+      if (!hasAnySubHire) {
+        // Pure project-group reorder — keep the lighter path.
+        reorderProjectGroups(
+          cat.id,
+          reordered.map((s) => (s.kind === "project" ? s.projectGroupId : "")).filter(Boolean),
+        ).catch(() => toast.error("Failed to reorder groups"));
+      } else {
+        const orderedIds = reordered.map((s) =>
+          s.kind === "project" ? `pg-${s.projectGroupId}` : `shg-${s.subHireGroupId}`,
+        );
+        reorderMixedGroupsInCategory({ categoryId: cat.id, orderedIds }).catch(() => {
+          toast.error("Failed to reorder groups");
+        });
+      }
       invalidate();
       return;
     }
@@ -1218,7 +638,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
 
   const typedCategories = categories as CategoryData[];
   const hasCategories = typedCategories.length > 0;
-  const hasUncategorized = (uncategorizedItems as LineItemData[]).length > 0;
+  const orphanSubHireGroups = uncategorizedSubHireGroups as SubHireGroupData[];
+  const hasUncategorized =
+    (uncategorizedItems as LineItemData[]).length > 0 || orphanSubHireGroups.length > 0;
 
   // Build a set of draft sub-hire IDs so we can badge unconfirmed items
   const draftSubHireIds = new Set<string>();
@@ -1226,16 +648,30 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     if (sh.status === "DRAFT") draftSubHireIds.add(sh.id as string);
   }
 
-  // Build flat list of all sortable IDs for the single DndContext
+  // Build flat list of all sortable IDs for the single DndContext.
+  // Walks each category's mixed group list in canonical (CategorySlot)
+  // order so the DnD context sees sub-hire group rows interleaved with
+  // project group rows. Falls back to cat.groups when mixedGroups isn't
+  // present (e.g. an HMR-stale cached response).
   const allSortableIds: string[] = [];
   for (const cat of typedCategories) {
     allSortableIds.push(`cat-${cat.id}`);
-    for (const group of cat.groups) {
-      allSortableIds.push(`grp-${group.id}`);
-      if (expandedGroups.has(group.id)) {
-        for (const item of group.lineItems ?? []) {
-          if (!isRealKitChild(item as LineItemData)) allSortableIds.push(`li-${item.id}`);
+    const mixed: MixedGroupSlot[] = cat.mixedGroups ?? cat.groups.map((g) => ({
+      kind: "project" as const,
+      sortOrder: g.sortOrder,
+      projectGroupId: g.id,
+    }));
+    for (const slot of mixed) {
+      if (slot.kind === "project") {
+        allSortableIds.push(`grp-${slot.projectGroupId}`);
+        const group = cat.groups.find((g) => g.id === slot.projectGroupId);
+        if (group && expandedGroups.has(group.id)) {
+          for (const item of group.lineItems ?? []) {
+            if (!isRealKitChild(item as LineItemData)) allSortableIds.push(`li-${item.id}`);
+          }
         }
+      } else {
+        allSortableIds.push(`shg-${slot.subHireGroupId}`);
       }
     }
     for (const item of cat.lineItems ?? []) {
@@ -1244,6 +680,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   }
   for (const item of uncategorizedItems as LineItemData[]) {
     if (!isRealKitChild(item)) allSortableIds.push(`li-${item.id}`);
+  }
+  for (const shGroup of orphanSubHireGroups) {
+    allSortableIds.push(`shg-${shGroup.id}`);
   }
 
   return (
@@ -1254,8 +693,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
           size="sm"
           className="gap-1.5"
           onClick={() => {
-            setAddEquipmentTarget({});
-            setShowAddEquipment(true);
+            setUnifiedAddTarget({});
+            setUnifiedAddKind("own-stock");
+            setShowUnifiedAdd(true);
           }}
         >
           <Plus className="h-3.5 w-3.5" />
@@ -1266,8 +706,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
           size="sm"
           className="gap-1.5"
           onClick={() => {
-            setKitTarget({});
-            setShowKitDialog(true);
+            setUnifiedAddTarget({});
+            setUnifiedAddKind("kit");
+            setShowUnifiedAdd(true);
           }}
         >
           <Package className="h-3.5 w-3.5" />
@@ -1277,7 +718,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
           variant="outline"
           size="sm"
           className="gap-1.5"
-          onClick={() => setShowCustomItemDialog(true)}
+          onClick={() => {
+            setUnifiedAddTarget({});
+            setUnifiedAddKind("custom");
+            setShowUnifiedAdd(true);
+          }}
         >
           <Plus className="h-3.5 w-3.5" />
           Custom Item
@@ -1292,7 +737,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
           }}
         >
           <ArrowLeftRight className="h-3.5 w-3.5" />
-          Sub-Hire Orders
+          Sub-Hire
         </Button>
         <Button
           variant="outline"
@@ -1304,6 +749,15 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
           Add Group
         </Button>
         <div className="flex-1" />
+        <Button
+          variant={showCostColumn ? "default" : "outline"}
+          size="sm"
+          className="gap-1.5"
+          onClick={toggleShowCostColumn}
+          title="Toggle the supplier-cost column so margin is visible at a glance"
+        >
+          {showCostColumn ? "Hide margin" : "Show margin"}
+        </Button>
         <Button
           variant="outline"
           size="sm"
@@ -1335,6 +789,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
               <col className="w-16" />
               <col className="w-28 hidden md:table-column" />
               <col className="w-20 hidden lg:table-column" />
+              {showCostColumn && <col className="w-24 hidden md:table-column" />}
               <col className="w-28 hidden sm:table-column" />
               <col className="w-20" />
             </colgroup>
@@ -1344,6 +799,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
               <TableHead>Item</TableHead>
               <TableHead className="text-center">Qty</TableHead>
               <TableHead className="text-right hidden md:table-cell">Unit Price</TableHead>
+              {showCostColumn && (
+                <TableHead className="text-right hidden md:table-cell">Cost</TableHead>
+              )}
               <TableHead className="text-right hidden sm:table-cell">Total</TableHead>
               <TableHead />
             </TableRow>
@@ -1351,7 +809,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
+            onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}
+            onDragCancel={() => setRejectedDropTargetId(null)}
           >
             <SortableContext
               items={allSortableIds}
@@ -1364,7 +824,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                   return (
                     <React.Fragment key={cat.id}>
                       {/* Category label row — sortable */}
-                      <SortableCategoryRow
+                      <CategoryRow
                         cat={cat}
                         onRename={() => {
                           setRenameCategoryId(cat.id);
@@ -1373,17 +833,90 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                         onDelete={() => deleteCategoryMut.mutate(cat.id)}
                       />
 
-                      {/* Groups within category */}
-                      {cat.groups.map((group) => {
+                      {/* Mixed groups within category (CategorySlot order; falls back
+                          to cat.groups when mixedGroups hasn't been computed). */}
+                      {(cat.mixedGroups ?? cat.groups.map<MixedGroupSlot>((g) => ({
+                        kind: "project" as const,
+                        sortOrder: g.sortOrder,
+                        projectGroupId: g.id,
+                      }))).map((slot) => {
+                        if (slot.kind === "subHire") {
+                          const shGroup = (cat.subHireGroupTargets ?? []).find(
+                            (g: SubHireGroupData) => g.id === slot.subHireGroupId,
+                          );
+                          if (!shGroup) return null;
+                          const isExpanded = expandedGroups.has(shGroup.id);
+                          // Synthetic parent line item — its childLineItems are
+                          // the kit-style children rendered on expand.
+                          const parentLi = (shGroup.lineItems ?? [])[0];
+                          const childItems = (parentLi?.childLineItems ?? []) as LineItemData[];
+                          return (
+                            <React.Fragment key={`shg-${shGroup.id}`}>
+                              <SubHireGroupRow
+                                group={shGroup}
+                                isExpanded={isExpanded}
+                                isRejectedDropTarget={rejectedDropTargetId === `shg-${shGroup.id}`}
+                                showCostColumn={showCostColumn}
+                                indented
+                                onToggle={() => toggleGroup(shGroup.id)}
+                                onEdit={() => {
+                                  setManagingSubHireId(shGroup.subHire.id);
+                                  setShowSubHireOrderDialog(true);
+                                }}
+                                onEditPrice={() => setPriceEditTarget({
+                                  kind: "subHire",
+                                  groupId: shGroup.id,
+                                  title: shGroup.title,
+                                  quantity: shGroup.quantity,
+                                  cost: shGroup.cost != null ? Number(shGroup.cost) : null,
+                                  charge: shGroup.charge != null ? Number(shGroup.charge) : null,
+                                })}
+                                onMove={() => setMoveSubHireGroup({ id: shGroup.id, title: shGroup.title })}
+                              />
+                              {isExpanded && childItems.length === 0 && (
+                                <TableRow className="hover:bg-transparent">
+                                  <TableCell colSpan={colCount} className="py-3 text-center text-xs text-fg-4">
+                                    No items in this sub-hire group yet.
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                              {isExpanded && childItems.map((item) => (
+                                <LineItemRow
+                                  key={item.id}
+                                  item={item}
+                                  indent="ml-12"
+                                  overbookedInfo={undefined}
+                                  isUnconfirmed={!!shGroup.subHire && draftSubHireIds.has(shGroup.subHire.id)}
+                                  showCostColumn={showCostColumn}
+                                  isExpanded={expandedParents.has(item.id)}
+                                  onToggle={() => toggleParent(item.id)}
+                                  onEdit={() => {
+                                    setManagingSubHireId(shGroup.subHire.id);
+                                    setShowSubHireOrderDialog(true);
+                                  }}
+                                  onMove={() => {
+                                    setManagingSubHireId(shGroup.subHire.id);
+                                    setShowSubHireOrderDialog(true);
+                                  }}
+                                  onRemove={() => removeMut.mutate(item.id)}
+                                />
+                              ))}
+                            </React.Fragment>
+                          );
+                        }
+                        const group = cat.groups.find((g) => g.id === slot.projectGroupId);
+                        if (!group) return null;
                         const isExpanded = expandedGroups.has(group.id);
                         const priceVal = group.price != null ? Number(group.price) : null;
                         const groupItems = (group.lineItems ?? []).filter((i: LineItemData) => !isHiddenFromList(i));
                         return (
                           <React.Fragment key={group.id}>
-                            <SortableGroupRow
+                            <GroupRow
                               group={group}
                               isExpanded={isExpanded}
                               indented
+                              isRejectedDropTarget={rejectedDropTargetId === `grp-${group.id}`}
+                              showCostColumn={showCostColumn}
                               onToggle={() => toggleGroup(group.id)}
                               onDelete={() => {
                                 setDeleteGroupId(group.id);
@@ -1393,23 +926,22 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                   itemCount: groupItems.length,
                                 });
                               }}
-                              onEdit={() => {
-                                setEditGroupData(group);
-                                setEditGroupTitle(group.title);
-                                setEditGroupDescription(group.description ?? "");
-                                setEditGroupQuantity(String(group.quantity));
-                                setEditGroupBillingMonths(group.billingMonths != null ? String(group.billingMonths) : "");
-                                setEditGroupBillingWeeks(group.billingWeeks != null ? String(group.billingWeeks) : "");
-                                setEditGroupBillingDays(group.billingDays != null ? String(group.billingDays) : "");
-                                setEditGroupPrice(priceVal != null ? String(priceVal) : "");
-                              }}
+                              onEdit={() => setEditGroupData(group)}
+                              onEditPrice={() => setPriceEditTarget({
+                                kind: "project",
+                                groupId: group.id,
+                                title: group.title,
+                                price: priceVal,
+                              })}
                               onAddEquipment={() => {
-                                setAddEquipmentTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
-                                setShowAddEquipment(true);
+                                setUnifiedAddTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
+                                setUnifiedAddKind("own-stock");
+                                setShowUnifiedAdd(true);
                               }}
                               onAddKit={() => {
-                                setKitTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
-                                setShowKitDialog(true);
+                                setUnifiedAddTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
+                                setUnifiedAddKind("kit");
+                                setShowUnifiedAdd(true);
                               }}
                               onRecalculate={async () => {
                                 try {
@@ -1425,30 +957,27 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                   toast.error(e instanceof Error ? e.message : "Failed to recalculate");
                                 }
                               }}
-                              onSaveAsTemplate={() => {
-                                setSaveAsTemplateGroup({ id: group.id, title: group.title });
-                                setSaveAsTemplateName(group.title);
-                                setSaveAsTemplateDescription(group.description ?? "");
-                              }}
+                              onSaveAsTemplate={() => setSaveAsTemplateGroup({ id: group.id, title: group.title })}
                             />
                             {/* Expanded line items */}
                             {isExpanded && groupItems.length === 0 && (
                               <TableRow className="hover:bg-transparent">
-                                <TableCell colSpan={COL_COUNT} className="py-3 text-center text-xs text-fg-4">
+                                <TableCell colSpan={colCount} className="py-3 text-center text-xs text-fg-4">
                                   No items in this group yet. Add equipment to get started.
                                 </TableCell>
                               </TableRow>
                             )}
                             {isExpanded && groupItems.map((item) => (
-                              <SortableLineItemRow
+                              <LineItemRow
                                 key={item.id}
                                 item={item}
                                 indent="ml-12"
                                 overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                                 isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
+                                showCostColumn={showCostColumn}
                                 isExpanded={expandedParents.has(item.id)}
                                 onToggle={() => toggleParent(item.id)}
-                                onEdit={() => openEditLineItem(item)}
+                                onEdit={() => setEditLineItem(item)}
                                 onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId(group.id); }}
                                 onRemove={() => removeMut.mutate(item.id)}
                               />
@@ -1459,15 +988,16 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
 
                       {/* Standalone line items in category */}
                       {standaloneItems.map((item) => (
-                        <SortableLineItemRow
+                        <LineItemRow
                           key={item.id}
                           item={item}
                           indent="ml-3"
                           overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                           isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
+                          showCostColumn={showCostColumn}
                           isExpanded={expandedParents.has(item.id)}
                           onToggle={() => toggleParent(item.id)}
-                          onEdit={() => openEditLineItem(item)}
+                          onEdit={() => setEditLineItem(item)}
                           onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
                           onRemove={() => removeMut.mutate(item.id)}
                         />
@@ -1479,7 +1009,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                 {/* Uncategorized items */}
                 {hasCategories && hasUncategorized && (
                   <TableRow className="bg-bg-inset/30">
-                    <TableCell colSpan={COL_COUNT} className="py-2 px-1">
+                    <TableCell colSpan={colCount} className="py-2 px-1">
                       <div className="flex items-center gap-1.5">
                         <div className="w-6" />
                         <h3 className="text-sm font-semibold text-fg-4">Uncategorized</h3>
@@ -1488,19 +1018,79 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                   </TableRow>
                 )}
                 {(uncategorizedItems as LineItemData[]).filter((i) => !isHiddenFromList(i)).map((item) => (
-                  <SortableLineItemRow
+                  <LineItemRow
                     key={item.id}
                     item={item}
                     indent=""
                     overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                     isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
+                    showCostColumn={showCostColumn}
                     isExpanded={expandedParents.has(item.id)}
                     onToggle={() => toggleParent(item.id)}
-                    onEdit={() => openEditLineItem(item)}
+                    onEdit={() => setEditLineItem(item)}
                     onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
                     onRemove={() => removeMut.mutate(item.id)}
                   />
                 ))}
+                {/* Orphan sub-hire groups — targetCategoryId IS NULL.
+                    S13 from the test plan: must surface here, not vanish. */}
+                {orphanSubHireGroups.map((shGroup) => {
+                  const isExpanded = expandedGroups.has(shGroup.id);
+                  const parentLi = (shGroup.lineItems ?? [])[0];
+                  const childItems = (parentLi?.childLineItems ?? []) as LineItemData[];
+                  return (
+                    <React.Fragment key={`shg-${shGroup.id}`}>
+                      <SubHireGroupRow
+                        group={shGroup}
+                        isExpanded={isExpanded}
+                        isRejectedDropTarget={rejectedDropTargetId === `shg-${shGroup.id}`}
+                        showCostColumn={showCostColumn}
+                        onToggle={() => toggleGroup(shGroup.id)}
+                        onEdit={() => {
+                          setManagingSubHireId(shGroup.subHire.id);
+                          setShowSubHireOrderDialog(true);
+                        }}
+                        onEditPrice={() => setPriceEditTarget({
+                          kind: "subHire",
+                          groupId: shGroup.id,
+                          title: shGroup.title,
+                          quantity: shGroup.quantity,
+                          cost: shGroup.cost != null ? Number(shGroup.cost) : null,
+                          charge: shGroup.charge != null ? Number(shGroup.charge) : null,
+                        })}
+                        onMove={() => setMoveSubHireGroup({ id: shGroup.id, title: shGroup.title })}
+                      />
+                      {isExpanded && childItems.length === 0 && (
+                        <TableRow className="hover:bg-transparent">
+                          <TableCell colSpan={colCount} className="py-3 text-center text-xs text-fg-4">
+                            No items in this sub-hire group yet.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      {isExpanded && childItems.map((item) => (
+                        <LineItemRow
+                          key={item.id}
+                          item={item}
+                          indent="ml-8"
+                          overbookedInfo={undefined}
+                          isUnconfirmed={!!shGroup.subHire && draftSubHireIds.has(shGroup.subHire.id)}
+                          showCostColumn={showCostColumn}
+                          isExpanded={expandedParents.has(item.id)}
+                          onToggle={() => toggleParent(item.id)}
+                          onEdit={() => {
+                            setManagingSubHireId(shGroup.subHire.id);
+                            setShowSubHireOrderDialog(true);
+                          }}
+                          onMove={() => {
+                            setManagingSubHireId(shGroup.subHire.id);
+                            setShowSubHireOrderDialog(true);
+                          }}
+                          onRemove={() => removeMut.mutate(item.id)}
+                        />
+                      ))}
+                    </React.Fragment>
+                  );
+                })}
               </TableBody>
             </SortableContext>
           </DndContext>
@@ -1642,803 +1232,136 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
       {/* ─── Dialogs ────────────────────────────────────────────────────────── */}
 
       {/* Add category dialog */}
-      <Dialog open={showAddCategory} onOpenChange={setShowAddCategory}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>New category</DialogTitle>
-            <DialogDescription>
-              Categories organize equipment into sections (e.g. RF, IEM, PA).
-            </DialogDescription>
-          </DialogHeader>
-          <Input
-            placeholder="Category name"
-            value={newCategoryName}
-            onChange={(e) => setNewCategoryName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && newCategoryName.trim()) {
-                createCategoryMut.mutate(newCategoryName.trim());
-              }
-            }}
-            autoFocus
-          />
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowAddCategory(false);
-                setNewCategoryName("");
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => createCategoryMut.mutate(newCategoryName.trim())}
-              disabled={!newCategoryName.trim() || createCategoryMut.isPending}
-            >
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AddCategoryDialog
+        open={showAddCategory}
+        isPending={createCategoryMut.isPending}
+        onOpenChange={setShowAddCategory}
+        onSubmit={(name) => createCategoryMut.mutate(name)}
+      />
 
-      {/* Rename category dialog */}
-      <Dialog open={renameCategoryId != null} onOpenChange={(open) => { if (!open) setRenameCategoryId(null); }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Rename category</DialogTitle>
-          </DialogHeader>
-          <Input
-            placeholder="Category name"
-            value={renameCategoryValue}
-            onChange={(e) => setRenameCategoryValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && renameCategoryValue.trim() && renameCategoryId) {
-                renameCategoryMut.mutate({ id: renameCategoryId, name: renameCategoryValue.trim() });
-              }
-            }}
-            autoFocus
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRenameCategoryId(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (renameCategoryId && renameCategoryValue.trim()) {
-                  renameCategoryMut.mutate({ id: renameCategoryId, name: renameCategoryValue.trim() });
-                }
-              }}
-              disabled={!renameCategoryValue.trim() || renameCategoryMut.isPending}
-            >
-              Rename
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <RenameCategoryDialog
+        categoryId={renameCategoryId}
+        initialValue={renameCategoryValue}
+        isPending={renameCategoryMut.isPending}
+        onClose={() => setRenameCategoryId(null)}
+        onSubmit={(id, name) => renameCategoryMut.mutate({ id, name })}
+      />
 
       {/* Save group as template dialog */}
-      <Dialog
-        open={saveAsTemplateGroup != null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setSaveAsTemplateGroup(null);
-            setSaveAsTemplateName("");
-            setSaveAsTemplateDescription("");
-          }
-        }}
-      >
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Save as Template</DialogTitle>
-            <DialogDescription>
-              Save &quot;{saveAsTemplateGroup?.title}&quot; as a reusable template. Only model- and kit-backed items are captured; free-text lines are skipped.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-2">
-              <Label>Template name</Label>
-              <Input
-                value={saveAsTemplateName}
-                onChange={(e) => setSaveAsTemplateName(e.target.value)}
-                placeholder="e.g. Drum Mic Pack"
-                autoFocus
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Description (optional)</Label>
-              <Input
-                value={saveAsTemplateDescription}
-                onChange={(e) => setSaveAsTemplateDescription(e.target.value)}
-                placeholder="When to use this template..."
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setSaveAsTemplateGroup(null);
-                setSaveAsTemplateName("");
-                setSaveAsTemplateDescription("");
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (saveAsTemplateGroup && saveAsTemplateName.trim()) {
-                  saveAsTemplateMut.mutate({
-                    groupId: saveAsTemplateGroup.id,
-                    name: saveAsTemplateName.trim(),
-                    description: saveAsTemplateDescription.trim() || undefined,
-                  });
-                }
-              }}
-              disabled={!saveAsTemplateName.trim() || saveAsTemplateMut.isPending}
-            >
-              {saveAsTemplateMut.isPending ? "Saving..." : "Save Template"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <SaveAsTemplateDialog
+        group={saveAsTemplateGroup}
+        isPending={saveAsTemplateMut.isPending}
+        onClose={() => setSaveAsTemplateGroup(null)}
+        onSubmit={(groupId, values) =>
+          saveAsTemplateMut.mutate({
+            groupId,
+            name: values.name,
+            description: values.description,
+          })
+        }
+      />
 
       {/* Add group from toolbar dialog */}
-      <Dialog open={showAddGroupFromToolbar} onOpenChange={(open) => {
-        setShowAddGroupFromToolbar(open);
-        if (!open) { setToolbarGroupTitle(""); setToolbarGroupCategoryId(""); setToolbarGroupTemplateId(""); }
-      }}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Add Group</DialogTitle>
-            <DialogDescription>
-              Choose a category and name for the new group. Optionally start from a template.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-2">
-              <Label>Category</Label>
-              <select
-                value={toolbarGroupCategoryId}
-                onChange={(e) => setToolbarGroupCategoryId(e.target.value)}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                <option value="">Select category...</option>
-                {typedCategories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>{cat.name}</option>
-                ))}
-              </select>
-            </div>
-            {templateOptions.length > 0 && (
-              <div className="space-y-2">
-                <Label>Template (optional)</Label>
-                <select
-                  value={toolbarGroupTemplateId}
-                  onChange={(e) => {
-                    const id = e.target.value;
-                    setToolbarGroupTemplateId(id);
-                    if (id && !toolbarGroupTitle.trim()) {
-                      const t = templateOptions.find((o) => o.id === id);
-                      if (t) setToolbarGroupTitle(t.name);
-                    }
-                  }}
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                >
-                  <option value="">None (empty group)</option>
-                  {templateOptions.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} ({t.itemCount} {t.itemCount === 1 ? "item" : "items"})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <div className="space-y-2">
-              <Label>Group Title</Label>
-              <Input
-                value={toolbarGroupTitle}
-                onChange={(e) => setToolbarGroupTitle(e.target.value)}
-                placeholder="e.g. PA System, Lighting Rig"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && toolbarGroupTitle.trim() && toolbarGroupCategoryId) {
-                    createGroupMut.mutate({
-                      categoryId: toolbarGroupCategoryId,
-                      title: toolbarGroupTitle.trim(),
-                      templateId: toolbarGroupTemplateId || undefined,
-                    });
-                    setShowAddGroupFromToolbar(false);
-                    setToolbarGroupTitle("");
-                    setToolbarGroupCategoryId("");
-                    setToolbarGroupTemplateId("");
-                  }
-                }}
-                autoFocus
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setShowAddGroupFromToolbar(false);
-              setToolbarGroupTitle("");
-              setToolbarGroupCategoryId("");
-              setToolbarGroupTemplateId("");
-            }}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (toolbarGroupTitle.trim() && toolbarGroupCategoryId) {
-                  createGroupMut.mutate({
-                    categoryId: toolbarGroupCategoryId,
-                    title: toolbarGroupTitle.trim(),
-                    templateId: toolbarGroupTemplateId || undefined,
-                  });
-                  setShowAddGroupFromToolbar(false);
-                  setToolbarGroupTitle("");
-                  setToolbarGroupCategoryId("");
-                  setToolbarGroupTemplateId("");
-                }
-              }}
-              disabled={!toolbarGroupTitle.trim() || !toolbarGroupCategoryId || createGroupMut.isPending}
-            >
-              {toolbarGroupTemplateId ? "Create from Template" : "Create"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Price edit dialog */}
-      <Dialog
-        open={priceEditGroupId != null}
-        onOpenChange={(open) => {
-          if (!open) setPriceEditGroupId(null);
+      <AddGroupToolbarDialog
+        open={showAddGroupFromToolbar}
+        isPending={createGroupMut.isPending}
+        categories={typedCategories.map((c) => ({ id: c.id, name: c.name }))}
+        templates={templateOptions}
+        onOpenChange={setShowAddGroupFromToolbar}
+        onSubmit={(values) => {
+          createGroupMut.mutate(values);
+          setShowAddGroupFromToolbar(false);
         }}
-      >
-        <DialogContent className="max-w-xs">
-          <DialogHeader>
-            <DialogTitle>Set group price</DialogTitle>
-          </DialogHeader>
-          <div className="flex items-center gap-2">
-            <span className="text-fg-3">$</span>
-            <Input
-              type="number"
-              step="0.01"
-              min="0"
-              value={priceEditValue}
-              onChange={(e) => setPriceEditValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && priceEditGroupId) {
-                  updatePriceMut.mutate({
-                    groupId: priceEditGroupId,
-                    price: parseFloat(priceEditValue) || 0,
-                  });
-                }
-              }}
-              autoFocus
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPriceEditGroupId(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (priceEditGroupId) {
-                  updatePriceMut.mutate({
-                    groupId: priceEditGroupId,
-                    price: parseFloat(priceEditValue) || 0,
-                  });
-                }
-              }}
-              disabled={updatePriceMut.isPending}
-            >
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete confirmation dialog */}
-      <Dialog
-        open={deleteGroupId != null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setDeleteGroupId(null);
-            setDeleteGroupInfo(null);
-          }
+      />
+      {/* Delete confirmation dialog (Phase 7 — extracted) */}
+      <DeleteGroupDialog
+        groupId={deleteGroupId}
+        info={deleteGroupInfo}
+        isPending={deleteGroupMut.isPending}
+        onClose={() => {
+          setDeleteGroupId(null);
+          setDeleteGroupInfo(null);
         }}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Delete group</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete &ldquo;{deleteGroupInfo?.title}&rdquo;?
-            </DialogDescription>
-          </DialogHeader>
-          {deleteGroupInfo && (
-            <div className="rounded-lg bg-bg-inset p-3 text-xs space-y-1">
-              <div className="flex justify-between">
-                <span className="text-fg-3">Items</span>
-                <span className="text-fg-2">{deleteGroupInfo.itemCount} will become standalone</span>
-              </div>
-              {deleteGroupInfo.price > 0 && (
-                <div className="flex justify-between">
-                  <span className="text-fg-3">Revenue impact</span>
-                  <span className="font-medium text-[oklch(0.58_0.22_27)]">
-                    -{formatCurrency(deleteGroupInfo.price)}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setDeleteGroupId(null);
-                setDeleteGroupInfo(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => deleteGroupId && deleteGroupMut.mutate(deleteGroupId)}
-              disabled={deleteGroupMut.isPending}
-            >
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        onConfirm={(id) => deleteGroupMut.mutate(id)}
+      />
 
-      {/* Edit line item dialog */}
-      <Dialog open={editLineItem != null} onOpenChange={(open) => { if (!open) setEditLineItem(null); }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit Item</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="edit-description">Description</Label>
-              <Input
-                id="edit-description"
-                value={editDescription}
-                onChange={(e) => setEditDescription(e.target.value)}
-              />
-            </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="edit-quantity">Quantity</Label>
-              <Input
-                id="edit-quantity"
-                type="number"
-                min={1}
-                value={editQuantity}
-                onChange={(e) => setEditQuantity(e.target.value)}
-              />
-              {editAvailability && editLineItem?.modelId && (
-                <div className="space-y-1 pt-1">
-                  <p className={editIsOverbooked ? "text-sm text-red-600 dark:text-red-400" : "text-sm text-fg-3"}>
-                    <span className="font-semibold">{editAvailableForEdit ?? 0}</span>{" "}
-                    available out of{" "}
-                    <span className="font-semibold">{editAvailability.effectiveStock ?? editAvailability.totalStock}</span>{" "}
-                    {editAvailability.dateless ? "in stock" : "usable"}
-                    {editAvailability.dateless && (
-                      <span className="text-fg-3 font-normal">
-                        {" "}(no dates set — showing stock only)
-                      </span>
-                    )}
-                  </p>
-                  {(editAvailability.unavailable ?? 0) > 0 && (
-                    <p className="text-purple-600 dark:text-purple-400 text-xs">
-                      {editAvailability.unavailable} of {editAvailability.totalStock} total not usable
-                      {" "}({[
-                        editAvailability.inMaintenance ? `${editAvailability.inMaintenance} in maintenance` : "",
-                        editAvailability.lost ? `${editAvailability.lost} lost` : "",
-                      ].filter(Boolean).join(", ")})
-                    </p>
-                  )}
-                  {editAvailability.conflicts && editAvailability.conflicts.length > 0 && (
-                    <div className="flex items-start gap-2 text-amber-600 dark:text-amber-400">
-                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                      <div>
-                        <p className="text-xs font-medium">Conflicts:</p>
-                        <ul className="list-disc pl-4 text-xs">
-                          {editAvailability.conflicts.map((c: string) => (
-                            <li key={c}>{c}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Pricing section */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label>Pricing</Label>
-                {editLineItem?.pricingType === "OPTIMIZED" && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (editPriceMode === "auto") {
-                        setEditPriceMode("manual");
-                        setEditUnitPrice(editLineItem.unitPrice != null ? String(Number(editLineItem.unitPrice)) : "");
-                      } else {
-                        setEditPriceMode("auto");
-                        setEditUnitPrice("");
-                      }
-                    }}
-                    className="text-xs text-primary hover:underline"
-                  >
-                    {editPriceMode === "auto" ? "Set manual price" : "Revert to auto"}
-                  </button>
-                )}
-              </div>
-
-              {editPriceMode === "auto" && editLineItem?.pricingType === "OPTIMIZED" ? (
-                <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-primary">Auto-priced</span>
-                    <span className="text-sm font-semibold">
-                      {formatCurrency(editLineItem.unitPrice != null ? Number(editLineItem.unitPrice) : null)}
-                    </span>
-                  </div>
-                  {editLineItem.priceBreakdown && (
-                    <p className="text-xs text-fg-3 mt-0.5">{editLineItem.priceBreakdown}</p>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <Input
-                    id="edit-unitPrice"
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    value={editUnitPrice}
-                    onChange={(e) => setEditUnitPrice(e.target.value)}
-                    placeholder="Enter price"
-                  />
-                  {editLineItem?.pricingType === "OPTIMIZED" && (
-                    <p className="text-xs text-amber-500">This will override the auto-calculated price</p>
-                  )}
-                </div>
-              )}
-
-              {/* Discount row */}
-              <div className="flex items-center gap-2">
-                <Label htmlFor="edit-discount" className="shrink-0 text-sm">Discount</Label>
-                <div className="flex gap-1 flex-1">
-                  <Input
-                    id="edit-discount"
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    placeholder="0"
-                    value={editDiscount}
-                    onChange={(e) => setEditDiscount(e.target.value)}
-                    className="flex-1"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setEditDiscountMode(editDiscountMode === "$" ? "%" : "$")}
-                    className="shrink-0 w-9 h-9 rounded-md border border-input text-sm font-medium hover:bg-accent transition-colors"
-                  >
-                    {editDiscountMode}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="edit-notes">Notes</Label>
-              <Textarea
-                id="edit-notes"
-                value={editNotes}
-                onChange={(e) => setEditNotes(e.target.value)}
-                rows={2}
-              />
-            </div>
-
-            {editIsOverbooked && (
-              <div className="rounded-md border border-red-500/50 bg-red-500/10 p-3 space-y-2">
-                <p className="text-sm font-medium text-red-600 dark:text-red-400">
-                  <AlertTriangle className="inline-block mr-1.5 h-3.5 w-3.5" />
-                  {rentalStartDate && rentalEndDate
-                    ? `This will overbook ${editRequestedQty} units with only ${editAvailableForEdit ?? 0} available across overlapping projects`
-                    : `Only ${editAvailableForEdit ?? 0} in stock — requesting ${editRequestedQty}`}
-                </p>
-                {editAvailability?.dateless && (
-                  <p className="text-xs text-red-600/80 dark:text-red-400/80">
-                    No dates set — checking stock only (not cross-project conflicts)
-                  </p>
-                )}
-                {editAvailability?.conflicts && editAvailability.conflicts.length > 0 && (
-                  <p className="text-xs text-red-600/80 dark:text-red-400/80">
-                    Conflicts with: {editAvailability.conflicts.join(", ")}
-                  </p>
-                )}
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editOverbookConfirmed}
-                    onChange={(e) => setEditOverbookConfirmed(e.target.checked)}
-                    className="accent-red-500"
-                  />
-                  <span className="text-red-600 dark:text-red-400">I understand, overbook anyway</span>
-                </label>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditLineItem(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSaveEditLineItem}
-              disabled={updateLineItemMut.isPending || (editIsOverbooked && !editOverbookConfirmed)}
-            >
-              {updateLineItemMut.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Edit line item dialog (Phase 7 — extracted) */}
+      <EditLineItemDialog
+        item={editLineItem}
+        projectId={projectId}
+        rentalStartDate={rentalStartDate}
+        rentalEndDate={rentalEndDate}
+        orgId={orgId}
+        isPending={updateLineItemMut.isPending}
+        onClose={() => setEditLineItem(null)}
+        onSubmit={(id, data, allowOverbook) =>
+          updateLineItemMut.mutate({
+            id,
+            data: data as unknown as Record<string, unknown>,
+            allowOverbook,
+          })
+        }
+      />
 
       {/* Move line item dialog */}
-      <Dialog open={moveLineItemId != null} onOpenChange={(open) => { if (!open) setMoveLineItemId(null); }}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Move Item</DialogTitle>
-            <DialogDescription>
-              Choose a destination group for this item.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2 py-2">
-            <select
-              value={moveTargetGroupId}
-              onChange={(e) => setMoveTargetGroupId(e.target.value)}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            >
-              <option value="__uncategorized__">Uncategorized (no group)</option>
-              {typedCategories.map((cat) =>
-                cat.groups.map((g) => (
-                  <option key={g.id} value={`${cat.id}|${g.id}`}>
-                    {cat.name} &gt; {g.title}
-                  </option>
-                ))
-              )}
-            </select>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setMoveLineItemId(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (!moveLineItemId) return;
-                if (moveTargetGroupId === "__uncategorized__") {
-                  moveLineItemMut.mutate({ lineItemId: moveLineItemId, targetGroupId: null, targetCategoryId: null });
-                } else {
-                  const [catId, grpId] = moveTargetGroupId.split("|");
-                  moveLineItemMut.mutate({ lineItemId: moveLineItemId, targetGroupId: grpId, targetCategoryId: catId });
-                }
-              }}
-              disabled={moveLineItemMut.isPending}
-            >
-              {moveLineItemMut.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Move
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <MoveLineItemDialog
+        lineItemId={moveLineItemId}
+        initialEncoded={moveTargetGroupId}
+        categories={typedCategories}
+        isPending={moveLineItemMut.isPending}
+        onClose={() => setMoveLineItemId(null)}
+        onSubmit={(lineItemId, target) =>
+          moveLineItemMut.mutate({
+            lineItemId,
+            targetGroupId: target.groupId,
+            targetCategoryId: target.categoryId,
+          })
+        }
+      />
 
-      {/* Add custom item dialog */}
-      <Dialog
-        open={showCustomItemDialog}
+      {/* Unified price-edit dialog (Phase 6c — works for both kinds of group). */}
+      <PriceEditDialog
+        target={priceEditTarget}
+        onClose={() => setPriceEditTarget(null)}
+        onInvalidate={invalidate}
+      />
+
+      {/* Move-sub-hire-group dialog (kebab → "Move to category") */}
+      <MoveSubHireGroupDialog
+        open={moveSubHireGroup != null}
         onOpenChange={(open) => {
-          setShowCustomItemDialog(open);
-          if (!open) {
-            setCustomItemName("");
-            setCustomItemQty("1");
-            setCustomItemPrice("");
-            setCustomItemPricingType("FLAT");
-            setCustomItemDuration("1");
-            setCustomItemDiscount("");
-            setCustomItemIsOptional(false);
-            setCustomItemNotes("");
-            setCustomItemCategoryId("");
-            setCustomItemGroupId("");
-          }
+          if (!open) setMoveSubHireGroup(null);
         }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Custom Item</DialogTitle>
-            <DialogDescription>
-              Add a free-text item not in your inventory. It will appear on documents and in the warehouse.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="custom-item-name">Name <span className="text-error">*</span></Label>
-              <Input
-                id="custom-item-name"
-                placeholder="e.g. 2x SM58 (borrowed), Client cable drum"
-                value={customItemName}
-                onChange={(e) => setCustomItemName(e.target.value)}
-                maxLength={200}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Category</Label>
-                <select
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={customItemCategoryId}
-                  onChange={(e) => {
-                    setCustomItemCategoryId(e.target.value);
-                    setCustomItemGroupId("");
-                  }}
-                >
-                  <option value="">Uncategorized</option>
-                  {(categories as CategoryData[]).map((cat) => (
-                    <option key={cat.id} value={cat.id}>{cat.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Group</Label>
-                <select
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={customItemGroupId}
-                  onChange={(e) => setCustomItemGroupId(e.target.value)}
-                  disabled={!customItemCategoryId}
-                >
-                  <option value="">No group</option>
-                  {customItemCategoryId && (categories as CategoryData[])
-                    .find((c) => c.id === customItemCategoryId)
-                    ?.groups.map((g) => (
-                      <option key={g.id} value={g.id}>{g.title}</option>
-                    ))}
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="custom-item-qty">Quantity</Label>
-                <Input
-                  id="custom-item-qty"
-                  type="number"
-                  min="1"
-                  value={customItemQty}
-                  onChange={(e) => setCustomItemQty(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="custom-item-price">Unit Price</Label>
-                <Input
-                  id="custom-item-price"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={customItemPrice}
-                  onChange={(e) => setCustomItemPrice(e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Pricing Type</Label>
-                <select
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={customItemPricingType}
-                  onChange={(e) => setCustomItemPricingType(e.target.value as typeof customItemPricingType)}
-                >
-                  <option value="FLAT">Flat</option>
-                  <option value="PER_DAY">Per Day</option>
-                  <option value="PER_WEEK">Per Week</option>
-                  <option value="PER_HOUR">Per Hour</option>
-                </select>
-              </div>
-              {customItemPricingType !== "FLAT" && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="custom-item-duration">Duration</Label>
-                  <Input
-                    id="custom-item-duration"
-                    type="number"
-                    min="1"
-                    value={customItemDuration}
-                    onChange={(e) => setCustomItemDuration(e.target.value)}
-                  />
-                </div>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="custom-item-discount">Discount</Label>
-                <Input
-                  id="custom-item-discount"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={customItemDiscount}
-                  onChange={(e) => setCustomItemDiscount(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="flex items-center gap-2 pt-7">
-                  <input
-                    type="checkbox"
-                    className="rounded border-border"
-                    checked={customItemIsOptional}
-                    onChange={(e) => setCustomItemIsOptional(e.target.checked)}
-                  />
-                  Optional (excluded from project total)
-                </Label>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="custom-item-notes">Notes</Label>
-              <Textarea
-                id="custom-item-notes"
-                placeholder="Optional notes..."
-                value={customItemNotes}
-                onChange={(e) => setCustomItemNotes(e.target.value)}
-                rows={2}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCustomItemDialog(false)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={!customItemName.trim() || addCustomItemMut.isPending}
-              onClick={() => {
-                addCustomItemMut.mutate({
-                  description: customItemName.trim(),
-                  quantity: parseInt(customItemQty) || 1,
-                  unitPrice: customItemPrice !== "" ? parseFloat(customItemPrice) : undefined,
-                  pricingType: customItemPricingType,
-                  duration: customItemPricingType !== "FLAT" ? (parseInt(customItemDuration) || 1) : 1,
-                  discount: customItemDiscount !== "" ? parseFloat(customItemDiscount) : undefined,
-                  isOptional: customItemIsOptional,
-                  notes: customItemNotes.trim() || undefined,
-                  categoryId: customItemCategoryId || undefined,
-                  groupId: customItemGroupId || undefined,
-                });
-              }}
-            >
-              {addCustomItemMut.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Add Item
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        groupId={moveSubHireGroup?.id ?? null}
+        groupTitle={moveSubHireGroup?.title}
+        projectId={projectId}
+        categories={(categories as CategoryData[]).map((c) => ({ id: c.id, name: c.name }))}
+        onInvalidate={invalidate}
+      />
 
-      {/* Add equipment dialog */}
-      {showAddEquipment && (
-        <AddEquipmentDialog
-          projectId={projectId}
-          rentalStartDate={rentalStartDate ?? undefined}
-          rentalEndDate={rentalEndDate ?? undefined}
-          open={showAddEquipment}
-          onOpenChange={setShowAddEquipment}
-          categoryId={addEquipmentTarget.categoryId}
-          groupId={addEquipmentTarget.groupId}
-          targetLabel={addEquipmentTarget.label}
-          onOpenSubHire={() => {
-            setManagingSubHireId(null);
-            setShowSubHireOrderDialog(true);
-          }}
-        />
-      )}
-
+      {/* Unified add dialog (own-stock / kit / sub-hire / custom) */}
+      <UnifiedAddDialog
+        open={showUnifiedAdd}
+        onOpenChange={(open) => {
+          setShowUnifiedAdd(open);
+          if (!open) setUnifiedAddTarget({});
+        }}
+        kind={unifiedAddKind}
+        onKindChange={setUnifiedAddKind}
+        projectId={projectId}
+        rentalStartDate={rentalStartDate ?? undefined}
+        rentalEndDate={rentalEndDate ?? undefined}
+        categoryId={unifiedAddTarget.categoryId}
+        groupId={unifiedAddTarget.groupId}
+        targetLabel={unifiedAddTarget.label}
+        categories={categories as CategoryData[]}
+        onInvalidate={invalidate}
+        onOpenSubHire={() => {
+          setManagingSubHireId(null);
+          setShowSubHireOrderDialog(true);
+        }}
+      />
 
       {/* Sub-hire order dialog */}
       <SubHireOrderDialog
@@ -2451,317 +1374,20 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
         subHireId={managingSubHireId}
       />
 
-      {/* Add kit dialog */}
-      <Dialog
-        open={showKitDialog}
-        onOpenChange={(open) => {
-          setShowKitDialog(open);
-          if (!open) {
-            setSelectedKitId("");
-            setKitPricingMode("KIT_PRICE");
-            setKitUnitPrice("");
-            setKitTarget({});
+      {/* Edit group dialog (Phase 7 — extracted) */}
+      <EditGroupDialog
+        group={editGroupData}
+        isPending={updateGroupMut.isPending}
+        onClose={() => setEditGroupData(null)}
+        onSubmit={(groupId, values, price) => {
+          updateGroupMut.mutate({ groupId, data: values });
+          if (price !== undefined) {
+            updateGroupPrice(groupId, price)
+              .then(() => invalidate())
+              .catch((e: Error) => toast.error(e.message));
           }
         }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Kit to Project</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            {kitTarget.label && (
-              <div className="rounded-md bg-accent/50 px-3 py-2 text-xs text-fg-3">
-                Adding to <span className="font-medium text-fg">{kitTarget.label}</span>
-              </div>
-            )}
-            <div className="space-y-2">
-              <Label>Kit</Label>
-              <ComboboxPicker
-                value={selectedKitId}
-                onChange={setSelectedKitId}
-                options={(kitsData?.kits || []).map((kit: { id: string; assetTag: string; name: string; category?: { name: string } | null }) => ({
-                  value: kit.id,
-                  label: `${kit.assetTag} - ${kit.name}`,
-                  description: kit.category?.name,
-                }))}
-                placeholder="Select a kit..."
-                searchPlaceholder="Search kits..."
-                emptyMessage="No kits found."
-              />
-            </div>
-
-            {selectedKitId && kitAvailability && !kitAvailability.available && (
-              <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-                Kit is unavailable: {kitAvailability.conflictsWith}
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label>Pricing Mode</Label>
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input
-                    type="radio"
-                    name="kitPricingMode"
-                    value="KIT_PRICE"
-                    checked={kitPricingMode === "KIT_PRICE"}
-                    onChange={() => setKitPricingMode("KIT_PRICE")}
-                    className="accent-primary"
-                  />
-                  Kit Price
-                </label>
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input
-                    type="radio"
-                    name="kitPricingMode"
-                    value="ITEMIZED"
-                    checked={kitPricingMode === "ITEMIZED"}
-                    onChange={() => setKitPricingMode("ITEMIZED")}
-                    className="accent-primary"
-                  />
-                  Itemized
-                </label>
-              </div>
-              <p className="text-xs text-fg-3">
-                {kitPricingMode === "KIT_PRICE"
-                  ? "One price for the whole kit."
-                  : "Each item in the kit priced individually."}
-              </p>
-            </div>
-
-            {kitPricingMode === "KIT_PRICE" && (
-              <div className="space-y-2">
-                <Label>Unit Price</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={kitUnitPrice}
-                  onChange={(e) => setKitUnitPrice(e.target.value)}
-                />
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button
-              onClick={() => addKitMut.mutate()}
-              disabled={
-                !selectedKitId ||
-                addKitMut.isPending ||
-                (kitAvailability && !kitAvailability.available)
-              }
-            >
-              {addKitMut.isPending ? "Adding..." : "Add Kit"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit group dialog */}
-      <Dialog
-        open={editGroupData != null}
-        onOpenChange={(open) => {
-          if (!open) setEditGroupData(null);
-        }}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Edit Group</DialogTitle>
-            <DialogDescription>
-              Update the group&apos;s title, description, and quantity.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Title</Label>
-              <Input
-                value={editGroupTitle}
-                onChange={(e) => setEditGroupTitle(e.target.value)}
-                placeholder="Group title"
-                autoFocus
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Description</Label>
-              <Textarea
-                value={editGroupDescription}
-                onChange={(e) => setEditGroupDescription(e.target.value)}
-                placeholder="Optional description..."
-                rows={3}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Quantity</Label>
-              <Input
-                type="number"
-                min="1"
-                value={editGroupQuantity}
-                onChange={(e) => setEditGroupQuantity(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Price</Label>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={editGroupPrice}
-                onChange={(e) => setEditGroupPrice(e.target.value)}
-                placeholder="Leave blank for no price"
-              />
-              {editGroupData?.suggestedPrice != null && (
-                <button
-                  type="button"
-                  className="text-xs text-fg-3 hover:text-fg transition-colors"
-                  onClick={() => setEditGroupPrice(String(Number(editGroupData.suggestedPrice)))}
-                >
-                  Suggested: {formatCurrency(Number(editGroupData.suggestedPrice))}
-                </button>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label className="text-muted-foreground text-xs">Billing Override (leave blank to use project defaults)</Label>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="space-y-1">
-                  <Label>Months</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={editGroupBillingMonths}
-                    onChange={(e) => setEditGroupBillingMonths(e.target.value)}
-                    placeholder="—"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label>Weeks</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={editGroupBillingWeeks}
-                    onChange={(e) => setEditGroupBillingWeeks(e.target.value)}
-                    placeholder="—"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label>Days</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={editGroupBillingDays}
-                    onChange={(e) => setEditGroupBillingDays(e.target.value)}
-                    placeholder="—"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditGroupData(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (editGroupData && editGroupTitle.trim()) {
-                  updateGroupMut.mutate({
-                    groupId: editGroupData.id,
-                    data: {
-                      title: editGroupTitle.trim(),
-                      description: editGroupDescription.trim() || undefined,
-                      quantity: parseInt(editGroupQuantity) || 1,
-                      billingMonths: editGroupBillingMonths !== "" ? parseInt(editGroupBillingMonths) : undefined,
-                      billingWeeks: editGroupBillingWeeks !== "" ? parseInt(editGroupBillingWeeks) : undefined,
-                      billingDays: editGroupBillingDays !== "" ? parseInt(editGroupBillingDays) : undefined,
-                    },
-                  });
-                  if (editGroupPrice !== "") {
-                    updatePriceMut.mutate({
-                      groupId: editGroupData.id,
-                      price: parseFloat(editGroupPrice) || 0,
-                    });
-                  }
-                }
-              }}
-              disabled={!editGroupTitle.trim() || updateGroupMut.isPending}
-            >
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
-// ─── Sub-Hire Expanded Items ──────────────────────────────────────────────────
-
-function SubHireExpandedItems({ subHireId, orgId }: { subHireId: string; orgId?: string }) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: subHire } = useQuery<any>({
-    queryKey: ["sub-hire", orgId, subHireId],
-    queryFn: async () => {
-      const { getSubHire } = await import("@/server/sub-hires");
-      return getSubHire(subHireId);
-    },
-    enabled: !!orgId,
-  });
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const items = (subHire?.items || []) as Array<Record<string, any>>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const groups = (subHire?.groups || []) as Array<Record<string, any>>;
-  const ungroupedItems = items.filter((item) => !item.groupId);
-
-  if (items.length === 0 && groups.length === 0) {
-    return (
-      <div className="pb-3 ml-4 border-l-2 border-primary/20 pl-8 text-xs text-fg-4 py-2">
-        No items in this order yet.
-      </div>
-    );
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function renderItemRow(item: Record<string, any>, indent: string) {
-    const itemMargin = Number(item.unitCharge) - Number(item.unitCost);
-    return (
-      <tr key={item.id as string} className="text-sm">
-        <td className={`${indent} py-1.5 text-fg-2`}>
-          {item.description as string}
-          {(item.model as Record<string, string>)?.name && (
-            <span className="ml-1.5 text-xs text-fg-4">({(item.model as Record<string, string>).name})</span>
-          )}
-        </td>
-        <td className="px-3 py-1.5 text-right tabular-nums text-fg-3 w-12">&times;{item.quantity as number}</td>
-        <td className="px-3 py-1.5 text-right tabular-nums text-fg-3 w-24">{formatCurrency(Number(item.unitCost))} cost</td>
-        <td className="px-3 py-1.5 text-right tabular-nums w-24">{formatCurrency(Number(item.unitCharge))}</td>
-        <td className={`px-3 py-1.5 text-right tabular-nums w-20 ${itemMargin > 0 ? "text-success" : itemMargin < 0 ? "text-error" : "text-fg-4"}`}>
-          {formatCurrency(itemMargin)}
-        </td>
-      </tr>
-    );
-  }
-
-  return (
-    <div className="pb-2 ml-4 border-l-2 border-primary/20">
-      <table className="w-full">
-        <tbody>
-          {groups.map((group) => {
-            const groupItems = (group.items || []) as Array<Record<string, unknown>>;
-            return (
-              <Fragment key={group.id}>
-                <tr className="text-xs">
-                  <td colSpan={5} className="pl-8 py-1.5 font-medium text-fg-3">
-                    <span className="text-primary/70">▸</span> {group.title}
-                    <span className="ml-1.5 text-fg-4 font-normal">({groupItems.length} item{groupItems.length !== 1 ? "s" : ""})</span>
-                  </td>
-                </tr>
-                {groupItems.map((item) => renderItemRow(item, "pl-12"))}
-              </Fragment>
-            );
-          })}
-          {ungroupedItems.map((item) => renderItemRow(item, "pl-8"))}
-        </tbody>
-      </table>
+      />
     </div>
   );
 }

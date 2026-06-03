@@ -242,6 +242,28 @@ export async function reorderMixedGroupsInCategory(
     .sort((a, b) => (a.prefixedId < b.prefixedId ? -1 : a.prefixedId > b.prefixedId ? 1 : 0));
 
   await prisma.$transaction(async (tx) => {
+    // Serialize concurrent reorders of the SAME category. UNIQUE
+    // (projectCategoryId, sortOrder) would otherwise blow up two
+    // parallel calls — they each compute their target sortOrders
+    // independently and would collide mid-flight. pg_advisory_xact_lock
+    // is per-Postgres-connection and auto-releases at COMMIT/ROLLBACK,
+    // so it scopes serialization to one category and doesn't block
+    // unrelated reorders. See Finding 7.2 in the cross-type
+    // unification plan.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${parsed.categoryId})::bigint)`;
+
+    // Phase 1: free up the positive sortOrder range so the upserts
+    // below can write their target sortOrders without temporary
+    // collisions during the loop. UPDATE-all sets every existing slot
+    // in this category to a negative number that mirrors its current
+    // sortOrder — guaranteed distinct because the original sortOrders
+    // were distinct under the same UNIQUE constraint.
+    await tx.$executeRaw`
+      UPDATE category_slot
+      SET "sortOrder" = -1 - "sortOrder"
+      WHERE "projectCategoryId" = ${parsed.categoryId}
+    `;
+
     for (const { prefixedId, displayIndex } of sortedByPrefixedId) {
       const parsedSlot = parseSlotId(prefixedId);
       if (!parsedSlot) continue; // Zod already rejected, defensive guard.
@@ -249,9 +271,9 @@ export async function reorderMixedGroupsInCategory(
         ? { projectGroupId: parsedSlot.id }
         : { subHireGroupId: parsedSlot.id };
 
-      // Upsert via deleteMany+create — projectGroupId/subHireGroupId are
-      // unique columns, but the slot may not exist yet (legacy groups
-      // pre-CategorySlot migration). Two-step keeps it portable.
+      // Upsert via find+update/create — projectGroupId/subHireGroupId
+      // are unique columns, but the slot may not exist yet (legacy
+      // groups pre-CategorySlot migration). Two-step keeps it portable.
       const existing = await tx.categorySlot.findFirst({ where });
       if (existing) {
         await tx.categorySlot.update({

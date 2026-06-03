@@ -381,6 +381,83 @@ describe("reorderMixedGroupsInCategory — basic sort write", () => {
   });
 });
 
+// ── S11 — concurrent reorder atomicity ──────────────────────────────────────
+
+describe("S11 — reorderMixedGroupsInCategory under concurrent load", () => {
+  beforeEach(async () => {
+    await setupIntegrationTest();
+  });
+  afterAll(async () => {
+    await testPrisma.$disconnect();
+  });
+
+  async function seedFourGroups() {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id, "owner");
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+    const supplier = await createSupplierFixture(org.id);
+    const project = await createProjectFixture(org.id);
+    const cat = await createCategoryFixture(org.id, project.id);
+    const pg1 = await createGroupFixture(org.id, project.id, cat.id, "PG1", 0);
+    const pg2 = await createGroupFixture(org.id, project.id, cat.id, "PG2", 1);
+    const subHire = await createSubHireFixture(org.id, supplier.id, user.id, project.id);
+    const shg1 = await createSubHireGroupFixture(subHire.id, { title: "SHG1", targetCategoryId: cat.id, sortOrder: 0 });
+    const shg2 = await createSubHireGroupFixture(subHire.id, { title: "SHG2", targetCategoryId: cat.id, sortOrder: 1 });
+    return { cat, ids: { pg1: pg1.id, pg2: pg2.id, shg1: shg1.id, shg2: shg2.id } };
+  }
+
+  it("two concurrent reorders on the same category both complete (no deadlock)", async () => {
+    const { cat, ids } = await seedFourGroups();
+
+    const orderA = [`pg-${ids.pg1}`, `pg-${ids.pg2}`, `shg-${ids.shg1}`, `shg-${ids.shg2}`];
+    const orderB = [`shg-${ids.shg2}`, `shg-${ids.shg1}`, `pg-${ids.pg2}`, `pg-${ids.pg1}`];
+
+    const results = await Promise.allSettled([
+      reorderMixedGroupsInCategory({ categoryId: cat.id, orderedIds: orderA }),
+      reorderMixedGroupsInCategory({ categoryId: cat.id, orderedIds: orderB }),
+    ]);
+
+    // Both calls must complete — deadlock would surface as one or both
+    // being rejected with a deadlock detected error.
+    const rejected = results.filter((r) => r.status === "rejected");
+    if (rejected.length > 0) {
+      const reasons = rejected.map((r) =>
+        r.status === "rejected" ? (r.reason as Error).message : "",
+      );
+      throw new Error(`Expected both reorders to succeed; rejected: ${reasons.join(" | ")}`);
+    }
+  });
+
+  it("after two concurrent reorders the final state matches one of the requested orderings", async () => {
+    const { cat, ids } = await seedFourGroups();
+
+    const orderA = [`pg-${ids.pg1}`, `pg-${ids.pg2}`, `shg-${ids.shg1}`, `shg-${ids.shg2}`];
+    const orderB = [`shg-${ids.shg2}`, `shg-${ids.shg1}`, `pg-${ids.pg2}`, `pg-${ids.pg1}`];
+
+    await Promise.allSettled([
+      reorderMixedGroupsInCategory({ categoryId: cat.id, orderedIds: orderA }),
+      reorderMixedGroupsInCategory({ categoryId: cat.id, orderedIds: orderB }),
+    ]);
+
+    const slots = await testPrisma.categorySlot.findMany({
+      where: { projectCategoryId: cat.id },
+      orderBy: { sortOrder: "asc" },
+    });
+    const finalOrder = slots.map((s) =>
+      s.projectGroupId ? `pg-${s.projectGroupId}` : `shg-${s.subHireGroupId}`,
+    );
+
+    expect(finalOrder).toHaveLength(4);
+    const matchesA = JSON.stringify(finalOrder) === JSON.stringify(orderA);
+    const matchesB = JSON.stringify(finalOrder) === JSON.stringify(orderB);
+    if (!matchesA && !matchesB) {
+      throw new Error(
+        `Final order ${JSON.stringify(finalOrder)} does not match either reorder request. Expected one of: ${JSON.stringify(orderA)} or ${JSON.stringify(orderB)}`,
+      );
+    }
+  });
+});
+
 // ── S15 — inline create-category-and-place ──────────────────────────────────
 
 describe("S15 — createCategoryAndPlaceGroup atomic create + place", () => {

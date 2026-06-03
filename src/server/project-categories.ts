@@ -36,6 +36,32 @@ export async function getProjectCategories(projectId: string) {
             include: lineItemInclude,
             orderBy: { sortOrder: "asc" },
           },
+          slot: true,
+        },
+        orderBy: { sortOrder: "asc" },
+      },
+      // Sub-hire groups placed in this category (Phase 5b — cross-type
+      // unification). Returned alongside ProjectGroups so the equipment
+      // tab can render a unified ordered list per category. Includes the
+      // sub-hire shell (PO / supplier metadata) so each row can show
+      // "via Supplier" without an extra query.
+      subHireGroupTargets: {
+        include: {
+          slot: true,
+          subHire: {
+            select: {
+              id: true,
+              orderNumber: true,
+              status: true,
+              supplier: { select: { id: true, name: true } },
+            },
+          },
+          items: true,
+          lineItems: {
+            where: { isKitChild: false, parentLineItemId: null },
+            include: lineItemInclude,
+            orderBy: { sortOrder: "asc" },
+          },
         },
         orderBy: { sortOrder: "asc" },
       },
@@ -47,7 +73,32 @@ export async function getProjectCategories(projectId: string) {
     },
     orderBy: { sortOrder: "asc" },
   });
-  return serialize(categories);
+
+  // Build the canonical mixed-ordered group list per category. Cross-type
+  // sortOrder lives on CategorySlot; legacy groups without a slot row fall
+  // back to their own per-table sortOrder so existing projects keep working.
+  const withMixed = categories.map((cat) => {
+    type MixedSlot =
+      | { kind: "project"; sortOrder: number; projectGroupId: string }
+      | { kind: "subHire"; sortOrder: number; subHireGroupId: string };
+
+    const mixedGroups: MixedSlot[] = [
+      ...cat.groups.map((g) => ({
+        kind: "project" as const,
+        sortOrder: g.slot?.sortOrder ?? g.sortOrder,
+        projectGroupId: g.id,
+      })),
+      ...cat.subHireGroupTargets.map((g) => ({
+        kind: "subHire" as const,
+        sortOrder: g.slot?.sortOrder ?? g.sortOrder,
+        subHireGroupId: g.id,
+      })),
+    ].sort((a, b) => a.sortOrder - b.sortOrder);
+
+    return { ...cat, mixedGroups };
+  });
+
+  return serialize(withMixed);
 }
 
 export async function createProjectCategory(

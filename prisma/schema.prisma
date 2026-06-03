@@ -1517,26 +1517,26 @@ model ProjectLineItemUnit {
 ///
 /// Permanent — never auto-cleaned. One row per merged (old) line item.
 model LineItemMergeMap {
-  id                   String   @id @default(cuid())
-  organizationId       String
-  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id                    String       @id @default(cuid())
+  organizationId        String
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   /// The line item that was merged away. Kept in the projectLineItem
   /// table (status: CANCELLED, quantity: 0, assetId: null) so historical
   /// data isn't destroyed — only made inert.
-  oldLineItemId        String   @unique
+  oldLineItemId         String       @unique
   /// The line item the units / records were re-pointed to.
-  canonicalLineItemId  String
+  canonicalLineItemId   String
   /// The unit row that carried the old line's asset/bulk allocation
   /// after the move. Null when the old row had no unit (rare —
   /// pre-Phase-2a rows or kit children).
-  movedUnitId          String?
-  checkRecordsRepointed Int      @default(0)
-  damageEventsRepointed Int      @default(0)
-  serviceRepointed     Boolean  @default(false)
+  movedUnitId           String?
+  checkRecordsRepointed Int          @default(0)
+  damageEventsRepointed Int          @default(0)
+  serviceRepointed      Boolean      @default(false)
   /// Free-form notes captured at merge time (eg. the equivalence-key
   /// snapshot, dry-run vs. apply, the run id).
-  notes                String?
-  mergedAt             DateTime @default(now())
+  notes                 String?
+  mergedAt              DateTime     @default(now())
 
   @@index([organizationId])
   @@index([canonicalLineItemId])
@@ -2342,6 +2342,7 @@ model CrewAssignment {
   @@index([projectId])
   @@index([crewMemberId])
   @@index([crewMemberId, startDate])
+  @@index([crewMemberId, startDate, endDate])
   @@index([serviceId])
   @@map("crew_assignment")
 }

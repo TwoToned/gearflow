@@ -38,7 +38,7 @@ import {
   getUncategorizedLineItems,
   getProjectOverbookedStatus,
 } from "@/server/project-categories";
-import { getUncategorizedSubHireGroups } from "@/server/category-slots";
+import { getUncategorizedSubHireGroups, reorderMixedGroupsInCategory } from "@/server/category-slots";
 import { getGroupTemplates, applyGroupTemplate, saveGroupAsTemplate } from "@/server/group-templates";
 import { removeLineItem, updateLineItem, reorderLineItems, checkAvailability } from "@/server/line-items";
 import { Button } from "@/components/ui/button";
@@ -491,26 +491,73 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
       return;
     }
 
-    // Group reorder
-    if (activeId.startsWith("grp-") && overId.startsWith("grp-")) {
-      const activeRealId = activeId.slice(4);
-      const overRealId = overId.slice(4);
-      // Find which category contains these groups
-      const cats = categories as CategoryData[];
-      const cat = cats.find((c) => c.groups.some((g) => g.id === activeRealId));
-      if (!cat) return;
+    // Group-level reorder (project group OR sub-hire group, in any
+    // combination). Within the same category, both move types route
+    // through reorderMixedGroupsInCategory which owns the cross-type
+    // CategorySlot sortOrder. If the destination category has no
+    // sub-hire groups (and neither active nor over is a sub-hire group),
+    // we keep the lighter reorderProjectGroups path so categories that
+    // never touch the unified shape don't pay for CategorySlot writes.
+    const activeIsGroupSlot = activeId.startsWith("grp-") || activeId.startsWith("shg-");
+    const overIsGroupSlot = overId.startsWith("grp-") || overId.startsWith("shg-");
+    if (activeIsGroupSlot && overIsGroupSlot) {
+      const activeKind: "project" | "subHire" = activeId.startsWith("grp-") ? "project" : "subHire";
+      const overKind: "project" | "subHire" = overId.startsWith("grp-") ? "project" : "subHire";
+      const activeRealId = activeId.startsWith("grp-") ? activeId.slice(4) : activeId.slice(4);
+      const overRealId = overId.startsWith("grp-") ? overId.slice(4) : overId.slice(4);
 
-      const oldIndex = cat.groups.findIndex((g) => g.id === activeRealId);
-      const newIndex = cat.groups.findIndex((g) => g.id === overRealId);
+      const cats = categories as CategoryData[];
+      const findCatForGroup = (kind: "project" | "subHire", id: string) => {
+        if (kind === "project") {
+          return cats.find((c) => c.groups.some((g) => g.id === id));
+        }
+        return cats.find((c) => (c.subHireGroupTargets ?? []).some((g) => g.id === id));
+      };
+      const activeCat = findCatForGroup(activeKind, activeRealId);
+      const overCat = findCatForGroup(overKind, overRealId);
+      if (!activeCat || !overCat) return;
+      // Cross-category moves are handled in Phase 5d.b — for 5d.a we only
+      // wire within-category reorders. Bail out cleanly if cats differ.
+      if (activeCat.id !== overCat.id) return;
+
+      const cat = activeCat;
+      // Build current mixed-ordered slot list for this category.
+      const mixed: MixedGroupSlot[] = cat.mixedGroups ?? cat.groups.map((g) => ({
+        kind: "project" as const,
+        sortOrder: g.sortOrder,
+        projectGroupId: g.id,
+      }));
+      const oldIndex = mixed.findIndex((s) =>
+        s.kind === "project"
+          ? activeKind === "project" && s.projectGroupId === activeRealId
+          : activeKind === "subHire" && s.subHireGroupId === activeRealId,
+      );
+      const newIndex = mixed.findIndex((s) =>
+        s.kind === "project"
+          ? overKind === "project" && s.projectGroupId === overRealId
+          : overKind === "subHire" && s.subHireGroupId === overRealId,
+      );
       if (oldIndex === -1 || newIndex === -1) return;
 
-      const reordered = [...cat.groups];
+      const reordered = [...mixed];
       const [moved] = reordered.splice(oldIndex, 1);
       reordered.splice(newIndex, 0, moved);
 
-      reorderProjectGroups(cat.id, reordered.map((g) => g.id)).catch(() => {
-        toast.error("Failed to reorder groups");
-      });
+      const hasAnySubHire = reordered.some((s) => s.kind === "subHire");
+      if (!hasAnySubHire) {
+        // Pure project-group reorder — keep the lighter path.
+        reorderProjectGroups(
+          cat.id,
+          reordered.map((s) => (s.kind === "project" ? s.projectGroupId : "")).filter(Boolean),
+        ).catch(() => toast.error("Failed to reorder groups"));
+      } else {
+        const orderedIds = reordered.map((s) =>
+          s.kind === "project" ? `pg-${s.projectGroupId}` : `shg-${s.subHireGroupId}`,
+        );
+        reorderMixedGroupsInCategory({ categoryId: cat.id, orderedIds }).catch(() => {
+          toast.error("Failed to reorder groups");
+        });
+      }
       invalidate();
       return;
     }

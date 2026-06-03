@@ -22,6 +22,7 @@ import {
   AlertTriangle,
   BookmarkPlus,
   Handshake,
+  ArrowRightLeft,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -846,9 +847,27 @@ export function LineItemRow({
           <Button variant="ghost" size="icon-sm" onClick={onEdit}>
             <Pencil className="h-3.5 w-3.5" />
           </Button>
-          <Button variant="ghost" size="icon-sm" onClick={onRemove}>
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" />}>
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Item</DropdownMenuLabel>
+                <DropdownMenuItem onClick={onMove}>
+                  <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
+                  Move
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={onRemove}
+                  className="text-[oklch(0.58_0.22_27)]"
+                >
+                  <Trash2 className="mr-2 h-3.5 w-3.5" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </TableCell>
     </TableRow>

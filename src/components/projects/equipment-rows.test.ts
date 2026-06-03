@@ -1,0 +1,96 @@
+/**
+ * Unit tests for describeRow — the 3-axis row descriptor that replaced the
+ * scattered inline `kitId && !isKitChild` style conditions in the row
+ * primitive. Seeds test S14 (row primitive descriptor matrix) from the
+ * cross-type unification test plan.
+ *
+ * Each case asserts the descriptor matches the EXACT condition the row
+ * previously rendered against, so a regression in the dispatch is caught.
+ */
+
+import { describe, it, expect } from "vitest";
+import { describeRow, type LineItemData } from "./equipment-rows";
+
+function item(overrides: Partial<LineItemData>): LineItemData {
+  return {
+    id: "li-1",
+    description: "Item",
+    quantity: 1,
+    unitPrice: 0,
+    lineTotal: 0,
+    ...overrides,
+  };
+}
+
+describe("describeRow", () => {
+  it("plain own-stock line → owned / standalone", () => {
+    const d = describeRow(item({ modelId: "m1" }));
+    expect(d).toMatchObject({ source: "owned", role: "standalone", isKit: false, isSubhire: false, hasChildren: false });
+  });
+
+  it("custom item → custom source", () => {
+    const d = describeRow(item({ isCustomItem: true }));
+    expect(d.source).toBe("custom");
+    expect(d.isSubhire).toBe(false);
+  });
+
+  it("sub-hire line (subHireId) → subhire source", () => {
+    const d = describeRow(item({ subHireId: "sh1" }));
+    expect(d.source).toBe("subhire");
+    expect(d.isSubhire).toBe(true);
+  });
+
+  it("legacy sub-hire (type SUBHIRE, no subHireId) → subhire source", () => {
+    const d = describeRow(item({ type: "SUBHIRE" }));
+    expect(d.isSubhire).toBe(true);
+    expect(d.source).toBe("subhire");
+  });
+
+  it("kit parent (kitId, not child, with children) → owned / parent / isKit", () => {
+    const d = describeRow(
+      item({ kitId: "k1", childLineItems: [item({ id: "c1", isKitChild: true })] }),
+    );
+    expect(d.isKit).toBe(true);
+    expect(d.role).toBe("parent");
+    expect(d.hasChildren).toBe(true);
+    expect(d.source).toBe("owned");
+  });
+
+  it("kit child → child role, not a kit parent", () => {
+    const d = describeRow(item({ kitId: "k1", isKitChild: true }));
+    expect(d.role).toBe("child");
+    expect(d.isKit).toBe(false);
+  });
+
+  it("sub-hire group parent (subHireId, not child, with children) → subhire / parent", () => {
+    const d = describeRow(
+      item({ subHireId: "sh1", childLineItems: [item({ id: "c1", isKitChild: true })] }),
+    );
+    expect(d.source).toBe("subhire");
+    expect(d.role).toBe("parent");
+    expect(d.hasChildren).toBe(true);
+  });
+
+  it("sub-hire child (isKitChild flag set) → child role, no expand chevron", () => {
+    const d = describeRow(
+      item({ subHireId: "sh1", isKitChild: true, childLineItems: [] }),
+    );
+    expect(d.role).toBe("child");
+    expect(d.hasChildren).toBe(false);
+    // still a sub-hire SOURCE even though it's a child (the orthogonality a
+    // flat enum couldn't express)
+    expect(d.isSubhire).toBe(true);
+  });
+
+  it("kitId present but zero children → not a parent (no chevron)", () => {
+    const d = describeRow(item({ kitId: "k1", childLineItems: [] }));
+    expect(d.hasChildren).toBe(false);
+    expect(d.role).toBe("standalone");
+    expect(d.isKit).toBe(true); // still badged as a kit
+  });
+
+  it("custom item never reads as sub-hire even if type is stale", () => {
+    const d = describeRow(item({ isCustomItem: true, type: "EQUIPMENT" }));
+    expect(d.source).toBe("custom");
+  });
+});

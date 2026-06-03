@@ -122,6 +122,44 @@ export function isHiddenFromList(item: LineItemData) {
   return isRealKitChild(item) || isMergeTombstone(item);
 }
 
+// ─── Row descriptor (cross-type unification) ─────────────────────────────────
+//
+// A line-item row is described by three independent axes, NOT one flat "kind"
+// enum — a sub-hire group child is simultaneously a `subhire` source AND a
+// `child` role, which a flat enum can't represent. `describeRow` derives the
+// axes that are computable from the item alone (`container` is contextual and
+// supplied by the caller in later phases). Each field below preserves the
+// EXACT boolean expression the row previously used inline, so rendering is
+// unchanged — this is a readability refactor, not a behaviour change.
+
+export type RowSource = "owned" | "subhire" | "custom";
+export type RowRole = "parent" | "child" | "standalone";
+
+export interface RowDescriptor {
+  /** owned stock / sub-hire / ad-hoc custom — drives the leading kind icon. */
+  source: RowSource;
+  /** parent (has expandable children) / child / standalone. */
+  role: RowRole;
+  /** kit parent: `kitId` set and not itself a kit child. */
+  isKit: boolean;
+  /** sub-hire line: `subHireId` set OR legacy `type === "SUBHIRE"`. */
+  isSubhire: boolean;
+  /** show the expand chevron (kit parent or sub-hire group parent with children). */
+  hasChildren: boolean;
+}
+
+export function describeRow(item: LineItemData): RowDescriptor {
+  const isSubhire = item.subHireId != null || item.type === "SUBHIRE";
+  const isKit = !!item.kitId && !item.isKitChild;
+  // Preserve the exact original expression: any kitId, OR a non-child sub-hire.
+  const hasChildren =
+    (item.childLineItems?.length ?? 0) > 0 &&
+    (!!item.kitId || (item.subHireId != null && !item.isKitChild));
+  const source: RowSource = item.isCustomItem ? "custom" : isSubhire ? "subhire" : "owned";
+  const role: RowRole = item.isKitChild ? "child" : hasChildren ? "parent" : "standalone";
+  return { source, role, isKit, isSubhire, hasChildren };
+}
+
 // ─── Overbooked info type ───────────────────────────────────────────────────
 
 export type OverbookedInfo = {
@@ -214,7 +252,7 @@ function OverbookedBadge({ info }: { info?: OverbookedInfo | null }) {
 
 // ─── Sortable group row ─────────────────────────────────────────────────────
 
-export function SortableGroupRow({
+export function GroupRow({
   group,
   isExpanded,
   indented,
@@ -338,7 +376,7 @@ export function SortableGroupRow({
 
 // ─── Sortable category row ──────────────────────────────────────────────────
 
-export function SortableCategoryRow({
+export function CategoryRow({
   cat,
   onRename,
   onDelete,
@@ -398,7 +436,7 @@ export function SortableCategoryRow({
 
 // ─── Sortable line item row ──────────────────────────────────────────────────
 
-export function SortableLineItemRow({
+export function LineItemRow({
   item,
   indent,
   overbookedInfo,
@@ -419,8 +457,8 @@ export function SortableLineItemRow({
   onMove: () => void;
   onRemove: () => void;
 }) {
-  // Show expand/collapse for kits and sub-hire group parents
-  const hasChildren = (item.childLineItems?.length ?? 0) > 0 && (!!item.kitId || (item.subHireId != null && !item.isKitChild));
+  const desc = describeRow(item);
+  const hasChildren = desc.hasChildren;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: `li-${item.id}` });
 
@@ -488,12 +526,12 @@ export function SortableLineItemRow({
             }
             return null;
           })()}
-          {item.kitId && !item.isKitChild && (
+          {desc.isKit && (
             <Badge variant="outline" className="ml-1.5 text-xs bg-indigo-500/10 text-indigo-600 border-indigo-500/20">
               Kit
             </Badge>
           )}
-          {item.kitId && !item.isKitChild && item.pricingMode === "ITEMIZED" && (
+          {desc.isKit && item.pricingMode === "ITEMIZED" && (
             <Badge variant="outline" className="ml-1 text-xs">
               Itemized
             </Badge>
@@ -503,7 +541,7 @@ export function SortableLineItemRow({
               Optional
             </Badge>
           )}
-          {(item.subHireId != null || item.type === "SUBHIRE") && (
+          {desc.isSubhire && (
             <Badge variant="outline" className="ml-1.5 text-xs bg-cyan-500/10 text-cyan-600 border-cyan-500/20">
               Subhire
             </Badge>
@@ -539,7 +577,7 @@ export function SortableLineItemRow({
           )}
           <OverbookedBadge info={overbookedInfo} />
         </div>
-        {(item.subHireId != null || item.type === "SUBHIRE") && item.supplier && (
+        {desc.isSubhire && item.supplier && (
           <p className={`text-xs text-fg-3 mt-0.5 ${indent}`}>via {item.supplier.name}</p>
         )}
         {item.notes && (

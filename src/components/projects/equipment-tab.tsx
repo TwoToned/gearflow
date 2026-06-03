@@ -75,9 +75,9 @@ import {
   COL_COUNT,
   isRealKitChild,
   isHiddenFromList,
-  SortableGroupRow,
-  SortableCategoryRow,
-  SortableLineItemRow,
+  GroupRow,
+  CategoryRow,
+  LineItemRow,
   type LineItemData,
   type GroupData,
   type CategoryData,
@@ -792,7 +792,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                   return (
                     <React.Fragment key={cat.id}>
                       {/* Category label row — sortable */}
-                      <SortableCategoryRow
+                      <CategoryRow
                         cat={cat}
                         onRename={() => {
                           setRenameCategoryId(cat.id);
@@ -808,7 +808,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                         const groupItems = (group.lineItems ?? []).filter((i: LineItemData) => !isHiddenFromList(i));
                         return (
                           <React.Fragment key={group.id}>
-                            <SortableGroupRow
+                            <GroupRow
                               group={group}
                               isExpanded={isExpanded}
                               indented
@@ -868,7 +868,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                               </TableRow>
                             )}
                             {isExpanded && groupItems.map((item) => (
-                              <SortableLineItemRow
+                              <LineItemRow
                                 key={item.id}
                                 item={item}
                                 indent="ml-12"
@@ -887,7 +887,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
 
                       {/* Standalone line items in category */}
                       {standaloneItems.map((item) => (
-                        <SortableLineItemRow
+                        <LineItemRow
                           key={item.id}
                           item={item}
                           indent="ml-3"
@@ -916,7 +916,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                   </TableRow>
                 )}
                 {(uncategorizedItems as LineItemData[]).filter((i) => !isHiddenFromList(i)).map((item) => (
-                  <SortableLineItemRow
+                  <LineItemRow
                     key={item.id}
                     item={item}
                     indent=""

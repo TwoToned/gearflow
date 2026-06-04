@@ -36,6 +36,14 @@ per-table `sortOrder` field, so existing projects keep working.
 `SubHireGroup.targetCategoryId` is the placement field for sub-hire groups
 inside a project. `null` means uncategorised.
 
+`ProjectGroup.categoryId` is **nullable since v0.10.0.0** (migration
+`20260604030000_uncategorized_project_groups`) and `null` means
+uncategorised — the same convention sub-hire groups already used. The
+FK's `onDelete` switched from `CASCADE` to `SET NULL` at the same time,
+so deleting a `ProjectCategory` now orphans its groups (they reappear
+under Uncategorized) instead of destroying them together with every
+contained line item.
+
 ## Server actions
 
 All in [`src/server/category-slots.ts`](../src/server/category-slots.ts).
@@ -44,8 +52,9 @@ Validations in [`src/lib/validations/category-slot.ts`](../src/lib/validations/c
 | Action | Purpose | Permission |
 |---|---|---|
 | `getUncategorizedSubHireGroups(projectId)` | Read counterpart to `getUncategorizedLineItems`. Returns groups with `targetCategoryId IS NULL`. | `project:read` |
+| `getUncategorizedProjectGroups(projectId)` | Project-group counterpart added in v0.10.0.0. Returns groups with `categoryId IS NULL` (including line items + child line items in the same include shape used by `getProjectCategories`) so the equipment tab can render orphan project groups in the Uncategorized zone next to orphan sub-hire groups and standalone uncategorised line items. | `project:read` |
 | `moveSubHireGroupToCategory(groupId, categoryId\|null)` | Placement-only update. Does NOT trigger `syncSubHireToProject` regenerate — just updates targetCategoryId, the synthetic parent line item's categoryId, and the slot row. Calls `recalculateProjectTotals` once. | `project:manage_line_items` + `subHire:update` |
-| `moveProjectGroupToCategory(groupId, categoryId)` | Project-group counterpart to the sub-hire move. Updates `ProjectGroup.categoryId`, every contained `ProjectLineItem.categoryId`, and the slot row in one transaction guarded by the same destination-category advisory lock. Destination is required — `ProjectGroup.categoryId` is NOT NULL, so there is no "uncategorised project group" state. | `project:manage_line_items` |
+| `moveProjectGroupToCategory(groupId, categoryId\|null)` | Project-group counterpart to the sub-hire move. Updates `ProjectGroup.categoryId`, every contained `ProjectLineItem.categoryId`, and the slot row in one transaction. Destination is **nullable since v0.10.0.0** — passing `null` drops the slot, clears the line items' `categoryId`, and bypasses the advisory lock (no slot insert means nothing to race on). A non-null destination still takes the same `pg_advisory_xact_lock` keyed on the destination category that protects the sub-hire move. | `project:manage_line_items` |
 | `reorderMixedGroupsInCategory(categoryId, orderedIds[])` | Reorders a mixed array of `pg-<id>` / `shg-<id>` prefixed IDs by updating `CategorySlot.sortOrder`. Uses a Postgres advisory lock (`pg_advisory_xact_lock`) keyed on the category id to serialize concurrent reorders, plus a phase-1 negation step to free the positive sortOrder range before writing new values. | `project:manage_line_items` + `subHire:update` |
 | `createCategoryAndPlaceGroup(projectId, name, slot)` | Atomic: creates a new ProjectCategory at the END of the project's category list, places the chosen group (project or sub-hire) inside it via a slot row, and syncs the group's own placement field. Both branches (project + sub-hire) also `updateMany` the contained line items' `categoryId` so PDFs and reports that filter by category see the new home — the project-group branch missed this until v0.9.2.0. Used by the inline "Create category" affordance in the Move dialog. | `project:manage_line_items` |
 
@@ -132,8 +141,9 @@ All under `src/components/projects/`:
 - **`MoveProjectGroupDialog`** — project-group counterpart, same
   `ComboboxPicker` + `creatable` shape. Calls `moveProjectGroupToCategory`
   for existing destinations and `createCategoryAndPlaceGroup` for new
-  ones. Destination is required (no "uncategorised" option), so the
-  Confirm button stays disabled until a category is picked.
+  ones. Since v0.10.0.0 the picker also offers an Uncategorized
+  destination (mirrors `MoveSubHireGroupDialog`), which submits
+  `categoryId: null`.
 - **`MoveItemToCategoryDialog`** — picks a destination `ProjectCategory`
   (or "Uncategorized") for a single line item. Always lands the item
   with `groupId: null` so it appears as a standalone item under the

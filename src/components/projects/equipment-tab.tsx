@@ -41,6 +41,7 @@ import {
 } from "@/server/project-categories";
 import {
   getUncategorizedSubHireGroups,
+  getUncategorizedProjectGroups,
   moveSubHireGroupToCategory,
   reorderMixedGroupsInCategory,
 } from "@/server/category-slots";
@@ -59,8 +60,10 @@ import { formatCurrency } from "@/lib/formatters";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { UnifiedAddDialog, type UnifiedAddKind } from "./unified-add-dialog";
 import { MoveSubHireGroupDialog } from "./move-sub-hire-group-dialog";
+import { MoveProjectGroupDialog } from "./move-project-group-dialog";
 import { PriceEditDialog, type PriceEditTarget } from "./price-edit-dialog";
-import { MoveLineItemDialog } from "./move-line-item-dialog";
+import { MoveItemToCategoryDialog } from "./move-item-to-category-dialog";
+import { MoveItemToGroupDialog } from "./move-item-to-group-dialog";
 import { EditGroupDialog } from "./edit-group-dialog";
 import { DeleteGroupDialog } from "./delete-group-dialog";
 import { SaveAsTemplateDialog } from "./save-as-template-dialog";
@@ -111,6 +114,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
 
   // Move-sub-hire-group dialog state (Phase 6b kebab action).
   const [moveSubHireGroup, setMoveSubHireGroup] = useState<{ id: string; title: string } | null>(null);
+
+  // Move-project-group dialog state (Fix A — project groups can move
+  // between categories now; mirrors the sub-hire flow).
+  const [moveProjectGroup, setMoveProjectGroup] = useState<{ id: string; title: string } | null>(null);
 
   // Unified PriceEditDialog target (Phase 6c kebab action — works for
   // both project groups and sub-hire groups).
@@ -182,9 +189,20 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   // Save group as template dialog state
   const [saveAsTemplateGroup, setSaveAsTemplateGroup] = useState<{ id: string; title: string } | null>(null);
 
-  // Move line item dialog state
-  const [moveLineItemId, setMoveLineItemId] = useState<string | null>(null);
-  const [moveTargetGroupId, setMoveTargetGroupId] = useState<string>("__uncategorized__");
+  // Move-item dialog state. Split into two flows (v0.9.3.0):
+  //   - moveItemToCategory: pick a category (or Uncategorised); item
+  //     lands as standalone under that category.
+  //   - moveItemToGroup: pick a group; item adopts the group's category.
+  // Each opens independently so the user can pick one path from the
+  // kebab without going through a chooser.
+  const [moveItemToCategory, setMoveItemToCategory] = useState<{
+    lineItemId: string;
+    initialCategoryId?: string;
+  } | null>(null);
+  const [moveItemToGroup, setMoveItemToGroup] = useState<{
+    lineItemId: string;
+    initialGroupId?: string;
+  } | null>(null);
 
   // EditLineItemDialog target — body owns its own form state + availability query.
   const [editLineItem, setEditLineItem] = useState<LineItemData | null>(null);
@@ -237,6 +255,12 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     staleTime: 60_000,
   });
 
+  const { data: uncategorizedProjectGroups = [] } = useQuery({
+    queryKey: ["uncategorized-project-groups", projectId],
+    queryFn: () => getUncategorizedProjectGroups(projectId),
+    staleTime: 60_000,
+  });
+
   const { data: templates = [] } = useQuery({
     queryKey: ["group-templates"],
     queryFn: () => getGroupTemplates(),
@@ -270,6 +294,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     queryClient.invalidateQueries({ queryKey });
     queryClient.invalidateQueries({ queryKey: ["uncategorized-items", projectId] });
     queryClient.invalidateQueries({ queryKey: ["uncategorized-subhire-groups", projectId] });
+    queryClient.invalidateQueries({ queryKey: ["uncategorized-project-groups", projectId] });
     queryClient.invalidateQueries({ queryKey: ["project", projectId] });
     queryClient.invalidateQueries({ queryKey: ["project-overbooked", projectId] });
     // Any mutation that changes line item quantity/presence must refresh
@@ -317,7 +342,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     }) => moveLineItemToGroup({ lineItemId, targetGroupId, targetCategoryId }),
     onSuccess: () => {
       invalidate();
-      setMoveLineItemId(null);
+      // Close whichever dialog drove this mutation. Cheap to call
+      // both setters — only the one with state actually re-renders.
+      setMoveItemToCategory(null);
+      setMoveItemToGroup(null);
       toast.success("Item moved");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -357,8 +385,15 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   });
 
   const createGroupMut = useMutation({
-    mutationFn: ({ categoryId, title, templateId }: { categoryId: string; title: string; templateId?: string }) => {
+    mutationFn: ({ categoryId, title, templateId }: { categoryId: string | null; title: string; templateId?: string }) => {
       if (templateId) {
+        // Templates are category-scoped concepts — fall back to no-template
+        // when the user picks Uncategorised so they can still create the
+        // group structurally. The template can be applied via a follow-up
+        // move + recalculate if they later want to materialise its items.
+        if (!categoryId) {
+          return createProjectGroup(projectId, { categoryId: null, title, quantity: 1 });
+        }
         return applyGroupTemplate(projectId, { templateId, categoryId, title });
       }
       return createProjectGroup(projectId, { categoryId, title, quantity: 1 });
@@ -638,8 +673,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   const typedCategories = categories as CategoryData[];
   const hasCategories = typedCategories.length > 0;
   const orphanSubHireGroups = uncategorizedSubHireGroups as SubHireGroupData[];
+  const orphanProjectGroups = uncategorizedProjectGroups as GroupData[];
   const hasUncategorized =
-    (uncategorizedItems as LineItemData[]).length > 0 || orphanSubHireGroups.length > 0;
+    (uncategorizedItems as LineItemData[]).length > 0 ||
+    orphanSubHireGroups.length > 0 ||
+    orphanProjectGroups.length > 0;
 
   // Build a set of draft sub-hire IDs so we can badge unconfirmed items
   const draftSubHireIds = new Set<string>();
@@ -795,6 +833,21 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                           setRenameCategoryValue(cat.name);
                         }}
                         onDelete={() => deleteCategoryMut.mutate(cat.id)}
+                        onAddEquipment={() => {
+                          setUnifiedAddTarget({ categoryId: cat.id, label: cat.name });
+                          setUnifiedAddKind("own-stock");
+                          setShowUnifiedAdd(true);
+                        }}
+                        onAddKit={() => {
+                          setUnifiedAddTarget({ categoryId: cat.id, label: cat.name });
+                          setUnifiedAddKind("kit");
+                          setShowUnifiedAdd(true);
+                        }}
+                        onAddCustom={() => {
+                          setUnifiedAddTarget({ categoryId: cat.id, label: cat.name });
+                          setUnifiedAddKind("custom");
+                          setShowUnifiedAdd(true);
+                        }}
                       />
 
                       {/* Mixed groups within category (CategorySlot order; falls back
@@ -858,7 +911,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                     setManagingSubHireId(shGroup.subHire.id);
                                     setShowSubHireOrderDialog(true);
                                   }}
-                                  onMove={() => {
+                                  onMoveToCategory={() => {
+                                    setManagingSubHireId(shGroup.subHire.id);
+                                    setShowSubHireOrderDialog(true);
+                                  }}
+                                  onMoveToGroup={() => {
                                     setManagingSubHireId(shGroup.subHire.id);
                                     setShowSubHireOrderDialog(true);
                                   }}
@@ -922,6 +979,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                 }
                               }}
                               onSaveAsTemplate={() => setSaveAsTemplateGroup({ id: group.id, title: group.title })}
+                              onMove={() => setMoveProjectGroup({ id: group.id, title: group.title })}
                             />
                             {/* Expanded line items */}
                             {isExpanded && groupItems.length === 0 && (
@@ -942,7 +1000,14 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                 isExpanded={expandedParents.has(item.id)}
                                 onToggle={() => toggleParent(item.id)}
                                 onEdit={() => setEditLineItem(item)}
-                                onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId(group.id); }}
+                                onMoveToCategory={() => setMoveItemToCategory({
+                                  lineItemId: item.id,
+                                  initialCategoryId: cat.id,
+                                })}
+                                onMoveToGroup={() => setMoveItemToGroup({
+                                  lineItemId: item.id,
+                                  initialGroupId: group.id,
+                                })}
                                 onRemove={() => removeMut.mutate(item.id)}
                               />
                             ))}
@@ -962,7 +1027,13 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                           isExpanded={expandedParents.has(item.id)}
                           onToggle={() => toggleParent(item.id)}
                           onEdit={() => setEditLineItem(item)}
-                          onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
+                          onMoveToCategory={() => setMoveItemToCategory({
+                            lineItemId: item.id,
+                            initialCategoryId: cat.id,
+                          })}
+                          onMoveToGroup={() => setMoveItemToGroup({
+                            lineItemId: item.id,
+                          })}
                           onRemove={() => removeMut.mutate(item.id)}
                         />
                       ))}
@@ -992,10 +1063,90 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                     isExpanded={expandedParents.has(item.id)}
                     onToggle={() => toggleParent(item.id)}
                     onEdit={() => setEditLineItem(item)}
-                    onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
+                    onMoveToCategory={() => setMoveItemToCategory({
+                      lineItemId: item.id,
+                    })}
+                    onMoveToGroup={() => setMoveItemToGroup({
+                      lineItemId: item.id,
+                    })}
                     onRemove={() => removeMut.mutate(item.id)}
                   />
                 ))}
+                {/* Orphan PROJECT groups — categoryId IS NULL (v0.9.4.0
+                    allows groups to live uncategorised). Render with the
+                    full GroupRow affordances (kebab, Move, Delete) so
+                    they're first-class citizens of the Uncategorized
+                    zone alongside orphan sub-hire groups. */}
+                {orphanProjectGroups.map((group) => {
+                  const isExpanded = expandedGroups.has(group.id);
+                  const priceVal = group.price != null ? Number(group.price) : null;
+                  const groupItems = (group.lineItems ?? []).filter((i: LineItemData) => !isHiddenFromList(i));
+                  return (
+                    <React.Fragment key={`pg-${group.id}`}>
+                      <GroupRow
+                        group={group}
+                        isExpanded={isExpanded}
+                        isRejectedDropTarget={rejectedDropTargetId === `grp-${group.id}`}
+                        showCostColumn={showCostColumn}
+                        onToggle={() => toggleGroup(group.id)}
+                        onDelete={() => {
+                          setDeleteGroupId(group.id);
+                          setDeleteGroupInfo({
+                            title: group.title,
+                            price: priceVal ?? 0,
+                            itemCount: groupItems.length,
+                          });
+                        }}
+                        onEdit={() => setEditGroupData(group)}
+                        onEditPrice={() => setPriceEditTarget({
+                          kind: "project",
+                          groupId: group.id,
+                          title: group.title,
+                          price: priceVal,
+                        })}
+                        onAddEquipment={() => {
+                          setUnifiedAddTarget({ groupId: group.id, label: `Uncategorized > ${group.title}` });
+                          setUnifiedAddKind("own-stock");
+                          setShowUnifiedAdd(true);
+                        }}
+                        onAddKit={() => {
+                          setUnifiedAddTarget({ groupId: group.id, label: `Uncategorized > ${group.title}` });
+                          setUnifiedAddKind("kit");
+                          setShowUnifiedAdd(true);
+                        }}
+                        onMove={() => setMoveProjectGroup({ id: group.id, title: group.title })}
+                      />
+                      {isExpanded && groupItems.length === 0 && (
+                        <TableRow className="hover:bg-transparent">
+                          <TableCell colSpan={colCount} className="py-3 text-center text-xs text-fg-4">
+                            No items in this group yet. Add equipment to get started.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      {isExpanded && groupItems.map((item: LineItemData) => (
+                        <LineItemRow
+                          key={item.id}
+                          item={item}
+                          indent="ml-12"
+                          overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
+                          isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
+                          showCostColumn={showCostColumn}
+                          isExpanded={expandedParents.has(item.id)}
+                          onToggle={() => toggleParent(item.id)}
+                          onEdit={() => setEditLineItem(item)}
+                          onMoveToCategory={() => setMoveItemToCategory({
+                            lineItemId: item.id,
+                          })}
+                          onMoveToGroup={() => setMoveItemToGroup({
+                            lineItemId: item.id,
+                            initialGroupId: group.id,
+                          })}
+                          onRemove={() => removeMut.mutate(item.id)}
+                        />
+                      ))}
+                    </React.Fragment>
+                  );
+                })}
                 {/* Orphan sub-hire groups — targetCategoryId IS NULL.
                     S13 from the test plan: must surface here, not vanish. */}
                 {orphanSubHireGroups.map((shGroup) => {
@@ -1045,7 +1196,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                             setManagingSubHireId(shGroup.subHire.id);
                             setShowSubHireOrderDialog(true);
                           }}
-                          onMove={() => {
+                          onMoveToCategory={() => {
+                            setManagingSubHireId(shGroup.subHire.id);
+                            setShowSubHireOrderDialog(true);
+                          }}
+                          onMoveToGroup={() => {
                             setManagingSubHireId(shGroup.subHire.id);
                             setShowSubHireOrderDialog(true);
                           }}
@@ -1255,18 +1410,36 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
         }
       />
 
-      {/* Move line item dialog */}
-      <MoveLineItemDialog
-        lineItemId={moveLineItemId}
-        initialEncoded={moveTargetGroupId}
+      {/* Move-item-to-category dialog (kebab → "Move to category").
+          Item lands as standalone under the picked category. */}
+      <MoveItemToCategoryDialog
+        lineItemId={moveItemToCategory?.lineItemId ?? null}
+        initialCategoryId={moveItemToCategory?.initialCategoryId}
         categories={typedCategories}
         isPending={moveLineItemMut.isPending}
-        onClose={() => setMoveLineItemId(null)}
+        onClose={() => setMoveItemToCategory(null)}
         onSubmit={(lineItemId, target) =>
           moveLineItemMut.mutate({
             lineItemId,
-            targetGroupId: target.groupId,
             targetCategoryId: target.categoryId,
+            targetGroupId: target.groupId,
+          })
+        }
+      />
+
+      {/* Move-item-to-group dialog (kebab → "Move to group").
+          Item lands inside the picked group and adopts its category. */}
+      <MoveItemToGroupDialog
+        lineItemId={moveItemToGroup?.lineItemId ?? null}
+        initialGroupId={moveItemToGroup?.initialGroupId}
+        categories={typedCategories}
+        isPending={moveLineItemMut.isPending}
+        onClose={() => setMoveItemToGroup(null)}
+        onSubmit={(lineItemId, target) =>
+          moveLineItemMut.mutate({
+            lineItemId,
+            targetCategoryId: target.categoryId,
+            targetGroupId: target.groupId,
           })
         }
       />
@@ -1286,6 +1459,19 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
         }}
         groupId={moveSubHireGroup?.id ?? null}
         groupTitle={moveSubHireGroup?.title}
+        projectId={projectId}
+        categories={(categories as CategoryData[]).map((c) => ({ id: c.id, name: c.name }))}
+        onInvalidate={invalidate}
+      />
+
+      {/* Move-project-group dialog (kebab → "Move to category") */}
+      <MoveProjectGroupDialog
+        open={moveProjectGroup != null}
+        onOpenChange={(open) => {
+          if (!open) setMoveProjectGroup(null);
+        }}
+        groupId={moveProjectGroup?.id ?? null}
+        groupTitle={moveProjectGroup?.title}
         projectId={projectId}
         categories={(categories as CategoryData[]).map((c) => ({ id: c.id, name: c.name }))}
         onInvalidate={invalidate}

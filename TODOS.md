@@ -213,6 +213,19 @@ group kinds, cross-type DnD with Drop Matrix 8C rejection, per-row keyboard
 shortcuts e/m/d, show-margin Cost column toggle, inline "Create category"
 from the Move dialog. Test gates S1, S2, S7, S8, S9, S10, S11, S15 all green
 (1974 unit + 235 integration tests pass).
+
+**Follow-up shipped in v0.9.3.0:** Line-item "Move" action split into two clearer
+choices — "Move to category" and "Move to group" — replacing the combined picker
+that confused users (selecting "Audio" vs "Audio > PA System" looked equivalent
+but landed items in different places).
+
+**Symmetry sealed in v0.10.0.0:** `ProjectGroup.categoryId` is now nullable
+(matching `SubHireGroup.targetCategoryId`). Project groups can live in the
+Uncategorized zone via the toolbar "Add Group" dialog and the per-group Move
+dialog. The FK switched from `CASCADE` to `SET NULL` so deleting a category
+orphans its groups instead of destroying every line item inside them. New
+`getUncategorizedProjectGroups` server query mirrors the sub-hire equivalent.
+
 Plan at [~/.gstack/projects/TwoToned-gearflow/jayden-main-plan-20260603-164457.md].
 Full feature doc: [FEATUREDOCS/47-cross-type-equipment-unification.md].
 

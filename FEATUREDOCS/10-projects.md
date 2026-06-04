@@ -64,12 +64,23 @@ marginPercent = margin / total × 100
 ## Categories (`ProjectCategory`)
 - Top-level organiser for equipment (e.g. "RF", "IEM", "PA")
 - Sort order via `sortOrder` field, drag-and-drop reorderable
-- Deleting a category cascades: groups deleted, all line items become uncategorized
+- Deleting a category orphans its groups and line items into the
+  Uncategorized zone (FK is `ON DELETE SET NULL` for both
+  `ProjectGroup.categoryId` and `ProjectLineItem.categoryId` — the
+  group FK switched from CASCADE to SET NULL in v0.10.0.0 so deleting
+  a category no longer destroys its groups along with every contained
+  line item)
 - Server actions: `src/server/project-categories.ts`
 
 ## Groups (`ProjectGroup`) — The Billable Unit
 - Groups are the billable units on quotes/invoices
 - Fields: `title`, `description` (free-text for quote), `quantity`, `price`
+- `categoryId` is **nullable since v0.10.0.0** — a group can live in
+  the project's Uncategorized zone (mirrors `SubHireGroup.targetCategoryId`).
+  The toolbar "Add Group" dialog and per-group Move dialog both offer
+  Uncategorized as a destination. `createProjectGroup` scopes its
+  `sortOrder` aggregate by `projectId` so each project's Uncategorized
+  zone has its own sequence.
 - `suggestedPrice` auto-calculated from tracked assets' rates inside the group
 - User can override `price` or accept the suggestion with one click
 - Assets inside a group are for **tracking only** — never shown on quotes
@@ -161,8 +172,11 @@ HEADER (full width):
 - Line items indented under their parent group, drag-and-drop reorderable
 - Single flat `DndContext` with prefixed IDs (categories, groups, items all in one context)
 - Inline "Add Group" button in toolbar with template picker
-- Uncategorized line items shown at the bottom
-- Line item edit dialog, move-between-groups dialog
+- Uncategorized zone at the bottom holds orphan line items, orphan
+  sub-hire groups, **and orphan project groups** (since v0.10.0.0) —
+  fetched via `getUncategorizedProjectGroups` from
+  [`src/server/category-slots.ts`](../src/server/category-slots.ts)
+- Line item edit dialog; separate "Move to category" and "Move to group" dialogs (split in v0.9.3.0 — see [47-cross-type-equipment-unification.md](./47-cross-type-equipment-unification.md))
 - Category rename (inline) and delete with cascade warning
 
 ### Financial Summary Sidebar

@@ -678,7 +678,7 @@ async function recalculateSubHireTotals(subHireId: string) {
 function resolvePlacement(
   entity: { targetGroupId?: string | null; targetCategoryId?: string | null },
   orderDefaults: { defaultTargetGroupId?: string | null; defaultTargetCategoryId?: string | null },
-  groupCategoryMap: Map<string, string>, // projectGroupId → categoryId
+  groupCategoryMap: Map<string, string | null>, // projectGroupId → categoryId (null for uncategorised groups)
 ): { groupId: string | null; categoryId: string | null } {
   const gId = entity.targetGroupId ?? orderDefaults.defaultTargetGroupId ?? null;
   if (gId) {
@@ -722,7 +722,7 @@ async function generateSubHireLineItemsTx(
   for (const i of subHire.items) {
     if (i.targetGroupId) targetGroupIds.add(i.targetGroupId);
   }
-  const groupCategoryMap = new Map<string, string>();
+  const groupCategoryMap = new Map<string, string | null>();
   if (targetGroupIds.size > 0) {
     const projectGroups = await tx.projectGroup.findMany({
       where: { id: { in: [...targetGroupIds] } },
@@ -911,7 +911,7 @@ async function syncNewSubHireLineItem(
     };
 
     // Build group→category map for any referenced project groups
-    const groupCategoryMap = new Map<string, string>();
+    const groupCategoryMap = new Map<string, string | null>();
     const gId = item.targetGroupId ?? orderDefaults.defaultTargetGroupId;
     if (gId) {
       const pg = await prisma.projectGroup.findUnique({

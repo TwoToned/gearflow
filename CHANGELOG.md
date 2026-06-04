@@ -5,6 +5,126 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0.0] - 2026-06-04
+
+Project groups can now live in the Uncategorized zone, matching how sub-hire groups already work. Deleting a category no longer destroys the groups inside it.
+
+### Added
+- **Project groups in Uncategorized.** Both the toolbar "Add Group" dialog and
+  each group's "Move" dialog now offer an Uncategorized destination. Groups
+  created without a category live alongside orphan sub-hire groups in the
+  project's Uncategorized zone, with the same kebab actions (Edit, Edit Price,
+  Add Equipment / Kit, Move, Delete) as categorised groups.
+- **`getUncategorizedProjectGroups(projectId)` server query** — mirrors
+  `getUncategorizedSubHireGroups`, scoped to org + project. The equipment tab
+  uses it to render orphan project groups in the same loop as orphan sub-hires.
+
+### Changed
+- **`ProjectGroup.categoryId` is now nullable** (Prisma schema + DB migration
+  `20260604030000_uncategorized_project_groups`). The FK's `onDelete` switched
+  from `CASCADE` to `SET NULL`, so deleting a `ProjectCategory` orphans its
+  groups instead of destroying them along with all their line items. Groups
+  surface in the Uncategorized zone afterwards.
+- **`createProjectGroup` sortOrder scope** — the aggregate that picks the next
+  `sortOrder` now includes `projectId`. Without this, null-category groups
+  across every project in the org would have shared one sortOrder pool.
+- **Validation schemas accept `null` categoryId** —
+  `projectGroupSchema.categoryId` and
+  `moveProjectGroupToCategorySchema.categoryId` are now nullable. The old
+  v0.9.3.0 unit test that asserted "rejects a null categoryId" flipped to
+  assert acceptance.
+
+### Fixed
+- **`moveProjectGroupToCategory` to Uncategorized.** When the destination is
+  null, the action skips advisory locking and category-slot inserts, drops any
+  existing slot for the group, and clears the line items' `categoryId` —
+  matching the sub-hire equivalent's behaviour.
+
+## [0.9.3.0] - 2026-06-04
+
+The line-item Move action splits into two clearer choices.
+
+### Changed
+- **Line-item kebab "Move" → two actions: "Move to category" and
+  "Move to group".** The combined picker that v0.9.1.0–0.9.2.1
+  evolved (Uncategorized + per-category root + per-category-group
+  entries in one dropdown) confused users every time — picking
+  "Audio" looked equivalent to "Audio > PA System" but landed the
+  item in a different place. Each row's kebab now offers an explicit
+  category-only and group-only path:
+    • *Move to category* — lists every category plus
+      Uncategorized. The item lands as a standalone under the picked
+      category (or in the truly uncategorised zone).
+    • *Move to group* — lists every group, clustered by its
+      category. The item lands inside the picked group and adopts
+      its category.
+  The `m` row shortcut binds to *Move to category* (the broader
+  pick); *Move to group* needs the explicit kebab.
+- Group-only dialog renders an explanatory empty state with a
+  Close button when the project has zero groups, instead of an
+  empty dropdown over a disabled Move button.
+
+### Removed
+- `move-line-item-dialog.tsx` — the combined picker. Replaced
+  by `move-item-to-category-dialog.tsx` + `move-item-to-group-dialog.tsx`.
+
+## [0.9.2.1] - 2026-06-04
+
+### Fixed
+- **Move-item dialog: pick a category as the destination.** The
+  destination dropdown only listed `<category> > <group>` entries
+  plus a single top-level "Uncategorized" option. Users wanting to
+  drop an item under a category — but not into one of its groups —
+  had no UI affordance, so they picked the only top-level option
+  (Uncategorized), the server obediently moved the item to truly
+  uncategorised, and it "disappeared" from where they expected.
+  Each category now contributes a `<name> (no group)` entry
+  alongside its child groups so category-root is a real destination.
+  Server side unchanged — `moveLineItemToGroup` already accepted
+  `{ categoryId, groupId: null }`.
+
+## [0.9.2.0] - 2026-06-04
+
+Project groups can now move between categories, and categories themselves
+gain inline add actions for equipment, kits, and custom items. Fixes two
+bugs reported against v0.9.1.0: structure-creation was stuck (a project
+group was glued to whichever category it was born in), and there was no
+inline path to drop a kit straight into a category without first making
+a group inside it.
+
+### Added
+- **Move project groups across categories.** Group kebab gains a
+  "Move to category" action with the same `ArrowRightLeft` icon as the
+  line-item Move. Picks any category in the project, or types a new
+  category name and presses Enter to create-and-place in one atomic
+  step (matches the sub-hire group move S15 pattern). The `m` row
+  shortcut binds to it.
+- **Add actions on category rows.** Category kebab gains
+  "Add Equipment", "Add Kit", and "Add Custom Item" entries — each
+  opens the unified add dialog scoped to that category with no group
+  pre-set, so the new item lands under the category as a
+  standalone item. Sub-hire is intentionally omitted because sub-hire
+  orders don't carry a categoryId at the order level (their groups do
+  — use the toolbar Add).
+
+### Changed
+- Sub-hire group Move kebab icon switched from `Package` to
+  `ArrowRightLeft` so the three rows (LineItem, SubHireGroup,
+  ProjectGroup) all render Move with the same affordance.
+- MoveLineItemDialog description now says "Choose a destination
+  group or category" since Uncategorized is a valid pick.
+
+### Fixed
+- **Category sync on group placement.** `createCategoryAndPlaceGroup`
+  was leaving line-item categoryIds stale when the new category was
+  created via the project-group branch — the sub-hire branch had
+  always synced its synthetic parents but the project-group branch
+  skipped its own line items. PDFs and reports that filter by
+  category would have shown items under their OLD category for any
+  group moved through the create-by-name path. Both branches now
+  call the same `projectLineItem.updateMany` so the placement is
+  always consistent.
+
 ## [0.9.1.0] - 2026-06-04
 
 Unified the project equipment "Add" surface. The four separate toolbar

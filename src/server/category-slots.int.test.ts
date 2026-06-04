@@ -46,6 +46,8 @@ vi.mock("@/server/line-items", async (importOriginal) => {
 
 import {
   moveSubHireGroupToCategory,
+  moveProjectGroupToCategory,
+  getUncategorizedProjectGroups,
   reorderMixedGroupsInCategory,
   createCategoryAndPlaceGroup,
   getUncategorizedSubHireGroups,
@@ -679,5 +681,374 @@ describe("S15 — createCategoryAndPlaceGroup atomic create + place", () => {
       where: { projectGroupId: pg.id },
     });
     expect(slot.projectCategoryId).toBe(newCat.id);
+  });
+});
+
+// ── Fix A — moveProjectGroupToCategory ──────────────────────────────────────
+
+describe("moveProjectGroupToCategory — happy path + invariants", () => {
+  beforeEach(async () => {
+    await setupIntegrationTest();
+    h.recalcSpy.mockClear();
+  });
+  afterAll(async () => {
+    await testPrisma.$disconnect();
+  });
+
+  it("moves the group, line items, and CategorySlot to the destination category", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id, "owner");
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+
+    const project = await createProjectFixture(org.id);
+    const catA = await createCategoryFixture(org.id, project.id, "A", 0);
+    const catB = await createCategoryFixture(org.id, project.id, "B", 1);
+    const pg = await createGroupFixture(org.id, project.id, catA.id, "PG", 0);
+    // Seed a line item in the group so we can assert it follows.
+    const item = await testPrisma.projectLineItem.create({
+      data: {
+        organizationId: org.id, projectId: project.id,
+        groupId: pg.id, categoryId: catA.id,
+        description: "Item", quantity: 1,
+      },
+    });
+    // Seed the existing CategorySlot in catA so we can assert it moves.
+    await testPrisma.categorySlot.create({
+      data: { projectCategoryId: catA.id, projectGroupId: pg.id, sortOrder: 0 },
+    });
+
+    const result = await moveProjectGroupToCategory({
+      groupId: pg.id, categoryId: catB.id,
+    });
+    expect(result).toMatchObject({ success: true });
+
+    const pgAfter = await testPrisma.projectGroup.findUniqueOrThrow({ where: { id: pg.id } });
+    expect(pgAfter.categoryId).toBe(catB.id);
+
+    const itemAfter = await testPrisma.projectLineItem.findUniqueOrThrow({ where: { id: item.id } });
+    expect(itemAfter.categoryId).toBe(catB.id);
+
+    const slots = await testPrisma.categorySlot.findMany({
+      where: { projectGroupId: pg.id },
+    });
+    expect(slots).toHaveLength(1);
+    expect(slots[0].projectCategoryId).toBe(catB.id);
+
+    expect(h.recalcSpy).toHaveBeenCalledTimes(1);
+    expect(h.recalcSpy).toHaveBeenCalledWith(project.id);
+  });
+
+  it("is a no-op when destination equals current category (returns noop:true)", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id, "owner");
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+
+    const project = await createProjectFixture(org.id);
+    const catA = await createCategoryFixture(org.id, project.id, "A", 0);
+    const pg = await createGroupFixture(org.id, project.id, catA.id, "PG", 0);
+
+    const result = await moveProjectGroupToCategory({
+      groupId: pg.id, categoryId: catA.id,
+    });
+    expect(result).toMatchObject({ success: true, noop: true });
+    // Should NOT call recalc when nothing moved.
+    expect(h.recalcSpy).not.toHaveBeenCalled();
+  });
+
+  it("appends the slot to the end of the destination's slot list", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id, "owner");
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+
+    const project = await createProjectFixture(org.id);
+    const catA = await createCategoryFixture(org.id, project.id, "A", 0);
+    const catB = await createCategoryFixture(org.id, project.id, "B", 1);
+
+    // Pre-populate catB with two existing slots (sortOrder 0 and 1).
+    const pgInB1 = await createGroupFixture(org.id, project.id, catB.id, "B1", 0);
+    const pgInB2 = await createGroupFixture(org.id, project.id, catB.id, "B2", 1);
+    await testPrisma.categorySlot.create({
+      data: { projectCategoryId: catB.id, projectGroupId: pgInB1.id, sortOrder: 0 },
+    });
+    await testPrisma.categorySlot.create({
+      data: { projectCategoryId: catB.id, projectGroupId: pgInB2.id, sortOrder: 1 },
+    });
+
+    // Move pg from A → B; should land at sortOrder 2.
+    const pg = await createGroupFixture(org.id, project.id, catA.id, "PG", 0);
+    await moveProjectGroupToCategory({ groupId: pg.id, categoryId: catB.id });
+
+    const slot = await testPrisma.categorySlot.findFirstOrThrow({
+      where: { projectGroupId: pg.id },
+    });
+    expect(slot.projectCategoryId).toBe(catB.id);
+    expect(slot.sortOrder).toBe(2);
+  });
+});
+
+describe("moveProjectGroupToCategory — cross-org / cross-project rejection", () => {
+  beforeEach(async () => {
+    await setupIntegrationTest();
+  });
+  afterAll(async () => {
+    await testPrisma.$disconnect();
+  });
+
+  it("rejects a destination category that belongs to another org", async () => {
+    const orgA = await createOrgFixture({ slug: "org-a" });
+    const orgB = await createOrgFixture({ slug: "org-b" });
+    const userA = await createUserFixture(orgA.id, "owner");
+    h.ctx = { organizationId: orgA.id, userId: userA.id, userName: "A" };
+
+    const projA = await createProjectFixture(orgA.id);
+    const catA = await createCategoryFixture(orgA.id, projA.id, "A");
+    const pg = await createGroupFixture(orgA.id, projA.id, catA.id, "PG");
+
+    const projB = await createProjectFixture(orgB.id);
+    const catB = await createCategoryFixture(orgB.id, projB.id, "B-other-org");
+
+    await expect(
+      moveProjectGroupToCategory({ groupId: pg.id, categoryId: catB.id }),
+    ).rejects.toThrow(/destination category not found/i);
+
+    // Nothing should have written.
+    const pgAfter = await testPrisma.projectGroup.findUniqueOrThrow({ where: { id: pg.id } });
+    expect(pgAfter.categoryId).toBe(catA.id);
+  });
+
+  it("rejects a destination category in the same org but a different project", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id, "owner");
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+
+    const projA = await createProjectFixture(org.id);
+    const catA = await createCategoryFixture(org.id, projA.id, "A");
+    const pg = await createGroupFixture(org.id, projA.id, catA.id, "PG");
+
+    const projB = await createProjectFixture(org.id);
+    const catBSameOrgDiffProj = await createCategoryFixture(org.id, projB.id, "B");
+
+    await expect(
+      moveProjectGroupToCategory({ groupId: pg.id, categoryId: catBSameOrgDiffProj.id }),
+    ).rejects.toThrow(/across projects/i);
+  });
+
+  it("rejects when the group itself belongs to another org", async () => {
+    const orgA = await createOrgFixture({ slug: "org-a" });
+    const orgB = await createOrgFixture({ slug: "org-b" });
+    const userA = await createUserFixture(orgA.id, "owner");
+    h.ctx = { organizationId: orgA.id, userId: userA.id, userName: "A" };
+
+    const projB = await createProjectFixture(orgB.id);
+    const catB = await createCategoryFixture(orgB.id, projB.id, "B");
+    const pgInB = await createGroupFixture(orgB.id, projB.id, catB.id, "PG-other-org");
+
+    const projA = await createProjectFixture(orgA.id);
+    const catA = await createCategoryFixture(orgA.id, projA.id, "A");
+
+    await expect(
+      moveProjectGroupToCategory({ groupId: pgInB.id, categoryId: catA.id }),
+    ).rejects.toThrow(/project group not found/i);
+  });
+});
+
+describe("moveProjectGroupToCategory — concurrent move advisory lock", () => {
+  beforeEach(async () => {
+    await setupIntegrationTest();
+  });
+  afterAll(async () => {
+    await testPrisma.$disconnect();
+  });
+
+  it("two concurrent moves of the same group both complete without UNIQUE violation", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id, "owner");
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+
+    const project = await createProjectFixture(org.id);
+    const catA = await createCategoryFixture(org.id, project.id, "A", 0);
+    const catB = await createCategoryFixture(org.id, project.id, "B", 1);
+    const pg = await createGroupFixture(org.id, project.id, catA.id, "PG", 0);
+    await testPrisma.categorySlot.create({
+      data: { projectCategoryId: catA.id, projectGroupId: pg.id, sortOrder: 0 },
+    });
+
+    const results = await Promise.allSettled([
+      moveProjectGroupToCategory({ groupId: pg.id, categoryId: catB.id }),
+      moveProjectGroupToCategory({ groupId: pg.id, categoryId: catB.id }),
+    ]);
+
+    const rejected = results.filter((r) => r.status === "rejected");
+    if (rejected.length > 0) {
+      const reasons = rejected.map((r) =>
+        r.status === "rejected" ? (r.reason as Error).message : "",
+      );
+      throw new Error(`Expected both moves to succeed; rejected: ${reasons.join(" | ")}`);
+    }
+
+    // Final state: exactly one slot for the group, in catB.
+    const slots = await testPrisma.categorySlot.findMany({
+      where: { projectGroupId: pg.id },
+    });
+    expect(slots).toHaveLength(1);
+    expect(slots[0].projectCategoryId).toBe(catB.id);
+    const pgAfter = await testPrisma.projectGroup.findUniqueOrThrow({ where: { id: pg.id } });
+    expect(pgAfter.categoryId).toBe(catB.id);
+  });
+});
+
+// ── v0.9.4.0 — uncategorised project groups ─────────────────────────────────
+
+describe("moveProjectGroupToCategory — null destination (move to Uncategorised)", () => {
+  beforeEach(async () => {
+    await setupIntegrationTest();
+    h.recalcSpy.mockClear();
+  });
+  afterAll(async () => {
+    await testPrisma.$disconnect();
+  });
+
+  it("moves a categorised group to Uncategorised: clears categoryId, drops slot, syncs line items", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id, "owner");
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+    const project = await createProjectFixture(org.id);
+    const catA = await createCategoryFixture(org.id, project.id, "A", 0);
+    const pg = await createGroupFixture(org.id, project.id, catA.id, "PG", 0);
+    const item = await testPrisma.projectLineItem.create({
+      data: {
+        organizationId: org.id, projectId: project.id,
+        groupId: pg.id, categoryId: catA.id,
+        description: "Item", quantity: 1,
+      },
+    });
+    await testPrisma.categorySlot.create({
+      data: { projectCategoryId: catA.id, projectGroupId: pg.id, sortOrder: 0 },
+    });
+
+    const result = await moveProjectGroupToCategory({
+      groupId: pg.id, categoryId: null,
+    });
+    expect(result).toMatchObject({ success: true });
+
+    const pgAfter = await testPrisma.projectGroup.findUniqueOrThrow({ where: { id: pg.id } });
+    expect(pgAfter.categoryId).toBeNull();
+
+    const itemAfter = await testPrisma.projectLineItem.findUniqueOrThrow({ where: { id: item.id } });
+    expect(itemAfter.categoryId).toBeNull();
+
+    const slots = await testPrisma.categorySlot.findMany({
+      where: { projectGroupId: pg.id },
+    });
+    expect(slots).toHaveLength(0);
+
+    expect(h.recalcSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("moves an uncategorised group INTO a category: creates a fresh slot at the end", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id, "owner");
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+    const project = await createProjectFixture(org.id);
+    const cat = await createCategoryFixture(org.id, project.id, "Audio", 0);
+
+    // Pre-populate the destination with two existing slots so we can
+    // assert the new one lands at sortOrder 2.
+    const pgInCat1 = await createGroupFixture(org.id, project.id, cat.id, "X1", 0);
+    const pgInCat2 = await createGroupFixture(org.id, project.id, cat.id, "X2", 1);
+    await testPrisma.categorySlot.create({
+      data: { projectCategoryId: cat.id, projectGroupId: pgInCat1.id, sortOrder: 0 },
+    });
+    await testPrisma.categorySlot.create({
+      data: { projectCategoryId: cat.id, projectGroupId: pgInCat2.id, sortOrder: 1 },
+    });
+
+    // Seed the orphan project group (categoryId = null) directly.
+    const orphan = await testPrisma.projectGroup.create({
+      data: {
+        organizationId: org.id, projectId: project.id,
+        categoryId: null, title: "Orphan", sortOrder: 0,
+      },
+    });
+
+    await moveProjectGroupToCategory({ groupId: orphan.id, categoryId: cat.id });
+
+    const orphanAfter = await testPrisma.projectGroup.findUniqueOrThrow({ where: { id: orphan.id } });
+    expect(orphanAfter.categoryId).toBe(cat.id);
+
+    const slot = await testPrisma.categorySlot.findFirstOrThrow({
+      where: { projectGroupId: orphan.id },
+    });
+    expect(slot.projectCategoryId).toBe(cat.id);
+    expect(slot.sortOrder).toBe(2);
+  });
+
+  it("is a no-op when an already-uncategorised group is moved to null again", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id, "owner");
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+    const project = await createProjectFixture(org.id);
+    const orphan = await testPrisma.projectGroup.create({
+      data: {
+        organizationId: org.id, projectId: project.id,
+        categoryId: null, title: "Orphan", sortOrder: 0,
+      },
+    });
+
+    const result = await moveProjectGroupToCategory({
+      groupId: orphan.id, categoryId: null,
+    });
+    expect(result).toMatchObject({ success: true, noop: true });
+    expect(h.recalcSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("getUncategorizedProjectGroups", () => {
+  beforeEach(async () => {
+    await setupIntegrationTest();
+  });
+  afterAll(async () => {
+    await testPrisma.$disconnect();
+  });
+
+  it("returns project groups with null categoryId for the requested project, scoped to org", async () => {
+    const orgA = await createOrgFixture({ slug: "org-a" });
+    const orgB = await createOrgFixture({ slug: "org-b" });
+    const userA = await createUserFixture(orgA.id, "owner");
+    h.ctx = { organizationId: orgA.id, userId: userA.id, userName: "A" };
+
+    const projectA = await createProjectFixture(orgA.id);
+    const catA = await createCategoryFixture(orgA.id, projectA.id, "A");
+    // Mix of one categorised + one orphan in our project — only the
+    // orphan should come back.
+    await createGroupFixture(orgA.id, projectA.id, catA.id, "PG-in-cat");
+    const orphanInA = await testPrisma.projectGroup.create({
+      data: {
+        organizationId: orgA.id, projectId: projectA.id,
+        categoryId: null, title: "Orphan-A", sortOrder: 0,
+      },
+    });
+
+    // Second project in same org — its orphan must NOT leak in.
+    const projectA2 = await createProjectFixture(orgA.id);
+    await testPrisma.projectGroup.create({
+      data: {
+        organizationId: orgA.id, projectId: projectA2.id,
+        categoryId: null, title: "Orphan-A2", sortOrder: 0,
+      },
+    });
+
+    // Other org's orphan must NOT leak in.
+    const projectB = await createProjectFixture(orgB.id);
+    await testPrisma.projectGroup.create({
+      data: {
+        organizationId: orgB.id, projectId: projectB.id,
+        categoryId: null, title: "Orphan-B", sortOrder: 0,
+      },
+    });
+
+    const result = await getUncategorizedProjectGroups(projectA.id);
+    const titles = (result as Array<{ id: string; title: string }>).map((g) => g.title);
+    expect(titles).toEqual([orphanInA.title]);
   });
 });

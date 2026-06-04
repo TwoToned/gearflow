@@ -7,12 +7,12 @@
  * These are system operations (the bot acting as itself, not a user), so the
  * routes gate on the global bot Bearer (withBotAuth), not a per-user actor.
  */
-import { Prisma } from "@/generated/prisma/client";
+import { Prisma, ProjectStatus } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { DiscordApiError } from "@/lib/discord/api-errors";
 import {
   ACTIVE_PROJECT_STATUS_FILTER,
-  isTerminalProjectStatus,
+  shouldHaveChannel,
 } from "@/lib/discord/project-statuses";
 
 type Db = Prisma.TransactionClient;
@@ -24,14 +24,29 @@ export interface ProjectChannelSpec {
   name: string;
   status: string;
   isTemplate: boolean;
-  /** Terminal projects should have their channel archived, not kept live. */
-  archived: boolean;
+  /**
+   * Should this project have a channel at all (per the org's `channelCreateOnStatuses`)?
+   * False for projects below the create threshold; the bot no-ops if no channel
+   * exists yet, but keeps an existing channel until status enters the archive set.
+   */
+  shouldExist: boolean;
+  /**
+   * Should the channel be archived (status in `channelArchiveOnStatuses`)? When
+   * true, the bot moves the channel to the org's `archiveCategoryId` and locks
+   * it. When the status flips back off the archive list, the bot moves it back
+   * to the active category.
+   */
+  shouldArchive: boolean;
+  /** Category the channel should live in (active by default; archive when shouldArchive). */
+  targetCategoryId: string | null;
   /** Existing channel id, or null if not yet created. */
   channelId: string | null;
   /** Discord ids of assigned crew who have linked — the desired overwrite set. */
   members: string[];
   /** Assigned crew who have NOT linked yet (shown as a "pending access" warning). */
   pendingCount: number;
+  /** True when the bot should post the welcome embed on this channel's first creation. */
+  postWelcomeOnCreate: boolean;
 }
 
 /** Build the desired channel spec for a project (org-scoped). */
@@ -40,20 +55,32 @@ export async function getProjectChannelSpec(
   organizationId: string,
   db: Db = prisma,
 ): Promise<ProjectChannelSpec> {
-  const project = await db.project.findFirst({
-    where: { id: projectId, organizationId },
-    select: {
-      id: true,
-      projectNumber: true,
-      name: true,
-      status: true,
-      isTemplate: true,
-      discordChannelId: true,
-      crewAssignments: {
-        select: { crewMember: { select: { discordLink: { select: { discordUserId: true } } } } },
+  const [project, integration] = await Promise.all([
+    db.project.findFirst({
+      where: { id: projectId, organizationId },
+      select: {
+        id: true,
+        projectNumber: true,
+        name: true,
+        status: true,
+        isTemplate: true,
+        discordChannelId: true,
+        crewAssignments: {
+          select: { crewMember: { select: { discordLink: { select: { discordUserId: true } } } } },
+        },
       },
-    },
-  });
+    }),
+    db.discordIntegration.findUnique({
+      where: { organizationId },
+      select: {
+        projectCategoryId: true,
+        archiveCategoryId: true,
+        channelCreateOnStatuses: true,
+        channelArchiveOnStatuses: true,
+        postWelcomeOnCreate: true,
+      },
+    }),
+  ]);
   if (!project) {
     throw new DiscordApiError("PROJECT_NOT_FOUND", "Project not found.", {
       details: { projectId },
@@ -68,16 +95,38 @@ export async function getProjectChannelSpec(
     else pendingCount += 1;
   }
 
+  // Integration row absent (defensive — the route would normally fail first):
+  // fall back to "always exist, never archive" so the bot does something sensible.
+  const createOn = integration?.channelCreateOnStatuses ?? [ProjectStatus.CONFIRMED];
+  const archiveOn = integration?.channelArchiveOnStatuses ?? [
+    ProjectStatus.COMPLETED,
+    ProjectStatus.INVOICED,
+    ProjectStatus.RETURNED,
+    ProjectStatus.CANCELLED,
+  ];
+  const { shouldExist, shouldArchive } = shouldHaveChannel(
+    project.status,
+    createOn,
+    archiveOn,
+    project.discordChannelId !== null,
+  );
+  const targetCategoryId = shouldArchive
+    ? (integration?.archiveCategoryId ?? null)
+    : (integration?.projectCategoryId ?? null);
+
   return {
     projectId: project.id,
     projectNumber: project.projectNumber,
     name: project.name,
     status: project.status,
     isTemplate: project.isTemplate,
-    archived: isTerminalProjectStatus(project.status),
+    shouldExist,
+    shouldArchive,
+    targetCategoryId,
     channelId: project.discordChannelId,
     members: [...members],
     pendingCount,
+    postWelcomeOnCreate: integration?.postWelcomeOnCreate ?? true,
   };
 }
 

@@ -13,6 +13,7 @@
 export const DISCORD_OUTBOX_EVENT_TYPES = [
   "project.created",
   "project.archived",
+  "project.status.changed",
   "crew.assignment.changed",
   "discord.link.confirmed",
 ] as const;
@@ -31,6 +32,12 @@ export interface ProjectArchivedPayload {
   status: string;
 }
 
+export interface ProjectStatusChangedPayload {
+  projectId: string;
+  fromStatus: string;
+  toStatus: string;
+}
+
 export interface CrewAssignmentChangedPayload {
   projectId: string;
   crewMemberId: string;
@@ -47,6 +54,7 @@ export interface DiscordLinkConfirmedPayload {
 export interface DiscordOutboxPayloads {
   "project.created": ProjectCreatedPayload;
   "project.archived": ProjectArchivedPayload;
+  "project.status.changed": ProjectStatusChangedPayload;
   "crew.assignment.changed": CrewAssignmentChangedPayload;
   "discord.link.confirmed": DiscordLinkConfirmedPayload;
 }

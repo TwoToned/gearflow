@@ -74,13 +74,14 @@ describe("channel-sync source of truth (integration)", () => {
     const spec = await getProjectChannelSpec(p.id, orgId);
     expect(spec.members).toEqual(["alice"]);
     expect(spec.pendingCount).toBe(1);
-    expect(spec.archived).toBe(false);
+    expect(spec.shouldArchive).toBe(false);
   });
 
-  it("flags terminal projects as archived", async () => {
+  it("flags terminal projects for archive (status in channelArchiveOnStatuses)", async () => {
     const p = await project(orgId, { status: "COMPLETED" });
     const spec = await getProjectChannelSpec(p.id, orgId);
-    expect(spec.archived).toBe(true);
+    expect(spec.shouldArchive).toBe(true);
+    expect(spec.shouldExist).toBe(true);
   });
 
   it("throws PROJECT_NOT_FOUND for another org's project (org-scoped)", async () => {

@@ -52,6 +52,8 @@ export interface DiscordRouteContext<P = undefined> {
   json: unknown;
   /** Resolved actor, or null when the Discord user has not linked in this org. */
   actor: ServiceActor | null;
+  /** Raw signed invoker Discord id — present even pre-link (e.g. for /link). */
+  actorDiscordUserId: string | null;
   /** The Discord interaction id, used for command→API idempotency. */
   idempotencyKey: string | null;
   params: P;
@@ -192,6 +194,7 @@ export function withDiscordAuth<P = undefined>(
         rawBody,
         json,
         actor,
+        actorDiscordUserId: actorDiscordId,
         idempotencyKey: request.headers.get("idempotency-key"),
         params: await resolveParams(args),
       });

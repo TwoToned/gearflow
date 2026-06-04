@@ -37,7 +37,7 @@ Lives in `apps/discord-bot/` (standalone Node service). Command registry: each `
 - [x] Bot service scaffold + command registry
 - [x] `Core()` service extraction + first `src/app/api/discord/v1/*` routes (asset lookup + outbox)
 - [x] Outbox emission hooks (createProject, crew-assignment add/remove) — `emitIfDiscordEnabled`
-- [ ] `/link` enrollment flow (hardened) + `/discord/verify` endpoint
+- [x] `/link` enrollment flow (hardened) + `/discord/verify` endpoint
 - [ ] Channel sync (create + permission overwrites + reconcile)
 - [ ] `/asset fault` → DamageEvent
 - [ ] Admin "Discord Integration" settings page
@@ -69,5 +69,15 @@ The session-less path is the load-bearing part (runtime-killer #1). Layers:
 Trust boundary + session-less permission enforcement are covered by
 `src/app/api/discord/v1/discord-route-auth.int.test.ts` (real Postgres): cross-org-secret,
 stale ts, tampered body, disabled integration, NOT_LINKED, FORBIDDEN, freelancer baseline.
+
+**Enrollment (`/link`)** — `src/lib/services/discord-link-service.ts`. `startDiscordLink` returns a
+CONSTANT `pending` (no enumeration oracle); durable DB-backed rate limits (3/hr per Discord user,
+3/day per crew member, counted from issued tokens); org-scoped email resolve (0 or >1 ⇒ nothing);
+opaque `randomBytes(32)` token, **hash-at-rest only**, **invoker Discord id bound at issue time**
+(anti-hijack), single-use. `consumeDiscordLink` claims atomically (`updateMany` guarded on
+`consumedAt null AND expiresAt > now`), rejects re-link, emits `discord.link.confirmed`. Routes:
+`POST /v1/link`, and the unauthenticated `/api/discord/verify` (GET = confirm button so email
+link-scanners can't burn the token on a prefetch; POST = consume). Security pipeline covered by
+`src/lib/services/discord-link.int.test.ts` (test plan #5). Bot: `commands/link.ts`.
 
 See the full reviewed plan + test plan in `docs/designs/discord-bot-*.md`.

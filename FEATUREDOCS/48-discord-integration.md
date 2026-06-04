@@ -39,7 +39,7 @@ Lives in `apps/discord-bot/` (standalone Node service). Command registry: each `
 - [x] Outbox emission hooks (createProject, crew-assignment add/remove) — `emitIfDiscordEnabled`
 - [x] `/link` enrollment flow (hardened) + `/discord/verify` endpoint
 - [x] Channel sync (create + permission overwrites + retroactive grant; converge logic = reconcile primitive)
-- [ ] `/asset fault` → DamageEvent
+- [x] `/asset fault` → DamageEvent
 - [ ] Admin "Discord Integration" settings page
 - [ ] `apps/discord-bot/README.md` operator setup (intents, scopes, perm bits) + `npm run doctor`
 
@@ -91,5 +91,15 @@ converges to desired state (idempotent; = the /reconcile primitive) with a per-p
 processes in id order, acks the successful prefix, stops on first failure, advances the cursor only past
 acked events. `channel-name.ts` slugs `CODE-name`; `discord-channel-gateway.ts` is the only discord.js
 module. v2: a `/reconcile` slash command (the converge primitive already exists).
+
+**`/asset fault`** — `src/lib/services/asset-fault-service.ts`. Migration
+`20260604130000_discord_fault_reporter` adds `DamageEvent.reportedByCrewMemberId` (true reporter)
++ unique `discordIdempotencyKey`. createdById = the reporter's linked User, else a per-org system
+actor (owner→admin→any) — resolves the required-FK runtime-killer for freelancers; the same id backs
+the activity-log FK. Severity is MINOR/MAJOR only (no TOTAL/out_of_service); `holdForRepair` →
+`IN_MAINTENANCE` via a guarded `updateMany` (AVAILABLE/RESERVED only, never clobbers CHECKED_OUT).
+Reporting is open to linked crew; the flip needs `maintenance:create`. Idempotent on the Discord
+interaction id. Route `POST /v1/asset/:code/fault`; bot `commands/fault.ts` (slash options + in-channel
+embed; photo-in-modal deferred to v2). Covered by `asset-fault.int.test.ts` (test plan #7).
 
 See the full reviewed plan + test plan in `docs/designs/discord-bot-*.md`.

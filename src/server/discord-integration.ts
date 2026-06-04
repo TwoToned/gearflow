@@ -11,7 +11,8 @@ import {
   type DiscordCredentialsValues,
   type DiscordIntegrationConfigValues,
 } from "@/lib/validations/discord-integration";
-import { encryptSecret } from "@/lib/crypto/secret-vault";
+import { decryptSecret, encryptSecret } from "@/lib/crypto/secret-vault";
+import { deployCommands as deployCommandsToDiscord } from "@/lib/discord/deploy-commands";
 
 function generateSecret(): string {
   return crypto.randomBytes(32).toString("base64url");
@@ -196,6 +197,56 @@ export async function setDiscordCredentials(data: DiscordCredentialsValues) {
   });
 
   return { hasDiscordBotToken: !!encryptedToken };
+}
+
+/**
+ * Push the slash command registry to Discord (guild-scoped, instant). Replaces
+ * the old `npm run deploy-commands` CLI now that the bot runs in-process. Reads
+ * the encrypted bot token, app id, and guild id straight from the integration
+ * row; surfaces the most likely operator-fixable failure modes with a clear
+ * error rather than the raw Discord exception.
+ */
+export async function deployDiscordCommands() {
+  const { organizationId, userId, userName } = await requirePermission("orgSettings", "update");
+  const row = await prisma.discordIntegration.findUnique({ where: { organizationId } });
+  if (!row) {
+    throw new Error("Discord integration is not configured yet.");
+  }
+  const missing: string[] = [];
+  if (!row.discordBotToken) missing.push("bot token");
+  if (!row.discordApplicationId) missing.push("application id");
+  if (!row.guildId) missing.push("guild id");
+  if (missing.length > 0) {
+    throw new Error(
+      `Cannot deploy commands — missing: ${missing.join(", ")}. Fill these in above and save first.`,
+    );
+  }
+  let token: string;
+  try {
+    token = decryptSecret(row.discordBotToken!);
+  } catch {
+    throw new Error("Failed to decrypt the stored Discord bot token. Re-paste it and try again.");
+  }
+
+  const result = await deployCommandsToDiscord({
+    discordBotToken: token,
+    discordApplicationId: row.discordApplicationId!,
+    guildId: row.guildId!,
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "discord_integration",
+    entityId: row.id,
+    entityName: "Discord Integration",
+    summary: `Deployed ${result.deployed} slash commands to guild`,
+    details: { commands: result.commandNames },
+  });
+
+  return result;
 }
 
 export async function regenerateDiscordSigningSecret() {

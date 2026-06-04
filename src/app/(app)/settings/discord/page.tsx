@@ -28,6 +28,7 @@ import {
   setDiscordIntegrationEnabled,
   regenerateDiscordSigningSecret,
   setDiscordCredentials,
+  deployDiscordCommands,
   unlinkDiscordAccount,
 } from "@/server/discord-integration";
 
@@ -181,6 +182,12 @@ export default function DiscordSettingsPage() {
       invalidate();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to save token"),
+  });
+
+  const deployCommands = useMutation({
+    mutationFn: () => deployDiscordCommands(),
+    onSuccess: (r) => toast.success(`Deployed ${r.deployed} commands: ${r.commandNames.join(", ")}`),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to deploy commands"),
   });
 
   const unlink = useMutation({
@@ -442,6 +449,35 @@ export default function DiscordSettingsPage() {
             label={integration?.hasDiscordBotToken ? "Token configured" : "Not set"}
           />
         </p>
+      </section>
+
+      {/* Slash command deploy — replaces the old `npm run deploy-commands` CLI. */}
+      <section className="rounded-lg bg-bg-surface p-5 surface-ring">
+        <h2 className="mb-1 text-sm font-semibold text-fg-1">Slash commands</h2>
+        <p className="mb-3 text-xs text-fg-3">
+          Pushes the current command registry to your Discord server (guild-scoped, instant). Re-run any time you add or rename a command.
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={
+            deployCommands.isPending ||
+            !integration?.hasDiscordBotToken ||
+            !integration?.discordApplicationId ||
+            !integration?.guildId
+          }
+          onClick={() => deployCommands.mutate()}
+        >
+          {deployCommands.isPending && <Loader2 className="mr-2 size-4 animate-spin" />}
+          Deploy slash commands
+        </Button>
+        {(!integration?.hasDiscordBotToken ||
+          !integration?.discordApplicationId ||
+          !integration?.guildId) && (
+          <p className="mt-2 text-xs text-fg-3">
+            Fill in the bot token, application id, and guild id above first.
+          </p>
+        )}
       </section>
 
       {/* Signing secret — show/hide + copy + regenerate. */}

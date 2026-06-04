@@ -7,6 +7,7 @@
 export const OUTBOX_EVENT_TYPES = [
   "project.created",
   "project.archived",
+  "project.status.changed",
   "crew.assignment.changed",
   "discord.link.confirmed",
 ] as const;
@@ -27,10 +28,13 @@ export interface ProjectChannelSpec {
   name: string;
   status: string;
   isTemplate: boolean;
-  archived: boolean;
+  shouldExist: boolean;
+  shouldArchive: boolean;
+  targetCategoryId: string | null;
   channelId: string | null;
   members: string[];
   pendingCount: number;
+  postWelcomeOnCreate: boolean;
 }
 
 export interface CrewChannelsResult {

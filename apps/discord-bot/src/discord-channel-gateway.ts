@@ -83,12 +83,28 @@ export class DiscordChannelGateway implements ChannelGateway {
     await channel.permissionOverwrites.set(overwrites, "GearFlow: sync project crew");
   }
 
-  async archiveChannel(channelId: string): Promise<void> {
+  async moveToCategory(channelId: string, categoryId: string | null): Promise<void> {
     const channel = (await this.guild.channels.fetch(channelId).catch(() => null)) as
       | TextChannel
       | null;
     if (!channel) return;
-    // Lock (deny @everyone, keep the bot) rather than delete — keeps history.
+    if ((channel.parentId ?? null) === (categoryId ?? null)) return; // already there
+    await channel.setParent(categoryId, { lockPermissions: false, reason: "GearFlow: move category" });
+  }
+
+  async archiveChannel(channelId: string, archiveCategoryId: string | null): Promise<void> {
+    const channel = (await this.guild.channels.fetch(channelId).catch(() => null)) as
+      | TextChannel
+      | null;
+    if (!channel) return;
+    // Move into the archive category (if configured), then lock — deny @everyone
+    // and revoke crew; keep the bot so future un-archive can restore access.
+    if (archiveCategoryId && channel.parentId !== archiveCategoryId) {
+      await channel.setParent(archiveCategoryId, {
+        lockPermissions: false,
+        reason: "GearFlow: project archived",
+      });
+    }
     await channel.permissionOverwrites.set(
       [
         { id: this.guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
@@ -96,5 +112,21 @@ export class DiscordChannelGateway implements ChannelGateway {
       ],
       "GearFlow: project archived",
     );
+  }
+
+  async postWelcome(channelId: string, content: { title: string; description?: string }): Promise<void> {
+    const channel = (await this.guild.channels.fetch(channelId).catch(() => null)) as
+      | TextChannel
+      | null;
+    if (!channel) return;
+    await channel.send({
+      embeds: [
+        {
+          title: content.title,
+          description: content.description,
+          color: 0x0f766e, // teal — DESIGN.md primary
+        },
+      ],
+    });
   }
 }

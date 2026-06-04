@@ -9,7 +9,9 @@ function fakeGateway(overrides: Partial<ChannelGateway> = {}): ChannelGateway {
     createChannel: overrides.createChannel ?? vi.fn().mockResolvedValue("chan-new"),
     deleteChannel: overrides.deleteChannel ?? vi.fn().mockResolvedValue(undefined),
     syncMembers: overrides.syncMembers ?? vi.fn().mockResolvedValue(undefined),
+    moveToCategory: overrides.moveToCategory ?? vi.fn().mockResolvedValue(undefined),
     archiveChannel: overrides.archiveChannel ?? vi.fn().mockResolvedValue(undefined),
+    postWelcome: overrides.postWelcome ?? vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -20,10 +22,13 @@ function spec(overrides: Partial<ProjectChannelSpec> = {}): ProjectChannelSpec {
     name: "Pippin",
     status: "CONFIRMED",
     isTemplate: false,
-    archived: false,
+    shouldExist: true,
+    shouldArchive: false,
+    targetCategoryId: "cat-active",
     channelId: null,
     members: ["alice", "bob"],
     pendingCount: 0,
+    postWelcomeOnCreate: false, // off by default in tests; the archive/create tests don't care
     ...overrides,
   };
 }
@@ -56,9 +61,9 @@ describe("convergeProject", () => {
   it("creates a channel, records the id, and syncs the member set", async () => {
     const gateway = fakeGateway();
     const { api, posts } = fakeApi({ spec: spec({ projectId: "pc1" }), record: { channelId: "chan-new", created: true } });
-    await convergeProject("pc1", { api, gateway, categoryId: "cat1" });
+    await convergeProject("pc1", { api, gateway });
 
-    expect(gateway.createChannel).toHaveBeenCalledWith({ name: "ttp001-pippin", categoryId: "cat1" });
+    expect(gateway.createChannel).toHaveBeenCalledWith({ name: "ttp001-pippin", categoryId: "cat-active" });
     expect(posts[0]).toEqual({ path: "/project/pc1/channel", body: { discordChannelId: "chan-new" } });
     expect(gateway.syncMembers).toHaveBeenCalledWith("chan-new", ["alice", "bob"]);
   });
@@ -66,7 +71,7 @@ describe("convergeProject", () => {
   it("does NOT create a second channel when one already exists (idempotent)", async () => {
     const gateway = fakeGateway();
     const { api } = fakeApi({ spec: spec({ projectId: "pc2", channelId: "existing" }) });
-    await convergeProject("pc2", { api, gateway, categoryId: "cat1" });
+    await convergeProject("pc2", { api, gateway });
 
     expect(gateway.createChannel).not.toHaveBeenCalled();
     expect(gateway.syncMembers).toHaveBeenCalledWith("existing", ["alice", "bob"]);
@@ -75,7 +80,7 @@ describe("convergeProject", () => {
   it("discards its channel and uses the winner's id when it loses the create race", async () => {
     const gateway = fakeGateway({ createChannel: vi.fn().mockResolvedValue("mine") });
     const { api } = fakeApi({ spec: spec({ projectId: "pc3" }), record: { channelId: "theirs", created: false } });
-    await convergeProject("pc3", { api, gateway, categoryId: "cat1" });
+    await convergeProject("pc3", { api, gateway });
 
     expect(gateway.deleteChannel).toHaveBeenCalledWith("mine");
     expect(gateway.syncMembers).toHaveBeenCalledWith("theirs", ["alice", "bob"]);
@@ -83,17 +88,17 @@ describe("convergeProject", () => {
 
   it("archives a terminal project's channel and skips member sync", async () => {
     const gateway = fakeGateway();
-    const { api } = fakeApi({ spec: spec({ projectId: "pc4", archived: true, channelId: "old" }) });
-    await convergeProject("pc4", { api, gateway, categoryId: "cat1" });
+    const { api } = fakeApi({ spec: spec({ projectId: "pc4", shouldArchive: true, targetCategoryId: "cat-archive", channelId: "old" }) });
+    await convergeProject("pc4", { api, gateway });
 
-    expect(gateway.archiveChannel).toHaveBeenCalledWith("old");
+    expect(gateway.archiveChannel).toHaveBeenCalledWith("old", "cat-archive");
     expect(gateway.syncMembers).not.toHaveBeenCalled();
   });
 
   it("skips templates entirely", async () => {
     const gateway = fakeGateway();
     const { api } = fakeApi({ spec: spec({ projectId: "pc5", isTemplate: true }) });
-    await convergeProject("pc5", { api, gateway, categoryId: "cat1" });
+    await convergeProject("pc5", { api, gateway });
     expect(gateway.createChannel).not.toHaveBeenCalled();
     expect(gateway.syncMembers).not.toHaveBeenCalled();
   });
@@ -106,7 +111,7 @@ describe("handleEvent", () => {
       crew: { discordUserId: "alice", projectIds: ["pa", "pb"] },
       spec: spec({ channelId: "c", members: ["alice"] }),
     });
-    const deps: ConsumerDeps = { api, gateway, categoryId: null };
+    const deps: ConsumerDeps = { api, gateway };
     await handleEvent(
       { id: 1, eventType: "discord.link.confirmed", payload: { crewMemberId: "cm1" }, dedupeKey: "k", createdAt: "" },
       deps,
@@ -126,7 +131,7 @@ describe("pollOnce", () => {
 
   it("returns the same cursor and does nothing when there are no events", async () => {
     const { api } = fakeApi({ outbox: { events: [], cursor: 5 } });
-    const res = await pollOnce(5, { api, gateway: fakeGateway(), categoryId: null });
+    const res = await pollOnce(5, { api, gateway: fakeGateway() });
     expect(res).toEqual({ cursor: 5, processed: 0, failed: false });
   });
 
@@ -136,7 +141,7 @@ describe("pollOnce", () => {
       spec: spec({ channelId: "c", members: [] }),
       record: { channelId: "c", created: false },
     });
-    const res = await pollOnce(5, { api, gateway: fakeGateway(), categoryId: null });
+    const res = await pollOnce(5, { api, gateway: fakeGateway() });
     expect(res).toMatchObject({ cursor: 7, processed: 2, failed: false });
     const ack = posts.find((p) => p.path === "/outbox/ack");
     expect(ack?.body).toEqual({ ids: [6, 7] });
@@ -154,7 +159,7 @@ describe("pollOnce", () => {
       spec: spec({ channelId: "c", members: [] }),
       record: { channelId: "c", created: false },
     });
-    const res = await pollOnce(5, { api, gateway, categoryId: null });
+    const res = await pollOnce(5, { api, gateway });
     expect(res).toMatchObject({ cursor: 6, processed: 1, failed: true });
     const ack = posts.find((p) => p.path === "/outbox/ack");
     expect(ack?.body).toEqual({ ids: [6] }); // 7 and 8 stay PENDING for retry

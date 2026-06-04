@@ -20,8 +20,6 @@ import type {
 export interface ConsumerDeps {
   api: GearFlowApiClient;
   gateway: ChannelGateway;
-  /** Category new project channels are created under (from DiscordIntegration). */
-  categoryId: string | null;
   botUserId?: string;
   log?: (event: string, fields?: Record<string, unknown>) => void;
 }
@@ -44,26 +42,37 @@ function withProjectLock<T>(projectId: string, fn: () => Promise<T>): Promise<T>
 }
 
 /**
- * Converge one project's channel to the desired spec: create (with the cross-
- * instance race guard), archive terminal projects, then re-apply the exact member
- * overwrite set. Unlinked crew are simply absent from `members` (no-op, no failure).
+ * Converge one project's channel to the spec returned by the app, honoring the
+ * org's create/archive rules:
+ *
+ *  - !shouldExist + no channel → no-op (skip enquiry-stage projects).
+ *  - shouldExist + no channel → create (race-guard via discordChannelId; loser
+ *    discards its channel), optionally post the welcome embed, sync members.
+ *  - shouldArchive + channel exists → move to the archive category + lock.
+ *    Skip member sync (archive locks out everyone except the bot anyway).
+ *  - !shouldArchive + channel exists → move to the active category if not already
+ *    there (un-archive), sync members.
+ *
+ * Unlinked crew are simply absent from `members`. Templates are filtered at the
+ * spec level (the app sets shouldExist=false for them via the create rule).
  */
 export async function convergeProject(projectId: string, deps: ConsumerDeps): Promise<void> {
   return withProjectLock(projectId, async () => {
     const spec = await deps.api.get<ProjectChannelSpec>(`/project/${projectId}/channel-spec`);
-    if (spec.isTemplate) return; // templates never get a channel
+    if (spec.isTemplate) return; // belt + braces (the app already filters)
 
     let channelId = spec.channelId;
-
-    if (spec.archived) {
-      if (channelId) await deps.gateway.archiveChannel(channelId);
+    if (!channelId && !spec.shouldExist) {
+      // Project is below the org's create threshold (e.g. still in ENQUIRY when
+      // create=CONFIRMED). Quietly do nothing; we'll see another event when it
+      // moves to a creating status.
       return;
     }
 
-    if (!channelId) {
+    if (!channelId && spec.shouldExist) {
       const createdId = await deps.gateway.createChannel({
         name: formatChannelName(spec.projectNumber, spec.name),
-        categoryId: deps.categoryId,
+        categoryId: spec.targetCategoryId,
       });
       const rec = await deps.api.post<{ channelId: string | null; created: boolean }>(
         `/project/${projectId}/channel`,
@@ -77,14 +86,33 @@ export async function convergeProject(projectId: string, deps: ConsumerDeps): Pr
       } else {
         channelId = createdId;
         deps.log?.("channel.created", { projectId, channelId });
+        if (spec.postWelcomeOnCreate) {
+          try {
+            await deps.gateway.postWelcome(channelId, {
+              title: `${spec.projectNumber} — ${spec.name}`,
+              description: `Status: **${spec.status}**`,
+            });
+          } catch (err) {
+            // Welcome is nice-to-have; don't fail the converge on a posting hiccup.
+            deps.log?.("channel.welcome_failed", { projectId, channelId, error: String(err) });
+          }
+        }
       }
     }
 
-    if (channelId) {
-      await deps.gateway.syncMembers(channelId, spec.members);
-      if (spec.pendingCount > 0) {
-        deps.log?.("channel.pending_access", { projectId, pendingCount: spec.pendingCount });
-      }
+    if (!channelId) return;
+
+    if (spec.shouldArchive) {
+      await deps.gateway.archiveChannel(channelId, spec.targetCategoryId);
+      deps.log?.("channel.archived", { projectId, channelId, categoryId: spec.targetCategoryId });
+      return;
+    }
+
+    // Active path: ensure it's in the active category, then sync members.
+    await deps.gateway.moveToCategory(channelId, spec.targetCategoryId);
+    await deps.gateway.syncMembers(channelId, spec.members);
+    if (spec.pendingCount > 0) {
+      deps.log?.("channel.pending_access", { projectId, pendingCount: spec.pendingCount });
     }
   });
 }
@@ -94,6 +122,7 @@ export async function handleEvent(event: OutboxEvent, deps: ConsumerDeps): Promi
   switch (event.eventType) {
     case "project.created":
     case "project.archived":
+    case "project.status.changed":
     case "crew.assignment.changed": {
       const { projectId } = event.payload as { projectId: string };
       await convergeProject(projectId, deps);

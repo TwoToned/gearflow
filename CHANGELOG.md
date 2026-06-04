@@ -5,6 +5,48 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2.0] - 2026-06-04
+
+Project groups can now move between categories, and categories themselves
+gain inline add actions for equipment, kits, and custom items. Fixes two
+bugs reported against v0.9.1.0: structure-creation was stuck (a project
+group was glued to whichever category it was born in), and there was no
+inline path to drop a kit straight into a category without first making
+a group inside it.
+
+### Added
+- **Move project groups across categories.** Group kebab gains a
+  "Move to category" action with the same `ArrowRightLeft` icon as the
+  line-item Move. Picks any category in the project, or types a new
+  category name and presses Enter to create-and-place in one atomic
+  step (matches the sub-hire group move S15 pattern). The `m` row
+  shortcut binds to it.
+- **Add actions on category rows.** Category kebab gains
+  "Add Equipment", "Add Kit", and "Add Custom Item" entries — each
+  opens the unified add dialog scoped to that category with no group
+  pre-set, so the new item lands under the category as a
+  standalone item. Sub-hire is intentionally omitted because sub-hire
+  orders don't carry a categoryId at the order level (their groups do
+  — use the toolbar Add).
+
+### Changed
+- Sub-hire group Move kebab icon switched from `Package` to
+  `ArrowRightLeft` so the three rows (LineItem, SubHireGroup,
+  ProjectGroup) all render Move with the same affordance.
+- MoveLineItemDialog description now says "Choose a destination
+  group or category" since Uncategorized is a valid pick.
+
+### Fixed
+- **Category sync on group placement.** `createCategoryAndPlaceGroup`
+  was leaving line-item categoryIds stale when the new category was
+  created via the project-group branch — the sub-hire branch had
+  always synced its synthetic parents but the project-group branch
+  skipped its own line items. PDFs and reports that filter by
+  category would have shown items under their OLD category for any
+  group moved through the create-by-name path. Both branches now
+  call the same `projectLineItem.updateMany` so the placement is
+  always consistent.
+
 ## [0.9.1.0] - 2026-06-04
 
 Unified the project equipment "Add" surface. The four separate toolbar

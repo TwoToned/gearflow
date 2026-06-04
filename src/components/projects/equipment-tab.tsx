@@ -61,7 +61,8 @@ import { UnifiedAddDialog, type UnifiedAddKind } from "./unified-add-dialog";
 import { MoveSubHireGroupDialog } from "./move-sub-hire-group-dialog";
 import { MoveProjectGroupDialog } from "./move-project-group-dialog";
 import { PriceEditDialog, type PriceEditTarget } from "./price-edit-dialog";
-import { MoveLineItemDialog } from "./move-line-item-dialog";
+import { MoveItemToCategoryDialog } from "./move-item-to-category-dialog";
+import { MoveItemToGroupDialog } from "./move-item-to-group-dialog";
 import { EditGroupDialog } from "./edit-group-dialog";
 import { DeleteGroupDialog } from "./delete-group-dialog";
 import { SaveAsTemplateDialog } from "./save-as-template-dialog";
@@ -187,9 +188,20 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   // Save group as template dialog state
   const [saveAsTemplateGroup, setSaveAsTemplateGroup] = useState<{ id: string; title: string } | null>(null);
 
-  // Move line item dialog state
-  const [moveLineItemId, setMoveLineItemId] = useState<string | null>(null);
-  const [moveTargetGroupId, setMoveTargetGroupId] = useState<string>("__uncategorized__");
+  // Move-item dialog state. Split into two flows (v0.9.3.0):
+  //   - moveItemToCategory: pick a category (or Uncategorised); item
+  //     lands as standalone under that category.
+  //   - moveItemToGroup: pick a group; item adopts the group's category.
+  // Each opens independently so the user can pick one path from the
+  // kebab without going through a chooser.
+  const [moveItemToCategory, setMoveItemToCategory] = useState<{
+    lineItemId: string;
+    initialCategoryId?: string;
+  } | null>(null);
+  const [moveItemToGroup, setMoveItemToGroup] = useState<{
+    lineItemId: string;
+    initialGroupId?: string;
+  } | null>(null);
 
   // EditLineItemDialog target — body owns its own form state + availability query.
   const [editLineItem, setEditLineItem] = useState<LineItemData | null>(null);
@@ -322,7 +334,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     }) => moveLineItemToGroup({ lineItemId, targetGroupId, targetCategoryId }),
     onSuccess: () => {
       invalidate();
-      setMoveLineItemId(null);
+      // Close whichever dialog drove this mutation. Cheap to call
+      // both setters — only the one with state actually re-renders.
+      setMoveItemToCategory(null);
+      setMoveItemToGroup(null);
       toast.success("Item moved");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -878,7 +893,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                     setManagingSubHireId(shGroup.subHire.id);
                                     setShowSubHireOrderDialog(true);
                                   }}
-                                  onMove={() => {
+                                  onMoveToCategory={() => {
+                                    setManagingSubHireId(shGroup.subHire.id);
+                                    setShowSubHireOrderDialog(true);
+                                  }}
+                                  onMoveToGroup={() => {
                                     setManagingSubHireId(shGroup.subHire.id);
                                     setShowSubHireOrderDialog(true);
                                   }}
@@ -963,7 +982,14 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                 isExpanded={expandedParents.has(item.id)}
                                 onToggle={() => toggleParent(item.id)}
                                 onEdit={() => setEditLineItem(item)}
-                                onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId(group.id); }}
+                                onMoveToCategory={() => setMoveItemToCategory({
+                                  lineItemId: item.id,
+                                  initialCategoryId: cat.id,
+                                })}
+                                onMoveToGroup={() => setMoveItemToGroup({
+                                  lineItemId: item.id,
+                                  initialGroupId: group.id,
+                                })}
                                 onRemove={() => removeMut.mutate(item.id)}
                               />
                             ))}
@@ -983,7 +1009,13 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                           isExpanded={expandedParents.has(item.id)}
                           onToggle={() => toggleParent(item.id)}
                           onEdit={() => setEditLineItem(item)}
-                          onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
+                          onMoveToCategory={() => setMoveItemToCategory({
+                            lineItemId: item.id,
+                            initialCategoryId: cat.id,
+                          })}
+                          onMoveToGroup={() => setMoveItemToGroup({
+                            lineItemId: item.id,
+                          })}
                           onRemove={() => removeMut.mutate(item.id)}
                         />
                       ))}
@@ -1013,7 +1045,12 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                     isExpanded={expandedParents.has(item.id)}
                     onToggle={() => toggleParent(item.id)}
                     onEdit={() => setEditLineItem(item)}
-                    onMove={() => { setMoveLineItemId(item.id); setMoveTargetGroupId("__uncategorized__"); }}
+                    onMoveToCategory={() => setMoveItemToCategory({
+                      lineItemId: item.id,
+                    })}
+                    onMoveToGroup={() => setMoveItemToGroup({
+                      lineItemId: item.id,
+                    })}
                     onRemove={() => removeMut.mutate(item.id)}
                   />
                 ))}
@@ -1066,7 +1103,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                             setManagingSubHireId(shGroup.subHire.id);
                             setShowSubHireOrderDialog(true);
                           }}
-                          onMove={() => {
+                          onMoveToCategory={() => {
+                            setManagingSubHireId(shGroup.subHire.id);
+                            setShowSubHireOrderDialog(true);
+                          }}
+                          onMoveToGroup={() => {
                             setManagingSubHireId(shGroup.subHire.id);
                             setShowSubHireOrderDialog(true);
                           }}
@@ -1276,18 +1317,36 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
         }
       />
 
-      {/* Move line item dialog */}
-      <MoveLineItemDialog
-        lineItemId={moveLineItemId}
-        initialEncoded={moveTargetGroupId}
+      {/* Move-item-to-category dialog (kebab → "Move to category").
+          Item lands as standalone under the picked category. */}
+      <MoveItemToCategoryDialog
+        lineItemId={moveItemToCategory?.lineItemId ?? null}
+        initialCategoryId={moveItemToCategory?.initialCategoryId}
         categories={typedCategories}
         isPending={moveLineItemMut.isPending}
-        onClose={() => setMoveLineItemId(null)}
+        onClose={() => setMoveItemToCategory(null)}
         onSubmit={(lineItemId, target) =>
           moveLineItemMut.mutate({
             lineItemId,
-            targetGroupId: target.groupId,
             targetCategoryId: target.categoryId,
+            targetGroupId: target.groupId,
+          })
+        }
+      />
+
+      {/* Move-item-to-group dialog (kebab → "Move to group").
+          Item lands inside the picked group and adopts its category. */}
+      <MoveItemToGroupDialog
+        lineItemId={moveItemToGroup?.lineItemId ?? null}
+        initialGroupId={moveItemToGroup?.initialGroupId}
+        categories={typedCategories}
+        isPending={moveLineItemMut.isPending}
+        onClose={() => setMoveItemToGroup(null)}
+        onSubmit={(lineItemId, target) =>
+          moveLineItemMut.mutate({
+            lineItemId,
+            targetCategoryId: target.categoryId,
+            targetGroupId: target.groupId,
           })
         }
       />

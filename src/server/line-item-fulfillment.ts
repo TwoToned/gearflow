@@ -363,13 +363,32 @@ export async function expandAccessoriesForAsset(
   const asset = await tx.asset.findUnique({
     where: { id: assetId },
     select: {
+      modelId: true,
       childAssets: { select: { id: true, modelId: true, model: { select: { name: true } } } },
       childBulkItems: {
         select: { bulkAssetId: true, quantity: true, bulkAsset: { select: { modelId: true, model: { select: { name: true } } } } },
       },
     },
   });
-  if (!asset || (asset.childAssets.length === 0 && asset.childBulkItems.length === 0)) return [];
+  if (!asset) return [];
+
+  // Union with model-level bulk accessories, asset-level wins on bulkAssetId.
+  const assetBulkIds = new Set(asset.childBulkItems.map((b) => b.bulkAssetId));
+  const modelBulks = await tx.modelBulkAccessory.findMany({
+    where: { modelId: asset.modelId, organizationId },
+    select: {
+      bulkAssetId: true,
+      quantity: true,
+      bulkAsset: { select: { modelId: true, model: { select: { name: true } } } },
+    },
+    orderBy: { sortOrder: "asc" },
+  });
+  const allBulks = [
+    ...asset.childBulkItems,
+    ...modelBulks.filter((m) => !assetBulkIds.has(m.bulkAssetId)),
+  ];
+
+  if (asset.childAssets.length === 0 && allBulks.length === 0) return [];
 
   const existing = await tx.projectLineItem.findMany({
     where: { parentLineItemId: lineItemId, childKind: "ACCESSORY", organizationId },
@@ -405,7 +424,7 @@ export async function expandAccessoriesForAsset(
     });
     created.push(row.id);
   }
-  for (const bi of asset.childBulkItems) {
+  for (const bi of allBulks) {
     if (haveBulk.has(bi.bulkAssetId)) continue;
     const row = await tx.projectLineItem.create({
       data: {

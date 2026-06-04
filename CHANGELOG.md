@@ -5,6 +5,34 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.3.0] - 2026-06-04
+
+The line-item Move action splits into two clearer choices.
+
+### Changed
+- **Line-item kebab "Move" → two actions: "Move to category" and
+  "Move to group".** The combined picker that v0.9.1.0–0.9.2.1
+  evolved (Uncategorized + per-category root + per-category-group
+  entries in one dropdown) confused users every time — picking
+  "Audio" looked equivalent to "Audio > PA System" but landed the
+  item in a different place. Each row's kebab now offers an explicit
+  category-only and group-only path:
+    • *Move to category* — lists every category plus
+      Uncategorized. The item lands as a standalone under the picked
+      category (or in the truly uncategorised zone).
+    • *Move to group* — lists every group, clustered by its
+      category. The item lands inside the picked group and adopts
+      its category.
+  The `m` row shortcut binds to *Move to category* (the broader
+  pick); *Move to group* needs the explicit kebab.
+- Group-only dialog renders an explanatory empty state with a
+  Close button when the project has zero groups, instead of an
+  empty dropdown over a disabled Move button.
+
+### Removed
+- `move-line-item-dialog.tsx` — the combined picker. Replaced
+  by `move-item-to-category-dialog.tsx` + `move-item-to-group-dialog.tsx`.
+
 ## [0.9.2.1] - 2026-06-04
 
 ### Fixed

@@ -162,7 +162,7 @@ HEADER (full width):
 - Single flat `DndContext` with prefixed IDs (categories, groups, items all in one context)
 - Inline "Add Group" button in toolbar with template picker
 - Uncategorized line items shown at the bottom
-- Line item edit dialog, move-between-groups dialog
+- Line item edit dialog; separate "Move to category" and "Move to group" dialogs (split in v0.9.3.0 — see [47-cross-type-equipment-unification.md](./47-cross-type-equipment-unification.md))
 - Category rename (inline) and delete with cascade warning
 
 ### Financial Summary Sidebar

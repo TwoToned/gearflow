@@ -767,7 +767,8 @@ export function LineItemRow({
   showCostColumn,
   onToggle,
   onEdit,
-  onMove,
+  onMoveToCategory,
+  onMoveToGroup,
   onRemove,
 }: {
   item: LineItemData;
@@ -780,7 +781,12 @@ export function LineItemRow({
   showCostColumn?: boolean;
   onToggle?: () => void;
   onEdit: () => void;
-  onMove: () => void;
+  /** Opens the "Move to category" dialog. The item lands under a
+   *  category as a standalone item (groupId = null). */
+  onMoveToCategory: () => void;
+  /** Opens the "Move to group" dialog. The item lands inside a
+   *  specific group and adopts its category. */
+  onMoveToGroup: () => void;
   onRemove: () => void;
 }) {
   const desc = describeRow(item);
@@ -800,7 +806,11 @@ export function LineItemRow({
   // Deeper indent for child rows
   const childIndent = indent === "ml-12" ? "ml-16" : indent === "ml-3" ? "ml-8" : "ml-6";
 
-  const shortcuts = useRowShortcuts({ e: onEdit, m: onMove, d: onRemove });
+  // `m` binds to "Move to category" — it's the broader, lossless
+  // pick (an item with no group is still meaningful). Group moves
+  // need the explicit kebab path. Matches the precedent set by
+  // category-only being the default destination state.
+  const shortcuts = useRowShortcuts({ e: onEdit, m: onMoveToCategory, d: onRemove });
 
   return (
     <>
@@ -952,9 +962,13 @@ export function LineItemRow({
             <DropdownMenuContent align="end">
               <DropdownMenuGroup>
                 <DropdownMenuLabel>Item</DropdownMenuLabel>
-                <DropdownMenuItem onClick={onMove}>
+                <DropdownMenuItem onClick={onMoveToCategory}>
                   <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
-                  Move
+                  Move to category
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onMoveToGroup}>
+                  <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
+                  Move to group
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={onRemove}

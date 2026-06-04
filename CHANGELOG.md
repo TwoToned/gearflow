@@ -39,6 +39,17 @@ work, and deleting a category no longer destroys the groups inside it.
   signing API client, framework-free command registry, `npm run doctor`
   green/red preflight, README walks the ~15 operator-setup steps
   (intents, scopes, permission bits, invite URL, env vars).
+- **Bot runtime is fully wired.** `apps/discord-bot/src/index.ts` now
+  dispatches every slash command through `handleInteraction` with a live
+  `resolveActor` (calls `GET /v1/me` per interaction — no caching, so a
+  demoted role takes effect immediately) and runs a recursive
+  `setTimeout` outbox poll loop (default 5s; exponential backoff to 60s on
+  repeated failure). On `clientReady` it fetches the configured guild,
+  builds a `DiscordChannelGateway`, and loads the per-org integration
+  config from a new `GET /api/discord/v1/integration/config` route. The
+  app also exposes `GET /api/discord/v1/me` (actor resolution) and an
+  unauthenticated `GET /api/discord/v1/health` for the doctor preflight.
+  SIGINT/SIGTERM stops the loop, destroys the Discord client, exits 0.
 - **Project groups in Uncategorized.** Both the toolbar "Add Group" dialog and
   each group's "Move" dialog now offer an Uncategorized destination. Groups
   created without a category live alongside orphan sub-hire groups in the

@@ -56,9 +56,9 @@ const serverEnvSchema = z.object({
   // Cron / scheduled jobs
   CRON_SECRET: z.string().optional(),
 
-  // Discord bot — global service token gating the outbox pull + a coarse gate on
-  // every /api/discord/v1/* route. Per-org HMAC secrets live in the DB, not here.
-  DISCORD_BOT_TOKEN: z.string().optional(),
+  // Discord bot — RUNS IN-PROCESS NOW. All credentials and config live in the
+  // DiscordIntegration row (encrypted token via secret-vault). No bot env vars
+  // here; instrumentation.ts boots it on server start.
 
   // Sentry — error tracking. If unset, Sentry is disabled (dev/local).
   SENTRY_DSN: z.string().optional(),

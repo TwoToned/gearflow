@@ -41,8 +41,9 @@ Lives in `apps/discord-bot/` (standalone Node service). Command registry: each `
 - [x] Channel sync (create + permission overwrites + retroactive grant; converge logic = reconcile primitive)
 - [x] `/asset fault` → DamageEvent
 - [x] Bot runtime wired (live interaction listener + outbox poll loop) — bot actually runs now
-- [x] Bot config moved off the bot host — admin page is the single source of truth for credentials + behavior. Bot reads everything via `/v1/integration/bootstrap` on startup.
+- [x] Bot config moved off the bot host — admin page is the single source of truth for credentials + behavior
 - [x] Channel lifecycle rules + archive category — admin picks when channels are created (statuses) and when they're archived (separate category)
+- [x] **Bot is now in-process** — runs as a Next.js instrumentation hook, calls services directly (no HMAC, no Bearer, no separate process, no `.env`). `apps/discord-bot/` removed. All `/v1/*` HMAC routes deleted (kept `/discord/verify` + `/v1/health`).
 - [x] Admin "Discord Integration" settings page
 - [~] `apps/discord-bot/README.md` operator setup + `npm run doctor` — scaffolded (47-line README, doctor stub); still needs the full ~15-step guide (privileged Guild Members intent, OAuth scopes, perm-bit invite URL) and to document `DISCORD_BOT_TOKEN` + the per-org signing secret + the new endpoints
 

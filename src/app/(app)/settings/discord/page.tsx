@@ -29,6 +29,8 @@ import {
   regenerateDiscordSigningSecret,
   setDiscordCredentials,
   deployDiscordCommands,
+  restartDiscordBot,
+  stopDiscordBot,
   unlinkDiscordAccount,
 } from "@/server/discord-integration";
 
@@ -143,23 +145,51 @@ export default function DiscordSettingsPage() {
     },
   });
 
+  // Restart the in-process bot so config changes take effect without a Next.js
+  // server restart. Toast on failure; never block the original save. Always
+  // invalidate so the page re-reads the bot.running state.
+  const applyBotRestart = async () => {
+    try {
+      const state = await restartDiscordBot();
+      toast.success(state.running ? "Bot restarted — running" : "Bot restarted — still offline (check config)");
+    } catch (e) {
+      toast.error(e instanceof Error ? `Bot restart failed: ${e.message}` : "Bot restart failed");
+    }
+    invalidate();
+  };
+
   const toggleEnabled = useMutation({
     mutationFn: async (enabled: boolean) => {
       if (!integration) await ensureDiscordIntegration();
       return setDiscordIntegrationEnabled(enabled);
     },
-    onSuccess: (_r, enabled) => {
+    onSuccess: async (_r, enabled) => {
       toast.success(enabled ? "Discord integration enabled" : "Discord integration disabled");
       invalidate();
+      // Enable → start the bot. Disable → stop it. Both happen in-process.
+      if (enabled) {
+        await applyBotRestart();
+      } else {
+        try {
+          await stopDiscordBot();
+          toast.success("Bot stopped");
+        } catch (e) {
+          toast.error(e instanceof Error ? `Bot stop failed: ${e.message}` : "Bot stop failed");
+        }
+        invalidate();
+      }
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to update"),
   });
 
   const saveConfig = useMutation({
     mutationFn: (values: DiscordIntegrationConfigValues) => updateDiscordIntegrationConfig(values),
-    onSuccess: () => {
+    onSuccess: async () => {
       toast.success("Settings saved");
       invalidate();
+      // Lifecycle rules / category ids / behavior toggles all affect the
+      // running bot — restart so the new spec takes effect on the next poll.
+      if (integration?.isEnabled) await applyBotRestart();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to save"),
   });
@@ -167,7 +197,7 @@ export default function DiscordSettingsPage() {
   const regenerate = useMutation({
     mutationFn: () => regenerateDiscordSigningSecret(),
     onSuccess: () => {
-      toast.success("Signing secret regenerated — update the bot's config");
+      toast.success("Signing secret regenerated");
       invalidate();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to regenerate"),
@@ -176,17 +206,40 @@ export default function DiscordSettingsPage() {
   const [pendingBotToken, setPendingBotToken] = useState("");
   const saveBotToken = useMutation({
     mutationFn: (val: string | null) => setDiscordCredentials({ discordBotToken: val }),
-    onSuccess: (_r, val) => {
+    onSuccess: async (_r, val) => {
       toast.success(val === null ? "Discord bot token cleared" : "Discord bot token saved");
       setPendingBotToken("");
       invalidate();
+      // Token change → restart (or stop if cleared). The running bot held the
+      // old token in memory; it needs a fresh login to use the new one.
+      if (val === null) {
+        try {
+          await stopDiscordBot();
+        } catch {
+          /* swallow; toast covered the save itself */
+        }
+        invalidate();
+      } else if (integration?.isEnabled) {
+        await applyBotRestart();
+      }
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to save token"),
   });
 
   const deployCommands = useMutation({
-    mutationFn: () => deployDiscordCommands(),
-    onSuccess: (r) => toast.success(`Deployed ${r.deployed} commands: ${r.commandNames.join(", ")}`),
+    mutationFn: async () => {
+      const deploy = await deployDiscordCommands();
+      // After pushing the command registry to Discord, restart the bot so its
+      // in-memory command set matches what Discord will route to it.
+      const state = await restartDiscordBot().catch(() => ({ running: false }));
+      return { ...deploy, botRunning: state.running };
+    },
+    onSuccess: (r) => {
+      toast.success(
+        `Deployed ${r.deployed} commands: ${r.commandNames.join(", ")} — bot ${r.botRunning ? "running" : "offline"}`,
+      );
+      invalidate();
+    },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to deploy commands"),
   });
 
@@ -221,13 +274,18 @@ export default function DiscordSettingsPage() {
       <section className="rounded-lg bg-bg-surface p-5 surface-ring">
         <div className="flex items-center justify-between gap-4">
           <div className="space-y-1">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <StatusIndicator intent={conn.intent} label={conn.label} />
+              <StatusIndicator
+                variant="pill"
+                intent={data?.bot?.running ? "success" : "neutral"}
+                label={data?.bot?.running ? "Bot running" : "Bot stopped"}
+              />
             </div>
             <p className="text-xs text-fg-3">
               {integration?.lastHeartbeatAt
                 ? `Last heartbeat ${formatDistanceToNow(new Date(integration.lastHeartbeatAt), { addSuffix: true })}`
-                : "The bot hasn't checked in yet. Start the bot service with this org's signing secret."}
+                : "The bot hasn't checked in yet. Enable the integration and click Deploy commands & start bot below."}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -451,11 +509,12 @@ export default function DiscordSettingsPage() {
         </p>
       </section>
 
-      {/* Slash command deploy — replaces the old `npm run deploy-commands` CLI. */}
+      {/* Deploy & start — one-click bring-up. Pushes commands to Discord then
+          restarts the in-process bot so it picks up the latest config. */}
       <section className="rounded-lg bg-bg-surface p-5 surface-ring">
-        <h2 className="mb-1 text-sm font-semibold text-fg-1">Slash commands</h2>
+        <h2 className="mb-1 text-sm font-semibold text-fg-1">Deploy &amp; start bot</h2>
         <p className="mb-3 text-xs text-fg-3">
-          Pushes the current command registry to your Discord server (guild-scoped, instant). Re-run any time you add or rename a command.
+          Pushes the slash command registry to your Discord server (guild-scoped, instant) AND restarts the bot in this Next.js process so it logs in with the latest credentials and config. No server restart needed.
         </p>
         <Button
           variant="outline"
@@ -469,7 +528,7 @@ export default function DiscordSettingsPage() {
           onClick={() => deployCommands.mutate()}
         >
           {deployCommands.isPending && <Loader2 className="mr-2 size-4 animate-spin" />}
-          Deploy slash commands
+          Deploy commands &amp; start bot
         </Button>
         {(!integration?.hasDiscordBotToken ||
           !integration?.discordApplicationId ||

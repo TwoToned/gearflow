@@ -40,8 +40,8 @@ Lives in `apps/discord-bot/` (standalone Node service). Command registry: each `
 - [x] `/link` enrollment flow (hardened) + `/discord/verify` endpoint
 - [x] Channel sync (create + permission overwrites + retroactive grant; converge logic = reconcile primitive)
 - [x] `/asset fault` → DamageEvent
-- [ ] Admin "Discord Integration" settings page
-- [ ] `apps/discord-bot/README.md` operator setup (intents, scopes, perm bits) + `npm run doctor`
+- [x] Admin "Discord Integration" settings page
+- [~] `apps/discord-bot/README.md` operator setup + `npm run doctor` — scaffolded (47-line README, doctor stub); still needs the full ~15-step guide (privileged Guild Members intent, OAuth scopes, perm-bit invite URL) and to document `DISCORD_BOT_TOKEN` + the per-org signing secret + the new endpoints
 
 ## Implementation notes — server side (`src/lib/services/*`, `src/app/api/discord/v1/*`)
 The session-less path is the load-bearing part (runtime-killer #1). Layers:
@@ -101,5 +101,20 @@ the activity-log FK. Severity is MINOR/MAJOR only (no TOTAL/out_of_service); `ho
 Reporting is open to linked crew; the flip needs `maintenance:create`. Idempotent on the Discord
 interaction id. Route `POST /v1/asset/:code/fault`; bot `commands/fault.ts` (slash options + in-channel
 embed; photo-in-modal deferred to v2). Covered by `asset-fault.int.test.ts` (test plan #7).
+
+**Admin settings** — `src/app/(app)/settings/discord/page.tsx` (+ INTEGRATIONS nav entry) backed by
+`src/server/discord-integration.ts`. Renders ENTIRELY from the DB, never awaiting the bot: a
+connection-health card leads (online/offline derived from `lastHeartbeatAt`, dot+text via
+`StatusIndicator` per DESIGN.md §203 — never a Badge); the linked-accounts roster lists unlinked crew
+too with an "X of Y linked" summary; set-once config is collapsible (text inputs, not live dropdowns);
+signing-secret show/hide/copy/regenerate; recent activity from `logActivity`; unlink via `Dialog`.
+Config schema in `src/lib/validations/discord-integration.ts`.
+
+## Status: v1 server + admin complete
+All six build-order steps land with unit + full-pipeline integration coverage (test plan #1–#7).
+Verified: app `tsc` + `next build` clean (the build catches Next route-type checks `tsc --noEmit`
+misses), 2015 unit + 265 integration + 35 bot tests green, ESLint clean. Remaining for a live rollout
+is bot RUNTIME wiring (gateway gateway-intents, the poll loop, modal UX) and the v2 deferrals
+(`/asset checkout|checkin`, `/incident`, role-mapping, live-dropdown admin UI, a `/reconcile` command).
 
 See the full reviewed plan + test plan in `docs/designs/discord-bot-*.md`.

@@ -60,6 +60,8 @@ export interface DocumentLineItem {
   isGroupRow?: boolean;
   isOptional: boolean;
   isKitChild?: boolean;
+  /** KIT | ACCESSORY — distinguishes a kit member from an accessory child. */
+  childKind?: "KIT" | "ACCESSORY" | null;
   kitId?: string | null;
   pricingMode?: string | null;
   notes: string | null;

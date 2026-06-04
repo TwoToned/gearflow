@@ -346,7 +346,15 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
       // it isn't one.
       const isGroupParent =
         !!item.isGroupRow && (item.childLineItems?.length ?? 0) > 0;
-      const isParentWithChildren = isKit || isGroupParent;
+      // A serialised asset with permanent accessories (child assets). Not a
+      // kit (no kitId) — it renders as a normal asset row with its
+      // accessories indented underneath, via the same childLineItems path.
+      const isAccessoryParent =
+        !item.isKitChild &&
+        !item.kitId &&
+        !item.isGroupRow &&
+        (item.childLineItems?.some((c) => c.childKind === "ACCESSORY") ?? false);
+      const isParentWithChildren = isKit || isGroupParent || isAccessoryParent;
       const isItemized = isKit && item.pricingMode === "ITEMIZED";
       const itemName = getItemName(item, isKit);
 
@@ -672,11 +680,13 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
         }
       }
 
-      // === Kit children / Group members ===
-      // Same indented-children rendering for both kit parents (when
-      // showKitChildren is on) and synthetic Project Group rows whose
-      // members were attached as childLineItems by structureLineItems().
-      if ((isKit && config.showKitChildren) || isGroupParent) {
+      // === Kit children / Group members / Accessories ===
+      // Same indented-children rendering for kit parents (when showKitChildren
+      // is on), synthetic Project Group rows whose members were attached as
+      // childLineItems by structureLineItems(), and serialised assets with
+      // permanent accessories. Accessories are inseparable from their parent,
+      // so they always render (not gated by showKitChildren).
+      if ((isKit && config.showKitChildren) || isGroupParent || isAccessoryParent) {
         let children = item.childLineItems || [];
 
         // Filter children by deployment status for return sheet / delivery docket

@@ -11,13 +11,15 @@ import {
   type DiscordCredentialsValues,
   type DiscordIntegrationConfigValues,
 } from "@/lib/validations/discord-integration";
-import { decryptSecret, encryptSecret } from "@/lib/crypto/secret-vault";
-import { deployCommands as deployCommandsToDiscord } from "@/lib/discord/deploy-commands";
-import {
-  getBotState,
-  restartBot as restartBotProcess,
-  stopBot as stopBotProcess,
-} from "@/lib/discord/bot-process";
+import { encryptSecret } from "@/lib/crypto/secret-vault";
+
+// IMPORTANT: every discord.js-touching action lives in an API route
+// (`src/app/api/admin/discord/{restart,stop,deploy-commands,status}/route.ts`),
+// NOT in this server-actions file. discord.js uses `node:module`, which
+// Turbopack's client bundler chokes on even with "use server" stripping. The
+// API-route boundary keeps the discord.js module graph fully server-side. The
+// admin page reads bot status via fetch (a separate useQuery) so this file
+// never imports anything that touches discord.js.
 
 function generateSecret(): string {
   return crypto.randomBytes(32).toString("base64url");
@@ -81,28 +83,7 @@ export async function getDiscordIntegrationSettings() {
     roster,
     summary: { linkedCount, totalCrew: roster.length },
     recentActivity,
-    bot: getBotState(),
   });
-}
-
-/**
- * Stop the running in-process bot (if any) and start a fresh one with the
- * current integration row. Called automatically after every config-changing
- * save so the admin doesn't need to `pm2 restart gearflow` to apply changes.
- * Returns the new running state so the UI toast can confirm what happened.
- */
-export async function restartDiscordBot() {
-  await requirePermission("orgSettings", "update");
-  await restartBotProcess();
-  const state = getBotState();
-  return state;
-}
-
-/** Stop the running bot. Called when the admin toggles Enabled off. */
-export async function stopDiscordBot() {
-  await requirePermission("orgSettings", "update");
-  await stopBotProcess();
-  return getBotState();
 }
 
 /** Create the integration row on first visit (never-configured → configured). */
@@ -225,55 +206,9 @@ export async function setDiscordCredentials(data: DiscordCredentialsValues) {
   return { hasDiscordBotToken: !!encryptedToken };
 }
 
-/**
- * Push the slash command registry to Discord (guild-scoped, instant). Replaces
- * the old `npm run deploy-commands` CLI now that the bot runs in-process. Reads
- * the encrypted bot token, app id, and guild id straight from the integration
- * row; surfaces the most likely operator-fixable failure modes with a clear
- * error rather than the raw Discord exception.
- */
-export async function deployDiscordCommands() {
-  const { organizationId, userId, userName } = await requirePermission("orgSettings", "update");
-  const row = await prisma.discordIntegration.findUnique({ where: { organizationId } });
-  if (!row) {
-    throw new Error("Discord integration is not configured yet.");
-  }
-  const missing: string[] = [];
-  if (!row.discordBotToken) missing.push("bot token");
-  if (!row.discordApplicationId) missing.push("application id");
-  if (!row.guildId) missing.push("guild id");
-  if (missing.length > 0) {
-    throw new Error(
-      `Cannot deploy commands — missing: ${missing.join(", ")}. Fill these in above and save first.`,
-    );
-  }
-  let token: string;
-  try {
-    token = decryptSecret(row.discordBotToken!);
-  } catch {
-    throw new Error("Failed to decrypt the stored Discord bot token. Re-paste it and try again.");
-  }
-
-  const result = await deployCommandsToDiscord({
-    discordBotToken: token,
-    discordApplicationId: row.discordApplicationId!,
-    guildId: row.guildId!,
-  });
-
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "UPDATE",
-    entityType: "discord_integration",
-    entityId: row.id,
-    entityName: "Discord Integration",
-    summary: `Deployed ${result.deployed} slash commands to guild`,
-    details: { commands: result.commandNames },
-  });
-
-  return result;
-}
+// deployDiscordCommands now lives at POST /api/admin/discord/deploy-commands
+// (the client calls it via fetch). Keeping it as a server action would force
+// discord.js into the client module graph — see top-of-file note.
 
 export async function regenerateDiscordSigningSecret() {
   const { organizationId, userId, userName } = await requirePermission("orgSettings", "update");

@@ -28,11 +28,31 @@ import {
   setDiscordIntegrationEnabled,
   regenerateDiscordSigningSecret,
   setDiscordCredentials,
-  deployDiscordCommands,
-  restartDiscordBot,
-  stopDiscordBot,
   unlinkDiscordAccount,
 } from "@/server/discord-integration";
+
+// API helpers — the bot lifecycle + deploy-commands live in API routes (not
+// server actions) so the client bundle never traces the discord.js module
+// graph. See src/app/api/admin/discord/*.
+type BotState = { running: boolean; organizationId: string | null };
+async function apiPost<T>(path: string): Promise<T> {
+  const res = await fetch(path, { method: "POST" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+  }
+  return res.json() as Promise<T>;
+}
+async function apiGet<T>(path: string): Promise<T> {
+  const res = await fetch(path);
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json() as Promise<T>;
+}
+const restartDiscordBot = () => apiPost<BotState>("/api/admin/discord/restart");
+const stopDiscordBot = () => apiPost<BotState>("/api/admin/discord/stop");
+const deployDiscordCommands = () =>
+  apiPost<{ deployed: number; commandNames: string[] }>("/api/admin/discord/deploy-commands");
+const fetchBotStatus = () => apiGet<BotState>("/api/admin/discord/status");
 
 // Subset of ProjectStatus the form uses — kept as a string literal type so the
 // page doesn't import generated Prisma types client-side.
@@ -113,6 +133,15 @@ export default function DiscordSettingsPage() {
     queryFn: () => getDiscordIntegrationSettings(),
     enabled: !!orgId,
   });
+  // Bot lifecycle state lives behind an API route (the page can't import the
+  // bot-process module — discord.js would land in the client bundle). Refresh
+  // automatically every 10s while the tab is open.
+  const { data: botStatus } = useQuery({
+    queryKey: ["discord-bot-status", orgId],
+    queryFn: fetchBotStatus,
+    enabled: !!orgId,
+    refetchInterval: 10_000,
+  });
 
   const integration = data?.integration ?? null;
   const roster = (data?.roster ?? []) as RosterRow[];
@@ -120,7 +149,10 @@ export default function DiscordSettingsPage() {
   const recentActivity = data?.recentActivity ?? [];
   const conn = connectionStatus(integration?.lastHeartbeatAt);
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["discord-integration", orgId] });
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["discord-integration", orgId] });
+    queryClient.invalidateQueries({ queryKey: ["discord-bot-status", orgId] });
+  };
 
   const form = useForm<DiscordIntegrationConfigValues>({
     resolver: zodResolver(discordIntegrationConfigSchema),
@@ -278,8 +310,8 @@ export default function DiscordSettingsPage() {
               <StatusIndicator intent={conn.intent} label={conn.label} />
               <StatusIndicator
                 variant="pill"
-                intent={data?.bot?.running ? "success" : "neutral"}
-                label={data?.bot?.running ? "Bot running" : "Bot stopped"}
+                intent={botStatus?.running ? "success" : "neutral"}
+                label={botStatus?.running ? "Bot running" : "Bot stopped"}
               />
             </div>
             <p className="text-xs text-fg-3">

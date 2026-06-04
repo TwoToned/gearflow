@@ -1,12 +1,29 @@
 import { z } from "zod";
-import { ProjectStatus } from "@/generated/prisma/client";
 
 /**
  * Discord integration admin config. v1 uses plain text inputs for the guild /
  * category / channel ids (NOT live Discord dropdowns) — the admin page must render
  * entirely from the DB and never block on a live bot call (design review, locked).
+ *
+ * NOTE: This file is imported by the admin client page for the zodResolver, so
+ * it MUST NOT import from `@/generated/prisma/client` — Prisma's generated client
+ * uses `node:module`, which Turbopack's client bundler can't trace. We mirror
+ * the ProjectStatus enum as a literal-string z.enum here. CI runs `prisma generate`
+ * before tsc, and `prisma migrate deploy` enforces the DB-side enum.
  */
-const projectStatusSchema = z.nativeEnum(ProjectStatus);
+const projectStatusSchema = z.enum([
+  "ENQUIRY",
+  "QUOTING",
+  "QUOTED",
+  "CONFIRMED",
+  "PREPPING",
+  "CHECKED_OUT",
+  "ON_SITE",
+  "RETURNED",
+  "COMPLETED",
+  "INVOICED",
+  "CANCELLED",
+]);
 
 export const discordIntegrationConfigSchema = z.object({
   guildId: z.string().trim().optional().default(""),
@@ -19,15 +36,10 @@ export const discordIntegrationConfigSchema = z.object({
   // Status-rule arrays — multi-select on the admin page. Must be non-empty for
   // create to do anything useful; empty archive list means channels are never
   // archived (acceptable but flagged in the UI).
-  channelCreateOnStatuses: z.array(projectStatusSchema).default([ProjectStatus.CONFIRMED]),
+  channelCreateOnStatuses: z.array(projectStatusSchema).default(["CONFIRMED"]),
   channelArchiveOnStatuses: z
     .array(projectStatusSchema)
-    .default([
-      ProjectStatus.COMPLETED,
-      ProjectStatus.INVOICED,
-      ProjectStatus.RETURNED,
-      ProjectStatus.CANCELLED,
-    ]),
+    .default(["COMPLETED", "INVOICED", "RETURNED", "CANCELLED"]),
 
   postWelcomeOnCreate: z.boolean().default(true),
   postFaultsToProjectChannel: z.boolean().default(true),

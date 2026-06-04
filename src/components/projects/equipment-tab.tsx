@@ -712,6 +712,15 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
           <FolderPlus className="h-3.5 w-3.5" />
           Add Group
         </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => setShowAddCategory(true)}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add Category
+        </Button>
         <div className="flex-1" />
         <Button
           variant={showCostColumn ? "default" : "outline"}
@@ -721,15 +730,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
           title="Toggle the supplier-cost column so margin is visible at a glance"
         >
           {showCostColumn ? "Hide margin" : "Show margin"}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          onClick={() => setShowAddCategory(true)}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Add Category
         </Button>
       </div>
 

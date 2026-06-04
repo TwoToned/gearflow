@@ -34,8 +34,8 @@ Lives in `apps/discord-bot/` (standalone Node service). Command registry: each `
 ## Status / TODO
 - [x] Prisma schema + migration
 - [x] Error envelope + HMAC contract (+ unit tests)
-- [ ] Bot service scaffold + command registry
-- [ ] `Core()` service extraction + `src/app/api/discord/v1/*` routes
+- [x] Bot service scaffold + command registry
+- [x] `Core()` service extraction + first `src/app/api/discord/v1/*` routes (asset lookup + outbox)
 - [ ] Outbox emission hooks (createProject, crew-assignment writes)
 - [ ] `/link` enrollment flow (hardened) + `/discord/verify` endpoint
 - [ ] Channel sync (create + permission overwrites + reconcile)
@@ -43,4 +43,31 @@ Lives in `apps/discord-bot/` (standalone Node service). Command registry: each `
 - [ ] Admin "Discord Integration" settings page
 - [ ] `apps/discord-bot/README.md` operator setup (intents, scopes, perm bits) + `npm run doctor`
 
-See the full reviewed plan + test plan in `~/.gstack/projects/TwoToned-gearflow/`.
+## Implementation notes — server side (`src/lib/services/*`, `src/app/api/discord/v1/*`)
+The session-less path is the load-bearing part (runtime-killer #1). Layers:
+
+- **`src/lib/services/discord-actor.ts`** — `resolveDiscordActor(orgId, discordUserId, db)` →
+  `ServiceActor` (role read LIVE; a freelancer CrewMember with no platform User gets the
+  read-only `viewer` baseline). `requireActorPermission(actor, resource, action, db)` enforces
+  the SAME `hasPermission()` matrix the session path uses — throws `FORBIDDEN`. No Better Auth
+  session is ever touched.
+- **`src/lib/discord/route-auth.ts`** — two wrappers. `withDiscordAuth` = global Bearer +
+  per-org HMAC over `timestamp.rawBody` + actor resolution from the signed
+  `x-gearflow-actor-discord-id` header (server-trusted because the whole request is signed; the
+  role is never client-supplied). `withBotAuth` = Bearer only (outbox pull/heartbeat). Both render
+  thrown `DiscordApiError`s into the envelope; a handler may return a raw `NextResponse` (e.g. a PDF).
+  `requireLinkedActor(ctx)` → `NOT_LINKED` when unlinked.
+- **`src/lib/discord/outbox-events.ts`** — shared event-type union + payload shapes (emit + consume
+  contract). **`src/lib/services/outbox-service.ts`** — `emitOutboxEvent(tx, …)` (call inside the
+  mutation's `$transaction`), `readOutboxEvents` (status-driven, so a lost cursor never replays
+  PROCESSED rows), `ackOutboxEvents` (idempotent), `recordDiscordHeartbeat`.
+- **Routes:** `GET /asset/[code]` (HMAC + linked actor + `asset:read`), `GET /outbox` (Bearer;
+  heartbeat + pull), `POST /outbox/ack`.
+- **Env:** global `DISCORD_BOT_TOKEN` (Bearer). Per-org HMAC secret stays in the DB.
+- **Bot:** `api-client.ts` now sends `x-gearflow-actor-discord-id` so routes resolve the actor.
+
+Trust boundary + session-less permission enforcement are covered by
+`src/app/api/discord/v1/discord-route-auth.int.test.ts` (real Postgres): cross-org-secret,
+stale ts, tampered body, disabled integration, NOT_LINKED, FORBIDDEN, freelancer baseline.
+
+See the full reviewed plan + test plan in `docs/designs/discord-bot-*.md`.

@@ -8,10 +8,36 @@ import {
   type AssetSerializedChildFormValues,
   type AssetBulkChildFormValues,
 } from "@/lib/validations/asset";
+import { getOrgContext } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { adjustBulkAvailability } from "@/lib/inventory-mutations";
 import { UserFacingError } from "@/lib/errors";
+
+/**
+ * Serialised assets eligible to become an accessory of `parentAssetId`:
+ * AVAILABLE, not in a kit, not already an accessory, not the parent itself,
+ * and not a parent of accessories themselves (one level deep).
+ */
+export async function getAvailableAccessoryAssets(parentAssetId: string) {
+  const { organizationId } = await getOrgContext();
+  return serialize(
+    await prisma.asset.findMany({
+      where: {
+        organizationId,
+        isActive: true,
+        status: "AVAILABLE",
+        kitId: null,
+        parentAssetId: null,
+        id: { not: parentAssetId },
+        childAssets: { none: {} },
+        childBulkItems: { none: {} },
+      },
+      include: { model: { select: { name: true, manufacturer: true } } },
+      orderBy: { assetTag: "asc" },
+    }),
+  );
+}
 
 /**
  * Child assets / accessories.

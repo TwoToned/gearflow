@@ -173,4 +173,16 @@ describe("child assets / accessories — attach/detach", () => {
 
     await expect(addSerializedItemToKit(kit.id, { assetId: child.id })).rejects.toThrow();
   });
+
+  it("a bulk accessory can only be detached via its real parent (guard)", async () => {
+    const { org, model } = await seed();
+    const parentA = await createAssetFixture(org.id, model.id, { assetTag: "PA" });
+    const parentB = await createAssetFixture(org.id, model.id, { assetTag: "PB" });
+    const clamps = await createBulkAssetFixture(org.id, model.id, { assetTag: "CLAMP-G", total: 10 });
+    const child = (await addBulkChildToAsset(parentA.id, { bulkAssetId: clamps.id, quantity: 1 })) as { id: string };
+
+    // Detaching via the wrong parent must throw and not delete the row.
+    await expect(removeBulkChildFromAsset(parentB.id, child.id)).rejects.toThrow();
+    expect(await testPrisma.assetBulkChild.count({ where: { parentAssetId: parentA.id } })).toBe(1);
+  });
 });

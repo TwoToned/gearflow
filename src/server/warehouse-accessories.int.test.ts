@@ -118,6 +118,17 @@ describe("warehouse accessory cascade (Phase E)", () => {
     }
   });
 
+  it("a DAMAGED return sends the serialised accessory to maintenance", async () => {
+    const s = await seed();
+    const { light, cable, parentLineId } = await lightWithAccessoriesOnProject(s);
+    await checkOutItems(s.project.id, [{ lineItemId: parentLineId, assetId: light.id }]);
+
+    await checkInItems(s.project.id, [{ lineItemId: parentLineId, assetId: light.id, returnCondition: "DAMAGED" }]);
+
+    const cableAsset = await testPrisma.asset.findUnique({ where: { id: cable.id } });
+    expect(cableAsset?.status).toBe("IN_MAINTENANCE");
+  });
+
   it("scanning an accessory resolves to 'scan the parent'", async () => {
     const s = await seed();
     const { light, cable } = await lightWithAccessoriesOnProject(s);

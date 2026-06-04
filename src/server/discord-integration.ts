@@ -13,6 +13,11 @@ import {
 } from "@/lib/validations/discord-integration";
 import { decryptSecret, encryptSecret } from "@/lib/crypto/secret-vault";
 import { deployCommands as deployCommandsToDiscord } from "@/lib/discord/deploy-commands";
+import {
+  getBotState,
+  restartBot as restartBotProcess,
+  stopBot as stopBotProcess,
+} from "@/lib/discord/bot-process";
 
 function generateSecret(): string {
   return crypto.randomBytes(32).toString("base64url");
@@ -76,7 +81,28 @@ export async function getDiscordIntegrationSettings() {
     roster,
     summary: { linkedCount, totalCrew: roster.length },
     recentActivity,
+    bot: getBotState(),
   });
+}
+
+/**
+ * Stop the running in-process bot (if any) and start a fresh one with the
+ * current integration row. Called automatically after every config-changing
+ * save so the admin doesn't need to `pm2 restart gearflow` to apply changes.
+ * Returns the new running state so the UI toast can confirm what happened.
+ */
+export async function restartDiscordBot() {
+  await requirePermission("orgSettings", "update");
+  await restartBotProcess();
+  const state = getBotState();
+  return state;
+}
+
+/** Stop the running bot. Called when the admin toggles Enabled off. */
+export async function stopDiscordBot() {
+  await requirePermission("orgSettings", "update");
+  await stopBotProcess();
+  return getBotState();
 }
 
 /** Create the integration row on first visit (never-configured → configured). */

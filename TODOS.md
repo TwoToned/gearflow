@@ -165,7 +165,20 @@ Hardened post-review: TOCTOU-safe attach, detach-while-deployed guard,
 deleteAsset blocks parents with accessories, symmetric kit↔accessory dual
 membership guard. 26 integration tests. Follow-ups (deferred, see below).
 
+### ~~Model-level bulk accessories~~ ✅ SHIPPED
+Shipped in v0.13.0.0. `ModelBulkAccessory` join table — every asset of a
+model inherits its defaults. Office add and warehouse scan-time both union
+the asset's own bulk children with the model's defaults, deduped by
+`bulkAssetId` so asset-level overrides win. UI: Accessories section on the
+Model detail page; asset detail shows inherited rows tagged "from model".
+5 integration tests.
+
 ### Accessories — Follow-ups from v0.11.0.0
+- **Scan-time quantity overrides at re-scan.** `expandAccessoriesForAsset`
+  dedupes by `bulkAssetId` only. If a model accessory expanded with qty=1
+  and an operator later adds an asset-level override with qty=4 for the
+  same bulkAsset, a re-scan won't update the existing row. Either update
+  the existing row's quantity, or skip silently and document. P3.
 - **Re-enable `DEDICATED` bulk allocation.** Server-side support exists; UI
   is currently SHIPS_WITH-only because DEDICATED was double-counting against
   live availability (`adjustBulkAvailability` decrement at attach + the

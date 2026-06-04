@@ -11,6 +11,7 @@ import { serialize } from "@/lib/serialize";
 import { computeOverbookedStatus } from "@/lib/availability";
 import { recalculateProjectTotals } from "@/server/line-items";
 import { logActivity } from "@/lib/activity-log";
+import { emitIfDiscordEnabled } from "@/lib/services/outbox-service";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
 
@@ -347,7 +348,8 @@ export async function createProject(data: ProjectFormValues & { isTemplate?: boo
     : parsed.projectNumber!;
 
   try {
-    const result = await prisma.project.create({
+    const result = await prisma.$transaction(async (tx) => {
+      const project = await tx.project.create({
       data: {
         organizationId,
         isTemplate,
@@ -385,6 +387,25 @@ export async function createProject(data: ProjectFormValues & { isTemplate?: boo
         invoicedTotal: parsed.invoicedTotal ?? null,
         tags: parsed.tags,
       },
+      });
+
+      // Transactional outbox: a Discord channel-sync event that rolls back with
+      // the project if the txn fails. Templates never get a channel.
+      if (!isTemplate) {
+        await emitIfDiscordEnabled(tx, {
+          organizationId,
+          eventType: "project.created",
+          payload: {
+            projectId: project.id,
+            projectNumber: project.projectNumber,
+            name: project.name,
+            status: project.status,
+          },
+          dedupeKey: `project.created:${project.id}`,
+        });
+      }
+
+      return project;
     });
 
     await logActivity({

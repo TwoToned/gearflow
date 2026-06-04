@@ -97,12 +97,19 @@ primitives:
   sub-hire order / Move to category. "Save as Template" is hidden by design
   (8I — templates support own stock only).
 - **`LineItemRow`** — ProjectLineItem. Drag id `li-<id>`. Pencil + kebab
-  (Move / Delete).
+  (Move to category / Move to group / Delete). The two move entries
+  opened a single combined dialog from v0.9.1.0 through v0.9.2.1; that
+  dialog was split into two focused dialogs in v0.9.3.0 because mixing
+  "land under a category" and "land inside a group" in one picker kept
+  surprising users (the category-only path is lossless, the group path
+  changes the item's owning category).
 
 Every row supports `e`/`m`/`d` keyboard shortcuts on hover via the
 `useRowShortcuts` hook — Edit / Move / Delete. Skipped when focus is in
 an input, dialog, or open menu (decision 8J). On `GroupRow`, `m` binds
-to "Move to category".
+to "Move to category". On `LineItemRow`, `m` binds to "Move to
+category" — the broader, lossless pick. Group moves need the explicit
+kebab path.
 
 ## Dialogs
 
@@ -127,6 +134,26 @@ All under `src/components/projects/`:
   for existing destinations and `createCategoryAndPlaceGroup` for new
   ones. Destination is required (no "uncategorised" option), so the
   Confirm button stays disabled until a category is picked.
+- **`MoveItemToCategoryDialog`** — picks a destination `ProjectCategory`
+  (or "Uncategorized") for a single line item. Always lands the item
+  with `groupId: null` so it appears as a standalone item under the
+  category (or in the project's top-level uncategorised zone). Submits
+  `{ categoryId, groupId: null }` to `moveLineItemToGroup` via the
+  parent-owned mutation.
+- **`MoveItemToGroupDialog`** — picks a destination `ProjectGroup` for a
+  single line item. The picker lists every group in the project,
+  labelled `<category> > <group>` and clustered by category via native
+  `<optgroup>` so projects with many categories stay scannable. The
+  item's `categoryId` follows the picked group's owning category.
+  Empty-state copy with a Cancel button when the project has zero
+  groups instead of an empty dropdown.
+
+Both move-item dialogs replaced the combined `move-line-item-dialog.tsx`
+in v0.9.3.0. The server action (`moveLineItemToGroup`) is unchanged —
+this is purely a UI split. The combined dialog landed in v0.9.1.0 and
+got a `(no group)` escape hatch in v0.9.2.1; field reports kept showing
+the mixed picker confused users about whether their pick would also
+re-home the item's category, so we split it.
 
 ## DnD (drag-and-drop)
 

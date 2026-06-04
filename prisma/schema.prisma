@@ -2851,11 +2851,28 @@ model DiscordIntegration {
   isEnabled     Boolean @default(false)
   signingSecret String // Per-org HMAC shared secret (bot signs requests; rotatable)
 
-  // Guild binding (moved from env to row — multi-tenant)
-  guildId           String?
-  projectCategoryId String? // Category new project channels are created under
+  // Bot credentials — moved off the bot host into the admin page so there's one
+  // place to configure things. discordBotToken is AES-256-GCM encrypted at rest
+  // (key derived from BETTER_AUTH_SECRET); see src/lib/crypto/secret-vault.ts.
+  discordBotToken      String? // ENCRYPTED ciphertext; never returned in admin reads
+  discordApplicationId String?
+
+  // Channel binding
+  guildId           String? // Discord server this org is bound to
+  projectCategoryId String? // category active project channels are created under
+  archiveCategoryId String? // category archived project channels move into (null = no move, just lock)
   alertChannelId    String? // #asset-alerts (out-of-service faults)
   auditChannelId    String? // #gearflow-log (automated action feed)
+
+  // Channel lifecycle rules — when to create/archive a project channel.
+  // Defaults: create when a project hits CONFIRMED (skips the early enquiry
+  // noise); archive when it hits any terminal status.
+  channelCreateOnStatuses  ProjectStatus[] @default([CONFIRMED])
+  channelArchiveOnStatuses ProjectStatus[] @default([COMPLETED, INVOICED, RETURNED, CANCELLED])
+
+  // Behavior toggles for v1 — knobs the admin can flip without a deploy.
+  postWelcomeOnCreate        Boolean @default(true) // bot posts a project summary embed when a channel is first created
+  postFaultsToProjectChannel Boolean @default(true) // /asset fault echoes a summary in the project's channel (in addition to ephemeral confirmation)
 
   // Enrollment settings
   linkTokenTtlMinutes Int     @default(15)

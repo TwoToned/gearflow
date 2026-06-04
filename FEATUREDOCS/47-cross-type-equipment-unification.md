@@ -99,8 +99,12 @@ All under `src/components/projects/`:
 
 - **`UnifiedAddDialog`** — single dialog for adding line items. Segmented
   switcher: Own stock / Kit / Sub-hire / Custom. Switching reshapes the
-  body inline. Sub-hire bounces to the existing `SubHireOrderDialog` so
-  the PO workflow stays separate (plan 4B).
+  body inline for all four kinds, including sub-hire (see
+  `SubHireAddForm` in the same folder). Sub-hire submit creates the
+  order via `createSubHire`, closes this dialog, and opens
+  `SubHireOrderDialog` on the new order in manage view so the user can
+  immediately add items. The legacy `onOpenSubHire` bounce prop was
+  removed in v0.9.1.0.
 - **`PriceEditDialog`** — single dialog for editing group pricing.
   `kind=project` shows a single price input; `kind=subHire` shows charge +
   cost + computed margin per unit.

@@ -17,7 +17,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { Plus, FolderPlus, Package, Pencil } from "lucide-react";
+import { Plus, FolderPlus, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
 import { getProjectCategories } from "@/server/project-categories";
@@ -57,7 +57,6 @@ import {
 } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/formatters";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { CanDo } from "@/components/auth/permission-gate";
 import { UnifiedAddDialog, type UnifiedAddKind } from "./unified-add-dialog";
 import { MoveSubHireGroupDialog } from "./move-sub-hire-group-dialog";
 import { PriceEditDialog, type PriceEditTarget } from "./price-edit-dialog";
@@ -689,55 +688,20 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     <div className="space-y-3">
       {/* Toolbar */}
       <div className="flex items-center gap-2">
+        {/* Single Add entry — opens UnifiedAddDialog. Tabs inside the
+            dialog (own-stock / kit / sub-hire / custom) replace the four
+            old toolbar buttons. Defaults to whichever kind was used last,
+            falling back to "own-stock". */}
         <Button
           size="sm"
           className="gap-1.5"
           onClick={() => {
             setUnifiedAddTarget({});
-            setUnifiedAddKind("own-stock");
             setShowUnifiedAdd(true);
           }}
         >
           <Plus className="h-3.5 w-3.5" />
-          Add Equipment
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          onClick={() => {
-            setUnifiedAddTarget({});
-            setUnifiedAddKind("kit");
-            setShowUnifiedAdd(true);
-          }}
-        >
-          <Package className="h-3.5 w-3.5" />
-          Add Kit
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          onClick={() => {
-            setUnifiedAddTarget({});
-            setUnifiedAddKind("custom");
-            setShowUnifiedAdd(true);
-          }}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Custom Item
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          onClick={() => {
-            setManagingSubHireId(null);
-            setShowSubHireOrderDialog(true);
-          }}
-        >
-          <ArrowLeftRight className="h-3.5 w-3.5" />
-          Sub-Hire
+          Add
         </Button>
         <Button
           variant="outline"
@@ -748,6 +712,15 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
           <FolderPlus className="h-3.5 w-3.5" />
           Add Group
         </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => setShowAddCategory(true)}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add Category
+        </Button>
         <div className="flex-1" />
         <Button
           variant={showCostColumn ? "default" : "outline"}
@@ -757,15 +730,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
           title="Toggle the supplier-cost column so margin is visible at a glance"
         >
           {showCostColumn ? "Hide margin" : "Show margin"}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          onClick={() => setShowAddCategory(true)}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Add Category
         </Button>
       </div>
 
@@ -1107,19 +1071,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
               <h3 className="text-sm font-medium text-fg-2">Sub-Hire Orders</h3>
               <span className="text-xs text-fg-4">({projectSubHires.length})</span>
             </div>
-            <CanDo resource="subHire" action="create">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setManagingSubHireId(null);
-                  setShowSubHireOrderDialog(true);
-                }}
-              >
-                <Plus className="mr-1 h-3 w-3" />
-                New
-              </Button>
-            </CanDo>
           </div>
           <div className="divide-y divide-border/30">
             {projectSubHires.map((sh: Record<string, unknown>) => {
@@ -1357,9 +1308,18 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
         targetLabel={unifiedAddTarget.label}
         categories={categories as CategoryData[]}
         onInvalidate={invalidate}
-        onOpenSubHire={() => {
-          setManagingSubHireId(null);
-          setShowSubHireOrderDialog(true);
+        onSubHireCreated={(newSubHireId) => {
+          // Hand off from the inline create form to the manage view so
+          // the user can add items to their new order without a context
+          // switch. Close the unified dialog first, then open the order
+          // dialog on the next tick to avoid a same-frame open/close
+          // race in Radix Dialog.
+          setShowUnifiedAdd(false);
+          setUnifiedAddTarget({});
+          setTimeout(() => {
+            setManagingSubHireId(newSubHireId);
+            setShowSubHireOrderDialog(true);
+          }, 0);
         }}
       />
 

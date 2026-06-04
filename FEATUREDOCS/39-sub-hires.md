@@ -33,11 +33,12 @@ CANCELLED CANCELLED  CANCELLED
 Sub-hires are managed via a **dialog** on the project equipment tab:
 
 1. **Sub-Hire Orders section** — expandable rows below the equipment table showing all sub-hire orders for the project. Each row shows order number, supplier, status, item count, charge and margin. Clicking the chevron expands to show individual items grouped by sub-hire groups.
-2. **"Sub-Hire Orders" toolbar button** — opens the dialog which has three views:
-   - **List view** — shows all sub-hires for the project with create button
-   - **Create view** — supplier picker, dates, showOnDocs toggle, notes
+2. **Unified "Add" dialog → Sub-hire tab** — the single equipment toolbar `Add` button opens `UnifiedAddDialog`. The Sub-hire tab uses `SubHireAddForm` to capture supplier, supplier reference, hire start/end, and notes. Submitting calls `createSubHire`, closes the unified dialog, and opens `SubHireOrderDialog` on the new order in manage view so items can be added immediately. The standalone "Sub-Hire" toolbar button and the "New" button at the top of the Sub-Hire Orders panel were removed in v0.9.1.0 — both were duplicates of this flow.
+3. **`SubHireOrderDialog` views** — once open on an existing order, the dialog still has the same three views it always had:
+   - **List view** — shows all sub-hires for the project
+   - **Create view** — still available (used by manual entry points / templates), but the equipment-tab path goes straight to manage view on the freshly-created order
    - **Manage view** — full sub-hire detail with groups, items table, pricing mode, placement pickers, status transitions, delete
-3. **Overbook shortcut** — the "Sub-hire N units instead" link in the add-equipment dialog opens the sub-hire dialog instead of navigating away
+4. **Overbook shortcut** — the "Sub-hire N units instead" link in the add-equipment dialog opens the sub-hire flow instead of navigating away
 
 ## Display Toggles (Two-Toggle System)
 

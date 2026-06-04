@@ -5,6 +5,43 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1.0] - 2026-06-04
+
+Unified the project equipment "Add" surface. The four separate toolbar
+buttons (Add Equipment / Add Kit / Custom Item / Sub-Hire) collapse into
+one dialog that picks kind via a tab strip, and sub-hire creation now
+lives inline alongside equipment, kits, and custom items instead of
+bouncing to a separate window. The "New" button in the Sub-Hire Orders
+panel is gone for the same reason. Add Group and Add Category now sit
+next to each other in the toolbar so the structure-creation cluster
+reads as one group instead of being split across a spacer.
+
+### Added
+- `SubHireAddForm` — inline form mirroring `EquipmentAddForm` /
+  `KitAddForm` / `CustomItemAddForm`. Captures supplier, supplier
+  reference, hire start/end, and notes. After `createSubHire` succeeds,
+  the unified dialog closes and `SubHireOrderDialog` opens on the new
+  order in manage view so the user can immediately add items.
+- `UnifiedAddDialog` now renders one of four kinds inline: `own-stock`,
+  `kit`, `custom`, or `sub-hire`. The `onOpenSubHire` bounce prop is
+  removed.
+
+### Changed
+- Equipment toolbar reduced to three buttons: `Add` (unified, opens the
+  add dialog at the last selected kind), `Add Group`, `Add Category`.
+  The four-button add cluster is gone.
+- Group-kebab `Add Equipment` and `Add Kit` actions still pre-set the
+  unified dialog's kind so the per-group context is preserved.
+- `Add Category` moved next to `Add Group` (was on the right of the
+  spacer next to Show margin) so structure-creation buttons cluster.
+
+### Removed
+- Standalone "Sub-Hire" toolbar button — duplicate of the unified Add
+  dialog's Sub-hire tab.
+- "New" button at the top of the Sub-Hire Orders panel — same duplicate.
+- The `onOpenSubHire` callback prop on `UnifiedAddDialog` and the
+  bounce-to-other-dialog behaviour it implemented.
+
 ## [0.9.0.0] - 2026-06-04
 
 Cross-type group/category unification for the project equipment tab.

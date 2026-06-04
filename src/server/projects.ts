@@ -11,6 +11,7 @@ import { serialize } from "@/lib/serialize";
 import { computeOverbookedStatus } from "@/lib/availability";
 import { recalculateProjectTotals } from "@/server/line-items";
 import { logActivity } from "@/lib/activity-log";
+import { emitIfDiscordEnabled } from "@/lib/services/outbox-service";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
 
@@ -347,7 +348,8 @@ export async function createProject(data: ProjectFormValues & { isTemplate?: boo
     : parsed.projectNumber!;
 
   try {
-    const result = await prisma.project.create({
+    const result = await prisma.$transaction(async (tx) => {
+      const project = await tx.project.create({
       data: {
         organizationId,
         isTemplate,
@@ -385,6 +387,25 @@ export async function createProject(data: ProjectFormValues & { isTemplate?: boo
         invoicedTotal: parsed.invoicedTotal ?? null,
         tags: parsed.tags,
       },
+      });
+
+      // Transactional outbox: a Discord channel-sync event that rolls back with
+      // the project if the txn fails. Templates never get a channel.
+      if (!isTemplate) {
+        await emitIfDiscordEnabled(tx, {
+          organizationId,
+          eventType: "project.created",
+          payload: {
+            projectId: project.id,
+            projectNumber: project.projectNumber,
+            name: project.name,
+            status: project.status,
+          },
+          dedupeKey: `project.created:${project.id}`,
+        });
+      }
+
+      return project;
     });
 
     await logActivity({
@@ -411,7 +432,15 @@ export async function updateProject(id: string, data: ProjectFormValues) {
   const { organizationId, userId, userName } = await requirePermission("project", "update");
   const parsed = projectSchema.parse(data);
 
-  const updated = await prisma.project.update({
+  // Read the prior status so a project-form save that flips status emits the
+  // same outbox event as updateProjectStatus would.
+  const before = await prisma.project.findUnique({
+    where: { id, organizationId },
+    select: { status: true, isTemplate: true },
+  });
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const result = await tx.project.update({
     where: { id, organizationId },
     data: {
       projectNumber: parsed.projectNumber,
@@ -448,6 +477,17 @@ export async function updateProject(id: string, data: ProjectFormValues) {
       invoicedTotal: parsed.invoicedTotal ?? null,
       tags: parsed.tags,
     },
+    });
+
+    if (before && !before.isTemplate && before.status !== parsed.status) {
+      await emitIfDiscordEnabled(tx, {
+        organizationId,
+        eventType: "project.status.changed",
+        payload: { projectId: id, fromStatus: before.status, toStatus: parsed.status },
+        dedupeKey: `project.status.changed:${id}:${before.status}->${parsed.status}:${Date.now()}`,
+      });
+    }
+    return result;
   });
 
   // Recalculate totals if tax rate changed
@@ -490,9 +530,22 @@ export async function updateProjectStatus(
       message: "Templates don't have a status — they're a starting point for creating projects.",
     });
   }
-  const updated = await prisma.project.update({
-    where: { id, organizationId },
-    data: { status },
+  const updated = await prisma.$transaction(async (tx) => {
+    const result = await tx.project.update({
+      where: { id, organizationId },
+      data: { status },
+    });
+    if (project.status !== status) {
+      await emitIfDiscordEnabled(tx, {
+        organizationId,
+        eventType: "project.status.changed",
+        payload: { projectId: id, fromStatus: project.status, toStatus: String(status) },
+        // Include status + a monotonic timestamp so a rapid CONFIRMED→PREPPING→CONFIRMED
+        // sequence doesn't collide on the unique dedupeKey.
+        dedupeKey: `project.status.changed:${id}:${project.status}->${String(status)}:${Date.now()}`,
+      });
+    }
+    return result;
   });
 
   await logActivity({

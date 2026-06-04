@@ -179,6 +179,10 @@ model Organization {
   testTagAuditorTokens     TestTagAuditorToken[]
   wooCommerceIntegration   WooCommerceIntegration?
   wooCommerceOrderLogs     WooCommerceOrderLog[]
+  discordIntegration       DiscordIntegration?
+  discordOutbox            DiscordOutbox[]
+  discordAccountLinks      DiscordAccountLink[]
+  discordLinkTokens        DiscordLinkToken[]
   savedReports             SavedReport[]
   checkItems               CheckItem[]
   modelCheckItems          ModelCheckItem[]
@@ -1268,6 +1272,13 @@ model DamageEvent {
   maintenanceRecord   MaintenanceRecord?   @relation(fields: [maintenanceRecordId], references: [id], onDelete: SetNull)
   createdById         String
   createdBy           User                 @relation("DamageEventCreatedBy", fields: [createdById], references: [id])
+  // True reporter when a fault is logged from Discord by a (possibly non-User)
+  // crew member. createdById still holds a real User (the reporter's linked User,
+  // else a system actor) to satisfy the required FK — see discord fault service.
+  reportedByCrewMemberId String?
+  reportedByCrewMember   CrewMember? @relation("DamageReportedBy", fields: [reportedByCrewMemberId], references: [id], onDelete: SetNull)
+  // Discord interaction id — makes the bot→API fault POST idempotent on retry.
+  discordIdempotencyKey String? @unique
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 
@@ -1276,6 +1287,7 @@ model DamageEvent {
   @@index([assetId])
   @@index([bulkAssetId])
   @@index([lineItemUnitId])
+  @@index([reportedByCrewMemberId])
   @@map("damage_event")
 }
 
@@ -1392,6 +1404,7 @@ model Project {
   invoicedTotal         Decimal?      @db.Decimal(12, 2)
   tags                  String[]      @default([])
   isTemplate            Boolean       @default(false)
+  discordChannelId      String?       @unique // Discord channel synced for this project (null = not yet created)
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
 
@@ -1645,16 +1658,16 @@ model ProjectCategory {
 // unified group list per category.
 
 model CategorySlot {
-  id                String           @id @default(cuid())
+  id                String          @id @default(cuid())
   projectCategoryId String
-  projectCategory   ProjectCategory  @relation(fields: [projectCategoryId], references: [id], onDelete: Cascade)
+  projectCategory   ProjectCategory @relation(fields: [projectCategoryId], references: [id], onDelete: Cascade)
   sortOrder         Int
-  projectGroupId    String?          @unique
-  projectGroup      ProjectGroup?    @relation(fields: [projectGroupId], references: [id], onDelete: Cascade)
-  subHireGroupId    String?          @unique
-  subHireGroup      SubHireGroup?    @relation(fields: [subHireGroupId], references: [id], onDelete: Cascade)
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  projectGroupId    String?         @unique
+  projectGroup      ProjectGroup?   @relation(fields: [projectGroupId], references: [id], onDelete: Cascade)
+  subHireGroupId    String?         @unique
+  subHireGroup      SubHireGroup?   @relation(fields: [subHireGroupId], references: [id], onDelete: Cascade)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
   @@unique([projectCategoryId, sortOrder])
   @@index([projectCategoryId])
@@ -2290,6 +2303,11 @@ model CrewMember {
   crewRoleId     String?
   crewRole       CrewRole?           @relation(fields: [crewRoleId], references: [id], onDelete: SetNull)
 
+  // Discord integration
+  discordLink       DiscordAccountLink?
+  discordLinkTokens DiscordLinkToken[]
+  reportedDamageEvents DamageEvent[] @relation("DamageReportedBy")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   isActive  Boolean  @default(true)
@@ -2880,6 +2898,132 @@ enum WooOrderLogStatus {
   COMPLETED
   FAILED
   DUPLICATE
+}
+
+// ─── Discord Integration ─────────────────────────────────────────────────────
+// Per-org Discord bot integration. Mirrors WooCommerceIntegration (HMAC per-org
+// secret). The bot holds NO DB access — it polls DiscordOutbox and calls signed
+// /api/discord/v1/* endpoints. Source of truth is always GearFlow.
+
+model DiscordIntegration {
+  id             String       @id @default(cuid())
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  isEnabled     Boolean @default(false)
+  signingSecret String // Per-org HMAC shared secret (bot signs requests; rotatable)
+
+  // Bot credentials — moved off the bot host into the admin page so there's one
+  // place to configure things. discordBotToken is AES-256-GCM encrypted at rest
+  // (key derived from BETTER_AUTH_SECRET); see src/lib/crypto/secret-vault.ts.
+  discordBotToken      String? // ENCRYPTED ciphertext; never returned in admin reads
+  discordApplicationId String?
+
+  // Channel binding
+  guildId           String? // Discord server this org is bound to
+  projectCategoryId String? // category active project channels are created under
+  archiveCategoryId String? // category archived project channels move into (null = no move, just lock)
+  alertChannelId    String? // #asset-alerts (out-of-service faults)
+  auditChannelId    String? // #gearflow-log (automated action feed)
+
+  // Channel lifecycle rules — when to create/archive a project channel.
+  // Defaults: create when a project hits CONFIRMED (skips the early enquiry
+  // noise); archive when it hits any terminal status.
+  channelCreateOnStatuses  ProjectStatus[] @default([CONFIRMED])
+  channelArchiveOnStatuses ProjectStatus[] @default([COMPLETED, INVOICED, RETURNED, CANCELLED])
+
+  // Behavior toggles for v1 — knobs the admin can flip without a deploy.
+  postWelcomeOnCreate        Boolean @default(true) // bot posts a project summary embed when a channel is first created
+  postFaultsToProjectChannel Boolean @default(true) // /asset fault echoes a summary in the project's channel (in addition to ephemeral confirmation)
+
+  // Enrollment settings
+  linkTokenTtlMinutes Int     @default(15)
+  enrollmentOpen      Boolean @default(true)
+
+  // Health — bot writes lastHeartbeatAt on poll; UI derives status, never blocks on the bot
+  lastHeartbeatAt DateTime?
+  botUserId       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("discord_integration")
+}
+
+// Transactional outbox. Rows are written INSIDE the same Prisma transaction as the
+// project/crew mutation, so an event cannot survive a rolled-back txn. The bot polls
+// for PENDING rows ordered by monotonic id, claims, processes, marks PROCESSED.
+model DiscordOutbox {
+  id             Int          @id @default(autoincrement()) // monotonic cursor
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  eventType String // "project.created" | "project.archived" | "crew.assignment.changed" | "discord.link.confirmed"
+  payload   Json
+  dedupeKey String @unique // e.g. "crew.assignment.changed:{assignmentId}:{version}"
+
+  status        DiscordOutboxStatus @default(PENDING)
+  attemptCount  Int                 @default(0)
+  nextAttemptAt DateTime?
+  lockedAt      DateTime?
+  processedAt   DateTime?
+  lastError     String?
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId, id])
+  @@index([status, nextAttemptAt])
+  @@map("discord_outbox")
+}
+
+enum DiscordOutboxStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
+// Resolved Discord ↔ person link. Org-scoped (a freelancer may exist in multiple
+// orgs). One Discord user maps to one CrewMember per org, and vice-versa.
+model DiscordAccountLink {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  crewMemberId   String       @unique
+  crewMember     CrewMember   @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
+
+  discordUserId String
+
+  linkedAt   DateTime @default(now())
+  linkedById String? // User who performed an admin link, if applicable
+
+  @@unique([organizationId, discordUserId])
+  @@index([organizationId])
+  @@index([discordUserId])
+  @@map("discord_account_link")
+}
+
+// Single-use enrollment token. The raw token is NEVER stored — only its sha256 hash.
+// discordUserId is bound at issue time so a leaked link cannot attach a different
+// Discord account to the victim (anti-hijack). Consumed atomically.
+model DiscordLinkToken {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  crewMemberId   String
+  crewMember     CrewMember   @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
+
+  tokenHash     String  @unique // sha256(rawToken)
+  discordUserId String // invoker's Discord ID, bound at issue time
+  guildId       String?
+
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([organizationId])
+  @@index([expiresAt])
+  @@map("discord_link_token")
 }
 
 // ─── Saved Reports ──────────────────────────────────────────────────────────

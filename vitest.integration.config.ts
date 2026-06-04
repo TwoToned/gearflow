@@ -16,6 +16,9 @@ export default defineConfig({
   },
   test: {
     globals: true,
+    // Injected before any module loads so env.ts captures it (the discord route
+    // wrapper gates on the global bot Bearer).
+    env: { DISCORD_BOT_TOKEN: "test-bot-token" },
     include: ["src/**/*.int.test.ts", "tests/**/*.int.test.ts"],
     // Forks pool: each test file gets its own Node process, so the shared
     // testPrisma client is properly isolated per file. Avoids the test

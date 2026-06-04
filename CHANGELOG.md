@@ -4,6 +4,66 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.12.0.0] - 2026-06-04
+
+GearFlow now bridges Discord. Every project gets its own private channel,
+crew can link their Discord accounts via email, and they can look up assets
+and log faults from their phone without opening the app. The bot runs
+in-process — there's nothing to deploy separately, no `.env` to manage. Admins
+configure everything at **Settings → Discord**.
+
+### Added
+- **Discord integration.** Per-org config row, transactional outbox for events,
+  per-project private channels created automatically when a project hits a
+  configurable status (default: `CONFIRMED`) and archived to a separate
+  category when it hits a terminal status (default: `COMPLETED, INVOICED,
+  RETURNED, CANCELLED`). Crew get channel access as soon as they're assigned;
+  late-linking crew get retroactive access on confirm.
+- **`/link [email]` enrollment.** Crew run `/link` in Discord, get a magic
+  link emailed to their GearFlow profile, and click to confirm. Anti-hijack
+  hardened (the token binds the invoker's Discord ID at issue time), constant
+  "if that email is on file" response (no enumeration oracle), durably
+  rate-limited (3/hr per Discord user, 3/day per crew member).
+- **`/asset code:TTP-042`.** Linked crew look up any asset by tag from
+  Discord: current status, test-and-tag validity, and which project it's
+  deployed on.
+- **`/fault code:… description:… severity:MINOR|MAJOR hold:true`.** Crew log
+  a DamageEvent from Discord. `hold` flips the asset to `IN_MAINTENANCE` (needs
+  `maintenance:create`). Idempotent on the Discord interaction id — a retry
+  never double-logs.
+- **Admin Discord settings page** (`/settings/discord`). Discord bot token
+  (encrypted at rest via AES-256-GCM keyed off `BETTER_AUTH_SECRET`),
+  application id, guild id, project + archive categories, channel lifecycle
+  rules (multi-select status arrays), welcome-on-create + fault-echo behaviour
+  toggles, signing-secret rotation, linked-accounts roster (linked + pending
+  in one table), recent activity.
+- **One-click bring-up.** A **Deploy commands & start bot** button on the admin
+  page pushes the slash command registry to Discord AND restarts the
+  in-process bot so it picks up the latest credentials and config — no
+  `pm2 restart gearflow` needed. Every config-changing save (toggle Enabled,
+  save token, save settings) auto-restarts the bot for the same reason. A
+  live "Bot running" / "Bot stopped" pill on the connection-health card
+  surfaces gateway state. `startBot()` awaits the Discord `ClientReady`
+  handshake (10s timeout) so the post-restart status read is accurate.
+
+### Changed
+- **Bot architecture: in-process, no separate service.** The bot lives inside
+  the GearFlow Next.js server (booted by `instrumentation.ts`). Slash commands
+  call services directly; the outbox poller reads the DB directly. Same
+  service-layer invariants (`requireActorPermission`, transactional outbox,
+  idempotent converge) as a separate service would have — but with one process,
+  one call path, and no HMAC trust boundary to enforce. **Zero env vars** on
+  the host for Discord.
+- **`DamageEvent` records the true reporter.** New nullable
+  `reportedByCrewMemberId` preserves who filed the fault when a non-User
+  freelancer reports it from Discord, while `createdById` keeps a real User to
+  satisfy the existing FK (`20260604130000_discord_fault_reporter` migration).
+  A new unique `discordIdempotencyKey` makes retried fault POSTs safe.
+- **Project + crew-assignment writes emit transactional Discord events.**
+  `createProject`, `createAssignment`, `deleteAssignment`, `updateProject`, and
+  `updateProjectStatus` wrap their Prisma calls in a `$transaction` and append
+  a `DiscordOutbox` row inside it — a rolled-back mutation never leaks a
+  channel-sync event. Orgs without an enabled integration emit nothing.
 
 ## [0.11.0.0] - 2026-06-04
 
@@ -49,42 +109,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `addSerializedItemToKit` (single + batch) rejects an asset that's already an
   accessory of another asset — symmetric to the existing kit-to-accessory
   guard.
-
-## [0.10.0.0] - 2026-06-04
-
-Project groups can now live in the Uncategorized zone, matching how sub-hire groups already work. Deleting a category no longer destroys the groups inside it.
-
-### Added
-- **Project groups in Uncategorized.** Both the toolbar "Add Group" dialog and
-  each group's "Move" dialog now offer an Uncategorized destination. Groups
-  created without a category live alongside orphan sub-hire groups in the
-  project's Uncategorized zone, with the same kebab actions (Edit, Edit Price,
-  Add Equipment / Kit, Move, Delete) as categorised groups.
-- **`getUncategorizedProjectGroups(projectId)` server query** — mirrors
-  `getUncategorizedSubHireGroups`, scoped to org + project. The equipment tab
-  uses it to render orphan project groups in the same loop as orphan sub-hires.
-
-### Changed
-- **`ProjectGroup.categoryId` is now nullable** (Prisma schema + DB migration
-  `20260604030000_uncategorized_project_groups`). The FK's `onDelete` switched
-  from `CASCADE` to `SET NULL`, so deleting a `ProjectCategory` orphans its
-  groups instead of destroying them along with all their line items. Groups
-  surface in the Uncategorized zone afterwards.
-- **`createProjectGroup` sortOrder scope** — the aggregate that picks the next
-  `sortOrder` now includes `projectId`. Without this, null-category groups
-  across every project in the org would have shared one sortOrder pool.
-- **Validation schemas accept `null` categoryId** —
-  `projectGroupSchema.categoryId` and
-  `moveProjectGroupToCategorySchema.categoryId` are now nullable. The old
-  v0.9.3.0 unit test that asserted "rejects a null categoryId" flipped to
-  assert acceptance.
-
-### Fixed
-- **`moveProjectGroupToCategory` to Uncategorized.** When the destination is
-  null, the action skips advisory locking and category-slot inserts, drops any
-  existing slot for the group, and clears the line items' `categoryId` —
-  matching the sub-hire equivalent's behaviour.
-
 ## [0.9.3.0] - 2026-06-04
 
 The line-item Move action splits into two clearer choices.

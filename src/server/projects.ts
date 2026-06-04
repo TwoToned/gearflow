@@ -432,7 +432,15 @@ export async function updateProject(id: string, data: ProjectFormValues) {
   const { organizationId, userId, userName } = await requirePermission("project", "update");
   const parsed = projectSchema.parse(data);
 
-  const updated = await prisma.project.update({
+  // Read the prior status so a project-form save that flips status emits the
+  // same outbox event as updateProjectStatus would.
+  const before = await prisma.project.findUnique({
+    where: { id, organizationId },
+    select: { status: true, isTemplate: true },
+  });
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const result = await tx.project.update({
     where: { id, organizationId },
     data: {
       projectNumber: parsed.projectNumber,
@@ -469,6 +477,17 @@ export async function updateProject(id: string, data: ProjectFormValues) {
       invoicedTotal: parsed.invoicedTotal ?? null,
       tags: parsed.tags,
     },
+    });
+
+    if (before && !before.isTemplate && before.status !== parsed.status) {
+      await emitIfDiscordEnabled(tx, {
+        organizationId,
+        eventType: "project.status.changed",
+        payload: { projectId: id, fromStatus: before.status, toStatus: parsed.status },
+        dedupeKey: `project.status.changed:${id}:${before.status}->${parsed.status}:${Date.now()}`,
+      });
+    }
+    return result;
   });
 
   // Recalculate totals if tax rate changed
@@ -511,9 +530,22 @@ export async function updateProjectStatus(
       message: "Templates don't have a status — they're a starting point for creating projects.",
     });
   }
-  const updated = await prisma.project.update({
-    where: { id, organizationId },
-    data: { status },
+  const updated = await prisma.$transaction(async (tx) => {
+    const result = await tx.project.update({
+      where: { id, organizationId },
+      data: { status },
+    });
+    if (project.status !== status) {
+      await emitIfDiscordEnabled(tx, {
+        organizationId,
+        eventType: "project.status.changed",
+        payload: { projectId: id, fromStatus: project.status, toStatus: String(status) },
+        // Include status + a monotonic timestamp so a rapid CONFIRMED→PREPPING→CONFIRMED
+        // sequence doesn't collide on the unique dedupeKey.
+        dedupeKey: `project.status.changed:${id}:${project.status}->${String(status)}:${Date.now()}`,
+      });
+    }
+    return result;
   });
 
   await logActivity({

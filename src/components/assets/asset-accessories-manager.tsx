@@ -33,6 +33,14 @@ type BulkChild = {
   id: string;
   quantity: number;
   allocationMode: "SHIPS_WITH" | "DEDICATED";
+  bulkAssetId?: string | null;
+  bulkAsset?: { assetTag?: string | null; model?: { name?: string | null } | null } | null;
+};
+
+type InheritedBulk = {
+  id: string;
+  quantity: number;
+  bulkAssetId: string;
   bulkAsset?: { assetTag?: string | null; model?: { name?: string | null } | null } | null;
 };
 
@@ -40,9 +48,19 @@ interface Props {
   assetId: string;
   childAssets: SerializedChild[];
   childBulkItems: BulkChild[];
+  /** Bulk accessories from the asset's MODEL — read-only, render with a "from model" tag.
+   *  An entry is hidden when the asset has its own row for the same bulkAssetId (override). */
+  inheritedBulkItems?: InheritedBulk[];
 }
 
-export function AssetAccessoriesManager({ assetId, childAssets, childBulkItems }: Props) {
+export function AssetAccessoriesManager({
+  assetId,
+  childAssets,
+  childBulkItems,
+  inheritedBulkItems = [],
+}: Props) {
+  const ownBulkIds = new Set(childBulkItems.map((c) => c.bulkAssetId).filter(Boolean) as string[]);
+  const visibleInherited = inheritedBulkItems.filter((i) => !ownBulkIds.has(i.bulkAssetId));
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"serialized" | "bulk">("serialized");
@@ -52,7 +70,8 @@ export function AssetAccessoriesManager({ assetId, childAssets, childBulkItems }
   const [bulkQty, setBulkQty] = useState(1);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["asset"] });
-  const hasAny = childAssets.length > 0 || childBulkItems.length > 0;
+  const hasAny =
+    childAssets.length > 0 || childBulkItems.length > 0 || visibleInherited.length > 0;
 
   const { data: availableAssets = [] } = useQuery({
     queryKey: ["accessory-assets", assetId],
@@ -145,6 +164,15 @@ export function AssetAccessoriesManager({ assetId, childAssets, childBulkItems }
               <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => removeBulk.mutate(c.id)}>
                 <X className="h-3.5 w-3.5" />
               </Button>
+            </li>
+          ))}
+          {visibleInherited.map((c) => (
+            <li key={`inh-${c.id}`} className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground/60 select-none">└─</span>
+              <span className="font-medium">{c.quantity}× {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}</span>
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">from model</span>
+              <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">accessory</span>
+              {/* No X — inherited rows are managed on the Model page. */}
             </li>
           ))}
         </ul>

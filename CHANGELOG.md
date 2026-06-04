@@ -39,17 +39,20 @@ work, and deleting a category no longer destroys the groups inside it.
   signing API client, framework-free command registry, `npm run doctor`
   green/red preflight, README walks the ~15 operator-setup steps
   (intents, scopes, permission bits, invite URL, env vars).
-- **Bot runtime is fully wired.** `apps/discord-bot/src/index.ts` now
-  dispatches every slash command through `handleInteraction` with a live
-  `resolveActor` (calls `GET /v1/me` per interaction — no caching, so a
-  demoted role takes effect immediately) and runs a recursive
-  `setTimeout` outbox poll loop (default 5s; exponential backoff to 60s on
-  repeated failure). On `clientReady` it fetches the configured guild,
-  builds a `DiscordChannelGateway`, and loads the per-org integration
-  config from a new `GET /api/discord/v1/integration/config` route. The
-  app also exposes `GET /api/discord/v1/me` (actor resolution) and an
-  unauthenticated `GET /api/discord/v1/health` for the doctor preflight.
-  SIGINT/SIGTERM stops the loop, destroys the Discord client, exits 0.
+- **Bot runs in-process now — zero env vars on the host.** The bot lives
+  inside the GearFlow Next.js server (booted by `instrumentation.ts`).
+  All configuration (Discord bot token, application id, guild id,
+  category ids, lifecycle rules, behavior toggles) lives in the
+  `DiscordIntegration` row managed at **Settings → Discord**. The
+  standalone `apps/discord-bot/` package is gone; all HMAC-signed
+  `/api/discord/v1/*` routes are deleted (kept: `/v1/health` for ops,
+  `/discord/verify` for the unauth email flow). Slash commands call
+  services directly; the outbox poller reads the DB directly. Same
+  service-layer invariants (`requireActorPermission`, transactional
+  outbox, idempotent converge) — just no HMAC trust boundary to enforce
+  between two processes that are now one. New **Deploy slash commands**
+  button on the admin page replaces the old `npm run deploy-commands`
+  CLI. Hot-reload safe in dev via a `globalThis` singleton.
 - **Project groups in Uncategorized.** Both the toolbar "Add Group" dialog and
   each group's "Move" dialog now offer an Uncategorized destination. Groups
   created without a category live alongside orphan sub-hire groups in the

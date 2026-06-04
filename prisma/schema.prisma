@@ -39,6 +39,7 @@ model User {
   addedKitSerializedItems   KitSerializedItem[]         @relation("KitSerializedItemAddedBy")
   addedKitBulkItems         KitBulkItem[]               @relation("KitBulkItemAddedBy")
   addedAssetBulkChildren    AssetBulkChild[]            @relation("AssetBulkChildAddedBy")
+  addedModelBulkAccessories ModelBulkAccessory[]        @relation("ModelBulkAccessoryAddedBy")
   uploads                   FileUpload[]
   testTagRecords            TestTagRecord[]
   twoFactors                TwoFactor[]
@@ -151,6 +152,7 @@ model Organization {
   kitSerializedItems       KitSerializedItem[]
   kitBulkItems             KitBulkItem[]
   assetBulkChildren        AssetBulkChild[]
+  modelBulkAccessories     ModelBulkAccessory[]
   fileUploads              FileUpload[]
   modelMedia               ModelMedia[]
   assetMedia               AssetMedia[]
@@ -683,6 +685,7 @@ model Model {
   media              ModelMedia[]
   modelCheckItems    ModelCheckItem[]
   groupTemplateItems GroupTemplateItem[]
+  bulkAccessories    ModelBulkAccessory[]
 
   supplierOrderItems SupplierOrderItem[]
   subHireItems       SubHireItem[]
@@ -1106,10 +1109,11 @@ model BulkAsset {
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
 
-  kitBulkItems    KitBulkItem[]
-  assetChildItems AssetBulkChild[]
-  lineItems       ProjectLineItem[]
-  lineItemUnits   ProjectLineItemUnit[]
+  kitBulkItems       KitBulkItem[]
+  assetChildItems    AssetBulkChild[]
+  modelAccessoryUses ModelBulkAccessory[]
+  lineItems          ProjectLineItem[]
+  lineItemUnits      ProjectLineItemUnit[]
   scanLogs        AssetScanLog[]
   testTagAssets   TestTagAsset[]
   checkRecords    CheckRecord[]
@@ -1158,6 +1162,36 @@ model AssetBulkChild {
   @@index([parentAssetId])
   @@index([bulkAssetId])
   @@map("asset_bulk_child")
+}
+
+/// A bulk asset declared as a default accessory at the Model level —
+/// "every asset of this model ships with N of this bulk asset". When any
+/// asset of the model is added to a project, model-level bulk accessories
+/// auto-expand as child lines alongside the asset's own accessories, deduped
+/// by bulkAssetId (asset-level wins on conflict). Model-level accessories are
+/// always SHIPS_WITH (drawn from the live pool at prep) — DEDICATED only
+/// makes sense at the asset level (you can't permanently reserve N from the
+/// pool against every asset of a model — that'd drain the whole shelf).
+model ModelBulkAccessory {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  modelId        String
+  model          Model        @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  bulkAssetId    String
+  bulkAsset      BulkAsset    @relation(fields: [bulkAssetId], references: [id], onDelete: Cascade)
+  quantity       Int
+  sortOrder      Int          @default(0)
+  notes          String?
+  addedAt        DateTime     @default(now())
+  addedById      String
+  addedBy        User         @relation("ModelBulkAccessoryAddedBy", fields: [addedById], references: [id])
+
+  @@unique([modelId, bulkAssetId])
+  @@index([organizationId])
+  @@index([modelId])
+  @@index([bulkAssetId])
+  @@map("model_bulk_accessory")
 }
 
 // ─── Location ────────────────────────────────────────────────────────────────

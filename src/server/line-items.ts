@@ -46,6 +46,7 @@ async function expandAccessoryChildren(
   const asset = await tx.asset.findUnique({
     where: { id: parentLine.assetId },
     select: {
+      modelId: true,
       childAssets: {
         select: { id: true, modelId: true, model: { select: { name: true } } },
         orderBy: { assetTag: "asc" },
@@ -61,7 +62,29 @@ async function expandAccessoryChildren(
     },
   });
   if (!asset) return;
-  if (asset.childAssets.length === 0 && asset.childBulkItems.length === 0) return;
+
+  // Union with model-level bulk accessories (every asset of this model
+  // inherits them), deduped by bulkAssetId — asset-level wins on conflict so
+  // a specific asset's quantity / DEDICATED mode can override the template.
+  const assetBulkIds = new Set(asset.childBulkItems.map((b) => b.bulkAssetId));
+  const modelBulks = await tx.modelBulkAccessory.findMany({
+    where: { modelId: asset.modelId, organizationId },
+    select: {
+      bulkAssetId: true,
+      quantity: true,
+      bulkAsset: { select: { modelId: true, model: { select: { name: true } } } },
+    },
+    orderBy: { sortOrder: "asc" },
+  });
+  const inheritedBulks = modelBulks.filter((m) => !assetBulkIds.has(m.bulkAssetId));
+
+  if (
+    asset.childAssets.length === 0 &&
+    asset.childBulkItems.length === 0 &&
+    inheritedBulks.length === 0
+  ) {
+    return;
+  }
 
   let sort = 0;
   for (const child of asset.childAssets) {
@@ -86,7 +109,7 @@ async function expandAccessoryChildren(
       },
     });
   }
-  for (const bi of asset.childBulkItems) {
+  for (const bi of [...asset.childBulkItems, ...inheritedBulks]) {
     await tx.projectLineItem.create({
       data: {
         organizationId,

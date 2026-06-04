@@ -13,12 +13,16 @@ export interface ApiClientConfig {
   signingSecret: string; // per-org DiscordIntegration.signingSecret
   botToken: string; // global DISCORD_BOT_TOKEN bearer
   organizationId: string; // scopes every request
+  /** Invoking Discord user — the app resolves the actor + role from this server-side. */
+  actorDiscordUserId?: string;
   fetchImpl?: typeof fetch;
   now?: () => number; // unix seconds, injectable for tests
 }
 
 const SIG_HEADER = "x-gearflow-signature";
 const TS_HEADER = "x-gearflow-timestamp";
+const ORG_HEADER = "x-gearflow-org";
+const ACTOR_HEADER = "x-gearflow-actor-discord-id";
 
 interface ErrorEnvelope {
   ok: false;
@@ -42,10 +46,11 @@ export class GearFlowApiClientImpl {
     const rawBody = body === undefined ? "" : JSON.stringify(body);
     const headers: Record<string, string> = {
       authorization: `Bearer ${this.cfg.botToken}`,
-      "x-gearflow-org": this.cfg.organizationId,
+      [ORG_HEADER]: this.cfg.organizationId,
       [TS_HEADER]: String(ts),
       [SIG_HEADER]: this.sign(rawBody, ts),
     };
+    if (this.cfg.actorDiscordUserId) headers[ACTOR_HEADER] = this.cfg.actorDiscordUserId;
     if (body !== undefined) headers["content-type"] = "application/json";
     if (idempotencyKey) headers["idempotency-key"] = idempotencyKey;
 

@@ -6,9 +6,12 @@ import { requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import {
+  discordCredentialsSchema,
   discordIntegrationConfigSchema,
+  type DiscordCredentialsValues,
   type DiscordIntegrationConfigValues,
 } from "@/lib/validations/discord-integration";
+import { encryptSecret } from "@/lib/crypto/secret-vault";
 
 function generateSecret(): string {
   return crypto.randomBytes(32).toString("base64url");
@@ -19,13 +22,25 @@ function generateSecret(): string {
  * roster (linked AND unlinked, partial is the steady state) + recent activity.
  * All from the DB; the page derives online/offline from `lastHeartbeatAt` and
  * never blocks on the bot.
+ *
+ * Sensitive fields: `signingSecret` is returned (admin needs to see+copy/rotate it),
+ * `discordBotToken` is NEVER returned — the admin can replace it via setDiscordCredentials
+ * but cannot read it back. Storing it encrypted is belt; not exposing it is suspenders.
  */
 export async function getDiscordIntegrationSettings() {
   const { organizationId } = await requirePermission("orgSettings", "read");
 
-  const integration = await prisma.discordIntegration.findUnique({
+  const rawIntegration = await prisma.discordIntegration.findUnique({
     where: { organizationId },
   });
+  // Strip the encrypted token; surface presence so the UI shows "configured" vs "not set".
+  const integration = rawIntegration
+    ? {
+        ...rawIntegration,
+        discordBotToken: undefined,
+        hasDiscordBotToken: !!rawIntegration.discordBotToken,
+      }
+    : null;
 
   const crew = await prisma.crewMember.findMany({
     where: { organizationId, status: "ACTIVE" },
@@ -81,9 +96,15 @@ export async function updateDiscordIntegrationConfig(data: DiscordIntegrationCon
 
   const fields = {
     guildId: parsed.guildId || null,
+    discordApplicationId: parsed.discordApplicationId || null,
     projectCategoryId: parsed.projectCategoryId || null,
+    archiveCategoryId: parsed.archiveCategoryId || null,
     alertChannelId: parsed.alertChannelId || null,
     auditChannelId: parsed.auditChannelId || null,
+    channelCreateOnStatuses: parsed.channelCreateOnStatuses,
+    channelArchiveOnStatuses: parsed.channelArchiveOnStatuses,
+    postWelcomeOnCreate: parsed.postWelcomeOnCreate,
+    postFaultsToProjectChannel: parsed.postFaultsToProjectChannel,
     linkTokenTtlMinutes: parsed.linkTokenTtlMinutes,
     enrollmentOpen: parsed.enrollmentOpen,
   };
@@ -130,6 +151,51 @@ export async function setDiscordIntegrationEnabled(enabled: boolean) {
   });
 
   return serialize(result);
+}
+
+/**
+ * Set or clear the Discord bot token. The token is encrypted at rest via
+ * secret-vault (AES-256-GCM, key derived from BETTER_AUTH_SECRET). Pass `null`
+ * to clear; pass a fresh string to replace. The token is never returned by
+ * getDiscordIntegrationSettings — only `hasDiscordBotToken: boolean` is exposed.
+ */
+export async function setDiscordCredentials(data: DiscordCredentialsValues) {
+  const { organizationId, userId, userName } = await requirePermission("orgSettings", "update");
+  const parsed = discordCredentialsSchema.parse(data);
+  const existing = await prisma.discordIntegration.findUnique({ where: { organizationId } });
+
+  const encryptedToken =
+    parsed.discordBotToken === null
+      ? null
+      : parsed.discordBotToken.trim() === ""
+        ? existing?.discordBotToken ?? null // empty string = no change
+        : encryptSecret(parsed.discordBotToken.trim());
+
+  const result = await prisma.discordIntegration.upsert({
+    where: { organizationId },
+    create: {
+      organizationId,
+      signingSecret: existing?.signingSecret ?? generateSecret(),
+      discordBotToken: encryptedToken,
+    },
+    update: { discordBotToken: encryptedToken },
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "discord_integration",
+    entityId: result.id,
+    entityName: "Discord Integration",
+    summary:
+      parsed.discordBotToken === null
+        ? "Cleared Discord bot token"
+        : "Updated Discord bot token",
+  });
+
+  return { hasDiscordBotToken: !!encryptedToken };
 }
 
 export async function regenerateDiscordSigningSecret() {

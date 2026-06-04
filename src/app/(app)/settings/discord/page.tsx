@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useForm, Controller } from "react-hook-form";
+import { useForm, Controller, type Control } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -27,8 +27,38 @@ import {
   updateDiscordIntegrationConfig,
   setDiscordIntegrationEnabled,
   regenerateDiscordSigningSecret,
+  setDiscordCredentials,
   unlinkDiscordAccount,
 } from "@/server/discord-integration";
+
+// Subset of ProjectStatus the form uses — kept as a string literal type so the
+// page doesn't import generated Prisma types client-side.
+type ProjectStatusLiteral =
+  | "ENQUIRY"
+  | "QUOTING"
+  | "QUOTED"
+  | "CONFIRMED"
+  | "PREPPING"
+  | "CHECKED_OUT"
+  | "ON_SITE"
+  | "RETURNED"
+  | "COMPLETED"
+  | "INVOICED"
+  | "CANCELLED";
+
+const ALL_PROJECT_STATUSES: { value: ProjectStatusLiteral; label: string }[] = [
+  { value: "ENQUIRY", label: "Enquiry" },
+  { value: "QUOTING", label: "Quoting" },
+  { value: "QUOTED", label: "Quoted" },
+  { value: "CONFIRMED", label: "Confirmed" },
+  { value: "PREPPING", label: "Prepping" },
+  { value: "CHECKED_OUT", label: "Checked out" },
+  { value: "ON_SITE", label: "On site" },
+  { value: "RETURNED", label: "Returned" },
+  { value: "COMPLETED", label: "Completed" },
+  { value: "INVOICED", label: "Invoiced" },
+  { value: "CANCELLED", label: "Cancelled" },
+];
 import { useActiveOrganization } from "@/lib/auth-client";
 
 import { Button } from "@/components/ui/button";
@@ -93,9 +123,20 @@ export default function DiscordSettingsPage() {
     resolver: zodResolver(discordIntegrationConfigSchema),
     values: {
       guildId: integration?.guildId ?? "",
+      discordApplicationId: integration?.discordApplicationId ?? "",
       projectCategoryId: integration?.projectCategoryId ?? "",
+      archiveCategoryId: integration?.archiveCategoryId ?? "",
       alertChannelId: integration?.alertChannelId ?? "",
       auditChannelId: integration?.auditChannelId ?? "",
+      channelCreateOnStatuses: (integration?.channelCreateOnStatuses ?? ["CONFIRMED"]) as ProjectStatusLiteral[],
+      channelArchiveOnStatuses: (integration?.channelArchiveOnStatuses ?? [
+        "COMPLETED",
+        "INVOICED",
+        "RETURNED",
+        "CANCELLED",
+      ]) as ProjectStatusLiteral[],
+      postWelcomeOnCreate: integration?.postWelcomeOnCreate ?? true,
+      postFaultsToProjectChannel: integration?.postFaultsToProjectChannel ?? true,
       linkTokenTtlMinutes: integration?.linkTokenTtlMinutes ?? 15,
       enrollmentOpen: integration?.enrollmentOpen ?? true,
     },
@@ -129,6 +170,17 @@ export default function DiscordSettingsPage() {
       invalidate();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to regenerate"),
+  });
+
+  const [pendingBotToken, setPendingBotToken] = useState("");
+  const saveBotToken = useMutation({
+    mutationFn: (val: string | null) => setDiscordCredentials({ discordBotToken: val }),
+    onSuccess: (_r, val) => {
+      toast.success(val === null ? "Discord bot token cleared" : "Discord bot token saved");
+      setPendingBotToken("");
+      invalidate();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to save token"),
   });
 
   const unlink = useMutation({
@@ -242,35 +294,99 @@ export default function DiscordSettingsPage() {
           {showConfig ? <ChevronUp className="size-4 text-fg-3" /> : <ChevronDown className="size-4 text-fg-3" />}
         </button>
         {showConfig && (
-          <form className="space-y-4 px-5 pb-5" onSubmit={form.handleSubmit((v) => saveConfig.mutate(v))}>
-            <Field label="Guild (server) ID" hint="The Discord server this org is bound to.">
-              <Input {...form.register("guildId")} placeholder="e.g. 123456789012345678" />
-            </Field>
-            <Field label="Project category ID" hint="New project channels are created under this category.">
-              <Input {...form.register("projectCategoryId")} placeholder="Category channel id" />
-            </Field>
-            <Field label="Asset alert channel ID" hint="Out-of-service faults are posted here.">
-              <Input {...form.register("alertChannelId")} placeholder="Channel id" />
-            </Field>
-            <Field label="Audit log channel ID" hint="Automated bot action feed.">
-              <Input {...form.register("auditChannelId")} placeholder="Channel id" />
-            </Field>
-            <Field label="Enrollment link expiry (minutes)" hint="How long a /link email stays valid.">
-              <Input type="number" min={5} max={1440} {...form.register("linkTokenTtlMinutes")} />
-            </Field>
-            <div className="flex items-center justify-between">
-              <div>
-                <Label className="text-sm text-fg-2">Open enrollment</Label>
-                <p className="text-xs text-fg-3">Allow crew to self-enroll with /link.</p>
+          <form className="space-y-6 px-5 pb-5" onSubmit={form.handleSubmit((v) => saveConfig.mutate(v))}>
+            <fieldset className="space-y-4">
+              <legend className="text-xs font-semibold uppercase tracking-wide text-fg-3">Discord identity</legend>
+              <Field label="Discord application ID" hint="From the Developer Portal — used by deploy-commands.">
+                <Input {...form.register("discordApplicationId")} placeholder="e.g. 987654321098765432" />
+              </Field>
+              <Field label="Guild (server) ID" hint="The Discord server this org is bound to.">
+                <Input {...form.register("guildId")} placeholder="e.g. 123456789012345678" />
+              </Field>
+            </fieldset>
+
+            <fieldset className="space-y-4">
+              <legend className="text-xs font-semibold uppercase tracking-wide text-fg-3">Channels</legend>
+              <Field label="Project category ID" hint="Active project channels are created here.">
+                <Input {...form.register("projectCategoryId")} placeholder="Category channel id" />
+              </Field>
+              <Field
+                label="Archive category ID"
+                hint="Channels move here when a project enters an archive status (leave blank to lock in place)."
+              >
+                <Input {...form.register("archiveCategoryId")} placeholder="Category channel id (optional)" />
+              </Field>
+              <Field label="Asset alert channel ID" hint="Out-of-service faults are posted here.">
+                <Input {...form.register("alertChannelId")} placeholder="Channel id" />
+              </Field>
+              <Field label="Audit log channel ID" hint="Automated bot action feed.">
+                <Input {...form.register("auditChannelId")} placeholder="Channel id" />
+              </Field>
+            </fieldset>
+
+            <fieldset className="space-y-4">
+              <legend className="text-xs font-semibold uppercase tracking-wide text-fg-3">
+                Channel lifecycle rules
+              </legend>
+              <div className="space-y-2">
+                <Label className="text-sm text-fg-2">Create channel when status is…</Label>
+                <p className="text-xs text-fg-3">
+                  Once a project hits any of these, it gets a channel. Earlier statuses (e.g. Enquiry) skip the noise.
+                </p>
+                <Controller
+                  control={form.control}
+                  name="channelCreateOnStatuses"
+                  render={({ field }) => (
+                    <StatusCheckboxGroup
+                      value={(field.value ?? []) as ProjectStatusLiteral[]}
+                      onChange={field.onChange}
+                    />
+                  )}
+                />
               </div>
-              <Controller
+              <div className="space-y-2">
+                <Label className="text-sm text-fg-2">Archive channel when status is…</Label>
+                <p className="text-xs text-fg-3">
+                  The bot moves the channel to the archive category and locks it. Empty = channels are never auto-archived.
+                </p>
+                <Controller
+                  control={form.control}
+                  name="channelArchiveOnStatuses"
+                  render={({ field }) => (
+                    <StatusCheckboxGroup
+                      value={(field.value ?? []) as ProjectStatusLiteral[]}
+                      onChange={field.onChange}
+                    />
+                  )}
+                />
+              </div>
+            </fieldset>
+
+            <fieldset className="space-y-3">
+              <legend className="text-xs font-semibold uppercase tracking-wide text-fg-3">Behavior</legend>
+              <ToggleRow
+                label="Post welcome embed on channel creation"
+                hint="The bot posts a project summary the first time a channel is made."
+                control={form.control}
+                name="postWelcomeOnCreate"
+              />
+              <ToggleRow
+                label="Echo fault reports in the project channel"
+                hint="When /asset fault runs, post a summary to the project's channel in addition to the alert channel."
+                control={form.control}
+                name="postFaultsToProjectChannel"
+              />
+              <ToggleRow
+                label="Open enrollment"
+                hint="Allow crew to self-enroll with /link."
                 control={form.control}
                 name="enrollmentOpen"
-                render={({ field }) => (
-                  <Switch checked={!!field.value} onCheckedChange={field.onChange} />
-                )}
               />
-            </div>
+              <Field label="Enrollment link expiry (minutes)" hint="How long a /link email stays valid.">
+                <Input type="number" min={5} max={1440} {...form.register("linkTokenTtlMinutes")} />
+              </Field>
+            </fieldset>
+
             <div className="flex justify-end">
               <Button type="submit" disabled={saveConfig.isPending}>
                 {saveConfig.isPending && <Loader2 className="mr-2 size-4 animate-spin" />}
@@ -279,6 +395,53 @@ export default function DiscordSettingsPage() {
             </div>
           </form>
         )}
+      </section>
+
+      {/* Bot credentials — Discord token. Stored encrypted at rest; never shown back. */}
+      <section className="rounded-lg bg-bg-surface p-5 surface-ring">
+        <h2 className="mb-1 text-sm font-semibold text-fg-1">Bot credentials</h2>
+        <p className="mb-3 text-xs text-fg-3">
+          The Discord bot token from the Developer Portal. Stored encrypted at rest; the bot fetches it on startup so there&apos;s no .env on the host.
+        </p>
+        <div className="flex items-center gap-2">
+          <Input
+            type="password"
+            placeholder={
+              integration?.hasDiscordBotToken
+                ? "Token configured (paste a new value to rotate)"
+                : "Paste the bot token here"
+            }
+            value={pendingBotToken}
+            onChange={(e) => setPendingBotToken(e.target.value)}
+            className="font-mono text-xs"
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={saveBotToken.isPending || pendingBotToken.trim() === ""}
+            onClick={() => saveBotToken.mutate(pendingBotToken.trim())}
+          >
+            {saveBotToken.isPending ? <Loader2 className="size-4 animate-spin" /> : "Save"}
+          </Button>
+          {integration?.hasDiscordBotToken && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-fg-3 hover:text-error"
+              disabled={saveBotToken.isPending}
+              onClick={() => saveBotToken.mutate(null)}
+            >
+              Clear
+            </Button>
+          )}
+        </div>
+        <p className="mt-3 text-xs text-fg-3">
+          <StatusIndicator
+            variant="pill"
+            intent={integration?.hasDiscordBotToken ? "success" : "warning"}
+            label={integration?.hasDiscordBotToken ? "Token configured" : "Not set"}
+          />
+        </p>
       </section>
 
       {/* Signing secret — show/hide + copy + regenerate. */}
@@ -368,6 +531,68 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
       <Label className="text-sm text-fg-2">{label}</Label>
       {children}
       {hint && <p className="text-xs text-fg-3">{hint}</p>}
+    </div>
+  );
+}
+
+function StatusCheckboxGroup({
+  value,
+  onChange,
+}: {
+  value: ProjectStatusLiteral[];
+  onChange: (v: ProjectStatusLiteral[]) => void;
+}) {
+  const toggle = (s: ProjectStatusLiteral) => {
+    if (value.includes(s)) onChange(value.filter((x) => x !== s));
+    else onChange([...value, s]);
+  };
+  return (
+    <div className="grid grid-cols-2 gap-1.5 rounded-md border border-border p-3 sm:grid-cols-3">
+      {ALL_PROJECT_STATUSES.map((s) => {
+        const checked = value.includes(s.value);
+        return (
+          <label
+            key={s.value}
+            className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm text-fg-2 hover:bg-bg-2"
+          >
+            <input
+              type="checkbox"
+              className="size-3.5 accent-primary"
+              checked={checked}
+              onChange={() => toggle(s.value)}
+            />
+            <span>{s.label}</span>
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
+function ToggleRow<TName extends "postWelcomeOnCreate" | "postFaultsToProjectChannel" | "enrollmentOpen">({
+  label,
+  hint,
+  control,
+  name,
+}: {
+  label: string;
+  hint: string;
+  control: Control<DiscordIntegrationConfigValues>;
+  name: TName;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <Label className="text-sm text-fg-2">{label}</Label>
+        <p className="text-xs text-fg-3">{hint}</p>
+      </div>
+      <Controller
+        control={control}
+        name={name}
+        render={({ field }) => (
+          <Switch checked={!!field.value} onCheckedChange={field.onChange} />
+        )}
+      />
     </div>
   );
 }

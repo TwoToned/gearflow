@@ -38,7 +38,7 @@ Lives in `apps/discord-bot/` (standalone Node service). Command registry: each `
 - [x] `Core()` service extraction + first `src/app/api/discord/v1/*` routes (asset lookup + outbox)
 - [x] Outbox emission hooks (createProject, crew-assignment add/remove) — `emitIfDiscordEnabled`
 - [x] `/link` enrollment flow (hardened) + `/discord/verify` endpoint
-- [ ] Channel sync (create + permission overwrites + reconcile)
+- [x] Channel sync (create + permission overwrites + retroactive grant; converge logic = reconcile primitive)
 - [ ] `/asset fault` → DamageEvent
 - [ ] Admin "Discord Integration" settings page
 - [ ] `apps/discord-bot/README.md` operator setup (intents, scopes, perm bits) + `npm run doctor`
@@ -79,5 +79,17 @@ opaque `randomBytes(32)` token, **hash-at-rest only**, **invoker Discord id boun
 `POST /v1/link`, and the unauthenticated `/api/discord/verify` (GET = confirm button so email
 link-scanners can't burn the token on a prefetch; POST = consume). Security pipeline covered by
 `src/lib/services/discord-link.int.test.ts` (test plan #5). Bot: `commands/link.ts`.
+
+**Channel sync** — the bot has no DB, so it reads the desired state and writes back the channel id.
+App: `src/lib/services/channel-sync-service.ts` — `getProjectChannelSpec` (name, archive flag,
+existing channel id, linked member set, pending-access count), `recordProjectChannelId` (the
+`discordChannelId` idempotency guard — first writer wins, returns the effective id so a race-loser
+discards its channel), `getCrewActiveProjects` (retroactive grant after a late link). Routes (Bearer):
+`GET /project/:id/channel-spec`, `POST /project/:id/channel`, `GET /crew/:id/channels`. Covered by
+`channel-sync.int.test.ts` (test plan #6). Bot (`apps/discord-bot/src`): `outbox-consumer.ts`
+converges to desired state (idempotent; = the /reconcile primitive) with a per-project mutex; `pollOnce`
+processes in id order, acks the successful prefix, stops on first failure, advances the cursor only past
+acked events. `channel-name.ts` slugs `CODE-name`; `discord-channel-gateway.ts` is the only discord.js
+module. v2: a `/reconcile` slash command (the converge primitive already exists).
 
 See the full reviewed plan + test plan in `docs/designs/discord-bot-*.md`.

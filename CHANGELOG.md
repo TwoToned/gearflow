@@ -7,9 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.10.0.0] - 2026-06-04
 
-Project groups can now live in the Uncategorized zone, matching how sub-hire groups already work. Deleting a category no longer destroys the groups inside it.
+GearFlow now bridges Discord: every project gets its own private channel,
+crew can link their Discord accounts via email, and they can look up assets
+and log faults from their phone without opening the app. Project groups can
+also now live in the Uncategorized zone, matching how sub-hire groups already
+work, and deleting a category no longer destroys the groups inside it.
 
 ### Added
+- **Discord integration (foundation).** Per-org bot integration mirroring
+  WooCommerce: connect a Discord server, get auto-created private channels
+  per project (`PROJECTCODE-projectname`), and grant crew access automatically
+  when they're assigned. Configure under **Settings → Discord**.
+- **`/link [email]` enrollment.** Crew run `/link` in Discord, get a magic
+  link emailed to their GearFlow profile, and click to connect — anti-hijack
+  hardened (token binds the invoker's Discord ID at issue time), constant
+  "if that email is on file" response (no enumeration oracle), rate-limited
+  3/hr per Discord user and 3/day per email.
+- **`/asset lookup [code]`.** Linked crew can look up any asset by tag
+  from Discord: current status, test-and-tag validity, and which project
+  it's deployed on.
+- **`/fault [code] [description] [severity] [hold]`.** Crew can log a
+  DamageEvent from Discord. Severity is MINOR or MAJOR; the optional
+  `hold` flag takes the asset out of service (requires maintenance
+  permission). Idempotent on the Discord interaction id — a retry never
+  double-logs.
+- **Admin Discord settings page** (`/settings/discord`). Connection health
+  reads the bot's heartbeat (UI never blocks on the bot, online or off),
+  linked-accounts roster shows the entire crew (linked + pending),
+  signing-secret rotate, recent activity from the existing audit log.
+- **Standalone bot service** (`apps/discord-bot/`). discord.js v14, HMAC-
+  signing API client, framework-free command registry, `npm run doctor`
+  green/red preflight, README walks the ~15 operator-setup steps
+  (intents, scopes, permission bits, invite URL, env vars).
 - **Project groups in Uncategorized.** Both the toolbar "Add Group" dialog and
   each group's "Move" dialog now offer an Uncategorized destination. Groups
   created without a category live alongside orphan sub-hire groups in the
@@ -20,6 +49,17 @@ Project groups can now live in the Uncategorized zone, matching how sub-hire gro
   uses it to render orphan project groups in the same loop as orphan sub-hires.
 
 ### Changed
+- **`DamageEvent` now records the true reporter** —
+  `reportedByCrewMemberId` (nullable FK to `CrewMember`) preserves who filed
+  the fault when a non-User freelancer reports it from Discord, while
+  `createdById` keeps a real User to satisfy the existing FK
+  (`20260604130000_discord_fault_reporter` migration). A new unique
+  `discordIdempotencyKey` makes retried fault POSTs safe.
+- **Project + crew-assignment writes now emit transactional Discord events.**
+  `createProject`, `createAssignment`, and `deleteAssignment` wrap their
+  Prisma calls in a `$transaction` and append a `DiscordOutbox` row inside
+  it, so a rolled-back mutation never leaks a channel-sync event. Orgs
+  without an enabled integration emit nothing (no orphan rows).
 - **`ProjectGroup.categoryId` is now nullable** (Prisma schema + DB migration
   `20260604030000_uncategorized_project_groups`). The FK's `onDelete` switched
   from `CASCADE` to `SET NULL`, so deleting a `ProjectCategory` orphans its

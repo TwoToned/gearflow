@@ -36,6 +36,8 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 
+const UNCATEGORISED_VALUE = "__uncategorised__";
+
 interface CategoryOption {
   id: string;
   name: string;
@@ -79,11 +81,11 @@ function MoveProjectGroupDialogBody({
   onInvalidate,
 }: MoveProjectGroupDialogProps) {
   const queryClient = useQueryClient();
-  // Seed with the first available category if any — saves a click in the
-  // common case where the user is moving INTO a specific category they
-  // already see in the list. Empty string when there are no categories
-  // (rare — they'd be looking at the create-by-name path).
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
+  // Seed with Uncategorised — a meaningful default that doesn't
+  // require the user to remember which category they picked last.
+  // Picking a category from the dropdown still lets them move into
+  // a specific destination; typing a new name routes to create-by-name.
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>(UNCATEGORISED_VALUE);
 
   function refreshCaches() {
     onInvalidate();
@@ -93,15 +95,20 @@ function MoveProjectGroupDialogBody({
   const moveMut = useMutation({
     mutationFn: async () => {
       if (!groupId) throw new Error("No project group selected");
-      if (!selectedCategoryId) throw new Error("Pick a destination category");
+      if (!selectedCategoryId) throw new Error("Pick a destination");
       return moveProjectGroupToCategory({
         groupId,
-        categoryId: selectedCategoryId,
+        categoryId:
+          selectedCategoryId === UNCATEGORISED_VALUE ? null : selectedCategoryId,
       });
     },
     onSuccess: () => {
       refreshCaches();
-      toast.success("Moved group");
+      toast.success(
+        selectedCategoryId === UNCATEGORISED_VALUE
+          ? "Moved group to uncategorised"
+          : "Moved group",
+      );
       onOpenChange(false);
     },
     onError: (e: Error) => toast.error(e.message),
@@ -130,7 +137,7 @@ function MoveProjectGroupDialogBody({
     // ComboboxPicker emits ids from its options list; the creatable
     // footer routes typed-but-unmatched text here as a create intent.
     const matched = categories.find((c) => c.id === value);
-    if (matched) {
+    if (matched || value === UNCATEGORISED_VALUE) {
       setSelectedCategoryId(value);
       return;
     }
@@ -152,7 +159,10 @@ function MoveProjectGroupDialogBody({
           <ComboboxPicker
             value={selectedCategoryId}
             onChange={handlePickValue}
-            options={categories.map((c) => ({ value: c.id, label: c.name }))}
+            options={[
+              { value: UNCATEGORISED_VALUE, label: "Uncategorised" },
+              ...categories.map((c) => ({ value: c.id, label: c.name })),
+            ]}
             placeholder="Select or type to create"
             searchPlaceholder="Search categories or type a new name..."
             emptyMessage="No matching category."

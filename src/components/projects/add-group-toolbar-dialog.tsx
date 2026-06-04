@@ -37,10 +37,15 @@ export interface TemplateOption {
 }
 
 export interface AddGroupValues {
-  categoryId: string;
+  /** null = create the group in the project's Uncategorized zone
+   *  (since v0.9.4.0; mirrors how sub-hire groups can already be
+   *  uncategorised). */
+  categoryId: string | null;
   title: string;
   templateId?: string;
 }
+
+const UNCATEGORISED_VALUE = "__uncategorized__";
 
 interface AddGroupToolbarDialogProps {
   open: boolean;
@@ -75,7 +80,7 @@ function AddGroupToolbarDialogBody({
   function handleSubmit() {
     if (!title.trim() || !categoryId) return;
     onSubmit({
-      categoryId,
+      categoryId: categoryId === UNCATEGORISED_VALUE ? null : categoryId,
       title: title.trim(),
       templateId: templateId || undefined,
     });
@@ -107,6 +112,7 @@ function AddGroupToolbarDialogBody({
             className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
             <option value="">Select category...</option>
+            <option value={UNCATEGORISED_VALUE}>Uncategorized</option>
             {categories.map((cat) => (
               <option key={cat.id} value={cat.id}>{cat.name}</option>
             ))}

@@ -1602,13 +1602,18 @@ model CategorySlot {
 // ─── Project Group ──────────────────────────────────────────────────────────
 
 model ProjectGroup {
-  id             String          @id @default(cuid())
+  id             String           @id @default(cuid())
   organizationId String
-  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   projectId      String
-  project        Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  categoryId     String
-  category       ProjectCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  project        Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  // Nullable since v0.9.4.0 — groups can live in the project's
+  // Uncategorized zone, mirroring SubHireGroup.targetCategoryId.
+  // The relation's onDelete switched from Cascade to SetNull so
+  // deleting a category no longer destroys its groups; they
+  // become orphaned and surface in the Uncategorized zone.
+  categoryId     String?
+  category       ProjectCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   title          String
   description    String?
   quantity       Int             @default(1)

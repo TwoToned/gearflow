@@ -33,7 +33,7 @@ import {
 import { resolveDiscordActor, type ServiceActor } from "@/lib/services/discord-actor";
 
 /** Context handed to a `withBotAuth` handler. */
-export interface BotRouteContext<P = undefined> {
+export interface BotRouteContext<P = Record<never, never>> {
   request: Request;
   requestId: string;
   /** From the `x-gearflow-org` header, if the caller scoped the request. */
@@ -42,7 +42,7 @@ export interface BotRouteContext<P = undefined> {
 }
 
 /** Context handed to a `withDiscordAuth` handler. */
-export interface DiscordRouteContext<P = undefined> {
+export interface DiscordRouteContext<P = Record<never, never>> {
   request: Request;
   requestId: string;
   organizationId: string;
@@ -85,7 +85,7 @@ function requireBotToken(request: Request): void {
 
 async function resolveParams<P>(args: NextRouteArgs<P>): Promise<P> {
   const ctx = args[1];
-  return (ctx?.params ? await ctx.params : (undefined as P)) as P;
+  return (ctx?.params ? await ctx.params : ({} as P)) as P;
 }
 
 /** Build the final NextResponse from a handler result (passthrough for raw responses). */
@@ -111,7 +111,7 @@ function toErrorResponse(err: unknown, requestId: string): NextResponse {
  * Wrap a handler that only needs the global Bearer (outbox pull, heartbeat).
  * Org is read from the header if present but not verified by HMAC.
  */
-export function withBotAuth<P = undefined>(
+export function withBotAuth<P = Record<never, never>>(
   handler: (ctx: BotRouteContext<P>) => Promise<unknown>,
 ): (...args: NextRouteArgs<P>) => Promise<NextResponse> {
   return async (...args: NextRouteArgs<P>) => {
@@ -135,7 +135,7 @@ export function withBotAuth<P = undefined>(
  * body, parses JSON, and resolves the actor (may be null — routes that require a
  * link call `requireLinkedActor`).
  */
-export function withDiscordAuth<P = undefined>(
+export function withDiscordAuth<P = Record<never, never>>(
   handler: (ctx: DiscordRouteContext<P>) => Promise<unknown>,
 ): (...args: NextRouteArgs<P>) => Promise<NextResponse> {
   return async (...args: NextRouteArgs<P>) => {

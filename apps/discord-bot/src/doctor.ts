@@ -1,25 +1,52 @@
 /**
- * `npm run doctor` — green/red preflight checklist so operators don't spelunk the
- * Developer Portal. Checks env, bot token validity, guild membership, and GearFlow
- * API reachability. SCAFFOLD — extend checks as wiring lands.
+ * `npm run doctor` — green/red preflight checklist. Validates env + bootstrap
+ * reachability + that GearFlow has enough config to actually run the bot.
  */
-const checks: { label: string; run: () => Promise<boolean> | boolean }[] = [
-  { label: "DISCORD_BOT_TOKEN set", run: () => !!process.env.DISCORD_BOT_TOKEN },
-  { label: "DISCORD_APPLICATION_ID set", run: () => !!process.env.DISCORD_APPLICATION_ID },
-  { label: "DISCORD_GUILD_ID set", run: () => !!process.env.DISCORD_GUILD_ID },
-  { label: "GEARFLOW_API_URL set", run: () => !!process.env.GEARFLOW_API_URL },
-  { label: "GEARFLOW_DISCORD_SIGNING_SECRET set", run: () => !!process.env.GEARFLOW_DISCORD_SIGNING_SECRET },
-  { label: "GEARFLOW_ORG_ID set", run: () => !!process.env.GEARFLOW_ORG_ID },
+import { loadEnv } from "./env.js";
+import { fetchBootstrap, BootstrapError } from "./bootstrap.js";
+
+type Check = { label: string; run: () => Promise<boolean> | boolean };
+
+const checks: Check[] = [
   { label: "GEARFLOW_BOT_BEARER set", run: () => !!process.env.GEARFLOW_BOT_BEARER },
+  { label: "GEARFLOW_ORG_ID set", run: () => !!process.env.GEARFLOW_ORG_ID },
   {
     label: "GearFlow API reachable",
     run: async () => {
-      const base = process.env.GEARFLOW_API_URL;
-      if (!base) return false;
+      const base = process.env.GEARFLOW_API_URL ?? "https://home.twotoned.com.au";
       try {
         const res = await fetch(`${base}/api/discord/v1/health`);
-        return res.ok || res.status === 401; // 401 = reachable but unsigned, still "up"
+        return res.ok;
       } catch {
+        return false;
+      }
+    },
+  },
+  {
+    label: "Bootstrap returns a configured integration",
+    run: async () => {
+      try {
+        const env = loadEnv();
+        const boot = await fetchBootstrap(env);
+        if (!boot.isEnabled) {
+          console.log("   ↳ integration is disabled — enable it at GearFlow → Settings → Discord");
+          return false;
+        }
+        const missing: string[] = [];
+        if (!boot.discordBotToken) missing.push("bot token");
+        if (!boot.discordApplicationId) missing.push("application id");
+        if (!boot.guildId) missing.push("guild id");
+        if (missing.length > 0) {
+          console.log(`   ↳ missing: ${missing.join(", ")} — set at GearFlow → Settings → Discord`);
+          return false;
+        }
+        console.log(
+          `   ↳ guild=${boot.guildId}, category=${boot.projectCategoryId ?? "none"}, archive=${boot.archiveCategoryId ?? "none"}`,
+        );
+        return true;
+      } catch (err) {
+        if (err instanceof BootstrapError) console.log(`   ↳ ${err.message}`);
+        else console.log(`   ↳ ${(err as Error).message}`);
         return false;
       }
     },

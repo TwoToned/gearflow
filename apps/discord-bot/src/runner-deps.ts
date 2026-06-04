@@ -27,13 +27,19 @@ interface MeResponse {
   } | null;
 }
 
-/** Build a signing client targeting an org with an optional invoker actor. */
-export function buildApiClient(env: BotEnv, actorDiscordUserId?: string): GearFlowApiClient {
+/** Inputs to build a signing api client. signingSecret comes from the bootstrap fetch. */
+export interface ApiClientFactoryConfig {
+  env: BotEnv;
+  signingSecret: string;
+}
+
+/** Build a signing client targeting the org with an optional invoker actor. */
+export function buildApiClient(cfg: ApiClientFactoryConfig, actorDiscordUserId?: string): GearFlowApiClient {
   return new GearFlowApiClientImpl({
-    baseUrl: env.GEARFLOW_API_URL,
-    signingSecret: env.GEARFLOW_DISCORD_SIGNING_SECRET,
-    botToken: env.GEARFLOW_BOT_BEARER,
-    organizationId: env.GEARFLOW_ORG_ID,
+    baseUrl: cfg.env.GEARFLOW_API_URL,
+    signingSecret: cfg.signingSecret,
+    botToken: cfg.env.GEARFLOW_BOT_BEARER,
+    organizationId: cfg.env.GEARFLOW_ORG_ID,
     actorDiscordUserId,
   });
 }
@@ -50,14 +56,13 @@ function narrowRole(role: string | null | undefined): GearFlowRole | null {
 }
 
 /**
- * Build the production deps the runner consumes per interaction. `nowMember`
- * lookups against the GearFlow API are not memoized — the runner already
- * enforces "checked LIVE per interaction".
+ * Build the production deps the runner consumes per interaction. Live actor
+ * lookup (no caching) so a role demote takes effect on the next interaction.
  */
-export function buildRunnerDeps(env: BotEnv): RunnerDeps {
+export function buildRunnerDeps(cfg: ApiClientFactoryConfig): RunnerDeps {
   return {
     async resolveActor(discordUserId: string): Promise<ResolvedActor> {
-      const client = buildApiClient(env, discordUserId);
+      const client = buildApiClient(cfg, discordUserId);
       const me = await client.get<MeResponse>("/me");
       return {
         discordUserId: me.discordUserId,
@@ -71,7 +76,7 @@ export function buildRunnerDeps(env: BotEnv): RunnerDeps {
       };
     },
     apiFor(actor: ResolvedActor): GearFlowApiClient {
-      return buildApiClient(env, actor.discordUserId);
+      return buildApiClient(cfg, actor.discordUserId);
     },
   };
 }

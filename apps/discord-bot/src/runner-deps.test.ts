@@ -1,17 +1,14 @@
 import { describe, it, expect, vi } from "vitest";
-import { buildApiClient, buildRunnerDeps } from "./runner-deps.js";
+import { buildApiClient, buildRunnerDeps, type ApiClientFactoryConfig } from "./runner-deps.js";
 import type { BotEnv } from "./env.js";
 
 const env: BotEnv = {
-  DISCORD_BOT_TOKEN: "bot",
-  DISCORD_APPLICATION_ID: "app",
-  DISCORD_GUILD_ID: "guild",
   GEARFLOW_API_URL: "https://gearflow.test",
   GEARFLOW_BOT_BEARER: "bearer",
-  GEARFLOW_DISCORD_SIGNING_SECRET: "sig",
   GEARFLOW_ORG_ID: "org-1",
   POLL_INTERVAL_MS: 5000,
 };
+const cfg: ApiClientFactoryConfig = { env, signingSecret: "sig" };
 
 function meResponseFetch(meReturn: unknown) {
   return vi.fn().mockResolvedValue({
@@ -25,7 +22,7 @@ describe("buildRunnerDeps.resolveActor", () => {
       discordUserId: "alice",
       link: { organizationId: "org-1", crewMemberId: "cm-7", role: "manager", userName: "Alice Sample" },
     });
-    const deps = buildRunnerDeps({ ...env });
+    const deps = buildRunnerDeps(cfg);
     // Inject the fetch stub by shimming global fetch (api-client picks process fetch by default).
     const originalFetch = globalThis.fetch;
     globalThis.fetch = fetchImpl as typeof fetch;
@@ -50,7 +47,7 @@ describe("buildRunnerDeps.resolveActor", () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = fetchImpl as typeof fetch;
     try {
-      const actor = await buildRunnerDeps(env).resolveActor("stranger", "guild-1");
+      const actor = await buildRunnerDeps(cfg).resolveActor("stranger", "guild-1");
       expect(actor.link).toBeNull();
     } finally {
       globalThis.fetch = originalFetch;
@@ -65,7 +62,7 @@ describe("buildRunnerDeps.resolveActor", () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = fetchImpl as typeof fetch;
     try {
-      const actor = await buildRunnerDeps(env).resolveActor("x", "g");
+      const actor = await buildRunnerDeps(cfg).resolveActor("x", "g");
       expect(actor.link?.role).toBeNull();
     } finally {
       globalThis.fetch = originalFetch;
@@ -75,7 +72,7 @@ describe("buildRunnerDeps.resolveActor", () => {
 
 describe("buildApiClient", () => {
   it("wires the env into a client that signs with the per-org secret", () => {
-    const client = buildApiClient(env, "alice");
+    const client = buildApiClient(cfg, "alice");
     expect(client).toBeDefined(); // Concrete construction; api-client.test covers signing.
   });
 });

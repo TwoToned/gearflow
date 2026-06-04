@@ -39,6 +39,7 @@ export async function handleInteraction(
   }
 
   const ctx: CommandContext = {
+    interactionId: interaction.id,
     options: optionMap(interaction),
     actor,
     guildId: interaction.guildId,

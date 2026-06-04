@@ -53,6 +53,8 @@ export interface ReplyOptions {
 
 /** Injected into every command. The transport (discord.js) is hidden behind it. */
 export interface CommandContext {
+  /** Discord interaction id — the natural Idempotency-Key for mutating calls. */
+  interactionId: string;
   /** Raw string option values, by option name. */
   options: Record<string, string | undefined>;
   /** The resolved actor (link may be null). */

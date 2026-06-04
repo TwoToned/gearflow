@@ -39,6 +39,7 @@ export function makeMockContext(opts: MockContextOptions = {}): MockContext {
   };
 
   return {
+    interactionId: "interaction_1",
     options: opts.options ?? {},
     actor,
     guildId: opts.guildId ?? "guild_1",

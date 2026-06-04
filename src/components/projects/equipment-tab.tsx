@@ -59,6 +59,7 @@ import { formatCurrency } from "@/lib/formatters";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { UnifiedAddDialog, type UnifiedAddKind } from "./unified-add-dialog";
 import { MoveSubHireGroupDialog } from "./move-sub-hire-group-dialog";
+import { MoveProjectGroupDialog } from "./move-project-group-dialog";
 import { PriceEditDialog, type PriceEditTarget } from "./price-edit-dialog";
 import { MoveLineItemDialog } from "./move-line-item-dialog";
 import { EditGroupDialog } from "./edit-group-dialog";
@@ -111,6 +112,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
 
   // Move-sub-hire-group dialog state (Phase 6b kebab action).
   const [moveSubHireGroup, setMoveSubHireGroup] = useState<{ id: string; title: string } | null>(null);
+
+  // Move-project-group dialog state (Fix A — project groups can move
+  // between categories now; mirrors the sub-hire flow).
+  const [moveProjectGroup, setMoveProjectGroup] = useState<{ id: string; title: string } | null>(null);
 
   // Unified PriceEditDialog target (Phase 6c kebab action — works for
   // both project groups and sub-hire groups).
@@ -922,6 +927,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                 }
                               }}
                               onSaveAsTemplate={() => setSaveAsTemplateGroup({ id: group.id, title: group.title })}
+                              onMove={() => setMoveProjectGroup({ id: group.id, title: group.title })}
                             />
                             {/* Expanded line items */}
                             {isExpanded && groupItems.length === 0 && (
@@ -1286,6 +1292,19 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
         }}
         groupId={moveSubHireGroup?.id ?? null}
         groupTitle={moveSubHireGroup?.title}
+        projectId={projectId}
+        categories={(categories as CategoryData[]).map((c) => ({ id: c.id, name: c.name }))}
+        onInvalidate={invalidate}
+      />
+
+      {/* Move-project-group dialog (kebab → "Move to category") */}
+      <MoveProjectGroupDialog
+        open={moveProjectGroup != null}
+        onOpenChange={(open) => {
+          if (!open) setMoveProjectGroup(null);
+        }}
+        groupId={moveProjectGroup?.id ?? null}
+        groupTitle={moveProjectGroup?.title}
         projectId={projectId}
         categories={(categories as CategoryData[]).map((c) => ({ id: c.id, name: c.name }))}
         onInvalidate={invalidate}

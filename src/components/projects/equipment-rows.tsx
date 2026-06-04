@@ -350,6 +350,7 @@ export function GroupRow({
   onEditPrice,
   onAddEquipment,
   onAddKit,
+  onMove,
   onRecalculate,
   onSaveAsTemplate,
 }: {
@@ -369,6 +370,9 @@ export function GroupRow({
   onEditPrice?: () => void;
   onAddEquipment: () => void;
   onAddKit: () => void;
+  /** Open the move-to-category dialog. Optional so callers that don't
+   *  want the affordance (e.g. read-only views) can omit it. */
+  onMove?: () => void;
   onRecalculate?: () => void;
   onSaveAsTemplate?: () => void;
 }) {
@@ -385,7 +389,7 @@ export function GroupRow({
   const rejectionClasses = isRejectedDropTarget
     ? "border-l-2 border-l-red-500 cursor-not-allowed"
     : "";
-  const shortcuts = useRowShortcuts({ e: onEdit, d: onDelete });
+  const shortcuts = useRowShortcuts({ e: onEdit, m: onMove, d: onDelete });
 
   return (
     <TableRow
@@ -474,6 +478,12 @@ export function GroupRow({
                   <DropdownMenuItem onClick={onSaveAsTemplate}>
                     <BookmarkPlus className="mr-2 h-3.5 w-3.5" />
                     Save as Template
+                  </DropdownMenuItem>
+                )}
+                {onMove && (
+                  <DropdownMenuItem onClick={onMove}>
+                    <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
+                    Move to category
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem
@@ -637,7 +647,7 @@ export function SubHireGroupRow({
                 </DropdownMenuItem>
                 {onMove && (
                   <DropdownMenuItem onClick={onMove}>
-                    <Package className="mr-2 h-3.5 w-3.5" />
+                    <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
                     Move to category
                   </DropdownMenuItem>
                 )}

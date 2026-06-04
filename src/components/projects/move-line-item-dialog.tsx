@@ -73,8 +73,14 @@ function MoveLineItemDialogBody({
       onSubmit(lineItemId, { categoryId: null, groupId: null });
       return;
     }
+    // Encoded shape: "<catId>|<grpId>". An empty trailing segment
+    // (e.g. "<catId>|") means "category root, no specific group" —
+    // the item lands as a standalone item under that category.
     const [catId, grpId] = encoded.split("|");
-    onSubmit(lineItemId, { categoryId: catId, groupId: grpId });
+    onSubmit(lineItemId, {
+      categoryId: catId || null,
+      groupId: grpId ? grpId : null,
+    });
   }
 
   return (
@@ -92,13 +98,25 @@ function MoveLineItemDialogBody({
           className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
           <option value={UNCATEGORISED_VALUE}>Uncategorized (no group)</option>
-          {categories.map((cat) =>
-            cat.groups.map((g) => (
-              <option key={g.id} value={`${cat.id}|${g.id}`}>
-                {cat.name} &gt; {g.title}
-              </option>
-            )),
-          )}
+          {categories.map((cat) => (
+            // Each category contributes:
+            //   1. A "category root" option ("<name> (no group)") so the
+            //      item can live directly under the category as a
+            //      standalone item.
+            //   2. One option per group inside it ("<name> > <group>").
+            // Without (1) the dialog promises "destination group or
+            // category" in the description but only ever lets you
+            // pick a group, which is what the v0.9.2.0 user-reported
+            // bug surfaced.
+            <optgroup key={cat.id} label={cat.name}>
+              <option value={`${cat.id}|`}>{cat.name} (no group)</option>
+              {cat.groups.map((g) => (
+                <option key={g.id} value={`${cat.id}|${g.id}`}>
+                  {cat.name} &gt; {g.title}
+                </option>
+              ))}
+            </optgroup>
+          ))}
         </select>
       </div>
       <DialogFooter>

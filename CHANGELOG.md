@@ -5,6 +5,21 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2.1] - 2026-06-04
+
+### Fixed
+- **Move-item dialog: pick a category as the destination.** The
+  destination dropdown only listed `<category> > <group>` entries
+  plus a single top-level "Uncategorized" option. Users wanting to
+  drop an item under a category — but not into one of its groups —
+  had no UI affordance, so they picked the only top-level option
+  (Uncategorized), the server obediently moved the item to truly
+  uncategorised, and it "disappeared" from where they expected.
+  Each category now contributes a `<name> (no group)` entry
+  alongside its child groups so category-root is a real destination.
+  Server side unchanged — `moveLineItemToGroup` already accepted
+  `{ categoryId, groupId: null }`.
+
 ## [0.9.2.0] - 2026-06-04
 
 Project groups can now move between categories, and categories themselves

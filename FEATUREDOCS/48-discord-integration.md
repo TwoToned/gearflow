@@ -41,6 +41,8 @@ Lives in `apps/discord-bot/` (standalone Node service). Command registry: each `
 - [x] Channel sync (create + permission overwrites + retroactive grant; converge logic = reconcile primitive)
 - [x] `/asset fault` → DamageEvent
 - [x] Bot runtime wired (live interaction listener + outbox poll loop) — bot actually runs now
+- [x] Bot config moved off the bot host — admin page is the single source of truth for credentials + behavior. Bot reads everything via `/v1/integration/bootstrap` on startup.
+- [x] Channel lifecycle rules + archive category — admin picks when channels are created (statuses) and when they're archived (separate category)
 - [x] Admin "Discord Integration" settings page
 - [~] `apps/discord-bot/README.md` operator setup + `npm run doctor` — scaffolded (47-line README, doctor stub); still needs the full ~15-step guide (privileged Guild Members intent, OAuth scopes, perm-bit invite URL) and to document `DISCORD_BOT_TOKEN` + the per-org signing secret + the new endpoints
 
@@ -107,9 +109,38 @@ lists every missing var); `runner-deps.ts` builds the production `RunnerDeps`
 loads the integration config, and starts a recursive `setTimeout` poll loop calling
 `pollOnce` every `POLL_INTERVAL_MS` (default 5s; exponential backoff to 60s on
 repeated failure). SIGINT/SIGTERM stops the loop, destroys the client, exits 0.
-Single-org-per-process for v1 (env-configured `GEARFLOW_ORG_ID` +
-`GEARFLOW_DISCORD_SIGNING_SECRET`). Cursor is in-memory — the outbox read is
+Single-org-per-process for v1 (env-configured `GEARFLOW_ORG_ID` only —
+everything else comes via bootstrap). Cursor is in-memory — the outbox read is
 status-driven, so a restart with cursor=0 only re-pulls PENDING rows.
+
+**Config-on-the-admin-page architecture** (bot is two env vars now). Migration
+`20260604140000_discord_integration_config` adds 7 columns to `DiscordIntegration`:
+`discordBotToken` (AES-256-GCM encrypted at rest, key derived from
+`BETTER_AUTH_SECRET` via HKDF-SHA256 — see `src/lib/crypto/secret-vault.ts`),
+`discordApplicationId`, `archiveCategoryId`, `channelCreateOnStatuses`
+(`ProjectStatus[]`, default `[CONFIRMED]`), `channelArchiveOnStatuses` (default
+`[COMPLETED, INVOICED, RETURNED, CANCELLED]`), `postWelcomeOnCreate`, and
+`postFaultsToProjectChannel`. Server actions: `setDiscordCredentials({botToken})`
+encrypts before storing, never returns it back (the admin page surfaces only
+`hasDiscordBotToken: boolean`); `updateDiscordIntegrationConfig` covers the
+behavior fields. New route `GET /api/discord/v1/integration/bootstrap`
+(Bearer-only, single-call) returns everything the bot needs to login + sign +
+converge channels. Bot side: `env.ts` shrinks to `GEARFLOW_BOT_BEARER` +
+`GEARFLOW_ORG_ID` (plus optional `GEARFLOW_API_URL` defaulted to twotoned prod);
+`bootstrap.ts` fetches the config with friendly error messages for wrong-Bearer
+and not-configured; `index.ts` bootstraps **before** Discord login.
+`deploy-commands.ts` does the same (pulls application id + guild id from
+GearFlow instead of `.env`). `doctor.ts` runs through bootstrap reachability +
+"is the config complete?" checks. Lifecycle rules: `shouldHaveChannel(status,
+createOn, archiveOn, hasChannelAlready)` (in `src/lib/discord/project-statuses.ts`)
+returns `{shouldExist, shouldArchive}`; `getProjectChannelSpec` carries those
+plus `targetCategoryId` (active vs archive); bot's `convergeProject` no-ops if
+`!shouldExist+no channel`, creates+optionally welcomes if `shouldExist+no channel`,
+moves to archive category + locks if `shouldArchive+channel`, moves back to
+active category if `!shouldArchive+channel in archive`. New event
+`project.status.changed` emitted from `updateProject` + `updateProjectStatus`
+inside their `$transaction` so a status flip triggers archive/un-archive within
+one poll cycle. `DiscordChannelGateway` gains `moveToCategory` + `postWelcome`.
 
 **`/asset fault`** — `src/lib/services/asset-fault-service.ts`. Migration
 `20260604130000_discord_fault_reporter` adds `DamageEvent.reportedByCrewMemberId` (true reporter)

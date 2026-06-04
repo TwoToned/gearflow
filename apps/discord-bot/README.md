@@ -25,20 +25,30 @@ Then deploy to your dev guild: `npm run deploy-commands -- --guild <id>` (instan
 never global during dev — global propagation takes up to 1h).
 
 ## Operator setup (zero → working bot)
-1. **Create a Discord Application** — https://discord.com/developers/applications → copy the **Application ID** → `DISCORD_APPLICATION_ID`.
-2. **Add a Bot** → reset & copy the **Bot Token** → `DISCORD_BOT_TOKEN`.
+Only **two secrets** live on the bot host. Everything else (Discord bot token,
+application id, guild id, category ids, signing secret, status rules, behavior
+toggles) is configured at **GearFlow → Settings → Discord** and pulled on boot
+via `GET /v1/integration/bootstrap`.
+
+1. **Create a Discord Application** at https://discord.com/developers/applications. Copy the **Application ID**.
+2. **Add a Bot** → reset & copy the **Bot Token**.
 3. **Gateway intents** (Bot tab): enable **Server Members Intent** (PRIVILEGED — required to manage channel membership on crew assignment; without it member events never arrive). Guilds intent is default-on.
 4. **OAuth2 → URL Generator**: scopes `bot` + `applications.commands`; bot permissions: **Manage Channels**, **Manage Roles**, **View Channels**, **Send Messages**, **Embed Links**, **Attach Files**. Copy the generated invite URL.
-5. **Invite** the bot to your server with that URL.
-6. In **GearFlow → Settings → Discord**: enable the integration, paste
-   `DISCORD_GUILD_ID`, pick the project category + alert/audit channels, and
-   **generate the signing secret** → `GEARFLOW_DISCORD_SIGNING_SECRET`.
-7. Find the GearFlow organisation id (the bot is single-org per process) → `GEARFLOW_ORG_ID`.
-8. Fill `.env` (copy `.env.example`): tokens above + `DISCORD_GUILD_ID`,
-   `GEARFLOW_API_URL`, `GEARFLOW_BOT_BEARER`, `GEARFLOW_ORG_ID`.
-9. `npm install` then `npm run doctor` — green/red checklist (env, token, guild, API reachability).
-10. `npm run deploy-commands -- --guild <id>` then `npm run dev`.
-11. Smoke test: `/asset code:TTP-042` in your dev guild, then `/link your@email.com`.
+5. **Invite** the bot to your server with that URL. Copy the **server (guild) id** from Discord (Settings → Widget, or Server Settings → enable Developer Mode then right-click the server → Copy ID).
+6. In **GearFlow → Settings → Discord**:
+   - Toggle **Enabled**.
+   - Paste the **Discord application id** and **Guild id**.
+   - Pick the **Project category** + optional **Archive category** + alert/audit channels.
+   - Configure **Channel lifecycle rules** (when to create, when to archive).
+   - Toggle **welcome embed** + **fault echo** behavior to taste.
+   - Paste the **Discord bot token** under "Bot credentials" (encrypted at rest).
+   - **Generate the signing secret** and copy it (you won't need it on the bot host — it comes via bootstrap).
+7. Find the GearFlow organisation id → `GEARFLOW_ORG_ID`.
+8. Fill `.env` (copy `.env.example`) — just `GEARFLOW_BOT_BEARER` and `GEARFLOW_ORG_ID`.
+9. `npm install` then `npm run doctor` — green/red checklist (env, GearFlow reachable, bootstrap returns a complete config).
+10. `npm run deploy-commands` — fetches the application id + guild id from GearFlow and pushes the slash command registry.
+11. `npm run dev` — bot bootstraps, logs in, starts the outbox poll loop.
+12. Smoke test: `/asset code:TTP-042` in your guild, then `/link your@email.com`.
 
 ## What the bot does once running
 - **Interaction loop** — `client.on(interactionCreate)` dispatches every slash

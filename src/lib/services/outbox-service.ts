@@ -48,6 +48,30 @@ export async function emitOutboxEvent<T extends DiscordOutboxEventType>(
 }
 
 /**
+ * Emit only when the org has an ENABLED Discord integration, so orgs that never
+ * use Discord don't accumulate orphan PENDING rows nobody polls. The check runs
+ * in the caller's `tx`, so emission stays atomic with the mutation. Returns true
+ * if an event was written.
+ */
+export async function emitIfDiscordEnabled<T extends DiscordOutboxEventType>(
+  tx: Db,
+  input: {
+    organizationId: string;
+    eventType: T;
+    payload: DiscordOutboxPayloads[T];
+    dedupeKey: string;
+  },
+): Promise<boolean> {
+  const integration = await tx.discordIntegration.findUnique({
+    where: { organizationId: input.organizationId },
+    select: { isEnabled: true },
+  });
+  if (!integration?.isEnabled) return false;
+  await emitOutboxEvent(tx, input);
+  return true;
+}
+
+/**
  * Read undelivered events for an org with id > since, oldest first. Returns
  * PENDING and retry-due FAILED rows; PROCESSED/PROCESSING rows are skipped so a
  * cursor reset never replays completed work.

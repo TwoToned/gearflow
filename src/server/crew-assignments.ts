@@ -10,6 +10,7 @@ import {
   type CrewShiftFormValues,
 } from "@/lib/validations/crew";
 import { logActivity } from "@/lib/activity-log";
+import { emitIfDiscordEnabled } from "@/lib/services/outbox-service";
 
 // ─── Rate Cascade ────────────────────────────────────────────────────────────
 
@@ -135,7 +136,8 @@ export async function createAssignment(projectId: string, data: CrewAssignmentFo
     parsed.estimatedHours as number | undefined,
   );
 
-  const assignment = await prisma.crewAssignment.create({
+  const assignment = await prisma.$transaction(async (tx) => {
+    const created = await tx.crewAssignment.create({
     data: {
       organizationId,
       projectId,
@@ -156,6 +158,22 @@ export async function createAssignment(projectId: string, data: CrewAssignmentFo
       notes: parsed.notes || null,
       internalNotes: parsed.internalNotes || null,
     },
+    });
+
+    // Outbox: grant the linked crew member channel access (no-op for unlinked).
+    await emitIfDiscordEnabled(tx, {
+      organizationId,
+      eventType: "crew.assignment.changed",
+      payload: {
+        projectId,
+        crewMemberId: parsed.crewMemberId,
+        assignmentId: created.id,
+        action: "added",
+      },
+      dedupeKey: `crew.assignment.changed:${created.id}:added`,
+    });
+
+    return created;
   });
 
   // Auto-generate shifts if requested
@@ -278,7 +296,23 @@ export async function deleteAssignment(id: string) {
   });
   if (!assignment) throw new Error("Assignment not found");
 
-  await prisma.crewAssignment.delete({ where: { id, organizationId } });
+  await prisma.$transaction(async (tx) => {
+    await tx.crewAssignment.delete({ where: { id, organizationId } });
+
+    // Outbox: revoke channel access. Emitted in the same txn as the delete so a
+    // failed delete never revokes access (and vice-versa).
+    await emitIfDiscordEnabled(tx, {
+      organizationId,
+      eventType: "crew.assignment.changed",
+      payload: {
+        projectId: assignment.projectId,
+        crewMemberId: assignment.crewMemberId,
+        assignmentId: id,
+        action: "removed",
+      },
+      dedupeKey: `crew.assignment.changed:${id}:removed`,
+    });
+  });
 
   await logActivity({
     organizationId,

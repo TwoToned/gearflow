@@ -14,6 +14,20 @@ const withPWA = withPWAInit({
 const nextConfig: NextConfig = {
   // Turbopack config (Next.js 16 default bundler)
   turbopack: {},
+  // discord.js + its peers use Node-only APIs (`node:module`) and an optional
+  // native compression dep (`zlib-sync`) that the client bundler can't resolve
+  // statically. The in-process Discord bot loads them at runtime from
+  // `src/lib/discord/bot-process.ts` (booted by `instrumentation.ts`).
+  // Marking them as serverExternalPackages tells Next to leave them as
+  // require()-at-runtime on the server and never trace them into client bundles.
+  serverExternalPackages: [
+    "discord.js",
+    "@discordjs/ws",
+    "@discordjs/rest",
+    "@discordjs/builders",
+    "@discordjs/collection",
+    "zlib-sync",
+  ],
   async headers() {
     return [
       {

@@ -56,6 +56,10 @@ const serverEnvSchema = z.object({
   // Cron / scheduled jobs
   CRON_SECRET: z.string().optional(),
 
+  // Discord bot — RUNS IN-PROCESS NOW. All credentials and config live in the
+  // DiscordIntegration row (encrypted token via secret-vault). No bot env vars
+  // here; instrumentation.ts boots it on server start.
+
   // Sentry — error tracking. If unset, Sentry is disabled (dev/local).
   SENTRY_DSN: z.string().optional(),
   // Source map upload (CI only)

@@ -4,10 +4,12 @@
  * UnifiedAddDialog — single dialog for adding any kind of line item to a
  * project (own-stock equipment, kit, sub-hire, custom item). Renders a
  * segmented switcher at the top and swaps the body inline based on the
- * selected kind. The "Sub-Hire" kind is a bounce: it closes this dialog
- * and invokes onOpenSubHire to launch the existing PO workflow
- * (SubHireOrderDialog) — that stays separate per the cross-type
- * unification plan.
+ * selected kind.
+ *
+ * The "Sub-Hire" kind now renders SubHireAddForm inline. After the
+ * order is created, the parent uses onSubHireCreated(id) to close this
+ * dialog and open SubHireOrderDialog in manage mode so the user can add
+ * items without a context switch.
  *
  * Replaces the four standalone toolbar entry points (Add Equipment / Add
  * Kit / Custom Item / Sub-Hire Orders) and the two group-kebab actions
@@ -24,6 +26,7 @@ import {
 import { EquipmentAddForm } from "./equipment-add-form";
 import { KitAddForm } from "./kit-add-form";
 import { CustomItemAddForm } from "./custom-item-add-form";
+import { SubHireAddForm } from "./sub-hire-add-form";
 import type { CategoryData } from "./equipment-rows";
 
 export type UnifiedAddKind = "own-stock" | "kit" | "sub-hire" | "custom";
@@ -51,9 +54,10 @@ interface UnifiedAddDialogProps {
   categories: CategoryData[];
   /** Invalidate parent-owned queries after a successful add. */
   onInvalidate: () => void;
-  /** Open the sub-hire PO workflow. Called when the user picks the Sub-Hire
-   *  tab; this dialog closes and SubHireOrderDialog opens. */
-  onOpenSubHire: () => void;
+  /** Called after SubHireAddForm successfully creates an order. Parent
+   *  should close this dialog and open SubHireOrderDialog in manage mode
+   *  on the new id so the user can add items. */
+  onSubHireCreated: (subHireId: string) => void;
 }
 
 interface KindOption {
@@ -88,20 +92,13 @@ export function UnifiedAddDialog({
   targetLabel,
   categories,
   onInvalidate,
-  onOpenSubHire,
+  onSubHireCreated,
 }: UnifiedAddDialogProps) {
   function handleClose() {
     onOpenChange(false);
   }
 
   function handlePickKind(next: UnifiedAddKind) {
-    // Sub-hire is a bounce: close this dialog and open the existing
-    // SubHireOrderDialog (PO workflow stays separate per plan 4B).
-    if (next === "sub-hire") {
-      onOpenChange(false);
-      onOpenSubHire();
-      return;
-    }
     onKindChange(next);
   }
 
@@ -133,8 +130,7 @@ export function UnifiedAddDialog({
           })}
         </div>
 
-        {/* Body swap by kind. Sub-hire renders nothing — the effect above
-            bounces to onOpenSubHire on the next tick. */}
+        {/* Body swap by kind. */}
         {open && kind === "own-stock" && (
           <EquipmentAddForm
             projectId={projectId}
@@ -145,7 +141,12 @@ export function UnifiedAddDialog({
             targetLabel={targetLabel}
             onInvalidate={onInvalidate}
             onClose={handleClose}
-            onOpenSubHire={onOpenSubHire}
+            onOpenSubHire={() => {
+              // EquipmentAddForm uses this for the overbooking-fallback
+              // CTA. Route it through the unified switcher so the user
+              // lands on the inline sub-hire form, not a separate dialog.
+              onKindChange("sub-hire");
+            }}
           />
         )}
         {open && kind === "kit" && (
@@ -157,6 +158,18 @@ export function UnifiedAddDialog({
             groupId={groupId}
             targetLabel={targetLabel}
             onInvalidate={onInvalidate}
+            onClose={handleClose}
+          />
+        )}
+        {open && kind === "sub-hire" && (
+          <SubHireAddForm
+            projectId={projectId}
+            rentalStartDate={rentalStartDate}
+            rentalEndDate={rentalEndDate}
+            onCreated={(id) => {
+              onInvalidate();
+              onSubHireCreated(id);
+            }}
             onClose={handleClose}
           />
         )}

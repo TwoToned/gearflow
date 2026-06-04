@@ -488,7 +488,7 @@ export async function deleteAsset(id: string) {
   const asset = await prisma.asset.findUnique({
     where: { id, organizationId },
     include: {
-      _count: { select: { lineItems: true, maintenanceLinks: true } },
+      _count: { select: { lineItems: true, maintenanceLinks: true, childAssets: true, childBulkItems: true } },
       kitItem: true,
     },
   });
@@ -514,6 +514,16 @@ export async function deleteAsset(id: string) {
       title: "Cannot delete",
       message: "This asset is part of a kit.",
       hint: "Remove it from the kit first, then delete.",
+    });
+  }
+  // Deleting a parent would silently orphan/destroy its accessories
+  // (serialised children SetNull, bulk-child rows cascade). Block it.
+  if (asset._count.childAssets > 0 || asset._count.childBulkItems > 0) {
+    throw new UserFacingError({
+      code: "ASSET_HAS_ACCESSORIES",
+      title: "Cannot delete",
+      message: "This asset has accessories attached.",
+      hint: "Detach its accessories first, then delete.",
     });
   }
 

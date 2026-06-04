@@ -43,6 +43,7 @@ import {
   removeBulkChildFromAsset,
 } from "@/server/asset-accessories";
 import { addSerializedItemToKit } from "@/server/kits";
+import { deleteAsset } from "@/server/assets";
 
 async function seed() {
   const org = await createOrgFixture();
@@ -184,5 +185,15 @@ describe("child assets / accessories — attach/detach", () => {
     // Detaching via the wrong parent must throw and not delete the row.
     await expect(removeBulkChildFromAsset(parentB.id, child.id)).rejects.toThrow();
     expect(await testPrisma.assetBulkChild.count({ where: { parentAssetId: parentA.id } })).toBe(1);
+  });
+
+  it("a parent with accessories cannot be deleted (no silent orphaning)", async () => {
+    const { org, model } = await seed();
+    const parent = await createAssetFixture(org.id, model.id, { assetTag: "P-DEL" });
+    const child = await createAssetFixture(org.id, model.id, { assetTag: "C-DEL" });
+    await addSerializedChildToAsset(parent.id, { childAssetId: child.id });
+
+    await expect(deleteAsset(parent.id)).rejects.toThrow();
+    expect(await testPrisma.asset.findUnique({ where: { id: parent.id } })).not.toBeNull();
   });
 });

@@ -39,6 +39,15 @@ work, and deleting a category no longer destroys the groups inside it.
   signing API client, framework-free command registry, `npm run doctor`
   green/red preflight, README walks the ~15 operator-setup steps
   (intents, scopes, permission bits, invite URL, env vars).
+- **Bot config changes apply without restarting GearFlow.** Every save on
+  the Discord settings page that affects bot behavior (toggle enabled,
+  save token, save settings, deploy commands) automatically restarts the
+  in-process bot so the change takes effect immediately. The "Deploy &amp;
+  start bot" button does both jobs in one click. A live "Bot running" /
+  "Bot stopped" pill appears next to the connection-health dot so the
+  admin can see whether the bot is up at a glance. `startBot()` awaits
+  the Discord `ClientReady` handshake (10s timeout) so the post-restart
+  status read is accurate.
 - **Bot runs in-process now — zero env vars on the host.** The bot lives
   inside the GearFlow Next.js server (booted by `instrumentation.ts`).
   All configuration (Discord bot token, application id, guild id,

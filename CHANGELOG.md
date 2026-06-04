@@ -5,6 +5,41 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0.0] - 2026-06-04
+
+Project groups can now live in the Uncategorized zone, matching how sub-hire groups already work. Deleting a category no longer destroys the groups inside it.
+
+### Added
+- **Project groups in Uncategorized.** Both the toolbar "Add Group" dialog and
+  each group's "Move" dialog now offer an Uncategorized destination. Groups
+  created without a category live alongside orphan sub-hire groups in the
+  project's Uncategorized zone, with the same kebab actions (Edit, Edit Price,
+  Add Equipment / Kit, Move, Delete) as categorised groups.
+- **`getUncategorizedProjectGroups(projectId)` server query** — mirrors
+  `getUncategorizedSubHireGroups`, scoped to org + project. The equipment tab
+  uses it to render orphan project groups in the same loop as orphan sub-hires.
+
+### Changed
+- **`ProjectGroup.categoryId` is now nullable** (Prisma schema + DB migration
+  `20260604030000_uncategorized_project_groups`). The FK's `onDelete` switched
+  from `CASCADE` to `SET NULL`, so deleting a `ProjectCategory` orphans its
+  groups instead of destroying them along with all their line items. Groups
+  surface in the Uncategorized zone afterwards.
+- **`createProjectGroup` sortOrder scope** — the aggregate that picks the next
+  `sortOrder` now includes `projectId`. Without this, null-category groups
+  across every project in the org would have shared one sortOrder pool.
+- **Validation schemas accept `null` categoryId** —
+  `projectGroupSchema.categoryId` and
+  `moveProjectGroupToCategorySchema.categoryId` are now nullable. The old
+  v0.9.3.0 unit test that asserted "rejects a null categoryId" flipped to
+  assert acceptance.
+
+### Fixed
+- **`moveProjectGroupToCategory` to Uncategorized.** When the destination is
+  null, the action skips advisory locking and category-slot inserts, drops any
+  existing slot for the group, and clears the line items' `categoryId` —
+  matching the sub-hire equivalent's behaviour.
+
 ## [0.9.3.0] - 2026-06-04
 
 The line-item Move action splits into two clearer choices.

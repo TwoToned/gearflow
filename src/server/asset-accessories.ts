@@ -121,12 +121,18 @@ export async function addSerializedChildToAsset(
   }
 
   const result = await prisma.$transaction(async (tx) => {
-    return tx.asset.update({
-      where: { id: child.id },
+    // Guarded write: re-assert the pre-check conditions in the WHERE so two
+    // concurrent attaches of the same child (to different parents) can't both
+    // win — the second sees count 0 and rolls back.
+    const guarded = await tx.asset.updateMany({
+      where: { id: child.id, organizationId, parentAssetId: null, kitId: null, status: "AVAILABLE" },
       // Child physically lives with the parent → inherit its location.
       data: { parentAssetId, locationId: parent.locationId, notes: parsed.notes ? parsed.notes : undefined },
-      include: { model: true },
     });
+    if (guarded.count === 0) {
+      throw new UserFacingError({ code: "ACCESSORY_TAKEN", title: "Already attached", message: `${child.assetTag} was just attached elsewhere. Refresh and try again.` });
+    }
+    return tx.asset.findUniqueOrThrow({ where: { id: child.id }, include: { model: true } });
   });
 
   await logActivity({
@@ -237,10 +243,15 @@ export async function removeSerializedChildFromAsset(
 
   const child = await prisma.asset.findUnique({
     where: { id: childAssetId, organizationId },
-    select: { id: true, assetTag: true, parentAssetId: true },
+    select: { id: true, assetTag: true, parentAssetId: true, status: true },
   });
   if (!child || child.parentAssetId !== parentAssetId) {
     throw new UserFacingError({ code: "NOT_FOUND", title: "Accessory not found", message: "That accessory is not attached to this asset." });
+  }
+  // Don't detach while the accessory is out on a job — detaching a deployed
+  // asset would leave its project child line dangling and mis-state the shelf.
+  if (child.status !== "AVAILABLE") {
+    throw new UserFacingError({ code: "ACCESSORY_DEPLOYED", title: "Accessory is in use", message: `${child.assetTag} is ${child.status.replace("_", " ").toLowerCase()} — return it before detaching.` });
   }
 
   await prisma.asset.update({

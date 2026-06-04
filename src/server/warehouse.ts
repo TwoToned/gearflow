@@ -265,7 +265,7 @@ export async function lookupAssetForScan(
   // If this serialized asset is a permanent accessory of another asset, prompt
   // to scan the parent instead — accessories move with their parent.
   if (asset && asset.parentAssetId) {
-    const parent = await prisma.asset.findUnique({ where: { id: asset.parentAssetId }, select: { id: true, assetTag: true } });
+    const parent = await prisma.asset.findFirst({ where: { id: asset.parentAssetId, organizationId }, select: { id: true, assetTag: true } });
     return serialize({
       found: true as const, type: "asset_child" as const, lineItemId: null, assetId: asset.id,
       assetName: asset.model.name, parentAssetId: parent?.id || null, parentAssetTag: parent?.assetTag || null, reason: "asset_is_accessory" as const,

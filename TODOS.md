@@ -148,15 +148,38 @@ the leading prefix where it's narrower.
 **Context:** Deferred from custom items autoplan (Barcode Scanning Phase 2).
 **Priority:** P3
 
-### Child Assets / Accessories
-**What:** Allow serialised and bulk assets to be permanently attached to other serialised assets as children/accessories. E.g. "IEC cable" attached to "Mixer", "Adaptor" attached to "JAG Headset Mic". When the parent asset is added to a project, children come with it automatically. When the parent is checked out/in, children move with it.
-**Why:** Lots of gear has fixed accessories that always travel together but aren't really kits (no formal container, no separate pricing). Currently operators either add accessories as separate line items (clutter) or omit them and hope they ship with the parent (errors).
-**Pros:** Models reality of how gear actually moves, reduces line-item clutter, fewer missed accessories at deploy, no need to build a kit for every cable.
-**Cons:** New schema relationship (`Asset.parentAssetId`?), needs UI on asset form to attach/detach children, warehouse flows need to propagate parent → children scans, PDFs need to decide whether to show children indented or hide them.
-**Context:** Different from kits — kits are containers with their own asset tag and rental contract; accessories are inseparable from their parent. Bulk asset children (e.g. 1 mixer always ships with 1 IEC) and serialised children (specific IEC tracked individually) both need to work.
-**Depends on:** Nothing (greenfield feature, but touches warehouse, pull sheet, delivery docket, kit boundary).
-**Estimate:** human ~2 weeks / CC ~2-3 hours
-**Priority:** P1
+### ~~Child Assets / Accessories~~ ✅ SHIPPED
+Shipped in v0.11.0.0. `Asset.parentAssetId` self-relation (serialised
+children), `AssetBulkChild` join (bulk children, default `SHIPS_WITH`
+allocation), `ProjectLineItem.childKind` (`KIT | ACCESSORY`), reusing
+`isKitChild` so the ~40 totals/count filters auto-exclude accessories with
+no migration. Accessories auto-expand onto projects from two entry points:
+office adds (`expandAccessoryChildren` in `line-items.ts`) and warehouse
+assigns-at-scan (`expandAccessoriesForAsset` in `line-item-fulfillment.ts`,
+hooked into `prepUnit` + `checkOutItems`, idempotent). Warehouse cascade
+flips accessory units through the standard unit path inside the parent's
+transaction. PDF audit covers all 5 consumers with an "accessory parent"
+detection in both render and height calc. `AssetAccessoriesManager` UI on
+the asset detail page; "scan the parent" prompts in all 3 warehouse tabs.
+Hardened post-review: TOCTOU-safe attach, detach-while-deployed guard,
+deleteAsset blocks parents with accessories, symmetric kit↔accessory dual
+membership guard. 26 integration tests. Follow-ups (deferred, see below).
+
+### Accessories — Follow-ups from v0.11.0.0
+- **Re-enable `DEDICATED` bulk allocation.** Server-side support exists; UI
+  is currently SHIPS_WITH-only because DEDICATED was double-counting against
+  live availability (`adjustBulkAvailability` decrement at attach + the
+  expanded child line counted as a booking in `availability.ts`). Pick one:
+  exclude DEDICATED accessory children from the live overbook query (sub-hire
+  style), or drop the attach-time decrement. P3.
+- **Bulk parents.** v1 restricts parents to serialised assets; "50 lights
+  each with 2 clamps" can't be expressed yet. Unlocks the full Bulk Check-In
+  payoff. P2.
+- **Nested accessories.** Currently one level deep. Kits already nest;
+  revisit only if requested. P3.
+- **DEDICATED detach-while-out** — if `DEDICATED` is re-enabled, block
+  detaching while the bulk units are still out on a project (currently we
+  guard only the serialised case). P3.
 
 ## Warehouse Documents
 

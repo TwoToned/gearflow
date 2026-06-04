@@ -5,13 +5,14 @@ import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Archive, ChevronRight, Pencil, Trash2, FileText, RotateCcw, MapPin, Wrench, CalendarClock } from "lucide-react";
+import { Archive, ChevronRight, Pencil, Trash2, FileText, RotateCcw, MapPin, Wrench, CalendarClock, Cable } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useActiveOrganization } from "@/lib/auth-client";
 
 import { getAsset, archiveAsset, deleteAsset, updateAssetNotes } from "@/server/assets";
 import { AssetChecksTab } from "@/components/assets/asset-checks-tab";
+import { AssetAccessoriesManager } from "@/components/assets/asset-accessories-manager";
 import { forceReturnAsset } from "@/server/warehouse";
 import { getBulkAsset, archiveBulkAsset, deleteBulkAsset, updateBulkAssetNotes } from "@/server/bulk-assets";
 import {
@@ -549,6 +550,55 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     <MapPin className="h-3.5 w-3.5 text-fg-3 shrink-0" />
                     <span className="font-medium">{asset.location.name}</span>
                   </div>
+                </SidebarSection>
+              )}
+
+              {/* This asset is itself an accessory of another */}
+              {asset.parentAsset && (
+                <SidebarSection title="Accessory of">
+                  <Link
+                    href={`/assets/registry/${asset.parentAsset.id}`}
+                    className="flex items-center gap-2 text-sm hover:underline"
+                  >
+                    <Cable className="h-3.5 w-3.5 text-fg-3 shrink-0" />
+                    <span className="font-medium">{asset.parentAsset.assetTag}</span>
+                    {asset.parentAsset.customName && (
+                      <span className="text-fg-3">{asset.parentAsset.customName}</span>
+                    )}
+                  </Link>
+                </SidebarSection>
+              )}
+
+              {/* Accessories manager — only for top-level assets (not children) */}
+              {!asset.parentAsset && (
+                <SidebarSection title="Accessories">
+                  <CanDo resource="asset" action="update" fallback={
+                    (asset.childAssets.length > 0 || asset.childBulkItems.length > 0) ? (
+                      <ul className="space-y-1 text-sm">
+                        {asset.childAssets.map((c) => (
+                          <li key={c.id} className="flex items-center gap-2">
+                            <span className="text-fg-3 select-none">└─</span>
+                            <span className="font-medium">{c.assetTag}</span>
+                            <span className="text-fg-3">{c.model?.name ?? ""}</span>
+                          </li>
+                        ))}
+                        {asset.childBulkItems.map((c) => (
+                          <li key={c.id} className="flex items-center gap-2">
+                            <span className="text-fg-3 select-none">└─</span>
+                            <span className="font-medium">{c.quantity}× {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-fg-3">No accessories attached.</p>
+                    )
+                  }>
+                    <AssetAccessoriesManager
+                      assetId={asset.id}
+                      childAssets={asset.childAssets}
+                      childBulkItems={asset.childBulkItems}
+                    />
+                  </CanDo>
                 </SidebarSection>
               )}
 

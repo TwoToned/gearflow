@@ -38,6 +38,7 @@ model User {
   returnedLineItems         ProjectLineItem[]           @relation("ReturnedBy")
   addedKitSerializedItems   KitSerializedItem[]         @relation("KitSerializedItemAddedBy")
   addedKitBulkItems         KitBulkItem[]               @relation("KitBulkItemAddedBy")
+  addedAssetBulkChildren    AssetBulkChild[]            @relation("AssetBulkChildAddedBy")
   uploads                   FileUpload[]
   testTagRecords            TestTagRecord[]
   twoFactors                TwoFactor[]
@@ -149,6 +150,7 @@ model Organization {
   kits                     Kit[]
   kitSerializedItems       KitSerializedItem[]
   kitBulkItems             KitBulkItem[]
+  assetBulkChildren        AssetBulkChild[]
   fileUploads              FileUpload[]
   modelMedia               ModelMedia[]
   assetMedia               AssetMedia[]
@@ -483,6 +485,14 @@ enum KitStatus {
 enum KitPricingMode {
   KIT_PRICE
   ITEMIZED
+}
+
+/// What kind of child a non-top-level ProjectLineItem is. Set alongside
+/// `isKitChild: true` + `parentLineItemId`. KIT = a kit member; ACCESSORY = a
+/// child asset / accessory permanently attached to a parent asset.
+enum LineItemChildKind {
+  KIT
+  ACCESSORY
 }
 
 enum KitCheckMode {
@@ -1026,6 +1036,14 @@ model Asset {
   kit     Kit?               @relation(fields: [kitId], references: [id])
   kitItem KitSerializedItem?
 
+  // Child assets / accessories — a serialised asset can be permanently
+  // attached to a parent serialised asset (e.g. an IEC cable on a mixer).
+  // parentAssetId is single-valued: a child has exactly one parent.
+  parentAssetId  String?
+  parentAsset    Asset?           @relation("AssetAccessories", fields: [parentAssetId], references: [id], onDelete: SetNull)
+  childAssets    Asset[]          @relation("AssetAccessories")
+  childBulkItems AssetBulkChild[]
+
   maintenanceLinks   MaintenanceRecordAsset[]
   lineItems          ProjectLineItem[]
   lineItemUnits      ProjectLineItemUnit[]
@@ -1045,6 +1063,7 @@ model Asset {
   @@index([supplierId])
   @@index([supplierOrderId])
   @@index([kitId])
+  @@index([parentAssetId])
   @@index([isActive])
   @@map("asset")
 }
@@ -1083,14 +1102,15 @@ model BulkAsset {
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
 
-  kitBulkItems   KitBulkItem[]
-  lineItems      ProjectLineItem[]
-  lineItemUnits  ProjectLineItemUnit[]
-  scanLogs       AssetScanLog[]
-  testTagAssets  TestTagAsset[]
-  checkRecords   CheckRecord[]
-  damageEvents   DamageEvent[]
-  stocktakeItems StocktakeItem[]
+  kitBulkItems    KitBulkItem[]
+  assetChildItems AssetBulkChild[]
+  lineItems       ProjectLineItem[]
+  lineItemUnits   ProjectLineItemUnit[]
+  scanLogs        AssetScanLog[]
+  testTagAssets   TestTagAsset[]
+  checkRecords    CheckRecord[]
+  damageEvents    DamageEvent[]
+  stocktakeItems  StocktakeItem[]
 
   @@unique([organizationId, assetTag])
   @@index([organizationId])
@@ -1099,6 +1119,41 @@ model BulkAsset {
   @@index([isActive])
   @@index([preferredSupplierId])
   @@map("bulk_asset")
+}
+
+/// How a bulk accessory is allocated against the shared pool.
+/// SHIPS_WITH: the parent "ships with" N of this bulk asset; the N are drawn
+///   from the live pool at prep/checkout (a normal booking) — availability is
+///   computed live, the pool is NOT decremented at attach time.
+/// DEDICATED: the N are permanently pulled out of the shared pool at attach
+///   time (kit-style availableQuantity decrement) and restored on detach/remove.
+enum AccessoryAllocationMode {
+  SHIPS_WITH
+  DEDICATED
+}
+
+/// A bulk asset attached as a permanent accessory to a parent serialised asset
+/// (e.g. "this light ships with 2 clamps"). Mirrors KitBulkItem.
+model AssetBulkChild {
+  id             String                  @id @default(cuid())
+  organizationId String
+  organization   Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parentAssetId  String
+  parentAsset    Asset                   @relation(fields: [parentAssetId], references: [id], onDelete: Cascade)
+  bulkAssetId    String
+  bulkAsset      BulkAsset               @relation(fields: [bulkAssetId], references: [id], onDelete: Cascade)
+  quantity       Int
+  allocationMode AccessoryAllocationMode @default(SHIPS_WITH)
+  sortOrder      Int                     @default(0)
+  notes          String?
+  addedAt        DateTime                @default(now())
+  addedById      String
+  addedBy        User                    @relation("AssetBulkChildAddedBy", fields: [addedById], references: [id])
+
+  @@index([organizationId])
+  @@index([parentAssetId])
+  @@index([bulkAssetId])
+  @@map("asset_bulk_child")
 }
 
 // ─── Location ────────────────────────────────────────────────────────────────
@@ -1382,7 +1437,14 @@ model ProjectLineItem {
   bulkAsset           BulkAsset?            @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
   kitId               String?
   kit                 Kit?                  @relation(fields: [kitId], references: [id], onDelete: SetNull)
+  // `isKitChild` is the structural "is a non-top-level child" flag — it is set
+  // on kit children, sub-hire group children, AND (since the accessories
+  // feature) accessory children. The ~40 `isKitChild: false` filters across the
+  // app rely on it to exclude every kind of child from top-level totals/counts.
+  // `childKind` is the discriminator that distinguishes WHAT kind of child a row
+  // is, for behaviour that differs (render label, remove-error copy, scan routing).
   isKitChild          Boolean               @default(false)
+  childKind           LineItemChildKind?
   parentLineItemId    String?
   parentLineItem      ProjectLineItem?      @relation("KitLineItemChildren", fields: [parentLineItemId], references: [id], onDelete: Cascade)
   childLineItems      ProjectLineItem[]     @relation("KitLineItemChildren")

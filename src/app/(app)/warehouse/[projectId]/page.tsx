@@ -843,6 +843,14 @@ function WarehouseProjectPage({
         return;
       }
 
+      if (result.found && result.type === "asset_child") {
+        const r = result as { assetName: string; parentAssetTag: string | null };
+        toast.info(`${r.assetName} is an accessory${r.parentAssetTag ? ` of ${r.parentAssetTag}` : ""} — scan the parent; accessories move with it.`);
+        setScanValue("");
+        scanInputRef.current?.focus();
+        return;
+      }
+
       if (result.found && result.lineItemId) {
         // Ensure container asset is on project before prepping
         await ensureContainerIfNeeded();
@@ -947,6 +955,14 @@ function WarehouseProjectPage({
       if (result.found && result.type === "kit_member") {
         const memberResult = result as { kitId: string | null; kitAssetTag: string | null; assetName: string };
         toast.error(`This asset is in a kit${memberResult.kitAssetTag ? ` (${memberResult.kitAssetTag})` : ""} — scan the kit barcode to deploy`);
+        setDeployScanValue("");
+        deployScanInputRef.current?.focus();
+        return;
+      }
+
+      if (result.found && result.type === "asset_child") {
+        const r = result as { assetName: string; parentAssetTag: string | null };
+        toast.error(`${r.assetName} is an accessory${r.parentAssetTag ? ` of ${r.parentAssetTag}` : ""} — scan the parent to deploy; it moves with the parent.`);
         setDeployScanValue("");
         deployScanInputRef.current?.focus();
         return;
@@ -1057,6 +1073,14 @@ function WarehouseProjectPage({
         } else {
           toast.error(`This asset is in a kit${memberResult.kitAssetTag ? ` (${memberResult.kitAssetTag})` : ""} not on this project.`);
         }
+        setReturnScanValue("");
+        returnScanInputRef.current?.focus();
+        return;
+      }
+
+      if (result.found && result.type === "asset_child") {
+        const r = result as { assetName: string; parentAssetTag: string | null };
+        toast.info(`${r.assetName} is an accessory${r.parentAssetTag ? ` of ${r.parentAssetTag}` : ""} — scan the parent to return; it comes back with the parent.`);
         setReturnScanValue("");
         returnScanInputRef.current?.focus();
         return;

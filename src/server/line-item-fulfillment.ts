@@ -328,6 +328,111 @@ export async function returnLineUnits(
  * asset assigned just carries prepStatus on the order line. Rolls the line
  * up and returns it (with model/asset/bulkAsset included).
  */
+/**
+ * Expand a specific serialised asset's permanent accessories onto a line as
+ * accessory child lines (childKind: ACCESSORY). Idempotent: dedups serialised
+ * accessories by their specific assetId and bulk accessories by bulkAssetId, so
+ * re-scanning the same parent doesn't duplicate rows.
+ *
+ * This is what makes accessories travel when the warehouse assigns a specific
+ * unit to a model-level line at prep/checkout (not just when the office adds
+ * the specific asset to the project). Returns the ids of any child lines created.
+ *
+ * v1 limitation: for a multi-quantity line where several parents each carry the
+ * SAME bulk accessory, the bulk row is created once (dedup by bulkAssetId).
+ * Serialised accessories accumulate correctly (unique per physical unit).
+ */
+export async function expandAccessoriesForAsset(
+  tx: Prisma.TransactionClient,
+  args: { organizationId: string; lineItemId: string; assetId: string },
+): Promise<string[]> {
+  const { organizationId, lineItemId, assetId } = args;
+  const line = await tx.projectLineItem.findUnique({
+    where: { id: lineItemId },
+    select: {
+      projectId: true,
+      categoryId: true,
+      groupId: true,
+      duration: true,
+      pricingType: true,
+      childKind: true,
+    },
+  });
+  if (!line || line.childKind) return []; // missing, or itself a child — never nest
+
+  const asset = await tx.asset.findUnique({
+    where: { id: assetId },
+    select: {
+      childAssets: { select: { id: true, modelId: true, model: { select: { name: true } } } },
+      childBulkItems: {
+        select: { bulkAssetId: true, quantity: true, bulkAsset: { select: { modelId: true, model: { select: { name: true } } } } },
+      },
+    },
+  });
+  if (!asset || (asset.childAssets.length === 0 && asset.childBulkItems.length === 0)) return [];
+
+  const existing = await tx.projectLineItem.findMany({
+    where: { parentLineItemId: lineItemId, childKind: "ACCESSORY", organizationId },
+    select: { assetId: true, bulkAssetId: true },
+  });
+  const haveAsset = new Set(existing.map((e) => e.assetId).filter(Boolean));
+  const haveBulk = new Set(existing.map((e) => e.bulkAssetId).filter(Boolean));
+
+  const created: string[] = [];
+  let sort = existing.length;
+  for (const child of asset.childAssets) {
+    if (haveAsset.has(child.id)) continue;
+    const row = await tx.projectLineItem.create({
+      data: {
+        organizationId,
+        projectId: line.projectId,
+        type: "EQUIPMENT",
+        modelId: child.modelId,
+        assetId: child.id,
+        quantity: 1,
+        isKitChild: true,
+        childKind: "ACCESSORY",
+        parentLineItemId: lineItemId,
+        categoryId: line.categoryId,
+        groupId: line.groupId,
+        description: child.model?.name ?? null,
+        unitPrice: null,
+        pricingType: line.pricingType,
+        duration: line.duration,
+        sortOrder: sort++,
+      },
+      select: { id: true },
+    });
+    created.push(row.id);
+  }
+  for (const bi of asset.childBulkItems) {
+    if (haveBulk.has(bi.bulkAssetId)) continue;
+    const row = await tx.projectLineItem.create({
+      data: {
+        organizationId,
+        projectId: line.projectId,
+        type: "EQUIPMENT",
+        modelId: bi.bulkAsset.modelId,
+        bulkAssetId: bi.bulkAssetId,
+        quantity: bi.quantity,
+        isKitChild: true,
+        childKind: "ACCESSORY",
+        parentLineItemId: lineItemId,
+        categoryId: line.categoryId,
+        groupId: line.groupId,
+        description: bi.bulkAsset.model?.name ? `${bi.quantity}x ${bi.bulkAsset.model.name}` : null,
+        unitPrice: null,
+        pricingType: line.pricingType,
+        duration: line.duration,
+        sortOrder: sort++,
+      },
+      select: { id: true },
+    });
+    created.push(row.id);
+  }
+  return created;
+}
+
 export async function prepUnit(
   tx: Prisma.TransactionClient,
   args: {
@@ -354,6 +459,13 @@ export async function prepUnit(
           ? { prepContainer: args.prepContainer }
           : {}),
       },
+    });
+    // Accessories of this specific asset join the line so they show on the
+    // pull sheet and get packed/deployed with it.
+    await expandAccessoriesForAsset(tx, {
+      organizationId: args.organizationId,
+      lineItemId: args.lineItemId,
+      assetId: args.assetId,
     });
   } else if (args.bulkAssetId) {
     const { id } = await ensureBulkUnit(tx, {

@@ -9,6 +9,7 @@ import { logActivity } from "@/lib/activity-log";
 import {
   syncLineItemRollup,
   ensureSerialisedUnit,
+  expandAccessoriesForAsset,
   ensureBulkUnit,
   returnLineUnits,
 } from "@/server/line-item-fulfillment";
@@ -262,6 +263,16 @@ export async function lookupAssetForScan(
     });
   }
 
+  // If this serialized asset is a permanent accessory of another asset, prompt
+  // to scan the parent instead — accessories move with their parent.
+  if (asset && asset.parentAssetId) {
+    const parent = await prisma.asset.findFirst({ where: { id: asset.parentAssetId, organizationId }, select: { id: true, assetTag: true } });
+    return serialize({
+      found: true as const, type: "asset_child" as const, lineItemId: null, assetId: asset.id,
+      assetName: asset.model.name, parentAssetId: parent?.id || null, parentAssetTag: parent?.assetTag || null, reason: "asset_is_accessory" as const,
+    });
+  }
+
   const found = asset || bulkAsset;
   if (!found) {
     return serialize({ found: false as const, type: null, lineItemId: null, assetId: null, assetName: null, reason: null });
@@ -456,6 +467,92 @@ export async function lookupAssetForScan(
     found: true as const, type: "serialized" as const,
     lineItemId: lineItem.id, assetId: asset.id, assetName, reason: null,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Accessory cascade — permanent accessories (child assets) move with their
+// parent through the warehouse. They are separate child line items
+// (childKind: ACCESSORY, parentLineItemId set), so the parent's checkout /
+// checkin must flip the children through the SAME unit path as any other line
+// (ensureSerialisedUnit / ensureBulkUnit / returnLineUnits) — never a parallel
+// cascade. No-op when the parent has no accessories.
+// ---------------------------------------------------------------------------
+
+async function checkoutAccessoryChildren(
+  tx: Prisma.TransactionClient,
+  args: {
+    organizationId: string;
+    projectId: string;
+    parentLineItemId: string;
+    userId: string;
+    projectLocationId: string | null;
+  },
+) {
+  const { organizationId, projectId, parentLineItemId, userId, projectLocationId } = args;
+  const children = await tx.projectLineItem.findMany({
+    where: { parentLineItemId, organizationId, childKind: "ACCESSORY" },
+  });
+  for (const child of children) {
+    if (child.assetId) {
+      const asset = await tx.asset.findUnique({ where: { id: child.assetId }, select: { status: true } });
+      // Skip if already deployed (idempotent on repeated parent scans).
+      const { id: unitId } = await ensureSerialisedUnit(tx, { organizationId, lineItemId: child.id, assetId: child.assetId });
+      await tx.projectLineItemUnit.updateMany({
+        where: { id: unitId, status: { not: "CHECKED_OUT" } },
+        data: { status: "CHECKED_OUT", checkedOutAt: new Date(), checkedOutById: userId },
+      });
+      if (asset?.status !== "CHECKED_OUT") {
+        await tx.asset.update({
+          where: { id: child.assetId },
+          data: { status: "CHECKED_OUT", ...(projectLocationId && { locationId: projectLocationId }) },
+        });
+      }
+      await tx.assetScanLog.create({
+        data: { organizationId, assetId: child.assetId, projectId, action: "CHECK_OUT", scannedById: userId, notes: "Accessory — moved with parent" },
+      });
+    } else if (child.bulkAssetId) {
+      const { id: unitId } = await ensureBulkUnit(tx, { organizationId, lineItemId: child.id, bulkAssetId: child.bulkAssetId, quantity: child.quantity });
+      await tx.projectLineItemUnit.update({
+        where: { id: unitId },
+        data: { status: "CHECKED_OUT", quantity: child.quantity, checkedOutAt: new Date(), checkedOutById: userId },
+      });
+      await tx.assetScanLog.create({
+        data: { organizationId, bulkAssetId: child.bulkAssetId, projectId, action: "CHECK_OUT", scannedById: userId, notes: "Accessory — moved with parent" },
+      });
+    }
+    await syncLineItemRollup(tx, child.id);
+  }
+}
+
+async function checkinAccessoryChildren(
+  tx: Prisma.TransactionClient,
+  args: {
+    organizationId: string;
+    projectId: string;
+    parentLineItemId: string;
+    returnCondition: "GOOD" | "DAMAGED" | "MISSING";
+    userId: string;
+    defaultLocationId: string | null;
+  },
+) {
+  const { organizationId, projectId, parentLineItemId, returnCondition, userId, defaultLocationId } = args;
+  const children = await tx.projectLineItem.findMany({
+    where: { parentLineItemId, organizationId, childKind: "ACCESSORY" },
+  });
+  for (const child of children) {
+    await returnLineUnits(tx, {
+      organizationId,
+      projectId,
+      lineItemId: child.id,
+      returnCondition,
+      // Bulk accessories carry a quantity > 1; return the whole quantity so
+      // the unit flips to RETURNED rather than partially-returned.
+      ...(child.bulkAssetId ? { quantity: child.quantity } : {}),
+      userId,
+      defaultLocationId,
+    });
+    await syncLineItemRollup(tx, child.id);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -728,8 +825,26 @@ export async function checkOutItems(
         continue;
       }
 
+      // If a specific asset with accessories was assigned to a model-level
+      // line at scan time (no prep), materialise its accessory child lines now
+      // so the cascade below deploys them. Idempotent — a no-op if prep already
+      // expanded them.
+      if (targetAssetId) {
+        await expandAccessoriesForAsset(tx, { organizationId, lineItemId: lineItem.id, assetId: targetAssetId });
+      }
+
       // Roll the unit change up onto the order line.
       await syncLineItemRollup(tx, lineItem.id);
+
+      // Permanent accessories travel with the parent — check them out too.
+      await checkoutAccessoryChildren(tx, {
+        organizationId,
+        projectId,
+        parentLineItemId: lineItem.id,
+        userId,
+        projectLocationId,
+      });
+
       updated.push(
         await tx.projectLineItem.findUnique({
           where: { id: lineItem.id },
@@ -827,6 +942,17 @@ export async function checkInItems(
       }
 
       await syncLineItemRollup(tx, item.lineItemId);
+
+      // Permanent accessories return with their parent.
+      await checkinAccessoryChildren(tx, {
+        organizationId,
+        projectId,
+        parentLineItemId: item.lineItemId,
+        returnCondition: item.returnCondition ?? "GOOD",
+        userId,
+        defaultLocationId,
+      });
+
       updated.push(
         await tx.projectLineItem.findUnique({
           where: { id: item.lineItemId },

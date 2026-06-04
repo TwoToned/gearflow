@@ -265,14 +265,22 @@ function calculateItemHeight(
   // its space and the plugin will overflow and silently drop tail items.
   const isGroupParent =
     !!item.isGroupRow && (item.childLineItems?.length ?? 0) > 0;
+  // A serialised asset with permanent accessories. The plugin renders its
+  // accessories indented (always — they're inseparable), so the height calc
+  // MUST reserve their rows here or the section under-estimates and the
+  // plugin silently drops tail items (the v0.8.1.1-class bug).
+  const isAccessoryParent =
+    !item.kitId &&
+    !item.isGroupRow &&
+    (item.childLineItems?.some((c) => c.childKind === "ACCESSORY") ?? false);
 
-  // Per-unit checkbox rows for bulk items (qty > 1, non-kit, non-group-parent)
-  if (settings.showPerUnitCheckboxes && !isKit && !isGroupParent && item.quantity > 1) {
+  // Per-unit checkbox rows for bulk items (qty > 1, non-parent)
+  if (settings.showPerUnitCheckboxes && !isKit && !isGroupParent && !isAccessoryParent && item.quantity > 1) {
     heightPt += item.quantity * PER_UNIT_ROW_PT;
   }
 
-  // Kit children / group members — same indented-child rendering path in the plugin
-  if ((isKit && settings.showKitChildren) || isGroupParent) {
+  // Kit children / group members / accessories — same indented-child path in the plugin
+  if ((isKit && settings.showKitChildren) || isGroupParent || isAccessoryParent) {
     const children = item.childLineItems || [];
     for (const child of children) {
       heightPt += CHILD_ROW_PT;

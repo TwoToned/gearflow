@@ -800,6 +800,21 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                           setRenameCategoryValue(cat.name);
                         }}
                         onDelete={() => deleteCategoryMut.mutate(cat.id)}
+                        onAddEquipment={() => {
+                          setUnifiedAddTarget({ categoryId: cat.id, label: cat.name });
+                          setUnifiedAddKind("own-stock");
+                          setShowUnifiedAdd(true);
+                        }}
+                        onAddKit={() => {
+                          setUnifiedAddTarget({ categoryId: cat.id, label: cat.name });
+                          setUnifiedAddKind("kit");
+                          setShowUnifiedAdd(true);
+                        }}
+                        onAddCustom={() => {
+                          setUnifiedAddTarget({ categoryId: cat.id, label: cat.name });
+                          setUnifiedAddKind("custom");
+                          setShowUnifiedAdd(true);
+                        }}
                       />
 
                       {/* Mixed groups within category (CategorySlot order; falls back

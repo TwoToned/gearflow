@@ -23,6 +23,7 @@ import {
   BookmarkPlus,
   Handshake,
   ArrowRightLeft,
+  Sparkles,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -666,11 +667,24 @@ export function CategoryRow({
   cat,
   onRename,
   onDelete,
+  onAddEquipment,
+  onAddKit,
+  onAddCustom,
 }: {
   cat: CategoryData;
   onRename: () => void;
   onDelete: () => void;
+  /** Open the unified add dialog scoped to this category (no group).
+   *  All three are optional so callers can opt in. The kebab section
+   *  hides entirely when none are supplied. Sub-hire is intentionally
+   *  absent — sub-hire orders don't carry a categoryId, only their
+   *  groups do, so adding a sub-hire "to a category" is not a clean
+   *  semantic. Use the toolbar Add for sub-hires. */
+  onAddEquipment?: () => void;
+  onAddKit?: () => void;
+  onAddCustom?: () => void;
 }) {
+  const hasAddActions = !!(onAddEquipment || onAddKit || onAddCustom);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: `cat-${cat.id}` });
 
@@ -700,6 +714,28 @@ export function CategoryRow({
             <DropdownMenuContent align="end">
               <DropdownMenuGroup>
                 <DropdownMenuLabel>Category</DropdownMenuLabel>
+                {hasAddActions && (
+                  <>
+                    {onAddEquipment && (
+                      <DropdownMenuItem onClick={onAddEquipment}>
+                        <Plus className="mr-2 h-3.5 w-3.5" />
+                        Add Equipment
+                      </DropdownMenuItem>
+                    )}
+                    {onAddKit && (
+                      <DropdownMenuItem onClick={onAddKit}>
+                        <Package className="mr-2 h-3.5 w-3.5" />
+                        Add Kit
+                      </DropdownMenuItem>
+                    )}
+                    {onAddCustom && (
+                      <DropdownMenuItem onClick={onAddCustom}>
+                        <Sparkles className="mr-2 h-3.5 w-3.5" />
+                        Add Custom Item
+                      </DropdownMenuItem>
+                    )}
+                  </>
+                )}
                 <DropdownMenuItem onClick={onRename}>
                   <Pencil className="mr-2 h-3.5 w-3.5" />
                   Rename

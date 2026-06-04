@@ -185,3 +185,81 @@ describe("getProjectCategories.mixedGroups — Phase 5b", () => {
     expect(b!.mixedGroups[0].kind).toBe("subHire");
   });
 });
+
+// ── Fix C — verify kit + line item placement by groupId/categoryId ──────────
+
+describe("getProjectCategories — line item placement (Fix C regression)", () => {
+  beforeEach(async () => {
+    await setupIntegrationTest();
+  });
+  afterAll(async () => {
+    await testPrisma.$disconnect();
+  });
+
+  it("renders a kit parent (kitId set, groupId set) INSIDE its group's lineItems", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id, "owner");
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+    const project = await createProjectFixture(org.id);
+    const cat = await createCategoryFixture(org.id, project.id, "Audio");
+    const pg = await createGroupFixture(org.id, project.id, cat.id, "PA System");
+
+    // Seed a minimal Kit so the kit FK is satisfied without the full
+    // addKitLineItem path. We're testing the QUERY, not the create.
+    const kit = await testPrisma.kit.create({
+      data: {
+        organizationId: org.id,
+        name: "Test Kit",
+        assetTag: "K-TEST",
+      },
+    });
+    // Kit parent line item — kitId set, groupId set, categoryId set.
+    const kitParent = await testPrisma.projectLineItem.create({
+      data: {
+        organizationId: org.id, projectId: project.id,
+        kitId: kit.id, groupId: pg.id, categoryId: cat.id,
+        description: `${kit.assetTag} - ${kit.name}`,
+        quantity: 1, type: "EQUIPMENT", isKitChild: false,
+      },
+    });
+
+    type CatWithLineItems = CategoryWithMixed & {
+      groups: Array<{ id: string; lineItems?: Array<{ id: string }> }>;
+      lineItems?: Array<{ id: string }>;
+    };
+    const result = (await getProjectCategories(project.id)) as CatWithLineItems[];
+    const renderedCat = result.find((c) => c.id === cat.id);
+    expect(renderedCat).toBeDefined();
+    const renderedGroup = renderedCat!.groups.find((g) => g.id === pg.id);
+    expect(renderedGroup).toBeDefined();
+    const groupItems = renderedGroup!.lineItems ?? [];
+    expect(groupItems.map((i) => i.id)).toContain(kitParent.id);
+    // Should NOT appear in cat.lineItems (which is groupId=null only).
+    const standalone = renderedCat!.lineItems ?? [];
+    expect(standalone.map((i) => i.id)).not.toContain(kitParent.id);
+  });
+
+  it("renders a category-scoped item (categoryId set, groupId null) in cat.lineItems", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id, "owner");
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+    const project = await createProjectFixture(org.id);
+    const cat = await createCategoryFixture(org.id, project.id, "Audio");
+
+    const item = await testPrisma.projectLineItem.create({
+      data: {
+        organizationId: org.id, projectId: project.id,
+        categoryId: cat.id, // groupId intentionally null
+        description: "Loose mic", quantity: 1, type: "EQUIPMENT",
+      },
+    });
+
+    type CatWithLineItems = CategoryWithMixed & {
+      lineItems?: Array<{ id: string }>;
+    };
+    const result = (await getProjectCategories(project.id)) as CatWithLineItems[];
+    const renderedCat = result.find((c) => c.id === cat.id);
+    const standalone = renderedCat!.lineItems ?? [];
+    expect(standalone.map((i) => i.id)).toContain(item.id);
+  });
+});

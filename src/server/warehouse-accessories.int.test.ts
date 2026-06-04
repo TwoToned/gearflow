@@ -129,6 +129,36 @@ describe("warehouse accessory cascade (Phase E)", () => {
     expect(cableAsset?.status).toBe("IN_MAINTENANCE");
   });
 
+  it("expands + deploys accessories when a specific asset is assigned to a model-level line at scan time", async () => {
+    const s = await seed();
+    const { org, model, user, project } = s;
+    const light = await createAssetFixture(org.id, model.id, { assetTag: "LIGHT-SCAN" });
+    const cable = await createAssetFixture(org.id, model.id, { assetTag: "IEC-SCAN" });
+    await testPrisma.asset.update({ where: { id: cable.id }, data: { parentAssetId: light.id } });
+    void user;
+
+    // Model-level line — NO specific asset at add time, so no accessory children yet.
+    const parent = await addLineItem(project.id, { type: "EQUIPMENT", modelId: model.id, quantity: 1 }, true);
+    const parentLineId = (parent as { id: string }).id;
+    expect(await testPrisma.projectLineItem.count({ where: { parentLineItemId: parentLineId } })).toBe(0);
+
+    // Warehouse assigns the specific light at deploy → accessories materialise + deploy.
+    await checkOutItems(project.id, [{ lineItemId: parentLineId, assetId: light.id }]);
+
+    const children = await testPrisma.projectLineItem.findMany({
+      where: { parentLineItemId: parentLineId, childKind: "ACCESSORY" },
+      include: { units: true },
+    });
+    expect(children).toHaveLength(1);
+    expect(children[0].assetId).toBe(cable.id);
+    const cableAsset = await testPrisma.asset.findUnique({ where: { id: cable.id } });
+    expect(cableAsset?.status).toBe("CHECKED_OUT");
+
+    // Idempotent: re-scan doesn't duplicate the accessory line.
+    await checkOutItems(project.id, [{ lineItemId: parentLineId, assetId: light.id }]);
+    expect(await testPrisma.projectLineItem.count({ where: { parentLineItemId: parentLineId, childKind: "ACCESSORY" } })).toBe(1);
+  });
+
   it("scanning an accessory resolves to 'scan the parent'", async () => {
     const s = await seed();
     const { light, cable } = await lightWithAccessoriesOnProject(s);

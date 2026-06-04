@@ -9,6 +9,7 @@ import { logActivity } from "@/lib/activity-log";
 import {
   syncLineItemRollup,
   ensureSerialisedUnit,
+  expandAccessoriesForAsset,
   ensureBulkUnit,
   returnLineUnits,
 } from "@/server/line-item-fulfillment";
@@ -822,6 +823,14 @@ export async function checkOutItems(
           }),
         );
         continue;
+      }
+
+      // If a specific asset with accessories was assigned to a model-level
+      // line at scan time (no prep), materialise its accessory child lines now
+      // so the cascade below deploys them. Idempotent — a no-op if prep already
+      // expanded them.
+      if (targetAssetId) {
+        await expandAccessoriesForAsset(tx, { organizationId, lineItemId: lineItem.id, assetId: targetAssetId });
       }
 
       // Roll the unit change up onto the order line.

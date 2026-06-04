@@ -15,7 +15,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
 import {
   getAvailableAccessoryAssets,
   addSerializedChildToAsset,
@@ -51,7 +50,6 @@ export function AssetAccessoriesManager({ assetId, childAssets, childBulkItems }
   const [serialId, setSerialId] = useState("");
   const [bulkId, setBulkId] = useState("");
   const [bulkQty, setBulkQty] = useState(1);
-  const [allocationMode, setAllocationMode] = useState<"SHIPS_WITH" | "DEDICATED">("SHIPS_WITH");
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["asset"] });
   const hasAny = childAssets.length > 0 || childBulkItems.length > 0;
@@ -81,12 +79,11 @@ export function AssetAccessoriesManager({ assetId, childAssets, childBulkItems }
     onError: (e) => toast.error(e.message),
   });
   const addBulk = useMutation({
-    mutationFn: () => addBulkChildToAsset(assetId, { bulkAssetId: bulkId, quantity: bulkQty, allocationMode }),
+    mutationFn: () => addBulkChildToAsset(assetId, { bulkAssetId: bulkId, quantity: bulkQty }),
     onSuccess: () => {
       toast.success("Accessory attached");
       setBulkId("");
       setBulkQty(1);
-      setAllocationMode("SHIPS_WITH");
       setOpen(false);
       refresh();
     },
@@ -211,28 +208,10 @@ export function AssetAccessoriesManager({ assetId, childAssets, childBulkItems }
                 <Label htmlFor="acc-qty">Quantity</Label>
                 <Input id="acc-qty" type="number" min={1} value={bulkQty} onChange={(e) => setBulkQty(Number(e.target.value))} />
               </div>
-              <div className="space-y-2">
-                <Label>How are these allocated?</Label>
-                {(
-                  [
-                    { mode: "SHIPS_WITH" as const, title: "Drawn from stock when packed", desc: "We pull these from the shared pool each time this asset goes out. Use for generic accessories." },
-                    { mode: "DEDICATED" as const, title: "Permanently attached", desc: "These exact items live with this asset and leave the shared pool now." },
-                  ]
-                ).map((opt) => (
-                  <button
-                    key={opt.mode}
-                    type="button"
-                    onClick={() => setAllocationMode(opt.mode)}
-                    className={cn(
-                      "w-full rounded-lg border p-2.5 text-left text-sm transition-colors",
-                      allocationMode === opt.mode ? "border-primary bg-primary/5" : "border-border hover:bg-muted/40",
-                    )}
-                  >
-                    <span className="font-medium">{opt.title}</span>
-                    <span className="mt-0.5 block text-xs text-muted-foreground">{opt.desc}</span>
-                  </button>
-                ))}
-              </div>
+              <p className="text-xs text-muted-foreground">
+                These are drawn from the shared pool each time this asset goes
+                out, then counted back in on return.
+              </p>
               <DialogFooter>
                 <Button disabled={!bulkId || addBulk.isPending} onClick={() => addBulk.mutate()}>
                   {addBulk.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

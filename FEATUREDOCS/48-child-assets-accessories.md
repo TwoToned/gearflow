@@ -48,10 +48,15 @@ what every existing query keys off.
    `addBulkChildToAsset`, plus detach. Guards: self/nesting/already-attached,
    kit↔accessory dual membership (symmetric check in `kits.ts`), one-level-deep,
    cross-org. UI: `AssetAccessoriesManager` on the asset detail page.
-2. **Onto a project** (`src/server/line-items.ts` `expandAccessoryChildren`) —
-   adding a serialised asset with accessories auto-expands child lines
-   (`isKitChild:true`, `childKind:ACCESSORY`, `parentLineItemId`), atomic with
-   the parent. No units created here — units stay lazy-at-prep. `removeLineItem`
+2. **Onto a project** — two entry points, both producing accessory child lines
+   (`isKitChild:true`, `childKind:ACCESSORY`, `parentLineItemId`):
+   - Office: adding a *specific* serialised asset (`expandAccessoryChildren`,
+     `line-items.ts`) auto-expands children atomic with the parent line.
+   - Warehouse: assigning a specific unit to a *model-level* line at prep or
+     deploy (`expandAccessoriesForAsset`, `line-item-fulfillment.ts`, hooked
+     into `prepUnit` + `checkOutItems`). Idempotent — dedups serialised by
+     assetId, bulk by bulkAssetId, so re-scans don't duplicate.
+   No units created at expansion — units stay lazy-at-prep. `removeLineItem`
    cascade-deletes children (transactional) and blocks direct child removal.
 3. **Warehouse** (`src/server/warehouse.ts`) — `lookupAssetForScan` returns
    `type: "asset_child"` ("scan the parent") for a scanned accessory.

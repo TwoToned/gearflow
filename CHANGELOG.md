@@ -5,6 +5,51 @@ All notable changes to GearFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0.0] - 2026-06-04
+
+### Added
+- **Child Assets / Accessories.** Permanently attach accessories (cables,
+  clamps, adaptors) to a parent serialised asset. They travel with the parent
+  onto projects and through warehouse checkout/checkin, and render indented on
+  pull sheets, delivery dockets, quotes, and invoices. New data model:
+  `Asset.parentAssetId` self-relation, `AssetBulkChild` join table,
+  `ProjectLineItem.childKind` (`KIT | ACCESSORY`). The structural `isKitChild`
+  flag is reused so the ~40 existing totals/count filters exclude accessories
+  with no migration.
+- **Scan-time accessory travel.** When the warehouse assigns a specific asset
+  to a model-level line at prep or deploy, that asset's accessories
+  materialise as child lines automatically (idempotent — dedups by asset/bulk
+  id, so re-scans don't duplicate). Accessories travel whether the office
+  books a specific asset or the warehouse picks the unit later.
+- **Accessory manager UI** on the asset detail page (connector-glyph list,
+  Attach dialog) with a plain-language allocation explanation. An "Accessory
+  of <parent>" badge appears on children's detail pages.
+- **Scanner "scan the parent" prompts** in all three warehouse tabs (prep /
+  deploy / return) when an accessory is scanned directly.
+
+### Changed
+- `removeLineItem` is now transactional and cascade-aware: accessory parents
+  cascade-delete their children atomically; direct removal of a child line is
+  blocked with a `childKind`-aware error message.
+- `deleteAsset` refuses to delete a parent that still has accessories
+  attached.
+- PDF pipeline: an "accessory parent" (top-level line, no `kitId`, has
+  `ACCESSORY` children) is recognised by both `gearflow-table` rendering and
+  `section-renderer` height reservation, so accessories render indented and
+  pagination doesn't tail-drop them.
+- VERSION file reconciled with package.json after the 0.10.0.0 drift.
+
+### Fixed
+- Concurrent `addSerializedChildToAsset` calls attaching the same child to
+  different parents now use a guarded update — the second attach throws
+  instead of silently overwriting the first.
+- `lookupAssetForScan` org-scopes the parent lookup (tenant isolation).
+- A serialised accessory cannot be detached while it's deployed on a project
+  (avoids a dangling project child line and a mis-stated shelf count).
+- `addSerializedItemToKit` (single + batch) rejects an asset that's already an
+  accessory of another asset — symmetric to the existing kit-to-accessory
+  guard.
+
 ## [0.10.0.0] - 2026-06-04
 
 Project groups can now live in the Uncategorized zone, matching how sub-hire groups already work. Deleting a category no longer destroys the groups inside it.

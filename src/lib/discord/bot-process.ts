@@ -219,9 +219,27 @@ export async function startBot(): Promise<void> {
   };
 
   try {
-    await client.login(config.discordBotToken);
+    // Race login + ClientReady against a timeout so the admin-page restart
+    // returns once the gateway handshake completes (or fails). Without this,
+    // the post-restart status read happens before isReady() flips to true.
+    await new Promise<void>((resolve, reject) => {
+      const onReady = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      const timer = setTimeout(() => {
+        client.off(Events.ClientReady, onReady);
+        reject(new Error("Timed out waiting for ClientReady (10s)"));
+      }, 10_000);
+      client.once(Events.ClientReady, onReady);
+      client.login(config.discordBotToken).catch((err) => {
+        clearTimeout(timer);
+        client.off(Events.ClientReady, onReady);
+        reject(err);
+      });
+    });
   } catch (err) {
-    console.error("[discord-bot] login failed:", err);
+    console.error("[discord-bot] login or ready handshake failed:", err);
     await stop();
   }
 }
@@ -232,4 +250,32 @@ export async function stopBot(): Promise<void> {
   if (!existing) return;
   console.log("[discord-bot] stopping...");
   await existing.stop();
+}
+
+/**
+ * Stop the running bot (if any) and start a fresh one with the current
+ * `DiscordIntegration` row. Use this after an admin save to apply changes
+ * without restarting the whole Next.js server. Idempotent.
+ */
+export async function restartBot(): Promise<void> {
+  await stopBot();
+  await startBot();
+}
+
+/**
+ * True when a bot instance is registered AND its Discord WS is open. Read by
+ * the admin page to render Running / Stopped without polling Discord.
+ */
+export function isBotRunning(): boolean {
+  const existing = globalRef.__gearflowDiscordBot;
+  if (!existing) return false;
+  // discord.js Client.isReady() returns true once the gateway handshake is done.
+  return existing.client.isReady();
+}
+
+/** Diagnostic info for the admin page. */
+export function getBotState(): { running: boolean; organizationId: string | null } {
+  const existing = globalRef.__gearflowDiscordBot;
+  if (!existing) return { running: false, organizationId: null };
+  return { running: existing.client.isReady(), organizationId: existing.organizationId };
 }

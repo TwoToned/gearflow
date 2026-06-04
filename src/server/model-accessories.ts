@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { getOrgContext, requirePermission } from "@/lib/org-context";
+import { requirePermission } from "@/lib/org-context";
 import {
   modelBulkAccessorySchema,
   type ModelBulkAccessoryFormValues,
@@ -22,18 +22,6 @@ import { UserFacingError } from "@/lib/errors";
  * here — it would require reserving N from the pool for every existing asset
  * of the model, which can drain the entire shelf in one click.
  */
-
-/** List the model's default bulk accessories. */
-export async function getModelAccessories(modelId: string) {
-  const { organizationId } = await getOrgContext();
-  return serialize(
-    await prisma.modelBulkAccessory.findMany({
-      where: { modelId, organizationId },
-      include: { bulkAsset: { include: { model: { select: { name: true } } } } },
-      orderBy: { sortOrder: "asc" },
-    }),
-  );
-}
 
 /** Attach a bulk asset as a model-level default accessory. */
 export async function addModelBulkAccessory(
@@ -71,7 +59,7 @@ export async function addModelBulkAccessory(
   }
 
   const maxSort = await prisma.modelBulkAccessory.aggregate({
-    where: { modelId },
+    where: { modelId, organizationId },
     _max: { sortOrder: true },
   });
 
@@ -135,7 +123,7 @@ export async function removeModelBulkAccessory(
       organizationId: true,
       modelId: true,
       quantity: true,
-      bulkAsset: { select: { assetTag: true } },
+      bulkAsset: { select: { id: true, assetTag: true } },
       model: { select: { name: true } },
     },
   });
@@ -162,7 +150,7 @@ export async function removeModelBulkAccessory(
     entityId: modelId,
     entityName: acc.model.name,
     summary: `Removed default accessory: ${acc.quantity}× ${acc.bulkAsset.assetTag}`,
-    details: { accessory: { bulkAssetId: acc.bulkAsset.assetTag, quantity: acc.quantity } },
+    details: { accessory: { bulkAssetId: acc.bulkAsset.id, quantity: acc.quantity } },
   });
 
   return serialize({ success: true });

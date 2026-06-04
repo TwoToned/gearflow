@@ -40,6 +40,7 @@ Lives in `apps/discord-bot/` (standalone Node service). Command registry: each `
 - [x] `/link` enrollment flow (hardened) + `/discord/verify` endpoint
 - [x] Channel sync (create + permission overwrites + retroactive grant; converge logic = reconcile primitive)
 - [x] `/asset fault` → DamageEvent
+- [x] Bot runtime wired (live interaction listener + outbox poll loop) — bot actually runs now
 - [x] Admin "Discord Integration" settings page
 - [~] `apps/discord-bot/README.md` operator setup + `npm run doctor` — scaffolded (47-line README, doctor stub); still needs the full ~15-step guide (privileged Guild Members intent, OAuth scopes, perm-bit invite URL) and to document `DISCORD_BOT_TOKEN` + the per-org signing secret + the new endpoints
 
@@ -91,6 +92,24 @@ converges to desired state (idempotent; = the /reconcile primitive) with a per-p
 processes in id order, acks the successful prefix, stops on first failure, advances the cursor only past
 acked events. `channel-name.ts` slugs `CODE-name`; `discord-channel-gateway.ts` is the only discord.js
 module. v2: a `/reconcile` slash command (the converge primitive already exists).
+
+**Runtime wiring** — what makes the bot actually answer commands and create
+channels (not just scaffold). App: `GET /api/discord/v1/me` returns the resolved
+actor link for the signed Discord invoker (drives the bot's `resolveActor`), `GET
+/api/discord/v1/integration/config` returns `{ guildId, projectCategoryId, alertChannelId,
+auditChannelId }` (system Bearer-only; the bot reads it on startup), and `GET
+/api/discord/v1/health` is the unauth liveness probe `doctor` hits. Bot
+(`apps/discord-bot/src`): `env.ts` validates required env at boot (fails loudly,
+lists every missing var); `runner-deps.ts` builds the production `RunnerDeps`
+(`resolveActor` calls `/me`, `apiFor` builds a per-actor `GearFlowApiClientImpl`);
+`index.ts` rewired — `client.on(InteractionCreate)` dispatches through `handleInteraction`,
+`client.once(ClientReady)` fetches the guild, builds a `DiscordChannelGateway`,
+loads the integration config, and starts a recursive `setTimeout` poll loop calling
+`pollOnce` every `POLL_INTERVAL_MS` (default 5s; exponential backoff to 60s on
+repeated failure). SIGINT/SIGTERM stops the loop, destroys the client, exits 0.
+Single-org-per-process for v1 (env-configured `GEARFLOW_ORG_ID` +
+`GEARFLOW_DISCORD_SIGNING_SECRET`). Cursor is in-memory — the outbox read is
+status-driven, so a restart with cursor=0 only re-pulls PENDING rows.
 
 **`/asset fault`** — `src/lib/services/asset-fault-service.ts`. Migration
 `20260604130000_discord_fault_reporter` adds `DamageEvent.reportedByCrewMemberId` (true reporter)

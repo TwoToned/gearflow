@@ -30,11 +30,29 @@ never global during dev — global propagation takes up to 1h).
 3. **Gateway intents** (Bot tab): enable **Server Members Intent** (PRIVILEGED — required to manage channel membership on crew assignment; without it member events never arrive). Guilds intent is default-on.
 4. **OAuth2 → URL Generator**: scopes `bot` + `applications.commands`; bot permissions: **Manage Channels**, **Manage Roles**, **View Channels**, **Send Messages**, **Embed Links**, **Attach Files**. Copy the generated invite URL.
 5. **Invite** the bot to your server with that URL.
-6. In **GearFlow → Settings → Discord**: enable the integration, set the guild/category/alert channels, and **generate the signing secret** → `GEARFLOW_DISCORD_SIGNING_SECRET`.
-7. Fill `.env` (copy `.env.example`): tokens above + `DISCORD_GUILD_ID`, `GEARFLOW_API_URL`, `GEARFLOW_BOT_BEARER`.
-8. `npm install` then `npm run doctor` — green/red checklist (env, token, guild, API reachability).
-9. `npm run deploy-commands -- --guild <id>` then `npm run dev`.
-10. Smoke test: `/asset code:TTP-042` in your dev guild.
+6. In **GearFlow → Settings → Discord**: enable the integration, paste
+   `DISCORD_GUILD_ID`, pick the project category + alert/audit channels, and
+   **generate the signing secret** → `GEARFLOW_DISCORD_SIGNING_SECRET`.
+7. Find the GearFlow organisation id (the bot is single-org per process) → `GEARFLOW_ORG_ID`.
+8. Fill `.env` (copy `.env.example`): tokens above + `DISCORD_GUILD_ID`,
+   `GEARFLOW_API_URL`, `GEARFLOW_BOT_BEARER`, `GEARFLOW_ORG_ID`.
+9. `npm install` then `npm run doctor` — green/red checklist (env, token, guild, API reachability).
+10. `npm run deploy-commands -- --guild <id>` then `npm run dev`.
+11. Smoke test: `/asset code:TTP-042` in your dev guild, then `/link your@email.com`.
+
+## What the bot does once running
+- **Interaction loop** — `client.on(interactionCreate)` dispatches every slash
+  command through `handleInteraction`. `resolveActor` makes a live `GET /v1/me`
+  call (no caching — a demoted role takes effect on the next command).
+- **Channel sync loop** — every `POLL_INTERVAL_MS` (default 5s) the bot calls
+  `GET /v1/outbox?since=<cursor>`, processes events in id order via
+  `convergeProject(projectId)` (idempotent — re-applies the full member set
+  every event, doubles as `/reconcile`), acks the successful prefix, and
+  records a heartbeat the admin page reads. Stops on first failure (preserves
+  ordering); the tail retries next cycle. On repeated failure, exponential
+  backoff up to 60s.
+- **Graceful shutdown** — `SIGINT`/`SIGTERM` stops the poll loop, destroys the
+  Discord client, exits 0.
 
 ## Local dev
 - Use a throwaway personal Discord server as `DISCORD_GUILD_ID` (guild-scoped deploy = instant loop).
@@ -42,6 +60,10 @@ never global during dev — global propagation takes up to 1h).
 - `npm test` runs the pure command/contract tests with no Discord and no network.
 
 ## Status
-Scaffold. Implemented: command registry + contract, error-code → copy map, HMAC api
-client, `/asset lookup` reference command, test harness. TODO (see FEATUREDOCS/48):
-runner actor-resolution wiring, outbox poller, `/link`, channel sync, `/asset fault`.
+**v1 runtime-complete for read commands + `/link` enrollment + project channel sync.**
+Implemented: command registry + contract, error-code → copy map, HMAC api client,
+`/asset lookup`, `/link`, `/fault`, runner with production actor-resolution, outbox
+polling consumer driving channel create / member sync / archive, `doctor` preflight.
+Deferred to v2 (per the locked /autoplan decisions): `/asset checkout|checkin`,
+`/incident`, role-mapping matrix, live-Discord-dropdown admin UI, an explicit
+`/reconcile` slash command (the converge primitive already powers every poll).

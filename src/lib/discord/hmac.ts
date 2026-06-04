@@ -14,6 +14,12 @@ import crypto from "crypto";
 
 export const DISCORD_SIG_HEADER = "x-gearflow-signature";
 export const DISCORD_TS_HEADER = "x-gearflow-timestamp";
+/** Org the request is scoped to (the bot signs with this org's secret). */
+export const DISCORD_ORG_HEADER = "x-gearflow-org";
+/** The invoking Discord user, bound by the bot from a verified interaction.
+ *  Trusted because the whole request is HMAC-signed by the bot. Routes resolve
+ *  the actor + role server-side from this — the role is never client-supplied. */
+export const DISCORD_ACTOR_HEADER = "x-gearflow-actor-discord-id";
 
 /** Max clock skew between bot and app before a request is rejected (replay guard). */
 export const DISCORD_SIG_MAX_SKEW_SECONDS = 300;

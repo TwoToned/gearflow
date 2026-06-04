@@ -182,6 +182,16 @@ export async function getAsset(id: string) {
           testIntervalMonths: true,
         },
       },
+      // Child assets / accessories
+      parentAsset: { select: { id: true, assetTag: true, customName: true } },
+      childAssets: {
+        include: { model: { select: { name: true, manufacturer: true } } },
+        orderBy: { assetTag: "asc" },
+      },
+      childBulkItems: {
+        include: { bulkAsset: { include: { model: { select: { name: true } } } } },
+        orderBy: { sortOrder: "asc" },
+      },
     },
   }));
 }

@@ -36,7 +36,7 @@ Lives in `apps/discord-bot/` (standalone Node service). Command registry: each `
 - [x] Error envelope + HMAC contract (+ unit tests)
 - [x] Bot service scaffold + command registry
 - [x] `Core()` service extraction + first `src/app/api/discord/v1/*` routes (asset lookup + outbox)
-- [ ] Outbox emission hooks (createProject, crew-assignment writes)
+- [x] Outbox emission hooks (createProject, crew-assignment add/remove) — `emitIfDiscordEnabled`
 - [ ] `/link` enrollment flow (hardened) + `/discord/verify` endpoint
 - [ ] Channel sync (create + permission overwrites + reconcile)
 - [ ] `/asset fault` → DamageEvent

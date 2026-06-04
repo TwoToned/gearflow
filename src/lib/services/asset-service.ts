@@ -3,20 +3,13 @@
  * against the resolved `ServiceActor` (no session) via `requireActorPermission`,
  * so the bot path runs the exact same `asset:read` gate the app uses.
  */
-import { Prisma, ProjectStatus } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { DiscordApiError } from "@/lib/discord/api-errors";
+import { ACTIVE_PROJECT_STATUS_FILTER } from "@/lib/discord/project-statuses";
 import { requireActorPermission, type ServiceActor } from "./discord-actor";
 
 type Db = Prisma.TransactionClient;
-
-/** Projects in a terminal state no longer count as a "current" assignment. */
-const TERMINAL_PROJECT_STATUSES: ProjectStatus[] = [
-  ProjectStatus.COMPLETED,
-  ProjectStatus.INVOICED,
-  ProjectStatus.CANCELLED,
-  ProjectStatus.RETURNED,
-];
 
 /** Shape the bot's `/asset lookup` command renders (mirrors AssetLookupResult). */
 export interface DiscordAssetLookup {
@@ -68,7 +61,7 @@ export async function getAssetForDiscord(
   const lineItem = await db.projectLineItem.findFirst({
     where: {
       assetId: asset.id,
-      project: { isTemplate: false, status: { notIn: TERMINAL_PROJECT_STATUSES } },
+      project: { isTemplate: false, status: ACTIVE_PROJECT_STATUS_FILTER },
     },
     select: { project: { select: { projectNumber: true, name: true } } },
   });

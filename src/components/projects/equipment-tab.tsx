@@ -41,6 +41,7 @@ import {
 } from "@/server/project-categories";
 import {
   getUncategorizedSubHireGroups,
+  getUncategorizedProjectGroups,
   moveSubHireGroupToCategory,
   reorderMixedGroupsInCategory,
 } from "@/server/category-slots";
@@ -254,6 +255,12 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     staleTime: 60_000,
   });
 
+  const { data: uncategorizedProjectGroups = [] } = useQuery({
+    queryKey: ["uncategorized-project-groups", projectId],
+    queryFn: () => getUncategorizedProjectGroups(projectId),
+    staleTime: 60_000,
+  });
+
   const { data: templates = [] } = useQuery({
     queryKey: ["group-templates"],
     queryFn: () => getGroupTemplates(),
@@ -287,6 +294,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     queryClient.invalidateQueries({ queryKey });
     queryClient.invalidateQueries({ queryKey: ["uncategorized-items", projectId] });
     queryClient.invalidateQueries({ queryKey: ["uncategorized-subhire-groups", projectId] });
+    queryClient.invalidateQueries({ queryKey: ["uncategorized-project-groups", projectId] });
     queryClient.invalidateQueries({ queryKey: ["project", projectId] });
     queryClient.invalidateQueries({ queryKey: ["project-overbooked", projectId] });
     // Any mutation that changes line item quantity/presence must refresh
@@ -377,8 +385,15 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   });
 
   const createGroupMut = useMutation({
-    mutationFn: ({ categoryId, title, templateId }: { categoryId: string; title: string; templateId?: string }) => {
+    mutationFn: ({ categoryId, title, templateId }: { categoryId: string | null; title: string; templateId?: string }) => {
       if (templateId) {
+        // Templates are category-scoped concepts — fall back to no-template
+        // when the user picks Uncategorised so they can still create the
+        // group structurally. The template can be applied via a follow-up
+        // move + recalculate if they later want to materialise its items.
+        if (!categoryId) {
+          return createProjectGroup(projectId, { categoryId: null, title, quantity: 1 });
+        }
         return applyGroupTemplate(projectId, { templateId, categoryId, title });
       }
       return createProjectGroup(projectId, { categoryId, title, quantity: 1 });
@@ -658,8 +673,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   const typedCategories = categories as CategoryData[];
   const hasCategories = typedCategories.length > 0;
   const orphanSubHireGroups = uncategorizedSubHireGroups as SubHireGroupData[];
+  const orphanProjectGroups = uncategorizedProjectGroups as GroupData[];
   const hasUncategorized =
-    (uncategorizedItems as LineItemData[]).length > 0 || orphanSubHireGroups.length > 0;
+    (uncategorizedItems as LineItemData[]).length > 0 ||
+    orphanSubHireGroups.length > 0 ||
+    orphanProjectGroups.length > 0;
 
   // Build a set of draft sub-hire IDs so we can badge unconfirmed items
   const draftSubHireIds = new Set<string>();
@@ -1054,6 +1072,81 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                     onRemove={() => removeMut.mutate(item.id)}
                   />
                 ))}
+                {/* Orphan PROJECT groups — categoryId IS NULL (v0.9.4.0
+                    allows groups to live uncategorised). Render with the
+                    full GroupRow affordances (kebab, Move, Delete) so
+                    they're first-class citizens of the Uncategorized
+                    zone alongside orphan sub-hire groups. */}
+                {orphanProjectGroups.map((group) => {
+                  const isExpanded = expandedGroups.has(group.id);
+                  const priceVal = group.price != null ? Number(group.price) : null;
+                  const groupItems = (group.lineItems ?? []).filter((i: LineItemData) => !isHiddenFromList(i));
+                  return (
+                    <React.Fragment key={`pg-${group.id}`}>
+                      <GroupRow
+                        group={group}
+                        isExpanded={isExpanded}
+                        isRejectedDropTarget={rejectedDropTargetId === `grp-${group.id}`}
+                        showCostColumn={showCostColumn}
+                        onToggle={() => toggleGroup(group.id)}
+                        onDelete={() => {
+                          setDeleteGroupId(group.id);
+                          setDeleteGroupInfo({
+                            title: group.title,
+                            price: priceVal ?? 0,
+                            itemCount: groupItems.length,
+                          });
+                        }}
+                        onEdit={() => setEditGroupData(group)}
+                        onEditPrice={() => setPriceEditTarget({
+                          kind: "project",
+                          groupId: group.id,
+                          title: group.title,
+                          price: priceVal,
+                        })}
+                        onAddEquipment={() => {
+                          setUnifiedAddTarget({ groupId: group.id, label: `Uncategorized > ${group.title}` });
+                          setUnifiedAddKind("own-stock");
+                          setShowUnifiedAdd(true);
+                        }}
+                        onAddKit={() => {
+                          setUnifiedAddTarget({ groupId: group.id, label: `Uncategorized > ${group.title}` });
+                          setUnifiedAddKind("kit");
+                          setShowUnifiedAdd(true);
+                        }}
+                        onMove={() => setMoveProjectGroup({ id: group.id, title: group.title })}
+                      />
+                      {isExpanded && groupItems.length === 0 && (
+                        <TableRow className="hover:bg-transparent">
+                          <TableCell colSpan={colCount} className="py-3 text-center text-xs text-fg-4">
+                            No items in this group yet. Add equipment to get started.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      {isExpanded && groupItems.map((item: LineItemData) => (
+                        <LineItemRow
+                          key={item.id}
+                          item={item}
+                          indent="ml-12"
+                          overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
+                          isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
+                          showCostColumn={showCostColumn}
+                          isExpanded={expandedParents.has(item.id)}
+                          onToggle={() => toggleParent(item.id)}
+                          onEdit={() => setEditLineItem(item)}
+                          onMoveToCategory={() => setMoveItemToCategory({
+                            lineItemId: item.id,
+                          })}
+                          onMoveToGroup={() => setMoveItemToGroup({
+                            lineItemId: item.id,
+                            initialGroupId: group.id,
+                          })}
+                          onRemove={() => removeMut.mutate(item.id)}
+                        />
+                      ))}
+                    </React.Fragment>
+                  );
+                })}
                 {/* Orphan sub-hire groups — targetCategoryId IS NULL.
                     S13 from the test plan: must surface here, not vanish. */}
                 {orphanSubHireGroups.map((shGroup) => {

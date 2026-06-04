@@ -215,9 +215,13 @@ export async function createProjectGroup(
   const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
   const parsed = projectGroupSchema.parse(data);
 
-  // Get next sort order within category
+  // Get next sort order within the (project, category) bucket.
+  // Scoping by projectId matters when categoryId is null — without
+  // it, orphan groups from other projects in the same org would
+  // share the same null sortOrder pool. With it, each project's
+  // Uncategorized zone has its own independent sequence.
   const maxSort = await prisma.projectGroup.aggregate({
-    where: { categoryId: parsed.categoryId, organizationId },
+    where: { categoryId: parsed.categoryId, projectId, organizationId },
     _max: { sortOrder: true },
   });
 

@@ -98,6 +98,53 @@ export async function getUncategorizedSubHireGroups(projectId: string) {
   return serialize(groups);
 }
 
+/**
+ * Project groups with no category placement (`categoryId IS NULL`).
+ * Mirrors `getUncategorizedSubHireGroups` so the equipment tab can
+ * render orphan project groups in the same Uncategorized zone — both
+ * group kinds and standalone uncategorised line items now live there
+ * together.
+ *
+ * Available since v0.9.4.0 when `ProjectGroup.categoryId` became
+ * nullable. Includes line items so each row can expand its members
+ * without an additional query (matches the include shape used by
+ * `getProjectCategories` for categorised groups).
+ */
+export async function getUncategorizedProjectGroups(projectId: string) {
+  const { organizationId } = await requirePermission("project", "read");
+  const groups = await prisma.projectGroup.findMany({
+    where: {
+      categoryId: null,
+      projectId,
+      organizationId,
+    },
+    include: {
+      lineItems: {
+        include: {
+          model: true,
+          asset: true,
+          bulkAsset: true,
+          kit: true,
+          supplier: { select: { name: true } },
+          childLineItems: {
+            include: {
+              model: true,
+              asset: true,
+              bulkAsset: true,
+              kit: true,
+              supplier: { select: { name: true } },
+            },
+            orderBy: { sortOrder: "asc" as const },
+          },
+        },
+        orderBy: { sortOrder: "asc" },
+      },
+    },
+    orderBy: { sortOrder: "asc" },
+  });
+  return serialize(groups);
+}
+
 // ── Mutations ───────────────────────────────────────────────────────────────
 
 /**
@@ -222,24 +269,27 @@ export async function moveSubHireGroupToCategory(
 }
 
 /**
- * Move a ProjectGroup to a different ProjectCategory.
+ * Move a ProjectGroup to a different ProjectCategory, or to the
+ * Uncategorized zone when `categoryId` is null.
  *
  * Updates three things in one transaction:
- *   - `ProjectGroup.categoryId` — the canonical placement.
+ *   - `ProjectGroup.categoryId` — the canonical placement (now nullable
+ *     since v0.9.4.0).
  *   - `ProjectLineItem.categoryId` for every item in the group — keeps
  *     line-item category in sync so any filter that scopes by category
  *     (PDFs, reports) sees the move.
- *   - `CategorySlot` row — appended to the end of the destination
- *     category so the unified mixed-group order stays consistent with
- *     sub-hire groups already living there.
- *
- * Unlike `moveSubHireGroupToCategory`, the destination is required —
- * `ProjectGroup.categoryId` is NOT NULL in the schema.
+ *   - `CategorySlot` row — when destination is a category, append at
+ *     the end of its slot list so the unified mixed-group order stays
+ *     consistent with sub-hire groups already living there. When the
+ *     destination is null, the slot is deleted and not recreated
+ *     (mirrors the sub-hire move flow).
  *
  * Concurrency: the same `pg_advisory_xact_lock` keyed on destination
  * categoryId that protects sub-hire moves (Finding 7.2 / S11). Two
  * parallel moves of the same group would otherwise race on
  * `UNIQUE(projectCategoryId, sortOrder)` when inserting their CategorySlot.
+ * Null destination (move to uncategorised) bypasses the lock — no slot
+ * gets inserted, so there's nothing to race on.
  *
  * Permission gate: only `project:manage_line_items` (no sub-hire perm
  * needed — this action never touches sub-hire data).
@@ -253,8 +303,9 @@ export async function moveProjectGroupToCategory(
     "manage_line_items",
   );
 
-  // Cross-org / cross-project validation: the group AND the destination
-  // category must both belong to this org and to the same project.
+  // Cross-org / cross-project validation: the group must belong to
+  // this org, and if a destination category was supplied it must too,
+  // in the same project.
   const group = await prisma.projectGroup.findFirst({
     where: { id: parsed.groupId, organizationId },
     select: { id: true, projectId: true, categoryId: true, title: true },
@@ -263,32 +314,42 @@ export async function moveProjectGroupToCategory(
     throw new Error("Project group not found");
   }
 
-  const category = await prisma.projectCategory.findFirst({
-    where: { id: parsed.categoryId, organizationId },
-    select: { id: true, projectId: true, name: true },
-  });
-  if (!category) {
-    throw new Error("Destination category not found");
-  }
-  if (category.projectId !== group.projectId) {
-    throw new Error("Cannot move project group across projects");
+  let destCategoryId: string | null = null;
+  let destCategoryName: string | null = null;
+  if (parsed.categoryId) {
+    const category = await prisma.projectCategory.findFirst({
+      where: { id: parsed.categoryId, organizationId },
+      select: { id: true, projectId: true, name: true },
+    });
+    if (!category) {
+      throw new Error("Destination category not found");
+    }
+    if (category.projectId !== group.projectId) {
+      throw new Error("Cannot move project group across projects");
+    }
+    destCategoryId = category.id;
+    destCategoryName = category.name;
   }
 
   // No-op fast path — saves a transaction round-trip when the user
   // picks the same category the group is already in (e.g. accidental
   // double-confirm in the move dialog).
-  if (group.categoryId === parsed.categoryId) {
+  if (group.categoryId === destCategoryId) {
     return serialize({ success: true, noop: true });
   }
 
   await prisma.$transaction(async (tx) => {
     // Serialize concurrent moves into the same destination category.
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${parsed.categoryId})::bigint)`;
+    // Skip the lock for null destinations — without a slot insert,
+    // there is no UNIQUE constraint to race on.
+    if (destCategoryId) {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${destCategoryId})::bigint)`;
+    }
 
     // 1. Move the group itself.
     await tx.projectGroup.update({
       where: { id: parsed.groupId },
-      data: { categoryId: parsed.categoryId },
+      data: { categoryId: destCategoryId },
     });
 
     // 2. Keep line-item categoryId in sync. Items follow their group —
@@ -299,25 +360,28 @@ export async function moveProjectGroupToCategory(
         groupId: parsed.groupId,
         organizationId,
       },
-      data: { categoryId: parsed.categoryId },
+      data: { categoryId: destCategoryId },
     });
 
     // 3. Update the CategorySlot — delete any existing slot for this
-    //    project group and insert a fresh one at the end of the
-    //    destination category's slot list. Mirrors the sub-hire flow.
+    //    project group; if a category was chosen, insert a fresh one
+    //    at the end of its slot list. Null destination just deletes
+    //    the old slot (mirrors the sub-hire flow).
     await tx.categorySlot.deleteMany({ where: { projectGroupId: parsed.groupId } });
-    const lastSlot = await tx.categorySlot.findFirst({
-      where: { projectCategoryId: parsed.categoryId },
-      orderBy: { sortOrder: "desc" },
-      select: { sortOrder: true },
-    });
-    await tx.categorySlot.create({
-      data: {
-        projectCategoryId: parsed.categoryId,
-        projectGroupId: parsed.groupId,
-        sortOrder: (lastSlot?.sortOrder ?? -1) + 1,
-      },
-    });
+    if (destCategoryId) {
+      const lastSlot = await tx.categorySlot.findFirst({
+        where: { projectCategoryId: destCategoryId },
+        orderBy: { sortOrder: "desc" },
+        select: { sortOrder: true },
+      });
+      await tx.categorySlot.create({
+        data: {
+          projectCategoryId: destCategoryId,
+          projectGroupId: parsed.groupId,
+          sortOrder: (lastSlot?.sortOrder ?? -1) + 1,
+        },
+      });
+    }
   });
 
   await recalculateProjectTotals(group.projectId);
@@ -329,7 +393,9 @@ export async function moveProjectGroupToCategory(
     entityType: "project",
     entityId: group.projectId,
     entityName: `Project group ${group.title}`,
-    summary: `Moved project group to category ${category.name}`,
+    summary: destCategoryName
+      ? `Moved project group to category ${destCategoryName}`
+      : `Moved project group to uncategorised`,
   });
 
   return serialize({ success: true });

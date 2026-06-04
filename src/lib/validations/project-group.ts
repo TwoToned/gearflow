@@ -1,7 +1,9 @@
 import { z } from "zod";
 
 export const projectGroupSchema = z.object({
-  categoryId: z.string().min(1, "Category is required"),
+  // Nullable since v0.9.4.0 — a group can be created directly in the
+  // project's Uncategorized zone (categoryId stays null on the row).
+  categoryId: z.string().min(1).nullable(),
   title: z.string().min(1, "Title is required").max(200),
   description: z.string().max(2000).optional(),
   quantity: z.coerce.number().int().min(1).default(1),

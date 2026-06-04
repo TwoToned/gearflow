@@ -1217,6 +1217,13 @@ model DamageEvent {
   maintenanceRecord   MaintenanceRecord?   @relation(fields: [maintenanceRecordId], references: [id], onDelete: SetNull)
   createdById         String
   createdBy           User                 @relation("DamageEventCreatedBy", fields: [createdById], references: [id])
+  // True reporter when a fault is logged from Discord by a (possibly non-User)
+  // crew member. createdById still holds a real User (the reporter's linked User,
+  // else a system actor) to satisfy the required FK — see discord fault service.
+  reportedByCrewMemberId String?
+  reportedByCrewMember   CrewMember? @relation("DamageReportedBy", fields: [reportedByCrewMemberId], references: [id], onDelete: SetNull)
+  // Discord interaction id — makes the bot→API fault POST idempotent on retry.
+  discordIdempotencyKey String? @unique
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 
@@ -1225,6 +1232,7 @@ model DamageEvent {
   @@index([assetId])
   @@index([bulkAssetId])
   @@index([lineItemUnitId])
+  @@index([reportedByCrewMemberId])
   @@map("damage_event")
 }
 
@@ -2231,6 +2239,7 @@ model CrewMember {
   // Discord integration
   discordLink       DiscordAccountLink?
   discordLinkTokens DiscordLinkToken[]
+  reportedDamageEvents DamageEvent[] @relation("DamageReportedBy")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

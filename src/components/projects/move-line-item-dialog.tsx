@@ -82,7 +82,7 @@ function MoveLineItemDialogBody({
       <DialogHeader>
         <DialogTitle>Move Item</DialogTitle>
         <DialogDescription>
-          Choose a destination group for this item.
+          Choose a destination group or category for this item.
         </DialogDescription>
       </DialogHeader>
       <div className="space-y-2 py-2">

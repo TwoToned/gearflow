@@ -33,10 +33,12 @@ import { logActivity } from "@/lib/activity-log";
 import { recalculateProjectTotals } from "@/server/line-items";
 import {
   moveSubHireGroupToCategorySchema,
+  moveProjectGroupToCategorySchema,
   reorderMixedGroupsInCategorySchema,
   createCategoryAndPlaceGroupSchema,
   parseSlotId,
   type MoveSubHireGroupToCategoryInput,
+  type MoveProjectGroupToCategoryInput,
   type ReorderMixedGroupsInCategoryInput,
   type CreateCategoryAndPlaceGroupInput,
 } from "@/lib/validations/category-slot";
@@ -215,6 +217,120 @@ export async function moveSubHireGroupToCategory(
         : `Moved sub-hire group to uncategorised`,
     });
   }
+
+  return serialize({ success: true });
+}
+
+/**
+ * Move a ProjectGroup to a different ProjectCategory.
+ *
+ * Updates three things in one transaction:
+ *   - `ProjectGroup.categoryId` — the canonical placement.
+ *   - `ProjectLineItem.categoryId` for every item in the group — keeps
+ *     line-item category in sync so any filter that scopes by category
+ *     (PDFs, reports) sees the move.
+ *   - `CategorySlot` row — appended to the end of the destination
+ *     category so the unified mixed-group order stays consistent with
+ *     sub-hire groups already living there.
+ *
+ * Unlike `moveSubHireGroupToCategory`, the destination is required —
+ * `ProjectGroup.categoryId` is NOT NULL in the schema.
+ *
+ * Concurrency: the same `pg_advisory_xact_lock` keyed on destination
+ * categoryId that protects sub-hire moves (Finding 7.2 / S11). Two
+ * parallel moves of the same group would otherwise race on
+ * `UNIQUE(projectCategoryId, sortOrder)` when inserting their CategorySlot.
+ *
+ * Permission gate: only `project:manage_line_items` (no sub-hire perm
+ * needed — this action never touches sub-hire data).
+ */
+export async function moveProjectGroupToCategory(
+  input: MoveProjectGroupToCategoryInput,
+) {
+  const parsed = moveProjectGroupToCategorySchema.parse(input);
+  const { organizationId, userId, userName } = await requirePermission(
+    "project",
+    "manage_line_items",
+  );
+
+  // Cross-org / cross-project validation: the group AND the destination
+  // category must both belong to this org and to the same project.
+  const group = await prisma.projectGroup.findFirst({
+    where: { id: parsed.groupId, organizationId },
+    select: { id: true, projectId: true, categoryId: true, title: true },
+  });
+  if (!group) {
+    throw new Error("Project group not found");
+  }
+
+  const category = await prisma.projectCategory.findFirst({
+    where: { id: parsed.categoryId, organizationId },
+    select: { id: true, projectId: true, name: true },
+  });
+  if (!category) {
+    throw new Error("Destination category not found");
+  }
+  if (category.projectId !== group.projectId) {
+    throw new Error("Cannot move project group across projects");
+  }
+
+  // No-op fast path — saves a transaction round-trip when the user
+  // picks the same category the group is already in (e.g. accidental
+  // double-confirm in the move dialog).
+  if (group.categoryId === parsed.categoryId) {
+    return serialize({ success: true, noop: true });
+  }
+
+  await prisma.$transaction(async (tx) => {
+    // Serialize concurrent moves into the same destination category.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${parsed.categoryId})::bigint)`;
+
+    // 1. Move the group itself.
+    await tx.projectGroup.update({
+      where: { id: parsed.groupId },
+      data: { categoryId: parsed.categoryId },
+    });
+
+    // 2. Keep line-item categoryId in sync. Items follow their group —
+    //    any consumer that filters by categoryId (PDFs, reports, the
+    //    Uncategorized zone query) sees the move immediately.
+    await tx.projectLineItem.updateMany({
+      where: {
+        groupId: parsed.groupId,
+        organizationId,
+      },
+      data: { categoryId: parsed.categoryId },
+    });
+
+    // 3. Update the CategorySlot — delete any existing slot for this
+    //    project group and insert a fresh one at the end of the
+    //    destination category's slot list. Mirrors the sub-hire flow.
+    await tx.categorySlot.deleteMany({ where: { projectGroupId: parsed.groupId } });
+    const lastSlot = await tx.categorySlot.findFirst({
+      where: { projectCategoryId: parsed.categoryId },
+      orderBy: { sortOrder: "desc" },
+      select: { sortOrder: true },
+    });
+    await tx.categorySlot.create({
+      data: {
+        projectCategoryId: parsed.categoryId,
+        projectGroupId: parsed.groupId,
+        sortOrder: (lastSlot?.sortOrder ?? -1) + 1,
+      },
+    });
+  });
+
+  await recalculateProjectTotals(group.projectId);
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "updated",
+    entityType: "project",
+    entityId: group.projectId,
+    entityName: `Project group ${group.title}`,
+    summary: `Moved project group to category ${category.name}`,
+  });
 
   return serialize({ success: true });
 }
@@ -424,6 +540,13 @@ export async function createCategoryAndPlaceGroup(input: CreateCategoryAndPlaceG
     if (projectGroupId) {
       await tx.projectGroup.update({
         where: { id: projectGroupId },
+        data: { categoryId: category.id },
+      });
+      // Mirror the sub-hire branch: keep the line items' categoryId in
+      // sync so any consumer that filters by category (PDFs, reports,
+      // the Uncategorized zone query) sees the new home.
+      await tx.projectLineItem.updateMany({
+        where: { groupId: projectGroupId, organizationId },
         data: { categoryId: category.id },
       });
     } else if (subHireGroupId) {

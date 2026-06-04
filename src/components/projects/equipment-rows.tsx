@@ -23,6 +23,7 @@ import {
   BookmarkPlus,
   Handshake,
   ArrowRightLeft,
+  Sparkles,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -350,6 +351,7 @@ export function GroupRow({
   onEditPrice,
   onAddEquipment,
   onAddKit,
+  onMove,
   onRecalculate,
   onSaveAsTemplate,
 }: {
@@ -369,6 +371,9 @@ export function GroupRow({
   onEditPrice?: () => void;
   onAddEquipment: () => void;
   onAddKit: () => void;
+  /** Open the move-to-category dialog. Optional so callers that don't
+   *  want the affordance (e.g. read-only views) can omit it. */
+  onMove?: () => void;
   onRecalculate?: () => void;
   onSaveAsTemplate?: () => void;
 }) {
@@ -385,7 +390,7 @@ export function GroupRow({
   const rejectionClasses = isRejectedDropTarget
     ? "border-l-2 border-l-red-500 cursor-not-allowed"
     : "";
-  const shortcuts = useRowShortcuts({ e: onEdit, d: onDelete });
+  const shortcuts = useRowShortcuts({ e: onEdit, m: onMove, d: onDelete });
 
   return (
     <TableRow
@@ -474,6 +479,12 @@ export function GroupRow({
                   <DropdownMenuItem onClick={onSaveAsTemplate}>
                     <BookmarkPlus className="mr-2 h-3.5 w-3.5" />
                     Save as Template
+                  </DropdownMenuItem>
+                )}
+                {onMove && (
+                  <DropdownMenuItem onClick={onMove}>
+                    <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
+                    Move to category
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem
@@ -637,7 +648,7 @@ export function SubHireGroupRow({
                 </DropdownMenuItem>
                 {onMove && (
                   <DropdownMenuItem onClick={onMove}>
-                    <Package className="mr-2 h-3.5 w-3.5" />
+                    <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
                     Move to category
                   </DropdownMenuItem>
                 )}
@@ -656,11 +667,24 @@ export function CategoryRow({
   cat,
   onRename,
   onDelete,
+  onAddEquipment,
+  onAddKit,
+  onAddCustom,
 }: {
   cat: CategoryData;
   onRename: () => void;
   onDelete: () => void;
+  /** Open the unified add dialog scoped to this category (no group).
+   *  All three are optional so callers can opt in. The kebab section
+   *  hides entirely when none are supplied. Sub-hire is intentionally
+   *  absent — sub-hire orders don't carry a categoryId, only their
+   *  groups do, so adding a sub-hire "to a category" is not a clean
+   *  semantic. Use the toolbar Add for sub-hires. */
+  onAddEquipment?: () => void;
+  onAddKit?: () => void;
+  onAddCustom?: () => void;
 }) {
+  const hasAddActions = !!(onAddEquipment || onAddKit || onAddCustom);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: `cat-${cat.id}` });
 
@@ -690,6 +714,28 @@ export function CategoryRow({
             <DropdownMenuContent align="end">
               <DropdownMenuGroup>
                 <DropdownMenuLabel>Category</DropdownMenuLabel>
+                {hasAddActions && (
+                  <>
+                    {onAddEquipment && (
+                      <DropdownMenuItem onClick={onAddEquipment}>
+                        <Plus className="mr-2 h-3.5 w-3.5" />
+                        Add Equipment
+                      </DropdownMenuItem>
+                    )}
+                    {onAddKit && (
+                      <DropdownMenuItem onClick={onAddKit}>
+                        <Package className="mr-2 h-3.5 w-3.5" />
+                        Add Kit
+                      </DropdownMenuItem>
+                    )}
+                    {onAddCustom && (
+                      <DropdownMenuItem onClick={onAddCustom}>
+                        <Sparkles className="mr-2 h-3.5 w-3.5" />
+                        Add Custom Item
+                      </DropdownMenuItem>
+                    )}
+                  </>
+                )}
                 <DropdownMenuItem onClick={onRename}>
                   <Pencil className="mr-2 h-3.5 w-3.5" />
                   Rename

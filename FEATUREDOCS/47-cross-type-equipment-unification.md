@@ -45,8 +45,9 @@ Validations in [`src/lib/validations/category-slot.ts`](../src/lib/validations/c
 |---|---|---|
 | `getUncategorizedSubHireGroups(projectId)` | Read counterpart to `getUncategorizedLineItems`. Returns groups with `targetCategoryId IS NULL`. | `project:read` |
 | `moveSubHireGroupToCategory(groupId, categoryId\|null)` | Placement-only update. Does NOT trigger `syncSubHireToProject` regenerate — just updates targetCategoryId, the synthetic parent line item's categoryId, and the slot row. Calls `recalculateProjectTotals` once. | `project:manage_line_items` + `subHire:update` |
+| `moveProjectGroupToCategory(groupId, categoryId)` | Project-group counterpart to the sub-hire move. Updates `ProjectGroup.categoryId`, every contained `ProjectLineItem.categoryId`, and the slot row in one transaction guarded by the same destination-category advisory lock. Destination is required — `ProjectGroup.categoryId` is NOT NULL, so there is no "uncategorised project group" state. | `project:manage_line_items` |
 | `reorderMixedGroupsInCategory(categoryId, orderedIds[])` | Reorders a mixed array of `pg-<id>` / `shg-<id>` prefixed IDs by updating `CategorySlot.sortOrder`. Uses a Postgres advisory lock (`pg_advisory_xact_lock`) keyed on the category id to serialize concurrent reorders, plus a phase-1 negation step to free the positive sortOrder range before writing new values. | `project:manage_line_items` + `subHire:update` |
-| `createCategoryAndPlaceGroup(projectId, name, slot)` | Atomic: creates a new ProjectCategory at the END of the project's category list, places the chosen group (project or sub-hire) inside it via a slot row, syncs the group's own placement field. Used by the inline "Create category" affordance in the Move dialog. | `project:manage_line_items` |
+| `createCategoryAndPlaceGroup(projectId, name, slot)` | Atomic: creates a new ProjectCategory at the END of the project's category list, places the chosen group (project or sub-hire) inside it via a slot row, and syncs the group's own placement field. Both branches (project + sub-hire) also `updateMany` the contained line items' `categoryId` so PDFs and reports that filter by category see the new home — the project-group branch missed this until v0.9.2.0. Used by the inline "Create category" affordance in the Move dialog. | `project:manage_line_items` |
 
 Explicit non-existence: there is NO `moveLineItemToSubHireGroup`. Own-stock
 items can't enter a sub-hire group per Drop Matrix 8C (below) — that's by
@@ -77,11 +78,20 @@ in canonical order.
 
 ## UI primitives
 
-`src/components/projects/equipment-rows.tsx` exports three sortable row
+`src/components/projects/equipment-rows.tsx` exports four sortable row
 primitives:
 
+- **`CategoryRow`** — ProjectCategory header. Drag id `cat-<id>`. Kebab:
+  Add Equipment / Add Kit / Add Custom Item / Rename / Delete. The three
+  Add entries open the unified add dialog scoped to the category with no
+  group pre-set, so the new item lands as a standalone item directly
+  under the category. Sub-hire is intentionally omitted — sub-hire
+  orders don't carry a categoryId at the order level (their groups
+  do), so use the toolbar Add for sub-hires.
 - **`GroupRow`** — ProjectGroup. Drag id `grp-<id>`. Kebab: Edit price /
-  Add Equipment / Add Kit / Recalculate Prices / Save as Template / Delete.
+  Add Equipment / Add Kit / Move to category / Recalculate Prices /
+  Save as Template / Delete. "Move to category" uses the same
+  `ArrowRightLeft` icon as the line-item and sub-hire-group Moves.
 - **`SubHireGroupRow`** — SubHireGroup. Drag id `shg-<id>`. Handshake icon,
   "via Supplier · $N margin" sub-line. Kebab: Edit price / Edit in
   sub-hire order / Move to category. "Save as Template" is hidden by design
@@ -91,7 +101,8 @@ primitives:
 
 Every row supports `e`/`m`/`d` keyboard shortcuts on hover via the
 `useRowShortcuts` hook — Edit / Move / Delete. Skipped when focus is in
-an input, dialog, or open menu (decision 8J).
+an input, dialog, or open menu (decision 8J). On `GroupRow`, `m` binds
+to "Move to category".
 
 ## Dialogs
 
@@ -111,6 +122,11 @@ All under `src/components/projects/`:
 - **`MoveSubHireGroupDialog`** — picks destination category for a sub-hire
   group. Uses `ComboboxPicker` with `creatable` — typing a new category
   name and pressing Enter calls `createCategoryAndPlaceGroup` atomically.
+- **`MoveProjectGroupDialog`** — project-group counterpart, same
+  `ComboboxPicker` + `creatable` shape. Calls `moveProjectGroupToCategory`
+  for existing destinations and `createCategoryAndPlaceGroup` for new
+  ones. Destination is required (no "uncategorised" option), so the
+  Confirm button stays disabled until a category is picked.
 
 ## DnD (drag-and-drop)
 
@@ -146,23 +162,27 @@ supplier cost on sub-hire group rows and an em-dash on every other kind.
 
 ## Permission seam
 
-Cross-type writes (move + reorder) require BOTH `project:manage_line_items`
+Cross-type writes that touch sub-hire data (`moveSubHireGroupToCategory`,
+`reorderMixedGroupsInCategory`) require BOTH `project:manage_line_items`
 AND `subHire:update`. The actions call `requirePermission` twice — once
 per resource — so users holding only one perm are rejected before any
-write happens. See [04-auth-permissions.md](./04-auth-permissions.md) for
-the perm model.
+write happens. `moveProjectGroupToCategory` and the project-group branch
+of `createCategoryAndPlaceGroup` only need `project:manage_line_items`
+because they never read or write sub-hire rows. See
+[04-auth-permissions.md](./04-auth-permissions.md) for the perm model.
 
 ## Test coverage
 
 Integration tests under `src/server/`:
 
 - `category-slot.int.test.ts` — schema invariants (S1, S2)
-- `category-slots.int.test.ts` — move/reorder/create (S8, S10, S11, S15)
+- `category-slots.int.test.ts` — move/reorder/create (S8, S10, S11, S15) plus the `moveProjectGroupToCategory` happy path and the `createCategoryAndPlaceGroup` project-group line-item sync (Fix A regression)
 - `category-slots-permissions.int.test.ts` — perm seam (S9)
-- `project-categories-mixed.int.test.ts` — mixedGroups query shape
+- `project-categories-mixed.int.test.ts` — mixedGroups query shape, plus a Fix C regression that verifies kit parents render inside their group's `lineItems` and category-scoped standalone items (`groupId: null`) render in `cat.lineItems`
 
-Unit tests under `src/components/projects/`:
+Unit tests under `src/lib/validations/` and `src/components/projects/`:
 
+- `category-slot.test.ts` — Zod schema coverage for every move/reorder/create input, including the new `moveProjectGroupToCategorySchema`
 - `equipment-rows.test.ts` — RowDescriptor + Drop Matrix predicate (S7, S14)
 - `use-row-shortcuts.test.ts` — keyboard shortcut suppression (8J)
 

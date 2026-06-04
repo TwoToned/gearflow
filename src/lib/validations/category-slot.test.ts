@@ -40,15 +40,15 @@ describe("moveProjectGroupToCategorySchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects a null categoryId — project groups MUST land in a category", () => {
-    // Distinct from sub-hire groups, which CAN go to uncategorised.
-    // Schema-level guard catches a client that accidentally tries to
-    // route a project group through the "Uncategorised" picker option.
+  it("accepts a null categoryId — move to Uncategorized (since v0.9.4.0)", () => {
+    // Mirrors moveSubHireGroupToCategorySchema. Project groups can now
+    // live uncategorised — the same picker that routes sub-hire groups
+    // through the Uncategorised option also routes project groups.
     const result = moveProjectGroupToCategorySchema.safeParse({
       groupId: "g-1",
       categoryId: null,
     });
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
   });
 
   it("rejects missing fields entirely", () => {

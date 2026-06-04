@@ -35,14 +35,15 @@ export const moveSubHireGroupToCategorySchema = z.object({
 export type MoveSubHireGroupToCategoryInput = z.input<typeof moveSubHireGroupToCategorySchema>;
 
 /**
- * Move a ProjectGroup to a different ProjectCategory. Unlike sub-hire
- * groups, ProjectGroup.categoryId is NOT NULL in the schema, so the
- * destination is required — there is no "uncategorised project group"
- * state.
+ * Move a ProjectGroup to a different ProjectCategory, or to the
+ * Uncategorized zone (categoryId = null) since v0.9.4.0. Mirrors
+ * `moveSubHireGroupToCategorySchema` — both group kinds can live
+ * uncategorized.
  */
 export const moveProjectGroupToCategorySchema = z.object({
   groupId: z.string().min(1),
-  categoryId: z.string().min(1),
+  /** null = move to uncategorised */
+  categoryId: z.string().min(1).nullable(),
 });
 export type MoveProjectGroupToCategoryInput = z.input<typeof moveProjectGroupToCategorySchema>;
 

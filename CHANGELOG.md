@@ -4,105 +4,111 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.12.0.0] - 2026-06-04
 
-## [0.10.0.0] - 2026-06-04
-
-GearFlow now bridges Discord: every project gets its own private channel,
+GearFlow now bridges Discord. Every project gets its own private channel,
 crew can link their Discord accounts via email, and they can look up assets
-and log faults from their phone without opening the app. Project groups can
-also now live in the Uncategorized zone, matching how sub-hire groups already
-work, and deleting a category no longer destroys the groups inside it.
+and log faults from their phone without opening the app. The bot runs
+in-process — there's nothing to deploy separately, no `.env` to manage. Admins
+configure everything at **Settings → Discord**.
 
 ### Added
-- **Discord integration (foundation).** Per-org bot integration mirroring
-  WooCommerce: connect a Discord server, get auto-created private channels
-  per project (`PROJECTCODE-projectname`), and grant crew access automatically
-  when they're assigned. Configure under **Settings → Discord**.
+- **Discord integration.** Per-org config row, transactional outbox for events,
+  per-project private channels created automatically when a project hits a
+  configurable status (default: `CONFIRMED`) and archived to a separate
+  category when it hits a terminal status (default: `COMPLETED, INVOICED,
+  RETURNED, CANCELLED`). Crew get channel access as soon as they're assigned;
+  late-linking crew get retroactive access on confirm.
 - **`/link [email]` enrollment.** Crew run `/link` in Discord, get a magic
-  link emailed to their GearFlow profile, and click to connect — anti-hijack
-  hardened (token binds the invoker's Discord ID at issue time), constant
-  "if that email is on file" response (no enumeration oracle), rate-limited
-  3/hr per Discord user and 3/day per email.
-- **`/asset lookup [code]`.** Linked crew can look up any asset by tag
-  from Discord: current status, test-and-tag validity, and which project
-  it's deployed on.
-- **`/fault [code] [description] [severity] [hold]`.** Crew can log a
-  DamageEvent from Discord. Severity is MINOR or MAJOR; the optional
-  `hold` flag takes the asset out of service (requires maintenance
-  permission). Idempotent on the Discord interaction id — a retry never
-  double-logs.
-- **Admin Discord settings page** (`/settings/discord`). Connection health
-  reads the bot's heartbeat (UI never blocks on the bot, online or off),
-  linked-accounts roster shows the entire crew (linked + pending),
-  signing-secret rotate, recent activity from the existing audit log.
-- **Standalone bot service** (`apps/discord-bot/`). discord.js v14, HMAC-
-  signing API client, framework-free command registry, `npm run doctor`
-  green/red preflight, README walks the ~15 operator-setup steps
-  (intents, scopes, permission bits, invite URL, env vars).
-- **Bot config changes apply without restarting GearFlow.** Every save on
-  the Discord settings page that affects bot behavior (toggle enabled,
-  save token, save settings, deploy commands) automatically restarts the
-  in-process bot so the change takes effect immediately. The "Deploy &amp;
-  start bot" button does both jobs in one click. A live "Bot running" /
-  "Bot stopped" pill appears next to the connection-health dot so the
-  admin can see whether the bot is up at a glance. `startBot()` awaits
-  the Discord `ClientReady` handshake (10s timeout) so the post-restart
-  status read is accurate.
-- **Bot runs in-process now — zero env vars on the host.** The bot lives
-  inside the GearFlow Next.js server (booted by `instrumentation.ts`).
-  All configuration (Discord bot token, application id, guild id,
-  category ids, lifecycle rules, behavior toggles) lives in the
-  `DiscordIntegration` row managed at **Settings → Discord**. The
-  standalone `apps/discord-bot/` package is gone; all HMAC-signed
-  `/api/discord/v1/*` routes are deleted (kept: `/v1/health` for ops,
-  `/discord/verify` for the unauth email flow). Slash commands call
-  services directly; the outbox poller reads the DB directly. Same
-  service-layer invariants (`requireActorPermission`, transactional
-  outbox, idempotent converge) — just no HMAC trust boundary to enforce
-  between two processes that are now one. New **Deploy slash commands**
-  button on the admin page replaces the old `npm run deploy-commands`
-  CLI. Hot-reload safe in dev via a `globalThis` singleton.
-- **Project groups in Uncategorized.** Both the toolbar "Add Group" dialog and
-  each group's "Move" dialog now offer an Uncategorized destination. Groups
-  created without a category live alongside orphan sub-hire groups in the
-  project's Uncategorized zone, with the same kebab actions (Edit, Edit Price,
-  Add Equipment / Kit, Move, Delete) as categorised groups.
-- **`getUncategorizedProjectGroups(projectId)` server query** — mirrors
-  `getUncategorizedSubHireGroups`, scoped to org + project. The equipment tab
-  uses it to render orphan project groups in the same loop as orphan sub-hires.
+  link emailed to their GearFlow profile, and click to confirm. Anti-hijack
+  hardened (the token binds the invoker's Discord ID at issue time), constant
+  "if that email is on file" response (no enumeration oracle), durably
+  rate-limited (3/hr per Discord user, 3/day per crew member).
+- **`/asset code:TTP-042`.** Linked crew look up any asset by tag from
+  Discord: current status, test-and-tag validity, and which project it's
+  deployed on.
+- **`/fault code:… description:… severity:MINOR|MAJOR hold:true`.** Crew log
+  a DamageEvent from Discord. `hold` flips the asset to `IN_MAINTENANCE` (needs
+  `maintenance:create`). Idempotent on the Discord interaction id — a retry
+  never double-logs.
+- **Admin Discord settings page** (`/settings/discord`). Discord bot token
+  (encrypted at rest via AES-256-GCM keyed off `BETTER_AUTH_SECRET`),
+  application id, guild id, project + archive categories, channel lifecycle
+  rules (multi-select status arrays), welcome-on-create + fault-echo behaviour
+  toggles, signing-secret rotation, linked-accounts roster (linked + pending
+  in one table), recent activity.
+- **One-click bring-up.** A **Deploy commands & start bot** button on the admin
+  page pushes the slash command registry to Discord AND restarts the
+  in-process bot so it picks up the latest credentials and config — no
+  `pm2 restart gearflow` needed. Every config-changing save (toggle Enabled,
+  save token, save settings) auto-restarts the bot for the same reason. A
+  live "Bot running" / "Bot stopped" pill on the connection-health card
+  surfaces gateway state. `startBot()` awaits the Discord `ClientReady`
+  handshake (10s timeout) so the post-restart status read is accurate.
 
 ### Changed
-- **`DamageEvent` now records the true reporter** —
-  `reportedByCrewMemberId` (nullable FK to `CrewMember`) preserves who filed
-  the fault when a non-User freelancer reports it from Discord, while
-  `createdById` keeps a real User to satisfy the existing FK
-  (`20260604130000_discord_fault_reporter` migration). A new unique
-  `discordIdempotencyKey` makes retried fault POSTs safe.
-- **Project + crew-assignment writes now emit transactional Discord events.**
-  `createProject`, `createAssignment`, and `deleteAssignment` wrap their
-  Prisma calls in a `$transaction` and append a `DiscordOutbox` row inside
-  it, so a rolled-back mutation never leaks a channel-sync event. Orgs
-  without an enabled integration emit nothing (no orphan rows).
-- **`ProjectGroup.categoryId` is now nullable** (Prisma schema + DB migration
-  `20260604030000_uncategorized_project_groups`). The FK's `onDelete` switched
-  from `CASCADE` to `SET NULL`, so deleting a `ProjectCategory` orphans its
-  groups instead of destroying them along with all their line items. Groups
-  surface in the Uncategorized zone afterwards.
-- **`createProjectGroup` sortOrder scope** — the aggregate that picks the next
-  `sortOrder` now includes `projectId`. Without this, null-category groups
-  across every project in the org would have shared one sortOrder pool.
-- **Validation schemas accept `null` categoryId** —
-  `projectGroupSchema.categoryId` and
-  `moveProjectGroupToCategorySchema.categoryId` are now nullable. The old
-  v0.9.3.0 unit test that asserted "rejects a null categoryId" flipped to
-  assert acceptance.
+- **Bot architecture: in-process, no separate service.** The bot lives inside
+  the GearFlow Next.js server (booted by `instrumentation.ts`). Slash commands
+  call services directly; the outbox poller reads the DB directly. Same
+  service-layer invariants (`requireActorPermission`, transactional outbox,
+  idempotent converge) as a separate service would have — but with one process,
+  one call path, and no HMAC trust boundary to enforce. **Zero env vars** on
+  the host for Discord.
+- **`DamageEvent` records the true reporter.** New nullable
+  `reportedByCrewMemberId` preserves who filed the fault when a non-User
+  freelancer reports it from Discord, while `createdById` keeps a real User to
+  satisfy the existing FK (`20260604130000_discord_fault_reporter` migration).
+  A new unique `discordIdempotencyKey` makes retried fault POSTs safe.
+- **Project + crew-assignment writes emit transactional Discord events.**
+  `createProject`, `createAssignment`, `deleteAssignment`, `updateProject`, and
+  `updateProjectStatus` wrap their Prisma calls in a `$transaction` and append
+  a `DiscordOutbox` row inside it — a rolled-back mutation never leaks a
+  channel-sync event. Orgs without an enabled integration emit nothing.
+
+## [0.11.0.0] - 2026-06-04
+
+### Added
+- **Child Assets / Accessories.** Permanently attach accessories (cables,
+  clamps, adaptors) to a parent serialised asset. They travel with the parent
+  onto projects and through warehouse checkout/checkin, and render indented on
+  pull sheets, delivery dockets, quotes, and invoices. New data model:
+  `Asset.parentAssetId` self-relation, `AssetBulkChild` join table,
+  `ProjectLineItem.childKind` (`KIT | ACCESSORY`). The structural `isKitChild`
+  flag is reused so the ~40 existing totals/count filters exclude accessories
+  with no migration.
+- **Scan-time accessory travel.** When the warehouse assigns a specific asset
+  to a model-level line at prep or deploy, that asset's accessories
+  materialise as child lines automatically (idempotent — dedups by asset/bulk
+  id, so re-scans don't duplicate). Accessories travel whether the office
+  books a specific asset or the warehouse picks the unit later.
+- **Accessory manager UI** on the asset detail page (connector-glyph list,
+  Attach dialog) with a plain-language allocation explanation. An "Accessory
+  of <parent>" badge appears on children's detail pages.
+- **Scanner "scan the parent" prompts** in all three warehouse tabs (prep /
+  deploy / return) when an accessory is scanned directly.
+
+### Changed
+- `removeLineItem` is now transactional and cascade-aware: accessory parents
+  cascade-delete their children atomically; direct removal of a child line is
+  blocked with a `childKind`-aware error message.
+- `deleteAsset` refuses to delete a parent that still has accessories
+  attached.
+- PDF pipeline: an "accessory parent" (top-level line, no `kitId`, has
+  `ACCESSORY` children) is recognised by both `gearflow-table` rendering and
+  `section-renderer` height reservation, so accessories render indented and
+  pagination doesn't tail-drop them.
+- VERSION file reconciled with package.json after the 0.10.0.0 drift.
 
 ### Fixed
-- **`moveProjectGroupToCategory` to Uncategorized.** When the destination is
-  null, the action skips advisory locking and category-slot inserts, drops any
-  existing slot for the group, and clears the line items' `categoryId` —
-  matching the sub-hire equivalent's behaviour.
-
+- Concurrent `addSerializedChildToAsset` calls attaching the same child to
+  different parents now use a guarded update — the second attach throws
+  instead of silently overwriting the first.
+- `lookupAssetForScan` org-scopes the parent lookup (tenant isolation).
+- A serialised accessory cannot be detached while it's deployed on a project
+  (avoids a dangling project child line and a mis-stated shelf count).
+- `addSerializedItemToKit` (single + batch) rejects an asset that's already an
+  accessory of another asset — symmetric to the existing kit-to-accessory
+  guard.
 ## [0.9.3.0] - 2026-06-04
 
 The line-item Move action splits into two clearer choices.

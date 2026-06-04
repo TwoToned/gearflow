@@ -467,6 +467,9 @@ export async function addSerializedItemToKit(
   if (asset.kitId) {
     throw new Error("Asset is already assigned to another kit");
   }
+  if (asset.parentAssetId) {
+    throw new Error("Asset is an accessory of another asset — detach it first");
+  }
 
   return serialize(
     await prisma.$transaction(async (tx) => {
@@ -522,6 +525,9 @@ export async function addSerializedItemsToKit(
     }
     if (asset.kitId) {
       throw new Error(`Asset ${asset.assetTag} is already in another kit`);
+    }
+    if (asset.parentAssetId) {
+      throw new Error(`Asset ${asset.assetTag} is an accessory — detach it first`);
     }
   }
 

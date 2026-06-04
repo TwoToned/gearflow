@@ -18,6 +18,100 @@ import { getOrgDaysPerMonth } from "@/lib/org-pricing";
 import { UserFacingError } from "@/lib/errors";
 import { computeStockBreakdown } from "@/lib/availability";
 
+/**
+ * Expand a serialised asset's permanent accessories into child line items.
+ *
+ * Called inside the same transaction that creates the parent line. Each
+ * accessory becomes a child ProjectLineItem with `isKitChild: true` (the
+ * structural "is a child" flag that the ~40 totals/count filters key off) and
+ * `childKind: ACCESSORY` (the behaviour discriminator). No units are created
+ * here — like every other line, units materialise lazily at prep. SHIPS_WITH
+ * bulk demand is counted live by availability; DEDICATED was already reserved
+ * against the pool when the accessory was attached to the asset.
+ */
+async function expandAccessoryChildren(
+  tx: Prisma.TransactionClient,
+  organizationId: string,
+  projectId: string,
+  parentLine: {
+    id: string;
+    assetId: string | null;
+    categoryId: string | null;
+    groupId: string | null;
+    duration: number;
+    pricingType: import("@/generated/prisma/client").PricingType;
+  },
+) {
+  if (!parentLine.assetId) return;
+  const asset = await tx.asset.findUnique({
+    where: { id: parentLine.assetId },
+    select: {
+      childAssets: {
+        select: { id: true, modelId: true, model: { select: { name: true } } },
+        orderBy: { assetTag: "asc" },
+      },
+      childBulkItems: {
+        select: {
+          bulkAssetId: true,
+          quantity: true,
+          bulkAsset: { select: { modelId: true, model: { select: { name: true } } } },
+        },
+        orderBy: { sortOrder: "asc" },
+      },
+    },
+  });
+  if (!asset) return;
+  if (asset.childAssets.length === 0 && asset.childBulkItems.length === 0) return;
+
+  let sort = 0;
+  for (const child of asset.childAssets) {
+    await tx.projectLineItem.create({
+      data: {
+        organizationId,
+        projectId,
+        type: "EQUIPMENT",
+        modelId: child.modelId,
+        assetId: child.id,
+        quantity: 1,
+        isKitChild: true,
+        childKind: "ACCESSORY",
+        parentLineItemId: parentLine.id,
+        categoryId: parentLine.categoryId,
+        groupId: parentLine.groupId,
+        description: child.model?.name ?? null,
+        unitPrice: null,
+        pricingType: parentLine.pricingType,
+        duration: parentLine.duration,
+        sortOrder: sort++,
+      },
+    });
+  }
+  for (const bi of asset.childBulkItems) {
+    await tx.projectLineItem.create({
+      data: {
+        organizationId,
+        projectId,
+        type: "EQUIPMENT",
+        modelId: bi.bulkAsset.modelId,
+        bulkAssetId: bi.bulkAssetId,
+        quantity: bi.quantity,
+        isKitChild: true,
+        childKind: "ACCESSORY",
+        parentLineItemId: parentLine.id,
+        categoryId: parentLine.categoryId,
+        groupId: parentLine.groupId,
+        description: bi.bulkAsset.model?.name
+          ? `${bi.quantity}x ${bi.bulkAsset.model.name}`
+          : null,
+        unitPrice: null,
+        pricingType: parentLine.pricingType,
+        duration: parentLine.duration,
+        sortOrder: sort++,
+      },
+    });
+  }
+}
+
 export async function addLineItem(projectId: string, data: LineItemFormValues, allowOverbook = false, forceSeparate = false) {
   const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
   const parsed = lineItemSchema.parse(data);
@@ -309,39 +403,49 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
   });
   const nextSort = (maxSort._max.sortOrder ?? -1) + 1;
 
-  const result = await prisma.projectLineItem.create({
-    data: {
-      organizationId,
-      projectId,
-      categoryId: parsed.categoryId || null,
-      groupId: parsed.groupId || null,
-      type: parsed.type,
-      modelId: parsed.modelId || null,
-      assetId: parsed.assetId || null,
-      bulkAssetId: parsed.bulkAssetId || null,
-      description: parsed.description || null,
-      quantity: parsed.quantity,
-      unitPrice: optimizedUnitPrice ?? null,
-      pricingType: optimizedPricingType,
-      duration: optimizedDuration,
-      discount: parsed.discount ?? null,
-      lineTotal,
-      priceBreakdown,
-      priceOverridden,
-      sortOrder: nextSort,
-      groupName: parsed.groupName || null,
-      notes: parsed.notes || null,
-      isOptional: parsed.isOptional,
-      showSubhireOnDocs: parsed.showSubhireOnDocs,
-      supplierId: parsed.supplierId || null,
-      subhireOrderNumber: parsed.subhireOrderNumber || null,
-    },
-    include: {
-      model: true,
-      asset: true,
-      bulkAsset: true,
-      supplier: true,
-    },
+  const result = await prisma.$transaction(async (tx) => {
+    const line = await tx.projectLineItem.create({
+      data: {
+        organizationId,
+        projectId,
+        categoryId: parsed.categoryId || null,
+        groupId: parsed.groupId || null,
+        type: parsed.type,
+        modelId: parsed.modelId || null,
+        assetId: parsed.assetId || null,
+        bulkAssetId: parsed.bulkAssetId || null,
+        description: parsed.description || null,
+        quantity: parsed.quantity,
+        unitPrice: optimizedUnitPrice ?? null,
+        pricingType: optimizedPricingType,
+        duration: optimizedDuration,
+        discount: parsed.discount ?? null,
+        lineTotal,
+        priceBreakdown,
+        priceOverridden,
+        sortOrder: nextSort,
+        groupName: parsed.groupName || null,
+        notes: parsed.notes || null,
+        isOptional: parsed.isOptional,
+        showSubhireOnDocs: parsed.showSubhireOnDocs,
+        supplierId: parsed.supplierId || null,
+        subhireOrderNumber: parsed.subhireOrderNumber || null,
+      },
+      include: {
+        model: true,
+        asset: true,
+        bulkAsset: true,
+        supplier: true,
+      },
+    });
+
+    // If a specific serialised asset with permanent accessories was added,
+    // auto-expand its accessories as child lines (atomic with the parent).
+    if (line.assetId) {
+      await expandAccessoryChildren(tx, organizationId, projectId, line);
+    }
+
+    return line;
   });
 
   // Recalculate group suggested price if item was added to a group
@@ -723,25 +827,31 @@ export async function removeLineItem(id: string) {
     });
   }
 
-  // Block removal of kit child items
+  // Block direct removal of child items (kit members, sub-hire group children,
+  // and accessory children). `childKind` distinguishes the message; all are
+  // removed via their parent, never individually.
   if (item.isKitChild) {
+    const isAccessory = item.childKind === "ACCESSORY";
     throw new UserFacingError({
-      code: "KIT_CHILD",
+      code: isAccessory ? "ACCESSORY_CHILD" : "KIT_CHILD",
       title: "Cannot remove this item",
-      message: "This item is part of a Kit.",
-      hint: "Remove the Kit from the project instead — that will remove all its members at once.",
+      message: isAccessory
+        ? "This item is an accessory of another asset."
+        : "This item is part of a Kit.",
+      hint: isAccessory
+        ? "Remove the parent asset's line to remove it, or detach the accessory from the asset in the catalog."
+        : "Remove the Kit from the project instead — that will remove all its members at once.",
     });
   }
 
-  // If this is a kit parent, cascade delete children
-  const hasKitChildren = item.kitId && !item.isKitChild;
-  if (hasKitChildren) {
-    await prisma.projectLineItem.deleteMany({
+  // Parent line (kit parent OR accessory parent): cascade-delete its children
+  // atomically with the parent.
+  await prisma.$transaction(async (tx) => {
+    await tx.projectLineItem.deleteMany({
       where: { parentLineItemId: item.id, organizationId },
     });
-  }
-
-  await prisma.projectLineItem.delete({ where: { id } });
+    await tx.projectLineItem.delete({ where: { id } });
+  });
   await recalculateProjectTotals(item.projectId);
 
   await logActivity({

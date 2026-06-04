@@ -1,6 +1,6 @@
 # Discord Bot — Session Handoff
 
-**If you're a fresh session: read this file first, then `FEATUREDOCS/48-discord-integration.md`.**
+**If you're a fresh session: read this file first, then `FEATUREDOCS/49-discord-integration.md`.**
 Everything below is committed to the `feat/discord-bot` branch — no prior session memory needed.
 
 ## Where you are
@@ -85,7 +85,7 @@ no generic Incident model (use `DamageEvent`); exclude `isTemplate:true` project
    status per DESIGN.md §203 — NOT a Badge; renders from DB, never blocks on the bot).
 
 ## Conventions (from root CLAUDE.md)
-Atomic commits; update `FEATUREDOCS/48` after changes; `"use server"` files call `serialize()`
+Atomic commits; update `FEATUREDOCS/49` after changes; `"use server"` files call `serialize()`
 + `logActivity()`; never re-export types from server files; Prisma client from
 `@/generated/prisma/client`; commit messages end with `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
 

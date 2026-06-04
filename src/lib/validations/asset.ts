@@ -40,6 +40,29 @@ export const bulkAssetSchema = z.object({
 
 export type BulkAssetFormValues = z.input<typeof bulkAssetSchema>;
 
+// ─── Child assets / accessories ──────────────────────────────────────────────
+
+/** Attach a serialised asset as a permanent accessory of a parent asset. */
+export const assetSerializedChildSchema = z.object({
+  childAssetId: z.string().min(1, "Accessory asset is required"),
+  notes: z.string().max(500).optional(),
+});
+
+export type AssetSerializedChildFormValues = z.input<typeof assetSerializedChildSchema>;
+
+/** Attach a bulk asset (with quantity + allocation mode) as an accessory. */
+export const assetBulkChildSchema = z.object({
+  bulkAssetId: z.string().min(1, "Bulk asset is required"),
+  quantity: z.coerce.number().int().min(1, "Quantity must be at least 1"),
+  // SHIPS_WITH (default): drawn from the live pool at prep/checkout — the
+  // shared pool is NOT touched at attach time. DEDICATED: permanently pulled
+  // out of the pool now (availableQuantity decremented), restored on detach.
+  allocationMode: z.enum(["SHIPS_WITH", "DEDICATED"]).default("SHIPS_WITH"),
+  notes: z.string().max(500).optional(),
+});
+
+export type AssetBulkChildFormValues = z.input<typeof assetBulkChildSchema>;
+
 export const locationSchema = z.object({
   name: z.string().min(1, "Name is required").max(200),
   address: z.string().max(500).optional(),

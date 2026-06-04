@@ -9,6 +9,8 @@ const checks: { label: string; run: () => Promise<boolean> | boolean }[] = [
   { label: "DISCORD_GUILD_ID set", run: () => !!process.env.DISCORD_GUILD_ID },
   { label: "GEARFLOW_API_URL set", run: () => !!process.env.GEARFLOW_API_URL },
   { label: "GEARFLOW_DISCORD_SIGNING_SECRET set", run: () => !!process.env.GEARFLOW_DISCORD_SIGNING_SECRET },
+  { label: "GEARFLOW_ORG_ID set", run: () => !!process.env.GEARFLOW_ORG_ID },
+  { label: "GEARFLOW_BOT_BEARER set", run: () => !!process.env.GEARFLOW_BOT_BEARER },
   {
     label: "GearFlow API reachable",
     run: async () => {

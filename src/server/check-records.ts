@@ -8,6 +8,7 @@ import {
   prepUnit,
   syncLineItemRollup,
   returnLineUnits,
+  checkinAccessoryChildren,
 } from "@/server/line-item-fulfillment";
 import type { Prisma } from "@/generated/prisma/client";
 import {
@@ -437,6 +438,14 @@ export async function completeCheckAndDeprep(data: {
       },
       include: { model: true, asset: true, bulkAsset: true },
     });
+
+    // Permanent accessories de-prep with their parent so they don't linger in
+    // the deploy-staging board after the parent has been returned + depreped.
+    await tx.projectLineItem.updateMany({
+      where: { parentLineItemId: data.lineItemId, organizationId, childKind: "ACCESSORY" },
+      data: { prepStatus: "PENDING" },
+    });
+
     return updated;
   });
 
@@ -862,6 +871,18 @@ export async function completeCheckAndStore(
 
     // 5. Sync rollup counters + derived status.
     await syncLineItemRollup(tx, parsed.lineItemId);
+
+    // 5b. Permanent accessories return with their parent — the same cascade
+    //     checkInItems runs, so a checked-and-stored parent doesn't leave its
+    //     cables/clamps stuck CHECKED_OUT. No-op for non-parent lines.
+    await checkinAccessoryChildren(tx, {
+      organizationId,
+      projectId: parsed.projectId,
+      parentLineItemId: parsed.lineItemId,
+      returnCondition: parsed.condition,
+      userId,
+      defaultLocationId: locationId,
+    });
 
     // 6. Scan log
     await tx.assetScanLog.create({

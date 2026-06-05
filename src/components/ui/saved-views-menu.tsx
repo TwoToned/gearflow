@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { BookmarkPlus, Check, Star, Trash2, ChevronDown, Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { useActiveOrganization } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -57,7 +58,12 @@ function sameConfig(a: SavedViewConfig, b: SavedViewConfig): boolean {
 
 export function SavedViewsMenu({ tableId, currentConfig, applyConfig, onResetPreferences }: Props) {
   const queryClient = useQueryClient();
-  const queryKey = ["saved-views", tableId];
+  // Scope the cache key to the active org so a multi-org user who switches orgs
+  // never sees/applies the previous org's views from a stale cache entry
+  // (server queries are org-scoped, but the client cache must be too).
+  const { data: activeOrg } = useActiveOrganization();
+  const orgId = activeOrg?.id;
+  const queryKey = ["saved-views", orgId, tableId];
 
   const { data: views = [], isLoading } = useQuery({
     queryKey,

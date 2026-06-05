@@ -88,7 +88,7 @@ describe("saved table views", () => {
     expect(views.find((v) => v.id === a.id)?.isDefault).toBe(true);
 
     await setDefaultSavedView("assets", null);
-    views = (await getSavedViews("assets")) as Array<{ isDefault: boolean }>;
+    views = (await getSavedViews("assets")) as Array<{ id: string; isDefault: boolean }>;
     expect(views.every((v) => !v.isDefault)).toBe(true);
   });
 

@@ -192,9 +192,31 @@ describe("warehouse accessory cascade (Phase E)", () => {
     void clamps;
   });
 
+  it("a DAMAGED check-and-store sends the serialised accessory to maintenance", async () => {
+    const s = await seed();
+    const { light, cable, parentLineId } = await lightWithAccessoriesOnProject(s);
+    await checkOutItems(s.project.id, [{ lineItemId: parentLineId, assetId: light.id }]);
+
+    // Guards against the check-and-store call site hard-coding GOOD: the
+    // condition must thread through to the accessory cascade.
+    const checkItem = await testPrisma.checkItem.create({
+      data: { organizationId: s.org.id, label: "Visual", type: "PASS_FAIL" },
+    });
+    await completeCheckAndStore({
+      projectId: s.project.id,
+      lineItemId: parentLineId,
+      assetId: light.id,
+      condition: "DAMAGED",
+      checks: [{ checkItemId: checkItem.id, result: "FAIL", photos: [] }],
+    });
+
+    const cableAsset = await testPrisma.asset.findUnique({ where: { id: cable.id } });
+    expect(cableAsset?.status).toBe("IN_MAINTENANCE");
+  });
+
   it("de-prepping the parent resets its accessories' prepStatus", async () => {
     const s = await seed();
-    const { light, parentLineId } = await lightWithAccessoriesOnProject(s);
+    const { light, clamps, parentLineId } = await lightWithAccessoriesOnProject(s);
     await checkOutItems(s.project.id, [{ lineItemId: parentLineId, assetId: light.id }]);
     await checkInItems(s.project.id, [{ lineItemId: parentLineId, assetId: light.id, returnCondition: "GOOD" }]);
 
@@ -226,6 +248,13 @@ describe("warehouse accessory cascade (Phase E)", () => {
     for (const cl of childLines) {
       expect(cl.prepStatus).toBe("PENDING");
     }
+    // Distinguish bulk vs serialised — the updateMany must reach both, not just
+    // the serialised child (a stray assetId filter would skip the bulk one).
+    const bulkChild = childLines.find((c) => c.bulkAssetId === clamps.id);
+    expect(bulkChild?.prepStatus).toBe("PENDING");
+    // The parent itself is depreped too.
+    const parent = await testPrisma.projectLineItem.findUnique({ where: { id: parentLineId } });
+    expect(parent?.prepStatus).toBe("PENDING");
   });
 
   it("scanning an accessory resolves to 'scan the parent'", async () => {

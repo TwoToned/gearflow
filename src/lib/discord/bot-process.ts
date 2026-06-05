@@ -9,6 +9,7 @@
  * before starting a new one.
  */
 import { Client, Events, GatewayIntentBits } from "discord.js";
+import * as Sentry from "@sentry/nextjs";
 import { prisma } from "@/lib/prisma";
 import { decryptSecret } from "@/lib/crypto/secret-vault";
 import { DiscordChannelGateway } from "./discord-channel-gateway";
@@ -151,6 +152,22 @@ export async function startBot(): Promise<void> {
   // events, or GuildMember{Add,Remove,Update} listeners — none of which we use.
   const client = new Client({
     intents: [GatewayIntentBits.Guilds],
+  });
+
+  // CRITICAL: discord.js `Client` is a Node EventEmitter. A gateway/websocket
+  // `error` or `shardError` emitted with NO listener is re-thrown by Node as an
+  // uncaught exception — which kills the entire process. This was the root cause
+  // of intermittent Cloudflare 502s: a transient Discord network blip crashed
+  // the web server, pm2 restarted it, and users hit a dead origin during the
+  // cold start. Listen, log (-> pm2 stderr), and report — never let a recoverable
+  // gateway hiccup take the process down.
+  client.on(Events.Error, (err) => {
+    console.error("[discord-bot] client error:", err);
+    Sentry.captureException(err, { tags: { scope: "discord-bot", kind: "client-error" } });
+  });
+  client.on(Events.ShardError, (err, shardId) => {
+    console.error(`[discord-bot] shard ${shardId} websocket error:`, err);
+    Sentry.captureException(err, { tags: { scope: "discord-bot", kind: "shard-error" } });
   });
 
   let running = true;

@@ -5,6 +5,12 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     await import("./sentry.server.config");
 
+    // Last-resort net: log + report stray unhandled rejections / uncaught
+    // exceptions instead of letting them silently kill the process (the
+    // intermittent-502 failure mode). See src/lib/process-safety.ts.
+    const { installProcessSafetyNet } = await import("./src/lib/process-safety");
+    installProcessSafetyNet("web");
+
     // Start the in-process Discord bot. Reads the active DiscordIntegration
     // from the DB and skips silently if disabled / unconfigured. No env vars
     // needed for the bot — admin configures everything at /settings/discord.

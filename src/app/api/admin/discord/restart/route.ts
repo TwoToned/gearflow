@@ -1,18 +1,17 @@
 import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/org-context";
-import { restartBot, getBotState } from "@/lib/discord/bot-process";
+import { requestBotRestart } from "@/lib/discord/bot-control";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * POST /api/admin/discord/restart — restarts the in-process bot. Authenticated
- * via the user's Better Auth session + `orgSettings:update` permission, exactly
- * like the server-actions path. Lives as an API route (not a server action)
- * so the client bundle never traces the discord.js import graph.
+ * POST /api/admin/discord/restart — ask the out-of-process bot to (re)start and
+ * reload config. Writes intent to the DB (desiredState=RUNNING +
+ * botRestartRequestedAt); the bot's supervisor loop actions it on its next tick.
+ * Authenticated via Better Auth session + `orgSettings:update`.
  */
 export async function POST(): Promise<NextResponse> {
   await requirePermission("orgSettings", "update");
-  await restartBot();
-  return NextResponse.json(getBotState());
+  return NextResponse.json(await requestBotRestart());
 }

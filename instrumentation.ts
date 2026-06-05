@@ -11,24 +11,10 @@ export async function register() {
     const { installProcessSafetyNet } = await import("./src/lib/process-safety");
     installProcessSafetyNet("web");
 
-    // Start the in-process Discord bot. Reads the active DiscordIntegration
-    // from the DB and skips silently if disabled / unconfigured. No env vars
-    // needed for the bot — admin configures everything at /settings/discord.
-    // Skipped during builds and in test mode.
-    if (
-      process.env.NEXT_PHASE !== "phase-production-build" &&
-      process.env.NODE_ENV !== "test" &&
-      process.env.GEARFLOW_DISCORD_BOT_DISABLED !== "1"
-    ) {
-      try {
-        const { startBot } = await import("./src/lib/discord/bot-process");
-        // Don't await — let the server start even if Discord login takes a
-        // moment. Errors are logged inside startBot.
-        void startBot();
-      } catch (err) {
-        console.error("[instrumentation] failed to start Discord bot:", err);
-      }
-    }
+    // The Discord bot NO LONGER runs in this process. It runs as its own pm2 app
+    // (`gearflow-discord-bot`, scripts/discord-bot.ts) so a gateway crash can't
+    // take the website down. The web app controls it via the DB
+    // (src/lib/discord/bot-control.ts); the bot's supervisor loop reconciles.
   }
   if (process.env.NEXT_RUNTIME === "edge") {
     await import("./sentry.edge.config");

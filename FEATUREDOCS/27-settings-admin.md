@@ -56,6 +56,16 @@
 - **Template selection priority** (at PDF generation time): specific `templateId` → org's published default → system default
 
 ## Dashboard & Reporting
-- **Dashboard** (`/dashboard`): Stats cards (Total Assets, Checked Out, Active Projects, Maintenance Due), recent activity feed, upcoming projects
+- **Dashboard** (`/dashboard`): the user's home screen. Leads with a personalised greeting
+  (time-of-day + first name) and a **"Your projects"** section — projects the signed-in user
+  manages, found via BOTH `Project.projectManagerId` AND the `ProjectManager` join
+  (`getMyHomeData` in `server/dashboard.ts`, active projects only). Each card shows status,
+  client, equipment count, and a status-aware date line ("Returns in 2d", "Overdue 3d",
+  "Starts today"), colour-coded by status intent. A "Needs attention" row chips overdue
+  returns / maintenance due / pending crew offers from the org stats (or "You're all caught
+  up"). Component: `components/dashboard/my-work-section.tsx`. Below that: the org metrics
+  strip (Total Assets, Deployed, Active Projects, Crew), upcoming projects, and the recent
+  activity feed. (Future: a "My tasks" section once Project Tasks lands — `getMyOpenTasks`
+  already exists for it.)
 - **Reports** (`/reports`): Full reporting system with quick stats, pre-built report library (~30 reports), saved reports with pin/share, and custom report builder. See `FEATUREDOCS/30-reporting-system.md` for full details.
 - Notification-driven alerts surface the same data as the notification system

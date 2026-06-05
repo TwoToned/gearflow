@@ -4,6 +4,16 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.18.0.0] - 2026-06-06
+
+### Added
+- **A home screen that's about your work.** The dashboard now greets you by name
+  and leads with "Your projects" — the projects you manage — as status-coloured
+  cards showing the client, equipment count, and a plain-English timing line
+  ("Returns in 2d", "Overdue 3d", "Starts today"). A "Needs attention" row
+  surfaces overdue returns, maintenance due, and pending crew offers at a glance
+  (or tells you you're all caught up). Org stats, upcoming projects, and recent
+  activity follow below.
 ## [0.17.0.0] - 2026-06-06
 
 ### Added

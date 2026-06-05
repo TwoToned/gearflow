@@ -73,6 +73,34 @@ export async function getDashboardStats() {
   };
 }
 
+/**
+ * User-centric home data: the projects the current user manages (as the single
+ * projectManager OR via the ProjectManager join), plus their org's display name.
+ * Active projects only (not completed/invoiced/cancelled), soonest first.
+ */
+export async function getMyHomeData() {
+  const { organizationId, userId, userName } = await getOrgContext();
+
+  const myProjects = await prisma.project.findMany({
+    where: {
+      organizationId,
+      isTemplate: false,
+      status: { notIn: ["COMPLETED", "INVOICED", "CANCELLED"] },
+      OR: [{ projectManagerId: userId }, { projectManagers: { some: { userId } } }],
+    },
+    include: {
+      client: { select: { name: true } },
+      _count: { select: { lineItems: { where: { type: "EQUIPMENT" } } } },
+    },
+    // Soonest first; undated projects (enquiries/drafts) sort last so they can't
+    // hide real upcoming work or push it past the take limit.
+    orderBy: [{ rentalStartDate: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
+    take: 24,
+  });
+
+  return serialize({ userName, userId, myProjects });
+}
+
 export async function getUpcomingProjects() {
   const { organizationId } = await getOrgContext();
 

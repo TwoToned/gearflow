@@ -4,7 +4,22 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-## [0.14.1.0] - 2026-06-05
+## [0.14.2.0] - 2026-06-05
+
+### Fixed
+- **Model accessories now show when you add gear by model.** Previously an
+  accessory set on a *model* ("every IMX6A ships with a Micon adaptor") only
+  appeared if you added that gear by scanning a specific asset tag — not when you
+  added it by model + quantity, which is how most quotes are built. So the
+  adaptor was missing from the project and every document. Now adding a line by
+  model expands the model's accessories immediately (quantity scaled — "2x IMX6A"
+  gets 2 adaptors), so they show on the project, the quote, and the docket.
+
+### Changed
+- **Existing jobs backfilled.** A one-time backfill adds model accessories onto
+  your existing model lines on active (quote/confirmed, not-yet-prepped) projects,
+  so current jobs get their accessories too — not just new ones. Finalized
+  (invoiced/completed) and already-deployed lines are left untouched.
 
 ### Fixed
 - **Accessories on multi-asset bookings now return with the right unit.**

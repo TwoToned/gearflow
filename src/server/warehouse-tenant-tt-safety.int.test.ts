@@ -186,4 +186,37 @@ describe("checkOutItems — accessory T&T compliance gate", () => {
     expect(lightAfter?.status).toBe("CHECKED_OUT");
     expect(cableAfter?.status).toBe("CHECKED_OUT");
   });
+
+  it("does NOT block when an ALREADY-deployed accessory's T&T lapses (gate scoped to to-be-flipped children)", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id);
+    h.ctx.organizationId = org.id;
+    h.ctx.userId = user.id;
+
+    const model = await createModelFixture(org.id);
+    const project = await makeProject(org.id);
+
+    const light = await createAssetFixture(org.id, model.id, { assetTag: `LIGHT-${createId().slice(0, 4)}` });
+    const cable = await createAssetFixture(org.id, model.id, { assetTag: `IEC-${createId().slice(0, 4)}` });
+    await testPrisma.asset.update({ where: { id: cable.id }, data: { parentAssetId: light.id } });
+
+    const parent = (await addLineItem(
+      project.id,
+      { type: "EQUIPMENT", modelId: model.id, assetId: light.id, quantity: 1 },
+      true,
+    )) as { id: string };
+
+    // First checkout while compliant — parent + accessory go out.
+    await checkOutItems(project.id, [{ lineItemId: parent.id, assetId: light.id }]);
+    expect((await testPrisma.asset.findUnique({ where: { id: cable.id } }))?.status).toBe("CHECKED_OUT");
+
+    // Accessory's T&T lapses to FAILED AFTER it shipped.
+    await createTestTagFixture(org.id, { testTagId: "TT-LAPSED", status: "FAILED", assetId: cable.id });
+
+    // Re-scanning the parent (idempotent) must NOT throw — the accessory child
+    // is already CHECKED_OUT, so it is excluded from the gate.
+    await expect(
+      checkOutItems(project.id, [{ lineItemId: parent.id, assetId: light.id }]),
+    ).resolves.toBeTruthy();
+  });
 });

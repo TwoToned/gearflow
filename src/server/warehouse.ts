@@ -502,9 +502,19 @@ async function checkoutAccessoryChildren(
   // Without this gate a failed/overdue accessory ships ungated. Assert here;
   // a block throws TestTagBlockError and rolls back the whole checkout batch,
   // matching the top-level preflight's all-or-nothing semantics.
+  //
+  // Scope the gate to children that will ACTUALLY be flipped now — i.e. not
+  // already CHECKED_OUT. The cascade below skips already-out units (guarded
+  // updates), so gating an already-deployed sibling accessory would wrongly
+  // block a later partial deploy of the same multi-quantity parent line if
+  // that sibling's T&T lapsed after it shipped. (Note: a not-yet-deployed
+  // sibling accessory IS still gated, because the line-scoped cascade would
+  // flip it; tightening that to true per-unit scope is the deferred "snapshot
+  // per-unit accessory contributions" follow-up — see FEATUREDOCS/48.)
+  const gateChildren = children.filter((c) => c.status !== "CHECKED_OUT");
   await assertTestTagAllowsCheckout(tx, organizationId, {
-    assetIds: children.map((c) => c.assetId).filter((x): x is string => !!x),
-    bulkAssetIds: children.map((c) => c.bulkAssetId).filter((x): x is string => !!x),
+    assetIds: gateChildren.map((c) => c.assetId).filter((x): x is string => !!x),
+    bulkAssetIds: gateChildren.map((c) => c.bulkAssetId).filter((x): x is string => !!x),
     projectId,
     scannedById: userId,
   });

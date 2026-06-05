@@ -166,7 +166,9 @@ export function SavedViewsMenu({ tableId, currentConfig, applyConfig, onResetPre
           {label}
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-60">
-          <DropdownMenuLabel>Saved views</DropdownMenuLabel>
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>Saved views</DropdownMenuLabel>
+          </DropdownMenuGroup>
           {isLoading ? (
             <div className="flex items-center gap-2 px-2 py-2 text-xs text-fg-3">
               <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…

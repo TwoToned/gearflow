@@ -28,6 +28,7 @@ import {
 import type { LineItem, GroupEntry } from "./warehouse-types";
 import { modelDisplayName, collectAllVerifiableIds, bulkUnitKey } from "./warehouse-types";
 import { KitChildRows } from "./kit-child-rows";
+import { AccessoryChildRows } from "./accessory-child-rows";
 import { PrepStatusBadge } from "./prep-status-badge";
 
 type ContainerOption = { value: string; label: string; assetId?: string; assetTag?: string; modelId?: string };
@@ -194,24 +195,27 @@ export function PickPrepTab({
                           </TableCell>
                         )}
                         {isExpanded && entry.items.map((item, idx) => (
-                          <TableRow key={item.id} className="bg-bg-inset/30">
-                            <TableCell>
-                              <Checkbox
-                                checked={selectedPrep.has(item.id)}
-                                onCheckedChange={() => toggleSelection(selectedPrep, setSelectedPrep, item.id)}
-                              />
-                            </TableCell>
-                            <TableCell className="pl-12 text-sm text-fg-3">
-                              {item.asset?.assetTag ? `${item.model?.name || "Asset"}` : `Unit ${idx + 1}`}
-                            </TableCell>
-                            <TableCell className="font-mono text-sm text-fg-3">
-                              {item.asset?.assetTag || "—"}
-                            </TableCell>
-                            <TableCell className="text-center">1</TableCell>
-                            <TableCell>
-                              <PrepStatusBadge item={item} />
-                            </TableCell>
-                          </TableRow>
+                          <Fragment key={item.id}>
+                            <TableRow className="bg-bg-inset/30">
+                              <TableCell>
+                                <Checkbox
+                                  checked={selectedPrep.has(item.id)}
+                                  onCheckedChange={() => toggleSelection(selectedPrep, setSelectedPrep, item.id)}
+                                />
+                              </TableCell>
+                              <TableCell className="pl-12 text-sm text-fg-3">
+                                {item.asset?.assetTag ? `${item.model?.name || "Asset"}` : `Unit ${idx + 1}`}
+                              </TableCell>
+                              <TableCell className="font-mono text-sm text-fg-3">
+                                {item.asset?.assetTag || "—"}
+                              </TableCell>
+                              <TableCell className="text-center">1</TableCell>
+                              <TableCell>
+                                <PrepStatusBadge item={item} />
+                              </TableCell>
+                            </TableRow>
+                            <AccessoryChildRows parent={item} mode="deploy" />
+                          </Fragment>
                         ))}
                       </Fragment>
                     );
@@ -264,6 +268,7 @@ export function PickPrepTab({
                             </TableRow>
                           );
                         })}
+                        {isExpanded && <AccessoryChildRows parent={entry.item} mode="deploy" />}
                       </Fragment>
                     );
                   }
@@ -340,7 +345,8 @@ export function PickPrepTab({
                   // Single item
                   const item = entry.item;
                   return (
-                    <TableRow key={item.id}>
+                    <Fragment key={item.id}>
+                    <TableRow>
                       <TableCell>
                         <Checkbox
                           checked={selectedPrep.has(item.id)}
@@ -367,6 +373,8 @@ export function PickPrepTab({
                         <PrepStatusBadge item={item} />
                       </TableCell>
                     </TableRow>
+                    <AccessoryChildRows parent={item} mode="deploy" />
+                    </Fragment>
                   );
                 })}
               </TableBody>

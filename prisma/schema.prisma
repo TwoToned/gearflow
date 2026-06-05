@@ -202,6 +202,7 @@ model Organization {
   notificationEmailLogs    NotificationEmailLog[]
   stocktakes               Stocktake[]
   customFieldDefinitions   CustomFieldDefinition[]
+  projectNumberSequences   ProjectNumberSequence[]
 
   @@map("organization")
 }
@@ -3429,6 +3430,24 @@ enum CustomFieldType {
   DATE
   SELECT
   BOOLEAN
+}
+
+// ─── Project Number Sequences (auto-incrementing project codes) ──────────────
+// One counter row per (org, scopeKey). scopeKey buckets the increment by the
+// configured reset period (e.g. "2026-06" monthly, "2026" yearly, "GLOBAL" none).
+// Incremented atomically via INSERT ... ON CONFLICT so concurrent project
+// creation can't hand out duplicate numbers.
+model ProjectNumberSequence {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  scopeKey       String
+  value          Int          @default(0)
+
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@unique([organizationId, scopeKey])
+  @@map("project_number_sequence")
 }
 
 // ─── Prep System (Pre-Packing / Staging) ─────────────────────────────────────

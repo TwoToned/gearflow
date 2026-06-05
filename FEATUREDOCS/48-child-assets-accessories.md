@@ -146,3 +146,38 @@ what every existing query keys off.
 Bulk parents (only serialised assets can be parents), nested accessories,
 per-accessory pricing (`unitPrice` is nullable so a future ITEMIZED mode is a
 data change), kit↔accessory conversion.
+
+## Known limitation — multi-quantity / model-level parents
+
+The feature is correct for the common case: a **specific serialised asset
+(quantity 1)** with its accessories. **Multi-quantity / model-level parent
+lines** (one `ProjectLineItem`, `quantity > 1`, units assigned per-unit) are
+under-handled across the whole feature — and `checkinAccessoryChildren` selects
+accessory children by `parentLineItemId` only, with no link to the returned unit:
+
+- **Over-return (the big one).** Returning ONE unit of a multi-qty parent (via
+  `checkInItems` OR `completeCheckAndStore`) cascades a return to **every**
+  accessory child of the line — so returning Light A also returns Light B's
+  still-deployed cable (and a DAMAGED return wrongly sends it to maintenance).
+  The deprep `updateMany` has the same all-children property. This predates the
+  pick-sheet/tab/check-flow wiring — `checkInItems` on `main` is byte-identical;
+  the fix belongs to the cascade, not the new surfaces.
+- **Bulk accessories undercounted.** `expandAccessoriesForAsset` dedups bulk
+  accessories by `bulkAssetId` per line, so a qty-10 line where each parent
+  needs one TrueCon gets one child row of quantity 1 — deploy/return/pull
+  sheets/availability all understate demand.
+- **Expansion race.** Idempotency is read-before-create with no unique index on
+  `(parentLineItemId, assetId|bulkAssetId)`; concurrent prep/checkout scans can
+  duplicate child rows.
+- **`bulk-group` tab rendering gap.** A multi-qty serialised model line is
+  classified `bulk-group` by `groupItems`, but `AccessoryChildRows` is only
+  wired into the `single` and `serialized-group` branches — so accessories on
+  those parents don't render in the deploy/return tabs.
+
+A proper fix scopes the return cascade to the returned unit (filter serialised
+children by `asset.parentAssetId === returnedAssetId`, fall back to all-children
+only when the whole line returns), gives bulk accessories per-unit accounting,
+adds the unique index, and covers the `bulk-group` branch. Tracked as a
+follow-up. (Adjacent pre-existing warehouse findings surfaced in the same review
+— `checkOutItems` writing an asset by un-org-scoped `assetId`, and accessories
+bypassing the T&T checkout preflight — are out of scope for this feature doc.)

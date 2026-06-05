@@ -365,15 +365,15 @@ Full feature doc: [FEATUREDOCS/47-cross-type-equipment-unification.md].
 
 ## Project Management
 
-### Project Todo Lists (Asana-Style)
-**What:** Add a todo/task list to each project. Tasks have title, assignee (org member or crew), due date, status, optional description, optional checklist. Project detail page gets a Tasks tab. Optional: dashboard view of "my open tasks across projects."
-**Why:** Operators currently use external tools (Asana, Notion, Slack threads) to track project-specific to-dos. Pulling this into the platform means tasks are linked to the project, visible to the team, and don't fall through the cracks.
-**Pros:** Single source of truth for project work, reduces tool switching, can surface overdue tasks on dashboards.
-**Cons:** New schema (Task model with relations to Project, User/CrewMember). Needs notification integration. Risk of half-baked "task manager" that nobody uses if it's not as fast as Asana.
-**Context:** User asked for this in their Gearflow TODO. Start minimal — title, assignee, due date, status — and expand only if used.
-**Depends on:** Nothing.
-**Estimate:** human ~2 weeks / CC ~2 hours
-**Priority:** P2
+### ~~Project Todo Lists (Asana-Style)~~ ✅ SHIPPED
+Shipped on branch `feat/project-tasks`. `ProjectTask` model (status TODO/IN_PROGRESS/DONE,
+priority, due date, inline JSON checklist, assignee = org user OR crew member, completedAt
+transition tracking). Server actions in `project-tasks.ts` (org-scoped, assignee-in-org
+validation, reorder, cross-project `getMyOpenTasks` for the home screen). New **Tasks** tab on
+the project detail page (`TasksPanel`): quick-add, status-grouped list, toggle/priority/due/
+checklist/assignee, edit dialog. 7 integration tests. Full doc:
+[FEATUREDOCS/50](./FEATUREDOCS/50-project-tasks.md). Follow-ups (deferred): assignment/due-date
+notifications, drag-and-drop reorder UI, task comments.
 
 ## Calendar Integration
 

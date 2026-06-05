@@ -116,12 +116,16 @@ describe("model-level bulk accessories — inheritance", () => {
     await addModelBulkAccessory(model.id, { bulkAssetId: trueCons.id, quantity: 1 });
     const light = await createAssetFixture(org.id, model.id, { assetTag: "LIGHT-M3" });
 
-    // Model-level project line: no specific asset, so addLineItem doesn't expand.
+    // Model-level project line (added by model): addLineItem now expands the
+    // model's default accessory immediately so it shows on the quote.
     const parent = await addLineItem(project.id, { type: "EQUIPMENT", modelId: model.id, quantity: 1 }, true);
     const parentLineId = (parent as { id: string }).id;
-    expect(await testPrisma.projectLineItem.count({ where: { parentLineItemId: parentLineId } })).toBe(0);
+    expect(await testPrisma.projectLineItem.count({
+      where: { parentLineItemId: parentLineId, childKind: "ACCESSORY" },
+    })).toBe(1);
 
-    // Warehouse assigns the specific light at deploy → model accessory materialises.
+    // Warehouse assigns the specific light at deploy → reconciles the same row,
+    // no duplicate (the (parentLineItemId, bulkAssetId) unique index backstops it).
     await checkOutItems(project.id, [{ lineItemId: parentLineId, assetId: light.id }]);
     const children = await testPrisma.projectLineItem.findMany({
       where: { parentLineItemId: parentLineId, childKind: "ACCESSORY" },

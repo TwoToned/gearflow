@@ -71,12 +71,25 @@ what every existing query keys off.
    unioning the asset's own bulk children with the asset's model's
    `bulkAccessories`, deduped by `bulkAssetId` so asset-level overrides win
    on conflict:
-   - Office: adding a *specific* serialised asset (`expandAccessoryChildren`,
-     `line-items.ts`) auto-expands children atomic with the parent line.
+   - Office, **specific asset**: adding a specific serialised asset
+     (`expandAccessoryChildren`, `line-items.ts`) auto-expands its serialised +
+     bulk children, atomic with the parent line.
+   - Office, **by model** (the common quoting flow): adding a line *by model*
+     (no specific asset) expands the **model's** default bulk accessories
+     (`ModelBulkAccessory`), quantity scaled by the line quantity (`2x IMX6A` →
+     `2x` of each model accessory), so the accessory shows on the project +
+     documents immediately. Serialised asset-level accessories can't expand here
+     (no specific asset is picked) — they materialise at warehouse prep.
    - Warehouse: assigning a specific unit to a *model-level* line at prep or
      deploy (`expandAccessoriesForAsset`, `line-item-fulfillment.ts`, hooked
      into `prepUnit` + `checkOutItems`). Idempotent — dedups serialised by
-     assetId, bulk by bulkAssetId, so re-scans don't duplicate.
+     assetId, bulk by bulkAssetId (the `(parentLineItemId, bulkAssetId)` unique
+     index backstops it), and **reconciles** the office-created model-accessory
+     row's quantity to the units actually assigned. So re-scans don't duplicate.
+   **Known limitation:** the quantity-merge path in `addLineItem` (adding the
+   same model again increments an existing line) does not re-scale the accessory
+   child; and changing a line's quantity later doesn't retroactively rescale.
+   Add the full quantity in one go for an exact accessory count.
    No units created at expansion — units stay lazy-at-prep. `removeLineItem`
    cascade-deletes children (transactional) and blocks direct child removal.
 3. **Warehouse** (`src/server/warehouse.ts`) — `lookupAssetForScan` returns

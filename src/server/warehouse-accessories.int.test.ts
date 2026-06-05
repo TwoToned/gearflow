@@ -32,6 +32,8 @@ vi.mock("@/lib/activity-log", () => ({ logActivity: vi.fn(async () => {}) }));
 import { addLineItem } from "@/server/line-items";
 import { checkOutItems, checkInItems, lookupAssetForScan } from "@/server/warehouse";
 import { completeCheckAndStore, completeCheckAndDeprep } from "@/server/check-records";
+import { addModelBulkAccessory } from "@/server/model-accessories";
+import { isUniqueViolation, createAccessoryChildIfAbsent } from "@/server/line-item-fulfillment";
 
 async function seed() {
   const org = await createOrgFixture();
@@ -270,5 +272,324 @@ describe("warehouse accessory cascade (Phase E)", () => {
     expect(result.type).toBe("asset_child");
     expect(result.parentAssetId).toBe(light.id);
     expect(result.reason).toBe("asset_is_accessory");
+  });
+});
+
+describe("multi-quantity parent accessory isolation", () => {
+  beforeEach(async () => {
+    await setupIntegrationTest();
+  });
+  afterAll(async () => {
+    await testPrisma.$disconnect();
+  });
+
+  /**
+   * One model-level line (quantity 2) with two physical units, each carrying its
+   * own serialised cable: light A → cable A (parentAssetId A), light B → cable B.
+   * Returns the parent line id + the four assets.
+   */
+  async function twoLightsEachWithACable(s: Awaited<ReturnType<typeof seed>>) {
+    const { org, model, project } = s;
+    const cableModel = await createModelFixture(org.id);
+    const lightA = await createAssetFixture(org.id, model.id, { assetTag: `LIGHT-A-${createId().slice(0, 4)}` });
+    const lightB = await createAssetFixture(org.id, model.id, { assetTag: `LIGHT-B-${createId().slice(0, 4)}` });
+    const cableA = await createAssetFixture(org.id, cableModel.id, { assetTag: `CABLE-A-${createId().slice(0, 4)}` });
+    const cableB = await createAssetFixture(org.id, cableModel.id, { assetTag: `CABLE-B-${createId().slice(0, 4)}` });
+    await testPrisma.asset.update({ where: { id: cableA.id }, data: { parentAssetId: lightA.id } });
+    await testPrisma.asset.update({ where: { id: cableB.id }, data: { parentAssetId: lightB.id } });
+
+    const parent = await addLineItem(project.id, { type: "EQUIPMENT", modelId: model.id, quantity: 2 }, true);
+    const parentLineId = (parent as { id: string }).id;
+    // Deploy both units — each assignment expands + deploys its own accessory.
+    await checkOutItems(project.id, [
+      { lineItemId: parentLineId, assetId: lightA.id },
+      { lineItemId: parentLineId, assetId: lightB.id },
+    ]);
+    return { lightA, lightB, cableA, cableB, parentLineId };
+  }
+
+  const status = (id: string) => testPrisma.asset.findUnique({ where: { id }, select: { status: true } }).then((a) => a?.status);
+
+  it("returning one unit returns only THAT unit's serialised accessory", async () => {
+    const s = await seed();
+    const { lightA, cableA, cableB, parentLineId } = await twoLightsEachWithACable(s);
+    expect(await status(cableA.id)).toBe("CHECKED_OUT");
+    expect(await status(cableB.id)).toBe("CHECKED_OUT");
+
+    await checkInItems(s.project.id, [{ lineItemId: parentLineId, assetId: lightA.id, returnCondition: "GOOD" }]);
+
+    expect(await status(cableA.id)).toBe("AVAILABLE");
+    // The whole point: light B is still out, so its cable must NOT be returned.
+    expect(await status(cableB.id)).toBe("CHECKED_OUT");
+  });
+
+  it("a DAMAGED single-unit return doesn't send the sibling's accessory to maintenance", async () => {
+    const s = await seed();
+    const { lightA, cableA, cableB, parentLineId } = await twoLightsEachWithACable(s);
+
+    await checkInItems(s.project.id, [{ lineItemId: parentLineId, assetId: lightA.id, returnCondition: "DAMAGED" }]);
+
+    expect(await status(cableA.id)).toBe("IN_MAINTENANCE");
+    expect(await status(cableB.id)).toBe("CHECKED_OUT");
+  });
+
+  it("a MISSING single-unit return marks only that unit's accessory LOST", async () => {
+    const s = await seed();
+    const { lightA, cableA, cableB, parentLineId } = await twoLightsEachWithACable(s);
+
+    await checkInItems(s.project.id, [{ lineItemId: parentLineId, assetId: lightA.id, returnCondition: "MISSING" }]);
+
+    expect(await status(cableA.id)).toBe("LOST");
+    expect(await status(cableB.id)).toBe("CHECKED_OUT");
+  });
+
+  it("a mixed-condition batch return routes each unit's accessory independently", async () => {
+    const s = await seed();
+    const { lightA, lightB, cableA, cableB, parentLineId } = await twoLightsEachWithACable(s);
+
+    // returnCondition is per-item — a regression that resolved it once per call
+    // would mis-route one sibling.
+    await checkInItems(s.project.id, [
+      { lineItemId: parentLineId, assetId: lightA.id, returnCondition: "GOOD" },
+      { lineItemId: parentLineId, assetId: lightB.id, returnCondition: "DAMAGED" },
+    ]);
+
+    expect(await status(cableA.id)).toBe("AVAILABLE");
+    expect(await status(cableB.id)).toBe("IN_MAINTENANCE");
+  });
+
+  it("whole-line return (no assetId) still returns every accessory", async () => {
+    const s = await seed();
+    const { cableA, cableB, parentLineId } = await twoLightsEachWithACable(s);
+
+    await checkInItems(s.project.id, [{ lineItemId: parentLineId, returnCondition: "GOOD" }]);
+
+    expect(await status(cableA.id)).toBe("AVAILABLE");
+    expect(await status(cableB.id)).toBe("AVAILABLE");
+  });
+
+  it("bulk accessory demand scales with units and returns per-unit", async () => {
+    const s = await seed();
+    const { org, model, project } = s;
+    const clampModel = await createModelFixture(org.id);
+    const clamps = await createBulkAssetFixture(org.id, clampModel.id, { assetTag: `CLAMP-${createId().slice(0, 4)}`, total: 50 });
+    // Every asset of the light model ships 1 clamp.
+    await addModelBulkAccessory(model.id, { bulkAssetId: clamps.id, quantity: 1 });
+
+    const lightA = await createAssetFixture(org.id, model.id, { assetTag: `LA-${createId().slice(0, 4)}` });
+    const lightB = await createAssetFixture(org.id, model.id, { assetTag: `LB-${createId().slice(0, 4)}` });
+    const parent = await addLineItem(project.id, { type: "EQUIPMENT", modelId: model.id, quantity: 2 }, true);
+    const parentLineId = (parent as { id: string }).id;
+    await checkOutItems(project.id, [
+      { lineItemId: parentLineId, assetId: lightA.id },
+      { lineItemId: parentLineId, assetId: lightB.id },
+    ]);
+
+    // Demand scaled to 2 (one clamp per light), not deduped to 1.
+    const bulkChild = await testPrisma.projectLineItem.findFirst({
+      where: { parentLineItemId: parentLineId, childKind: "ACCESSORY", bulkAssetId: clamps.id },
+      include: { units: true },
+    });
+    expect(bulkChild?.quantity).toBe(2);
+    expect(bulkChild?.units[0]?.quantity).toBe(2);
+
+    // Return light A → only its share (1) of the bulk comes back.
+    await checkInItems(project.id, [{ lineItemId: parentLineId, assetId: lightA.id, returnCondition: "GOOD" }]);
+    let unit = await testPrisma.projectLineItemUnit.findFirst({ where: { lineItemId: bulkChild!.id } });
+    expect(unit?.returnedQuantity).toBe(1);
+    expect(unit?.status).toBe("CHECKED_OUT");
+
+    // Return light B → bulk fully returned.
+    await checkInItems(project.id, [{ lineItemId: parentLineId, assetId: lightB.id, returnCondition: "GOOD" }]);
+    unit = await testPrisma.projectLineItemUnit.findFirst({ where: { lineItemId: bulkChild!.id } });
+    expect(unit?.returnedQuantity).toBe(2);
+    expect(unit?.status).toBe("RETURNED");
+  });
+
+  it("a double check-in of the same unit does not over-return the bulk accessory", async () => {
+    const s = await seed();
+    const { org, model, project } = s;
+    const clampModel = await createModelFixture(org.id);
+    const clamps = await createBulkAssetFixture(org.id, clampModel.id, { assetTag: `DC-${createId().slice(0, 4)}`, total: 50 });
+    await addModelBulkAccessory(model.id, { bulkAssetId: clamps.id, quantity: 1 });
+    const lightA = await createAssetFixture(org.id, model.id, { assetTag: `DA-${createId().slice(0, 4)}` });
+    const lightB = await createAssetFixture(org.id, model.id, { assetTag: `DB-${createId().slice(0, 4)}` });
+    const parent = await addLineItem(project.id, { type: "EQUIPMENT", modelId: model.id, quantity: 2 }, true);
+    const parentLineId = (parent as { id: string }).id;
+    await checkOutItems(project.id, [
+      { lineItemId: parentLineId, assetId: lightA.id },
+      { lineItemId: parentLineId, assetId: lightB.id },
+    ]);
+    const bulkChild = await testPrisma.projectLineItem.findFirst({
+      where: { parentLineItemId: parentLineId, childKind: "ACCESSORY", bulkAssetId: clamps.id },
+    });
+
+    // First return of light A: its share (1) comes back.
+    await checkInItems(project.id, [{ lineItemId: parentLineId, assetId: lightA.id, returnCondition: "GOOD" }]);
+    let unit = await testPrisma.projectLineItemUnit.findFirst({ where: { lineItemId: bulkChild!.id } });
+    expect(unit?.returnedQuantity).toBe(1);
+
+    // Retry / double-scan light A — the parent flips 0 units, so the bulk must
+    // NOT be returned again while light B is still out.
+    await checkInItems(project.id, [{ lineItemId: parentLineId, assetId: lightA.id, returnCondition: "GOOD" }]);
+    unit = await testPrisma.projectLineItemUnit.findFirst({ where: { lineItemId: bulkChild!.id } });
+    expect(unit?.returnedQuantity).toBe(1); // still 1, not 2
+    expect(unit?.status).toBe("CHECKED_OUT");
+  });
+
+  it("expansion is idempotent under a re-scan (no duplicate child rows)", async () => {
+    const s = await seed();
+    const { lightA, parentLineId } = await twoLightsEachWithACable(s);
+    // Re-deploy light A (idempotent scan) — must not duplicate its cable child.
+    await checkOutItems(s.project.id, [{ lineItemId: parentLineId, assetId: lightA.id }]);
+    const serialChildren = await testPrisma.projectLineItem.count({
+      where: { parentLineItemId: parentLineId, childKind: "ACCESSORY", assetId: { not: null } },
+    });
+    expect(serialChildren).toBe(2); // cable A + cable B, not 3
+  });
+
+  it("check-and-store on one unit isolates the sibling's accessory", async () => {
+    const s = await seed();
+    const { lightA, cableA, cableB, parentLineId } = await twoLightsEachWithACable(s);
+    // The returnedAssetId scoping must hold through completeCheckAndStore too,
+    // not just checkInItems.
+    const checkItem = await testPrisma.checkItem.create({
+      data: { organizationId: s.org.id, label: "Visual", type: "PASS_FAIL" },
+    });
+    await completeCheckAndStore({
+      projectId: s.project.id,
+      lineItemId: parentLineId,
+      assetId: lightA.id,
+      condition: "GOOD",
+      checks: [{ checkItemId: checkItem.id, result: "PASS", photos: [] }],
+    });
+    expect(await status(cableA.id)).toBe("AVAILABLE");
+    expect(await status(cableB.id)).toBe("CHECKED_OUT");
+  });
+
+  it("deprep on one unit only clears that unit's accessory from staging", async () => {
+    const s = await seed();
+    const { lightA, lightB, cableA, cableB, parentLineId } = await twoLightsEachWithACable(s);
+    // Return both units, then force both cable child lines back to PACKED to
+    // simulate them lingering on the deploy-staging board.
+    await checkInItems(s.project.id, [
+      { lineItemId: parentLineId, assetId: lightA.id, returnCondition: "GOOD" },
+      { lineItemId: parentLineId, assetId: lightB.id, returnCondition: "GOOD" },
+    ]);
+    await testPrisma.projectLineItem.updateMany({
+      where: { parentLineItemId: parentLineId, childKind: "ACCESSORY" },
+      data: { prepStatus: "PACKED" },
+    });
+    // The parent line must read PACKED for the deprep precondition.
+    await testPrisma.projectLineItem.update({ where: { id: parentLineId }, data: { prepStatus: "PACKED" } });
+    const checkItem = await testPrisma.checkItem.create({
+      data: { organizationId: s.org.id, label: "Visual", type: "PASS_FAIL" },
+    });
+    // Deprep light A only.
+    await completeCheckAndDeprep({
+      projectId: s.project.id,
+      lineItemId: parentLineId,
+      assetId: lightA.id,
+      checks: [{ checkItemId: checkItem.id, result: "PASS", photos: [] }],
+    });
+    const childOf = async (assetId: string) =>
+      (await testPrisma.projectLineItem.findFirst({ where: { parentLineItemId: parentLineId, assetId } }))?.prepStatus;
+    expect(await childOf(cableA.id)).toBe("PENDING"); // A's cable depreped
+    expect(await childOf(cableB.id)).toBe("PACKED"); // B's cable untouched
+  });
+
+  it("returning a unit that carries none of a bulk accessory leaves the bulk out", async () => {
+    const s = await seed();
+    const { org, model, project } = s;
+    const clampModel = await createModelFixture(org.id);
+    const clamps = await createBulkAssetFixture(org.id, clampModel.id, { assetTag: `CL-${createId().slice(0, 4)}`, total: 50 });
+    const lightA = await createAssetFixture(org.id, model.id, { assetTag: `LA-${createId().slice(0, 4)}` });
+    const lightB = await createAssetFixture(org.id, model.id, { assetTag: `LB-${createId().slice(0, 4)}` });
+    // Only light A ships a clamp (asset-level), light B ships nothing.
+    await testPrisma.assetBulkChild.create({
+      data: { organizationId: org.id, parentAssetId: lightA.id, bulkAssetId: clamps.id, quantity: 1, addedById: s.user.id },
+    });
+    const parent = await addLineItem(project.id, { type: "EQUIPMENT", modelId: model.id, quantity: 2 }, true);
+    const parentLineId = (parent as { id: string }).id;
+    await checkOutItems(project.id, [
+      { lineItemId: parentLineId, assetId: lightA.id },
+      { lineItemId: parentLineId, assetId: lightB.id },
+    ]);
+
+    const bulkChild = await testPrisma.projectLineItem.findFirst({
+      where: { parentLineItemId: parentLineId, childKind: "ACCESSORY", bulkAssetId: clamps.id },
+    });
+    expect(bulkChild?.quantity).toBe(1); // demand = 1 (only light A)
+
+    // Returning light B (which carries no clamp) must not return the clamp.
+    await checkInItems(project.id, [{ lineItemId: parentLineId, assetId: lightB.id, returnCondition: "GOOD" }]);
+    let unit = await testPrisma.projectLineItemUnit.findFirst({ where: { lineItemId: bulkChild!.id } });
+    expect(unit?.returnedQuantity).toBe(0);
+    expect(unit?.status).toBe("CHECKED_OUT");
+
+    // Returning light A returns it.
+    await checkInItems(project.id, [{ lineItemId: parentLineId, assetId: lightA.id, returnCondition: "GOOD" }]);
+    unit = await testPrisma.projectLineItemUnit.findFirst({ where: { lineItemId: bulkChild!.id } });
+    expect(unit?.returnedQuantity).toBe(1);
+    expect(unit?.status).toBe("RETURNED");
+  });
+});
+
+describe("createAccessoryChildIfAbsent — savepoint recovery against live Prisma", () => {
+  beforeEach(async () => {
+    await setupIntegrationTest();
+  });
+  afterAll(async () => {
+    await testPrisma.$disconnect();
+  });
+
+  it("swallows a duplicate via SAVEPOINT and leaves the transaction usable", async () => {
+    const s = await seed();
+    const { org, model, project } = s;
+    const asset = await createAssetFixture(org.id, model.id, { assetTag: `SP-${createId().slice(0, 4)}` });
+    const parent = await testPrisma.projectLineItem.create({
+      data: { organizationId: org.id, projectId: project.id, type: "EQUIPMENT", quantity: 1 },
+      select: { id: true },
+    });
+    const data = {
+      organizationId: org.id,
+      projectId: project.id,
+      type: "EQUIPMENT" as const,
+      modelId: model.id,
+      assetId: asset.id,
+      quantity: 1,
+      isKitChild: true,
+      childKind: "ACCESSORY" as const,
+      parentLineItemId: parent.id,
+      sortOrder: 0,
+    };
+
+    await testPrisma.$transaction(async (tx) => {
+      const id1 = await createAccessoryChildIfAbsent(tx, data);
+      expect(id1).not.toBeNull();
+      // Same (parentLineItemId, assetId) → the partial unique index fires. The
+      // helper must ROLLBACK TO SAVEPOINT and return null WITHOUT poisoning tx.
+      const id2 = await createAccessoryChildIfAbsent(tx, { ...data, sortOrder: 1 });
+      expect(id2).toBeNull();
+      // This query proves the transaction is still alive (not Postgres 25P02 /
+      // Prisma "transaction aborted") and that no duplicate row was written.
+      const count = await tx.projectLineItem.count({
+        where: { parentLineItemId: parent.id, childKind: "ACCESSORY" },
+      });
+      expect(count).toBe(1);
+    });
+  });
+});
+
+describe("isUniqueViolation", () => {
+  it("matches Prisma P2002 and raw Postgres 23505 and duplicate-key messages", () => {
+    expect(isUniqueViolation({ code: "P2002" })).toBe(true);
+    expect(isUniqueViolation({ code: "23505" })).toBe(true);
+    expect(isUniqueViolation(new Error('duplicate key value violates unique constraint "x"'))).toBe(true);
+  });
+  it("does not match unrelated errors", () => {
+    expect(isUniqueViolation({ code: "P2025" })).toBe(false);
+    expect(isUniqueViolation(new Error("connection refused"))).toBe(false);
+    expect(isUniqueViolation(null)).toBe(false);
   });
 });

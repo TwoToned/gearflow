@@ -147,37 +147,76 @@ Bulk parents (only serialised assets can be parents), nested accessories,
 per-accessory pricing (`unitPrice` is nullable so a future ITEMIZED mode is a
 data change), kit↔accessory conversion.
 
-## Known limitation — multi-quantity / model-level parents
+## Multi-quantity / model-level parents
 
-The feature is correct for the common case: a **specific serialised asset
-(quantity 1)** with its accessories. **Multi-quantity / model-level parent
-lines** (one `ProjectLineItem`, `quantity > 1`, units assigned per-unit) are
-under-handled across the whole feature — and `checkinAccessoryChildren` selects
-accessory children by `parentLineItemId` only, with no link to the returned unit:
+A multi-quantity / model-level parent line (one `ProjectLineItem`, `quantity > 1`,
+specific units assigned per-unit at prep/checkout) accumulates one accessory child
+set per assigned parent unit. These are handled per-unit:
 
-- **Over-return (the big one).** Returning ONE unit of a multi-qty parent (via
-  `checkInItems` OR `completeCheckAndStore`) cascades a return to **every**
-  accessory child of the line — so returning Light A also returns Light B's
-  still-deployed cable (and a DAMAGED return wrongly sends it to maintenance).
-  The deprep `updateMany` has the same all-children property. This predates the
-  pick-sheet/tab/check-flow wiring — `checkInItems` on `main` is byte-identical;
-  the fix belongs to the cascade, not the new surfaces.
-- **Bulk accessories undercounted.** `expandAccessoriesForAsset` dedups bulk
-  accessories by `bulkAssetId` per line, so a qty-10 line where each parent
-  needs one TrueCon gets one child row of quantity 1 — deploy/return/pull
-  sheets/availability all understate demand.
-- **Expansion race.** Idempotency is read-before-create with no unique index on
-  `(parentLineItemId, assetId|bulkAssetId)`; concurrent prep/checkout scans can
-  duplicate child rows.
-- **`bulk-group` tab rendering gap.** A multi-qty serialised model line is
-  classified `bulk-group` by `groupItems`, but `AccessoryChildRows` is only
-  wired into the `single` and `serialized-group` branches — so accessories on
-  those parents don't render in the deploy/return tabs.
+- **Per-unit return scoping.** `checkinAccessoryChildren` takes a `returnedAssetId`.
+  On a per-unit return (`checkInItems`/`completeCheckAndStore` with a scanned
+  asset) only that unit's accessories return — **serialised** children whose
+  accessory `asset.parentAssetId === returnedAssetId`, plus the returned unit's
+  **per-unit share** of each bulk accessory (a partial `returnLineUnits`, so the
+  bulk child flips to RETURNED only once every parent unit is back). A whole-line
+  return (no `returnedAssetId`) returns every child in full. So returning Light A
+  no longer returns Light B's still-deployed cable, and a DAMAGED return only
+  maintenance-routes the returned unit's accessories. `completeCheckAndDeprep`
+  scopes its `prepStatus` reset the same way (serialised by `parentAssetId` +
+  shared bulk rows).
+- **Bulk demand scales with units.** `expandAccessoriesForAsset` keeps ONE bulk
+  child per `bulkAssetId` but recomputes its quantity as the total demand across
+  every assigned parent unit (qty-N line × 1 clamp each → bulk child quantity N).
+  Recompute (not increment) keeps it idempotent under re-scans. Checkout syncs the
+  bulk unit quantity from the child, so it tracks demand as units deploy.
+- **Expansion race closed.** Partial unique indexes (migration
+  `20260605120000_accessory_child_unique_index`) on `(parentLineItemId, assetId)`
+  and `(parentLineItemId, bulkAssetId)` where `childKind = 'ACCESSORY'` backstop
+  the read-before-create; the create catches the violation (`isUniqueViolation`)
+  and falls back to an update. Prisma's DSL can't express partial indexes, so they
+  are raw-SQL only and not in `schema.prisma` (see the migration's note on
+  `migrate dev` drift).
+- **`bulk-group` tab rendering.** `AccessoryChildRows` is wired into the
+  `bulk-group` branch of the deploy/return tabs too, so a multi-qty serialised
+  model line (which `groupItems` classifies `bulk-group`) shows its accessories.
 
-A proper fix scopes the return cascade to the returned unit (filter serialised
-children by `asset.parentAssetId === returnedAssetId`, fall back to all-children
-only when the whole line returns), gives bulk accessories per-unit accounting,
-adds the unique index, and covers the `bulk-group` branch. Tracked as a
-follow-up. (Adjacent pre-existing warehouse findings surfaced in the same review
-— `checkOutItems` writing an asset by un-org-scoped `assetId`, and accessories
-bypassing the T&T checkout preflight — are out of scope for this feature doc.)
+`resolveAssetAccessories` is the shared per-asset profile (serialised children +
+bulk accessories, asset-level unioned with model-level) used by both expansion and
+the per-unit return scoping. Tests: the multi-quantity isolation block in
+`warehouse-accessories.int.test.ts` (return-isolation, DAMAGED + MISSING
+isolation, mixed-condition batch, whole-line return, bulk scale + per-unit return,
+double-check-in no over-return, idempotent re-scan, savepoint recovery).
+
+**Concurrency & idempotency.**
+- Accessory child creation is backstopped by the partial unique indexes;
+  `createAccessoryChildIfAbsent` wraps each create in a SAVEPOINT so a conflict
+  rolls back only that statement instead of poisoning the Prisma interactive
+  transaction (a 23505 otherwise aborts the whole tx — verified by the
+  savepoint-recovery integration test).
+- `expandAccessoriesForAsset` takes a `FOR UPDATE` row lock on the parent line, so
+  two stations expanding different units of the same line serialize and bulk
+  demand sees every committed sibling (no concurrent undercount). Demand excludes
+  RETURNED / CANCELLED units.
+- The return cascade only fires when the parent return actually flipped a unit
+  (`unitsFlipped > 0`), so a retry / double-scan can't re-return the shared bulk
+  accessory.
+
+**Known edge cases (bulk only; serialised is exact).** Bulk demand and the
+per-unit return share are recomputed live from current config, not snapshotted at
+checkout, so a **config edit mid-deployment** (changing/removing a model/asset
+bulk accessory qty) only reconciles on the next expansion of a unit that still
+ships it. An **orphaned serialised accessory** (parent asset deleted →
+`parentAssetId` null) returns only via a whole-line return, not a per-unit scan.
+**Per-unit deprep** clears every bulk accessory row's `prepStatus` (bulk rows are
+shared) — staging-board cosmetic only. The robust fix is to snapshot each unit's
+accessory contribution at deploy; tracked in TODOS.md.
+
+**Still out of scope (pre-existing, untouched):** `checkOutItems` fetches+updates
+an asset by global `assetId` without re-scoping to `organizationId` (cross-tenant
+write risk), and accessories are materialised after the T&T checkout preflight
+(`assertTestTagAllowsCheckout`) so a non-compliant accessory can deploy unchecked.
+Both are tracked in TODOS.md.
+
+**Perf note:** bulk demand recompute resolves each distinct parent-unit asset once
+per expansion call (O(units) per call, O(units²) over a full multi-unit deploy).
+Fine for typical rental line sizes; revisit if very large lines appear.

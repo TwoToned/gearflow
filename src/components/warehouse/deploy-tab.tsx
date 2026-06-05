@@ -286,6 +286,10 @@ export function DeployTab({
                             </TableRow>
                           );
                         })}
+                        {/* Accessories on a multi-qty serialised model line (classified
+                            bulk-group) still travel with the parent. Gated on
+                            isExpanded so they hide with the group's unit rows. */}
+                        {isExpanded && <AccessoryChildRows parent={entry.item} mode="deploy" />}
                       </Fragment>
                     );
                   }

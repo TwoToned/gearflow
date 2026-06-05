@@ -218,16 +218,20 @@ isolation, concurrent-expansion (FOR UPDATE lock), and double-scan are already
 correct; these are bulk-only and need a config edit / asset delete to trigger.
 **Priority:** P2
 
-### Pre-existing warehouse safety (surfaced during accessories review)
-**What:** (1) `checkOutItems` fetches+updates an asset by global `assetId` via
-`findUnique`/`update` without re-scoping to the caller's `organizationId` —
-potential cross-tenant write. (2) Accessories are materialised AFTER the
-test-and-tag checkout preflight (`assertTestTagAllowsCheckout`), so an
-overdue/failed accessory can deploy without a compliance check.
-**Why:** (1) is a multi-tenant isolation risk; (2) lets non-compliant gear ship.
-**Context:** Flagged by Codex adversarial during the v0.14.0.0 ship; both are
-pre-existing (untouched by that branch).
-**Priority:** P1
+### ~~Pre-existing warehouse safety (surfaced during accessories review)~~ ✅ FIXED
+Fixed on branch `fix/warehouse-tenant-tt-safety`. (1) `checkOutItems` now
+re-scopes the (untrusted, scan-supplied) `targetAssetId` to the caller's org
+via `findFirst({ id, organizationId })` and throws "Asset not found in this
+organization" on a miss; the status/location write became an org-scoped
+`updateMany` (defense-in-depth), and the accessory-cascade asset write was
+scoped the same way. (2) The T&T compliance gate now runs inside
+`checkoutAccessoryChildren` over the accessory children's asset/bulk ids —
+they're separate line items the top-level preflight never sees (prep-time:
+own line ids; scan-time: materialised after the preflight), so a failed/overdue
+accessory now blocks the whole checkout batch (TestTagBlockError, full
+rollback). 3 integration tests in `warehouse-tenant-tt-safety.int.test.ts`
+(cross-tenant rejection, accessory-blocks-parent, current-T&T-passes); all 52
+existing warehouse integration tests still green.
 
 ### ~~Model-level bulk accessories~~ ✅ SHIPPED
 Shipped in v0.13.0.0. `ModelBulkAccessory` join table — every asset of a

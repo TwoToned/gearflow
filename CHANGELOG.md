@@ -14,6 +14,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to you and follow you across devices. Available on assets, models, clients, crew,
   locations, projects, suppliers, kits, maintenance, T&T registry, activity log,
   damage, timesheets, and stocktakes.
+## [0.14.7.0] - 2026-06-06
+
+### Fixed
+- **Warehouse checkout — multi-tenant safety.** Checking out a scanned asset now
+  verifies the asset belongs to your organization before flipping its status or
+  location. Previously a checkout request carrying another organization's asset id
+  could mutate that asset; it now fails cleanly with "Asset not found in this
+  organization".
+- **Warehouse checkout — accessories are Test & Tag gated.** Permanent accessories
+  that travel with a parent asset are now blocked from deploying if their own Test
+  & Tag is failed or overdue, the same as any other gear. Previously accessories
+  could ship without a compliance check because they were materialised after the
+  checkout's T&T pre-flight. The block is scoped to accessories actually being
+  deployed, so an already-out accessory whose tag later lapses won't wrongly block
+  a later partial deploy of the same line.
 
 ## [0.14.6.0] - 2026-06-05
 

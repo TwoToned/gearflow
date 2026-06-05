@@ -4,8 +4,10 @@ import {
   __resetProcessSafetyNetForTests,
 } from "./process-safety";
 
-const captureException = vi.fn((..._args: unknown[]) => {});
-const flush = vi.fn((..._args: unknown[]) => Promise.resolve(true));
+const captureException = vi.fn<(...args: unknown[]) => void>();
+const flush = vi.fn<(...args: unknown[]) => Promise<boolean>>(() =>
+  Promise.resolve(true),
+);
 vi.mock("@sentry/nextjs", () => ({
   captureException: (...args: unknown[]) => captureException(...args),
   flush: (...args: unknown[]) => flush(...args),

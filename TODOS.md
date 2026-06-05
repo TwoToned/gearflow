@@ -175,24 +175,18 @@ extended to the check-and-store flow (`completeCheckAndStore`) and de-prep
 `line-item-fulfillment` module. Pure helpers extracted + unit-tested
 (`pick-list-progress`, `getAccessoryChildren`). +18 tests.
 
-### Multi-quantity / model-level accessory correctness
-**What:** Fix accessory handling for multi-quantity / model-level parent lines.
-Returning one unit of a multi-qty parent currently cascades a return to EVERY
-accessory child of the line (`checkinAccessoryChildren` filters by
-`parentLineItemId` only) — so it releases sibling units' still-deployed
-accessories, and a DAMAGED return mis-routes them to maintenance. Same
-all-children property in the de-prep `updateMany`.
-**Also:** bulk accessories undercounted on multi-qty lines (dedup by
-`bulkAssetId`); accessory expansion race (no unique index on
-`(parentLineItemId, assetId|bulkAssetId)`); deploy/return tabs don't render
-accessories for `bulk-group`-classified parents.
-**Why:** Silent inventory-state corruption on multi-asset bookings. Single-asset
-bookings (the common case) are correct.
-**Context:** Cross-model review (Claude + Codex) consensus during the v0.14.0.0
-ship. The over-return predates this branch (`checkInItems` on main is
-byte-identical). Fix scopes the cascade to the returned unit. See
-FEATUREDOCS/48 "Known limitation — multi-quantity / model-level parents".
-**Priority:** P1
+### ~~Multi-quantity / model-level accessory correctness~~ ✅ FIXED (pending release)
+Fixed on branch `fix/accessory-multiquantity`. `checkinAccessoryChildren` takes a `returnedAssetId` and
+scopes a per-unit return to that unit's accessories — serialised children by
+`asset.parentAssetId`, bulk children by the returned unit's per-unit share
+(partial return). Wired through `checkInItems`, `completeCheckAndStore`, and
+`completeCheckAndDeprep` (prepStatus reset). Bulk demand now scales with assigned
+units (`expandAccessoriesForAsset` recomputes one bulk child of total quantity,
+idempotent). Partial unique indexes (migration `20260605120000`) on
+`(parentLineItemId, assetId|bulkAssetId)` where `childKind='ACCESSORY'` close the
+expansion race, with a `isUniqueViolation` catch + update fallback.
+`AccessoryChildRows` wired into the `bulk-group` deploy/return branch. Shared
+`resolveAssetAccessories` profile. 5 multi-quantity isolation integration tests.
 
 ### Pre-existing warehouse safety (surfaced during accessories review)
 **What:** (1) `checkOutItems` fetches+updates an asset by global `assetId` via

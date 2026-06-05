@@ -399,6 +399,15 @@ Shipped on branch `fix/ical-timezone`. Root cause: `formatICalDate` used `Date.g
 
 ## UI / UX
 
+### ~~User-Centric Home Screen~~ ✅ SHIPPED
+Shipped on branch `feat/home-screen`. The `/dashboard` now leads with the signed-in user's
+own work: personalised greeting (time-of-day + first name) and a "Your projects" section
+(`getMyHomeData` finds projects managed via `Project.projectManagerId` AND the `ProjectManager`
+join), with status-coloured cards showing client, equipment count, and a status-aware date line
+("Returns in 2d", "Overdue 3d", "Starts today"), plus a "Needs attention" chip row. Org metrics +
+upcoming + activity sit below. `components/dashboard/my-work-section.tsx`; 2 integration tests.
+Follow-up: add a "My tasks" panel once Project Tasks merges (`getMyOpenTasks` is ready).
+
 ### System-Wide UI/UX Overhaul
 **What:** Full pass across every page to make the app feel cohesive. Audit spacing, typography, component patterns, empty states, loading states, error states, microcopy, iconography, motion. Surface inconsistencies (different buttons in similar slots, off-by-default-rhythm spacing, mixed metaphors). Fix them.
 **Why:** App has grown organically across 30+ features. Individual pages are polished but they don't all feel like they belong to the same product. Operators notice this — it erodes trust.

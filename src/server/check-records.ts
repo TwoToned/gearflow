@@ -883,17 +883,21 @@ export async function completeCheckAndStore(
 
     // 5b. Permanent accessories return with their parent — the same cascade
     //     checkInItems runs, scoped to the returned unit (resolvedAssetId) so a
-    //     multi-quantity parent doesn't return its siblings' accessories. No-op
-    //     for non-parent lines.
-    await checkinAccessoryChildren(tx, {
-      organizationId,
-      projectId: parsed.projectId,
-      parentLineItemId: parsed.lineItemId,
-      returnCondition: parsed.condition,
-      userId,
-      defaultLocationId: locationId,
-      returnedAssetId: resolvedAssetId || null,
-    });
+    //     multi-quantity parent doesn't return its siblings' accessories. Only
+    //     when the parent return flipped a unit, so a re-check-and-store of an
+    //     already-returned unit can't re-return the shared bulk accessory.
+    //     No-op for non-parent lines.
+    if (unitsFlipped > 0) {
+      await checkinAccessoryChildren(tx, {
+        organizationId,
+        projectId: parsed.projectId,
+        parentLineItemId: parsed.lineItemId,
+        returnCondition: parsed.condition,
+        userId,
+        defaultLocationId: locationId,
+        returnedAssetId: resolvedAssetId || null,
+      });
+    }
 
     // 6. Scan log
     await tx.assetScanLog.create({

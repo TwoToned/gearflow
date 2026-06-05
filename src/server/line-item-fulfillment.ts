@@ -449,7 +449,7 @@ export function isUniqueViolation(e: unknown): boolean {
  * healthy. The only unique constraints on `project_line_item` are the accessory
  * partial indexes, so a swallowed violation can only mean "this child exists".
  */
-async function createAccessoryChildIfAbsent(
+export async function createAccessoryChildIfAbsent(
   tx: Prisma.TransactionClient,
   data: Prisma.ProjectLineItemUncheckedCreateInput,
 ): Promise<string | null> {
@@ -488,8 +488,8 @@ export async function expandAccessoriesForAsset(
   args: { organizationId: string; lineItemId: string; assetId: string },
 ): Promise<string[]> {
   const { organizationId, lineItemId, assetId } = args;
-  const line = await tx.projectLineItem.findUnique({
-    where: { id: lineItemId },
+  const line = await tx.projectLineItem.findFirst({
+    where: { id: lineItemId, organizationId },
     select: {
       projectId: true,
       categoryId: true,
@@ -501,14 +501,24 @@ export async function expandAccessoriesForAsset(
   });
   if (!line || line.childKind) return []; // missing, or itself a child — never nest
 
+  // Serialize concurrent expansion of the SAME parent line. Without this, two
+  // stations checking out different units of one multi-quantity line race: each
+  // computes bulk demand before the other's unit is committed, so both write
+  // demand=1 and the bulk accessory is undercounted. A row lock on the parent
+  // line makes the second expansion wait, then see the committed sibling unit.
+  // Single-resource lock (one row per line) → no deadlock across lines.
+  await tx.$executeRaw`SELECT id FROM "project_line_item" WHERE id = ${lineItemId} FOR UPDATE`;
+
   const profile = await resolveAssetAccessories(tx, organizationId, assetId);
   if (profile.serialised.length === 0 && profile.bulks.length === 0) return [];
 
-  // Resolve every parent-unit asset (plus the one being expanded, in case its
-  // unit row isn't created yet at this call site) once, so bulk demand can be
-  // summed across units without re-querying per bulk accessory.
+  // Resolve every ACTIVE parent-unit asset (plus the one being expanded, in case
+  // its unit row isn't created yet at this call site) once, so bulk demand can
+  // be summed across units without re-querying per bulk accessory. RETURNED /
+  // CANCELLED units no longer need their accessory, so they're excluded — else a
+  // redeploy after a partial return would inflate demand above the active count.
   const parentUnits = await tx.projectLineItemUnit.findMany({
-    where: { lineItemId, assetId: { not: null } },
+    where: { lineItemId, assetId: { not: null }, status: { notIn: ["RETURNED", "CANCELLED"] } },
     select: { assetId: true },
   });
   const parentAssetIds = new Set<string>([assetId, ...parentUnits.map((u) => u.assetId).filter((a): a is string => !!a)]);

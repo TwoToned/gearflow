@@ -916,16 +916,21 @@ export async function checkInItems(
 
       // Permanent accessories return with their parent — scoped to the scanned
       // unit (item.assetId) so a multi-quantity parent doesn't return its
-      // siblings' still-deployed accessories.
-      await checkinAccessoryChildren(tx, {
-        organizationId,
-        projectId,
-        parentLineItemId: item.lineItemId,
-        returnCondition: item.returnCondition ?? "GOOD",
-        userId,
-        defaultLocationId,
-        returnedAssetId: item.assetId ?? null,
-      });
+      // siblings' still-deployed accessories. Only cascade when the parent
+      // return actually flipped a unit: a retry / double-scan of an already-
+      // returned unit must NOT re-return (and over-return) the shared bulk
+      // accessory while sibling units are still out.
+      if (unitsFlipped > 0) {
+        await checkinAccessoryChildren(tx, {
+          organizationId,
+          projectId,
+          parentLineItemId: item.lineItemId,
+          returnCondition: item.returnCondition ?? "GOOD",
+          userId,
+          defaultLocationId,
+          returnedAssetId: item.assetId ?? null,
+        });
+      }
 
       updated.push(
         await tx.projectLineItem.findUnique({

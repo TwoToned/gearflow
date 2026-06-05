@@ -4,6 +4,25 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.19.0.0] - 2026-06-06
+
+### Fixed
+- **The app randomly going down for a minute or two, at no particular time.**
+  The Discord bot used to run inside the web server, and a brief Discord network
+  hiccup could crash the bot in a way that took the whole website down with it
+  (a "502 Bad Gateway" with nothing in the app logs to explain it). The bot now
+  runs as its own separate service, so a Discord glitch can only restart the bot,
+  never the website. Discord errors are now caught and logged instead of crashing
+  anything, and a safety net reports any other unexpected error instead of letting
+  it silently take the server down.
+
+### Changed
+- **Discord bot runs as a separate process (`gearflow-discord-bot`).** No change
+  to how you configure it (still all on the Discord settings page). The Start /
+  Stop / Restart buttons and the status pill now coordinate with the separate
+  process through the database. Operator guide added at
+  `docs/operations/discord-bot.md`.
+
 ## [0.18.1.0] - 2026-06-06
 
 ### Fixed

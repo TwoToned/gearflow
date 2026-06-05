@@ -137,6 +137,7 @@ export function StocktakeTable() {
     resetPreferences,
     filters,
     setFilter,
+    currentConfig, applyConfig,
   } = useTablePreferences("stocktakes", {
     sortBy: "createdAt",
     sortOrder: "desc",
@@ -200,6 +201,7 @@ export function StocktakeTable() {
       columnVisibility={columnVisibility}
       onToggleColumnVisibility={toggleColumnVisibility}
       onResetPreferences={resetPreferences}
+      savedViews={{ tableId: "stocktakes", currentConfig, applyConfig }}
       isLoading={isLoading}
       emptyTitle="No stocktakes found"
       toolbarActions={toolbarActions}

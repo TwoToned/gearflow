@@ -121,6 +121,7 @@ export function SupplierTable() {
     setPage, setPageSize, handleSort,
     columnVisibility, toggleColumnVisibility, resetPreferences,
     filters, setFilter,
+    currentConfig, applyConfig,
   } = useTablePreferences("suppliers", { sortBy: "name", sortOrder: "asc" });
 
   const [search, setSearch] = useState("");
@@ -171,6 +172,7 @@ export function SupplierTable() {
       columnVisibility={columnVisibility}
       onToggleColumnVisibility={toggleColumnVisibility}
       onResetPreferences={resetPreferences}
+      savedViews={{ tableId: "suppliers", currentConfig, applyConfig }}
       isLoading={isLoading}
       emptyPreset="suppliers"
       toolbarActions={toolbarActions}

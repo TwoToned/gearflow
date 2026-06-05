@@ -91,6 +91,7 @@ export default function TimesheetsPage() {
     resetPreferences,
     filters,
     setFilter,
+    currentConfig, applyConfig,
   } = useTablePreferences("timesheets", {
     sortBy: "date",
     sortOrder: "desc",
@@ -435,6 +436,7 @@ export default function TimesheetsPage() {
           columnVisibility={columnVisibility}
           onToggleColumnVisibility={toggleColumnVisibility}
           onResetPreferences={resetPreferences}
+          savedViews={{ tableId: "timesheets", currentConfig, applyConfig }}
           isLoading={isLoading}
           emptyPreset="crew"
           emptyTitle="No time entries"

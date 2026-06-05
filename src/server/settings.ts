@@ -8,7 +8,7 @@ import { getPlatformName } from "@/lib/platform";
 import { logActivity } from "@/lib/activity-log";
 import { env } from "@/env";
 import type { OrgSSOSettings } from "@/lib/sso-types";
-import type { IncrementReset } from "@/lib/project-number";
+import { validateProjectNumberFormat, type IncrementReset } from "@/lib/project-number";
 
 export interface OrgBranding {
   primaryColor?: string;
@@ -91,6 +91,14 @@ export async function updateOrganization(data: {
   defaultTaxRate?: number | null;
 }) {
   const { organizationId, userId, userName } = await requirePermission("orgSettings", "update");
+
+  // Reject an invalid auto project-number format before persisting, so the
+  // saved config can never push project creation into a failing auto path.
+  const pnFormat = data.settings.projectNumberFormat?.trim();
+  if (pnFormat) {
+    const err = validateProjectNumberFormat(pnFormat);
+    if (err) throw new Error(`Project number format: ${err}`);
+  }
 
   const updated = await prisma.organization.update({
     where: { id: organizationId },

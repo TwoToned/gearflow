@@ -19,6 +19,7 @@ import {
   renderProjectNumber,
   scopeKeyFor,
   datePartsInTimezone,
+  hasIncrementToken,
   DEFAULT_INCREMENT_RESET,
   DEFAULT_INCREMENT_PADDING,
   type IncrementReset,
@@ -38,7 +39,11 @@ function readProjectNumberConfig(metadata: string | null): ProjectNumberConfig |
   try {
     const s = JSON.parse(metadata) as Record<string, unknown>;
     const format = typeof s.projectNumberFormat === "string" ? s.projectNumberFormat.trim() : "";
-    if (!format) return null;
+    // Treat a missing OR invalid format (no increment token) as "disabled" so
+    // blank creates fall back to the required-manual-code path rather than the
+    // auto path, where a token-less format would render the same code every time
+    // and collide-retry until failure.
+    if (!format || !hasIncrementToken(format)) return null;
     const reset = (s.projectNumberIncrementReset as IncrementReset) || DEFAULT_INCREMENT_RESET;
     const padding =
       typeof s.projectNumberIncrementPadding === "number"
@@ -105,7 +110,7 @@ export async function peekNextProjectNumber(override?: {
 
   if (override?.format !== undefined) {
     const fmt = override.format.trim();
-    config = fmt
+    config = fmt && hasIncrementToken(fmt)
       ? {
           format: fmt,
           reset: override.reset ?? config?.reset ?? DEFAULT_INCREMENT_RESET,

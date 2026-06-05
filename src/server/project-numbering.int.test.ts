@@ -102,6 +102,21 @@ describe("auto project numbers", () => {
     await expect(createProject({ name: "A" })).rejects.toThrow();
   });
 
+  it("treats a format with no increment token as disabled (falls back to manual-required)", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id);
+    act(org.id, user.id);
+    // Token-less format would collide every time — must NOT enter the auto path.
+    await setFormat(org.id, { format: "%YY%MM", reset: "MONTHLY", padding: 2 });
+
+    await expect(createProject({ name: "A" })).rejects.toThrow();
+    // A manual code still works.
+    const p = (await createProject({ name: "B", projectNumber: "OK-1" })) as { projectNumber: string };
+    expect(p.projectNumber).toBe("OK-1");
+    // And preview returns null for the invalid format.
+    expect(await peekNextProjectNumber()).toBeNull();
+  });
+
   it("peekNextProjectNumber previews without consuming a number", async () => {
     const org = await createOrgFixture();
     const user = await createUserFixture(org.id);

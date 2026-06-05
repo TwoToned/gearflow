@@ -86,9 +86,9 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp, initialMa
   // When creating a project and the org has auto project numbers configured,
   // preview the next code so the user can leave the field blank.
   const { data: nextProjectNumber } = useQuery({
-    queryKey: ["project-number-next"],
+    queryKey: ["project-number-next", orgId],
     queryFn: () => peekNextProjectNumber(),
-    enabled: !isTemplate && !isEditing,
+    enabled: !isTemplate && !isEditing && !!orgId,
     staleTime: 30_000,
   });
   const [quickCreateClientOpen, setQuickCreateClientOpen] = useState(false);

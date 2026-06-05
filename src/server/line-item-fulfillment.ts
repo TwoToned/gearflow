@@ -430,7 +430,7 @@ async function resolveAssetAccessories(
 /** True for a unique-constraint violation, whether Prisma maps it (P2002) or
  *  surfaces the raw Postgres error (23505) — our accessory unique indexes are
  *  partial/raw and not declared in schema.prisma, so both shapes can appear. */
-function isUniqueViolation(e: unknown): boolean {
+export function isUniqueViolation(e: unknown): boolean {
   const code = (e as { code?: string } | null)?.code;
   if (code === "P2002" || code === "23505") return true;
   const msg = e instanceof Error ? e.message : String(e);

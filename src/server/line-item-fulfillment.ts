@@ -399,8 +399,9 @@ async function resolveAssetAccessories(
   organizationId: string,
   assetId: string,
 ): Promise<AccessoryProfile> {
-  const asset = await tx.asset.findUnique({
-    where: { id: assetId },
+  // org-scoped read (defense-in-depth — assetId can originate from a scan value).
+  const asset = await tx.asset.findFirst({
+    where: { id: assetId, organizationId },
     select: {
       modelId: true,
       childAssets: { select: { id: true, modelId: true, model: { select: { name: true } } } },
@@ -435,6 +436,33 @@ export function isUniqueViolation(e: unknown): boolean {
   if (code === "P2002" || code === "23505") return true;
   const msg = e instanceof Error ? e.message : String(e);
   return /unique constraint|duplicate key/i.test(msg);
+}
+
+/**
+ * Run a `create` inside a SAVEPOINT and swallow a unique-constraint violation,
+ * returning `null` when the row already existed (a concurrent scan won the race).
+ *
+ * Why the SAVEPOINT: a 23505 inside a Prisma interactive transaction aborts the
+ * WHOLE transaction (Postgres `25P02`), so a plain try/catch can't recover —
+ * every later statement on the same `tx` would fail. Wrapping the create in a
+ * savepoint scopes the rollback to just this statement, leaving the transaction
+ * healthy. The only unique constraints on `project_line_item` are the accessory
+ * partial indexes, so a swallowed violation can only mean "this child exists".
+ */
+async function createAccessoryChildIfAbsent(
+  tx: Prisma.TransactionClient,
+  data: Prisma.ProjectLineItemUncheckedCreateInput,
+): Promise<string | null> {
+  await tx.$executeRawUnsafe("SAVEPOINT accessory_child_create");
+  try {
+    const row = await tx.projectLineItem.create({ data, select: { id: true } });
+    await tx.$executeRawUnsafe("RELEASE SAVEPOINT accessory_child_create");
+    return row.id;
+  } catch (e) {
+    await tx.$executeRawUnsafe("ROLLBACK TO SAVEPOINT accessory_child_create");
+    if (!isUniqueViolation(e)) throw e;
+    return null;
+  }
 }
 
 /**
@@ -488,14 +516,11 @@ export async function expandAccessoriesForAsset(
   for (const aid of parentAssetIds) {
     if (!profiles.has(aid)) profiles.set(aid, await resolveAssetAccessories(tx, organizationId, aid));
   }
-  const bulkDemand = (bulkAssetId: string): number => {
-    let total = 0;
-    for (const p of profiles.values()) {
-      const m = p.bulks.find((b) => b.bulkAssetId === bulkAssetId);
-      if (m) total += m.quantity;
-    }
-    return total;
-  };
+  // Total demand per bulk accessory = sum of every parent unit's per-unit qty.
+  const bulkDemand = new Map<string, number>();
+  for (const p of profiles.values()) {
+    for (const b of p.bulks) bulkDemand.set(b.bulkAssetId, (bulkDemand.get(b.bulkAssetId) ?? 0) + b.quantity);
+  }
 
   const existing = await tx.projectLineItem.findMany({
     where: { parentLineItemId: lineItemId, childKind: "ACCESSORY", organizationId },
@@ -507,72 +532,55 @@ export async function expandAccessoriesForAsset(
   const created: string[] = [];
   let sort = existing.length;
 
+  const baseChild = {
+    organizationId,
+    projectId: line.projectId,
+    type: "EQUIPMENT" as const,
+    isKitChild: true,
+    childKind: "ACCESSORY" as const,
+    parentLineItemId: lineItemId,
+    categoryId: line.categoryId,
+    groupId: line.groupId,
+    unitPrice: null,
+    pricingType: line.pricingType,
+    duration: line.duration,
+  };
+
   // Serialised: one child per accessory asset, deduped (unique index backstop).
   for (const child of profile.serialised) {
     if (haveAsset.has(child.assetId)) continue;
-    try {
-      const row = await tx.projectLineItem.create({
-        data: {
-          organizationId,
-          projectId: line.projectId,
-          type: "EQUIPMENT",
-          modelId: child.modelId,
-          assetId: child.assetId,
-          quantity: 1,
-          isKitChild: true,
-          childKind: "ACCESSORY",
-          parentLineItemId: lineItemId,
-          categoryId: line.categoryId,
-          groupId: line.groupId,
-          description: child.modelName,
-          unitPrice: null,
-          pricingType: line.pricingType,
-          duration: line.duration,
-          sortOrder: sort++,
-        },
-        select: { id: true },
-      });
-      created.push(row.id);
-    } catch (e) {
-      if (!isUniqueViolation(e)) throw e; // concurrent scan already created it
-    }
+    const id = await createAccessoryChildIfAbsent(tx, {
+      ...baseChild,
+      modelId: child.modelId,
+      assetId: child.assetId,
+      quantity: 1,
+      description: child.modelName,
+      sortOrder: sort++,
+    });
+    if (id) created.push(id);
   }
 
   // Bulk: one child per bulkAssetId, quantity = total demand across parent units.
   for (const bulk of profile.bulks) {
-    const demand = bulkDemand(bulk.bulkAssetId);
+    const demand = bulkDemand.get(bulk.bulkAssetId) ?? bulk.quantity;
     const description = bulk.modelName ? `${demand}x ${bulk.modelName}` : null;
     const existingId = existingBulk.get(bulk.bulkAssetId);
     if (existingId) {
       await tx.projectLineItem.update({ where: { id: existingId }, data: { quantity: demand, description } });
       continue;
     }
-    try {
-      const row = await tx.projectLineItem.create({
-        data: {
-          organizationId,
-          projectId: line.projectId,
-          type: "EQUIPMENT",
-          modelId: bulk.modelId,
-          bulkAssetId: bulk.bulkAssetId,
-          quantity: demand,
-          isKitChild: true,
-          childKind: "ACCESSORY",
-          parentLineItemId: lineItemId,
-          categoryId: line.categoryId,
-          groupId: line.groupId,
-          description,
-          unitPrice: null,
-          pricingType: line.pricingType,
-          duration: line.duration,
-          sortOrder: sort++,
-        },
-        select: { id: true },
-      });
-      created.push(row.id);
-    } catch (e) {
-      if (!isUniqueViolation(e)) throw e;
-      // Lost the create race — update the row the winner created.
+    const id = await createAccessoryChildIfAbsent(tx, {
+      ...baseChild,
+      modelId: bulk.modelId,
+      bulkAssetId: bulk.bulkAssetId,
+      quantity: demand,
+      description,
+      sortOrder: sort++,
+    });
+    if (id) {
+      created.push(id);
+    } else {
+      // Lost the create race — sync the quantity onto the row the winner created.
       const row = await tx.projectLineItem.findFirst({
         where: { parentLineItemId: lineItemId, bulkAssetId: bulk.bulkAssetId, childKind: "ACCESSORY", organizationId },
         select: { id: true },

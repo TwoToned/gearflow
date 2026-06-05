@@ -333,6 +333,31 @@ describe("multi-quantity parent accessory isolation", () => {
     expect(await status(cableB.id)).toBe("CHECKED_OUT");
   });
 
+  it("a MISSING single-unit return marks only that unit's accessory LOST", async () => {
+    const s = await seed();
+    const { lightA, cableA, cableB, parentLineId } = await twoLightsEachWithACable(s);
+
+    await checkInItems(s.project.id, [{ lineItemId: parentLineId, assetId: lightA.id, returnCondition: "MISSING" }]);
+
+    expect(await status(cableA.id)).toBe("LOST");
+    expect(await status(cableB.id)).toBe("CHECKED_OUT");
+  });
+
+  it("a mixed-condition batch return routes each unit's accessory independently", async () => {
+    const s = await seed();
+    const { lightA, lightB, cableA, cableB, parentLineId } = await twoLightsEachWithACable(s);
+
+    // returnCondition is per-item — a regression that resolved it once per call
+    // would mis-route one sibling.
+    await checkInItems(s.project.id, [
+      { lineItemId: parentLineId, assetId: lightA.id, returnCondition: "GOOD" },
+      { lineItemId: parentLineId, assetId: lightB.id, returnCondition: "DAMAGED" },
+    ]);
+
+    expect(await status(cableA.id)).toBe("AVAILABLE");
+    expect(await status(cableB.id)).toBe("IN_MAINTENANCE");
+  });
+
   it("whole-line return (no assetId) still returns every accessory", async () => {
     const s = await seed();
     const { cableA, cableB, parentLineId } = await twoLightsEachWithACable(s);

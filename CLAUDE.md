@@ -134,8 +134,10 @@ aren't killed). Anything you put in the URL itself wins.
 ### DOM Safety (removeChild Fix)
 - `DomPatch` (in root layout) monkey-patches `removeChild`/`insertBefore` to silently ignore calls where the target node is not a child — prevents the React 19 "Cannot read properties of null" TypeError
 - `GlobalErrorBoundary` (in root layout) catches any remaining DOM manipulation errors and auto-recovers
+- `OverlayLockReset` (in root layout) self-heals the "whole page becomes unclickable until refresh" bug: Base UI/Floating UI marks the rest of the page inert (`data-base-ui-inert` + `inert`/`aria-hidden`/`pointer-events:none` + a full-screen `[role="presentation"]` backdrop) while a modal overlay is open; React 19 sometimes orphans those locks when the overlay unmounts during navigation. A guarded watchdog clears orphaned locks **only when no overlay is open** (`src/components/overlay-lock-reset.tsx`, tested in `overlay-lock-reset.test.ts`)
 - **When adding new providers or scripts to the root layout**: place them inside `<GlobalErrorBoundary>` to ensure coverage
-- **Never remove** `DomPatch` or `GlobalErrorBoundary` from `layout.tsx` — they are critical for navigation stability
+- **Never remove** `DomPatch`, `GlobalErrorBoundary`, or `OverlayLockReset` from `layout.tsx` — they are critical for navigation stability
+- **New dropdown/menu UI is Base UI (shadcn v4):** `DropdownMenuItem` fires `onClick` (NOT Radix's `onSelect`), and `DropdownMenuLabel` must be wrapped in `<DropdownMenuGroup>` (it's a `GroupLabel` and throws otherwise). Test menus by actually OPENING them, not just rendering the closed trigger.
 
 ### Select — ALWAYS pass explicit label children to `SelectValue`
 `SelectValue` in shadcn/ui v4 **cannot** resolve labels from portal-rendered `SelectItem` children. Without explicit children, it shows the raw `value` (e.g. an ID or enum key) instead of the human-readable label. **Every `<SelectValue>` must have explicit children**:

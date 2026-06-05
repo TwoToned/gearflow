@@ -4,6 +4,16 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.18.1.0] - 2026-06-06
+
+### Fixed
+- **The whole page sometimes going unclickable until you refresh.** Opening a
+  menu or dialog and then navigating could leave the page in a frozen state
+  where buttons and links stopped responding (a known UI-library/React 19 issue,
+  much more frequent since menus landed on every list page). The app now detects
+  and clears these orphaned locks automatically within about a second, so you no
+  longer have to refresh to recover.
+
 ## [0.18.0.2] - 2026-06-06
 
 ### Fixed

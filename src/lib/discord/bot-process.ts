@@ -142,8 +142,15 @@ export async function startBot(): Promise<void> {
     `[discord-bot] starting (org=${config.organizationId}, guild=${config.guildId}, commands=${[...registry.keys()].join(",")})`,
   );
 
+  // Only `Guilds` — non-privileged. We previously also requested `GuildMembers`,
+  // but Discord rejects logins for that intent unless the "Server Members
+  // Intent" toggle is enabled in the Developer Portal. The only consumer was
+  // `guild.members.fetch(id)` (single-ID lookup) in discord-channel-gateway,
+  // which falls back to a REST call and works fine without the intent. The
+  // intent is only required for full-list `.fetch()` (no args), GUILD_MEMBERS_CHUNK
+  // events, or GuildMember{Add,Remove,Update} listeners — none of which we use.
   const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
+    intents: [GatewayIntentBits.Guilds],
   });
 
   let running = true;

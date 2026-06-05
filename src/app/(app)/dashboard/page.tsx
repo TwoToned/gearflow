@@ -23,7 +23,9 @@ import {
   getDashboardStats,
   getUpcomingProjects,
   getRecentActivity,
+  getMyHomeData,
 } from "@/server/dashboard";
+import { MyWorkSection } from "@/components/dashboard/my-work-section";
 import { getSubHireDashboardStats } from "@/server/sub-hires";
 import { formatDistanceToNow, format } from "date-fns";
 import { formatCurrency } from "@/lib/formatters";
@@ -62,11 +64,17 @@ export default function DashboardPage() {
     queryFn: getSubHireDashboardStats,
   });
 
-  // Greeting logic
+  const { data: myHome } = useQuery({
+    queryKey: ["my-home", orgId],
+    queryFn: getMyHomeData,
+  });
+
+  // Greeting logic — personalised with the user's first name.
   const now = new Date();
   const hour = now.getHours();
   const greeting =
     hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const firstName = myHome?.userName ? String(myHome.userName).split(" ")[0] : "";
 
   // 60-day window for date range bars: today - 7 days to today + 53 days
   const rangeStart = new Date(now);
@@ -83,7 +91,9 @@ export default function DashboardPage() {
       <FadeIn>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="t-title text-fg">{greeting}</h1>
+            <h1 className="t-title text-fg">
+              {greeting}{firstName ? `, ${firstName}` : ""}
+            </h1>
             <p className="t-body text-fg-3">
               {format(now, "EEEE, d MMMM yyyy")}
             </p>
@@ -116,6 +126,11 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
+      </FadeIn>
+
+      {/* ── Your work (user-centric) ── */}
+      <FadeIn delay={0.04}>
+        <MyWorkSection projects={myHome?.myProjects ?? []} stats={stats} />
       </FadeIn>
 
       {/* ── Metrics Strip ── */}

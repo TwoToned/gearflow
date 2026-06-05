@@ -17,6 +17,7 @@ import { loadCommands } from "./registry";
 import { handleInteraction } from "./runner";
 import { pollOnce, type ConsumerDeps } from "./outbox-consumer";
 import type { BotCommand } from "./bot-types";
+import type { SupervisorDeps, SupervisorState } from "./bot-supervisor";
 
 const POLL_INTERVAL_MS = Number(process.env.DISCORD_POLL_INTERVAL_MS ?? 5000);
 
@@ -191,6 +192,13 @@ export async function startBot(): Promise<void> {
 
   client.once(Events.ClientReady, async (c) => {
     console.log(`[discord-bot] logged in as ${c.user.tag} (id=${c.user.id})`);
+    // Healthy start — clear any stale startup error the admin page is showing.
+    await prisma.discordIntegration
+      .update({
+        where: { organizationId: config.organizationId },
+        data: { botStartError: null, botPid: process.pid },
+      })
+      .catch((err) => console.warn("[discord-bot] failed to clear botStartError:", err));
     // Stamp the bot's Discord user id so the admin page can show it.
     if (c.user.id !== config.botUserId) {
       await prisma.discordIntegration
@@ -264,6 +272,15 @@ export async function startBot(): Promise<void> {
     });
   } catch (err) {
     console.error("[discord-bot] login or ready handshake failed:", err);
+    // Surface the failure on the admin page (v2 doc item 2.2) so an operator
+    // can tell "wrong token" from "ECONNREFUSED" without SSHing into pm2.
+    const message = err instanceof Error ? err.message : String(err);
+    await prisma.discordIntegration
+      .update({
+        where: { organizationId: config.organizationId },
+        data: { botStartError: message },
+      })
+      .catch((e) => console.warn("[discord-bot] failed to record botStartError:", e));
     await stop();
   }
 }
@@ -302,4 +319,52 @@ export function getBotState(): { running: boolean; organizationId: string | null
   const existing = globalRef.__gearflowDiscordBot;
   if (!existing) return { running: false, organizationId: null };
   return { running: existing.client.isReady(), organizationId: existing.organizationId };
+}
+
+// --- Cross-process control plane (used by the standalone bot supervisor) ---
+
+/** Resolve the enabled integration's organizationId (the unique update key), or null. */
+async function resolveEnabledOrgId(): Promise<string | null> {
+  const explicit = process.env.GEARFLOW_DISCORD_ORG_ID;
+  const row = await prisma.discordIntegration.findFirst({
+    where: explicit ? { organizationId: explicit, isEnabled: true } : { isEnabled: true },
+    select: { organizationId: true },
+  });
+  return row?.organizationId ?? null;
+}
+
+/** Read cross-process control intent for the supervisor. null = no enabled integration. */
+export async function readBotControlState(): Promise<SupervisorState | null> {
+  const explicit = process.env.GEARFLOW_DISCORD_ORG_ID;
+  const row = await prisma.discordIntegration.findFirst({
+    where: explicit ? { organizationId: explicit, isEnabled: true } : { isEnabled: true },
+    select: { botDesiredState: true, botRestartRequestedAt: true },
+  });
+  if (!row) return null;
+  return {
+    desiredState: row.botDesiredState,
+    restartRequestedAt: row.botRestartRequestedAt,
+  };
+}
+
+/** Stamp liveness on the enabled integration row. */
+export async function writeBotHeartbeat(): Promise<void> {
+  const orgId = await resolveEnabledOrgId();
+  if (!orgId) return;
+  await prisma.discordIntegration.update({
+    where: { organizationId: orgId },
+    data: { lastHeartbeatAt: new Date(), botPid: process.pid },
+  });
+}
+
+/** Wire the supervisor reconcile loop to the DB + the in-process bot lifecycle. */
+export function createSupervisorDeps(): SupervisorDeps {
+  return {
+    readState: readBotControlState,
+    isRunning: isBotRunning,
+    start: startBot,
+    stop: stopBot,
+    writeHeartbeat: writeBotHeartbeat,
+    log: (msg) => console.log(`[discord-supervisor] ${msg}`),
+  };
 }

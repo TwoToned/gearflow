@@ -1,0 +1,93 @@
+import { describe, expect, it, vi } from "vitest";
+import {
+  reconcileOnce,
+  type SupervisorDeps,
+  type SupervisorState,
+} from "./bot-supervisor";
+
+function makeDeps(
+  state: SupervisorState | null,
+  running: boolean,
+): SupervisorDeps & {
+  start: ReturnType<typeof vi.fn>;
+  stop: ReturnType<typeof vi.fn>;
+  writeHeartbeat: ReturnType<typeof vi.fn>;
+} {
+  let isRunning = running;
+  const start = vi.fn(async () => {
+    isRunning = true;
+  });
+  const stop = vi.fn(async () => {
+    isRunning = false;
+  });
+  return {
+    readState: async () => state,
+    isRunning: () => isRunning,
+    start,
+    stop,
+    writeHeartbeat: vi.fn(async () => {}),
+    log: () => {},
+  };
+}
+
+describe("reconcileOnce", () => {
+  it("always writes a heartbeat, even with no integration", async () => {
+    const deps = makeDeps(null, false);
+    await reconcileOnce(deps, null);
+    expect(deps.writeHeartbeat).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts the bot when RUNNING and currently down", async () => {
+    const deps = makeDeps({ desiredState: "RUNNING", restartRequestedAt: null }, false);
+    await reconcileOnce(deps, null);
+    expect(deps.start).toHaveBeenCalledTimes(1);
+    expect(deps.stop).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when RUNNING and already up", async () => {
+    const deps = makeDeps({ desiredState: "RUNNING", restartRequestedAt: null }, true);
+    await reconcileOnce(deps, null);
+    expect(deps.start).not.toHaveBeenCalled();
+    expect(deps.stop).not.toHaveBeenCalled();
+  });
+
+  it("stops the bot when STOPPED and currently up", async () => {
+    const deps = makeDeps({ desiredState: "STOPPED", restartRequestedAt: null }, true);
+    await reconcileOnce(deps, null);
+    expect(deps.stop).toHaveBeenCalledTimes(1);
+    expect(deps.start).not.toHaveBeenCalled();
+  });
+
+  it("stops the bot when no integration is enabled", async () => {
+    const deps = makeDeps(null, true);
+    await reconcileOnce(deps, null);
+    expect(deps.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("restarts on a new restart request and records the handled timestamp", async () => {
+    const ts = new Date("2026-06-06T10:00:00Z");
+    const deps = makeDeps({ desiredState: "RUNNING", restartRequestedAt: ts }, true);
+    const handled = await reconcileOnce(deps, null);
+    expect(deps.stop).toHaveBeenCalledTimes(1);
+    expect(deps.start).toHaveBeenCalledTimes(1);
+    expect(handled).toBe(ts.getTime());
+  });
+
+  it("does NOT restart again for an already-handled restart request", async () => {
+    const ts = new Date("2026-06-06T10:00:00Z");
+    const deps = makeDeps({ desiredState: "RUNNING", restartRequestedAt: ts }, true);
+    await reconcileOnce(deps, ts.getTime()); // already handled
+    expect(deps.stop).not.toHaveBeenCalled();
+    expect(deps.start).not.toHaveBeenCalled();
+  });
+
+  it("a heartbeat-only update (no control change) never triggers a restart", async () => {
+    // Heartbeat writes bump updatedAt but not botRestartRequestedAt, so a steady
+    // RUNNING+up bot stays untouched across many ticks.
+    const deps = makeDeps({ desiredState: "RUNNING", restartRequestedAt: null }, true);
+    let handled: number | null = null;
+    for (let i = 0; i < 5; i++) handled = await reconcileOnce(deps, handled);
+    expect(deps.start).not.toHaveBeenCalled();
+    expect(deps.stop).not.toHaveBeenCalled();
+  });
+});

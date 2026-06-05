@@ -27,6 +27,7 @@ import { EquipmentTab } from "@/components/projects/equipment-tab";
 import { CrewPanel } from "@/components/projects/crew-panel";
 import { CallSheetDialog } from "@/components/projects/call-sheet-dialog";
 import { ServicesPanel } from "@/components/projects/services-panel";
+import { TasksPanel } from "@/components/projects/tasks-panel";
 import { FinancialSummary } from "@/components/projects/financial-summary";
 import { ProjectCostsPanel } from "@/components/projects/project-costs-panel";
 import { ProjectConflictsBanner } from "@/components/projects/project-conflicts-banner";
@@ -445,6 +446,7 @@ export default function ProjectDetailPage({
                 <TabsList>
                   <TabsTrigger value="equipment">Equipment</TabsTrigger>
                   <TabsTrigger value="labour">Labour &amp; Logistics</TabsTrigger>
+                  <TabsTrigger value="tasks">Tasks</TabsTrigger>
                   <TabsTrigger value="notes">Notes</TabsTrigger>
                   <TabsTrigger value="files">Files ({(project.media || []).length})</TabsTrigger>
                 </TabsList>
@@ -471,6 +473,13 @@ export default function ProjectDetailPage({
                     />
                     <div className="h-px bg-border" />
                     <CrewPanel projectId={id} />
+                  </div>
+                </TabsContent>
+
+                {/* Tasks Tab */}
+                <TabsContent value="tasks">
+                  <div className="pt-4">
+                    <TasksPanel projectId={id} />
                   </div>
                 </TabsContent>
 

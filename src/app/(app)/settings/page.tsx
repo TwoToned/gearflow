@@ -13,6 +13,7 @@ import {
   updateOrganization,
   type OrgSettings,
 } from "@/server/settings";
+import { ProjectNumberingSettings } from "@/components/settings/project-numbering-settings";
 import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";
 
@@ -251,6 +252,21 @@ export default function GeneralSettingsPage() {
                 How many days a &ldquo;month&rdquo; bills as in the pricing optimiser. Default 28; common alternatives are 30 or calendar (31). Values are clamped to 20-31.
               </p>
             </div>
+
+            <ProjectNumberingSettings
+              format={settings.projectNumberFormat ?? ""}
+              reset={settings.projectNumberIncrementReset ?? "MONTHLY"}
+              padding={settings.projectNumberIncrementPadding ?? 2}
+              disabled={!canEdit}
+              onChange={(patch) =>
+                setSettings((prev) => ({
+                  ...prev,
+                  ...(patch.format !== undefined ? { projectNumberFormat: patch.format } : {}),
+                  ...(patch.reset !== undefined ? { projectNumberIncrementReset: patch.reset } : {}),
+                  ...(patch.padding !== undefined ? { projectNumberIncrementPadding: patch.padding } : {}),
+                }))
+              }
+            />
           </div>
         </section>
       </div>

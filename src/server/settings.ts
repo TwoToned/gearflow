@@ -8,6 +8,7 @@ import { getPlatformName } from "@/lib/platform";
 import { logActivity } from "@/lib/activity-log";
 import { env } from "@/env";
 import type { OrgSSOSettings } from "@/lib/sso-types";
+import { validateProjectNumberFormat, type IncrementReset } from "@/lib/project-number";
 
 export interface OrgBranding {
   primaryColor?: string;
@@ -49,6 +50,12 @@ export interface OrgSettings {
   assetTagDigits?: number;
   /** Days a "month" bills as for pricing optimisation. Default 28; common alternatives are 30 or 31. */
   daysPerMonth?: number;
+  /** Auto project-number template (e.g. "%YY%MM%INC"). Empty/undefined = manual entry. */
+  projectNumberFormat?: string;
+  /** When the project-number increment resets. Default MONTHLY. */
+  projectNumberIncrementReset?: IncrementReset;
+  /** Zero-pad width for the project-number increment. Default 2. */
+  projectNumberIncrementPadding?: number;
   branding?: OrgBranding;
   testTag?: TestTagSettings;
   icalToken?: string;
@@ -84,6 +91,14 @@ export async function updateOrganization(data: {
   defaultTaxRate?: number | null;
 }) {
   const { organizationId, userId, userName } = await requirePermission("orgSettings", "update");
+
+  // Reject an invalid auto project-number format before persisting, so the
+  // saved config can never push project creation into a failing auto path.
+  const pnFormat = data.settings.projectNumberFormat?.trim();
+  if (pnFormat) {
+    const err = validateProjectNumberFormat(pnFormat);
+    if (err) throw new Error(`Project number format: ${err}`);
+  }
 
   const updated = await prisma.organization.update({
     where: { id: organizationId },

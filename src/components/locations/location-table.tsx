@@ -142,6 +142,7 @@ export function LocationTable() {
     setPage, setPageSize, handleSort,
     columnVisibility, toggleColumnVisibility, resetPreferences,
     filters, setFilter, clearFilters,
+    currentConfig, applyConfig,
   } = useTablePreferences("locations", { sortBy: "name", sortOrder: "asc" });
 
   const [search, setSearch] = useState("");
@@ -189,6 +190,7 @@ export function LocationTable() {
       columnVisibility={columnVisibility}
       onToggleColumnVisibility={toggleColumnVisibility}
       onResetPreferences={resetPreferences}
+      savedViews={{ tableId: "locations", currentConfig, applyConfig }}
       isLoading={isLoading}
       emptyPreset="locations"
       toolbarActions={actionButtons}

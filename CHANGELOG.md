@@ -14,6 +14,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   surfaces overdue returns, maintenance due, and pending crew offers at a glance
   (or tells you you're all caught up). Org stats, upcoming projects, and recent
   activity follow below.
+## [0.17.0.0] - 2026-06-06
+
+### Added
+- **Auto-generated project codes.** Optionally set a project-number template in
+  Settings → Project Defaults and new projects get their code automatically. The
+  template supports date + counter tokens — e.g. `%YY%MM%INC` makes June 2026's
+  first project `260601` and July's 8th `260708`. Choose when the counter resets
+  (never / yearly / monthly / daily) and how many digits it uses, with a live
+  preview of the next code. Leave the format blank to keep entering codes by hand.
+## [0.16.0.0] - 2026-06-06
+
+### Added
+- **Project task lists.** Every project now has a **Tasks** tab — an Asana-style
+  to-do list. Add tasks with a status (To do / In progress / Done), priority, due
+  date, an optional checklist of sub-steps, and an assignee (an org member or a
+  crew member). Overdue tasks are flagged, and each task tracks when it was
+  completed. Reads/writes respect project permissions.
+## [0.15.0.0] - 2026-06-06
+
+### Added
+- **Saved views on every list.** Save the current filters, sort, visible columns,
+  and page size on any list page as a named view, then recall it in one click —
+  e.g. "Overdue projects" or "Assets in maintenance". Star a view to make it your
+  default for that list and it loads automatically next time. Views are personal
+  to you and follow you across devices. Available on assets, models, clients, crew,
+  locations, projects, suppliers, kits, maintenance, T&T registry, activity log,
+  damage, timesheets, and stocktakes.
+## [0.14.7.0] - 2026-06-06
+
+### Fixed
+- **Warehouse checkout — multi-tenant safety.** Checking out a scanned asset now
+  verifies the asset belongs to your organization before flipping its status or
+  location. Previously a checkout request carrying another organization's asset id
+  could mutate that asset; it now fails cleanly with "Asset not found in this
+  organization".
+- **Warehouse checkout — accessories are Test & Tag gated.** Permanent accessories
+  that travel with a parent asset are now blocked from deploying if their own Test
+  & Tag is failed or overdue, the same as any other gear. Previously accessories
+  could ship without a compliance check because they were materialised after the
+  checkout's T&T pre-flight. The block is scoped to accessories actually being
+  deployed, so an already-out accessory whose tag later lapses won't wrongly block
+  a later partial deploy of the same line.
 
 ## [0.14.6.0] - 2026-06-05
 

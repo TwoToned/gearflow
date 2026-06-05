@@ -119,6 +119,7 @@ export function ClientTable() {
     setPage, setPageSize, handleSort,
     columnVisibility, toggleColumnVisibility, resetPreferences,
     filters, setFilter,
+    currentConfig, applyConfig,
   } = useTablePreferences("clients", { sortBy: "name", sortOrder: "asc" });
 
   const [search, setSearch] = useState("");
@@ -169,6 +170,7 @@ export function ClientTable() {
       columnVisibility={columnVisibility}
       onToggleColumnVisibility={toggleColumnVisibility}
       onResetPreferences={resetPreferences}
+      savedViews={{ tableId: "clients", currentConfig, applyConfig }}
       isLoading={isLoading}
       emptyPreset="clients"
       toolbarActions={toolbarActions}

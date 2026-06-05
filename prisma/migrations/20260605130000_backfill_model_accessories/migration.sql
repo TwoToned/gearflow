@@ -9,6 +9,14 @@
 -- projects so finalized quotes/invoices are left untouched. Quantity is scaled by
 -- the line quantity (a "2x IMX6A" line gets 2x of each model accessory).
 --
+-- CRITICAL scoping: only lines that have NOT started fulfillment
+-- (status IN QUOTED/CONFIRMED, checkedOutQuantity = 0). Injecting an accessory
+-- child onto an already-prepped/checked-out line would create a phantom,
+-- un-picked, un-deployed accessory on gear that's already out the door —
+-- corrupting pick lists / return sheets / progress counters. Those lines are
+-- skipped; only quote/confirm-stage lines (where adding the accessory is what a
+-- fresh add would do anyway) are backfilled.
+--
 -- Row ids: md5(random()+line+bulk) — any unique String PK is valid (the column is
 -- TEXT with no format constraint); we avoid gen_random_uuid/pgcrypto to not depend
 -- on an extension.
@@ -33,7 +41,7 @@ SELECT
   pli."groupId",
   pli."pricingType",
   pli."duration",
-  0,
+  mba."sortOrder",
   now()
 FROM "project_line_item" pli
 JOIN "project" p ON p."id" = pli."projectId"
@@ -43,10 +51,13 @@ JOIN "bulk_asset" ba ON ba."id" = mba."bulkAssetId"
 WHERE pli."type" = 'EQUIPMENT'
   AND pli."modelId" IS NOT NULL
   AND pli."assetId" IS NULL
+  AND pli."kitId" IS NULL
   AND pli."isKitChild" = false
+  AND pli."isContainerLineItem" = false
   AND pli."childKind" IS NULL
   AND pli."subHireId" IS NULL
-  AND pli."status" <> 'CANCELLED'
+  AND pli."status" IN ('QUOTED', 'CONFIRMED')
+  AND pli."checkedOutQuantity" = 0
   AND p."isTemplate" = false
   AND p."status" NOT IN ('CANCELLED', 'COMPLETED', 'INVOICED', 'RETURNED')
   AND NOT EXISTS (

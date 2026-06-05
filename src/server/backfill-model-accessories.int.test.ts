@@ -44,9 +44,23 @@ async function project(orgId: string, status: string = "QUOTED", isTemplate = fa
 }
 
 /** A pre-fix model-level line: modelId set, no asset, no accessory children. */
-async function modelLine(orgId: string, projectId: string, modelId: string, quantity: number) {
+async function modelLine(
+  orgId: string,
+  projectId: string,
+  modelId: string,
+  quantity: number,
+  opts: { status?: string; checkedOutQuantity?: number } = {},
+) {
   return testPrisma.projectLineItem.create({
-    data: { organizationId: orgId, projectId, type: "EQUIPMENT", modelId, quantity },
+    data: {
+      organizationId: orgId,
+      projectId,
+      type: "EQUIPMENT",
+      modelId,
+      quantity,
+      status: (opts.status ?? "QUOTED") as never,
+      checkedOutQuantity: opts.checkedOutQuantity ?? 0,
+    },
     select: { id: true },
   });
 }
@@ -127,5 +141,24 @@ describe("backfill: model-level accessories onto existing lines", () => {
       });
       expect(n).toBe(0);
     }
+  });
+
+  it("does NOT backfill already-fulfilled lines (no phantom accessory on deployed gear)", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id);
+    const model = await createModelFixture(org.id);
+    const micon = await createBulkAssetFixture(org.id, model.id, { assetTag: "MICON-BF4", total: 50 });
+    await attachModelAccessory(org.id, user.id, model.id, micon.id, 1);
+    const proj = await project(org.id, "CHECKED_OUT");
+    // A line already checked out — backfilling here would inject a phantom,
+    // un-picked accessory onto gear that's already out.
+    const out = await modelLine(org.id, proj.id, model.id, 1, { status: "CHECKED_OUT", checkedOutQuantity: 1 });
+    // A confirmed, not-yet-out line on the same project SHOULD be backfilled.
+    const ready = await modelLine(org.id, proj.id, model.id, 1, { status: "CONFIRMED", checkedOutQuantity: 0 });
+
+    await testPrisma.$executeRawUnsafe(BACKFILL_SQL);
+
+    expect(await testPrisma.projectLineItem.count({ where: { parentLineItemId: out.id, childKind: "ACCESSORY" } })).toBe(0);
+    expect(await testPrisma.projectLineItem.count({ where: { parentLineItemId: ready.id, childKind: "ACCESSORY" } })).toBe(1);
   });
 });

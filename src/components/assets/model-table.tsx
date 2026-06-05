@@ -203,6 +203,7 @@ export function ModelTable() {
     setPage, setPageSize, handleSort,
     columnVisibility, toggleColumnVisibility, resetPreferences,
     filters, setFilter,
+    currentConfig, applyConfig,
   } = useTablePreferences("models", { sortBy: "name", sortOrder: "asc" });
 
   const [search, setSearch] = useState("");
@@ -316,6 +317,7 @@ export function ModelTable() {
         columnVisibility={columnVisibility}
         onToggleColumnVisibility={toggleColumnVisibility}
         onResetPreferences={resetPreferences}
+        savedViews={{ tableId: "models", currentConfig, applyConfig }}
         isLoading={isLoading}
         emptyPreset="models"
         toolbarActions={toolbarActions}

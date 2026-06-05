@@ -69,6 +69,7 @@ model User {
   damageEventsCreated       DamageEvent[]               @relation("DamageEventCreatedBy")
   assignedProjectTasks      ProjectTask[]               @relation("ProjectTaskAssignee")
   createdProjectTasks       ProjectTask[]               @relation("ProjectTaskCreatedBy")
+  savedTableViews           SavedTableView[]
 
   @@map("user")
 }
@@ -205,6 +206,7 @@ model Organization {
   stocktakes               Stocktake[]
   customFieldDefinitions   CustomFieldDefinition[]
   projectTasks             ProjectTask[]
+  savedTableViews          SavedTableView[]
 
   @@map("organization")
 }
@@ -3486,3 +3488,29 @@ enum ProjectTaskPriority {
 }
 
 // ─── Prep System (Pre-Packing / Staging) ─────────────────────────────────────
+
+// ─── Saved Table Views (per-user, org-scoped list filter/sort/column presets) ─
+model SavedTableView {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Logical list identifier (matches useTablePreferences tableId), e.g. "assets",
+  // "clients", "projects". A view only ever applies to its own table.
+  tableId   String
+  name      String
+  // SavedViewConfig JSON: { filters, sortBy, sortOrder, columnVisibility, pageSize }.
+  config    Json
+  // At most one default per (user, tableId); enforced in the server action, not the DB.
+  isDefault Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, userId, tableId, name])
+  @@index([userId, tableId])
+  @@index([organizationId])
+  @@map("saved_table_view")
+}

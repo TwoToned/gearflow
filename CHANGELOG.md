@@ -12,6 +12,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   date, an optional checklist of sub-steps, and an assignee (an org member or a
   crew member). Overdue tasks are flagged, and each task tracks when it was
   completed. Reads/writes respect project permissions.
+## [0.15.0.0] - 2026-06-06
+
+### Added
+- **Saved views on every list.** Save the current filters, sort, visible columns,
+  and page size on any list page as a named view, then recall it in one click —
+  e.g. "Overdue projects" or "Assets in maintenance". Star a view to make it your
+  default for that list and it loads automatically next time. Views are personal
+  to you and follow you across devices. Available on assets, models, clients, crew,
+  locations, projects, suppliers, kits, maintenance, T&T registry, activity log,
+  damage, timesheets, and stocktakes.
+## [0.14.7.0] - 2026-06-06
+
+### Fixed
+- **Warehouse checkout — multi-tenant safety.** Checking out a scanned asset now
+  verifies the asset belongs to your organization before flipping its status or
+  location. Previously a checkout request carrying another organization's asset id
+  could mutate that asset; it now fails cleanly with "Asset not found in this
+  organization".
+- **Warehouse checkout — accessories are Test & Tag gated.** Permanent accessories
+  that travel with a parent asset are now blocked from deploying if their own Test
+  & Tag is failed or overdue, the same as any other gear. Previously accessories
+  could ship without a compliance check because they were materialised after the
+  checkout's T&T pre-flight. The block is scoped to accessories actually being
+  deployed, so an already-out accessory whose tag later lapses won't wrongly block
+  a later partial deploy of the same line.
 
 ## [0.14.6.0] - 2026-06-05
 

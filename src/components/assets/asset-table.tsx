@@ -325,6 +325,7 @@ export function AssetTable() {
     setPage, setPageSize, setView, handleSort,
     columnVisibility, toggleColumnVisibility, resetPreferences,
     filters, setFilter, clearFilters,
+    currentConfig, applyConfig,
   } = useTablePreferences("assets", { sortBy: "assetTag", sortOrder: "asc", view: "serialized" });
 
   const [search, setSearch] = useState("");
@@ -500,6 +501,7 @@ export function AssetTable() {
           columnVisibility={columnVisibility}
           onToggleColumnVisibility={toggleColumnVisibility}
           onResetPreferences={resetPreferences}
+          savedViews={{ tableId: "assets", currentConfig, applyConfig }}
           isLoading={isLoading}
           emptyPreset="assets"
           enableRowSelection
@@ -528,6 +530,7 @@ export function AssetTable() {
           columnVisibility={columnVisibility}
           onToggleColumnVisibility={toggleColumnVisibility}
           onResetPreferences={resetPreferences}
+          savedViews={{ tableId: "assets", currentConfig, applyConfig }}
           isLoading={isLoading}
           emptyPreset="assets"
           toolbarPrefix={viewToggle}

@@ -124,6 +124,7 @@ function ActivityLogContent() {
     setPage, setPageSize, handleSort,
     columnVisibility, toggleColumnVisibility, resetPreferences,
     filters, setFilter,
+    currentConfig, applyConfig,
   } = useTablePreferences("activity-log", { sortBy: "createdAt", sortOrder: "desc" });
 
   // Pre-seed the entityType filter from the URL so deep-links from
@@ -217,6 +218,7 @@ function ActivityLogContent() {
         columnVisibility={columnVisibility}
         onToggleColumnVisibility={toggleColumnVisibility}
         onResetPreferences={resetPreferences}
+        savedViews={{ tableId: "activity-log", currentConfig, applyConfig }}
         isLoading={isLoading}
         emptyPreset="activity"
         toolbarActions={

@@ -30,6 +30,19 @@ Shipped in v0.8.2.0. `OrgSettings.daysPerMonth` (validated 20-31, default 28),
 `optimizePrice` + `computeTotalDays`, UI field in Settings → Project Defaults
 with onChange clamping. 10 new pricing tests + 2 resolver tests.
 
+## Schema / Migrations
+
+### Pre-existing Prisma schema drift (surfaced during saved-views work)
+**What:** `prisma migrate dev` on the saved-views branch auto-detected drift between
+`schema.prisma` and the migration history that has no dedicated migration:
+`project_service.billableToClient` should be `SET NOT NULL` (schema has
+`@default(false)`), and `updatedAt` should `DROP DEFAULT` on `group_template`,
+`project_category`, and `project_group`. These were deliberately **excluded** from the
+saved-views migration (a NOT NULL alter can fail on prod rows with NULLs).
+**What to do:** Author a dedicated migration that reconciles these, after auditing
+`project_service` for NULL `billableToClient` rows (backfill to `false` first if any).
+**Priority:** P2
+
 ## Testing Expansion
 
 ### Server Action Integration Tests
@@ -205,16 +218,20 @@ isolation, concurrent-expansion (FOR UPDATE lock), and double-scan are already
 correct; these are bulk-only and need a config edit / asset delete to trigger.
 **Priority:** P2
 
-### Pre-existing warehouse safety (surfaced during accessories review)
-**What:** (1) `checkOutItems` fetches+updates an asset by global `assetId` via
-`findUnique`/`update` without re-scoping to the caller's `organizationId` —
-potential cross-tenant write. (2) Accessories are materialised AFTER the
-test-and-tag checkout preflight (`assertTestTagAllowsCheckout`), so an
-overdue/failed accessory can deploy without a compliance check.
-**Why:** (1) is a multi-tenant isolation risk; (2) lets non-compliant gear ship.
-**Context:** Flagged by Codex adversarial during the v0.14.0.0 ship; both are
-pre-existing (untouched by that branch).
-**Priority:** P1
+### ~~Pre-existing warehouse safety (surfaced during accessories review)~~ ✅ FIXED
+Fixed on branch `fix/warehouse-tenant-tt-safety`. (1) `checkOutItems` now
+re-scopes the (untrusted, scan-supplied) `targetAssetId` to the caller's org
+via `findFirst({ id, organizationId })` and throws "Asset not found in this
+organization" on a miss; the status/location write became an org-scoped
+`updateMany` (defense-in-depth), and the accessory-cascade asset write was
+scoped the same way. (2) The T&T compliance gate now runs inside
+`checkoutAccessoryChildren` over the accessory children's asset/bulk ids —
+they're separate line items the top-level preflight never sees (prep-time:
+own line ids; scan-time: materialised after the preflight), so a failed/overdue
+accessory now blocks the whole checkout batch (TestTagBlockError, full
+rollback). 3 integration tests in `warehouse-tenant-tt-safety.int.test.ts`
+(cross-tenant rejection, accessory-blocks-parent, current-T&T-passes); all 52
+existing warehouse integration tests still green.
 
 ### ~~Model-level bulk accessories~~ ✅ SHIPPED
 Shipped in v0.13.0.0. `ModelBulkAccessory` join table — every asset of a
@@ -459,15 +476,16 @@ Wave 3 list are excluded — Two Toned operates a single warehouse.
 **Estimate:** human ~3-4 weeks / CC ~3-4 hours
 **Priority:** P2
 
-### Saved Filters Per Entity
-**What:** Let users save named filter/sort/column configurations on list pages and recall them, with a consistent UX across every list page.
-**Why:** Operators repeatedly re-apply the same filters (e.g. "overdue projects", "assets in maintenance"). Saving them removes repetitive setup.
-**Pros:** Cheap, high-frequency win; touches every list page through the shared DataTable.
-**Cons:** Needs a place to persist configs (per-user, org-scoped) and a tasteful save/recall UI.
-**Context:** Wave 3 operational quality-of-life. Build on the shared DataTable (`FEATUREDOCS/25`) and existing table-preferences hook (`use-table-preferences`).
-**Depends on:** Shared DataTable + table-preferences infrastructure (shipped).
-**Estimate:** human ~1 week / CC ~45 min
-**Priority:** P2
+### ~~Saved Filters Per Entity~~ ✅ SHIPPED
+Shipped on branch `feat/saved-filters`. New `SavedTableView` model (per-user, org-scoped,
+server-persisted so views follow the user across devices), `SavedViewConfig` = filters +
+sort + column visibility + page size (search deliberately excluded). Server actions in
+`saved-views.ts` (getOrgContext + org+user scoping, at-most-one-default-per-table enforced
+in a txn). `useTablePreferences` gained `currentConfig` + `applyConfig`; a `SavedViewsMenu`
+renders in the DataTable toolbar when the new `savedViews` prop is passed (apply/save/update/
+delete/star-default/clear, dirty `*` marker, default auto-applies on pristine first mount).
+Wired into all 14 list pages. 7 integration tests (CRUD, default exclusivity, cross-user +
+cross-org isolation, validation). Full doc in [FEATUREDOCS/25](./FEATUREDOCS/25-datatable.md).
 
 ### Bulk Operations Across List Pages
 **What:** Multi-select rows on list pages and apply an action to all of them — bulk status change, bulk delete/archive, bulk tag, bulk export.

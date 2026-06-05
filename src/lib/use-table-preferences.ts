@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import type { FilterValue } from "@/lib/table-utils";
+import type { SavedViewConfig } from "@/lib/saved-views";
 
 type SortOrder = "asc" | "desc";
 
@@ -156,6 +157,31 @@ export function useTablePreferences(
     localStorage.removeItem(STORAGE_PREFIX + `${tableId}-filters`);
   }, [tableId, defaults]);
 
+  // ── Saved views: snapshot the current config and apply a saved one ────────
+  // currentConfig is what "Save current view" captures; applyConfig is what
+  // clicking a saved view (or auto-applying a default) restores. Search text is
+  // deliberately excluded — it's an ephemeral lookup, not part of a view.
+  const currentConfig = useMemo<SavedViewConfig>(
+    () => ({ filters, sortBy, sortOrder, columnVisibility, pageSize }),
+    [filters, sortBy, sortOrder, columnVisibility, pageSize],
+  );
+
+  const applyConfig = useCallback(
+    (config: SavedViewConfig) => {
+      const nextFilters = config.filters ?? {};
+      const nextColVis = config.columnVisibility ?? {};
+      setFiltersState(nextFilters);
+      setStored(`${tableId}-filters`, nextFilters);
+      setColumnVisibilityState(nextColVis);
+      setStored(`${tableId}-colVis`, nextColVis);
+      if (config.sortBy !== undefined) setSortBy(config.sortBy);
+      if (config.sortOrder !== undefined) setSortOrder(config.sortOrder);
+      if (config.pageSize !== undefined) setPageSize(config.pageSize);
+      setPage(1);
+    },
+    [tableId, setSortBy, setSortOrder, setPageSize],
+  );
+
   const handleSort = useCallback(
     (key: string) => {
       if (sortBy === key) {
@@ -173,6 +199,8 @@ export function useTablePreferences(
   return {
     sortBy,
     sortOrder,
+    setSortBy,
+    setSortOrder,
     pageSize,
     view,
     page,
@@ -188,5 +216,7 @@ export function useTablePreferences(
     setFilter,
     clearFilters,
     resetPreferences,
+    currentConfig,
+    applyConfig,
   };
 }

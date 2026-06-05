@@ -198,6 +198,7 @@ export function CrewTable() {
     setPage, setPageSize, handleSort,
     columnVisibility, toggleColumnVisibility, resetPreferences,
     filters, setFilter,
+    currentConfig, applyConfig,
   } = useTablePreferences("crew", { sortBy: "lastName", sortOrder: "asc" });
 
   const [search, setSearch] = useState("");
@@ -248,6 +249,7 @@ export function CrewTable() {
       columnVisibility={columnVisibility}
       onToggleColumnVisibility={toggleColumnVisibility}
       onResetPreferences={resetPreferences}
+      savedViews={{ tableId: "crew", currentConfig, applyConfig }}
       isLoading={isLoading}
       emptyPreset="crew"
       toolbarActions={toolbarActions}

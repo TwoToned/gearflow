@@ -493,6 +493,22 @@ async function checkoutAccessoryChildren(
   const children = await tx.projectLineItem.findMany({
     where: { parentLineItemId, organizationId, childKind: "ACCESSORY" },
   });
+
+  // SECURITY/COMPLIANCE: accessory children are SEPARATE line items with their
+  // own ids and units. The top-level checkout preflight only gathers ids from
+  // the scanned parent lines + their units, so accessory children never reach
+  // it — whether they were materialised at prep time (own line ids the
+  // preflight can't see) or at scan time (expanded AFTER the preflight ran).
+  // Without this gate a failed/overdue accessory ships ungated. Assert here;
+  // a block throws TestTagBlockError and rolls back the whole checkout batch,
+  // matching the top-level preflight's all-or-nothing semantics.
+  await assertTestTagAllowsCheckout(tx, organizationId, {
+    assetIds: children.map((c) => c.assetId).filter((x): x is string => !!x),
+    bulkAssetIds: children.map((c) => c.bulkAssetId).filter((x): x is string => !!x),
+    projectId,
+    scannedById: userId,
+  });
+
   for (const child of children) {
     if (child.assetId) {
       const asset = await tx.asset.findUnique({ where: { id: child.assetId }, select: { status: true } });
@@ -503,8 +519,8 @@ async function checkoutAccessoryChildren(
         data: { status: "CHECKED_OUT", checkedOutAt: new Date(), checkedOutById: userId },
       });
       if (asset?.status !== "CHECKED_OUT") {
-        await tx.asset.update({
-          where: { id: child.assetId },
+        await tx.asset.updateMany({
+          where: { id: child.assetId, organizationId },
           data: { status: "CHECKED_OUT", ...(projectLocationId && { locationId: projectLocationId }) },
         });
       }
@@ -681,11 +697,19 @@ export async function checkOutItems(
 
       if (targetAssetId) {
         // ── Serialised checkout — one unit per physical asset ────────────
-        const assetRecord = await tx.asset.findUnique({
-          where: { id: targetAssetId },
+        // SECURITY: `targetAssetId` can come from the untrusted scan payload
+        // (`item.assetId`), so it MUST be re-scoped to the caller's org. A
+        // bare `findUnique`/`update` by global id would let a caller flip the
+        // status + location of another tenant's asset by scanning its id onto
+        // their own line. Scope the read; a miss means the id isn't ours.
+        const assetRecord = await tx.asset.findFirst({
+          where: { id: targetAssetId, organizationId },
           select: { status: true, assetTag: true },
         });
-        if (assetRecord && assetRecord.status === "CHECKED_OUT") {
+        if (!assetRecord) {
+          throw new Error(`Asset not found in this organization`);
+        }
+        if (assetRecord.status === "CHECKED_OUT") {
           // Already deployed. Idempotent if it is this line's own unit;
           // otherwise the asset is genuinely double-booked.
           const ownUnit = await tx.projectLineItemUnit.findUnique({
@@ -701,10 +725,9 @@ export async function checkOutItems(
           throw new Error(`Asset ${assetRecord.assetTag} is already deployed`);
         }
         if (
-          assetRecord &&
-          (assetRecord.status === "RETIRED" ||
-            assetRecord.status === "IN_MAINTENANCE" ||
-            assetRecord.status === "LOST")
+          assetRecord.status === "RETIRED" ||
+          assetRecord.status === "IN_MAINTENANCE" ||
+          assetRecord.status === "LOST"
         ) {
           throw new Error(
             `Asset ${assetRecord.assetTag} is ${assetRecord.status
@@ -728,8 +751,11 @@ export async function checkOutItems(
           },
         });
 
-        await tx.asset.update({
-          where: { id: targetAssetId },
+        // Defense-in-depth: scope the write to the org too (the read above
+        // already proved ownership, but updateMany keeps the guarantee local
+        // to the mutation if the read is ever refactored away).
+        await tx.asset.updateMany({
+          where: { id: targetAssetId, organizationId },
           data: {
             status: "CHECKED_OUT",
             ...(projectLocationId && { locationId: projectLocationId }),

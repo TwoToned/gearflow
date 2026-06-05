@@ -28,8 +28,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { FilterValue, FilterType } from "@/lib/table-utils";
+import type { SavedViewConfig } from "@/lib/saved-views";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SavedViewsMenu } from "@/components/ui/saved-views-menu";
 
 // ─── Column Definition ──────────────────────────────────────────────
 
@@ -96,6 +98,12 @@ export interface DataTableProps<TData> {
   emptyPreset?: string;
   toolbarActions?: React.ReactNode;
   toolbarPrefix?: React.ReactNode;
+  /** Enables the Saved Views menu in the toolbar (per-user, org-scoped presets). */
+  savedViews?: {
+    tableId: string;
+    currentConfig: SavedViewConfig;
+    applyConfig: (config: SavedViewConfig) => void;
+  };
 }
 
 // ─── Get Value from Dot-Path ──────────────────────────────────────────
@@ -487,6 +495,7 @@ export function DataTable<TData>({
   emptyPreset,
   toolbarActions,
   toolbarPrefix,
+  savedViews,
 }: DataTableProps<TData>) {
   const filterableColumns = columns.filter((c) => c.filterable && c.filterType === "enum" && c.filterOptions);
 
@@ -579,6 +588,14 @@ export function DataTable<TData>({
           />
         ))}
         <div className="flex items-center gap-2 ml-auto">
+          {savedViews && (
+            <SavedViewsMenu
+              tableId={savedViews.tableId}
+              currentConfig={savedViews.currentConfig}
+              applyConfig={savedViews.applyConfig}
+              onResetPreferences={onResetPreferences}
+            />
+          )}
           {enableColumnVisibility && onToggleColumnVisibility && (
             <ColumnVisibilityPopover
               columns={columns}

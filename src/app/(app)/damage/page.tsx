@@ -68,6 +68,7 @@ function DamageListContent() {
     pageSize, page, setPage, setPageSize,
     columnVisibility, toggleColumnVisibility, resetPreferences,
     filters, setFilter,
+    currentConfig, applyConfig,
   } = useTablePreferences("damage-events", { sortBy: "createdAt", sortOrder: "desc" });
 
   const [search, setSearch] = useState("");
@@ -296,6 +297,7 @@ function DamageListContent() {
         columnVisibility={columnVisibility}
         onToggleColumnVisibility={toggleColumnVisibility}
         onResetPreferences={resetPreferences}
+        savedViews={{ tableId: "damage-events", currentConfig, applyConfig }}
         isLoading={isLoading}
       />
     </FadeIn>

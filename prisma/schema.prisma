@@ -67,6 +67,9 @@ model User {
   notificationPreference    UserNotificationPreference?
   notificationEmailLogs     NotificationEmailLog[]
   damageEventsCreated       DamageEvent[]               @relation("DamageEventCreatedBy")
+  assignedProjectTasks      ProjectTask[]               @relation("ProjectTaskAssignee")
+  createdProjectTasks       ProjectTask[]               @relation("ProjectTaskCreatedBy")
+  savedTableViews           SavedTableView[]
 
   @@map("user")
 }
@@ -203,6 +206,8 @@ model Organization {
   stocktakes               Stocktake[]
   customFieldDefinitions   CustomFieldDefinition[]
   projectNumberSequences   ProjectNumberSequence[]
+  projectTasks             ProjectTask[]
+  savedTableViews          SavedTableView[]
 
   @@map("organization")
 }
@@ -1457,6 +1462,7 @@ model Project {
   projectManagers      ProjectManager[]
   maintenanceRecords   MaintenanceRecord[]
   damageEvents         DamageEvent[]
+  tasks                ProjectTask[]
 
   @@unique([organizationId, projectNumber])
   @@index([organizationId])
@@ -2342,6 +2348,7 @@ model CrewMember {
   discordLink       DiscordAccountLink?
   discordLinkTokens DiscordLinkToken[]
   reportedDamageEvents DamageEvent[] @relation("DamageReportedBy")
+  assignedProjectTasks ProjectTask[] @relation("ProjectTaskCrewAssignee")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -3450,4 +3457,79 @@ model ProjectNumberSequence {
   @@map("project_number_sequence")
 }
 
+// ─── Project Tasks (Asana-style per-project to-do list) ──────────────────────
+model ProjectTask {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId      String
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String?
+  status      ProjectTaskStatus @default(TODO)
+  priority    ProjectTaskPriority @default(NORMAL)
+  dueDate     DateTime?
+  // Manual ordering within a project's list (drag/sort). Lower = higher.
+  sortOrder   Int               @default(0)
+  // Optional sub-steps: [{ id, text, done }] — kept inline as JSON, not a table.
+  checklist   Json?
+
+  // Assignee is EITHER an org user OR a crew member (at most one). Both nullable.
+  assigneeUserId String?
+  assigneeUser   User?       @relation("ProjectTaskAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
+  assigneeCrewId String?
+  assigneeCrew   CrewMember? @relation("ProjectTaskCrewAssignee", fields: [assigneeCrewId], references: [id], onDelete: SetNull)
+
+  createdById String?
+  createdBy   User?     @relation("ProjectTaskCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, projectId])
+  @@index([projectId, status])
+  @@index([assigneeUserId, status])
+  @@map("project_task")
+}
+
+enum ProjectTaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+enum ProjectTaskPriority {
+  LOW
+  NORMAL
+  HIGH
+}
+
 // ─── Prep System (Pre-Packing / Staging) ─────────────────────────────────────
+
+// ─── Saved Table Views (per-user, org-scoped list filter/sort/column presets) ─
+model SavedTableView {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Logical list identifier (matches useTablePreferences tableId), e.g. "assets",
+  // "clients", "projects". A view only ever applies to its own table.
+  tableId   String
+  name      String
+  // SavedViewConfig JSON: { filters, sortBy, sortOrder, columnVisibility, pageSize }.
+  config    Json
+  // At most one default per (user, tableId); enforced in the server action, not the DB.
+  isDefault Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, userId, tableId, name])
+  @@index([userId, tableId])
+  @@index([organizationId])
+  @@map("saved_table_view")
+}

@@ -31,6 +31,7 @@ vi.mock("@/lib/activity-log", () => ({ logActivity: vi.fn(async () => {}) }));
 
 import { addLineItem } from "@/server/line-items";
 import { checkOutItems, checkInItems, lookupAssetForScan } from "@/server/warehouse";
+import { completeCheckAndStore } from "@/server/check-records";
 
 async function seed() {
   const org = await createOrgFixture();
@@ -157,6 +158,38 @@ describe("warehouse accessory cascade (Phase E)", () => {
     // Idempotent: re-scan doesn't duplicate the accessory line.
     await checkOutItems(project.id, [{ lineItemId: parentLineId, assetId: light.id }]);
     expect(await testPrisma.projectLineItem.count({ where: { parentLineItemId: parentLineId, childKind: "ACCESSORY" } })).toBe(1);
+  });
+
+  it("check-and-store returns the parent's accessories with it", async () => {
+    const s = await seed();
+    const { light, cable, clamps, parentLineId } = await lightWithAccessoriesOnProject(s);
+    await checkOutItems(s.project.id, [{ lineItemId: parentLineId, assetId: light.id }]);
+
+    // Returning the parent via the check-and-store flow (not the plain return
+    // tab) must still cascade to the accessory children.
+    const checkItem = await testPrisma.checkItem.create({
+      data: { organizationId: s.org.id, label: "Visual", type: "PASS_FAIL" },
+    });
+    await completeCheckAndStore({
+      projectId: s.project.id,
+      lineItemId: parentLineId,
+      assetId: light.id,
+      condition: "GOOD",
+      checks: [{ checkItemId: checkItem.id, result: "PASS", photos: [] }],
+    });
+
+    const cableAsset = await testPrisma.asset.findUnique({ where: { id: cable.id } });
+    expect(cableAsset?.status).toBe("AVAILABLE");
+    const childLines = await testPrisma.projectLineItem.findMany({
+      where: { parentLineItemId: parentLineId, childKind: "ACCESSORY" },
+      include: { units: true },
+    });
+    expect(childLines).toHaveLength(2);
+    for (const cl of childLines) {
+      expect(cl.units.length).toBeGreaterThan(0);
+      expect(cl.units.every((u) => u.status === "RETURNED")).toBe(true);
+    }
+    void clamps;
   });
 
   it("scanning an accessory resolves to 'scan the parent'", async () => {

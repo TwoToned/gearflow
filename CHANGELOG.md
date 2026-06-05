@@ -4,6 +4,15 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.14.5.0] - 2026-06-05
+
+### Fixed
+- **Accessories now appear on PDFs for grouped items.** When an item that carries
+  an accessory lived inside a project group (e.g. an IMX6A Headset with a Micon
+  adaptor under a "Wireless Michael" group), the accessory rendered everywhere in
+  the app but was silently missing from generated documents — packing lists, quotes,
+  dockets. It now renders indented under its item on every PDF, grouped or not.
+
 ## [0.14.4.0] - 2026-06-05
 
 ### Fixed

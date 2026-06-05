@@ -697,6 +697,11 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
         for (const child of children) {
           if (overflow) break;
           const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
+          // A group member that is itself an accessory parent (no kitId, but
+          // carries ACCESSORY children) — recurse into it so its accessories
+          // render, e.g. an "IMX6A Headset" group member with a Micon adaptor.
+          const childHasAccessories =
+            !child.kitId && (child.childLineItems?.some((gc) => gc.childKind === "ACCESSORY") ?? false);
           const childName = child.model?.name || child.description || "-";
           const nestedChildren = child.childLineItems || [];
 
@@ -891,7 +896,7 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
           }
 
           // === Grandchildren (nested kit members) ===
-          if (isNestedKit) {
+          if (isNestedKit || childHasAccessories) {
             let grandchildren = nestedChildren;
             if (config.filterByStatus) {
               grandchildren = grandchildren.filter(gc => config.filterByStatus!.includes(gc.status));

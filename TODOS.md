@@ -348,6 +348,16 @@ Full feature doc: [FEATUREDOCS/47-cross-type-equipment-unification.md].
 
 ## Project Management
 
+### ~~Configurable Auto-Incrementing Project Codes~~ ✅ SHIPPED
+Shipped on branch `feat/project-codes`. Optional per-org template (e.g. `%YY%MM%INC` → June's
+first project `260601`). Pure `%`-token engine (`src/lib/project-number.ts`: %YYYY/%YY/%MM/%M/
+%DD/%D/%INCREMENT|%INC|%SEQ), configurable reset period (NONE/YEARLY/MONTHLY/DAILY) and
+increment padding, stored in `OrgSettings`. Atomic `ProjectNumberSequence` counter (INSERT ON
+CONFLICT) allocated inside the create txn with manual-collision retry; manual codes still win
+and blank-without-format still errors. Settings → Project Defaults UI with live preview;
+create-form shows the next code + "leave blank to auto-generate". 12 unit + 6 integration tests.
+Full doc: [FEATUREDOCS/51](./FEATUREDOCS/51-project-numbering.md).
+
 ### Project Todo Lists (Asana-Style)
 **What:** Add a todo/task list to each project. Tasks have title, assignee (org member or crew), due date, status, optional description, optional checklist. Project detail page gets a Tasks tab. Optional: dashboard view of "my open tasks across projects."
 **Why:** Operators currently use external tools (Asana, Notion, Slack threads) to track project-specific to-dos. Pulling this into the platform means tasks are linked to the project, visible to the team, and don't fall through the cracks.

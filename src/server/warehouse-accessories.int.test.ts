@@ -31,7 +31,7 @@ vi.mock("@/lib/activity-log", () => ({ logActivity: vi.fn(async () => {}) }));
 
 import { addLineItem } from "@/server/line-items";
 import { checkOutItems, checkInItems, lookupAssetForScan } from "@/server/warehouse";
-import { completeCheckAndStore } from "@/server/check-records";
+import { completeCheckAndStore, completeCheckAndDeprep } from "@/server/check-records";
 
 async function seed() {
   const org = await createOrgFixture();
@@ -190,6 +190,42 @@ describe("warehouse accessory cascade (Phase E)", () => {
       expect(cl.units.every((u) => u.status === "RETURNED")).toBe(true);
     }
     void clamps;
+  });
+
+  it("de-prepping the parent resets its accessories' prepStatus", async () => {
+    const s = await seed();
+    const { light, parentLineId } = await lightWithAccessoriesOnProject(s);
+    await checkOutItems(s.project.id, [{ lineItemId: parentLineId, assetId: light.id }]);
+    await checkInItems(s.project.id, [{ lineItemId: parentLineId, assetId: light.id, returnCondition: "GOOD" }]);
+
+    // Simulate the parent + accessories still sitting in the deploy-staging
+    // board (PACKED) after the return — deprep should clear them.
+    await testPrisma.projectLineItem.update({
+      where: { id: parentLineId },
+      data: { prepStatus: "PACKED" },
+    });
+    await testPrisma.projectLineItem.updateMany({
+      where: { parentLineItemId: parentLineId, childKind: "ACCESSORY" },
+      data: { prepStatus: "PACKED" },
+    });
+
+    const checkItem = await testPrisma.checkItem.create({
+      data: { organizationId: s.org.id, label: "Visual", type: "PASS_FAIL" },
+    });
+    await completeCheckAndDeprep({
+      projectId: s.project.id,
+      lineItemId: parentLineId,
+      assetId: light.id,
+      checks: [{ checkItemId: checkItem.id, result: "PASS", photos: [] }],
+    });
+
+    const childLines = await testPrisma.projectLineItem.findMany({
+      where: { parentLineItemId: parentLineId, childKind: "ACCESSORY" },
+    });
+    expect(childLines).toHaveLength(2);
+    for (const cl of childLines) {
+      expect(cl.prepStatus).toBe("PENDING");
+    }
   });
 
   it("scanning an accessory resolves to 'scan the parent'", async () => {

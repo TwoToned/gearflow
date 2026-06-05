@@ -286,6 +286,9 @@ export function DeployTab({
                             </TableRow>
                           );
                         })}
+                        {/* Accessories on a multi-qty serialised model line (classified
+                            bulk-group) still travel with the parent. */}
+                        <AccessoryChildRows parent={entry.item} mode="deploy" />
                       </Fragment>
                     );
                   }

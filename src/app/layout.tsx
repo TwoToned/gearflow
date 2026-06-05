@@ -5,6 +5,7 @@ import { QueryProvider } from "@/components/providers/query-provider";
 import { GoogleMapsProvider } from "@/components/providers/google-maps-provider";
 import { GlobalErrorBoundary } from "@/components/error-boundary";
 import { DomPatch } from "@/components/dom-patch";
+import { OverlayLockReset } from "@/components/overlay-lock-reset";
 import { ReducedMotionProvider } from "@/components/ui/motion";
 import { Toaster } from "@/components/ui/sonner";
 import { getPlatformName } from "@/lib/platform";
@@ -66,6 +67,7 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <GlobalErrorBoundary>
+          <OverlayLockReset />
           <ThemeProvider>
             <GoogleMapsProvider>
               <QueryProvider>

@@ -33,7 +33,7 @@ import { addLineItem } from "@/server/line-items";
 import { checkOutItems, checkInItems, lookupAssetForScan } from "@/server/warehouse";
 import { completeCheckAndStore, completeCheckAndDeprep } from "@/server/check-records";
 import { addModelBulkAccessory } from "@/server/model-accessories";
-import { isUniqueViolation } from "@/server/line-item-fulfillment";
+import { isUniqueViolation, createAccessoryChildIfAbsent } from "@/server/line-item-fulfillment";
 
 async function seed() {
   const org = await createOrgFixture();
@@ -406,6 +406,37 @@ describe("multi-quantity parent accessory isolation", () => {
     expect(unit?.status).toBe("RETURNED");
   });
 
+  it("a double check-in of the same unit does not over-return the bulk accessory", async () => {
+    const s = await seed();
+    const { org, model, project } = s;
+    const clampModel = await createModelFixture(org.id);
+    const clamps = await createBulkAssetFixture(org.id, clampModel.id, { assetTag: `DC-${createId().slice(0, 4)}`, total: 50 });
+    await addModelBulkAccessory(model.id, { bulkAssetId: clamps.id, quantity: 1 });
+    const lightA = await createAssetFixture(org.id, model.id, { assetTag: `DA-${createId().slice(0, 4)}` });
+    const lightB = await createAssetFixture(org.id, model.id, { assetTag: `DB-${createId().slice(0, 4)}` });
+    const parent = await addLineItem(project.id, { type: "EQUIPMENT", modelId: model.id, quantity: 2 }, true);
+    const parentLineId = (parent as { id: string }).id;
+    await checkOutItems(project.id, [
+      { lineItemId: parentLineId, assetId: lightA.id },
+      { lineItemId: parentLineId, assetId: lightB.id },
+    ]);
+    const bulkChild = await testPrisma.projectLineItem.findFirst({
+      where: { parentLineItemId: parentLineId, childKind: "ACCESSORY", bulkAssetId: clamps.id },
+    });
+
+    // First return of light A: its share (1) comes back.
+    await checkInItems(project.id, [{ lineItemId: parentLineId, assetId: lightA.id, returnCondition: "GOOD" }]);
+    let unit = await testPrisma.projectLineItemUnit.findFirst({ where: { lineItemId: bulkChild!.id } });
+    expect(unit?.returnedQuantity).toBe(1);
+
+    // Retry / double-scan light A — the parent flips 0 units, so the bulk must
+    // NOT be returned again while light B is still out.
+    await checkInItems(project.id, [{ lineItemId: parentLineId, assetId: lightA.id, returnCondition: "GOOD" }]);
+    unit = await testPrisma.projectLineItemUnit.findFirst({ where: { lineItemId: bulkChild!.id } });
+    expect(unit?.returnedQuantity).toBe(1); // still 1, not 2
+    expect(unit?.status).toBe("CHECKED_OUT");
+  });
+
   it("expansion is idempotent under a re-scan (no duplicate child rows)", async () => {
     const s = await seed();
     const { lightA, parentLineId } = await twoLightsEachWithACable(s);
@@ -501,6 +532,52 @@ describe("multi-quantity parent accessory isolation", () => {
     unit = await testPrisma.projectLineItemUnit.findFirst({ where: { lineItemId: bulkChild!.id } });
     expect(unit?.returnedQuantity).toBe(1);
     expect(unit?.status).toBe("RETURNED");
+  });
+});
+
+describe("createAccessoryChildIfAbsent — savepoint recovery against live Prisma", () => {
+  beforeEach(async () => {
+    await setupIntegrationTest();
+  });
+  afterAll(async () => {
+    await testPrisma.$disconnect();
+  });
+
+  it("swallows a duplicate via SAVEPOINT and leaves the transaction usable", async () => {
+    const s = await seed();
+    const { org, model, project } = s;
+    const asset = await createAssetFixture(org.id, model.id, { assetTag: `SP-${createId().slice(0, 4)}` });
+    const parent = await testPrisma.projectLineItem.create({
+      data: { organizationId: org.id, projectId: project.id, type: "EQUIPMENT", quantity: 1 },
+      select: { id: true },
+    });
+    const data = {
+      organizationId: org.id,
+      projectId: project.id,
+      type: "EQUIPMENT" as const,
+      modelId: model.id,
+      assetId: asset.id,
+      quantity: 1,
+      isKitChild: true,
+      childKind: "ACCESSORY" as const,
+      parentLineItemId: parent.id,
+      sortOrder: 0,
+    };
+
+    await testPrisma.$transaction(async (tx) => {
+      const id1 = await createAccessoryChildIfAbsent(tx, data);
+      expect(id1).not.toBeNull();
+      // Same (parentLineItemId, assetId) → the partial unique index fires. The
+      // helper must ROLLBACK TO SAVEPOINT and return null WITHOUT poisoning tx.
+      const id2 = await createAccessoryChildIfAbsent(tx, { ...data, sortOrder: 1 });
+      expect(id2).toBeNull();
+      // This query proves the transaction is still alive (not Postgres 25P02 /
+      // Prisma "transaction aborted") and that no duplicate row was written.
+      const count = await tx.projectLineItem.count({
+        where: { parentLineItemId: parent.id, childKind: "ACCESSORY" },
+      });
+      expect(count).toBe(1);
+    });
   });
 });
 

@@ -8,6 +8,7 @@ import { getPlatformName } from "@/lib/platform";
 import { logActivity } from "@/lib/activity-log";
 import { env } from "@/env";
 import type { OrgSSOSettings } from "@/lib/sso-types";
+import type { IncrementReset } from "@/lib/project-number";
 
 export interface OrgBranding {
   primaryColor?: string;
@@ -49,6 +50,12 @@ export interface OrgSettings {
   assetTagDigits?: number;
   /** Days a "month" bills as for pricing optimisation. Default 28; common alternatives are 30 or 31. */
   daysPerMonth?: number;
+  /** Auto project-number template (e.g. "%YY%MM%INC"). Empty/undefined = manual entry. */
+  projectNumberFormat?: string;
+  /** When the project-number increment resets. Default MONTHLY. */
+  projectNumberIncrementReset?: IncrementReset;
+  /** Zero-pad width for the project-number increment. Default 2. */
+  projectNumberIncrementPadding?: number;
   branding?: OrgBranding;
   testTag?: TestTagSettings;
   icalToken?: string;

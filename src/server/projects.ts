@@ -14,6 +14,117 @@ import { logActivity } from "@/lib/activity-log";
 import { emitIfDiscordEnabled } from "@/lib/services/outbox-service";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
+import { createId } from "@paralleldrive/cuid2";
+import {
+  renderProjectNumber,
+  scopeKeyFor,
+  datePartsInTimezone,
+  DEFAULT_INCREMENT_RESET,
+  DEFAULT_INCREMENT_PADDING,
+  type IncrementReset,
+} from "@/lib/project-number";
+
+/** Resolved auto project-number config, or null when auto-numbering is off. */
+type ProjectNumberConfig = {
+  format: string;
+  reset: IncrementReset;
+  padding: number;
+  timezone?: string;
+};
+
+/** Parse the org's auto project-number config from its settings metadata JSON. */
+function readProjectNumberConfig(metadata: string | null): ProjectNumberConfig | null {
+  if (!metadata) return null;
+  try {
+    const s = JSON.parse(metadata) as Record<string, unknown>;
+    const format = typeof s.projectNumberFormat === "string" ? s.projectNumberFormat.trim() : "";
+    if (!format) return null;
+    const reset = (s.projectNumberIncrementReset as IncrementReset) || DEFAULT_INCREMENT_RESET;
+    const padding =
+      typeof s.projectNumberIncrementPadding === "number"
+        ? s.projectNumberIncrementPadding
+        : DEFAULT_INCREMENT_PADDING;
+    const timezone = typeof s.timezone === "string" ? s.timezone : undefined;
+    return { format, reset, padding, timezone };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Atomically allocate the next auto project number inside a transaction. The
+ * sequence counter is bumped with INSERT ... ON CONFLICT (race-free across
+ * concurrent project creation); if the rendered number collides with an
+ * existing (e.g. manually-entered) one, we bump again. Returns the number.
+ */
+async function generateProjectNumber(
+  tx: Prisma.TransactionClient,
+  organizationId: string,
+  config: ProjectNumberConfig,
+  now: Date,
+): Promise<string> {
+  const parts = datePartsInTimezone(now, config.timezone);
+  const scopeKey = scopeKeyFor(config.reset, parts);
+
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const rows = await tx.$queryRaw<{ value: number }[]>`
+      INSERT INTO "project_number_sequence" ("id", "organizationId", "scopeKey", "value", "updatedAt")
+      VALUES (${createId()}, ${organizationId}, ${scopeKey}, 1, NOW())
+      ON CONFLICT ("organizationId", "scopeKey")
+      DO UPDATE SET "value" = "project_number_sequence"."value" + 1, "updatedAt" = NOW()
+      RETURNING "value"
+    `;
+    const sequence = Number(rows[0]?.value ?? 1);
+    const number = renderProjectNumber(config.format, { parts, sequence, padding: config.padding });
+    const clash = await tx.project.findFirst({
+      where: { organizationId, projectNumber: number },
+      select: { id: true },
+    });
+    if (!clash) return number;
+  }
+  throw new Error("Could not generate a unique project number");
+}
+
+/**
+ * Preview the next auto project number WITHOUT incrementing the counter. Powers
+ * the settings live preview. Pass `override` to preview unsaved form values
+ * (e.g. while the user types a new format); omit it to preview the saved config.
+ * Returns null when auto-numbering is disabled / format is empty.
+ */
+export async function peekNextProjectNumber(override?: {
+  format?: string;
+  reset?: IncrementReset;
+  padding?: number;
+}): Promise<string | null> {
+  const { organizationId } = await getOrgContext();
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { metadata: true },
+  });
+  let config = readProjectNumberConfig(org?.metadata ?? null);
+
+  if (override?.format !== undefined) {
+    const fmt = override.format.trim();
+    config = fmt
+      ? {
+          format: fmt,
+          reset: override.reset ?? config?.reset ?? DEFAULT_INCREMENT_RESET,
+          padding: override.padding ?? config?.padding ?? DEFAULT_INCREMENT_PADDING,
+          timezone: config?.timezone,
+        }
+      : null;
+  }
+  if (!config) return null;
+
+  const parts = datePartsInTimezone(new Date(), config.timezone);
+  const scopeKey = scopeKeyFor(config.reset, parts);
+  const seqRow = await prisma.projectNumberSequence.findUnique({
+    where: { organizationId_scopeKey: { organizationId, scopeKey } },
+    select: { value: true },
+  });
+  const nextSeq = (seqRow?.value ?? 0) + 1;
+  return renderProjectNumber(config.format, { parts, sequence: nextSeq, padding: config.padding });
+}
 
 const projectFilterColumns: FilterColumnDef[] = [
   { id: "status", filterType: "enum" },
@@ -334,7 +445,15 @@ export async function createProject(data: ProjectFormValues & { isTemplate?: boo
 
   const isTemplate = data.isTemplate ?? false;
 
-  if (!isTemplate && !parsed.projectNumber) {
+  // Auto project-number config (null when the org hasn't enabled it).
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { metadata: true },
+  });
+  const autoConfig = readProjectNumberConfig(org?.metadata ?? null);
+  const useAutoNumber = !isTemplate && !parsed.projectNumber && !!autoConfig;
+
+  if (!isTemplate && !parsed.projectNumber && !useAutoNumber) {
     throw new UserFacingError({
       code: "MISSING_PROJECT_CODE",
       title: "Project code is required",
@@ -343,12 +462,17 @@ export async function createProject(data: ProjectFormValues & { isTemplate?: boo
     });
   }
 
-  const projectNumber = isTemplate && !parsed.projectNumber
-    ? await generateTemplateCode(organizationId)
-    : parsed.projectNumber!;
+  // Templates without an explicit code get a template code (pre-txn is fine —
+  // no shared counter). Auto project numbers are allocated INSIDE the txn so
+  // the sequence bump and the create commit (or roll back) together.
+  const templateNumber =
+    isTemplate && !parsed.projectNumber ? await generateTemplateCode(organizationId) : null;
 
   try {
     const result = await prisma.$transaction(async (tx) => {
+      const projectNumber = useAutoNumber
+        ? await generateProjectNumber(tx, organizationId, autoConfig!, new Date())
+        : (templateNumber ?? parsed.projectNumber!);
       const project = await tx.project.create({
       data: {
         organizationId,

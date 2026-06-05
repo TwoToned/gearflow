@@ -6,6 +6,7 @@ import { Container, Check, Loader2 } from "lucide-react";
 import { getProjectPullSheet } from "@/server/warehouse";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { getAccessoryChildren, pickListProgress } from "./pick-list-progress";
 
 function getStorageKey(projectId: string) {
   return `picklist-checks-${projectId}`;
@@ -23,16 +24,6 @@ function saveChecked(projectId: string, checked: Set<string>) {
   try {
     localStorage.setItem(getStorageKey(projectId), JSON.stringify([...checked]));
   } catch { /* ignore */ }
-}
-
-/**
- * Accessories permanently attached to an asset (childKind === "ACCESSORY")
- * travel with their parent line. Unlike kit members they hang off a normal
- * top-level asset row, so we render them indented underneath it.
- */
-function getAccessoryChildren(item: Record<string, unknown>): Array<Record<string, unknown>> {
-  const children = (item.childLineItems || []) as Array<Record<string, unknown>>;
-  return children.filter((c) => c.childKind === "ACCESSORY");
 }
 
 interface OnlinePickListProps {
@@ -126,43 +117,7 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
   const allGroups = Object.entries(groups).map(([name, items]) => ({ name, items }));
 
   // Count totals for progress
-  let totalItems = 0;
-  let checkedItems = 0;
-  const countRows = (id: string, quantity: number) => {
-    if (quantity > 1) {
-      for (let i = 0; i < quantity; i++) {
-        totalItems++;
-        if (checked.has(`${id}-${i}`)) checkedItems++;
-      }
-    } else {
-      totalItems++;
-      if (checked.has(id)) checkedItems++;
-    }
-  };
-  for (const group of allGroups) {
-    for (const item of group.items) {
-      const isKit = !!(item.kitId) && !(item.isKitChild);
-      const isGroup = isKit;
-      const qty = item.quantity as number;
-      const children = isGroup ? ((item.childLineItems || []) as Array<Record<string, unknown>>) : [];
-
-      if (isGroup) {
-        // Kit header itself
-        totalItems++;
-        if (checked.has(`kit-${item.id}`)) checkedItems++;
-        for (const child of children) {
-          countRows(child.id as string, child.quantity as number);
-        }
-      } else {
-        countRows(item.id as string, qty);
-        // Accessories that travel with this asset are pickable in their own right
-        for (const child of getAccessoryChildren(item)) {
-          countRows(child.id as string, child.quantity as number);
-        }
-      }
-    }
-  }
-
+  const { totalItems, checkedItems } = pickListProgress(allGroups, checked);
   const progress = totalItems > 0 ? Math.round((checkedItems / totalItems) * 100) : 0;
 
   return (

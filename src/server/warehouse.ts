@@ -12,6 +12,7 @@ import {
   expandAccessoriesForAsset,
   ensureBulkUnit,
   returnLineUnits,
+  checkinAccessoryChildren,
 } from "@/server/line-item-fulfillment";
 import {
   adjustBulkAvailability,
@@ -524,36 +525,6 @@ async function checkoutAccessoryChildren(
   }
 }
 
-async function checkinAccessoryChildren(
-  tx: Prisma.TransactionClient,
-  args: {
-    organizationId: string;
-    projectId: string;
-    parentLineItemId: string;
-    returnCondition: "GOOD" | "DAMAGED" | "MISSING";
-    userId: string;
-    defaultLocationId: string | null;
-  },
-) {
-  const { organizationId, projectId, parentLineItemId, returnCondition, userId, defaultLocationId } = args;
-  const children = await tx.projectLineItem.findMany({
-    where: { parentLineItemId, organizationId, childKind: "ACCESSORY" },
-  });
-  for (const child of children) {
-    await returnLineUnits(tx, {
-      organizationId,
-      projectId,
-      lineItemId: child.id,
-      returnCondition,
-      // Bulk accessories carry a quantity > 1; return the whole quantity so
-      // the unit flips to RETURNED rather than partially-returned.
-      ...(child.bulkAssetId ? { quantity: child.quantity } : {}),
-      userId,
-      defaultLocationId,
-    });
-    await syncLineItemRollup(tx, child.id);
-  }
-}
 
 // ---------------------------------------------------------------------------
 // 3. checkOutItems

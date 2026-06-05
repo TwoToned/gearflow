@@ -66,6 +66,9 @@ export interface LineItemData {
    *  SubHireGroupRow renders the group itself (Phase 5c). */
   subHireGroupId?: string | null;
   kitId?: string | null;
+  /** Child discriminator: KIT (kit member) vs ACCESSORY (permanently attached
+   *  to a parent asset). Drives the "Accessory" badge on child rows. */
+  childKind?: string | null;
   pricingMode?: string | null;
   status?: string;
   prepStatus?: string | null;
@@ -238,10 +241,18 @@ export interface RowDescriptor {
 export function describeRow(item: LineItemData): RowDescriptor {
   const isSubhire = item.subHireId != null || item.type === "SUBHIRE";
   const isKit = !!item.kitId && !item.isKitChild;
-  // Preserve the exact original expression: any kitId, OR a non-child sub-hire.
+  // An accessory parent is a plain top-level asset line (no kitId, no sub-hire)
+  // whose children are permanently-attached accessories — they expand the same
+  // way kit members do.
+  const isAccessoryParent =
+    !item.isKitChild &&
+    !item.kitId &&
+    (item.childLineItems?.some((c) => c.childKind === "ACCESSORY") ?? false);
+  // Preserve the exact original expression: any kitId, OR a non-child sub-hire,
+  // PLUS accessory parents.
   const hasChildren =
     (item.childLineItems?.length ?? 0) > 0 &&
-    (!!item.kitId || (item.subHireId != null && !item.isKitChild));
+    (!!item.kitId || (item.subHireId != null && !item.isKitChild) || isAccessoryParent);
   const source: RowSource = item.isCustomItem ? "custom" : isSubhire ? "subhire" : "owned";
   const role: RowRole = item.isKitChild ? "child" : hasChildren ? "parent" : "standalone";
   return { source, role, isKit, isSubhire, hasChildren };
@@ -991,6 +1002,11 @@ export function LineItemRow({
           <div className={`${childIndent}`}>
             <div className="flex items-center gap-2">
               <span className="text-sm text-fg-2">{child.model?.name ?? child.description ?? "—"}</span>
+              {child.childKind === "ACCESSORY" && (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-fg-3">
+                  Accessory
+                </Badge>
+              )}
             </div>
             {child.notes && (
               <p className="text-xs text-fg-3 mt-0.5 truncate max-w-[300px]">{child.notes}</p>

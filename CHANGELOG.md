@@ -4,6 +4,30 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.14.0.0] - 2026-06-05
+
+### Added
+- **Accessories now travel with their asset everywhere.** Permanently-attached
+  accessories (cables, clamps, adaptors on a serialised asset) are wired
+  end-to-end. Add the asset to a job and its accessories come with it as
+  indented child lines. They show on the pick list and printable pull sheet —
+  badged "Accessory", counted in pick progress — so warehouse staff actually
+  pick them instead of leaving them on the shelf. They appear nested under the
+  parent in the deploy and return tabs, and expand under the parent in the
+  project equipment table.
+
+### Fixed
+- **Check-and-store returns now release the accessories too.** Returning an
+  asset through the check-and-store workflow previously freed the parent but
+  left its cables and clamps stuck "Checked Out"; the return now cascades to the
+  attached accessories, and de-prep clears them from the deploy-staging board.
+
+### Known limitations
+- Multi-quantity / model-level lines that carry per-unit accessories are not yet
+  fully handled — returning one unit can release accessories belonging to
+  sibling units that are still out. Single-asset bookings (the common case) are
+  correct. A follow-up tracks the multi-quantity fix.
+
 ## [0.13.0.1] - 2026-06-05
 
 ### Fixed

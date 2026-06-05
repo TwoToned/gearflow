@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { describeRow, getDisallowedDropReason, type LineItemData } from "./equipment-rows";
+import { describeRow, getDisallowedDropReason, isHiddenFromList, type LineItemData } from "./equipment-rows";
 
 function item(overrides: Partial<LineItemData>): LineItemData {
   return {
@@ -92,6 +92,45 @@ describe("describeRow", () => {
   it("custom item never reads as sub-hire even if type is stale", () => {
     const d = describeRow(item({ isCustomItem: true, type: "EQUIPMENT" }));
     expect(d.source).toBe("custom");
+  });
+
+  it("accessory parent (no kitId, ACCESSORY children) → owned / parent with chevron", () => {
+    const d = describeRow(
+      item({
+        modelId: "m1",
+        childLineItems: [item({ id: "acc1", isKitChild: true, childKind: "ACCESSORY" })],
+      }),
+    );
+    expect(d.isKit).toBe(false);
+    expect(d.role).toBe("parent");
+    expect(d.hasChildren).toBe(true);
+    expect(d.source).toBe("owned");
+  });
+
+  it("asset line whose only children are NOT accessories → no chevron", () => {
+    // Defensive: a stray non-accessory child on a non-kit line shouldn't promote
+    // it to an expandable parent (only ACCESSORY children do).
+    const d = describeRow(
+      item({ modelId: "m1", childLineItems: [item({ id: "x", isKitChild: true, childKind: "KIT" })] }),
+    );
+    expect(d.hasChildren).toBe(false);
+    expect(d.role).toBe("standalone");
+  });
+});
+
+describe("isHiddenFromList — accessory children", () => {
+  it("hides accessory children from the flat top-level list", () => {
+    // Accessory children carry isKitChild=true so they only render nested under
+    // their parent, never as a standalone top-level row.
+    expect(isHiddenFromList(item({ isKitChild: true, childKind: "ACCESSORY" }))).toBe(true);
+  });
+
+  it("keeps the accessory parent visible at the top level", () => {
+    expect(
+      isHiddenFromList(
+        item({ modelId: "m1", childLineItems: [item({ id: "a", isKitChild: true, childKind: "ACCESSORY" })] }),
+      ),
+    ).toBe(false);
   });
 });
 

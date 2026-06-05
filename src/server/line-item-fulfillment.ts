@@ -323,11 +323,43 @@ export async function returnLineUnits(
 }
 
 /**
- * Mark a unit prepped/packed (the pick-and-pack step before checkout).
- * Serialised and bulk lines get a PACKED unit row; a generic line with no
- * asset assigned just carries prepStatus on the order line. Rolls the line
- * up and returns it (with model/asset/bulkAsset included).
+ * Return all accessory children of a parent line alongside the parent. Mirrors
+ * checkoutAccessoryChildren on the return side: accessories are inseparable from
+ * their parent, so any code path that returns the parent must cascade here.
+ *
+ * Used by both the warehouse return flow (checkInItems) and the check-and-store
+ * return-check flow (completeCheckAndStore). Bulk accessories carry quantity > 1;
+ * we pass the full quantity so the unit flips to RETURNED rather than partial.
  */
+export async function checkinAccessoryChildren(
+  tx: Prisma.TransactionClient,
+  args: {
+    organizationId: string;
+    projectId: string;
+    parentLineItemId: string;
+    returnCondition: "GOOD" | "DAMAGED" | "MISSING";
+    userId: string;
+    defaultLocationId: string | null;
+  },
+) {
+  const { organizationId, projectId, parentLineItemId, returnCondition, userId, defaultLocationId } = args;
+  const children = await tx.projectLineItem.findMany({
+    where: { parentLineItemId, organizationId, childKind: "ACCESSORY" },
+  });
+  for (const child of children) {
+    await returnLineUnits(tx, {
+      organizationId,
+      projectId,
+      lineItemId: child.id,
+      returnCondition,
+      ...(child.bulkAssetId ? { quantity: child.quantity } : {}),
+      userId,
+      defaultLocationId,
+    });
+    await syncLineItemRollup(tx, child.id);
+  }
+}
+
 /**
  * Expand a specific serialised asset's permanent accessories onto a line as
  * accessory child lines (childKind: ACCESSORY). Idempotent: dedups serialised
@@ -452,6 +484,12 @@ export async function expandAccessoriesForAsset(
   return created;
 }
 
+/**
+ * Mark a unit prepped/packed (the pick-and-pack step before checkout).
+ * Serialised and bulk lines get a PACKED unit row; a generic line with no
+ * asset assigned just carries prepStatus on the order line. Rolls the line
+ * up and returns it (with model/asset/bulkAsset included).
+ */
 export async function prepUnit(
   tx: Prisma.TransactionClient,
   args: {

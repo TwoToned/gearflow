@@ -165,6 +165,46 @@ Hardened post-review: TOCTOU-safe attach, detach-while-deployed guard,
 deleteAsset blocks parents with accessories, symmetric kit↔accessory dual
 membership guard. 26 integration tests. Follow-ups (deferred, see below).
 
+### ~~Accessories — warehouse / pull-sheet / check-flow wiring~~ ✅ SHIPPED
+Shipped in v0.14.0.0. Accessories now render + are pickable on the interactive
+and printable pull sheets, render nested under the parent in the deploy/return
+tabs (`AccessoryChildRows`), and expand badged "Accessory" in the project
+equipment table (`describeRow` accessory-parent detection). Return cascade
+extended to the check-and-store flow (`completeCheckAndStore`) and de-prep
+(`completeCheckAndDeprep`); `checkinAccessoryChildren` promoted to the shared
+`line-item-fulfillment` module. Pure helpers extracted + unit-tested
+(`pick-list-progress`, `getAccessoryChildren`). +18 tests.
+
+### Multi-quantity / model-level accessory correctness
+**What:** Fix accessory handling for multi-quantity / model-level parent lines.
+Returning one unit of a multi-qty parent currently cascades a return to EVERY
+accessory child of the line (`checkinAccessoryChildren` filters by
+`parentLineItemId` only) — so it releases sibling units' still-deployed
+accessories, and a DAMAGED return mis-routes them to maintenance. Same
+all-children property in the de-prep `updateMany`.
+**Also:** bulk accessories undercounted on multi-qty lines (dedup by
+`bulkAssetId`); accessory expansion race (no unique index on
+`(parentLineItemId, assetId|bulkAssetId)`); deploy/return tabs don't render
+accessories for `bulk-group`-classified parents.
+**Why:** Silent inventory-state corruption on multi-asset bookings. Single-asset
+bookings (the common case) are correct.
+**Context:** Cross-model review (Claude + Codex) consensus during the v0.14.0.0
+ship. The over-return predates this branch (`checkInItems` on main is
+byte-identical). Fix scopes the cascade to the returned unit. See
+FEATUREDOCS/48 "Known limitation — multi-quantity / model-level parents".
+**Priority:** P1
+
+### Pre-existing warehouse safety (surfaced during accessories review)
+**What:** (1) `checkOutItems` fetches+updates an asset by global `assetId` via
+`findUnique`/`update` without re-scoping to the caller's `organizationId` —
+potential cross-tenant write. (2) Accessories are materialised AFTER the
+test-and-tag checkout preflight (`assertTestTagAllowsCheckout`), so an
+overdue/failed accessory can deploy without a compliance check.
+**Why:** (1) is a multi-tenant isolation risk; (2) lets non-compliant gear ship.
+**Context:** Flagged by Codex adversarial during the v0.14.0.0 ship; both are
+pre-existing (untouched by that branch).
+**Priority:** P1
+
 ### ~~Model-level bulk accessories~~ ✅ SHIPPED
 Shipped in v0.13.0.0. `ModelBulkAccessory` join table — every asset of a
 model inherits its defaults. Office add and warehouse scan-time both union

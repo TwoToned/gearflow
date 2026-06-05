@@ -33,12 +33,14 @@ The warehouse uses a Pick/Prep → Deploy → Return flow. Items are **prepped**
 - Items grouped by `prepContainer` with section headers (Package icon + container name)
 - X button on container headers to clear container assignment
 - Container line items auto-deploy when all contents are deployed (`syncContainerStatus`)
+- Permanent accessories (`childKind === "ACCESSORY"`) of a scanned asset render as read-only indented rows under the parent via `AccessoryChildRows` (`deploy` mode shows not-yet-out accessories). They cascade atomically with the parent — no separate scan/verify. See [Child Assets / Accessories](./48-child-assets-accessories.md).
 
 ### Return Tab
 - Shows items with `status === "CHECKED_OUT"` only
 - Split bulk items (qty=1 with bulkAssetId) use the serialized return path
 - Items grouped by `prepContainer` with section headers (same as Deploy tab)
 - Container line items auto-return when all contents are returned (`syncContainerStatus`)
+- Accessory children render as read-only indented rows via `AccessoryChildRows` (`return` mode shows currently-deployed accessories), mirroring the Deploy tab. See [Child Assets / Accessories](./48-child-assets-accessories.md).
 
 ### Scan Flow
 - `quickAddAndCheckOut()` adds items to project and **preps** them (sets `status: "CONFIRMED"`, `prepStatus: "PACKED"`) — does NOT deploy directly
@@ -56,6 +58,7 @@ The warehouse uses a Pick/Prep → Deploy → Return flow. Items are **prepped**
    - DAMAGED → asset status `IN_MAINTENANCE`, disconnects
    - MISSING → asset status `LOST`, disconnects
 3. For kit/prep-kit: `checkInKit` atomically reverses deployment
+4. Returning a parent asset cascades the return to its permanent accessories via `checkinAccessoryChildren` (`line-item-fulfillment.ts`) — shared, so both `checkInItems` AND the **check-and-store** flow (`completeCheckAndStore`) release the accessories; de-prep also clears them from the deploy-staging board. See [Child Assets / Accessories](./48-child-assets-accessories.md) (note the multi-quantity over-return limitation documented there).
 
 ## Kit Verification
 Before deploying or returning a kit (or prep-kit) with unverified items:
@@ -155,7 +158,7 @@ The warehouse page has a "Documents" dropdown with access to all project PDFs (P
 - Delivery docket counts only deployed children (`CHECKED_OUT`). Pull slip counts all children.
 
 ## Online Pick List
-Dialog with full item list showing deployment status per line item. Mobile full-screen with safe area padding. Kit and prep-kit groups show as expandable sections with children.
+Dialog with full item list showing deployment status per line item. Mobile full-screen with safe area padding. Kit and prep-kit groups show as expandable sections with children. Permanent accessories render indented under their parent asset line, badged "Accessory", and count toward pick progress (`pick-list-progress.ts`) — the same rows appear on the printable pull sheet (`pull-sheet/page.tsx`). See [Child Assets / Accessories](./48-child-assets-accessories.md).
 
 ## Warehouse Dashboard Display (TV Screen)
 

@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Printer, Square, Container } from "lucide-react";
 
 import { getProjectPullSheet } from "@/server/warehouse";
+import { getAccessoryChildren } from "@/components/warehouse/pick-list-progress";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { formatDate } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
@@ -320,6 +321,33 @@ export default function PullSheetPage({
                             <TableCell />
                           </TableRow>
                         ))}
+                        {/* Accessories attached to this asset — packed alongside it */}
+                        {!isKit && getAccessoryChildren(item)
+                          .map((child) => {
+                            const childModel = child.model as { name: string; modelNumber?: string | null } | null;
+                            const childAsset = child.asset as { assetTag: string; location?: { name: string } | null } | null;
+                            const childBulk = child.bulkAsset as { assetTag: string } | null;
+                            const childName = childModel?.name || (child.description as string) || "-";
+                            const childQty = child.quantity as number;
+                            return (
+                              <TableRow key={child.id as string}>
+                                <TableCell className="text-center">
+                                  <Square className="h-3.5 w-3.5 text-fg-3 print:text-black" />
+                                </TableCell>
+                                <TableCell className="pl-8">
+                                  <span className="text-sm text-fg-3">{childName}</span>
+                                  <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0 print:bg-transparent print:border-fg-3">Accessory</Badge>
+                                </TableCell>
+                                <TableCell className="text-center text-sm">{childQty}</TableCell>
+                                <TableCell className="font-mono text-xs text-fg-3">
+                                  {childAsset?.assetTag || childBulk?.assetTag || "—"}
+                                </TableCell>
+                                <TableCell className="text-xs text-fg-3">
+                                  {childAsset?.location?.name || "—"}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
                       </React.Fragment>
                     );
                   })}

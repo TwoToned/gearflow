@@ -161,11 +161,40 @@ too with an "X of Y linked" summary; set-once config is collapsible (text inputs
 signing-secret show/hide/copy/regenerate; recent activity from `logActivity`; unlink via `Dialog`.
 Config schema in `src/lib/validations/discord-integration.ts`.
 
-## Status: v1 server + admin complete
-All six build-order steps land with unit + full-pipeline integration coverage (test plan #1–#7).
-Verified: app `tsc` + `next build` clean (the build catches Next route-type checks `tsc --noEmit`
-misses), 2015 unit + 265 integration + 35 bot tests green, ESLint clean. Remaining for a live rollout
-is bot RUNTIME wiring (gateway gateway-intents, the poll loop, modal UX) and the v2 deferrals
-(`/asset checkout|checkin`, `/incident`, role-mapping, live-dropdown admin UI, a `/reconcile` command).
+## Status: v1 shipped (v0.13.0.1)
+v1 server + admin + runtime + in-process refactor + intent hotfix all live in production.
+All six build-order steps landed with unit + full-pipeline integration coverage (test plan #1–#7).
+The standalone bot service was deleted; the bot now boots from `instrumentation.ts` and lives in
+the same process as the Next.js app. Bot config is entirely in the DB (`DiscordIntegration` row) —
+zero `.env` for Discord. Admin saves trigger an in-process `restartBot()`; status pill polls
+`/api/admin/discord/status` every 10s. CI green: 2069 unit tests + integration + tsc + ESLint +
+`next build`. See `docs/designs/discord-bot-*.md` for the full reviewed plan + test plan.
 
-See the full reviewed plan + test plan in `docs/designs/discord-bot-*.md`.
+## v2 / Follow-ups
+Tracked here so the next session knows where to start. Detail + sequencing live in
+`docs/designs/discord-bot-v2.md`.
+
+### Real-world verification (do these before any v2 work)
+- [ ] End-to-end smoke test on prod with real bot token (paste creds, click Deploy commands, confirm online pill)
+- [ ] Channel lifecycle drill on a real project (CONFIRMED → channel created in configured category; COMPLETED → moved to archive)
+- [ ] `/link` flow with a real crew member (DM token, click verify link, confirm linked-accounts roster updates)
+- [ ] `/asset fault` from a phone — confirm `DamageEvent` created with severity + photo, asset routed `IN_MAINTENANCE` when "Hold for repair" set
+
+### Operability gaps (low-effort, high-value)
+- [ ] Rewrite `apps/discord-bot/README.md` → repurpose as `docs/operations/discord-bot.md` for the in-process model (the original described a deleted standalone service)
+- [ ] `discord.bot.failed_to_start` activity-log row when `startBot()` throws (currently only `console.error`; admin can't tell "no token" from "wrong token" without SSHing pm2 logs)
+- [ ] `npm run doctor` (or an in-admin "Diagnose" button) that checks: token decryptable? guild reachable? bot has Manage Channels in the project category? slash commands deployed?
+- [ ] Operator note on the `GuildMembers` intent (we dropped it in v0.13.0.1; v2 role-mapping will need it back AND the Server Members Intent toggle flipped in the Developer Portal)
+
+### v2 commands
+- [ ] `/asset checkout` + `/asset checkin` (the warehouse flow from Discord — depends on a per-org channel allowlist so randoms can't check out gear)
+- [ ] `/incident` (lighter than `/asset fault`; logs an incident report against a project, not an asset)
+- [ ] `/reconcile` (admin-only — force a full channel-membership reconcile, in case the outbox missed an event)
+
+### v2 admin UX
+- [ ] Live Discord dropdowns for guild / categories / channels (currently text inputs — works, but error-prone; needs a `/api/admin/discord/guild-tree` endpoint that calls Discord REST)
+- [ ] Role-mapping matrix (which Discord role grants which GearFlow `Member.role`) — DESIGN DECISION needed: should Discord role override the GearFlow role, or only add? (See v2 doc.)
+
+### v2 architecture
+- [ ] Bot's reverse API — let the bot trigger app-side workflows beyond the current command surface (e.g. button-on-embed → "approve this fault" → status update)
+- [ ] Per-org bot vs shared bot — currently one bot per org; if we scale to N orgs there's a Discord rate-limit ceiling. Open question whether to multiplex or stay per-org.

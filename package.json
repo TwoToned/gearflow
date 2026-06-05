@@ -1,6 +1,6 @@
 {
   "name": "gearflow-init",
-  "version": "0.14.4.0",
+  "version": "0.14.5.0",
   "private": true,
   "scripts": {
     "dev": "next dev",

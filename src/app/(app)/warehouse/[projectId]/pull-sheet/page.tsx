@@ -145,6 +145,18 @@ export default function PullSheetPage({
 
   return (
     <div className="space-y-6">
+      {/* Print pagination: repeat the table header on every page, never split a
+          row mid-cell, keep each item (its units + accessories) together, and
+          keep a group heading with the rows that follow it. */}
+      <style>{`
+        @media print {
+          @page { margin: 14mm; }
+          thead { display: table-header-group; }
+          tr { break-inside: avoid; }
+          h3 { break-after: avoid; }
+          tbody { break-inside: avoid; }
+        }
+      `}</style>
       {/* Screen-only header with back button */}
       <div className="flex items-center gap-2 print:hidden">
         <Button
@@ -213,8 +225,7 @@ export default function PullSheetPage({
                     <TableHead>Location</TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
-                  {group.items.map((item) => {
+                {group.items.map((item) => {
                     const model = item.model as { name: string; modelNumber?: string | null } | null;
                     const asset = item.asset as { assetTag: string; location?: { name: string } | null } | null;
                     const bulkAsset = item.bulkAsset as { assetTag: string } | null;
@@ -233,8 +244,38 @@ export default function PullSheetPage({
                         ? [model.name, model.modelNumber].filter(Boolean).join(" - ")
                         : (item.description as string) || "Unnamed item";
 
+                    // Accessories: shown per-unit when the bulk quantity divides
+                    // evenly across the units (e.g. 2 adaptors on a 2x line → 1
+                    // under each unit). Serialised or non-divisible accessories
+                    // fall back to one row under the line.
+                    const accessories = isKit ? [] : getAccessoryChildren(item);
+                    const perUnitAcc = qty > 1
+                      ? accessories.filter((a) => a.bulkAssetId && (a.quantity as number) % qty === 0)
+                      : [];
+                    const lineAcc = accessories.filter((a) => !perUnitAcc.includes(a));
+
+                    const accRow = (child: Record<string, unknown>, q: number, indent: string) => {
+                      const cm = child.model as { name: string } | null;
+                      const ca = child.asset as { assetTag: string; location?: { name: string } | null } | null;
+                      const cb = child.bulkAsset as { assetTag: string } | null;
+                      return (
+                        <TableRow key={`${child.id}-acc`}>
+                          <TableCell className="text-center">
+                            <Square className="h-3.5 w-3.5 text-fg-3 print:text-black" />
+                          </TableCell>
+                          <TableCell className={indent}>
+                            <span className="text-sm text-fg-3">{cm?.name || (child.description as string) || "-"}</span>
+                            <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0 print:bg-transparent print:border-fg-3">Accessory</Badge>
+                          </TableCell>
+                          <TableCell className="text-center text-sm">{q}</TableCell>
+                          <TableCell className="font-mono text-xs text-fg-3">{ca?.assetTag || cb?.assetTag || "—"}</TableCell>
+                          <TableCell className="text-xs text-fg-3">{ca?.location?.name || "—"}</TableCell>
+                        </TableRow>
+                      );
+                    };
+
                     return (
-                      <React.Fragment key={item.id as string}>
+                      <TableBody key={item.id as string} className="print:[break-inside:avoid]">
                         <TableRow className={isGroupParent ? "bg-bg-inset/30" : ""}>
                           <TableCell className="text-center">
                             {isGroupParent
@@ -307,51 +348,28 @@ export default function PullSheetPage({
                             </React.Fragment>
                           );
                         })}
-                        {/* Quantity expansion for non-kit items with qty > 1 */}
+                        {/* Non-kit units, each with the accessories that unit needs */}
                         {!isKit && qty > 1 && Array.from({ length: qty }).map((_, i) => (
-                          <TableRow key={`${item.id}-sub-${i}`}>
-                            <TableCell className="text-center">
-                              <Square className="h-3 w-3 text-fg-3/50 print:text-black" />
-                            </TableCell>
-                            <TableCell className="pl-8">
-                              <span className="text-xs text-fg-3">{itemName} - {i + 1}</span>
-                            </TableCell>
-                            <TableCell />
-                            <TableCell />
-                            <TableCell />
-                          </TableRow>
+                          <React.Fragment key={`${item.id}-sub-${i}`}>
+                            <TableRow>
+                              <TableCell className="text-center">
+                                <Square className="h-3 w-3 text-fg-3/50 print:text-black" />
+                              </TableCell>
+                              <TableCell className="pl-8">
+                                <span className="text-xs text-fg-3">{itemName} - {i + 1}</span>
+                              </TableCell>
+                              <TableCell />
+                              <TableCell />
+                              <TableCell />
+                            </TableRow>
+                            {perUnitAcc.map((acc) => accRow(acc, (acc.quantity as number) / qty, "pl-12"))}
+                          </React.Fragment>
                         ))}
-                        {/* Accessories attached to this asset — packed alongside it */}
-                        {!isKit && getAccessoryChildren(item)
-                          .map((child) => {
-                            const childModel = child.model as { name: string; modelNumber?: string | null } | null;
-                            const childAsset = child.asset as { assetTag: string; location?: { name: string } | null } | null;
-                            const childBulk = child.bulkAsset as { assetTag: string } | null;
-                            const childName = childModel?.name || (child.description as string) || "-";
-                            const childQty = child.quantity as number;
-                            return (
-                              <TableRow key={child.id as string}>
-                                <TableCell className="text-center">
-                                  <Square className="h-3.5 w-3.5 text-fg-3 print:text-black" />
-                                </TableCell>
-                                <TableCell className="pl-8">
-                                  <span className="text-sm text-fg-3">{childName}</span>
-                                  <Badge variant="outline" className="ml-1.5 text-[10px] px-1.5 py-0 print:bg-transparent print:border-fg-3">Accessory</Badge>
-                                </TableCell>
-                                <TableCell className="text-center text-sm">{childQty}</TableCell>
-                                <TableCell className="font-mono text-xs text-fg-3">
-                                  {childAsset?.assetTag || childBulk?.assetTag || "—"}
-                                </TableCell>
-                                <TableCell className="text-xs text-fg-3">
-                                  {childAsset?.location?.name || "—"}
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })}
-                      </React.Fragment>
+                        {/* Line-level accessories: qty-1 lines, or serialised / non-divisible bulk */}
+                        {!isKit && (qty > 1 ? lineAcc : accessories).map((acc) => accRow(acc, acc.quantity as number, "pl-8"))}
+                      </TableBody>
                     );
                   })}
-                </TableBody>
               </Table>
             </div>
           </div>

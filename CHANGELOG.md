@@ -4,6 +4,16 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.13.0.1] - 2026-06-05
+
+### Fixed
+- **Discord bot login failed with "Used disallowed intents".** The client was
+  requesting the privileged `GuildMembers` intent, which Discord rejects unless
+  the "Server Members Intent" toggle is enabled in the Developer Portal. Dropped
+  the intent — the only consumer was a single-ID `guild.members.fetch(id)` call,
+  which falls back to a REST request and works without the intent. No Developer
+  Portal change required; just restart and the bot connects clean.
+
 ## [0.13.0.0] - 2026-06-04
 
 ### Added

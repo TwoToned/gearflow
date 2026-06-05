@@ -304,8 +304,9 @@ export function ReturnTab({
                           );
                         })}
                         {/* Accessories on a multi-qty serialised model line (classified
-                            bulk-group) still travel with the parent. */}
-                        <AccessoryChildRows parent={entry.item} mode="return" />
+                            bulk-group) still travel with the parent. Gated on
+                            isExpanded so they hide with the group's unit rows. */}
+                        {isExpanded && <AccessoryChildRows parent={entry.item} mode="return" />}
                       </Fragment>
                     );
                   }

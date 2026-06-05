@@ -76,6 +76,20 @@ describe("getMyHomeData", () => {
     expect(data.myProjects.map((p) => p.id)).toEqual([p1.id, p2.id]);
   });
 
+  it("sorts dated projects before undated ones (NULL starts last)", async () => {
+    const org = await createOrgFixture();
+    const me = await createUserFixture(org.id);
+    h.ctx.organizationId = org.id;
+    h.ctx.userId = me.id;
+
+    const undated = await makeProject(org.id, { name: "Undated enquiry", pmId: me.id });
+    const dated = await makeProject(org.id, { name: "Dated", pmId: me.id, start: new Date("2026-09-01") });
+
+    const data = (await getMyHomeData()) as { myProjects: Array<{ id: string }> };
+    // The dated project must come first even though it was created after the undated one.
+    expect(data.myProjects.map((p) => p.id)).toEqual([dated.id, undated.id]);
+  });
+
   it("returns an empty list when the user manages nothing", async () => {
     const org = await createOrgFixture();
     const me = await createUserFixture(org.id);

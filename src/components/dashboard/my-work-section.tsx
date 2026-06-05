@@ -61,9 +61,14 @@ function projectDateLine(p: Project): { text: string; tone: "error" | "warning" 
   const now = startOfDay(new Date());
   const start = p.rentalStartDate ? startOfDay(new Date(p.rentalStartDate as string)) : null;
   const end = p.rentalEndDate ? startOfDay(new Date(p.rentalEndDate as string)) : null;
-  const deployed = ["CHECKED_OUT", "ON_SITE", "PREPPING"].includes(status);
+  // "Out" means the gear has actually left: CHECKED_OUT/ON_SITE always, or PREPPING
+  // only once the rental has started. A PREPPING project that hasn't started yet is
+  // upcoming, so it should show "Starts …", not "Returns …".
+  const started = !!start && start.getTime() <= now.getTime();
+  const out =
+    status === "CHECKED_OUT" || status === "ON_SITE" || (status === "PREPPING" && started);
 
-  if (deployed && end) {
+  if (out && end) {
     const days = Math.round((end.getTime() - now.getTime()) / DAY);
     if (days < 0) return { text: `Overdue ${Math.abs(days)}d`, tone: "error" };
     if (days === 0) return { text: "Returns today", tone: "warning" };

@@ -92,7 +92,9 @@ export async function getMyHomeData() {
       client: { select: { name: true } },
       _count: { select: { lineItems: { where: { type: "EQUIPMENT" } } } },
     },
-    orderBy: [{ rentalStartDate: "asc" }],
+    // Soonest first; undated projects (enquiries/drafts) sort last so they can't
+    // hide real upcoming work or push it past the take limit.
+    orderBy: [{ rentalStartDate: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
     take: 24,
   });
 

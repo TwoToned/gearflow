@@ -4,6 +4,19 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.14.4.0] - 2026-06-05
+
+### Fixed
+- **Pick slip now lists accessories under each unit.** On the printable pull
+  sheet, an accessory that ships per unit (e.g. a Micon adaptor on each IMX6A)
+  now shows beneath every unit row, so the picker sees exactly what to grab with
+  each item, instead of one combined line.
+- **Pick slip print pagination.** The table header now repeats on every printed
+  page, rows no longer split across a page break, and an item plus its units and
+  accessories stay together on one page.
+- **Accessories now show in the Pick / Prep tab** of the warehouse view (they
+  were only on Deploy/Return before).
+
 ## [0.14.3.0] - 2026-06-05
 
 ### Fixed

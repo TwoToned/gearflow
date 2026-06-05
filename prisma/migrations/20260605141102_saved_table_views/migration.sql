@@ -1,21 +1,3 @@
-/*
-  Warnings:
-
-  - Made the column `billableToClient` on table `project_service` required. This step will fail if there are existing NULL values in that column.
-
-*/
--- AlterTable
-ALTER TABLE "group_template" ALTER COLUMN "updatedAt" DROP DEFAULT;
-
--- AlterTable
-ALTER TABLE "project_category" ALTER COLUMN "updatedAt" DROP DEFAULT;
-
--- AlterTable
-ALTER TABLE "project_group" ALTER COLUMN "updatedAt" DROP DEFAULT;
-
--- AlterTable
-ALTER TABLE "project_service" ALTER COLUMN "billableToClient" SET NOT NULL;
-
 -- CreateTable
 CREATE TABLE "saved_table_view" (
     "id" TEXT NOT NULL,
@@ -38,7 +20,7 @@ CREATE INDEX "saved_table_view_userId_tableId_idx" ON "saved_table_view"("userId
 CREATE INDEX "saved_table_view_organizationId_idx" ON "saved_table_view"("organizationId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "saved_table_view_userId_tableId_name_key" ON "saved_table_view"("userId", "tableId", "name");
+CREATE UNIQUE INDEX "saved_table_view_organizationId_userId_tableId_name_key" ON "saved_table_view"("organizationId", "userId", "tableId", "name");
 
 -- AddForeignKey
 ALTER TABLE "saved_table_view" ADD CONSTRAINT "saved_table_view_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;

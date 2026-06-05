@@ -3455,7 +3455,7 @@ model SavedTableView {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([userId, tableId, name])
+  @@unique([organizationId, userId, tableId, name])
   @@index([userId, tableId])
   @@index([organizationId])
   @@map("saved_table_view")

@@ -25,6 +25,16 @@ function saveChecked(projectId: string, checked: Set<string>) {
   } catch { /* ignore */ }
 }
 
+/**
+ * Accessories permanently attached to an asset (childKind === "ACCESSORY")
+ * travel with their parent line. Unlike kit members they hang off a normal
+ * top-level asset row, so we render them indented underneath it.
+ */
+function getAccessoryChildren(item: Record<string, unknown>): Array<Record<string, unknown>> {
+  const children = (item.childLineItems || []) as Array<Record<string, unknown>>;
+  return children.filter((c) => c.childKind === "ACCESSORY");
+}
+
 interface OnlinePickListProps {
   projectId: string;
 }
@@ -118,6 +128,17 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
   // Count totals for progress
   let totalItems = 0;
   let checkedItems = 0;
+  const countRows = (id: string, quantity: number) => {
+    if (quantity > 1) {
+      for (let i = 0; i < quantity; i++) {
+        totalItems++;
+        if (checked.has(`${id}-${i}`)) checkedItems++;
+      }
+    } else {
+      totalItems++;
+      if (checked.has(id)) checkedItems++;
+    }
+  };
   for (const group of allGroups) {
     for (const item of group.items) {
       const isKit = !!(item.kitId) && !(item.isKitChild);
@@ -130,25 +151,14 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
         totalItems++;
         if (checked.has(`kit-${item.id}`)) checkedItems++;
         for (const child of children) {
-          const childQty = child.quantity as number;
-          if (childQty > 1) {
-            for (let i = 0; i < childQty; i++) {
-              totalItems++;
-              if (checked.has(`${child.id}-${i}`)) checkedItems++;
-            }
-          } else {
-            totalItems++;
-            if (checked.has(child.id as string)) checkedItems++;
-          }
-        }
-      } else if (qty > 1) {
-        for (let i = 0; i < qty; i++) {
-          totalItems++;
-          if (checked.has(`${item.id}-${i}`)) checkedItems++;
+          countRows(child.id as string, child.quantity as number);
         }
       } else {
-        totalItems++;
-        if (checked.has(item.id as string)) checkedItems++;
+        countRows(item.id as string, qty);
+        // Accessories that travel with this asset are pickable in their own right
+        for (const child of getAccessoryChildren(item)) {
+          countRows(child.id as string, child.quantity as number);
+        }
       }
     }
   }
@@ -285,6 +295,45 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
                         onToggle={() => toggle(item.id as string)}
                       />
                     )}
+
+                    {/* Accessories attached to this asset — picked alongside it */}
+                    {!isGroup && getAccessoryChildren(item).map((child) => {
+                      const childModel = child.model as { name: string; modelNumber?: string | null } | null;
+                      const childAsset = child.asset as { assetTag: string } | null;
+                      const childBulk = child.bulkAsset as { assetTag: string } | null;
+                      const childName = childModel?.name || (child.description as string) || "-";
+                      const childTag = childAsset?.assetTag || childBulk?.assetTag || null;
+                      const childQty = child.quantity as number;
+
+                      if (childQty > 1) {
+                        return Array.from({ length: childQty }).map((_, i) => {
+                          const key = `${child.id}-${i}`;
+                          return (
+                            <PickListRow
+                              key={key}
+                              label={childQty > 1 ? `${childName} - ${i + 1}` : childName}
+                              tag={childTag}
+                              accessory
+                              checked={checked.has(key)}
+                              onToggle={() => toggle(key)}
+                              indent={1}
+                            />
+                          );
+                        });
+                      }
+
+                      return (
+                        <PickListRow
+                          key={child.id as string}
+                          label={childName}
+                          tag={childTag}
+                          accessory
+                          checked={checked.has(child.id as string)}
+                          onToggle={() => toggle(child.id as string)}
+                          indent={1}
+                        />
+                      );
+                    })}
                   </React.Fragment>
                 );
               })}
@@ -313,6 +362,7 @@ function PickListRow({
   checked,
   onToggle,
   indent = 0,
+  accessory = false,
 }: {
   label: string;
   tag?: string | null;
@@ -320,6 +370,7 @@ function PickListRow({
   checked: boolean;
   onToggle: () => void;
   indent?: number;
+  accessory?: boolean;
 }) {
   return (
     <button
@@ -330,9 +381,14 @@ function PickListRow({
       style={indent ? { paddingLeft: `${indent * 1.25 + 0.75}rem` } : undefined}
     >
       <Checkbox checked={checked} className="shrink-0 pointer-events-none" />
-      <span className={`flex-1 text-sm ${checked ? "line-through text-fg-3" : "font-medium"}`}>
+      <span className={`flex-1 text-sm ${checked ? "line-through text-fg-3" : accessory ? "" : "font-medium"}`}>
         {label}
       </span>
+      {accessory && (
+        <span className="rounded bg-bg-inset px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-fg-3 shrink-0">
+          Accessory
+        </span>
+      )}
       {tag && (
         <span className="font-mono text-xs text-fg-3 shrink-0">{tag}</span>
       )}

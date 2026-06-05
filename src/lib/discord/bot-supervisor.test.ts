@@ -31,17 +31,24 @@ function makeDeps(
 }
 
 describe("reconcileOnce", () => {
-  it("always writes a heartbeat, even with no integration", async () => {
-    const deps = makeDeps(null, false);
+  it("heartbeats when the bot is up (its only cross-process liveness signal)", async () => {
+    const deps = makeDeps({ desiredState: "RUNNING", restartRequestedAt: null }, true);
     await reconcileOnce(deps, null);
     expect(deps.writeHeartbeat).toHaveBeenCalledTimes(1);
   });
 
-  it("starts the bot when RUNNING and currently down", async () => {
+  it("does NOT heartbeat when the bot is down, so a stale heartbeat means down", async () => {
+    const deps = makeDeps({ desiredState: "STOPPED", restartRequestedAt: null }, false);
+    await reconcileOnce(deps, null);
+    expect(deps.writeHeartbeat).not.toHaveBeenCalled();
+  });
+
+  it("starts the bot when RUNNING and currently down, then heartbeats", async () => {
     const deps = makeDeps({ desiredState: "RUNNING", restartRequestedAt: null }, false);
     await reconcileOnce(deps, null);
     expect(deps.start).toHaveBeenCalledTimes(1);
     expect(deps.stop).not.toHaveBeenCalled();
+    expect(deps.writeHeartbeat).toHaveBeenCalledTimes(1); // up after start()
   });
 
   it("does nothing when RUNNING and already up", async () => {

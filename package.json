@@ -19,6 +19,7 @@
     "collapse:historic-splits": "tsx --env-file=.env scripts/collapse-historic-splits.ts",
     "migrate:docket-per-unit": "tsx --env-file=.env scripts/migrate-docket-per-unit.ts",
     "lint:server-actions": "tsx scripts/audit-server-actions.ts",
+    "bot:start": "tsx --env-file=.env scripts/discord-bot.ts",
     "seed": "tsx --env-file=.env prisma/seed.ts"
   },
   "dependencies": {

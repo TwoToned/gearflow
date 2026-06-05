@@ -41,15 +41,8 @@ export async function reconcileOnce(
   deps: SupervisorDeps,
   lastHandledRestartAt: number | null,
 ): Promise<number | null> {
-  // Heartbeat first and unconditionally: the supervisor being alive is itself
-  // signal, independent of whether the bot should be running.
-  try {
-    await deps.writeHeartbeat();
-  } catch (err) {
-    deps.log(`heartbeat write failed: ${String(err)}`);
-  }
-
   const state = await deps.readState();
+
   if (!state) {
     // No enabled integration — nothing to run. Make sure we're stopped.
     if (deps.isRunning()) await deps.stop();
@@ -57,6 +50,7 @@ export async function reconcileOnce(
   }
 
   const restartTs = state.restartRequestedAt?.getTime() ?? null;
+  let handled = lastHandledRestartAt;
 
   if (state.desiredState === "STOPPED") {
     if (deps.isRunning()) {
@@ -74,14 +68,25 @@ export async function reconcileOnce(
     deps.log("restart requested — restarting bot");
     await deps.stop();
     await deps.start();
-    return restartTs;
-  }
-
-  if (!deps.isRunning()) {
+    handled = restartTs;
+  } else if (!deps.isRunning()) {
     deps.log("bot down but desiredState=RUNNING — starting");
     await deps.start();
   }
-  return lastHandledRestartAt;
+
+  // The heartbeat is the web process's ONLY window into bot connectivity (it
+  // can't call isRunning() across the process boundary). Stamp it only when the
+  // client is actually up, so a stale heartbeat unambiguously means "down" —
+  // which, combined with desiredState, lets the admin page tell "stopped by
+  // admin" from "crashed".
+  if (deps.isRunning()) {
+    try {
+      await deps.writeHeartbeat();
+    } catch (err) {
+      deps.log(`heartbeat write failed: ${String(err)}`);
+    }
+  }
+  return handled;
 }
 
 /**

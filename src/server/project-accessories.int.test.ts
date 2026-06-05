@@ -30,6 +30,7 @@ vi.mock("@/lib/org-context", () => ({
 vi.mock("@/lib/activity-log", () => ({ logActivity: vi.fn(async () => {}) }));
 
 import { addLineItem, removeLineItem } from "@/server/line-items";
+import { addModelBulkAccessory } from "@/server/model-accessories";
 
 async function seed() {
   const org = await createOrgFixture();
@@ -84,6 +85,37 @@ describe("accessories on a project (Phase D)", () => {
     const bulk = children.find((c) => c.bulkAssetId === clamps.id);
     expect(serial).toBeTruthy();
     expect(bulk?.quantity).toBe(2);
+  });
+
+  it("expands a MODEL's accessories when added by model (no specific asset)", async () => {
+    // The common quoting flow: a model-level accessory (every IMX6A ships a Micon
+    // adaptor) added to a project BY MODEL — not by scanning a specific tag.
+    const { org, model, project } = await seed();
+    const micon = await createBulkAssetFixture(org.id, model.id, { assetTag: "MICON-1", total: 50 });
+    await addModelBulkAccessory(model.id, { bulkAssetId: micon.id, quantity: 1 });
+
+    // Add "2x <model>" by MODEL — assetId is intentionally absent.
+    const parent = await addLineItem(project.id, { type: "EQUIPMENT", modelId: model.id, quantity: 2 }, true);
+
+    const children = await testPrisma.projectLineItem.findMany({
+      where: { parentLineItemId: (parent as { id: string }).id, childKind: "ACCESSORY" },
+    });
+    expect(children).toHaveLength(1);
+    const adaptor = children[0];
+    expect(adaptor.bulkAssetId).toBe(micon.id);
+    // 2 units x 1 adaptor each = 2.
+    expect(adaptor.quantity).toBe(2);
+    expect(adaptor.isKitChild).toBe(true);
+    expect(adaptor.assetId).toBeNull();
+  });
+
+  it("does not expand accessories for a model with none", async () => {
+    const { model, project } = await seed();
+    const parent = await addLineItem(project.id, { type: "EQUIPMENT", modelId: model.id, quantity: 1 }, true);
+    const children = await testPrisma.projectLineItem.count({
+      where: { parentLineItemId: (parent as { id: string }).id, childKind: "ACCESSORY" },
+    });
+    expect(children).toBe(0);
   });
 
   it("an asset with no accessories adds a lone line (no children)", async () => {

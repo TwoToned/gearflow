@@ -36,102 +36,120 @@ async function expandAccessoryChildren(
   parentLine: {
     id: string;
     assetId: string | null;
+    modelId: string | null;
+    quantity: number;
     categoryId: string | null;
     groupId: string | null;
     duration: number;
     pricingType: import("@/generated/prisma/client").PricingType;
   },
 ) {
-  if (!parentLine.assetId) return;
-  const asset = await tx.asset.findUnique({
-    where: { id: parentLine.assetId },
-    select: {
-      modelId: true,
-      childAssets: {
-        select: { id: true, modelId: true, model: { select: { name: true } } },
-        orderBy: { assetTag: "asc" },
-      },
-      childBulkItems: {
-        select: {
-          bulkAssetId: true,
-          quantity: true,
-          bulkAsset: { select: { modelId: true, model: { select: { name: true } } } },
+  const base = {
+    organizationId,
+    projectId,
+    type: "EQUIPMENT" as const,
+    isKitChild: true,
+    childKind: "ACCESSORY" as const,
+    parentLineItemId: parentLine.id,
+    categoryId: parentLine.categoryId,
+    groupId: parentLine.groupId,
+    unitPrice: null,
+    pricingType: parentLine.pricingType,
+    duration: parentLine.duration,
+  };
+
+  if (parentLine.assetId) {
+    // A specific serialised asset was added: expand its own serialised + bulk
+    // accessories, unioned with its model's defaults (asset wins by bulkAssetId).
+    const asset = await tx.asset.findUnique({
+      where: { id: parentLine.assetId },
+      select: {
+        modelId: true,
+        childAssets: {
+          select: { id: true, modelId: true, model: { select: { name: true } } },
+          orderBy: { assetTag: "asc" },
         },
-        orderBy: { sortOrder: "asc" },
+        childBulkItems: {
+          select: {
+            bulkAssetId: true,
+            quantity: true,
+            bulkAsset: { select: { modelId: true, model: { select: { name: true } } } },
+          },
+          orderBy: { sortOrder: "asc" },
+        },
       },
-    },
-  });
-  if (!asset) return;
+    });
+    if (!asset) return;
 
-  // Union with model-level bulk accessories (every asset of this model
-  // inherits them), deduped by bulkAssetId — asset-level wins on conflict so
-  // a specific asset's quantity / DEDICATED mode can override the template.
-  const assetBulkIds = new Set(asset.childBulkItems.map((b) => b.bulkAssetId));
-  const modelBulks = await tx.modelBulkAccessory.findMany({
-    where: { modelId: asset.modelId, organizationId },
-    select: {
-      bulkAssetId: true,
-      quantity: true,
-      bulkAsset: { select: { modelId: true, model: { select: { name: true } } } },
-    },
-    orderBy: { sortOrder: "asc" },
-  });
-  const inheritedBulks = modelBulks.filter((m) => !assetBulkIds.has(m.bulkAssetId));
+    const assetBulkIds = new Set(asset.childBulkItems.map((b) => b.bulkAssetId));
+    const modelBulks = await tx.modelBulkAccessory.findMany({
+      where: { modelId: asset.modelId, organizationId },
+      select: {
+        bulkAssetId: true,
+        quantity: true,
+        bulkAsset: { select: { modelId: true, model: { select: { name: true } } } },
+      },
+      orderBy: { sortOrder: "asc" },
+    });
+    const inheritedBulks = modelBulks.filter((m) => !assetBulkIds.has(m.bulkAssetId));
 
-  if (
-    asset.childAssets.length === 0 &&
-    asset.childBulkItems.length === 0 &&
-    inheritedBulks.length === 0
-  ) {
+    if (asset.childAssets.length === 0 && asset.childBulkItems.length === 0 && inheritedBulks.length === 0) {
+      return;
+    }
+
+    let sort = 0;
+    for (const child of asset.childAssets) {
+      await tx.projectLineItem.create({
+        data: { ...base, modelId: child.modelId, assetId: child.id, quantity: 1, description: child.model?.name ?? null, sortOrder: sort++ },
+      });
+    }
+    for (const bi of [...asset.childBulkItems, ...inheritedBulks]) {
+      await tx.projectLineItem.create({
+        data: {
+          ...base,
+          modelId: bi.bulkAsset.modelId,
+          bulkAssetId: bi.bulkAssetId,
+          quantity: bi.quantity,
+          description: bi.bulkAsset.model?.name ? `${bi.quantity}x ${bi.bulkAsset.model.name}` : null,
+          sortOrder: sort++,
+        },
+      });
+    }
     return;
   }
 
-  let sort = 0;
-  for (const child of asset.childAssets) {
-    await tx.projectLineItem.create({
-      data: {
-        organizationId,
-        projectId,
-        type: "EQUIPMENT",
-        modelId: child.modelId,
-        assetId: child.id,
-        quantity: 1,
-        isKitChild: true,
-        childKind: "ACCESSORY",
-        parentLineItemId: parentLine.id,
-        categoryId: parentLine.categoryId,
-        groupId: parentLine.groupId,
-        description: child.model?.name ?? null,
-        unitPrice: null,
-        pricingType: parentLine.pricingType,
-        duration: parentLine.duration,
-        sortOrder: sort++,
+  // Model-level line (no specific asset chosen — the common quoting flow). Expand
+  // the MODEL's default bulk accessories now, scaled by the line quantity, so the
+  // accessory shows on the project + documents immediately. Serialised asset-level
+  // accessories can't expand here (no specific asset picked); they materialise at
+  // warehouse prep when a unit is assigned (expandAccessoriesForAsset, which
+  // reconciles this row's quantity to the units actually assigned).
+  if (parentLine.modelId) {
+    const modelBulks = await tx.modelBulkAccessory.findMany({
+      where: { modelId: parentLine.modelId, organizationId },
+      select: {
+        bulkAssetId: true,
+        quantity: true,
+        bulkAsset: { select: { modelId: true, model: { select: { name: true } } } },
       },
+      orderBy: { sortOrder: "asc" },
     });
-  }
-  for (const bi of [...asset.childBulkItems, ...inheritedBulks]) {
-    await tx.projectLineItem.create({
-      data: {
-        organizationId,
-        projectId,
-        type: "EQUIPMENT",
-        modelId: bi.bulkAsset.modelId,
-        bulkAssetId: bi.bulkAssetId,
-        quantity: bi.quantity,
-        isKitChild: true,
-        childKind: "ACCESSORY",
-        parentLineItemId: parentLine.id,
-        categoryId: parentLine.categoryId,
-        groupId: parentLine.groupId,
-        description: bi.bulkAsset.model?.name
-          ? `${bi.quantity}x ${bi.bulkAsset.model.name}`
-          : null,
-        unitPrice: null,
-        pricingType: parentLine.pricingType,
-        duration: parentLine.duration,
-        sortOrder: sort++,
-      },
-    });
+    if (modelBulks.length === 0) return;
+
+    let sort = 0;
+    for (const bi of modelBulks) {
+      const qty = bi.quantity * Math.max(parentLine.quantity, 1);
+      await tx.projectLineItem.create({
+        data: {
+          ...base,
+          modelId: bi.bulkAsset.modelId,
+          bulkAssetId: bi.bulkAssetId,
+          quantity: qty,
+          description: bi.bulkAsset.model?.name ? `${qty}x ${bi.bulkAsset.model.name}` : null,
+          sortOrder: sort++,
+        },
+      });
+    }
   }
 }
 
@@ -462,9 +480,11 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
       },
     });
 
-    // If a specific serialised asset with permanent accessories was added,
-    // auto-expand its accessories as child lines (atomic with the parent).
-    if (line.assetId) {
+    // Auto-expand permanent accessories as child lines (atomic with the parent):
+    // a specific serialised asset expands its own + its model's; a model-level
+    // line expands the model's default accessories so they appear on the quote.
+    // Sub-hire lines are third-party stock — never expand.
+    if (!line.subHireId && line.type === "EQUIPMENT" && (line.assetId || line.modelId)) {
       await expandAccessoryChildren(tx, organizationId, projectId, line);
     }
 

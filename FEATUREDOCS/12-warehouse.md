@@ -106,6 +106,12 @@ When adding assets/kits to projects:
 ## Conflict Detection
 `lookupAssetForScan` checks both line item status AND physical asset status. If asset is `CHECKED_OUT` on another project, returns error with project name/number.
 
+## Checkout Safety Invariants
+Two invariants `checkOutItems` enforces (see `warehouse-tenant-tt-safety.int.test.ts`):
+
+- **Org-scoped asset writes.** The asset id used for a serialised checkout can come from the untrusted scan payload (`item.assetId`), so it is re-scoped to the caller's org with `findFirst({ id, organizationId })` before any write; a miss throws "Asset not found in this organization". The status/location mutation is an org-scoped `updateMany` (defense-in-depth), as is the accessory-cascade asset write in `checkoutAccessoryChildren`. Without this a caller could flip another tenant's asset status/location by scanning its id onto their own line.
+- **Accessories are T&T-gated.** The top-level T&T preflight (`assertTestTagAllowsCheckout`) only sees the scanned parent lines + their units. Accessory children are **separate line items** with their own ids/units (materialised at prep time on different line ids, or at scan time *after* the preflight runs), so they never reach the top-level gate. `checkoutAccessoryChildren` therefore runs its own `assertTestTagAllowsCheckout` over the accessory children's asset/bulk ids before flipping them — a failed/overdue accessory throws `TestTagBlockError` and rolls back the whole batch. See [Child Assets / Accessories](./48-child-assets-accessories.md).
+
 ## Cross-Navigation
 - **Warehouse → Project**: "View Project" button in warehouse header links to `/projects/[id]`
 - **Project → Warehouse**: "Warehouse" button in project header links to `/warehouse/[id]`

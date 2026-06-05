@@ -43,6 +43,7 @@ import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/compo
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { ModelChecksTab } from "@/components/assets/model-checks-tab";
 import { ModelFailureAnalytics } from "@/components/assets/model-failure-analytics";
+import { ModelAccessoriesManager } from "@/components/assets/model-accessories-manager";
 
 import { assetStatusLabels, bulkAssetStatusLabels, formatLabel } from "@/lib/status-labels";
 import { StatusIndicator } from "@/components/ui/status-indicator";
@@ -613,6 +614,35 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   </p>
                 </SidebarSection>
               )}
+
+              {/* Default accessories — every asset of this model inherits these */}
+              <SidebarSection title="Accessories">
+                <CanDo
+                  resource="model"
+                  action="update"
+                  fallback={
+                    model.bulkAccessories && model.bulkAccessories.length > 0 ? (
+                      <ul className="space-y-1 text-sm">
+                        {model.bulkAccessories.map((c) => (
+                          <li key={c.id} className="flex items-center gap-2">
+                            <span className="text-fg-3 select-none">└─</span>
+                            <span className="font-medium">
+                              {c.quantity}× {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-fg-3">No default accessories.</p>
+                    )
+                  }
+                >
+                  <ModelAccessoriesManager
+                    modelId={id}
+                    bulkAccessories={model.bulkAccessories ?? []}
+                  />
+                </CanDo>
+              </SidebarSection>
 
               {/* Activity Timeline */}
               <SidebarSection title="Activity" divider={false}>

@@ -63,6 +63,16 @@ export const assetBulkChildSchema = z.object({
 
 export type AssetBulkChildFormValues = z.input<typeof assetBulkChildSchema>;
 
+/** Attach a bulk asset as a default accessory on a Model — every asset of
+ * that model inherits it. Bulk only at the model level; always SHIPS_WITH. */
+export const modelBulkAccessorySchema = z.object({
+  bulkAssetId: z.string().min(1, "Bulk asset is required"),
+  quantity: z.coerce.number().int().min(1, "Quantity must be at least 1"),
+  notes: z.string().max(500).optional(),
+});
+
+export type ModelBulkAccessoryFormValues = z.input<typeof modelBulkAccessorySchema>;
+
 export const locationSchema = z.object({
   name: z.string().min(1, "Name is required").max(200),
   address: z.string().max(500).optional(),

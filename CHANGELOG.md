@@ -4,7 +4,7 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-## [0.12.0.1] - 2026-06-05
+## [0.13.0.1] - 2026-06-05
 
 ### Fixed
 - **Discord bot login failed with "Used disallowed intents".** The client was
@@ -13,6 +13,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the intent — the only consumer was a single-ID `guild.members.fetch(id)` call,
   which falls back to a REST request and works without the intent. No Developer
   Portal change required; just restart and the bot connects clean.
+
+## [0.13.0.0] - 2026-06-04
+
+### Added
+- **Model-level accessories.** Set a default accessory on a Model — "every
+  asset of this model ships with N of this bulk asset" — and every asset of
+  that model inherits it automatically. The new `ModelBulkAccessory` join
+  table is unique on `(modelId, bulkAssetId)`, so duplicates are blocked at
+  the DB layer. Bulk only at the model level (you can't pick "the" specific
+  cable for every asset of a model); always SHIPS_WITH (DEDICATED at the
+  model level would drain the whole shelf in one click). UI: "Accessories"
+  section on the Model detail page; asset detail page shows inherited bulk
+  rows tagged "from model".
+
+### Changed
+- Project expansion (`expandAccessoryChildren`) and warehouse scan-time
+  expansion (`expandAccessoriesForAsset`) now union the asset's own bulk
+  children with the asset's model's `bulkAccessories`, deduped by
+  `bulkAssetId` so an asset-level row wins on conflict (different quantity,
+  DEDICATED override). Idempotent — re-scans don't duplicate.
+- `getModel` and `getAsset` include `model.bulkAccessories` so the UI can
+  render the inherited rows and the asset's "(from model)" tag.
+- Removing a model accessory after a project already expanded it does NOT
+  retroactively delete the project line items — the template only governs
+  *new* expansions.
 
 ## [0.12.0.0] - 2026-06-04
 

@@ -149,6 +149,10 @@ export async function getAsset(id: string) {
             include: { file: true },
             orderBy: { sortOrder: "asc" },
           },
+          bulkAccessories: {
+            include: { bulkAsset: { include: { model: { select: { name: true } } } } },
+            orderBy: { sortOrder: "asc" },
+          },
         },
       },
       location: true,

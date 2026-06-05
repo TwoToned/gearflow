@@ -573,30 +573,45 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
               {!asset.parentAsset && (
                 <SidebarSection title="Accessories">
                   <CanDo resource="asset" action="update" fallback={
-                    (asset.childAssets.length > 0 || asset.childBulkItems.length > 0) ? (
-                      <ul className="space-y-1 text-sm">
-                        {asset.childAssets.map((c) => (
-                          <li key={c.id} className="flex items-center gap-2">
-                            <span className="text-fg-3 select-none">└─</span>
-                            <span className="font-medium">{c.assetTag}</span>
-                            <span className="text-fg-3">{c.model?.name ?? ""}</span>
-                          </li>
-                        ))}
-                        {asset.childBulkItems.map((c) => (
-                          <li key={c.id} className="flex items-center gap-2">
-                            <span className="text-fg-3 select-none">└─</span>
-                            <span className="font-medium">{c.quantity}× {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="text-sm text-fg-3">No accessories attached.</p>
-                    )
+                    (() => {
+                      const ownBulkIds = new Set(asset.childBulkItems.map((c) => c.bulkAssetId));
+                      const inherited = (asset.model?.bulkAccessories ?? []).filter(
+                        (m) => !ownBulkIds.has(m.bulkAssetId),
+                      );
+                      const total =
+                        asset.childAssets.length + asset.childBulkItems.length + inherited.length;
+                      if (total === 0) return <p className="text-sm text-fg-3">No accessories attached.</p>;
+                      return (
+                        <ul className="space-y-1 text-sm">
+                          {asset.childAssets.map((c) => (
+                            <li key={c.id} className="flex items-center gap-2">
+                              <span className="text-fg-3 select-none">└─</span>
+                              <span className="font-medium">{c.assetTag}</span>
+                              <span className="text-fg-3">{c.model?.name ?? ""}</span>
+                            </li>
+                          ))}
+                          {asset.childBulkItems.map((c) => (
+                            <li key={c.id} className="flex items-center gap-2">
+                              <span className="text-fg-3 select-none">└─</span>
+                              <span className="font-medium">{c.quantity}× {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}</span>
+                            </li>
+                          ))}
+                          {inherited.map((c) => (
+                            <li key={c.id} className="flex items-center gap-2">
+                              <span className="text-fg-3 select-none">└─</span>
+                              <span className="font-medium">{c.quantity}× {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}</span>
+                              <span className="text-[10px] uppercase tracking-wide text-fg-3">from model</span>
+                            </li>
+                          ))}
+                        </ul>
+                      );
+                    })()
                   }>
                     <AssetAccessoriesManager
                       assetId={asset.id}
                       childAssets={asset.childAssets}
                       childBulkItems={asset.childBulkItems}
+                      inheritedBulkItems={asset.model?.bulkAccessories ?? []}
                     />
                   </CanDo>
                 </SidebarSection>

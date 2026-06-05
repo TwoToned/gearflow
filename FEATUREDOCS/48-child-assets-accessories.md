@@ -15,7 +15,17 @@ mechanism but reusing its parent/child *line-item* shape.
 - **`Asset.parentAssetId`** — self-relation (`onDelete: SetNull`). A serialised
   child has exactly one parent. Parents are always serialised (Asset rows).
 - **`AssetBulkChild`** — join table for bulk accessories (e.g. "2 clamps"), with
-  `quantity` and `allocationMode`.
+  `quantity` and `allocationMode`. Asset-level — overrides the model template
+  for the same `bulkAssetId`.
+- **`ModelBulkAccessory`** — join table for **model-level** default bulk
+  accessories. "Every asset of this model ships with N of this bulk asset."
+  Unique on `(modelId, bulkAssetId)`. Inheritance kicks in at project
+  expansion: both office add and warehouse scan-time union the asset's own
+  bulk children with the model's defaults, deduped by `bulkAssetId` (asset
+  wins on conflict). Always SHIPS_WITH — DEDICATED at the model level would
+  drain the whole shelf in one click. Bulk only at the model level; serialised
+  accessories stay asset-level (you can't pick "the" specific cable for every
+  asset of a model).
 - **`AccessoryAllocationMode`** — `SHIPS_WITH` (default) | `DEDICATED`.
   - `SHIPS_WITH`: the parent "ships with" N of a bulk asset; the N are drawn
     from the live pool at prep/checkout (a normal booking). The shared pool is
@@ -44,12 +54,23 @@ what every existing query keys off.
 
 ## Flow
 
-1. **Attach** (`src/server/asset-accessories.ts`) — `addSerializedChildToAsset`,
-   `addBulkChildToAsset`, plus detach. Guards: self/nesting/already-attached,
-   kit↔accessory dual membership (symmetric check in `kits.ts`), one-level-deep,
-   cross-org. UI: `AssetAccessoriesManager` on the asset detail page.
+1. **Attach** (asset-level — `src/server/asset-accessories.ts`) —
+   `addSerializedChildToAsset`, `addBulkChildToAsset`, plus detach. Guards:
+   self/nesting/already-attached, kit↔accessory dual membership (symmetric
+   check in `kits.ts`), one-level-deep, cross-org. UI:
+   `AssetAccessoriesManager` on the asset detail page.
+
+   **Attach (model-level — `src/server/model-accessories.ts`)** —
+   `addModelBulkAccessory` / `removeModelBulkAccessory`. The unique
+   `(modelId, bulkAssetId)` constraint surfaces as `ACCESSORY_DUPLICATE`. UI:
+   `ModelAccessoriesManager` on the Model detail page. Removing a model
+   accessory after a project has already expanded it does NOT retroactively
+   delete the project line item — it's a concrete row at that point.
 2. **Onto a project** — two entry points, both producing accessory child lines
-   (`isKitChild:true`, `childKind:ACCESSORY`, `parentLineItemId`):
+   (`isKitChild:true`, `childKind:ACCESSORY`, `parentLineItemId`) AND both
+   unioning the asset's own bulk children with the asset's model's
+   `bulkAccessories`, deduped by `bulkAssetId` so asset-level overrides win
+   on conflict:
    - Office: adding a *specific* serialised asset (`expandAccessoryChildren`,
      `line-items.ts`) auto-expands children atomic with the parent line.
    - Warehouse: assigning a specific unit to a *model-level* line at prep or
@@ -79,6 +100,9 @@ what every existing query keys off.
   scan-the-parent (3).
 - `src/lib/pdfme/plugins/accessories-render.test.ts` — full pipeline: filter →
   indented render → height reservation (3).
+- `src/server/model-accessories.int.test.ts` — model inheritance: office add,
+  asset override wins, warehouse scan-time inheritance + idempotency, unique
+  constraint, "removing the template doesn't affect past expansions" (5).
 
 ## Not in v1
 

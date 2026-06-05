@@ -58,7 +58,7 @@ The warehouse uses a Pick/Prep → Deploy → Return flow. Items are **prepped**
    - DAMAGED → asset status `IN_MAINTENANCE`, disconnects
    - MISSING → asset status `LOST`, disconnects
 3. For kit/prep-kit: `checkInKit` atomically reverses deployment
-4. Returning a parent asset cascades the return to its permanent accessories via `checkinAccessoryChildren` (`line-item-fulfillment.ts`) — shared, so both `checkInItems` AND the **check-and-store** flow (`completeCheckAndStore`) release the accessories; de-prep also clears them from the deploy-staging board. See [Child Assets / Accessories](./48-child-assets-accessories.md) (note the multi-quantity over-return limitation documented there).
+4. Returning a parent asset cascades the return to its permanent accessories via `checkinAccessoryChildren` (`line-item-fulfillment.ts`) — shared, so both `checkInItems` AND the **check-and-store** flow (`completeCheckAndStore`) release the accessories; de-prep also clears them from the deploy-staging board. On a multi-quantity model line, the cascade is **scoped to the returned unit** (`returnedAssetId`): serialised accessories return only with their own host asset, and the shared bulk accessory clears one unit's share per return, fully releasing once every host unit is back. The cascade only fires when the parent return actually flipped a unit (`unitsFlipped > 0`), so re-scanning an already-returned unit can't double-return the shared accessory. See [Child Assets / Accessories](./48-child-assets-accessories.md).
 
 ## Kit Verification
 Before deploying or returning a kit (or prep-kit) with unverified items:

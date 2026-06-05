@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { getOrgContext, requirePermission } from "@/lib/org-context";
+import { requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import type { Prisma } from "@/generated/prisma/client";
@@ -19,6 +19,12 @@ async function assertAssigneeInOrg(
   assigneeUserId?: string | null,
   assigneeCrewId?: string | null,
 ) {
+  // A task is assigned to EITHER a user OR a crew member, never both. The UI
+  // enforces this, but server actions can be called directly, so reject the
+  // dual-assignee case here to keep the invariant true at the data layer.
+  if (assigneeUserId && assigneeCrewId) {
+    throw new Error("A task can be assigned to either a user or a crew member, not both");
+  }
   if (assigneeUserId) {
     const member = await prisma.member.findFirst({
       where: { organizationId, userId: assigneeUserId },
@@ -255,7 +261,10 @@ export async function reorderProjectTasks(projectId: string, orderedIds: string[
  * across every project in the org. Powers the user-centric home screen.
  */
 export async function getMyOpenTasks(limit = 25) {
-  const { organizationId, userId } = await getOrgContext();
+  // Gate on project read so users without project visibility can't pull task
+  // titles + project names (matches getProjectTasks). requirePermission returns
+  // the same { organizationId, userId } shape as getOrgContext.
+  const { organizationId, userId } = await requirePermission("project", "read");
 
   const tasks = await prisma.projectTask.findMany({
     where: {

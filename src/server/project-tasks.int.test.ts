@@ -120,6 +120,25 @@ describe("project tasks", () => {
     ).rejects.toThrow(/not a member/i);
   });
 
+  it("rejects a task assigned to both a user and a crew member", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id);
+    act(org.id, user.id);
+    const project = await makeProject(org.id);
+    const crew = await testPrisma.crewMember.create({
+      data: { id: createId(), organizationId: org.id, firstName: "Sam", lastName: "Crew" },
+    });
+
+    await expect(
+      createProjectTask({
+        projectId: project.id,
+        title: "x",
+        assigneeUserId: user.id,
+        assigneeCrewId: crew.id,
+      }),
+    ).rejects.toThrow(/either a user or a crew member/i);
+  });
+
   it("reorders tasks", async () => {
     const org = await createOrgFixture();
     const user = await createUserFixture(org.id);

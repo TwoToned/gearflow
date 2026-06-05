@@ -4,6 +4,16 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.14.6.0] - 2026-06-05
+
+### Fixed
+- **Accessories expand per unit on packing slips.** When an item ships with an
+  accessory and you pull, say, 10 of it, the accessory now lists 10 checkable
+  lines (one per unit) instead of a single combined row — so the picker grabs and
+  ticks one for each. An accessory is just an auto-added asset, so it now gets the
+  same per-unit treatment a real asset row does, including when the item sits
+  inside a project group.
+
 ## [0.14.5.0] - 2026-06-05
 
 ### Fixed

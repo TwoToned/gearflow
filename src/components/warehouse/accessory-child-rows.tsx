@@ -49,7 +49,7 @@ export function AccessoryChildRows({
             <div className="flex items-center gap-1.5">
               <Cable className="h-3.5 w-3.5 text-fg-3" />
               <span>{acc.model?.name || acc.description || "Accessory"}</span>
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-fg-3">
                 Accessory
               </Badge>
             </div>

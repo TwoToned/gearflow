@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Printer, Square, Container } from "lucide-react";
 
 import { getProjectPullSheet } from "@/server/warehouse";
+import { getAccessoryChildren } from "@/components/warehouse/pick-list-progress";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { formatDate } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
@@ -321,8 +322,7 @@ export default function PullSheetPage({
                           </TableRow>
                         ))}
                         {/* Accessories attached to this asset — packed alongside it */}
-                        {!isKit && ((item.childLineItems || []) as Array<Record<string, unknown>>)
-                          .filter((c) => c.childKind === "ACCESSORY")
+                        {!isKit && getAccessoryChildren(item)
                           .map((child) => {
                             const childModel = child.model as { name: string; modelNumber?: string | null } | null;
                             const childAsset = child.asset as { assetTag: string; location?: { name: string } | null } | null;

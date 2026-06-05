@@ -323,12 +323,6 @@ export async function returnLineUnits(
 }
 
 /**
- * Mark a unit prepped/packed (the pick-and-pack step before checkout).
- * Serialised and bulk lines get a PACKED unit row; a generic line with no
- * asset assigned just carries prepStatus on the order line. Rolls the line
- * up and returns it (with model/asset/bulkAsset included).
- */
-/**
  * Return all accessory children of a parent line alongside the parent. Mirrors
  * checkoutAccessoryChildren on the return side: accessories are inseparable from
  * their parent, so any code path that returns the parent must cascade here.
@@ -490,6 +484,12 @@ export async function expandAccessoriesForAsset(
   return created;
 }
 
+/**
+ * Mark a unit prepped/packed (the pick-and-pack step before checkout).
+ * Serialised and bulk lines get a PACKED unit row; a generic line with no
+ * asset assigned just carries prepStatus on the order line. Rolls the line
+ * up and returns it (with model/asset/bulkAsset included).
+ */
 export async function prepUnit(
   tx: Prisma.TransactionClient,
   args: {

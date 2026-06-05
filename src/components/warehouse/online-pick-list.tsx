@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Container, Check, Loader2 } from "lucide-react";
 import { getProjectPullSheet } from "@/server/warehouse";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { getAccessoryChildren, pickListProgress } from "./pick-list-progress";
 
@@ -340,9 +341,9 @@ function PickListRow({
         {label}
       </span>
       {accessory && (
-        <span className="rounded bg-bg-inset px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-fg-3 shrink-0">
+        <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-fg-3 shrink-0">
           Accessory
-        </span>
+        </Badge>
       )}
       {tag && (
         <span className="font-mono text-xs text-fg-3 shrink-0">{tag}</span>

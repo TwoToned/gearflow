@@ -146,6 +146,13 @@ what every existing query keys off.
    `childKind:ACCESSORY` grandchildren). Tested via the grouped-member case in
    `accessories-render.test.ts`.
 
+   **Per-unit on packing docs.** On packing-list/pull-slip docs (showPerUnitCheckboxes),
+   a qty>1 accessory expands into one checkable line per unit — an accessory is
+   just an auto-added asset, so it gets the same per-unit treatment a real asset
+   row does. This holds even when the accessory is a grandchild (its parent is a
+   group member): `gearflow-table.ts` draws the per-unit lines and
+   `section-renderer.ts` reserves their height.
+
 ## Tests
 
 - `src/server/asset-accessories.int.test.ts` — attach/detach, both allocation

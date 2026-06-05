@@ -121,6 +121,42 @@ describe("accessories — full PDF pipeline (Phase F)", () => {
     expect(texts).toMatch(/Micon Adapter/);
   });
 
+  it("expands an accessory per unit on a packing list (10x EW-DX → 10 battery lines)", async () => {
+    // EW-DX (qty 10) is a group member; its battery accessory is a grandchild.
+    const battery = makeLineItem({
+      id: "acc-batt",
+      isKitChild: true,
+      childKind: "ACCESSORY",
+      quantity: 10,
+      status: "CONFIRMED",
+      bulkAsset: { id: "b", assetTag: "TTP00099", model: { name: "AA Battery" } } as never,
+      model: { name: "AA Battery" } as never,
+      description: "AA Battery",
+    });
+    const ewdx = makeLineItem({
+      id: "ewdx",
+      quantity: 10,
+      status: "CONFIRMED",
+      model: { name: "EW-DX SK" } as never,
+      description: "EW-DX SK",
+      childLineItems: [battery],
+    });
+    const group = makeLineItem({
+      id: "group-wm",
+      isGroupRow: true,
+      quantity: 1,
+      status: "CONFIRMED",
+      model: { name: "Wireless Michael" } as never,
+      childLineItems: [ewdx],
+    });
+
+    const calls = await runTablePlugin([group], { showPerUnitCheckboxes: true });
+    const texts = calls.drawText.map((c) => c.text);
+    // One battery line per EW-DX unit — not a single qty-10 row.
+    const batteryUnitLines = texts.filter((t) => /^AA Battery - \d+$/.test(t));
+    expect(batteryUnitLines).toHaveLength(10);
+  });
+
   it("reserves height for a grouped accessory parent's accessories", () => {
     const section = { id: "s", type: "table", settings: { showKitChildren: true } } as never;
     const withAcc = { line_items: [groupWithAccessoryMember(true)] } as never;

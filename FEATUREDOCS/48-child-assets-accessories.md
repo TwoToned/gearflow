@@ -83,7 +83,32 @@ what every existing query keys off.
    `type: "asset_child"` ("scan the parent") for a scanned accessory.
    `checkOutItems`/`checkInItems` cascade the parent's deploy/return to accessory
    child lines through the same unit path (`ensureSerialisedUnit` /
-   `ensureBulkUnit` / `returnLineUnits`) inside the parent's transaction.
+   `ensureBulkUnit` / `returnLineUnits`) inside the parent's transaction. The
+   return cascade lives in `line-item-fulfillment.ts:checkinAccessoryChildren`
+   (shared, not warehouse-private) so the **check-and-store** return flow
+   (`check-records.ts:completeCheckAndStore`) cascades too — any code path that
+   returns a parent must call it, or accessories stick at `CHECKED_OUT`.
+   `completeCheckAndDeprep` resets accessory children `prepStatus` so they don't
+   linger on the deploy-staging board.
+
+   **Pick sheets** — accessories hang off a normal top-level asset line (not a
+   kit), so both the interactive (`online-pick-list.tsx`) and printable
+   (`pull-sheet/page.tsx`) sheets render them indented under their parent,
+   badged "Accessory", and count them in pick progress. The `getProjectPullSheet`
+   filter drops accessory rows from the flat list (`isKitChild:true`) — they
+   travel on the parent's `childLineItems` instead. Detect a renderable
+   accessory child by `childKind === "ACCESSORY"`.
+
+   **Project equipment table** (`equipment-rows.tsx`) — `describeRow` treats an
+   accessory parent (top-level asset line, no `kitId`, has `ACCESSORY` children)
+   as an expandable parent so its children render indented like kit members,
+   each badged "Accessory". Accessory children are hidden from the flat list by
+   `isHiddenFromList` (they're `isKitChild:true`).
+
+   **Known gap (not yet wired):** the scan-driven deploy/return tabs
+   (`deploy-tab.tsx` / `return-tab.tsx`) only group *kit* children visually;
+   accessories cascade correctly on a parent scan but aren't shown as a distinct
+   nested group there. Display-only — fulfillment is correct.
 4. **PDFs** — accessories render indented under the parent on **all** docs
    (internal and customer-facing). An accessory parent is detected by
    "top-level line, no `kitId`, has `ACCESSORY` children"; both the render
@@ -97,7 +122,9 @@ what every existing query keys off.
 - `src/server/project-accessories.int.test.ts` — project expansion, cascade
   delete, child-removal block, totals exclusion (5).
 - `src/server/warehouse-accessories.int.test.ts` — checkout/checkin cascade,
-  scan-the-parent (3).
+  check-and-store cascade, scan-the-parent (6).
+- `src/components/projects/equipment-rows.test.ts` — `describeRow` accessory
+  parent → expandable; `isHiddenFromList` nests accessory children (4).
 - `src/lib/pdfme/plugins/accessories-render.test.ts` — full pipeline: filter →
   indented render → height reservation (3).
 - `src/server/model-accessories.int.test.ts` — model inheritance: office add,

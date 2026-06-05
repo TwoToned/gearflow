@@ -1,0 +1,21 @@
+-- Refresh planner statistics after the model-accessory backfill
+-- (20260605130000_backfill_model_accessories) bulk-inserted accessory child
+-- rows into project_line_item.
+--
+-- WHY: a large bulk insert leaves the query planner on stale row-count
+-- statistics until autovacuum's auto-ANALYZE eventually catches up. Until then
+-- the planner can pick pathological plans (nested-loop instead of hash join,
+-- or ignoring an index) for hot queries that scan project_line_item
+-- (getProject, the overbooked-status cross-project scan, the kit
+-- double-booking check). In prod this manifested as intermittent ~1-minute,
+-- app-wide stalls: one slow query saturated the connection pool and every
+-- other request — including reads like the kit picker — queued behind it until
+-- the slow query cleared. It "fixed itself" hours later precisely when
+-- autovacuum finally ran ANALYZE. This migration does that deterministically at
+-- deploy time instead of waiting on autovacuum.
+--
+-- CONVENTION: any migration that bulk-inserts/updates/deletes a large table
+-- MUST end with `ANALYZE "<table>";`. Leaving the planner on stale statistics
+-- after a bulk data change is how you get random, hard-to-reproduce slowdowns
+-- that resolve on their own. See CLAUDE.md (Prisma v6).
+ANALYZE "project_line_item";

@@ -18,6 +18,15 @@ const serverEnvSchema = z.object({
   BETTER_AUTH_SECRET: z.string().min(1, "BETTER_AUTH_SECRET is required"),
   BETTER_AUTH_URL: z.string().url("BETTER_AUTH_URL must be a valid URL"),
 
+  // DB connection hardening (see src/lib/db-url.ts). Defaults are safe for a
+  // single-node Postgres; tune per-box. statement_timeout is the key stability
+  // guard — it stops one slow query from holding a pooled connection and
+  // stalling the whole app. Set DB_STATEMENT_TIMEOUT_MS=0 to disable (not advised).
+  DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().nonnegative().default(30000),
+  DB_POOL_TIMEOUT_S: z.coerce.number().int().nonnegative().default(10),
+  // Omit to keep Prisma's cpu-based default (cpus * 2 + 1).
+  DB_CONNECTION_LIMIT: z.coerce.number().int().positive().optional(),
+
   // Runtime
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 

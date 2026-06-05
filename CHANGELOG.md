@@ -4,6 +4,25 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.14.3.0] - 2026-06-05
+
+### Fixed
+- **App-wide stability after data backfills.** After the v0.14.2.0 model-accessory
+  backfill, the app intermittently froze for everyone for about a minute, then
+  recovered on its own (the kit picker would come up empty, moving items stalled,
+  prep felt slow). Root cause: the bulk insert left Postgres on stale query-planner
+  statistics, so it occasionally chose a pathological plan for hot queries — and with
+  no per-query timeout, one slow query held a database connection long enough to
+  starve the whole pool. The fix refreshes statistics at deploy time instead of
+  waiting hours for autovacuum to catch up.
+
+### Changed
+- **Database connections are now bounded so one slow query can't take the app down.**
+  The runtime connection sets a `statement_timeout` (default 30s) plus pool-wait
+  limits, so a single slow query fails on its own instead of stalling every other
+  request. Tunable via `DB_STATEMENT_TIMEOUT_MS`, `DB_POOL_TIMEOUT_S`, and
+  `DB_CONNECTION_LIMIT`; migrations are unaffected, so backfills are never cut off.
+
 ## [0.14.2.0] - 2026-06-05
 
 ### Fixed

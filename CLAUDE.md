@@ -88,6 +88,15 @@ npx prisma migrate dev   # Apply all migrations + generate client
 - `PLATFORM_NAME` — Display name (default: `GearFlow`)
 - `ADMIN_REGISTRATION_TOKEN` — Secret token for `/register/admin?token=...`
 
+**DB connection hardening (optional, safe defaults):** layered onto the runtime
+`DATABASE_URL` in `src/lib/db-url.ts` (NOT onto `prisma migrate`, so backfills
+aren't killed). Anything you put in the URL itself wins.
+- `DB_STATEMENT_TIMEOUT_MS` — per-query server-side cap (default `30000`). The key
+  stability guard: stops one slow query from holding a pooled connection and
+  stalling the whole app. `0` disables (not advised).
+- `DB_POOL_TIMEOUT_S` — wait for a free pooled connection before erroring (default `10`).
+- `DB_CONNECTION_LIMIT` — max pooled connections (default: Prisma's `cpus * 2 + 1`).
+
 ## Critical Conventions
 
 ### shadcn/ui v4 — `render` prop, NOT `asChild`
@@ -100,6 +109,14 @@ npx prisma migrate dev   # Apply all migrations + generate client
 ### Prisma v6
 - Import from `@/generated/prisma/client` (NOT `@/generated/prisma`)
 - After schema changes: `npx prisma migrate dev` → `npx prisma generate` → restart dev
+- **Bulk-data migrations MUST end with `ANALYZE "<table>";`.** A large
+  `INSERT`/`UPDATE`/`DELETE` leaves the planner on stale row-count statistics
+  until autovacuum eventually catches up; until then it can pick pathological
+  plans for hot queries, and one slow query saturates the connection pool and
+  stalls the whole app intermittently (then "fixes itself" when autovacuum runs
+  ANALYZE). See `20260605140000_analyze_project_line_item`. The runtime
+  `statement_timeout` (above) bounds the blast radius, but fresh stats are the
+  actual fix.
 
 ### Server Actions
 - All in `src/server/` with `"use server"` directive

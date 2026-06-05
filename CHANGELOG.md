@@ -4,6 +4,15 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.16.0.0] - 2026-06-06
+
+### Added
+- **Project task lists.** Every project now has a **Tasks** tab — an Asana-style
+  to-do list. Add tasks with a status (To do / In progress / Done), priority, due
+  date, an optional checklist of sub-steps, and an assignee (an org member or a
+  crew member). Overdue tasks are flagged, and each task tracks when it was
+  completed. Reads/writes respect project permissions.
+
 ## [0.14.6.0] - 2026-06-05
 
 ### Fixed

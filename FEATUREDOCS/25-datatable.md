@@ -39,3 +39,33 @@
 4. Call `buildFilterWhere(filters, filterColumnDefs)` in the server action
 5. Pass all state to `<DataTable>` component
 6. For `tags` filters: handle separately with `{ hasSome: values }` (Prisma array filter)
+7. To enable Saved Views, destructure `currentConfig, applyConfig` from `useTablePreferences`
+   and pass `savedViews={{ tableId, currentConfig, applyConfig }}` to `<DataTable>` (see below)
+
+## Saved Views (per-user, org-scoped presets)
+Users can save a named filter + sort + column-visibility + page-size preset on any list
+and recall it later. Views are **per-user and org-scoped** (server-persisted, so they
+follow the user across devices) — unlike `useTablePreferences`, which is the user's
+single live localStorage state per table.
+
+- **Model:** `SavedTableView` (`saved_table_view`) — `organizationId`, `userId`, `tableId`,
+  `name`, `config` (Json `SavedViewConfig`), `isDefault`. Unique on `(userId, tableId, name)`.
+- **Config shape:** `SavedViewConfig` in `src/lib/saved-views.ts` — `{ filters, sortBy,
+  sortOrder, columnVisibility, pageSize }`. Search text is intentionally NOT captured
+  (it's an ephemeral lookup, not part of a reusable view).
+- **Server actions:** `src/server/saved-views.ts` — `getSavedViews(tableId)`,
+  `createSavedView`, `updateSavedView`, `deleteSavedView`, `setDefaultSavedView(tableId, id|null)`.
+  Personal data, so they use `getOrgContext()` (auth + org) not `requirePermission`; every
+  query is scoped to BOTH `organizationId` AND `userId`. At most one default per
+  `(user, tableId)`, enforced in the action (a new default unsets the prior one in a txn).
+- **Hook surface:** `useTablePreferences` returns `currentConfig` (snapshot for "Save current
+  view") and `applyConfig(config)` (restore a saved/default view into live state).
+- **UI:** `SavedViewsMenu` (`src/components/ui/saved-views-menu.tsx`) renders in the DataTable
+  toolbar when the `savedViews` prop is passed. It lists views (apply on click), shows a
+  dirty marker (`*`) when the live state diverges from the active view, offers "Update",
+  "Save current view…" (with a "make default" checkbox), per-view star (default toggle) and
+  delete, and "Clear view". The **default view auto-applies on first mount** only when the
+  table has no active filters, so it never clobbers a deep-linked or in-progress filter set.
+- **Wired on:** all 14 list pages that use `useTablePreferences` (assets, models, clients,
+  crew, locations, projects, suppliers, kits, maintenance, T&T registry, activity log,
+  damage, timesheets, stocktakes).

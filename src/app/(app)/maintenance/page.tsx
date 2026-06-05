@@ -269,6 +269,7 @@ export default function MaintenancePage() {
     setPage, setPageSize, handleSort,
     columnVisibility, toggleColumnVisibility, resetPreferences,
     filters, setFilter,
+    currentConfig, applyConfig,
   } = useTablePreferences("maintenance", { sortBy: "scheduledDate", sortOrder: "asc" });
 
   const [search, setSearch] = useState("");
@@ -348,6 +349,7 @@ export default function MaintenancePage() {
           columnVisibility={columnVisibility}
           onToggleColumnVisibility={toggleColumnVisibility}
           onResetPreferences={resetPreferences}
+          savedViews={{ tableId: "maintenance", currentConfig, applyConfig }}
           isLoading={isLoading}
           emptyPreset="maintenance"
           toolbarActions={

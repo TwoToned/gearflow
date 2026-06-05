@@ -151,6 +151,7 @@ export default function KitsPage() {
     setPage, setPageSize, handleSort,
     columnVisibility, toggleColumnVisibility, resetPreferences,
     filters, setFilter, clearFilters,
+    currentConfig, applyConfig,
   } = useTablePreferences("kits", { sortBy: "assetTag", sortOrder: "asc" });
 
   const [search, setSearch] = useState("");
@@ -262,6 +263,7 @@ export default function KitsPage() {
           columnVisibility={columnVisibility}
           onToggleColumnVisibility={toggleColumnVisibility}
           onResetPreferences={resetPreferences}
+          savedViews={{ tableId: "kits", currentConfig, applyConfig }}
           isLoading={isLoading}
           emptyPreset="kits"
           enableRowSelection

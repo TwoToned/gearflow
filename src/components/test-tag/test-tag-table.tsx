@@ -204,6 +204,7 @@ function TestTagTableContent() {
     setPage, setPageSize, handleSort,
     columnVisibility, toggleColumnVisibility, resetPreferences,
     filters, setFilter,
+    currentConfig, applyConfig,
   } = useTablePreferences("test-tag-registry", { sortBy: "testTagId", sortOrder: "asc" });
 
   const [search, setSearch] = useState("");
@@ -250,6 +251,7 @@ function TestTagTableContent() {
       columnVisibility={columnVisibility}
       onToggleColumnVisibility={toggleColumnVisibility}
       onResetPreferences={resetPreferences}
+      savedViews={{ tableId: "test-tag-registry", currentConfig, applyConfig }}
       isLoading={isLoading}
       emptyPreset="maintenance"
       emptyTitle="No test tag assets found"

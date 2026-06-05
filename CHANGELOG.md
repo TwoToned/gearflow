@@ -4,6 +4,16 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.15.0.0] - 2026-06-06
+
+### Added
+- **Saved views on every list.** Save the current filters, sort, visible columns,
+  and page size on any list page as a named view, then recall it in one click —
+  e.g. "Overdue projects" or "Assets in maintenance". Star a view to make it your
+  default for that list and it loads automatically next time. Views are personal
+  to you and follow you across devices. Available on assets, models, clients, crew,
+  locations, projects, suppliers, kits, maintenance, T&T registry, activity log,
+  damage, timesheets, and stocktakes.
 ## [0.14.7.0] - 2026-06-06
 
 ### Fixed

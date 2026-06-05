@@ -241,6 +241,7 @@ export function ProjectTable() {
     setPage, setPageSize, handleSort,
     columnVisibility, toggleColumnVisibility, resetPreferences,
     filters, setFilter,
+    currentConfig, applyConfig,
   } = useTablePreferences("projects", { sortBy: "rentalStartDate", sortOrder: "asc" });
 
   const [search, setSearch] = useState("");
@@ -305,6 +306,7 @@ export function ProjectTable() {
       columnVisibility={columnVisibility}
       onToggleColumnVisibility={toggleColumnVisibility}
       onResetPreferences={resetPreferences}
+      savedViews={{ tableId: "projects", currentConfig, applyConfig }}
       isLoading={isLoading}
       emptyPreset="projects"
       toolbarActions={toolbarActions}

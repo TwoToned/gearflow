@@ -4,6 +4,24 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.14.1.0] - 2026-06-05
+
+### Fixed
+- **Accessories on multi-asset bookings now return with the right unit.**
+  Previously, on a line booked with several of the same asset (each carrying its
+  own attached accessory), returning one asset also marked its siblings'
+  still-deployed accessories as returned — and a "damaged" return could send a
+  sibling's cable to maintenance. Returns now follow the specific asset scanned.
+- **Attached accessory quantities now scale with the booking.** Ten lights that
+  each ship with a clamp now reserve ten clamps, not one — so pull sheets,
+  availability, and the deploy/return screens show the real count. Returning one
+  asset brings back its share; the accessory clears once every asset is back.
+- **Re-scanning an already-returned asset no longer double-returns** its shared
+  accessories, and two warehouse stations checking out the same booking at once
+  no longer under-count its accessories.
+- Attached accessories now also show on the deploy/return screens for
+  multi-asset model lines, and hide correctly when the group is collapsed.
+
 ## [0.14.0.0] - 2026-06-05
 
 ### Added

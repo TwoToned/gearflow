@@ -12,7 +12,7 @@ import {
   projectSchema,
   type ProjectFormValues,
 } from "@/lib/validations/project";
-import { createProject, updateProject } from "@/server/projects";
+import { createProject, updateProject, peekNextProjectNumber } from "@/server/projects";
 import { addProjectManager, removeProjectManager } from "@/server/project-managers";
 import { getClients } from "@/server/clients";
 import { getLocations } from "@/server/locations";
@@ -82,6 +82,15 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp, initialMa
   const orgId = activeOrg?.id;
   const isEditing = !!initialData;
   const isTemplate = isTemplateProp ?? initialData?.isTemplate ?? false;
+
+  // When creating a project and the org has auto project numbers configured,
+  // preview the next code so the user can leave the field blank.
+  const { data: nextProjectNumber } = useQuery({
+    queryKey: ["project-number-next", orgId],
+    queryFn: () => peekNextProjectNumber(),
+    enabled: !isTemplate && !isEditing && !!orgId,
+    staleTime: 30_000,
+  });
   const [quickCreateClientOpen, setQuickCreateClientOpen] = useState(false);
   const [quickCreateLocationOpen, setQuickCreateLocationOpen] = useState(false);
   const [selectedManagerIds, setSelectedManagerIds] = useState<string[]>(initialManagerIds);
@@ -211,13 +220,21 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp, initialMa
             <FormSection>
               {!isTemplate && (
                 <div className="space-y-2">
-                  <Label htmlFor="projectNumber">Project Code</Label>
+                  <Label htmlFor="projectNumber">
+                    Project Code {nextProjectNumber && <span className="text-fg-3 font-normal">(optional)</span>}
+                  </Label>
                   <Input
                     id="projectNumber"
                     {...form.register("projectNumber")}
-                    placeholder="e.g. PROJ-2026-0001"
+                    placeholder={nextProjectNumber ? `Auto: ${nextProjectNumber}` : "e.g. PROJ-2026-0001"}
                     className="font-mono"
                   />
+                  {nextProjectNumber && !isEditing && (
+                    <p className="text-xs text-fg-3">
+                      Leave blank to auto-generate. Next:{" "}
+                      <span className="font-mono text-fg-2">{nextProjectNumber}</span>
+                    </p>
+                  )}
                   {form.formState.errors.projectNumber && (
                     <p className="text-xs text-destructive">
                       {form.formState.errors.projectNumber.message}

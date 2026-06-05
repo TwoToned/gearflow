@@ -365,6 +365,16 @@ Full feature doc: [FEATUREDOCS/47-cross-type-equipment-unification.md].
 
 ## Project Management
 
+### ~~Configurable Auto-Incrementing Project Codes~~ ✅ SHIPPED
+Shipped on branch `feat/project-codes`. Optional per-org template (e.g. `%YY%MM%INC` → June's
+first project `260601`). Pure `%`-token engine (`src/lib/project-number.ts`: %YYYY/%YY/%MM/%M/
+%DD/%D/%INCREMENT|%INC|%SEQ), configurable reset period (NONE/YEARLY/MONTHLY/DAILY) and
+increment padding, stored in `OrgSettings`. Atomic `ProjectNumberSequence` counter (INSERT ON
+CONFLICT) allocated inside the create txn with manual-collision retry; manual codes still win
+and blank-without-format still errors. Settings → Project Defaults UI with live preview;
+create-form shows the next code + "leave blank to auto-generate". 12 unit + 6 integration tests.
+Full doc: [FEATUREDOCS/51](./FEATUREDOCS/51-project-numbering.md).
+
 ### ~~Project Todo Lists (Asana-Style)~~ ✅ SHIPPED
 Shipped on branch `feat/project-tasks`. `ProjectTask` model (status TODO/IN_PROGRESS/DONE,
 priority, due date, inline JSON checklist, assignee = org user OR crew member, completedAt

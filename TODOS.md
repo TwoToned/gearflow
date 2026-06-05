@@ -30,6 +30,19 @@ Shipped in v0.8.2.0. `OrgSettings.daysPerMonth` (validated 20-31, default 28),
 `optimizePrice` + `computeTotalDays`, UI field in Settings → Project Defaults
 with onChange clamping. 10 new pricing tests + 2 resolver tests.
 
+## Schema / Migrations
+
+### Pre-existing Prisma schema drift (surfaced during saved-views work)
+**What:** `prisma migrate dev` on the saved-views branch auto-detected drift between
+`schema.prisma` and the migration history that has no dedicated migration:
+`project_service.billableToClient` should be `SET NOT NULL` (schema has
+`@default(false)`), and `updatedAt` should `DROP DEFAULT` on `group_template`,
+`project_category`, and `project_group`. These were deliberately **excluded** from the
+saved-views migration (a NOT NULL alter can fail on prod rows with NULLs).
+**What to do:** Author a dedicated migration that reconciles these, after auditing
+`project_service` for NULL `billableToClient` rows (backfill to `false` first if any).
+**Priority:** P2
+
 ## Testing Expansion
 
 ### Server Action Integration Tests

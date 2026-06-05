@@ -285,14 +285,19 @@ function calculateItemHeight(
     for (const child of children) {
       heightPt += CHILD_ROW_PT;
       const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
+      // A group member that is itself an accessory parent (no kitId, has
+      // ACCESSORY children) — the plugin recurses into these the same as nested
+      // kits, so reserve their grandchild rows or the section tail-drops.
+      const childHasAccessories =
+        !child.kitId && ((child.childLineItems ?? []).some((gc) => gc.childKind === "ACCESSORY"));
 
       // Per-unit checkboxes for child items
       if (settings.showPerUnitCheckboxes && !isNestedKit && child.quantity > 1) {
         heightPt += child.quantity * PER_UNIT_ROW_PT;
       }
 
-      // Grandchildren (nested kit members)
-      if (isNestedKit) {
+      // Grandchildren (nested kit members, or an accessory parent's accessories)
+      if (isNestedKit || childHasAccessories) {
         heightPt += (child.childLineItems || []).length * GRANDCHILD_ROW_PT;
       }
     }

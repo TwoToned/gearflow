@@ -48,6 +48,42 @@ function lightWithAccessories(): DocumentLineItem {
   });
 }
 
+/**
+ * The user's shape: an accessory parent that is a GROUP MEMBER. structureLineItems
+ * nests group members as the synthetic group row's childLineItems, so the accessory
+ * parent becomes a child and its accessories become GRANDchildren — which the plugin
+ * previously only rendered for nested kits (child.kitId), silently dropping them.
+ */
+function groupWithAccessoryMember(withAccessory = true): DocumentLineItem {
+  const micon = makeLineItem({
+    id: "acc-micon",
+    isKitChild: true,
+    childKind: "ACCESSORY",
+    quantity: 12,
+    status: "CONFIRMED",
+    bulkAsset: { id: "b-mic", assetTag: "MICON", model: { name: "Micon Adapter" } } as never,
+    model: { name: "Micon Adapter" } as never,
+    description: "12x Micon Adapter",
+  });
+  const headset = makeLineItem({
+    id: "member-headset",
+    quantity: 12,
+    status: "CONFIRMED",
+    model: { name: "IMX6A Headset" } as never,
+    description: "IMX6A Headset",
+    childLineItems: withAccessory ? [micon] : [],
+  });
+  return makeLineItem({
+    id: "group-wm",
+    isGroupRow: true,
+    quantity: 1,
+    status: "CONFIRMED",
+    model: { name: "Wireless Michael" } as never,
+    description: "Wireless Michael",
+    childLineItems: [headset],
+  });
+}
+
 describe("accessories — full PDF pipeline (Phase F)", () => {
   it("filters accessory children out of the top-level parent list", () => {
     const parent = lightWithAccessories();
@@ -73,6 +109,25 @@ describe("accessories — full PDF pipeline (Phase F)", () => {
     const parentX = calls.drawText.find((c) => /LED Par/.test(c.text))!.x;
     const clampX = calls.drawText.find((c) => /Safety Clamp/.test(c.text))!.x;
     expect(clampX).toBeGreaterThan(parentX);
+  });
+
+  it("renders the accessories of a GROUPED accessory parent (group member)", async () => {
+    const group = groupWithAccessoryMember();
+    const calls = await runTablePlugin([group], { showKitChildren: false });
+    const texts = calls.drawText.map((c) => c.text).join("\n");
+    expect(texts).toMatch(/Wireless Michael/); // group header
+    expect(texts).toMatch(/IMX6A Headset/); // the accessory parent (group member)
+    // The bug: its accessory grandchild was missing from the PDF.
+    expect(texts).toMatch(/Micon Adapter/);
+  });
+
+  it("reserves height for a grouped accessory parent's accessories", () => {
+    const section = { id: "s", type: "table", settings: { showKitChildren: true } } as never;
+    const withAcc = { line_items: [groupWithAccessoryMember(true)] } as never;
+    const withoutAcc = { line_items: [groupWithAccessoryMember(false)] } as never;
+    const hAcc = estimateSectionHeight(section, withAcc, "packing-list");
+    const hPlain = estimateSectionHeight(section, withoutAcc, "packing-list");
+    expect(hAcc).toBeGreaterThan(hPlain);
   });
 
   it("reserves height for accessory children (no tail-drop)", () => {

@@ -136,6 +136,16 @@ what every existing query keys off.
    (`gearflow-table.ts`) and the height calc (`section-renderer.ts`) handle it,
    so children are reserved and never tail-dropped.
 
+   **Grouped accessory parents (the two-level case).** When an accessory parent is
+   a **project-group member**, `structureLineItems` nests it as the synthetic
+   group row's `childLineItems`, so the accessory parent is a *child* and its
+   accessories are *grandchildren*. The plugin/height previously only recursed
+   into grandchildren for nested kits (`child.kitId`), silently dropping a grouped
+   accessory parent's accessories. Both `gearflow-table.ts` and `section-renderer.ts`
+   now also recurse when a child is an accessory parent (`!child.kitId` +
+   `childKind:ACCESSORY` grandchildren). Tested via the grouped-member case in
+   `accessories-render.test.ts`.
+
 ## Tests
 
 - `src/server/asset-accessories.int.test.ts` — attach/detach, both allocation

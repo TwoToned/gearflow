@@ -13,6 +13,9 @@ export interface LineItem {
   bulkAssetId: string | null;
   kitId: string | null;
   isKitChild: boolean;
+  /** Child discriminator: KIT (kit member) vs ACCESSORY (permanently attached
+   *  to a parent asset). Null on top-level lines. */
+  childKind?: string | null;
   parentLineItemId: string | null;
   model: { name: string; modelNumber?: string | null; assetType?: string; _count?: { modelCheckItems: number } } | null;
   asset: { assetTag: string } | null;

@@ -30,6 +30,7 @@ import {
 import type { LineItem, GroupEntry } from "./warehouse-types";
 import { modelDisplayName, isBulkItem, collectAllVerifiableIds, bulkUnitKey } from "./warehouse-types";
 import { KitChildRows } from "./kit-child-rows";
+import { AccessoryChildRows } from "./accessory-child-rows";
 
 export interface ReturnTabProps {
   // Scan state
@@ -227,24 +228,27 @@ export function ReturnTab({
                           </TableCell>
                         )}
                         {isExpanded && entry.items.map((item, idx) => (
-                          <TableRow key={item.id} className="bg-bg-inset/30">
-                            <TableCell>
-                              <Checkbox
-                                checked={selectedIn.has(item.id)}
-                                onCheckedChange={() => toggleSelection(selectedIn, setSelectedIn, item.id)}
-                              />
-                            </TableCell>
-                            <TableCell className="pl-12 text-sm text-fg-3">
-                              {item.asset?.assetTag ? `${item.model?.name || "Asset"}` : `Unit ${idx + 1}`}
-                            </TableCell>
-                            <TableCell className="font-mono text-sm text-fg-3">
-                              {item.asset?.assetTag || "—"}
-                            </TableCell>
-                            <TableCell className="text-center">1</TableCell>
-                            <TableCell>
-                              <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
-                            </TableCell>
-                          </TableRow>
+                          <Fragment key={item.id}>
+                            <TableRow className="bg-bg-inset/30">
+                              <TableCell>
+                                <Checkbox
+                                  checked={selectedIn.has(item.id)}
+                                  onCheckedChange={() => toggleSelection(selectedIn, setSelectedIn, item.id)}
+                                />
+                              </TableCell>
+                              <TableCell className="pl-12 text-sm text-fg-3">
+                                {item.asset?.assetTag ? `${item.model?.name || "Asset"}` : `Unit ${idx + 1}`}
+                              </TableCell>
+                              <TableCell className="font-mono text-sm text-fg-3">
+                                {item.asset?.assetTag || "—"}
+                              </TableCell>
+                              <TableCell className="text-center">1</TableCell>
+                              <TableCell>
+                                <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
+                              </TableCell>
+                            </TableRow>
+                            <AccessoryChildRows parent={item} mode="return" />
+                          </Fragment>
                         ))}
                       </Fragment>
                     );
@@ -387,7 +391,8 @@ export function ReturnTab({
                   const isBulk = isBulkItem(item);
                   const assetTag = item.asset?.assetTag || item.bulkAsset?.assetTag || null;
                   return (
-                    <TableRow key={item.id}>
+                    <Fragment key={item.id}>
+                    <TableRow>
                       <TableCell>
                         <Checkbox
                           checked={selectedIn.has(item.id)}
@@ -425,6 +430,8 @@ export function ReturnTab({
                         <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
                       </TableCell>
                     </TableRow>
+                    <AccessoryChildRows parent={item} mode="return" />
+                    </Fragment>
                   );
                 })}
                   </Fragment>

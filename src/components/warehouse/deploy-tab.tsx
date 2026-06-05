@@ -27,6 +27,7 @@ import {
 import type { LineItem, GroupEntry } from "./warehouse-types";
 import { modelDisplayName, collectAllVerifiableIds, bulkUnitKey } from "./warehouse-types";
 import { KitChildRows } from "./kit-child-rows";
+import { AccessoryChildRows } from "./accessory-child-rows";
 import { PrepStatusBadge } from "./prep-status-badge";
 
 export interface DeployTabProps {
@@ -211,24 +212,27 @@ export function DeployTab({
                           </TableCell>
                         )}
                         {isExpanded && entry.items.map((item, idx) => (
-                          <TableRow key={item.id} className="bg-bg-inset/30">
-                            <TableCell>
-                              <Checkbox
-                                checked={selectedOut.has(item.id)}
-                                onCheckedChange={() => toggleSelection(selectedOut, setSelectedOut, item.id)}
-                              />
-                            </TableCell>
-                            <TableCell className="pl-12 text-sm text-fg-3">
-                              {item.asset?.assetTag ? `${item.model?.name || "Asset"}` : `Unit ${idx + 1}`}
-                            </TableCell>
-                            <TableCell className="font-mono text-sm text-fg-3">
-                              {item.asset?.assetTag || "—"}
-                            </TableCell>
-                            <TableCell className="text-center">1</TableCell>
-                            <TableCell>
-                              <PrepStatusBadge item={item} />
-                            </TableCell>
-                          </TableRow>
+                          <Fragment key={item.id}>
+                            <TableRow className="bg-bg-inset/30">
+                              <TableCell>
+                                <Checkbox
+                                  checked={selectedOut.has(item.id)}
+                                  onCheckedChange={() => toggleSelection(selectedOut, setSelectedOut, item.id)}
+                                />
+                              </TableCell>
+                              <TableCell className="pl-12 text-sm text-fg-3">
+                                {item.asset?.assetTag ? `${item.model?.name || "Asset"}` : `Unit ${idx + 1}`}
+                              </TableCell>
+                              <TableCell className="font-mono text-sm text-fg-3">
+                                {item.asset?.assetTag || "—"}
+                              </TableCell>
+                              <TableCell className="text-center">1</TableCell>
+                              <TableCell>
+                                <PrepStatusBadge item={item} />
+                              </TableCell>
+                            </TableRow>
+                            <AccessoryChildRows parent={item} mode="deploy" />
+                          </Fragment>
                         ))}
                       </Fragment>
                     );
@@ -368,7 +372,8 @@ export function DeployTab({
                   // --- Single item ---
                   const item = entry.item;
                   return (
-                    <TableRow key={item.id}>
+                    <Fragment key={item.id}>
+                    <TableRow>
                       <TableCell>
                         <Checkbox
                           checked={selectedOut.has(item.id)}
@@ -395,6 +400,8 @@ export function DeployTab({
                         <PrepStatusBadge item={item} />
                       </TableCell>
                     </TableRow>
+                    <AccessoryChildRows parent={item} mode="deploy" />
+                    </Fragment>
                   );
                 })}
                   </Fragment>

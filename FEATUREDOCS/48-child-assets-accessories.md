@@ -105,10 +105,18 @@ what every existing query keys off.
    each badged "Accessory". Accessory children are hidden from the flat list by
    `isHiddenFromList` (they're `isKitChild:true`).
 
-   **Known gap (not yet wired):** the scan-driven deploy/return tabs
-   (`deploy-tab.tsx` / `return-tab.tsx`) only group *kit* children visually;
-   accessories cascade correctly on a parent scan but aren't shown as a distinct
-   nested group there. Display-only — fulfillment is correct.
+   **Deploy/return tabs** — the scan-driven deploy/return tabs render accessory
+   children as read-only indented rows under their parent via
+   `accessory-child-rows.tsx` (`AccessoryChildRows` / `getAccessoryChildren`),
+   wired into both the `single` and `serialized-group` entry branches in
+   `deploy-tab.tsx` and `return-tab.tsx`. They're informational (no separate
+   verify/select — accessories cascade atomically with the parent); mode filter
+   mirrors `KitChildRows` (deploy shows not-yet-out, return shows checked-out).
+   Accessory parents are plain serialised lines, so `groupItems` routes them to
+   `single`/`serialized-group`, never `kit-group`.
+
+   **Known gap (not yet wired):** the pick/prep tab (`pick-prep-tab.tsx`) does
+   not yet show accessories nested; expansion still happens at prep server-side.
 4. **PDFs** — accessories render indented under the parent on **all** docs
    (internal and customer-facing). An accessory parent is detected by
    "top-level line, no `kitId`, has `ACCESSORY` children"; both the render
@@ -125,6 +133,8 @@ what every existing query keys off.
   check-and-store cascade, scan-the-parent (6).
 - `src/components/projects/equipment-rows.test.ts` — `describeRow` accessory
   parent → expandable; `isHiddenFromList` nests accessory children (4).
+- `src/components/warehouse/accessory-child-rows.test.ts` — `getAccessoryChildren`
+  mode filtering for the deploy/return tabs (4).
 - `src/lib/pdfme/plugins/accessories-render.test.ts` — full pipeline: filter →
   indented render → height reservation (3).
 - `src/server/model-accessories.int.test.ts` — model inheritance: office add,

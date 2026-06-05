@@ -1034,6 +1034,32 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
               }
 
               currentY -= nestedRowHeight;
+
+              // Per-unit rows for an accessory grandchild. An accessory is just
+              // an auto-added asset, so expand it per unit like a real asset row
+              // (10 EW-DX each ship a battery → 10 battery lines to check off).
+              if (config.showPerUnitCheckboxes && nested.childKind === "ACCESSORY" && nested.quantity > 1) {
+                const nestedUnits = nested.units ?? [];
+                const nestedCheckedOut = nested.checkedOutQuantity || 0;
+                const nestedName = nested.model?.name || nested.description || "-";
+                for (let i = 0; i < nested.quantity; i++) {
+                  const puHeight = 10;
+                  if (currentY - puHeight < bottomBoundary) { overflow = true; break; }
+                  const puY = currentY - puHeight + 3;
+                  const indentX = tableX + 50;
+                  drawCheckbox(page, pdfLib, indentX, puY, 6, i < nestedCheckedOut);
+                  const tag = nestedUnits[i]?.asset?.assetTag ?? nestedUnits[i]?.bulkAsset?.assetTag ?? null;
+                  const label = tag ? `Unit ${i + 1} — ${tag}` : `${nestedName} - ${i + 1}`;
+                  page.drawText(label, {
+                    x: indentX + 10,
+                    y: puY,
+                    size: 6.5,
+                    font: tag ? fonts.courier : fonts.regular,
+                    color: grandchildTextColor,
+                  });
+                  currentY -= puHeight;
+                }
+              }
             }
           }
         }

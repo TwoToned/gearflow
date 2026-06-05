@@ -183,8 +183,33 @@ set per assigned parent unit. These are handled per-unit:
 `resolveAssetAccessories` is the shared per-asset profile (serialised children +
 bulk accessories, asset-level unioned with model-level) used by both expansion and
 the per-unit return scoping. Tests: the multi-quantity isolation block in
-`warehouse-accessories.int.test.ts` (return-isolation, DAMAGED isolation,
-whole-line return, bulk scale + per-unit return, idempotent re-scan).
+`warehouse-accessories.int.test.ts` (return-isolation, DAMAGED + MISSING
+isolation, mixed-condition batch, whole-line return, bulk scale + per-unit return,
+double-check-in no over-return, idempotent re-scan, savepoint recovery).
+
+**Concurrency & idempotency.**
+- Accessory child creation is backstopped by the partial unique indexes;
+  `createAccessoryChildIfAbsent` wraps each create in a SAVEPOINT so a conflict
+  rolls back only that statement instead of poisoning the Prisma interactive
+  transaction (a 23505 otherwise aborts the whole tx — verified by the
+  savepoint-recovery integration test).
+- `expandAccessoriesForAsset` takes a `FOR UPDATE` row lock on the parent line, so
+  two stations expanding different units of the same line serialize and bulk
+  demand sees every committed sibling (no concurrent undercount). Demand excludes
+  RETURNED / CANCELLED units.
+- The return cascade only fires when the parent return actually flipped a unit
+  (`unitsFlipped > 0`), so a retry / double-scan can't re-return the shared bulk
+  accessory.
+
+**Known edge cases (bulk only; serialised is exact).** Bulk demand and the
+per-unit return share are recomputed live from current config, not snapshotted at
+checkout, so a **config edit mid-deployment** (changing/removing a model/asset
+bulk accessory qty) only reconciles on the next expansion of a unit that still
+ships it. An **orphaned serialised accessory** (parent asset deleted →
+`parentAssetId` null) returns only via a whole-line return, not a per-unit scan.
+**Per-unit deprep** clears every bulk accessory row's `prepStatus` (bulk rows are
+shared) — staging-board cosmetic only. The robust fix is to snapshot each unit's
+accessory contribution at deploy; tracked in TODOS.md.
 
 **Still out of scope (pre-existing, untouched):** `checkOutItems` fetches+updates
 an asset by global `assetId` without re-scoping to `organizationId` (cross-tenant

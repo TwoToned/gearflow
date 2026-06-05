@@ -188,6 +188,23 @@ expansion race, with a `isUniqueViolation` catch + update fallback.
 `AccessoryChildRows` wired into the `bulk-group` deploy/return branch. Shared
 `resolveAssetAccessories` profile. 5 multi-quantity isolation integration tests.
 
+### Snapshot per-unit accessory contributions at deploy
+**What:** Bulk accessory demand and per-unit return share are recomputed live from
+current config + active units, not snapshotted per unit at checkout. Residual edge
+cases (FEATUREDOCS/48 "Known edge cases"): a config edit mid-deployment doesn't
+reconcile a removed bulk accessory down; an orphaned serialised accessory (parent
+deleted → parentAssetId null) only returns on a whole-line return; per-unit deprep
+clears all shared bulk rows' prepStatus.
+**What to do:** Record each parent unit's accessory contribution (serialised child
+ids + bulk {bulkAssetId, qty}) at deploy time (e.g. on the ProjectLineItemUnit or
+a join row), and drive demand/return from the snapshot instead of recomputing.
+**Why:** Makes bulk accessory counts exact under config churn and parent deletes;
+serialised correctness already holds via parentAssetId.
+**Context:** Residual edges from the v0.14.x multi-quantity fix. Serialised
+isolation, concurrent-expansion (FOR UPDATE lock), and double-scan are already
+correct; these are bulk-only and need a config edit / asset delete to trigger.
+**Priority:** P2
+
 ### Pre-existing warehouse safety (surfaced during accessories review)
 **What:** (1) `checkOutItems` fetches+updates an asset by global `assetId` via
 `findUnique`/`update` without re-scoping to the caller's `organizationId` —

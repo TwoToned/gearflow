@@ -440,9 +440,18 @@ export async function completeCheckAndDeprep(data: {
     });
 
     // Permanent accessories de-prep with their parent so they don't linger in
-    // the deploy-staging board after the parent has been returned + depreped.
+    // the deploy-staging board. Scoped to the returned unit (resolvedAssetId):
+    // its serialised accessories (asset.parentAssetId match) plus the shared
+    // bulk accessory rows. A whole-line deprep (no assetId) clears them all.
     await tx.projectLineItem.updateMany({
-      where: { parentLineItemId: data.lineItemId, organizationId, childKind: "ACCESSORY" },
+      where: {
+        parentLineItemId: data.lineItemId,
+        organizationId,
+        childKind: "ACCESSORY",
+        ...(resolvedAssetId
+          ? { OR: [{ asset: { parentAssetId: resolvedAssetId } }, { assetId: null }] }
+          : {}),
+      },
       data: { prepStatus: "PENDING" },
     });
 
@@ -873,8 +882,9 @@ export async function completeCheckAndStore(
     await syncLineItemRollup(tx, parsed.lineItemId);
 
     // 5b. Permanent accessories return with their parent — the same cascade
-    //     checkInItems runs, so a checked-and-stored parent doesn't leave its
-    //     cables/clamps stuck CHECKED_OUT. No-op for non-parent lines.
+    //     checkInItems runs, scoped to the returned unit (resolvedAssetId) so a
+    //     multi-quantity parent doesn't return its siblings' accessories. No-op
+    //     for non-parent lines.
     await checkinAccessoryChildren(tx, {
       organizationId,
       projectId: parsed.projectId,
@@ -882,6 +892,7 @@ export async function completeCheckAndStore(
       returnCondition: parsed.condition,
       userId,
       defaultLocationId: locationId,
+      returnedAssetId: resolvedAssetId || null,
     });
 
     // 6. Scan log

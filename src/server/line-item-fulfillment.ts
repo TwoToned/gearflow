@@ -323,13 +323,22 @@ export async function returnLineUnits(
 }
 
 /**
- * Return all accessory children of a parent line alongside the parent. Mirrors
+ * Return a parent line's accessory children alongside the parent. Mirrors
  * checkoutAccessoryChildren on the return side: accessories are inseparable from
  * their parent, so any code path that returns the parent must cascade here.
  *
- * Used by both the warehouse return flow (checkInItems) and the check-and-store
- * return-check flow (completeCheckAndStore). Bulk accessories carry quantity > 1;
- * we pass the full quantity so the unit flips to RETURNED rather than partial.
+ * Scope (the multi-quantity fix): when `returnedAssetId` is given (a single
+ * parent unit was scanned back), only that unit's accessories return — serialised
+ * children whose accessory asset has `parentAssetId === returnedAssetId`, plus the
+ * returned unit's per-unit share of each bulk accessory (a partial return, so the
+ * bulk child only flips to RETURNED once every parent unit is back). Without
+ * `returnedAssetId` (whole-line return) every child returns in full.
+ *
+ * Without this scoping, returning Light A would also return Light B's
+ * still-deployed cable and mis-route a DAMAGED accessory to maintenance.
+ *
+ * Used by the warehouse return flow (checkInItems) and the check-and-store
+ * return-check flow (completeCheckAndStore).
  */
 export async function checkinAccessoryChildren(
   tx: Prisma.TransactionClient,
@@ -340,39 +349,111 @@ export async function checkinAccessoryChildren(
     returnCondition: "GOOD" | "DAMAGED" | "MISSING";
     userId: string;
     defaultLocationId: string | null;
+    /** The specific parent unit being returned. Null = whole-line return. */
+    returnedAssetId?: string | null;
   },
 ) {
   const { organizationId, projectId, parentLineItemId, returnCondition, userId, defaultLocationId } = args;
+  const returnedAssetId = args.returnedAssetId ?? null;
+
   const children = await tx.projectLineItem.findMany({
     where: { parentLineItemId, organizationId, childKind: "ACCESSORY" },
+    select: { id: true, assetId: true, bulkAssetId: true, quantity: true, asset: { select: { parentAssetId: true } } },
   });
+
+  // Per-unit return: how much of each bulk accessory the returned unit carries.
+  let perUnitBulk: Map<string, number> | null = null;
+  if (returnedAssetId) {
+    const { bulks } = await resolveAssetAccessories(tx, organizationId, returnedAssetId);
+    perUnitBulk = new Map(bulks.map((b) => [b.bulkAssetId, b.quantity]));
+  }
+
   for (const child of children) {
-    await returnLineUnits(tx, {
-      organizationId,
-      projectId,
-      lineItemId: child.id,
-      returnCondition,
-      ...(child.bulkAssetId ? { quantity: child.quantity } : {}),
-      userId,
-      defaultLocationId,
-    });
+    if (child.assetId) {
+      // Serialised accessory — belongs to exactly one parent unit.
+      if (returnedAssetId && child.asset?.parentAssetId !== returnedAssetId) continue;
+      await returnLineUnits(tx, { organizationId, projectId, lineItemId: child.id, returnCondition, userId, defaultLocationId });
+    } else if (child.bulkAssetId) {
+      // Bulk accessory — return the returned unit's share (or the whole lot).
+      const quantity = returnedAssetId ? (perUnitBulk?.get(child.bulkAssetId) ?? 0) : child.quantity;
+      if (quantity <= 0) continue;
+      await returnLineUnits(tx, { organizationId, projectId, lineItemId: child.id, returnCondition, quantity, userId, defaultLocationId });
+    } else {
+      continue;
+    }
     await syncLineItemRollup(tx, child.id);
   }
 }
 
+/** A parent asset's per-unit accessory profile: the specific serialised child
+ *  assets it carries, and the bulk accessories it ships with (asset-level
+ *  AssetBulkChild unioned with model-level ModelBulkAccessory; asset wins by
+ *  bulkAssetId). Shared by expansion AND the per-unit return scoping. */
+type AccessoryProfile = {
+  serialised: Array<{ assetId: string; modelId: string | null; modelName: string | null }>;
+  bulks: Array<{ bulkAssetId: string; quantity: number; modelId: string | null; modelName: string | null }>;
+};
+
+async function resolveAssetAccessories(
+  tx: Prisma.TransactionClient,
+  organizationId: string,
+  assetId: string,
+): Promise<AccessoryProfile> {
+  const asset = await tx.asset.findUnique({
+    where: { id: assetId },
+    select: {
+      modelId: true,
+      childAssets: { select: { id: true, modelId: true, model: { select: { name: true } } } },
+      childBulkItems: {
+        select: { bulkAssetId: true, quantity: true, bulkAsset: { select: { modelId: true, model: { select: { name: true } } } } },
+      },
+    },
+  });
+  if (!asset) return { serialised: [], bulks: [] };
+
+  const assetBulkIds = new Set(asset.childBulkItems.map((b) => b.bulkAssetId));
+  const modelBulks = await tx.modelBulkAccessory.findMany({
+    where: { modelId: asset.modelId, organizationId },
+    select: { bulkAssetId: true, quantity: true, bulkAsset: { select: { modelId: true, model: { select: { name: true } } } } },
+    orderBy: { sortOrder: "asc" },
+  });
+  const bulks = [
+    ...asset.childBulkItems.map((b) => ({ bulkAssetId: b.bulkAssetId, quantity: b.quantity, modelId: b.bulkAsset.modelId, modelName: b.bulkAsset.model?.name ?? null })),
+    ...modelBulks
+      .filter((m) => !assetBulkIds.has(m.bulkAssetId))
+      .map((m) => ({ bulkAssetId: m.bulkAssetId, quantity: m.quantity, modelId: m.bulkAsset.modelId, modelName: m.bulkAsset.model?.name ?? null })),
+  ];
+  const serialised = asset.childAssets.map((c) => ({ assetId: c.id, modelId: c.modelId, modelName: c.model?.name ?? null }));
+  return { serialised, bulks };
+}
+
+/** True for a unique-constraint violation, whether Prisma maps it (P2002) or
+ *  surfaces the raw Postgres error (23505) — our accessory unique indexes are
+ *  partial/raw and not declared in schema.prisma, so both shapes can appear. */
+function isUniqueViolation(e: unknown): boolean {
+  const code = (e as { code?: string } | null)?.code;
+  if (code === "P2002" || code === "23505") return true;
+  const msg = e instanceof Error ? e.message : String(e);
+  return /unique constraint|duplicate key/i.test(msg);
+}
+
 /**
  * Expand a specific serialised asset's permanent accessories onto a line as
- * accessory child lines (childKind: ACCESSORY). Idempotent: dedups serialised
- * accessories by their specific assetId and bulk accessories by bulkAssetId, so
- * re-scanning the same parent doesn't duplicate rows.
+ * accessory child lines (childKind: ACCESSORY).
  *
  * This is what makes accessories travel when the warehouse assigns a specific
  * unit to a model-level line at prep/checkout (not just when the office adds
  * the specific asset to the project). Returns the ids of any child lines created.
  *
- * v1 limitation: for a multi-quantity line where several parents each carry the
- * SAME bulk accessory, the bulk row is created once (dedup by bulkAssetId).
- * Serialised accessories accumulate correctly (unique per physical unit).
+ * Idempotent: serialised children dedup by their specific assetId; bulk children
+ * are one row per bulkAssetId whose quantity is RECOMPUTED as the total demand
+ * across every assigned parent unit (so a qty-N line where each parent ships 1
+ * of a bulk accessory ends with a bulk child of quantity N, not 1). The partial
+ * unique indexes (migration 20260605120000) backstop the read-before-create
+ * against concurrent scans; we catch the violation and fall back to an update.
+ *
+ * Perf note: demand recompute resolves each distinct parent-unit asset once per
+ * call (O(units) per expansion). Fine for typical rental line quantities.
  */
 export async function expandAccessoriesForAsset(
   tx: Prisma.TransactionClient,
@@ -392,94 +473,112 @@ export async function expandAccessoriesForAsset(
   });
   if (!line || line.childKind) return []; // missing, or itself a child — never nest
 
-  const asset = await tx.asset.findUnique({
-    where: { id: assetId },
-    select: {
-      modelId: true,
-      childAssets: { select: { id: true, modelId: true, model: { select: { name: true } } } },
-      childBulkItems: {
-        select: { bulkAssetId: true, quantity: true, bulkAsset: { select: { modelId: true, model: { select: { name: true } } } } },
-      },
-    },
-  });
-  if (!asset) return [];
+  const profile = await resolveAssetAccessories(tx, organizationId, assetId);
+  if (profile.serialised.length === 0 && profile.bulks.length === 0) return [];
 
-  // Union with model-level bulk accessories, asset-level wins on bulkAssetId.
-  const assetBulkIds = new Set(asset.childBulkItems.map((b) => b.bulkAssetId));
-  const modelBulks = await tx.modelBulkAccessory.findMany({
-    where: { modelId: asset.modelId, organizationId },
-    select: {
-      bulkAssetId: true,
-      quantity: true,
-      bulkAsset: { select: { modelId: true, model: { select: { name: true } } } },
-    },
-    orderBy: { sortOrder: "asc" },
+  // Resolve every parent-unit asset (plus the one being expanded, in case its
+  // unit row isn't created yet at this call site) once, so bulk demand can be
+  // summed across units without re-querying per bulk accessory.
+  const parentUnits = await tx.projectLineItemUnit.findMany({
+    where: { lineItemId, assetId: { not: null } },
+    select: { assetId: true },
   });
-  const allBulks = [
-    ...asset.childBulkItems,
-    ...modelBulks.filter((m) => !assetBulkIds.has(m.bulkAssetId)),
-  ];
-
-  if (asset.childAssets.length === 0 && allBulks.length === 0) return [];
+  const parentAssetIds = new Set<string>([assetId, ...parentUnits.map((u) => u.assetId).filter((a): a is string => !!a)]);
+  const profiles = new Map<string, AccessoryProfile>([[assetId, profile]]);
+  for (const aid of parentAssetIds) {
+    if (!profiles.has(aid)) profiles.set(aid, await resolveAssetAccessories(tx, organizationId, aid));
+  }
+  const bulkDemand = (bulkAssetId: string): number => {
+    let total = 0;
+    for (const p of profiles.values()) {
+      const m = p.bulks.find((b) => b.bulkAssetId === bulkAssetId);
+      if (m) total += m.quantity;
+    }
+    return total;
+  };
 
   const existing = await tx.projectLineItem.findMany({
     where: { parentLineItemId: lineItemId, childKind: "ACCESSORY", organizationId },
-    select: { assetId: true, bulkAssetId: true },
+    select: { id: true, assetId: true, bulkAssetId: true },
   });
   const haveAsset = new Set(existing.map((e) => e.assetId).filter(Boolean));
-  const haveBulk = new Set(existing.map((e) => e.bulkAssetId).filter(Boolean));
+  const existingBulk = new Map(existing.filter((e) => e.bulkAssetId).map((e) => [e.bulkAssetId as string, e.id]));
 
   const created: string[] = [];
   let sort = existing.length;
-  for (const child of asset.childAssets) {
-    if (haveAsset.has(child.id)) continue;
-    const row = await tx.projectLineItem.create({
-      data: {
-        organizationId,
-        projectId: line.projectId,
-        type: "EQUIPMENT",
-        modelId: child.modelId,
-        assetId: child.id,
-        quantity: 1,
-        isKitChild: true,
-        childKind: "ACCESSORY",
-        parentLineItemId: lineItemId,
-        categoryId: line.categoryId,
-        groupId: line.groupId,
-        description: child.model?.name ?? null,
-        unitPrice: null,
-        pricingType: line.pricingType,
-        duration: line.duration,
-        sortOrder: sort++,
-      },
-      select: { id: true },
-    });
-    created.push(row.id);
+
+  // Serialised: one child per accessory asset, deduped (unique index backstop).
+  for (const child of profile.serialised) {
+    if (haveAsset.has(child.assetId)) continue;
+    try {
+      const row = await tx.projectLineItem.create({
+        data: {
+          organizationId,
+          projectId: line.projectId,
+          type: "EQUIPMENT",
+          modelId: child.modelId,
+          assetId: child.assetId,
+          quantity: 1,
+          isKitChild: true,
+          childKind: "ACCESSORY",
+          parentLineItemId: lineItemId,
+          categoryId: line.categoryId,
+          groupId: line.groupId,
+          description: child.modelName,
+          unitPrice: null,
+          pricingType: line.pricingType,
+          duration: line.duration,
+          sortOrder: sort++,
+        },
+        select: { id: true },
+      });
+      created.push(row.id);
+    } catch (e) {
+      if (!isUniqueViolation(e)) throw e; // concurrent scan already created it
+    }
   }
-  for (const bi of allBulks) {
-    if (haveBulk.has(bi.bulkAssetId)) continue;
-    const row = await tx.projectLineItem.create({
-      data: {
-        organizationId,
-        projectId: line.projectId,
-        type: "EQUIPMENT",
-        modelId: bi.bulkAsset.modelId,
-        bulkAssetId: bi.bulkAssetId,
-        quantity: bi.quantity,
-        isKitChild: true,
-        childKind: "ACCESSORY",
-        parentLineItemId: lineItemId,
-        categoryId: line.categoryId,
-        groupId: line.groupId,
-        description: bi.bulkAsset.model?.name ? `${bi.quantity}x ${bi.bulkAsset.model.name}` : null,
-        unitPrice: null,
-        pricingType: line.pricingType,
-        duration: line.duration,
-        sortOrder: sort++,
-      },
-      select: { id: true },
-    });
-    created.push(row.id);
+
+  // Bulk: one child per bulkAssetId, quantity = total demand across parent units.
+  for (const bulk of profile.bulks) {
+    const demand = bulkDemand(bulk.bulkAssetId);
+    const description = bulk.modelName ? `${demand}x ${bulk.modelName}` : null;
+    const existingId = existingBulk.get(bulk.bulkAssetId);
+    if (existingId) {
+      await tx.projectLineItem.update({ where: { id: existingId }, data: { quantity: demand, description } });
+      continue;
+    }
+    try {
+      const row = await tx.projectLineItem.create({
+        data: {
+          organizationId,
+          projectId: line.projectId,
+          type: "EQUIPMENT",
+          modelId: bulk.modelId,
+          bulkAssetId: bulk.bulkAssetId,
+          quantity: demand,
+          isKitChild: true,
+          childKind: "ACCESSORY",
+          parentLineItemId: lineItemId,
+          categoryId: line.categoryId,
+          groupId: line.groupId,
+          description,
+          unitPrice: null,
+          pricingType: line.pricingType,
+          duration: line.duration,
+          sortOrder: sort++,
+        },
+        select: { id: true },
+      });
+      created.push(row.id);
+    } catch (e) {
+      if (!isUniqueViolation(e)) throw e;
+      // Lost the create race — update the row the winner created.
+      const row = await tx.projectLineItem.findFirst({
+        where: { parentLineItemId: lineItemId, bulkAssetId: bulk.bulkAssetId, childKind: "ACCESSORY", organizationId },
+        select: { id: true },
+      });
+      if (row) await tx.projectLineItem.update({ where: { id: row.id }, data: { quantity: demand, description } });
+    }
   }
   return created;
 }

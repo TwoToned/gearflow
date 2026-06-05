@@ -914,7 +914,9 @@ export async function checkInItems(
 
       await syncLineItemRollup(tx, item.lineItemId);
 
-      // Permanent accessories return with their parent.
+      // Permanent accessories return with their parent — scoped to the scanned
+      // unit (item.assetId) so a multi-quantity parent doesn't return its
+      // siblings' still-deployed accessories.
       await checkinAccessoryChildren(tx, {
         organizationId,
         projectId,
@@ -922,6 +924,7 @@ export async function checkInItems(
         returnCondition: item.returnCondition ?? "GOOD",
         userId,
         defaultLocationId,
+        returnedAssetId: item.assetId ?? null,
       });
 
       updated.push(

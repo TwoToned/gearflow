@@ -301,13 +301,13 @@ export function TasksPanel({ projectId }: { projectId: string }) {
                             Actions
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onSelect={() => setEditing(task)}>Edit…</DropdownMenuItem>
-                            <DropdownMenuItem onSelect={() => cycleStatus(task)}>
+                            <DropdownMenuItem onClick={() => setEditing(task)}>Edit…</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => cycleStatus(task)}>
                               Move to next status
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="text-destructive"
-                              onSelect={() => deleteMut.mutate(task.id)}
+                              onClick={() => deleteMut.mutate(task.id)}
                             >
                               <Trash2 className="mr-2 h-3.5 w-3.5" /> Delete
                             </DropdownMenuItem>

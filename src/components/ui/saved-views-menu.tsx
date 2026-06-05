@@ -181,10 +181,7 @@ export function SavedViewsMenu({ tableId, currentConfig, applyConfig, onResetPre
                 <DropdownMenuItem
                   key={view.id}
                   className="flex items-center gap-2"
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    apply(view);
-                  }}
+                  onClick={() => apply(view)}
                 >
                   <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
                     {activeViewId === view.id && <Check className="h-3.5 w-3.5 text-primary" />}
@@ -225,17 +222,13 @@ export function SavedViewsMenu({ tableId, currentConfig, applyConfig, onResetPre
           <DropdownMenuSeparator />
           {activeView && isDirty && (
             <DropdownMenuItem
-              onSelect={(e) => {
-                e.preventDefault();
-                updateMut.mutate({ id: activeView.id, config: currentConfig });
-              }}
+              onClick={() => updateMut.mutate({ id: activeView.id, config: currentConfig })}
             >
               Update &ldquo;{activeView.name}&rdquo;
             </DropdownMenuItem>
           )}
           <DropdownMenuItem
-            onSelect={(e) => {
-              e.preventDefault();
+            onClick={() => {
               setNewName("");
               setMakeDefault(false);
               setSaveOpen(true);
@@ -246,8 +239,7 @@ export function SavedViewsMenu({ tableId, currentConfig, applyConfig, onResetPre
           </DropdownMenuItem>
           {(activeViewId || onResetPreferences) && (
             <DropdownMenuItem
-              onSelect={(e) => {
-                e.preventDefault();
+              onClick={() => {
                 setActiveViewId(null);
                 onResetPreferences?.();
               }}

@@ -42,4 +42,21 @@ describe("SavedViewsMenu smoke", () => {
     fireEvent.click(screen.getByRole("button"));
     await waitFor(() => expect(screen.getByText("Saved views")).toBeTruthy());
   });
+
+  // Regression: Base UI Menu.Item fires onClick, NOT Radix's onSelect. Using
+  // onSelect made every menu action a dead button. Clicking "Save current view…"
+  // must open the save dialog.
+  it("'Save current view' opens the save dialog (items use onClick)", async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <SavedViewsMenu tableId="assets" currentConfig={{ filters: { a: ["x"] } }} applyConfig={() => {}} />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole("button"));
+    const item = await waitFor(() => screen.getByText("Save current view…"));
+    fireEvent.click(item);
+    // The dialog title is exactly "Save current view" (no ellipsis).
+    await waitFor(() => expect(screen.getByText("Save current view")).toBeTruthy());
+  });
 });

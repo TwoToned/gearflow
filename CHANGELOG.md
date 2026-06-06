@@ -4,6 +4,18 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.19.1.0] - 2026-06-06
+
+### Added
+- **Bulk accessory check-in.** A new **Bulk Check-In** tab on the warehouse
+  project page shows the total quantity of each accessory due back across the
+  whole job ("100 clamps", "50 TrueCons") instead of returning them one parent
+  at a time. Count the pile, type the quantity, pick a condition (Good / Damaged
+  / Missing), and check it in with one action — the return is distributed back
+  across the underlying line items automatically. Quantities are recomputed
+  server-side from live stock, so over-returns are rejected and the existing
+  per-parent Return flow is untouched.
+
 ## [0.19.0.1] - 2026-06-06
 
 ### Fixed

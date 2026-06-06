@@ -140,6 +140,10 @@ describe("model-level bulk accessories — inheritance", () => {
     expect(children).toHaveLength(1);
     expect(children[0].bulkAssetId).toBe(clamps.id);
     expect(children[0].quantity).toBe(4);
+    // Same row, updated in place — NOT deleted-and-recreated. Without this the
+    // implementation could drop the child and re-insert and the test would
+    // still pass; the whole point of the re-scan path is an in-place update.
+    expect(children[0].id).toBe(before!.id);
   });
 
   it("warehouse scan-time assignment also pulls model accessories (idempotent)", async () => {

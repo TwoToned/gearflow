@@ -4,6 +4,18 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.19.0.1] - 2026-06-06
+
+### Fixed
+- **Database consistency cleanup (internal).** Reconciled a long-standing drift
+  between the schema and the production database: the project-service "billable
+  to client" flag is now correctly required at the database level (with any
+  pre-existing blank values defaulted to "no"), and three internal `updatedAt`
+  columns had stale defaults removed so future migrations stay clean. No
+  user-facing behaviour change. Also added a regression test covering an
+  accessory quantity override being picked up when the warehouse re-scans the
+  parent asset.
+
 ## [0.19.0.0] - 2026-06-06
 
 ### Fixed

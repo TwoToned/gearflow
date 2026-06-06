@@ -110,6 +110,42 @@ describe("model-level bulk accessories — inheritance", () => {
     expect(trueConRow?.quantity).toBe(1);
   });
 
+  it("re-scan picks up an asset-level override added AFTER the initial expansion", async () => {
+    const { org, model, project } = await seed();
+    const clamps = await createBulkAssetFixture(org.id, model.id, { assetTag: "CLAMP-RS", total: 100 });
+    // Model default: every light of this model ships with 2 clamps.
+    await addModelBulkAccessory(model.id, { bulkAssetId: clamps.id, quantity: 2 });
+    const light = await createAssetFixture(org.id, model.id, { assetTag: "LIGHT-RS" });
+
+    // Office adds the specific light → expandAccessoriesForAsset materialises the
+    // model default (no asset-level override yet → qty 2).
+    const parent = await addLineItem(project.id, { type: "EQUIPMENT", modelId: model.id, assetId: light.id, quantity: 1 }, true);
+    const parentLineId = (parent as { id: string }).id;
+    const before = await testPrisma.projectLineItem.findFirst({
+      where: { parentLineItemId: parentLineId, childKind: "ACCESSORY", bulkAssetId: clamps.id },
+    });
+    expect(before?.quantity).toBe(2);
+
+    // Operator later overrides THIS light to ship 4 clamps (asset-level wins).
+    await addBulkChildToAsset(light.id, { bulkAssetId: clamps.id, quantity: 4 });
+
+    // Warehouse re-scans the light at checkout → expandAccessoriesForAsset re-runs,
+    // recomputes demand, and updates the existing child row IN PLACE (no duplicate,
+    // not stuck at the stale qty 2). Regression guard for the v0.14.0.0 re-scan fix.
+    await checkOutItems(project.id, [{ lineItemId: parentLineId, assetId: light.id }]);
+
+    const children = await testPrisma.projectLineItem.findMany({
+      where: { parentLineItemId: parentLineId, childKind: "ACCESSORY" },
+    });
+    expect(children).toHaveLength(1);
+    expect(children[0].bulkAssetId).toBe(clamps.id);
+    expect(children[0].quantity).toBe(4);
+    // Same row, updated in place — NOT deleted-and-recreated. Without this the
+    // implementation could drop the child and re-insert and the test would
+    // still pass; the whole point of the re-scan path is an in-place update.
+    expect(children[0].id).toBe(before!.id);
+  });
+
   it("warehouse scan-time assignment also pulls model accessories (idempotent)", async () => {
     const { org, model, project } = await seed();
     const trueCons = await createBulkAssetFixture(org.id, model.id, { assetTag: "TRUECON-3", total: 100 });

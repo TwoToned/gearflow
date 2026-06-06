@@ -32,16 +32,18 @@ with onChange clamping. 10 new pricing tests + 2 resolver tests.
 
 ## Schema / Migrations
 
-### Pre-existing Prisma schema drift (surfaced during saved-views work)
-**What:** `prisma migrate dev` on the saved-views branch auto-detected drift between
-`schema.prisma` and the migration history that has no dedicated migration:
-`project_service.billableToClient` should be `SET NOT NULL` (schema has
-`@default(false)`), and `updatedAt` should `DROP DEFAULT` on `group_template`,
-`project_category`, and `project_group`. These were deliberately **excluded** from the
-saved-views migration (a NOT NULL alter can fail on prod rows with NULLs).
-**What to do:** Author a dedicated migration that reconciles these, after auditing
-`project_service` for NULL `billableToClient` rows (backfill to `false` first if any).
-**Priority:** P2
+### ~~Pre-existing Prisma schema drift (surfaced during saved-views work)~~ ✅ FIXED
+Fixed on branch `fix/schema-drift-reconcile`. Migration
+`20260606020000_reconcile_schema_drift` reconciles the drift `prisma migrate dev`
+detected on the saved-views branch: `project_service.billableToClient` →
+`SET NOT NULL` (preceded by an idempotent `UPDATE ... WHERE IS NULL` backfill to
+`false`), and `updatedAt` → `DROP DEFAULT` on `group_template`, `project_category`,
+and `project_group`. Hand-authored + applied via `migrate deploy` (not `migrate dev`,
+which demands a reset on a drifted DB); every statement is idempotent-safe so a
+re-run on an already-reconciled DB is a no-op. SQL validated against the live schema
+in a rolled-back transaction (`is_nullable=NO`, all three defaults `(none)`,
+`UPDATE 0` rows locally) and applied cleanly to the integration test DB. Ends with
+`ANALYZE "project_service"` per the bulk-data migration rule.
 
 ## Testing Expansion
 
@@ -242,11 +244,16 @@ Model detail page; asset detail shows inherited rows tagged "from model".
 5 integration tests.
 
 ### Accessories — Follow-ups from v0.11.0.0
-- **Scan-time quantity overrides at re-scan.** `expandAccessoriesForAsset`
-  dedupes by `bulkAssetId` only. If a model accessory expanded with qty=1
-  and an operator later adds an asset-level override with qty=4 for the
-  same bulkAsset, a re-scan won't update the existing row. Either update
-  the existing row's quantity, or skip silently and document. P3.
+- ~~**Scan-time quantity overrides at re-scan.**~~ ✅ RESOLVED (v0.14.0.0 +
+  regression test on `fix/schema-drift-reconcile`). The v0.14.0.0 multi-quantity
+  fix already made `expandAccessoriesForAsset` recompute bulk `demand` and update
+  the existing child row in place on every re-scan (`existingBulk` →
+  `update({ quantity: demand })`), and `resolveAssetAccessories` makes asset-level
+  overrides win — so a qty 2→4 override added *after* the initial expansion is
+  picked up on the next scan. Added a regression test in
+  `model-accessories.int.test.ts` ("re-scan picks up an asset-level override added
+  AFTER the initial expansion") that the earlier tests missed: they added the
+  override *before* expansion, or re-scanned without a qty change.
 - **Re-enable `DEDICATED` bulk allocation.** Server-side support exists; UI
   is currently SHIPS_WITH-only because DEDICATED was double-counting against
   live availability (`adjustBulkAvailability` decrement at attach + the
@@ -277,9 +284,22 @@ cases the engineering review flagged. Follow-up: Cross-Type Group/Category
 Unification (next branch, see [user-flagged] note below).
 
 ### Follow-ups from this PR
-- **Template editor UI for `expandProjectGroups` toggle** — P3. The setting exists
-  in `TemplateSettings.table.expandProjectGroups`; no UI to flip it per template
-  yet. Orgs that want custom behaviour need a DB edit today.
+- **Template editor UI for `expandProjectGroups` toggle** — P3. **NOT a quick add
+  — entangled with the legacy/section pipeline split (investigated 2026-06-06).**
+  The setting lives in `TemplateSettings.table.expandProjectGroups` and is read
+  *document-globally* in `buildDocumentData` (drives `structureLineItems` for BOTH
+  pipelines). But the **legacy** `template-editor` (`table-section.tsx`) is the only
+  editor that edits `TemplateSettings`, and it now only serves old templates without
+  `sections` — all new + system-default templates route to the **section** builder
+  (`BlockEditor`), whose `TableSectionSettings` has no `expandProjectGroups` field at
+  all. So: (a) adding the toggle to `table-section.tsx` is trivial but only reaches
+  the minority legacy templates being phased out; (b) reaching the new builder means
+  adding the field to `TableSectionSettings` AND threading a per-section toggle back
+  into the document-global structuring step — a cross-cutting PDF data-shape change
+  that needs the 5-consumer audit + a pipeline integration test (per CLAUDE.md's PDF
+  rule). Decide the editor story first (likely: make `expandProjectGroups` a
+  document-level setting the section builder also exposes), then implement with the
+  full audit. Orgs that want custom behaviour need a DB edit today.
 - **Configurable packer sort order per org** — P3. `getPackerSortOrder()` returns
   a hard-coded `[location, category, modelName]` comparator. Two Toned might
   later want true rack-walk order (e.g. "Truss Room before Warehouse A" by route,

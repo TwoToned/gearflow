@@ -20,7 +20,7 @@ vi.mock("@/lib/org-context", () => ({
 }));
 vi.mock("@/lib/activity-log", () => ({ logActivity: vi.fn(async () => {}) }));
 
-import { importModelRatesCSV } from "@/server/csv";
+import { importModelRatesCSV, importModelsCSV } from "@/server/csv";
 
 async function makeModel(
   orgId: string,
@@ -136,5 +136,38 @@ describe("importModelRatesCSV", () => {
     expect(result.errors[0].message).toContain("not found");
     const unchanged = await testPrisma.model.findUniqueOrThrow({ where: { id: other.id } });
     expect(Number(unchanged.dailyRate)).toBe(5);
+  });
+});
+
+describe("importModelsCSV rate handling", () => {
+  it("round-trips rates and syncs defaultRentalPrice from dailyRate on create", async () => {
+    const org = await createOrgFixture();
+    h.ctx.organizationId = org.id;
+
+    const csv = "name,dailyRate,weeklyRate,monthlyRate\nNew Mixer,25,100,300";
+    const result = await importModelsCSV(csv);
+
+    expect(result).toMatchObject({ created: 1, updated: 0 });
+    const model = await testPrisma.model.findFirstOrThrow({
+      where: { organizationId: org.id, name: "New Mixer" },
+    });
+    expect(Number(model.dailyRate)).toBe(25);
+    expect(Number(model.weeklyRate)).toBe(100);
+    expect(Number(model.monthlyRate)).toBe(300);
+    expect(Number(model.defaultRentalPrice)).toBe(25);
+  });
+
+  it("rejects rows with a negative rate instead of persisting invalid pricing", async () => {
+    const org = await createOrgFixture();
+    h.ctx.organizationId = org.id;
+
+    const csv = "name,dailyRate\nBad Model,-10";
+    const result = await importModelsCSV(csv);
+
+    expect(result.created).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].message.toLowerCase()).toContain("negative");
+    const count = await testPrisma.model.count({ where: { organizationId: org.id } });
+    expect(count).toBe(0);
   });
 });

@@ -219,6 +219,21 @@ export async function importModelsCSV(csvContent: string): Promise<ImportResult>
       const monthlyRate = parseDecimal(get("monthlyrate") || get("monthly_rate") || get("monthly"));
       const explicitRentalPrice = parseDecimal(get("defaultrentalprice") || get("rental_price") || get("rentalprice"));
 
+      // Reject negative rates so a CSV can't persist invalid optimizer pricing
+      // (mirrors the model form + the rates-only import).
+      const negativeRate = (
+        [
+          ["dailyRate", dailyRate],
+          ["weeklyRate", weeklyRate],
+          ["monthlyRate", monthlyRate],
+          ["defaultRentalPrice", explicitRentalPrice],
+        ] as const
+      ).find(([, v]) => v !== null && v < 0);
+      if (negativeRate) {
+        result.errors.push({ row: i + 1, message: `${negativeRate[0]} cannot be negative` });
+        continue;
+      }
+
       const data = {
         name,
         manufacturer: get("manufacturer") || null,

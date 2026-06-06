@@ -4,6 +4,21 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.19.2.0] - 2026-06-06
+
+### Added
+- **CSV rate import.** Bulk-populate model rental rates from a spreadsheet
+  instead of clicking through forms — the fix for the "hundreds of models, no
+  rates" cold start. A new **Import Rates** button on the models catalog takes a
+  CSV with an identifier column (name, model number, SKU, or id) plus any of
+  `dailyRate` / `weeklyRate` / `monthlyRate`, matches each row to an existing
+  model, and updates only the rates you supplied. It never creates models, so a
+  rough name-and-price sheet can't spawn duplicates; rows that match nothing,
+  match two models with the same name, or carry a bad/negative number are listed
+  back to you instead of being silently dropped, and blank cells are left as-is.
+  The **Export** button now includes the rate columns too, so the simplest
+  workflow is export → fill in the rates → import.
+
 ## [0.19.1.0] - 2026-06-06
 
 ### Added

@@ -14,15 +14,21 @@ Deferred work items tracked from engineering reviews and planning sessions.
 **Estimate:** human ~1 week / CC ~30 min
 **Priority:** P2
 
-### CSV Rate Import
-**What:** Add CSV import for model rates. Upload a spreadsheet with model name/ID, daily rate, weekly rate, monthly rate. Bulk populate rates without clicking through forms.
-**Why:** The optimizer is only useful when models have rates populated. For existing inventories with hundreds of models, the model form and inline editing are too slow. CSV import solves the cold-start data entry problem.
-**Pros:** Fastest path to full rate coverage, familiar workflow for AV rental operators who manage rates in spreadsheets.
-**Cons:** Requires file upload handling, CSV parsing, error reporting for bad rows. Need to handle model matching (by name? by asset tag? by ID?).
-**Context:** Deferred during /autoplan CEO review. The bulk rate update dialog (formula-based) is in scope; CSV import is the next step for operators with existing rate spreadsheets.
-**Depends on:** Pricing optimization feature (rate fields must exist on Model).
-**Estimate:** human ~3 days / CC ~30 min
-**Priority:** P2
+### ~~CSV Rate Import~~ ✅ SHIPPED
+Shipped on branch `feat/csv-rate-import`. New rates-only `importModelRatesCSV`
+(`src/server/csv.ts`) matches existing models by identifier in priority order
+**id → sku → modelNumber → name** and updates only the `dailyRate`/`weeklyRate`/
+`monthlyRate` columns present — never creating models, so a hand-made rate sheet
+can't spawn duplicates. Unmatched / ambiguous (name shared by 2+ models) / invalid
+(non-numeric, negative) rows are reported as row errors; blank rate cells are left
+unchanged (push just one rate without clearing the others); `defaultRentalPrice`
+is synced from `dailyRate`; `model:update`-gated with a `logActivity` summary.
+Pure matching/parsing helpers extracted to `src/lib/rate-import.ts` (16 unit tests),
+DB-backed action covered by `csv-rate-import.int.test.ts` (7 integration tests).
+`exportModelsCSV` + `importModelsCSV` now also round-trip `sku` and the three rate
+columns, so the recommended flow is **Export → fill rates in a spreadsheet →
+Import Rates**. New `"rates"` mode on `CSVImportDialog` + an **Import Rates** button
+on the models table. Full doc: [FEATUREDOCS/20](./FEATUREDOCS/20-csv-import-export.md).
 
 ### ~~Configurable Days-Per-Month~~ ✅ SHIPPED
 Shipped in v0.8.2.0. `OrgSettings.daysPerMonth` (validated 20-31, default 28),

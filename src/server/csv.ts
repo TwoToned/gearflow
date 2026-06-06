@@ -3,6 +3,16 @@
 import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
+import { logActivity } from "@/lib/activity-log";
+import {
+  buildModelIndex,
+  hasIdentifierColumn,
+  hasRateColumn,
+  matchModel,
+  normalizeKey,
+  parseRateRow,
+  type ModelIndexEntry,
+} from "@/lib/rate-import";
 
 // ─── EXPORT ─────────────────────────────────────────────────────────────────
 
@@ -19,10 +29,14 @@ export async function exportModelsCSV() {
     "name",
     "manufacturer",
     "modelNumber",
+    "sku",
     "category",
     "assetType",
     "description",
     "defaultRentalPrice",
+    "dailyRate",
+    "weeklyRate",
+    "monthlyRate",
     "defaultPurchasePrice",
     "replacementCost",
     "weight",
@@ -37,10 +51,14 @@ export async function exportModelsCSV() {
     m.name,
     m.manufacturer || "",
     m.modelNumber || "",
+    m.sku || "",
     m.category?.name || "",
     m.assetType,
     m.description || "",
     m.defaultRentalPrice?.toString() || "",
+    m.dailyRate?.toString() || "",
+    m.weeklyRate?.toString() || "",
+    m.monthlyRate?.toString() || "",
     m.defaultPurchasePrice?.toString() || "",
     m.replacementCost?.toString() || "",
     m.weight?.toString() || "",
@@ -196,14 +214,24 @@ export async function importModelsCSV(csvContent: string): Promise<ImportResult>
       const assetTypeRaw = get("assettype") || get("asset_type") || get("type");
       const assetType = assetTypeRaw.toUpperCase() === "BULK" ? "BULK" : "SERIALIZED";
 
+      const dailyRate = parseDecimal(get("dailyrate") || get("daily_rate") || get("daily"));
+      const weeklyRate = parseDecimal(get("weeklyrate") || get("weekly_rate") || get("weekly"));
+      const monthlyRate = parseDecimal(get("monthlyrate") || get("monthly_rate") || get("monthly"));
+      const explicitRentalPrice = parseDecimal(get("defaultrentalprice") || get("rental_price") || get("rentalprice"));
+
       const data = {
         name,
         manufacturer: get("manufacturer") || null,
         modelNumber: get("modelnumber") || get("model_number") || null,
+        sku: get("sku") || null,
         categoryId,
         description: get("description") || null,
         assetType: assetType as "SERIALIZED" | "BULK",
-        defaultRentalPrice: parseDecimal(get("defaultrentalprice") || get("rental_price") || get("rentalprice")),
+        // Keep defaultRentalPrice (used by quoting fallback) in sync with the daily rate.
+        defaultRentalPrice: explicitRentalPrice ?? dailyRate,
+        dailyRate,
+        weeklyRate,
+        monthlyRate,
         defaultPurchasePrice: parseDecimal(get("defaultpurchaseprice") || get("purchase_price") || get("purchaseprice")),
         replacementCost: parseDecimal(get("replacementcost") || get("replacement_cost")),
         weight: parseDecimal(get("weight")),
@@ -229,9 +257,13 @@ export async function importModelsCSV(csvContent: string): Promise<ImportResult>
           where: { id: existing.id },
           data: {
             categoryId: data.categoryId ?? existing.categoryId,
+            sku: data.sku ?? existing.sku,
             description: data.description ?? existing.description,
             assetType: data.assetType,
             defaultRentalPrice: data.defaultRentalPrice ?? existing.defaultRentalPrice,
+            dailyRate: data.dailyRate ?? existing.dailyRate,
+            weeklyRate: data.weeklyRate ?? existing.weeklyRate,
+            monthlyRate: data.monthlyRate ?? existing.monthlyRate,
             defaultPurchasePrice: data.defaultPurchasePrice ?? existing.defaultPurchasePrice,
             replacementCost: data.replacementCost ?? existing.replacementCost,
             weight: data.weight ?? existing.weight,
@@ -401,6 +433,99 @@ export async function importAssetsCSV(csvContent: string): Promise<ImportResult>
       data: {
         metadata: JSON.stringify({ ...orgSettings, assetTagCounter: counter }),
       },
+    });
+  }
+
+  return serialize(result) as ImportResult;
+}
+
+/**
+ * Bulk-import rental rates onto existing models. Matches each row to a single
+ * model by identifier (id → sku → modelNumber → name, in priority order) and
+ * updates only the rate columns present in the row. Never creates models —
+ * unmatched rows are reported as errors. When a `dailyRate` is provided, the
+ * model's `defaultRentalPrice` (the quoting fallback) is kept in sync.
+ */
+export async function importModelRatesCSV(csvContent: string): Promise<ImportResult> {
+  const { organizationId, userId, userName } = await requirePermission("model", "update");
+  const rows = parseCSV(csvContent);
+  if (rows.length === 0) throw new Error("CSV is empty");
+
+  const normalizedHeaders = rows[0].map((h) => normalizeKey(h));
+  if (!hasIdentifierColumn(normalizedHeaders)) {
+    throw new Error('CSV must include a "name", "modelNumber", "sku", or "id" column');
+  }
+  if (!hasRateColumn(normalizedHeaders)) {
+    throw new Error('CSV must include at least one rate column (dailyRate, weeklyRate, monthlyRate)');
+  }
+
+  const models = await prisma.model.findMany({
+    where: { organizationId, isActive: true },
+    select: { id: true, name: true, sku: true, modelNumber: true },
+  });
+  const index = buildModelIndex(models as ModelIndexEntry[]);
+
+  const result: ImportResult = { created: 0, updated: 0, errors: [] };
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (row.length === 0 || (row.length === 1 && !row[0].trim())) continue;
+
+    const cells = new Map<string, string>();
+    normalizedHeaders.forEach((key, idx) => {
+      if (idx < row.length && !cells.has(key)) cells.set(key, row[idx]);
+    });
+
+    const parsed = parseRateRow(cells);
+    if (parsed.errors.length > 0) {
+      result.errors.push({ row: i + 1, message: parsed.errors.join("; ") });
+      continue;
+    }
+    if (!parsed.hasRate) {
+      result.errors.push({ row: i + 1, message: "No rate values to import" });
+      continue;
+    }
+
+    const match = matchModel(parsed.identifier, index);
+    if (match.error || !match.modelId) {
+      result.errors.push({ row: i + 1, message: match.error ?? "Model not found" });
+      continue;
+    }
+
+    try {
+      const data: {
+        dailyRate?: number;
+        weeklyRate?: number;
+        monthlyRate?: number;
+        defaultRentalPrice?: number;
+      } = { ...parsed.rates };
+      // Keep the quoting fallback in sync with the daily rate.
+      if (parsed.rates.dailyRate !== undefined) {
+        data.defaultRentalPrice = parsed.rates.dailyRate;
+      }
+
+      await prisma.model.update({
+        where: { id: match.modelId, organizationId },
+        data,
+      });
+      result.updated++;
+    } catch (e) {
+      result.errors.push({ row: i + 1, message: e instanceof Error ? e.message : "Unknown error" });
+    }
+  }
+
+  if (result.updated > 0) {
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "UPDATE",
+      entityType: "model",
+      entityId: organizationId,
+      entityName: `${result.updated} models`,
+      summary: `Imported rates for ${result.updated} model(s) via CSV${
+        result.errors.length > 0 ? ` (${result.errors.length} rows skipped)` : ""
+      }`,
     });
   }
 

@@ -214,7 +214,7 @@ export function BulkCheckInTab({ projectId }: { projectId: string }) {
       <div className="flex items-center justify-between">
         <p className="text-sm text-fg-3">
           {hasOverCount ? (
-            <span className="text-destructive">A quantity exceeds what's deployed.</span>
+            <span className="text-destructive">A quantity exceeds what&apos;s deployed.</span>
           ) : (
             <>
               <span className="font-medium text-fg tabular-nums">{totalSelected}</span> to check in

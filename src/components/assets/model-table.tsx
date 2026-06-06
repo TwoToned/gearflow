@@ -208,6 +208,7 @@ export function ModelTable() {
 
   const [search, setSearch] = useState("");
   const [importOpen, setImportOpen] = useState(false);
+  const [ratesImportOpen, setRatesImportOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [assignChecksOpen, setAssignChecksOpen] = useState(false);
   const [bulkRatesOpen, setBulkRatesOpen] = useState(false);
@@ -267,6 +268,12 @@ export function ModelTable() {
         <Upload className="mr-2 h-4 w-4" />
         Import
       </Button>
+      <CanDo resource="model" action="update">
+        <Button variant="outline" size="sm" className="hidden sm:inline-flex h-8" onClick={() => setRatesImportOpen(true)}>
+          <DollarSign className="mr-2 h-4 w-4" />
+          Import Rates
+        </Button>
+      </CanDo>
       <Button size="sm" className="h-8" render={<Link href="/assets/models/new" />}>
         <Plus className="mr-2 h-4 w-4" />
         New Model
@@ -350,10 +357,17 @@ export function ModelTable() {
             <Upload className="mr-2 h-4 w-4" />
             Import
           </Button>
+          <CanDo resource="model" action="update">
+            <Button variant="outline" size="sm" onClick={() => setRatesImportOpen(true)}>
+              <DollarSign className="mr-2 h-4 w-4" />
+              Rates
+            </Button>
+          </CanDo>
         </div>
       </CanDo>
 
       <CSVImportDialog type="models" open={importOpen} onOpenChange={setImportOpen} />
+      <CSVImportDialog type="rates" open={ratesImportOpen} onOpenChange={setRatesImportOpen} />
 
       <BulkRateUpdateDialog
         open={bulkRatesOpen}

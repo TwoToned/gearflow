@@ -43,7 +43,8 @@ Lives in `apps/discord-bot/` (standalone Node service). Command registry: each `
 - [x] Bot runtime wired (live interaction listener + outbox poll loop) — bot actually runs now
 - [x] Bot config moved off the bot host — admin page is the single source of truth for credentials + behavior
 - [x] Channel lifecycle rules + archive category — admin picks when channels are created (statuses) and when they're archived (separate category)
-- [x] **Bot is now in-process** — runs as a Next.js instrumentation hook, calls services directly (no HMAC, no Bearer, no separate process, no `.env`). `apps/discord-bot/` removed. All `/v1/*` HMAC routes deleted (kept `/discord/verify` + `/v1/health`).
+- [x] **Bot moved off HMAC `/v1/*` to direct service calls** — no HMAC, no Bearer, no `.env` for Discord. All `/v1/*` HMAC routes deleted (kept `/discord/verify` + `/v1/health`).
+- [x] **Bot runs as its own process again (`gearflow-discord-bot`)** — it was briefly in-process via `instrumentation.ts`, but an unhandled discord.js gateway error there crashed the whole web server, causing intermittent Cloudflare 502s. It now runs as a separate pm2 app (`scripts/discord-bot.ts`) importing the same `@/lib` service layer, so invariants still run once but a gateway crash can't take the website down. The web app controls it through the DB (`botDesiredState`/`botRestartRequestedAt`/`lastHeartbeatAt`, see `src/lib/discord/bot-control.ts` + `bot-supervisor.ts`). Also added discord.js `error`/`shardError` listeners + a process-level `unhandledRejection`/`uncaughtException` net (`src/lib/process-safety.ts`). Ops guide: `docs/operations/discord-bot.md`.
 - [x] Admin "Discord Integration" settings page
 - [~] `apps/discord-bot/README.md` operator setup + `npm run doctor` — scaffolded (47-line README, doctor stub); still needs the full ~15-step guide (privileged Guild Members intent, OAuth scopes, perm-bit invite URL) and to document `DISCORD_BOT_TOKEN` + the per-org signing secret + the new endpoints
 
@@ -161,14 +162,24 @@ too with an "X of Y linked" summary; set-once config is collapsible (text inputs
 signing-secret show/hide/copy/regenerate; recent activity from `logActivity`; unlink via `Dialog`.
 Config schema in `src/lib/validations/discord-integration.ts`.
 
-## Status: v1 shipped (v0.13.0.1)
-v1 server + admin + runtime + in-process refactor + intent hotfix all live in production.
+## Status: v1 shipped (v0.13.0.1); bot re-isolated to its own process (v0.19.0.0)
+v1 server + admin + runtime + intent hotfix all live in production.
 All six build-order steps landed with unit + full-pipeline integration coverage (test plan #1–#7).
-The standalone bot service was deleted; the bot now boots from `instrumentation.ts` and lives in
-the same process as the Next.js app. Bot config is entirely in the DB (`DiscordIntegration` row) —
-zero `.env` for Discord. Admin saves trigger an in-process `restartBot()`; status pill polls
-`/api/admin/discord/status` every 10s. CI green: 2069 unit tests + integration + tsc + ESLint +
-`next build`. See `docs/designs/discord-bot-*.md` for the full reviewed plan + test plan.
+Bot config is entirely in the DB (`DiscordIntegration` row) — zero `.env` for Discord.
+
+**Runtime model (current):** the bot runs as its own pm2 process,
+`gearflow-discord-bot` (`scripts/discord-bot.ts`), importing the same `@/lib`
+service layer so invariants still run once. It was briefly in-process via
+`instrumentation.ts`, but an unhandled discord.js gateway error there crashed the
+whole web server → intermittent Cloudflare 502s with no app logs. Splitting it
+out isolates that blast radius. The web app controls it via the DB
+(`botDesiredState`/`botRestartRequestedAt`/`lastHeartbeatAt`;
+`src/lib/discord/bot-control.ts` + `bot-supervisor.ts`); admin Restart/Stop/save
+write intent, the bot's supervisor loop reconciles, status pill polls
+`/api/admin/discord/status`. Crash safety: client `error`/`shardError` listeners
++ a process-level safety net (`src/lib/process-safety.ts`). Ops:
+`docs/operations/discord-bot.md`. See `docs/designs/discord-bot-*.md` for the full
+reviewed plan + test plan.
 
 ## v2 / Follow-ups
 Tracked here so the next session knows where to start. Detail + sequencing live in
@@ -181,8 +192,8 @@ Tracked here so the next session knows where to start. Detail + sequencing live 
 - [ ] `/asset fault` from a phone — confirm `DamageEvent` created with severity + photo, asset routed `IN_MAINTENANCE` when "Hold for repair" set
 
 ### Operability gaps (low-effort, high-value)
-- [ ] Rewrite `apps/discord-bot/README.md` → repurpose as `docs/operations/discord-bot.md` for the in-process model (the original described a deleted standalone service)
-- [ ] `discord.bot.failed_to_start` activity-log row when `startBot()` throws (currently only `console.error`; admin can't tell "no token" from "wrong token" without SSHing pm2 logs)
+- [x] `docs/operations/discord-bot.md` — operator guide for the separate-process model (setup, pm2 commands, where logs live, control plane, troubleshooting)
+- [x] Surface bot startup failures without SSHing pm2: `startBot()` now writes `botStartError` to the row on failure (cleared on healthy start); the admin status route returns it. (A distinct `discord.bot.failed_to_start` activity-log row is still a nice-to-have.)
 - [ ] `npm run doctor` (or an in-admin "Diagnose" button) that checks: token decryptable? guild reachable? bot has Manage Channels in the project category? slash commands deployed?
 - [ ] Operator note on the `GuildMembers` intent (we dropped it in v0.13.0.1; v2 role-mapping will need it back AND the Server Members Intent toggle flipped in the Developer Portal)
 

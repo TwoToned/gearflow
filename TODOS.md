@@ -316,7 +316,26 @@ Unification (next branch, see [user-flagged] note below).
   remaining bit of unique logic). A future cleanup can pull that into
   `structureLineItems` too.
 
-### Bulk Check-In Totals Screen
+### Bulk Check-In Totals Screen — 🚧 FIRST SLICE SHIPPED (pending release)
+**Status (branch `feat/bulk-checkin-totals`):** The core screen + reconciliation
+logic is in. Deployed accessory children (`childKind: ACCESSORY`) are aggregated
+across the whole project into per-identity totals (bulk by `bulkAssetId`,
+serialised by `modelId`) and returned by counted quantity in one action, with
+deterministic distribution back to the underlying child lines (`returnLineUnits`),
+authoritative server-side outstanding, over-return rejection, and
+idempotent/empty-safe submit. Pure helpers in `src/lib/bulk-checkin.ts`
+(12 unit tests), server actions `getBulkCheckInTotals` /
+`checkInBulkAccessoryTotals` in `src/server/bulk-checkin.ts` (7 integration
+tests), and a self-contained **Bulk Check-In** warehouse tab
+(`src/components/warehouse/bulk-checkin-tab.tsx`) parallel to the unchanged
+per-parent Return tab. Full doc: [FEATUREDOCS/52](./FEATUREDOCS/52-bulk-checkin.md).
+**Remaining for follow-up slices:** per-row condition (batch shares one
+condition today), partial-shortfall reconciliation UX polish, bulk *parents*
+("50 lights each with 2 clamps" where the parent is bulk — blocked on the
+serialised-parents-only v1 accessory model), and driving totals from snapshotted
+per-unit accessory contributions rather than live recompute (see the
+"Snapshot per-unit accessory contributions at deploy" TODO).
+
 **What:** Add a bulk check-in mode that shows child/bulk assets as totals across the whole job, not broken down per parent. Example: 50 lights each with 2 clamps + 1 true con — show "100 clamps to check in" and "50 true cons to check in" as single rows, let the operator enter how many they have in front of them and tick them off in one action.
 **Why:** Current check-in requires checking in each accessory per parent asset. For a job with 50 lights, that's 150 individual check-ins instead of 3 totals. Painfully slow for accessory-heavy gigs.
 **Pros:** Order-of-magnitude faster check-in for accessory-heavy jobs, matches how warehouse staff actually count (pile of clamps, count the pile).

@@ -17,6 +17,7 @@ import {
   FileText,
   ChevronDown,
   ExternalLink,
+  Layers,
 } from "lucide-react";
 import { toast } from "sonner";
 import { showError } from "@/lib/show-error";
@@ -76,6 +77,7 @@ import { FadeIn } from "@/components/ui/motion";
 import { OnlinePickList } from "@/components/warehouse/online-pick-list";
 import { ItemCheckForm } from "@/components/warehouse/item-check-form";
 import { CloseOutTab } from "@/components/warehouse/close-out-tab";
+import { BulkCheckInTab } from "@/components/warehouse/bulk-checkin-tab";
 import { PickPrepTab } from "@/components/warehouse/pick-prep-tab";
 import { DeployTab } from "@/components/warehouse/deploy-tab";
 import { ReturnTab } from "@/components/warehouse/return-tab";
@@ -2065,6 +2067,10 @@ function WarehouseProjectPage({
             <PackageX className="mr-1.5 h-4 w-4" />
             Return ({checkedOutItems.length})
           </TabsTrigger>
+          <TabsTrigger value="bulk-checkin">
+            <Layers className="mr-1.5 h-4 w-4" />
+            Bulk Check-In
+          </TabsTrigger>
           <TabsTrigger value="close-out">
             <PackageCheck className="mr-1.5 h-4 w-4" />
             Close-Out
@@ -2258,6 +2264,12 @@ function WarehouseProjectPage({
           renderGroupHeader={renderGroupHeader}
         />
 
+        {/* ================================================================ */}
+        {/* BULK CHECK-IN TAB — accessory totals across the whole project    */}
+        {/* ================================================================ */}
+        <TabsContent value="bulk-checkin">
+          <BulkCheckInTab projectId={projectId} />
+        </TabsContent>
 
         {/* ================================================================ */}
         {/* CLOSE-OUT TAB                                                    */}

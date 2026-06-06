@@ -42,6 +42,15 @@ jobs:
           cd ${{ vars.APP_DIR }}
           npm run build
  
-      - name: Restart app
-        run: pm2 restart gearflow
+      - name: Restart app + Discord bot
+        run: |
+          cd ${{ vars.APP_DIR }}
+          # Web app: unchanged, proven path.
+          pm2 restart gearflow
+          # Discord bot: separate process. startOrReload starts it on first
+          # deploy and gracefully reloads it thereafter (--only scopes to the bot
+          # so the web app config above is never touched by this file).
+          pm2 startOrReload ecosystem.config.js --only gearflow-discord-bot --update-env
+          # Persist the process list so a box reboot brings both back.
+          pm2 save
  

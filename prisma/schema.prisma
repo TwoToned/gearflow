@@ -2986,10 +2986,24 @@ model DiscordIntegration {
   lastHeartbeatAt DateTime?
   botUserId       String?
 
+  // Cross-process control plane. The bot runs in its own pm2 process
+  // (gearflow-discord-bot), so the admin page can no longer call in-process
+  // start/stop functions. Instead it writes intent here and the bot's watch loop
+  // reconciles. The web process never blocks on the bot.
+  botDesiredState     DiscordBotDesiredState @default(RUNNING) // admin Stop sets STOPPED; Save/Restart sets RUNNING
+  botRestartRequestedAt DateTime?            // admin Restart bumps this; bot restarts when it sees a newer value than it last handled
+  botStartError       String?                // last startup failure message (cleared on successful start); surfaced on the admin page
+  botPid              Int?                   // pid of the process that currently owns the bot (diagnostic)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("discord_integration")
+}
+
+enum DiscordBotDesiredState {
+  RUNNING
+  STOPPED
 }
 
 // Transactional outbox. Rows are written INSIDE the same Prisma transaction as the

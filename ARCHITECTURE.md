@@ -79,7 +79,7 @@ Detailed docs for each system are in the [`FEATUREDOCS/`](./FEATUREDOCS/) folder
 | 46 | [Custom Fields](./FEATUREDOCS/46-custom-fields.md) | Operator-defined entity attributes, definition CRUD, form rendering |
 | 47 | [Cross-Type Equipment Unification](./FEATUREDOCS/47-cross-type-equipment-unification.md) | CategorySlot, mixedGroups query, UnifiedAddDialog, SubHireGroupRow, PriceEditDialog, Drop Matrix 8C |
 | 48 | [Child Assets / Accessories](./FEATUREDOCS/48-child-assets-accessories.md) | Asset.parentAssetId + AssetBulkChild, SHIPS_WITH/DEDICATED allocation, childKind, project auto-expansion, warehouse cascade, PDF indented render |
-| 49 | [Discord Integration](./FEATUREDOCS/49-discord-integration.md) | In-process discord.js bot, per-org DiscordIntegration (encrypted token), transactional outbox, channel lifecycle rules, hardened /link enrollment, admin-managed config |
+| 49 | [Discord Integration](./FEATUREDOCS/49-discord-integration.md) | Standalone discord.js bot process (gearflow-discord-bot), per-org DiscordIntegration (encrypted token), transactional outbox, channel lifecycle rules, hardened /link enrollment, admin-managed config. Ops: [docs/operations/discord-bot.md](./docs/operations/discord-bot.md) |
 | 51 | [Project Numbering](./FEATUREDOCS/51-project-numbering.md) | Configurable auto project codes, %-token template engine, ProjectNumberSequence atomic counter, reset periods, settings UI + live preview |
 | 50 | [Project Tasks](./FEATUREDOCS/50-project-tasks.md) | ProjectTask model (status/priority/dueDate/checklist), user-or-crew assignee, Tasks tab panel, getMyOpenTasks cross-project query |
 

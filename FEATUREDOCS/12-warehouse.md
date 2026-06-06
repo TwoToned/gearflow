@@ -42,6 +42,19 @@ The warehouse uses a Pick/Prep → Deploy → Return flow. Items are **prepped**
 - Container line items auto-return when all contents are returned (`syncContainerStatus`)
 - Accessory children render as read-only indented rows via `AccessoryChildRows` (`return` mode shows currently-deployed accessories), mirroring the Deploy tab. See [Child Assets / Accessories](./48-child-assets-accessories.md).
 
+### Bulk Check-In Tab
+A project-wide accessory totals view for accessory-heavy jobs (50 lights = 100
+clamps + 50 TrueCons). Instead of returning each parent's accessories per
+parent, it aggregates every **deployed accessory child** (`childKind: ACCESSORY`)
+across the whole project into per-identity totals — bulk by `bulkAssetId`,
+serialised by `modelId` — and lets the operator check a counted quantity in with
+one action. The count is distributed deterministically back across the
+underlying child line items via the canonical `returnLineUnits` primitive (the
+same one the per-parent Return path uses). Over-return is rejected, empty/zero
+submits are no-ops, and repeated partial returns accumulate safely. Additive and
+parallel to the Return tab — the per-parent flow is unchanged. See
+[Bulk Check-In Totals](./52-bulk-checkin.md).
+
 ### Scan Flow
 - `quickAddAndCheckOut()` adds items to project and **preps** them (sets `status: "CONFIRMED"`, `prepStatus: "PACKED"`) — does NOT deploy directly
 - `lookupAssetForScan()` treats scanned serialized assets as serialized (not bulk) even if the matching line item has qty > 1

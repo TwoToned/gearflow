@@ -82,6 +82,7 @@ Detailed docs for each system are in the [`FEATUREDOCS/`](./FEATUREDOCS/) folder
 | 49 | [Discord Integration](./FEATUREDOCS/49-discord-integration.md) | Standalone discord.js bot process (gearflow-discord-bot), per-org DiscordIntegration (encrypted token), transactional outbox, channel lifecycle rules, hardened /link enrollment, admin-managed config. Ops: [docs/operations/discord-bot.md](./docs/operations/discord-bot.md) |
 | 51 | [Project Numbering](./FEATUREDOCS/51-project-numbering.md) | Configurable auto project codes, %-token template engine, ProjectNumberSequence atomic counter, reset periods, settings UI + live preview |
 | 50 | [Project Tasks](./FEATUREDOCS/50-project-tasks.md) | ProjectTask model (status/priority/dueDate/checklist), user-or-crew assignee, Tasks tab panel, getMyOpenTasks cross-project query |
+| 52 | [Bulk Check-In Totals](./FEATUREDOCS/52-bulk-checkin.md) | Project-wide accessory totals check-in: aggregate deployed accessory children by identity, deterministic distribution back to child lines, over-return rejection, idempotent/empty-safe submit, Bulk Check-In warehouse tab |
 
 **When making changes**: Read the relevant feature doc(s) first, follow documented patterns, and update the relevant doc(s) after. If no doc exists for the feature you're working on, create a new numbered file in `FEATUREDOCS/` and add it to the table above.
 

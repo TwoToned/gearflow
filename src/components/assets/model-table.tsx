@@ -208,6 +208,7 @@ export function ModelTable() {
 
   const [search, setSearch] = useState("");
   const [importOpen, setImportOpen] = useState(false);
+  const [ratesImportOpen, setRatesImportOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [assignChecksOpen, setAssignChecksOpen] = useState(false);
   const [bulkRatesOpen, setBulkRatesOpen] = useState(false);
@@ -244,34 +245,44 @@ export function ModelTable() {
   };
 
   const toolbarActions = (
-    <CanDo resource="model" action="create">
-      <Button
-        variant="outline"
-        size="sm"
-        className="hidden sm:inline-flex h-8"
-        onClick={async () => {
-          const csv = await exportModelsCSV();
-          const blob = new Blob([csv], { type: "text/csv" });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = "models.csv";
-          a.click();
-          URL.revokeObjectURL(url);
-        }}
-      >
-        <Download className="mr-2 h-4 w-4" />
-        Export
-      </Button>
-      <Button variant="outline" size="sm" className="hidden sm:inline-flex h-8" onClick={() => setImportOpen(true)}>
-        <Upload className="mr-2 h-4 w-4" />
-        Import
-      </Button>
-      <Button size="sm" className="h-8" render={<Link href="/assets/models/new" />}>
-        <Plus className="mr-2 h-4 w-4" />
-        New Model
-      </Button>
-    </CanDo>
+    <>
+      <CanDo resource="model" action="create">
+        <Button
+          variant="outline"
+          size="sm"
+          className="hidden sm:inline-flex h-8"
+          onClick={async () => {
+            const csv = await exportModelsCSV();
+            const blob = new Blob([csv], { type: "text/csv" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "models.csv";
+            a.click();
+            URL.revokeObjectURL(url);
+          }}
+        >
+          <Download className="mr-2 h-4 w-4" />
+          Export
+        </Button>
+        <Button variant="outline" size="sm" className="hidden sm:inline-flex h-8" onClick={() => setImportOpen(true)}>
+          <Upload className="mr-2 h-4 w-4" />
+          Import
+        </Button>
+      </CanDo>
+      <CanDo resource="model" action="update">
+        <Button variant="outline" size="sm" className="hidden sm:inline-flex h-8" onClick={() => setRatesImportOpen(true)}>
+          <DollarSign className="mr-2 h-4 w-4" />
+          Import Rates
+        </Button>
+      </CanDo>
+      <CanDo resource="model" action="create">
+        <Button size="sm" className="h-8" render={<Link href="/assets/models/new" />}>
+          <Plus className="mr-2 h-4 w-4" />
+          New Model
+        </Button>
+      </CanDo>
+    </>
   );
 
   return (
@@ -327,8 +338,8 @@ export function ModelTable() {
       />
 
       {/* Mobile export/import buttons */}
-      <CanDo resource="model" action="create">
-        <div className="flex gap-2 sm:hidden">
+      <div className="flex gap-2 sm:hidden">
+        <CanDo resource="model" action="create">
           <Button
             variant="outline"
             size="sm"
@@ -350,10 +361,17 @@ export function ModelTable() {
             <Upload className="mr-2 h-4 w-4" />
             Import
           </Button>
-        </div>
-      </CanDo>
+        </CanDo>
+        <CanDo resource="model" action="update">
+          <Button variant="outline" size="sm" onClick={() => setRatesImportOpen(true)}>
+            <DollarSign className="mr-2 h-4 w-4" />
+            Rates
+          </Button>
+        </CanDo>
+      </div>
 
       <CSVImportDialog type="models" open={importOpen} onOpenChange={setImportOpen} />
+      <CSVImportDialog type="rates" open={ratesImportOpen} onOpenChange={setRatesImportOpen} />
 
       <BulkRateUpdateDialog
         open={bulkRatesOpen}

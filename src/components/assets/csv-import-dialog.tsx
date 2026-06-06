@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Upload, Loader2, CheckCircle2, AlertTriangle, FileText } from "lucide-react";
 import { toast } from "sonner";
 
-import { importModelsCSV, importAssetsCSV } from "@/server/csv";
+import { importModelsCSV, importAssetsCSV, importModelRatesCSV } from "@/server/csv";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dialog";
 
 interface CSVImportDialogProps {
-  type: "models" | "assets";
+  type: "models" | "assets" | "rates";
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -36,6 +36,8 @@ export function CSVImportDialog({ type, open, onOpenChange }: CSVImportDialogPro
     mutationFn: async (csvContent: string) => {
       if (type === "models") {
         return importModelsCSV(csvContent);
+      } else if (type === "rates") {
+        return importModelRatesCSV(csvContent);
       } else {
         return importAssetsCSV(csvContent);
       }
@@ -43,11 +45,15 @@ export function CSVImportDialog({ type, open, onOpenChange }: CSVImportDialogPro
     onSuccess: (data) => {
       setResult(data);
       if (data.errors.length === 0) {
-        toast.success(`Imported ${data.created} new, updated ${data.updated} existing`);
+        if (type === "rates") {
+          toast.success(`Updated rates on ${data.updated} model(s)`);
+        } else {
+          toast.success(`Imported ${data.created} new, updated ${data.updated} existing`);
+        }
       } else {
         toast.warning(`Import completed with ${data.errors.length} errors`);
       }
-      queryClient.invalidateQueries({ queryKey: type === "models" ? ["models"] : ["assets"] });
+      queryClient.invalidateQueries({ queryKey: type === "assets" ? ["assets"] : ["models"] });
       if (type === "assets") {
         queryClient.invalidateQueries({ queryKey: ["bulkAssets"] });
       }
@@ -78,7 +84,7 @@ export function CSVImportDialog({ type, open, onOpenChange }: CSVImportDialogPro
     onOpenChange(nextOpen);
   }
 
-  const label = type === "models" ? "Models" : "Assets";
+  const label = type === "models" ? "Models" : type === "rates" ? "Rates" : "Assets";
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -121,8 +127,14 @@ export function CSVImportDialog({ type, open, onOpenChange }: CSVImportDialogPro
             {type === "models" ? (
               <>
                 <p className="font-medium">Expected columns:</p>
-                <p>name (required), manufacturer, modelNumber, category, assetType, description, defaultRentalPrice, defaultPurchasePrice, replacementCost, weight</p>
+                <p>name (required), manufacturer, modelNumber, sku, category, assetType, description, defaultRentalPrice, dailyRate, weeklyRate, monthlyRate, defaultPurchasePrice, replacementCost, weight</p>
                 <p>Existing models (matched by name + manufacturer + model number) will be updated.</p>
+              </>
+            ) : type === "rates" ? (
+              <>
+                <p className="font-medium">Expected columns:</p>
+                <p>An identifier — name, modelNumber, sku, or id — plus any of dailyRate, weeklyRate, monthlyRate.</p>
+                <p>Models are matched and updated, never created. Blank rate cells are left unchanged. Tip: use Export to grab a ready-to-edit sheet of your models.</p>
               </>
             ) : (
               <>
@@ -142,7 +154,11 @@ export function CSVImportDialog({ type, open, onOpenChange }: CSVImportDialogPro
                   <AlertTriangle className="h-4 w-4 text-amber-500" />
                 )}
                 <span>
-                  <strong>{result.created}</strong> created,{" "}
+                  {type !== "rates" && (
+                    <>
+                      <strong>{result.created}</strong> created,{" "}
+                    </>
+                  )}
                   <strong>{result.updated}</strong> updated
                   {result.errors.length > 0 && (
                     <>, <strong className="text-red-500">{result.errors.length}</strong> errors</>

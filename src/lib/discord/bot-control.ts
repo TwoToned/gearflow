@@ -81,7 +81,9 @@ export async function requestBotRestart(): Promise<BotStatus> {
 export async function requestBotStop(): Promise<BotStatus> {
   await prisma.discordIntegration.updateMany({
     where: enabledWhere(),
-    data: { botDesiredState: "STOPPED" },
+    // Clear any stale startup error too — a deliberately stopped bot shouldn't
+    // keep showing "failed to start" on the admin page.
+    data: { botDesiredState: "STOPPED", botStartError: null },
   });
   return getBotStatus();
 }

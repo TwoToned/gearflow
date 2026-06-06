@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   reconcileOnce,
+  runSupervisor,
   type SupervisorDeps,
   type SupervisorState,
 } from "./bot-supervisor";
@@ -96,5 +97,24 @@ describe("reconcileOnce", () => {
     for (let i = 0; i < 5; i++) handled = await reconcileOnce(deps, handled);
     expect(deps.start).not.toHaveBeenCalled();
     expect(deps.stop).not.toHaveBeenCalled();
+  });
+});
+
+describe("runSupervisor", () => {
+  it("seeds the handled-restart marker on boot so a STALE restartRequestedAt doesn't cause a spurious restart", async () => {
+    // The bot is already up (pm2 reload of an existing process) and the row has
+    // an old restart timestamp. On boot the supervisor must NOT restart it.
+    const ts = new Date("2026-06-06T10:00:00Z");
+    const deps = makeDeps({ desiredState: "RUNNING", restartRequestedAt: ts }, true);
+    await runSupervisor(deps, 999_999, { aborted: true });
+    expect(deps.start).not.toHaveBeenCalled();
+    expect(deps.stop).not.toHaveBeenCalled();
+    expect(deps.writeHeartbeat).toHaveBeenCalledTimes(1); // running => heartbeats once
+  });
+
+  it("starts the bot on boot when it's down and desiredState=RUNNING", async () => {
+    const deps = makeDeps({ desiredState: "RUNNING", restartRequestedAt: null }, false);
+    await runSupervisor(deps, 999_999, { aborted: true });
+    expect(deps.start).toHaveBeenCalledTimes(1);
   });
 });

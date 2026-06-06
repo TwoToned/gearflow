@@ -8,7 +8,7 @@ vi.mock("@/lib/prisma", () => ({
   prisma: { discordIntegration: { findFirst, updateMany } },
 }));
 
-import { getBotStatus, requestBotStop } from "./bot-control";
+import { getBotStatus, requestBotRestart, requestBotStop } from "./bot-control";
 
 const NOW = new Date("2026-06-06T10:00:00.000Z");
 
@@ -83,11 +83,33 @@ describe("requestBotStop", () => {
     updateMany.mockClear();
   });
 
-  it("writes desiredState=STOPPED", async () => {
+  it("writes desiredState=STOPPED and clears any stale startup error", async () => {
     findFirst.mockResolvedValue(null);
     await requestBotStop();
     expect(updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { botDesiredState: "STOPPED" } }),
+      expect.objectContaining({
+        data: { botDesiredState: "STOPPED", botStartError: null },
+      }),
+    );
+  });
+});
+
+describe("requestBotRestart", () => {
+  beforeEach(() => {
+    findFirst.mockReset();
+    updateMany.mockClear();
+  });
+
+  it("writes desiredState=RUNNING + a fresh restart timestamp", async () => {
+    findFirst.mockResolvedValue(null);
+    await requestBotRestart();
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          botDesiredState: "RUNNING",
+          botRestartRequestedAt: expect.any(Date),
+        }),
+      }),
     );
   });
 });

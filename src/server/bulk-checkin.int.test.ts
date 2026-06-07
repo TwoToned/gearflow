@@ -1,14 +1,3 @@
-/**
- * Integration tests for the Bulk Check-In Totals screen (Roadmap Phase 1.3).
- *
- * Accessory children deployed across the whole project are aggregated into
- * per-identity totals ("5 clamps due back"); the operator returns a counted
- * quantity in one action and the count is distributed deterministically back
- * across the underlying child line items. These tests prove aggregation across
- * parents, partial-return distribution, over-return rejection, empty/repeat
- * safety, and that the existing per-parent check-in path still works.
- */
-
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 import { createId } from "@paralleldrive/cuid2";
 import {
@@ -35,7 +24,7 @@ import { checkOutItems, checkInItems } from "@/server/warehouse";
 import { addModelBulkAccessory } from "@/server/model-accessories";
 import {
   getBulkCheckInTotals,
-  checkInBulkAccessoryTotals,
+  checkInBulkTotals,
 } from "@/server/bulk-checkin";
 
 async function seed() {
@@ -62,13 +51,6 @@ async function seed() {
   return { org, user, lightModel, project };
 }
 
-/**
- * Two separate parent lines of DISTINCT models (so `addLineItem`'s same-model
- * merge doesn't collapse them), where every unit of either model ships one
- * clamp — the SAME shared bulk asset. Deploy `aQty` lights on line A and `bQty`
- * on line B → the clamp identity is split across two accessory child lines whose
- * outstanding totals sum on the bulk-totals screen. Returns the shared clamp.
- */
 async function clampsAcrossTwoLines(
   s: Awaited<ReturnType<typeof seed>>,
   aQty: number,
@@ -126,8 +108,7 @@ describe("bulk check-in totals", () => {
     const s = await seed();
     const { clampKey, lineA, lineB } = await clampsAcrossTwoLines(s, 2, 3);
 
-    // Return 3 of 5: line A (sortOrder first) fills fully (2), line B takes 1.
-    const res = await checkInBulkAccessoryTotals(s.project.id, [
+    const res = await checkInBulkTotals(s.project.id, [
       { key: clampKey, quantity: 3, condition: "GOOD" },
     ]);
     expect(res.returned).toEqual([{ key: clampKey, quantity: 3, condition: "GOOD" }]);
@@ -143,7 +124,6 @@ describe("bulk check-in totals", () => {
     expect(childA?.units[0]).toMatchObject({ returnedQuantity: 2, status: "RETURNED" });
     expect(childB?.units[0]).toMatchObject({ returnedQuantity: 1, status: "CHECKED_OUT" });
 
-    // Remaining total now reflects only what's still out.
     expect(outstandingFor(await getBulkCheckInTotals(s.project.id), clampKey)).toBe(2);
   });
 
@@ -152,10 +132,9 @@ describe("bulk check-in totals", () => {
     const { clampKey } = await clampsAcrossTwoLines(s, 2, 3);
 
     await expect(
-      checkInBulkAccessoryTotals(s.project.id, [{ key: clampKey, quantity: 6, condition: "GOOD" }]),
+      checkInBulkTotals(s.project.id, [{ key: clampKey, quantity: 6, condition: "GOOD" }]),
     ).rejects.toThrow(/only 5 currently deployed/i);
 
-    // Whole transaction rolled back — nothing returned.
     expect(outstandingFor(await getBulkCheckInTotals(s.project.id), clampKey)).toBe(5);
   });
 
@@ -163,10 +142,9 @@ describe("bulk check-in totals", () => {
     const s = await seed();
     const { clampKey } = await clampsAcrossTwoLines(s, 2, 3);
 
-    expect((await checkInBulkAccessoryTotals(s.project.id, [])).returned).toEqual([]);
-    expect((await checkInBulkAccessoryTotals(s.project.id, [{ key: clampKey, quantity: 0 }])).returned).toEqual([]);
+    expect((await checkInBulkTotals(s.project.id, [])).returned).toEqual([]);
+    expect((await checkInBulkTotals(s.project.id, [{ key: clampKey, quantity: 0 }])).returned).toEqual([]);
 
-    // State unchanged.
     expect(outstandingFor(await getBulkCheckInTotals(s.project.id), clampKey)).toBe(5);
   });
 
@@ -174,18 +152,16 @@ describe("bulk check-in totals", () => {
     const s = await seed();
     const { clampKey } = await clampsAcrossTwoLines(s, 2, 3);
 
-    await checkInBulkAccessoryTotals(s.project.id, [{ key: clampKey, quantity: 2, condition: "GOOD" }]);
-    await checkInBulkAccessoryTotals(s.project.id, [{ key: clampKey, quantity: 2, condition: "GOOD" }]);
+    await checkInBulkTotals(s.project.id, [{ key: clampKey, quantity: 2, condition: "GOOD" }]);
+    await checkInBulkTotals(s.project.id, [{ key: clampKey, quantity: 2, condition: "GOOD" }]);
     expect(outstandingFor(await getBulkCheckInTotals(s.project.id), clampKey)).toBe(1);
 
-    // Final unit returns; the identity drops off the totals entirely.
-    await checkInBulkAccessoryTotals(s.project.id, [{ key: clampKey, quantity: 1, condition: "GOOD" }]);
+    await checkInBulkTotals(s.project.id, [{ key: clampKey, quantity: 1, condition: "GOOD" }]);
     const totals = await getBulkCheckInTotals(s.project.id);
     expect(totals.find((t) => t.key === clampKey)).toBeUndefined();
 
-    // A further attempt to return more is rejected (nothing left deployed).
     await expect(
-      checkInBulkAccessoryTotals(s.project.id, [{ key: clampKey, quantity: 1, condition: "GOOD" }]),
+      checkInBulkTotals(s.project.id, [{ key: clampKey, quantity: 1, condition: "GOOD" }]),
     ).rejects.toThrow(/only 0 currently deployed/i);
   });
 
@@ -211,9 +187,8 @@ describe("bulk check-in totals", () => {
     const totals = await getBulkCheckInTotals(project.id);
     expect(totals.find((t) => t.key === key)).toMatchObject({ kind: "SERIALIZED", totalDue: 2, childCount: 2 });
 
-    await checkInBulkAccessoryTotals(project.id, [{ key, quantity: 1, condition: "GOOD" }]);
+    await checkInBulkTotals(project.id, [{ key, quantity: 1, condition: "GOOD" }]);
 
-    // Exactly one cable came back; the other is still out.
     const statuses = await Promise.all(
       [cableA.id, cableB.id].map((id) =>
         testPrisma.asset.findUnique({ where: { id }, select: { status: true } }).then((a) => a?.status),
@@ -236,12 +211,235 @@ describe("bulk check-in totals", () => {
     const lineId = (line as { id: string }).id;
     await checkOutItems(project.id, [{ lineItemId: lineId, assetId: light.id }]);
 
-    // Per-parent return (unchanged code path) cascades to the accessory.
     await checkInItems(project.id, [{ lineItemId: lineId, assetId: light.id, returnCondition: "GOOD" }]);
 
     const cableAsset = await testPrisma.asset.findUnique({ where: { id: cable.id } });
     expect(cableAsset?.status).toBe("AVAILABLE");
-    // And that accessory no longer appears as due-back on the bulk screen.
+    expect(await getBulkCheckInTotals(project.id)).toEqual([]);
+  });
+
+  it("aggregates and returns a custom item", async () => {
+    const s = await seed();
+    const { org, project } = s;
+
+    const customLine = await testPrisma.projectLineItem.create({
+      data: {
+        organizationId: org.id,
+        projectId: project.id,
+        type: "EQUIPMENT",
+        isCustomItem: true,
+        description: "Custom stage element",
+        quantity: 1,
+        checkedOutQuantity: 1,
+        status: "CHECKED_OUT",
+        sortOrder: 0,
+      },
+    });
+
+    const totals = await getBulkCheckInTotals(project.id);
+    const customKey = `custom:${customLine.id}`;
+    expect(totals.find((t) => t.key === customKey)).toMatchObject({ kind: "SERIALIZED", itemType: "CUSTOM", totalDue: 1 });
+
+    await checkInBulkTotals(project.id, [{ key: customKey, quantity: 1, condition: "GOOD" }]);
+
+    const updated = await testPrisma.projectLineItem.findUnique({ where: { id: customLine.id } });
+    expect(updated?.status).toBe("RETURNED");
+  });
+
+  it("aggregates and returns a sub-hire item", async () => {
+    const s = await seed();
+    const { org, project } = s;
+
+    const supplier = await testPrisma.supplier.create({
+      data: { organizationId: org.id, name: "Test Supplier" },
+    });
+    const subHire = await testPrisma.subHire.create({
+      data: {
+        organizationId: org.id,
+        supplierId: supplier.id,
+        createdById: h.ctx.userId,
+        orderNumber: `SH-${createId().slice(0, 6)}`,
+        status: "CONFIRMED",
+        totalCost: 100,
+        totalCharge: 150,
+      },
+    });
+
+    const genModel = await createModelFixture(org.id, { name: "Generator" });
+    const subHireLine = await testPrisma.projectLineItem.create({
+      data: {
+        organizationId: org.id,
+        projectId: project.id,
+        type: "EQUIPMENT",
+        modelId: genModel.id,
+        subHireId: subHire.id,
+        quantity: 1,
+        checkedOutQuantity: 1,
+        status: "CHECKED_OUT",
+        sortOrder: 0,
+      },
+    });
+
+    const totals = await getBulkCheckInTotals(project.id);
+    const subHireKey = `subhire:${subHireLine.id}`;
+    expect(totals.find((t) => t.key === subHireKey)).toMatchObject({ kind: "SERIALIZED", itemType: "SUBHIRE", totalDue: 1 });
+
+    await checkInBulkTotals(project.id, [{ key: subHireKey, quantity: 1, condition: "GOOD" }]);
+
+    const updated = await testPrisma.projectLineItem.findUnique({ where: { id: subHireLine.id } });
+    expect(updated?.status).toBe("RETURNED");
+  });
+
+  it("a partial sub-hire return keeps the line CHECKED_OUT and the remainder visible", async () => {
+    const s = await seed();
+    const { org, project } = s;
+
+    const supplier = await testPrisma.supplier.create({
+      data: { organizationId: org.id, name: "Partial Supplier" },
+    });
+    const subHire = await testPrisma.subHire.create({
+      data: {
+        organizationId: org.id,
+        supplierId: supplier.id,
+        createdById: h.ctx.userId,
+        orderNumber: `SH-${createId().slice(0, 6)}`,
+        status: "CONFIRMED",
+        totalCost: 100,
+        totalCharge: 150,
+      },
+    });
+
+    const genModel = await createModelFixture(org.id, { name: "Generator" });
+    const subHireLine = await testPrisma.projectLineItem.create({
+      data: {
+        organizationId: org.id,
+        projectId: project.id,
+        type: "EQUIPMENT",
+        modelId: genModel.id,
+        subHireId: subHire.id,
+        quantity: 5,
+        checkedOutQuantity: 5,
+        status: "CHECKED_OUT",
+        sortOrder: 0,
+      },
+    });
+
+    const subHireKey = `subhire:${subHireLine.id}`;
+    expect(outstandingFor(await getBulkCheckInTotals(project.id), subHireKey)).toBe(5);
+
+    // Return 3 of 5 — line must stay CHECKED_OUT with 2 still outstanding.
+    await checkInBulkTotals(project.id, [{ key: subHireKey, quantity: 3, condition: "GOOD" }]);
+
+    const afterPartial = await testPrisma.projectLineItem.findUnique({ where: { id: subHireLine.id } });
+    expect(afterPartial).toMatchObject({ status: "CHECKED_OUT", returnedQuantity: 3 });
+    expect(outstandingFor(await getBulkCheckInTotals(project.id), subHireKey)).toBe(2);
+
+    // Return the remaining 2 — now it flips to RETURNED and drops off the totals.
+    await checkInBulkTotals(project.id, [{ key: subHireKey, quantity: 2, condition: "GOOD" }]);
+
+    const afterFull = await testPrisma.projectLineItem.findUnique({ where: { id: subHireLine.id } });
+    expect(afterFull).toMatchObject({ status: "RETURNED", returnedQuantity: 5 });
+    expect(
+      (await getBulkCheckInTotals(project.id)).find((t) => t.key === subHireKey),
+    ).toBeUndefined();
+  });
+
+  it("handles mixed-type batch returns (accessory + custom + sub-hire)", async () => {
+    const s = await seed();
+    const { org, lightModel, project } = s;
+
+    // Accessory
+    const clampModel = await createModelFixture(org.id);
+    const clamps = await createBulkAssetFixture(org.id, clampModel.id, {
+      assetTag: `CLAMP-${createId().slice(0, 4)}`,
+      total: 100,
+    });
+    await addModelBulkAccessory(lightModel.id, { bulkAssetId: clamps.id, quantity: 1 });
+    const light = await createAssetFixture(org.id, lightModel.id, { assetTag: `L-${createId().slice(0, 4)}` });
+    const line = await addLineItem(project.id, { type: "EQUIPMENT", modelId: lightModel.id, assetId: light.id, quantity: 1 }, true);
+    const lineId = (line as { id: string }).id;
+    await checkOutItems(project.id, [{ lineItemId: lineId, assetId: light.id }]);
+
+    // Custom item
+    const customLine = await testPrisma.projectLineItem.create({
+      data: {
+        organizationId: org.id,
+        projectId: project.id,
+        type: "EQUIPMENT",
+        isCustomItem: true,
+        description: "Custom piece",
+        quantity: 1,
+        checkedOutQuantity: 1,
+        status: "CHECKED_OUT",
+        sortOrder: 1,
+      },
+    });
+
+    // Sub-hire item
+    const supplier = await testPrisma.supplier.create({
+      data: { organizationId: org.id, name: "Supplier" },
+    });
+    const subHire = await testPrisma.subHire.create({
+      data: {
+        organizationId: org.id,
+        supplierId: supplier.id,
+        createdById: h.ctx.userId,
+        orderNumber: `SH-${createId().slice(0, 6)}`,
+        status: "CONFIRMED",
+        totalCost: 100,
+        totalCharge: 150,
+      },
+    });
+    const subHireLine = await testPrisma.projectLineItem.create({
+      data: {
+        organizationId: org.id,
+        projectId: project.id,
+        type: "EQUIPMENT",
+        subHireId: subHire.id,
+        quantity: 1,
+        checkedOutQuantity: 1,
+        status: "CHECKED_OUT",
+        sortOrder: 2,
+      },
+    });
+
+    const totals = await getBulkCheckInTotals(project.id);
+    // Light + clamp accessory + custom + sub-hire
+    expect(totals).toHaveLength(4);
+    const lightKey = `asset:${light.id}`;
+
+    await checkInBulkTotals(project.id, [
+      { key: lightKey, quantity: 1, condition: "GOOD" },
+      { key: `bulk:${clamps.id}`, quantity: 1, condition: "GOOD" },
+      { key: `custom:${customLine.id}`, quantity: 1, condition: "GOOD" },
+      { key: `subhire:${subHireLine.id}`, quantity: 1, condition: "GOOD" },
+    ]);
+
+    // Accessory returned
+    const accessoryChild = await testPrisma.projectLineItem.findFirst({
+      where: { parentLineItemId: lineId, childKind: "ACCESSORY" },
+    });
+    expect(accessoryChild?.status).toBe("RETURNED");
+
+    // Light returned
+    const updatedLine = await testPrisma.projectLineItem.findUnique({
+      where: { id: lineId },
+    });
+    expect(updatedLine?.status).toBe("RETURNED");
+
+    // Custom returned
+    const updatedCustom = await testPrisma.projectLineItem.findUnique({
+      where: { id: customLine.id },
+    });
+    expect(updatedCustom?.status).toBe("RETURNED");
+
+    // Sub-hire returned
+    const updatedSubHire = await testPrisma.projectLineItem.findUnique({
+      where: { id: subHireLine.id },
+    });
+    expect(updatedSubHire?.status).toBe("RETURNED");
+
+    // All checked in — totals should be empty
     expect(await getBulkCheckInTotals(project.id)).toEqual([]);
   });
 });

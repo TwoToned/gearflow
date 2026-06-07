@@ -1,18 +1,5 @@
 "use server";
 
-/**
- * Bulk Check-In Totals — server actions.
- *
- * Aggregates every DEPLOYED accessory child line item across a project into
- * per-identity totals (one row per bulk asset / per serialised accessory model)
- * and lets the operator return a counted quantity in one action, instead of
- * drilling into each parent. Roadmap Phase 1.3. See FEATUREDOCS/52-bulk-checkin.md.
- *
- * The aggregation + distribution rules live in the pure `@/lib/bulk-checkin`
- * helpers; this module is the IO shell (org scoping, permission, transaction,
- * activity log, serialize).
- */
-
 import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
@@ -22,28 +9,31 @@ import {
   syncLineItemRollup,
 } from "@/lib/line-item-fulfillment";
 import {
-  aggregateAccessoryTotals,
-  accessoryGroupKey,
+  aggregateCheckInTotals,
+  itemGroupKey,
   distributeReturn,
-  type AccessoryChildInput,
+  type CheckInItem,
+  type CheckInItemType,
   type BulkCheckInTotal,
 } from "@/lib/bulk-checkin";
 
 type ReturnCondition = "GOOD" | "DAMAGED" | "MISSING";
 
-/** Columns the rollup/outstanding maths needs off each unit row. */
 const UNIT_SELECT = {
   quantity: true,
   returnedQuantity: true,
   status: true,
 } as const;
 
-type AccessoryChildRow = {
+type DeployedItemRow = {
   id: string;
   modelId: string | null;
   sortOrder: number;
   assetId: string | null;
   bulkAssetId: string | null;
+  subHireId: string | null;
+  isCustomItem: boolean;
+  childKind: string | null;
   checkedOutQuantity: number;
   returnedQuantity: number;
   status: string;
@@ -51,12 +41,7 @@ type AccessoryChildRow = {
   units: Array<{ quantity: number; returnedQuantity: number; status: string }>;
 };
 
-/**
- * Outstanding deployed quantity still due back on one accessory child line.
- * Prefer the unit rows (the source of truth post-cutover); fall back to the
- * order line's denormalised counters for any legacy child with no units.
- */
-function childOutstanding(child: AccessoryChildRow): number {
+function childOutstanding(child: DeployedItemRow): number {
   if (child.units.length > 0) {
     return child.units.reduce(
       (sum, u) =>
@@ -70,8 +55,14 @@ function childOutstanding(child: AccessoryChildRow): number {
   return Math.max(0, child.checkedOutQuantity - child.returnedQuantity);
 }
 
-/** Reduce a DB accessory child row to the pure-helper input shape. */
-function toInput(child: AccessoryChildRow): AccessoryChildInput {
+function toInput(child: DeployedItemRow): CheckInItem {
+  let itemType: CheckInItemType;
+  if (child.childKind === "ACCESSORY") itemType = "ACCESSORY";
+  else if (child.isCustomItem) itemType = "CUSTOM";
+  else if (child.subHireId) itemType = "SUBHIRE";
+  else if (child.bulkAssetId) itemType = "OWNED_BULK";
+  else itemType = "OWNED_SERIALISED";
+
   return {
     lineItemId: child.id,
     modelId: child.modelId,
@@ -79,17 +70,30 @@ function toInput(child: AccessoryChildRow): AccessoryChildInput {
     modelNumber: child.model?.modelNumber ?? null,
     assetId: child.assetId,
     bulkAssetId: child.bulkAssetId,
+    subHireId: child.subHireId,
+    isCustomItem: child.isCustomItem,
+    childKind: child.childKind,
     sortOrder: child.sortOrder,
     outstanding: childOutstanding(child),
+    itemType,
   };
 }
 
-async function loadAccessoryChildren(
+async function loadDeployedItems(
   organizationId: string,
   projectId: string,
-): Promise<AccessoryChildRow[]> {
+): Promise<DeployedItemRow[]> {
   return prisma.projectLineItem.findMany({
-    where: { organizationId, projectId, childKind: "ACCESSORY" },
+    where: {
+      organizationId,
+      projectId,
+      status: "CHECKED_OUT",
+      subHireGroupId: null,
+      OR: [
+        { isKitChild: false },
+        { isKitChild: true, childKind: "ACCESSORY" },
+      ],
+    },
     orderBy: { sortOrder: "asc" },
     select: {
       id: true,
@@ -97,6 +101,9 @@ async function loadAccessoryChildren(
       sortOrder: true,
       assetId: true,
       bulkAssetId: true,
+      subHireId: true,
+      isCustomItem: true,
+      childKind: true,
       checkedOutQuantity: true,
       returnedQuantity: true,
       status: true,
@@ -106,34 +113,15 @@ async function loadAccessoryChildren(
   });
 }
 
-/**
- * Read the bulk check-in totals for a project: every deployed accessory child
- * aggregated by identity. Read-only, org-scoped.
- */
 export async function getBulkCheckInTotals(
   projectId: string,
 ): Promise<BulkCheckInTotal[]> {
   const { organizationId } = await getOrgContext();
-  const children = await loadAccessoryChildren(organizationId, projectId);
-  return serialize(aggregateAccessoryTotals(children.map(toInput)));
+  const items = await loadDeployedItems(organizationId, projectId);
+  return serialize(aggregateCheckInTotals(items.map(toInput)));
 }
 
-/**
- * Return accessories in aggregate. Each entry names a total (`key`) and how many
- * of that identity are physically in front of the operator. The requested count
- * is distributed deterministically across the underlying child line items.
- *
- * Safety:
- *  - **Authoritative outstanding.** Quantities are recomputed server-side from
- *    the live unit rows inside the transaction; the client number is never
- *    trusted.
- *  - **Over-return rejected.** If a requested quantity exceeds what is currently
- *    deployed for that identity, the whole batch throws and rolls back.
- *  - **Idempotent / empty-safe.** A zero (or omitted) quantity is skipped, an
- *    empty `returns` array is a clean no-op, and `returnLineUnits` clamps each
- *    child so a repeated submit can never drive a child below zero.
- */
-export async function checkInBulkAccessoryTotals(
+export async function checkInBulkTotals(
   projectId: string,
   returns: Array<{ key: string; quantity: number; condition?: ReturnCondition }>,
 ) {
@@ -142,7 +130,6 @@ export async function checkInBulkAccessoryTotals(
     "check_in",
   );
 
-  // Only act on entries that actually ask for something back.
   const wanted = (returns ?? []).filter(
     (r) => r && typeof r.quantity === "number" && r.quantity > 0,
   );
@@ -157,9 +144,17 @@ export async function checkInBulkAccessoryTotals(
     });
     const defaultLocationId = defaultLocation?.id ?? null;
 
-    // Authoritative re-read inside the transaction.
-    const children = (await tx.projectLineItem.findMany({
-      where: { organizationId, projectId, childKind: "ACCESSORY" },
+    const items = (await tx.projectLineItem.findMany({
+      where: {
+        organizationId,
+        projectId,
+        status: "CHECKED_OUT",
+        subHireGroupId: null,
+        OR: [
+          { isKitChild: false },
+          { isKitChild: true, childKind: "ACCESSORY" },
+        ],
+      },
       orderBy: { sortOrder: "asc" },
       select: {
         id: true,
@@ -167,25 +162,27 @@ export async function checkInBulkAccessoryTotals(
         sortOrder: true,
         assetId: true,
         bulkAssetId: true,
+        subHireId: true,
+        isCustomItem: true,
+        childKind: true,
         checkedOutQuantity: true,
         returnedQuantity: true,
         status: true,
         model: { select: { name: true, modelNumber: true } },
         units: { select: UNIT_SELECT },
       },
-    })) as AccessoryChildRow[];
+    })) as DeployedItemRow[];
 
-    // Bucket children by aggregation key so a requested total maps to its lines.
-    const byKey = new Map<string, AccessoryChildInput[]>();
+    const byKey = new Map<string, CheckInItem[]>();
     const labelByKey = new Map<string, string>();
-    for (const child of children) {
-      const input = toInput(child);
-      const key = accessoryGroupKey(input);
+    for (const item of items) {
+      const input = toInput(item);
+      const key = itemGroupKey(input);
       if (!key) continue;
       const bucket = byKey.get(key);
       if (bucket) bucket.push(input);
       else byKey.set(key, [input]);
-      if (!labelByKey.has(key)) labelByKey.set(key, input.modelName ?? "Accessory");
+      if (!labelByKey.has(key)) labelByKey.set(key, input.modelName ?? (input.itemType === "ACCESSORY" ? "Accessory" : "Item"));
     }
 
     const summary: Array<{ key: string; quantity: number; condition: ReturnCondition }> = [];
@@ -195,7 +192,6 @@ export async function checkInBulkAccessoryTotals(
       const groupChildren = byKey.get(req.key) ?? [];
       const { allocations, distributed } = distributeReturn(groupChildren, req.quantity);
 
-      // Over-return: asked for more than is currently deployed for this identity.
       if (distributed < req.quantity) {
         const available = groupChildren.reduce((s, c) => s + Math.max(0, c.outstanding), 0);
         throw new Error(
@@ -204,7 +200,36 @@ export async function checkInBulkAccessoryTotals(
       }
 
       const assetsTouched: string[] = [];
+
       for (const alloc of allocations) {
+        if (alloc.itemType === "SUBHIRE" || alloc.itemType === "CUSTOM") {
+          const line = await tx.projectLineItem.findUnique({
+            where: { id: alloc.lineItemId },
+            select: { checkedOutQuantity: true, returnedQuantity: true },
+          });
+          const newReturned = (line?.returnedQuantity ?? 0) + alloc.quantity;
+          const isFullyReturned = newReturned >= (line?.checkedOutQuantity ?? 0);
+          await tx.projectLineItem.update({
+            where: { id: alloc.lineItemId },
+            data: {
+              status: isFullyReturned ? "RETURNED" : "CHECKED_OUT",
+              returnedQuantity: { increment: alloc.quantity },
+              returnCondition: condition,
+              // Only stamp the return actor/timestamp once the line is fully
+              // back — a partial return shouldn't claim the line is closed out.
+              ...(isFullyReturned
+                ? { returnedAt: new Date(), returnedById: userId }
+                : {}),
+            },
+          });
+          // NB: no syncLineItemRollup here. Sub-hire/custom lines carry no
+          // ProjectLineItemUnit rows, so the rollup would recompute every
+          // counter from an empty unit set and zero out the checkedOut /
+          // returned quantities we just set — making outstanding units
+          // invisible. The line-level fields ARE the source of truth here.
+          continue;
+        }
+
         const { assetsTouched: touched } = await returnLineUnits(tx, {
           organizationId,
           projectId,
@@ -220,7 +245,6 @@ export async function checkInBulkAccessoryTotals(
         assetsTouched.push(...touched);
       }
 
-      // Audit: per-asset scan logs for serialised returns, plus a group summary.
       for (const assetId of assetsTouched) {
         await tx.assetScanLog.create({
           data: {

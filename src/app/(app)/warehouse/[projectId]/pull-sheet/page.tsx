@@ -60,7 +60,7 @@ function PullSheetOverbookedBadge({ info }: { info?: { overBy: number; totalStoc
           <Tooltip>
             <TooltipTrigger
               render={
-                <Badge variant="outline" className="ml-1.5 cursor-help text-xs print:border-purple-500 print:text-purple-600 bg-purple-500/10 text-purple-600 border-purple-500/20">
+                <Badge variant="outline" className="ml-1.5 cursor-help text-xs print:border-blue-500 print:text-blue-600 bg-blue-500/10 text-blue-600 border-blue-500/20">
                   Reduced Stock
                 </Badge>
               }
@@ -74,7 +74,7 @@ function PullSheetOverbookedBadge({ info }: { info?: { overBy: number; totalStoc
 
   const isReduced = info.reducedOnly;
   const colorClass = isReduced
-    ? "bg-purple-500/10 text-purple-600 border-purple-500/20"
+    ? "bg-blue-500/10 text-blue-600 border-blue-500/20"
     : info.inherited
       ? "bg-amber-500/10 text-amber-600 border-amber-500/20"
       : "bg-red-500/10 text-red-600 border-red-500/20";

@@ -106,7 +106,7 @@ export function SSOPendingApprovals() {
               onValueChange={(v) => setRoleOverrides({ ...roleOverrides, [approval.id]: v })}
             >
               <SelectTrigger className="w-36 h-8 text-xs">
-                <SelectValue />
+                <SelectValue>{allRoles.find((r) => r.value === (roleOverrides[approval.id] || approval.suggestedRole || "member"))?.label ?? (roleOverrides[approval.id] || approval.suggestedRole || "member")}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {allRoles.map((r) => (

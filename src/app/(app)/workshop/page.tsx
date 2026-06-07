@@ -66,7 +66,7 @@ const COLUMNS: Array<{
     status: "AWAITING_PARTS",
     label: "Awaiting Parts",
     desc: "Parts ordered",
-    headerClass: "border-purple-500/40 bg-purple-500/5",
+    headerClass: "border-blue-500/40 bg-blue-500/5",
   },
   {
     status: "IN_PROGRESS",

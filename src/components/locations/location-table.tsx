@@ -91,7 +91,7 @@ const columns: ColumnDef<LocationRow>[] = [
     filterOptions: [
       { value: "WAREHOUSE", label: "Warehouse", color: "bg-blue-500" },
       { value: "VENUE", label: "Venue", color: "bg-amber-500" },
-      { value: "VEHICLE", label: "Vehicle", color: "bg-purple-500" },
+      { value: "VEHICLE", label: "Vehicle", color: "bg-teal-500" },
       { value: "OFFSITE", label: "Offsite", color: "bg-gray-500" },
     ],
     cell: (row) => (

@@ -316,7 +316,7 @@ export function EquipmentAddForm({
                       )}
                     </p>
                     {(availability.unavailable ?? 0) > 0 && (
-                      <p className="text-purple-600 dark:text-purple-400 text-xs">
+                      <p className="text-blue-600 dark:text-blue-400 text-xs">
                         {availability.unavailable} of {availability.totalStock} total not usable
                         {" "}
                         ({[
@@ -384,12 +384,12 @@ export function EquipmentAddForm({
                   (availability?.totalStock ?? 0) -
                     ((availability?.booked ?? 0) - (availability?.bookedOnThisProject ?? 0));
               const borderColor = isReducedOnly
-                ? "border-purple-500/50 bg-purple-500/10"
+                ? "border-blue-500/50 bg-blue-500/10"
                 : "border-red-500/50 bg-red-500/10";
               const textColor = isReducedOnly
-                ? "text-purple-600 dark:text-purple-400"
+                ? "text-blue-600 dark:text-blue-400"
                 : "text-red-600 dark:text-red-400";
-              const accentColor = isReducedOnly ? "accent-purple-500" : "accent-red-500";
+              const accentColor = isReducedOnly ? "accent-blue-500" : "accent-red-500";
               return (
                 <div className={`rounded-md border ${borderColor} p-3 space-y-2`}>
                   <p className={`text-sm font-medium ${textColor}`}>

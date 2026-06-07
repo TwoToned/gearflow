@@ -43,7 +43,8 @@ interface CustomRoleData {
 
 const customRoleColorToIntent: Record<string, ColorIntent> = {
   blue: "info",
-  purple: "primary",
+  cyan: "info",
+  purple: "info",
   green: "success",
   orange: "warning",
   red: "error",

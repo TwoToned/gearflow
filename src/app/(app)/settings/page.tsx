@@ -33,10 +33,10 @@ export default function GeneralSettingsPage() {
 
   useEffect(() => {
     if (org) {
-      setName((org as Record<string, unknown>).name as string || ""); // eslint-disable-line react-hooks/set-state-in-effect
-      setSettings((org as Record<string, unknown>).settings as OrgSettings || {}); // eslint-disable-line react-hooks/set-state-in-effect
+      setName((org as Record<string, unknown>).name as string || "");
+      setSettings((org as Record<string, unknown>).settings as OrgSettings || {});
       const taxRate = (org as Record<string, unknown>).defaultTaxRate;
-      setDefaultTaxRate(taxRate != null ? String(taxRate) : ""); // eslint-disable-line react-hooks/set-state-in-effect
+      setDefaultTaxRate(taxRate != null ? String(taxRate) : "");
     }
   }, [org]);
 

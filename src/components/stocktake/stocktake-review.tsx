@@ -25,12 +25,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
@@ -52,7 +46,7 @@ const resultColors: Record<string, string> = {
   MISSING: "bg-red-500/10 text-red-500 border-red-500/20",
   UNEXPECTED: "bg-amber-500/10 text-amber-500 border-amber-500/20",
   QUANTITY_MISMATCH: "bg-orange-500/10 text-orange-500 border-orange-500/20",
-  WRONG_LOCATION: "bg-purple-500/10 text-purple-500 border-purple-500/20",
+  WRONG_LOCATION: "bg-blue-500/10 text-blue-500 border-blue-500/20",
 };
 
 type FilterType = "ALL" | "MISSING" | "UNEXPECTED" | "QUANTITY_MISMATCH" | "WRONG_LOCATION";
@@ -149,34 +143,26 @@ export function StocktakeReview({ stocktake, onUpdate }: StocktakeReviewProps) {
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Card>
-          <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">Expected</p>
-            <p className="text-2xl font-bold">{stocktake.expectedCount}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">Found</p>
-            <p className="text-2xl font-bold text-green-500">
-              {stocktake.foundCount}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">Missing</p>
-            <p className="text-2xl font-bold text-red-500">{missingCount}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">Unexpected</p>
-            <p className="text-2xl font-bold text-amber-500">
-              {unexpectedCount}
-            </p>
-          </CardContent>
-        </Card>
+        <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+          <p className="text-xs text-muted-foreground">Expected</p>
+          <p className="text-2xl font-bold">{stocktake.expectedCount}</p>
+        </div>
+        <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+          <p className="text-xs text-muted-foreground">Found</p>
+          <p className="text-2xl font-bold text-green-500">
+            {stocktake.foundCount}
+          </p>
+        </div>
+        <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+          <p className="text-xs text-muted-foreground">Missing</p>
+          <p className="text-2xl font-bold text-red-500">{missingCount}</p>
+        </div>
+        <div className="rounded-lg bg-bg-surface p-4 surface-ring">
+          <p className="text-xs text-muted-foreground">Unexpected</p>
+          <p className="text-2xl font-bold text-amber-500">
+            {unexpectedCount}
+          </p>
+        </div>
       </div>
 
       {/* Filter tabs */}
@@ -248,13 +234,10 @@ export function StocktakeReview({ stocktake, onUpdate }: StocktakeReviewProps) {
       )}
 
       {/* Discrepancy list */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">
-            Discrepancies ({filteredItems.length})
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <h3 className="t-heading text-fg mb-3">
+          Discrepancies ({filteredItems.length})
+        </h3>
           {filteredItems.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4 text-center">
               {filter === "ALL"
@@ -279,8 +262,7 @@ export function StocktakeReview({ stocktake, onUpdate }: StocktakeReviewProps) {
               ))}
             </div>
           )}
-        </CardContent>
-      </Card>
+      </div>
 
       {/* Action buttons */}
       <div className="flex gap-2">

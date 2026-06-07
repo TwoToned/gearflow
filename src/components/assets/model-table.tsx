@@ -70,7 +70,7 @@ const TYPE_COLORS: Record<CheckItemType, string> = {
   PASS_FAIL: "bg-green-500/10 text-green-500 border-green-500/20",
   NOTES: "bg-blue-500/10 text-blue-500 border-blue-500/20",
   MEASUREMENT: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  DROPDOWN: "bg-purple-500/10 text-purple-500 border-purple-500/20",
+  DROPDOWN: "bg-blue-500/10 text-blue-500 border-blue-500/20",
 };
 
 function useModelColumns(

@@ -15,7 +15,7 @@ export default function AdminDashboardPage() {
     <AdminShell>
       <div className="space-y-6">
         <div>
-          <h1 className="t-title text-fg">Admin Dashboard</h1>
+          <h1 className="t-title text-fg">Dashboard</h1>
           <p className="text-fg-3">
             Platform overview and recent activity.
           </p>

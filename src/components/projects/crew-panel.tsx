@@ -1096,7 +1096,7 @@ function AssignmentDialog({
                 }
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue>{assignmentStatusLabels[form.watch("status") ?? ""] ?? form.watch("status")}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {allStatuses.map((s) => (

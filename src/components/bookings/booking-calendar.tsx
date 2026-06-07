@@ -51,8 +51,8 @@ const statusColors: Record<string, string> = {
   QUOTED: "bg-blue-400",
   CONFIRMED: "bg-green-400",
   PREPPING: "bg-amber-400",
-  CHECKED_OUT: "bg-purple-500",
-  ON_SITE: "bg-purple-500",
+  CHECKED_OUT: "bg-teal-500",
+  ON_SITE: "bg-teal-500",
   RETURNED: "bg-teal-400",
   COMPLETED: "bg-green-400",
   INVOICED: "bg-green-400",
@@ -204,7 +204,7 @@ export function BookingCalendar({
     // Asset only: check if model is booked (purple hint)
     if (entityType === "asset" && modelId) {
       const modelCount = getBookingsForDay(modelBookings, day).length;
-      if (modelCount > 0) return "bg-purple-500/12 dark:bg-purple-500/18";
+      if (modelCount > 0) return "bg-teal-500/12 dark:bg-teal-500/18";
     }
     return "";
   }
@@ -296,7 +296,7 @@ export function BookingCalendar({
         </div>
         {entityType === "asset" && modelId && (
           <div className="flex items-center gap-1.5">
-            <span className="inline-block h-3 w-3 rounded-sm bg-purple-500/18 border border-purple-500/30" />
+            <span className="inline-block h-3 w-3 rounded-sm bg-teal-500/18 border border-teal-500/30" />
             Model booked (not this asset)
           </div>
         )}
@@ -382,7 +382,7 @@ export function BookingCalendar({
                                   {dayModelBookings.slice(0, Math.max(0, 4 - count)).map((b) => (
                                     <span
                                       key={`m-${b.id}`}
-                                      className="inline-block h-1.5 w-1.5 rounded-full bg-purple-400"
+                                      className="inline-block h-1.5 w-1.5 rounded-full bg-teal-400"
                                     />
                                   ))}
                                   {count + dayModelBookings.length > 4 && (
@@ -412,7 +412,7 @@ export function BookingCalendar({
                                   {count < 2 && dayModelBookings.slice(0, 2 - count).map((b) => (
                                     <div
                                       key={`m-${b.id}`}
-                                      className="text-[9px] leading-tight truncate rounded px-0.5 bg-purple-500 text-white"
+                                      className="text-[9px] leading-tight truncate rounded px-0.5 bg-teal-500 text-white"
                                     >
                                       {b.projectNumber}
                                     </div>
@@ -513,14 +513,14 @@ export function BookingCalendar({
                       {/* Model-level bookings for assets (purple hint) */}
                       {selectedModelBookings.length > 0 && (
                         <>
-                          <p className="text-xs text-purple-400 pt-1">
+                          <p className="text-xs text-teal-400 pt-1">
                             Model booked (not this asset)
                           </p>
                           {selectedModelBookings.map((b) => (
                             <button
                               key={b.id}
                               onClick={() => router.push(`/projects/${b.projectId}`)}
-                              className="w-full text-left rounded-lg border border-purple-500/20 p-3 hover:bg-accent/50 transition-colors cursor-pointer space-y-1.5"
+                              className="w-full text-left rounded-lg border border-teal-500/20 p-3 hover:bg-accent/50 transition-colors cursor-pointer space-y-1.5"
                             >
                               <div className="flex items-center justify-between gap-2">
                                 <span className="font-medium text-sm">
@@ -528,7 +528,7 @@ export function BookingCalendar({
                                 </span>
                                 <Badge
                                   variant="outline"
-                                  className="text-[10px] bg-purple-500/10 text-purple-400 border-purple-500/20"
+                                  className="text-[10px] bg-teal-500/10 text-teal-400 border-teal-500/20"
                                 >
                                   {statusLabels[b.projectStatus] || b.projectStatus}
                                 </Badge>

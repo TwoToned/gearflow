@@ -209,7 +209,7 @@ function EditLineItemDialogBody({
                 )}
               </p>
               {(availability.unavailable ?? 0) > 0 && (
-                <p className="text-purple-600 dark:text-purple-400 text-xs">
+                <p className="text-blue-600 dark:text-blue-400 text-xs">
                   {availability.unavailable} of {availability.totalStock} total not usable
                   {" "}({[
                     availability.inMaintenance ? `${availability.inMaintenance} in maintenance` : "",

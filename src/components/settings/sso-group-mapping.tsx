@@ -184,7 +184,7 @@ export function SSOGroupMappingSection({
           disabled={!canUpdate}
         >
           <SelectTrigger className="w-48">
-            <SelectValue />
+            <SelectValue>{{ name: "Group Name", id: "Group ID" }[groupValueType] ?? groupValueType}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="name">Group Name</SelectItem>

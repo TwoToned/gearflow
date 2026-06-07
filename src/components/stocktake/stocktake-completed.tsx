@@ -31,7 +31,7 @@ const resultColors: Record<string, string> = {
   MISSING: "bg-red-500/10 text-red-500 border-red-500/20",
   UNEXPECTED: "bg-amber-500/10 text-amber-500 border-amber-500/20",
   QUANTITY_MISMATCH: "bg-orange-500/10 text-orange-500 border-orange-500/20",
-  WRONG_LOCATION: "bg-purple-500/10 text-purple-500 border-purple-500/20",
+  WRONG_LOCATION: "bg-blue-500/10 text-blue-500 border-blue-500/20",
 };
 
 interface StocktakeCompletedProps {

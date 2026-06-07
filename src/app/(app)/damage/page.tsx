@@ -48,7 +48,7 @@ const statusConfig: Record<string, { label: string; className: string }> = {
   OPEN: { label: "Open", className: "bg-blue-500/10 text-blue-600 border-blue-500/30" },
   UNDER_REPAIR: { label: "Under repair", className: "bg-amber-500/10 text-amber-600 border-amber-500/30" },
   RESOLVED: { label: "Resolved", className: "bg-green-500/10 text-green-600 border-green-500/30" },
-  CHARGED_BACK: { label: "Charged back", className: "bg-purple-500/10 text-purple-600 border-purple-500/30" },
+  CHARGED_BACK: { label: "Charged back", className: "bg-blue-500/10 text-blue-600 border-blue-500/30" },
 };
 
 // Anywhere we touch `row` we keep the type loose — server fn returns
@@ -199,7 +199,7 @@ function DamageListContent() {
       sortable: false,
       cell: (row) =>
         row.chargedBack ? (
-          <Badge variant="outline" className="bg-purple-500/10 text-purple-600 border-purple-500/30">
+          <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/30">
             <Receipt className="mr-1 size-3" /> Yes
           </Badge>
         ) : (

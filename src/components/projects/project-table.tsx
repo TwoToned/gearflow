@@ -49,11 +49,11 @@ const typeColors: Record<string, string> = {
   DRY_HIRE: "bg-blue-500/10 text-blue-500 border-blue-500/20",
   WET_HIRE: "bg-cyan-500/10 text-cyan-500 border-cyan-500/20",
   INSTALLATION: "bg-orange-500/10 text-orange-500 border-orange-500/20",
-  TOUR: "bg-purple-500/10 text-purple-500 border-purple-500/20",
+  TOUR: "bg-teal-500/10 text-teal-500 border-teal-500/20",
   CORPORATE: "bg-slate-500/10 text-slate-500 border-slate-500/20",
   THEATRE: "bg-rose-500/10 text-rose-500 border-rose-500/20",
   FESTIVAL: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  CONFERENCE: "bg-indigo-500/10 text-indigo-500 border-indigo-500/20",
+  CONFERENCE: "bg-blue-500/10 text-blue-500 border-blue-500/20",
   OTHER: "bg-gray-500/10 text-gray-500 border-gray-500/20",
 };
 
@@ -137,11 +137,11 @@ const projectColumns: ColumnDef<AnyProject>[] = [
       { value: "DRY_HIRE", label: "Dry Hire", color: "bg-blue-500" },
       { value: "WET_HIRE", label: "Wet Hire", color: "bg-cyan-500" },
       { value: "INSTALLATION", label: "Installation", color: "bg-orange-500" },
-      { value: "TOUR", label: "Tour", color: "bg-purple-500" },
+      { value: "TOUR", label: "Tour", color: "bg-teal-500" },
       { value: "CORPORATE", label: "Corporate", color: "bg-slate-500" },
       { value: "THEATRE", label: "Theatre", color: "bg-rose-500" },
       { value: "FESTIVAL", label: "Festival", color: "bg-amber-500" },
-      { value: "CONFERENCE", label: "Conference", color: "bg-indigo-500" },
+      { value: "CONFERENCE", label: "Conference", color: "bg-blue-500" },
       { value: "OTHER", label: "Other", color: "bg-gray-500" },
     ],
     cell: (row) => (
@@ -163,8 +163,8 @@ const projectColumns: ColumnDef<AnyProject>[] = [
       { value: "QUOTED", label: "Quoted", color: "bg-blue-500" },
       { value: "CONFIRMED", label: "Confirmed", color: "bg-green-500" },
       { value: "PREPPING", label: "Prepping", color: "bg-amber-500" },
-      { value: "CHECKED_OUT", label: "Deployed", color: "bg-purple-500" },
-      { value: "ON_SITE", label: "On Site", color: "bg-purple-500" },
+      { value: "CHECKED_OUT", label: "Deployed", color: "bg-teal-500" },
+      { value: "ON_SITE", label: "On Site", color: "bg-teal-500" },
       { value: "RETURNED", label: "Returned", color: "bg-teal-500" },
       { value: "COMPLETED", label: "Completed", color: "bg-green-500" },
       { value: "INVOICED", label: "Invoiced", color: "bg-green-500" },
@@ -320,7 +320,7 @@ function ProjectIssueBadge({ issues }: { issues: { hasOverbooked: boolean; hasRe
 
   const color = issues.hasOverbooked
     ? "text-red-500"
-    : "text-purple-500";
+    : "text-blue-500";
 
   return (
     <TooltipProvider>

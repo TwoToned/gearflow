@@ -406,7 +406,7 @@ function ActivityItem({ item }: { item: TimelineItem }) {
         <div
           className={`mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full ${
             isCheckOut
-              ? "bg-purple-500/10 text-purple-500"
+              ? "bg-teal-500/10 text-teal-500"
               : "bg-teal-500/10 text-teal-500"
           }`}
         >

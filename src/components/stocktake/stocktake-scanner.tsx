@@ -31,12 +31,6 @@ import { BarcodeScanner } from "@/components/ui/barcode-scanner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 
 interface StocktakeScannerProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -234,8 +228,7 @@ export function StocktakeScanner({
       </div>
 
       {/* Progress bar */}
-      <Card>
-        <CardContent className="pt-6">
+      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium">Progress</span>
             <span className="text-2xl font-bold tabular-nums">
@@ -254,8 +247,7 @@ export function StocktakeScanner({
           <p className="text-muted-foreground mt-1 text-sm">
             {progressPercent}% complete
           </p>
-        </CardContent>
-      </Card>
+      </div>
 
       {/* Scan button */}
       <Button
@@ -390,14 +382,11 @@ export function StocktakeScanner({
 
       {/* Bulk quantity entry */}
       {bulkEntry && (
-        <Card className="border-amber-500/30 bg-amber-500/5">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Info className="h-4 w-4" />
-              Enter counted quantity
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+        <div className="rounded-lg bg-amber-500/5 p-5 surface-ring sm:p-6">
+          <h3 className="t-heading text-fg flex items-center gap-2 mb-3">
+            <Info className="h-4 w-4" />
+            Enter counted quantity
+          </h3>
             <p className="text-sm text-muted-foreground mb-2">
               {bulkEntry.name} — expected: {bulkEntry.expected}
             </p>
@@ -434,16 +423,12 @@ export function StocktakeScanner({
                 Skip
               </Button>
             </div>
-          </CardContent>
-        </Card>
+        </div>
       )}
 
       {/* Recently scanned */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Recently Scanned</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <h3 className="t-heading text-fg mb-3">Recently Scanned</h3>
           {!recentScans || recentScans.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4 text-center">
               No items scanned yet. Scan a barcode or search to find items.
@@ -493,8 +478,7 @@ export function StocktakeScanner({
               })}
             </div>
           )}
-        </CardContent>
-      </Card>
+      </div>
 
       {/* Complete scanning button */}
       <Button

@@ -78,7 +78,7 @@ function useKitColumns(
       filterType: "enum",
       filterOptions: [
         { value: "AVAILABLE", label: "Available", color: "bg-green-500" },
-        { value: "CHECKED_OUT", label: "Deployed", color: "bg-purple-500" },
+        { value: "CHECKED_OUT", label: "Deployed", color: "bg-teal-500" },
         { value: "IN_MAINTENANCE", label: "In Maintenance", color: "bg-amber-500" },
         { value: "RETIRED", label: "Retired", color: "bg-gray-500" },
         { value: "INCOMPLETE", label: "Incomplete", color: "bg-red-500" },

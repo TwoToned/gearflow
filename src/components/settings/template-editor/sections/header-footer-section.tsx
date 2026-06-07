@@ -50,7 +50,7 @@ export function HeaderFooterSection({ settings, onSettingsChange }: HeaderFooter
             onValueChange={(v) => v && updateHeader({ logoMode: v as "logo" | "icon" | "none" })}
           >
             <SelectTrigger className="h-9 text-xs">
-              <SelectValue />
+              <SelectValue>{{ logo: "Full Logo", icon: "Icon Only", none: "No Logo" }[settings.header.logoMode] ?? settings.header.logoMode}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="logo">Full Logo</SelectItem>

@@ -86,7 +86,7 @@ export function SSOProvisioningSection({ provisioningMode, defaultRole, canUpdat
           disabled={!canUpdate}
         >
           <SelectTrigger className="w-48">
-            <SelectValue />
+            <SelectValue>{allRoles.find((r) => r.value === defaultRole)?.label ?? defaultRole}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             {allRoles.map((role) => (

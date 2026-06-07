@@ -148,7 +148,7 @@ export function CategoryManager() {
                 )}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="cat-icon">Icon (emoji)</Label>
+                <Label htmlFor="cat-icon">Icon</Label>
                 <Input id="cat-icon" {...form.register("icon")} placeholder="e.g. 🎤" className="w-20" />
               </div>
               <div className="space-y-2">

@@ -103,9 +103,9 @@ function useAssetColumns(
       filterType: "enum",
       filterOptions: [
         { value: "AVAILABLE", label: "Available", color: "bg-green-500" },
-        { value: "CHECKED_OUT", label: "Deployed", color: "bg-purple-500" },
+        { value: "CHECKED_OUT", label: "Deployed", color: "bg-teal-500" },
         { value: "IN_MAINTENANCE", label: "In Maintenance", color: "bg-amber-500" },
-        { value: "RESERVED", label: "Reserved", color: "bg-purple-500" },
+        { value: "RESERVED", label: "Reserved", color: "bg-blue-500" },
         { value: "RETIRED", label: "Retired", color: "bg-gray-500" },
         { value: "LOST", label: "Lost", color: "bg-red-500" },
       ],
@@ -121,7 +121,7 @@ function useAssetColumns(
       responsiveHide: "md",
       cell: (row) => {
         if (row.status === "CHECKED_OUT") {
-          return <span className="text-xs font-medium text-purple-400">Deployed</span>;
+          return <span className="text-xs font-medium text-teal-400">Deployed</span>;
         }
         if (row.status === "RESERVED") {
           return <span className="text-xs font-medium text-blue-400">Reserved</span>;

@@ -125,6 +125,8 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     return pathname === "/settings" ? "/settings" : null;
   })();
 
+  const activeTitle = settingsNav.flatMap((s) => s.items).find((i) => i.href === activeHref)?.title ?? "Settings";
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
@@ -132,7 +134,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
           {orgInitial}
         </div>
         <div>
-          <h1 className="t-title text-fg">Settings</h1>
+          <h1 className="t-title text-fg">{activeTitle}</h1>
           <p className="t-body text-fg-3">
             {activeOrg?.name ?? "Organization"}
           </p>

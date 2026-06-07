@@ -298,7 +298,7 @@ function OverbookedBadge({ info }: { info?: OverbookedInfo | null }) {
           <Tooltip>
             <TooltipTrigger
               render={
-                <Badge variant="outline" className="ml-1.5 cursor-help text-xs bg-purple-500/10 text-purple-600 border-purple-500/20">
+                <Badge variant="outline" className="ml-1.5 cursor-help text-xs bg-blue-500/10 text-blue-600 border-blue-500/20">
                   Reduced Stock
                 </Badge>
               }
@@ -314,7 +314,7 @@ function OverbookedBadge({ info }: { info?: OverbookedInfo | null }) {
 
   const isReduced = info.reducedOnly;
   const colorClass = isReduced
-    ? "bg-purple-500/10 text-purple-600 border-purple-500/20"
+    ? "bg-blue-500/10 text-blue-600 border-blue-500/20"
     : info.inherited
       ? "bg-amber-500/10 text-amber-600 border-amber-500/20"
       : "bg-red-500/10 text-red-600 border-red-500/20";
@@ -876,7 +876,7 @@ export function LineItemRow({
             return null;
           })()}
           {desc.isKit && (
-            <Badge variant="outline" className="ml-1.5 text-xs bg-indigo-500/10 text-indigo-600 border-indigo-500/20">
+            <Badge variant="outline" className="ml-1.5 text-xs bg-blue-500/10 text-blue-600 border-blue-500/20">
               Kit
             </Badge>
           )}

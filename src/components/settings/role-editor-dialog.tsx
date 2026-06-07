@@ -46,7 +46,7 @@ interface RoleEditorDialogProps {
 
 const ROLE_COLORS = [
   { value: "blue", label: "Blue", classes: "bg-blue-500/10 text-blue-500 border-blue-500/20" },
-  { value: "purple", label: "Purple", classes: "bg-purple-500/10 text-purple-500 border-purple-500/20" },
+  { value: "cyan", label: "Cyan", classes: "bg-cyan-500/10 text-cyan-500 border-cyan-500/20" },
   { value: "green", label: "Green", classes: "bg-green-500/10 text-green-500 border-green-500/20" },
   { value: "orange", label: "Orange", classes: "bg-orange-500/10 text-orange-500 border-orange-500/20" },
   { value: "red", label: "Red", classes: "bg-red-500/10 text-red-500 border-red-500/20" },

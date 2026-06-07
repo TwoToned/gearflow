@@ -51,10 +51,12 @@ const ITEM_TYPE_LABELS: Record<CheckInItemType, string> = {
   ACCESSORY: "Accessory",
 };
 
-const ITEM_TYPE_VARIANTS: Record<CheckInItemType, string> = {
+const ITEM_TYPE_VARIANTS: Record<CheckInItemType, "default" | "secondary" | "outline" | "destructive"> = {
   OWNED_SERIALISED: "default",
   OWNED_BULK: "default",
-  SUBHIRE: "default",
+  // DESIGN.md has no cyan in its palette — sub-hire uses the standard
+  // "secondary" variant rather than a hardcoded cyan badge.
+  SUBHIRE: "secondary",
   CUSTOM: "secondary",
   ACCESSORY: "outline",
 };
@@ -73,7 +75,7 @@ export function BulkCheckInTab({ projectId }: { projectId: string }) {
     queryFn: () => getBulkCheckInTotals(projectId),
   });
 
-  const rows = (totals ?? []) as BulkCheckInTotal[];
+  const rows = totals ?? [];
 
   const mutation = useMutation({
     mutationFn: (returns: Array<{ key: string; quantity: number; condition: Condition }>) =>
@@ -190,8 +192,8 @@ export function BulkCheckInTab({ projectId }: { projectId: string }) {
                         <span className="font-mono text-xs text-fg-4">{row.modelNumber}</span>
                       )}
                       <Badge
-                        variant={ITEM_TYPE_VARIANTS[row.itemType] as "default" | "secondary" | "outline" | "destructive"}
-                        className={`text-[10px] px-1.5 py-0 ${row.itemType === "SUBHIRE" ? "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200 border-cyan-200 dark:border-cyan-800" : row.itemType === "CUSTOM" ? "text-fg-4" : "text-fg-3"}`}
+                        variant={ITEM_TYPE_VARIANTS[row.itemType]}
+                        className="text-[10px] px-1.5 py-0"
                       >
                         {ITEM_TYPE_LABELS[row.itemType]}
                       </Badge>
@@ -208,7 +210,7 @@ export function BulkCheckInTab({ projectId }: { projectId: string }) {
                       min={0}
                       max={row.totalDue}
                       aria-label={`Check-in quantity for ${row.label}`}
-                      aria-invalid={over}
+                      aria-invalid={over ? "true" : "false"}
                       className={`h-9 w-24 ml-auto text-right tabular-nums ${over ? "border-destructive" : ""}`}
                       value={counts[row.key] ?? String(row.totalDue)}
                       onChange={(e) =>

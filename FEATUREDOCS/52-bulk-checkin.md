@@ -27,8 +27,15 @@ Depends on [Child Assets / Accessories](./48-child-assets-accessories.md).
   the underlying line items deterministically.
 - Owned serialised/owned bulk/accessory items go through `returnLineUnits` (the
   same primitive the per-parent check-in uses).
-- Sub-hire and custom items have their line-item status updated directly to
-  RETURNED.
+- Sub-hire and custom items carry **no `ProjectLineItemUnit` rows** — their
+  line-item `status` and `returnedQuantity` are the source of truth and are
+  updated directly. The line only flips to `RETURNED` once the cumulative
+  returned quantity meets/exceeds `checkedOutQuantity`; a partial return stays
+  `CHECKED_OUT` so the remaining quantity is still visible to
+  `getBulkCheckInTotals` (which filters on `status: CHECKED_OUT`). Because these
+  lines have no units, `syncLineItemRollup` is deliberately **not** called on
+  this path — it would recompute every counter from an empty unit set and zero
+  out the quantities just written.
 
 ## Pure helpers — `src/lib/bulk-checkin.ts`
 
@@ -55,7 +62,8 @@ No Prisma / IO.
   - **Authoritative outstanding.** Quantities recomputed server-side from live
     unit rows inside the transaction.
   - **Distribution.** Per-type processing: `returnLineUnits` for owned/accessory
-    items, direct status update for sub-hire/custom items.
+    items, direct status update for sub-hire/custom items (status flips to
+    RETURNED only when fully returned; partials stay CHECKED_OUT).
   - **Over-return rejected.** Throws and rolls back the whole batch.
   - **Idempotent / empty-safe.** Zero-quantity entries skipped, empty array is
     a no-op.

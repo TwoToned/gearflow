@@ -290,6 +290,60 @@ describe("bulk check-in totals", () => {
     expect(updated?.status).toBe("RETURNED");
   });
 
+  it("a partial sub-hire return keeps the line CHECKED_OUT and the remainder visible", async () => {
+    const s = await seed();
+    const { org, project } = s;
+
+    const supplier = await testPrisma.supplier.create({
+      data: { organizationId: org.id, name: "Partial Supplier" },
+    });
+    const subHire = await testPrisma.subHire.create({
+      data: {
+        organizationId: org.id,
+        supplierId: supplier.id,
+        createdById: h.ctx.userId,
+        orderNumber: `SH-${createId().slice(0, 6)}`,
+        status: "CONFIRMED",
+        totalCost: 100,
+        totalCharge: 150,
+      },
+    });
+
+    const genModel = await createModelFixture(org.id, { name: "Generator" });
+    const subHireLine = await testPrisma.projectLineItem.create({
+      data: {
+        organizationId: org.id,
+        projectId: project.id,
+        type: "EQUIPMENT",
+        modelId: genModel.id,
+        subHireId: subHire.id,
+        quantity: 5,
+        checkedOutQuantity: 5,
+        status: "CHECKED_OUT",
+        sortOrder: 0,
+      },
+    });
+
+    const subHireKey = `subhire:${subHireLine.id}`;
+    expect(outstandingFor(await getBulkCheckInTotals(project.id), subHireKey)).toBe(5);
+
+    // Return 3 of 5 — line must stay CHECKED_OUT with 2 still outstanding.
+    await checkInBulkTotals(project.id, [{ key: subHireKey, quantity: 3, condition: "GOOD" }]);
+
+    const afterPartial = await testPrisma.projectLineItem.findUnique({ where: { id: subHireLine.id } });
+    expect(afterPartial).toMatchObject({ status: "CHECKED_OUT", returnedQuantity: 3 });
+    expect(outstandingFor(await getBulkCheckInTotals(project.id), subHireKey)).toBe(2);
+
+    // Return the remaining 2 — now it flips to RETURNED and drops off the totals.
+    await checkInBulkTotals(project.id, [{ key: subHireKey, quantity: 2, condition: "GOOD" }]);
+
+    const afterFull = await testPrisma.projectLineItem.findUnique({ where: { id: subHireLine.id } });
+    expect(afterFull).toMatchObject({ status: "RETURNED", returnedQuantity: 5 });
+    expect(
+      (await getBulkCheckInTotals(project.id)).find((t) => t.key === subHireKey),
+    ).toBeUndefined();
+  });
+
   it("handles mixed-type batch returns (accessory + custom + sub-hire)", async () => {
     const s = await seed();
     const { org, lightModel, project } = s;

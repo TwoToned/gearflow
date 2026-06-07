@@ -203,16 +203,30 @@ export async function checkInBulkTotals(
 
       for (const alloc of allocations) {
         if (alloc.itemType === "SUBHIRE" || alloc.itemType === "CUSTOM") {
+          const line = await tx.projectLineItem.findUnique({
+            where: { id: alloc.lineItemId },
+            select: { checkedOutQuantity: true, returnedQuantity: true },
+          });
+          const newReturned = (line?.returnedQuantity ?? 0) + alloc.quantity;
+          const isFullyReturned = newReturned >= (line?.checkedOutQuantity ?? 0);
           await tx.projectLineItem.update({
             where: { id: alloc.lineItemId },
             data: {
-              status: "RETURNED",
+              status: isFullyReturned ? "RETURNED" : "CHECKED_OUT",
               returnedQuantity: { increment: alloc.quantity },
               returnCondition: condition,
-              returnedAt: new Date(),
-              returnedById: userId,
+              // Only stamp the return actor/timestamp once the line is fully
+              // back — a partial return shouldn't claim the line is closed out.
+              ...(isFullyReturned
+                ? { returnedAt: new Date(), returnedById: userId }
+                : {}),
             },
           });
+          // NB: no syncLineItemRollup here. Sub-hire/custom lines carry no
+          // ProjectLineItemUnit rows, so the rollup would recompute every
+          // counter from an empty unit set and zero out the checkedOut /
+          // returned quantities we just set — making outstanding units
+          // invisible. The line-level fields ARE the source of truth here.
           continue;
         }
 

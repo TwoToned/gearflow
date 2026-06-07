@@ -775,18 +775,22 @@ export function LineItemRow({
   overbookedInfo,
   isUnconfirmed,
   isExpanded,
+  isSelected,
   showCostColumn,
   onToggle,
   onEdit,
   onMoveToCategory,
   onMoveToGroup,
   onRemove,
+  onClick,
 }: {
   item: LineItemData;
   indent: string;
   overbookedInfo?: OverbookedInfo | null;
   isUnconfirmed?: boolean;
   isExpanded?: boolean;
+  /** Multi-select: highlight this row */
+  isSelected?: boolean;
   /** 8H — render the Cost column cell. Standalone line items don't carry
    *  a supplier-cost concept, so the cell renders an em-dash. */
   showCostColumn?: boolean;
@@ -799,6 +803,8 @@ export function LineItemRow({
    *  specific group and adopts its category. */
   onMoveToGroup: () => void;
   onRemove: () => void;
+  /** Multi-select: row click handler (not firing for grip handle clicks) */
+  onClick?: (e: React.MouseEvent) => void;
 }) {
   const desc = describeRow(item);
   const hasChildren = desc.hasChildren;
@@ -825,7 +831,13 @@ export function LineItemRow({
 
   return (
     <>
-    <TableRow ref={setNodeRef} style={style} className={isDragging ? "opacity-30" : ""} {...shortcuts}>
+    <TableRow
+      ref={setNodeRef}
+      style={style}
+      className={`${isDragging ? "opacity-30" : ""} ${isSelected ? "bg-accent/20" : ""}`}
+      onClick={onClick}
+      {...shortcuts}
+    >
       <TableCell className="px-0">
         <div className={`flex justify-end ${gripIndent || "px-1"}`}>
           <button
@@ -833,6 +845,7 @@ export function LineItemRow({
             className="flex cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
             {...attributes}
             {...listeners}
+            onClick={(e) => e.stopPropagation()}
           >
             <GripVertical className="h-4 w-4" />
           </button>

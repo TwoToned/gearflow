@@ -43,7 +43,7 @@ export function AccessoryChildRows({
   return (
     <>
       {accessories.map((acc) => (
-        <TableRow key={acc.id} className="bg-bg-inset/20">
+        <TableRow key={acc.id} className="bg-bg-inset/30">
           <TableCell />
           <TableCell className="pl-12 text-sm text-fg-3">
             <div className="flex items-center gap-1.5">

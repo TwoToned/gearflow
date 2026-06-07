@@ -266,6 +266,16 @@ Model detail page; asset detail shows inherited rows tagged "from model".
   expanded child line counted as a booking in `availability.ts`). Pick one:
   exclude DEDICATED accessory children from the live overbook query (sub-hire
   style), or drop the attach-time decrement. P3.
+- **~~Equipment-tab accessory styling (grip handle).~~** ✅ DONE. Accessory
+  child rows now render a display-only grip handle column to visually match
+  kit children (`GripVertical` icon, `text-fg-3/40`, same `ml-16` indentation).
+  The grip is inert (no drag listeners) since accessories move with their
+  parent.
+- **~~Exclude-accessories toggle.~~** ✅ SHIPPED. `addLineItem` and
+  `checkOutItems` accept `includeAccessories` (default `true`). UI checkbox
+  on the equipment-add form when `hasAccessories` is true on
+  `checkAvailability` / `lookupAssetByTag`. `hasAccessories` field added to
+  both return types. Integration tests for `includeAccessories=false`.
 - **Bulk parents.** v1 restricts parents to serialised assets; "50 lights
   each with 2 clamps" can't be expressed yet. Unlocks the full Bulk Check-In
   payoff. P2.

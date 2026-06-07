@@ -225,8 +225,8 @@ export function EquipmentAddForm({
   const requestedQty = Number(form.watch("quantity")) || 1;
   const isOverbooked = mode === "model" && !!availability && requestedQty > availability.available;
   const hasDuplicate = mode === "model" && !!availability && availability.bookedOnThisProject > 0;
-  const modelHasAccessories = (availability as { hasAccessories?: boolean } | undefined)?.hasAccessories === true;
-  const assetHasAccessories = (assetLookup as { hasAccessories?: boolean } | undefined)?.hasAccessories === true;
+  const modelHasAccessories = availability?.hasAccessories === true;
+  const assetHasAccessories = assetLookup?.hasAccessories === true;
   const showAccessoriesToggle = mode === "model" ? !!selectedModelId && modelHasAccessories : !!lookupTag && assetHasAccessories;
 
   // Reset overbook confirmation when model or quantity changes

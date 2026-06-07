@@ -7,6 +7,7 @@ import {
   RESOURCES,
   type PermissionMap,
 } from "@/lib/permissions";
+import { logActivity } from "@/lib/activity-log";
 
 // ─── Read ───────────────────────────────────────────────────────────────────
 
@@ -53,8 +54,7 @@ export async function createCustomRole(data: {
   ssoGroupClaim?: string;
   permissions: PermissionMap;
 }) {
-  await requirePermission("orgMembers", "update_role");
-  const { organizationId } = await getOrgContext();
+  const { organizationId, userId, userName } = await requirePermission("orgMembers", "update_role");
 
   validatePermissions(data.permissions);
 
@@ -67,6 +67,18 @@ export async function createCustomRole(data: {
       ssoGroupClaim: data.ssoGroupClaim?.trim() || null,
       permissions: JSON.stringify(data.permissions),
     },
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "CREATE",
+    entityType: "customRole",
+    entityId: role.id,
+    entityName: role.name,
+    summary: `Created custom role ${role.name}`,
+    details: { permissions: data.permissions },
   });
 
   return serialize({
@@ -86,8 +98,7 @@ export async function updateCustomRole(
     permissions?: PermissionMap;
   },
 ) {
-  await requirePermission("orgMembers", "update_role");
-  const { organizationId } = await getOrgContext();
+  const { organizationId, userId, userName } = await requirePermission("orgMembers", "update_role");
 
   const existing = await prisma.customRole.findFirst({
     where: { id, organizationId },
@@ -110,6 +121,18 @@ export async function updateCustomRole(
     data: updateData,
   });
 
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "customRole",
+    entityId: id,
+    entityName: updated.name,
+    summary: `Updated custom role ${updated.name}`,
+    details: updateData,
+  });
+
   return serialize({
     ...updated,
     permissions: data.permissions
@@ -120,8 +143,7 @@ export async function updateCustomRole(
 
 /** Delete a custom role. Fails if any members are assigned to it. */
 export async function deleteCustomRole(id: string) {
-  await requirePermission("orgMembers", "update_role");
-  const { organizationId } = await getOrgContext();
+  const { organizationId, userId, userName } = await requirePermission("orgMembers", "update_role");
 
   const existing = await prisma.customRole.findFirst({
     where: { id, organizationId },
@@ -140,13 +162,24 @@ export async function deleteCustomRole(id: string) {
   }
 
   await prisma.customRole.delete({ where: { id, organizationId } });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "DELETE",
+    entityType: "customRole",
+    entityId: id,
+    entityName: existing.name,
+    summary: `Deleted custom role ${existing.name}`,
+  });
+
   return { success: true };
 }
 
 /** Duplicate a custom role with a new name */
 export async function duplicateCustomRole(id: string, newName: string) {
-  await requirePermission("orgMembers", "update_role");
-  const { organizationId } = await getOrgContext();
+  const { organizationId, userId, userName } = await requirePermission("orgMembers", "update_role");
 
   const existing = await prisma.customRole.findFirst({
     where: { id, organizationId },
@@ -161,6 +194,18 @@ export async function duplicateCustomRole(id: string, newName: string) {
       color: existing.color,
       permissions: existing.permissions,
     },
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "DUPLICATE",
+    entityType: "customRole",
+    entityId: role.id,
+    entityName: role.name,
+    summary: `Duplicated custom role ${existing.name} as ${role.name}`,
+    details: { sourceId: id, sourceName: existing.name },
   });
 
   return serialize({

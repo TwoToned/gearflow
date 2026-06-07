@@ -370,7 +370,7 @@ function DiscrepancyRow({
                 <DropdownMenuLabel>Resolve</DropdownMenuLabel>
                 {item.result === "MISSING" && (
                   <DropdownMenuItem
-                    onSelect={() => onResolve("MARK_LOST", note)}
+                    onClick={() => onResolve("MARK_LOST", note)}
                   >
                     <PackageX className="mr-2 h-4 w-4" />
                     Mark as Lost
@@ -379,7 +379,7 @@ function DiscrepancyRow({
                 {(item.result === "UNEXPECTED" ||
                   item.result === "WRONG_LOCATION") && (
                   <DropdownMenuItem
-                    onSelect={() => onResolve("UPDATE_LOCATION", note)}
+                    onClick={() => onResolve("UPDATE_LOCATION", note)}
                   >
                     <MapPin className="mr-2 h-4 w-4" />
                     Update Location
@@ -387,14 +387,14 @@ function DiscrepancyRow({
                 )}
                 {item.result === "QUANTITY_MISMATCH" && (
                   <DropdownMenuItem
-                    onSelect={() => onResolve("ADJUST_QUANTITY", note)}
+                    onClick={() => onResolve("ADJUST_QUANTITY", note)}
                   >
                     <Hash className="mr-2 h-4 w-4" />
                     Adjust Quantity
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem
-                  onSelect={() => onResolve("IGNORE", note)}
+                  onClick={() => onResolve("IGNORE", note)}
                 >
                   <Ban className="mr-2 h-4 w-4" />
                   Ignore

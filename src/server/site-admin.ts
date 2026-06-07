@@ -8,6 +8,7 @@ import { sendEmail } from "@/lib/email";
 import { getPlatformName } from "@/lib/platform";
 import { getTheOrg, invalidateOrgCache } from "@/lib/single-org";
 import { env } from "@/env";
+import { logActivity } from "@/lib/activity-log";
 
 /** Verify the current user is a site admin. Throws if not. */
 async function requireSiteAdmin() {
@@ -58,7 +59,7 @@ export async function updateSiteSettings(data: {
   socialLoginGoogle?: boolean;
   socialLoginMicrosoft?: boolean;
 }) {
-  await requireSiteAdmin();
+  const session = await requireSiteAdmin();
 
   let settings = await prisma.siteSettings.findFirst();
   if (!settings) {
@@ -72,6 +73,21 @@ export async function updateSiteSettings(data: {
 
   // Invalidate the cached platform name so it picks up changes immediately
   invalidatePlatformNameCache();
+
+  const theOrg = await getTheOrg();
+  if (theOrg) {
+    await logActivity({
+      organizationId: theOrg.id,
+      userId: session.user.id,
+      userName: session.user.name,
+      action: "UPDATE",
+      entityType: "siteSettings",
+      entityId: updated.id,
+      entityName: "Site Settings",
+      summary: "Updated site settings",
+      details: data as Record<string, unknown>,
+    });
+  }
 
   return serialize(updated);
 }
@@ -142,6 +158,17 @@ export async function adminCreateOrganization(data: {
     return newOrg;
   });
 
+  await logActivity({
+    organizationId: org.id,
+    userId: session.user.id,
+    userName: session.user.name,
+    action: "CREATE",
+    entityType: "organization",
+    entityId: org.id,
+    entityName: org.name,
+    summary: `Created organization ${org.name}`,
+  });
+
   return serialize(org);
 }
 
@@ -193,7 +220,7 @@ export async function adminUpdateOrganization(
   orgId: string,
   data: { name?: string; slug?: string },
 ) {
-  await requireSiteAdmin();
+  const session = await requireSiteAdmin();
 
   if (data.slug) {
     const normalizedSlug = data.slug.toLowerCase().replace(/[^a-z0-9-]/g, "").replace(/(^-|-$)/g, "");
@@ -212,13 +239,43 @@ export async function adminUpdateOrganization(
 
   invalidateOrgCache();
 
+  await logActivity({
+    organizationId: orgId,
+    userId: session.user.id,
+    userName: session.user.name,
+    action: "UPDATE",
+    entityType: "organization",
+    entityId: orgId,
+    entityName: updated.name,
+    summary: `Updated organization ${updated.name}`,
+    details: data,
+  });
+
   return serialize(updated);
 }
 
 export async function adminDeleteOrganization(orgId: string) {
-  await requireSiteAdmin();
+  const session = await requireSiteAdmin();
+
+  const org = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: { id: true, name: true },
+  });
+  if (!org) throw new Error("Organization not found");
 
   await prisma.organization.delete({ where: { id: orgId } });
+
+  await logActivity({
+    organizationId: orgId,
+    userId: session.user.id,
+    userName: session.user.name,
+    action: "DELETE",
+    entityType: "organization",
+    entityId: orgId,
+    entityName: org.name,
+    summary: `Deleted organization ${org.name}`,
+  });
+
   return { success: true };
 }
 
@@ -305,11 +362,32 @@ export async function getAllUsers(params?: {
 }
 
 export async function promoteToSiteAdmin(userId: string) {
-  await requireSiteAdmin();
+  const session = await requireSiteAdmin();
+
+  const targetUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { name: true, email: true },
+  });
+
   await prisma.user.update({
     where: { id: userId },
     data: { role: "admin" },
   });
+
+  const theOrg = await getTheOrg();
+  if (theOrg) {
+    await logActivity({
+      organizationId: theOrg.id,
+      userId: session.user.id,
+      userName: session.user.name,
+      action: "UPDATE",
+      entityType: "user",
+      entityId: userId,
+      entityName: targetUser?.name || userId,
+      summary: `Promoted ${targetUser?.name || userId} to site admin`,
+    });
+  }
+
   return { success: true };
 }
 
@@ -318,10 +396,31 @@ export async function demoteFromSiteAdmin(userId: string) {
   if (session.user.id === userId) {
     throw new Error("You cannot demote yourself.");
   }
+
+  const targetUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { name: true, email: true },
+  });
+
   await prisma.user.update({
     where: { id: userId },
     data: { role: "user" },
   });
+
+  const theOrg = await getTheOrg();
+  if (theOrg) {
+    await logActivity({
+      organizationId: theOrg.id,
+      userId: session.user.id,
+      userName: session.user.name,
+      action: "UPDATE",
+      entityType: "user",
+      entityId: userId,
+      entityName: targetUser?.name || userId,
+      summary: `Demoted ${targetUser?.name || userId} from site admin`,
+    });
+  }
+
   return { success: true };
 }
 
@@ -330,19 +429,61 @@ export async function banUser(userId: string) {
   if (session.user.id === userId) {
     throw new Error("You cannot ban yourself.");
   }
+
+  const targetUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { name: true, email: true },
+  });
+
   await prisma.user.update({
     where: { id: userId },
     data: { banned: true },
   });
+
+  const theOrg = await getTheOrg();
+  if (theOrg) {
+    await logActivity({
+      organizationId: theOrg.id,
+      userId: session.user.id,
+      userName: session.user.name,
+      action: "UPDATE",
+      entityType: "user",
+      entityId: userId,
+      entityName: targetUser?.name || userId,
+      summary: `Banned ${targetUser?.name || userId}`,
+    });
+  }
+
   return { success: true };
 }
 
 export async function unbanUser(userId: string) {
-  await requireSiteAdmin();
+  const session = await requireSiteAdmin();
+
+  const targetUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { name: true, email: true },
+  });
+
   await prisma.user.update({
     where: { id: userId },
     data: { banned: false },
   });
+
+  const theOrg = await getTheOrg();
+  if (theOrg) {
+    await logActivity({
+      organizationId: theOrg.id,
+      userId: session.user.id,
+      userName: session.user.name,
+      action: "UPDATE",
+      entityType: "user",
+      entityId: userId,
+      entityName: targetUser?.name || userId,
+      summary: `Unbanned ${targetUser?.name || userId}`,
+    });
+  }
+
   return { success: true };
 }
 
@@ -351,6 +492,11 @@ export async function adminDeleteUser(userId: string) {
   if (session.user.id === userId) {
     throw new Error("You cannot delete yourself.");
   }
+
+  const targetUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { name: true, email: true },
+  });
 
   await prisma.$transaction(async (tx) => {
     // Null out nullable User FK references
@@ -370,11 +516,31 @@ export async function adminDeleteUser(userId: string) {
     await tx.user.delete({ where: { id: userId } });
   });
 
+  const theOrg = await getTheOrg();
+  if (theOrg) {
+    await logActivity({
+      organizationId: theOrg.id,
+      userId: session.user.id,
+      userName: session.user.name,
+      action: "DELETE",
+      entityType: "user",
+      entityId: userId,
+      entityName: targetUser?.name || userId,
+      summary: `Deleted user ${targetUser?.name || userId}`,
+    });
+  }
+
   return { success: true };
 }
 
 export async function forceDisable2FA(userId: string) {
-  await requireSiteAdmin();
+  const session = await requireSiteAdmin();
+
+  const targetUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { name: true, email: true },
+  });
+
   await prisma.$transaction([
     prisma.twoFactor.deleteMany({ where: { userId } }),
     prisma.user.update({
@@ -382,21 +548,38 @@ export async function forceDisable2FA(userId: string) {
       data: { twoFactorEnabled: false },
     }),
   ]);
+
+  const theOrg = await getTheOrg();
+  if (theOrg) {
+    await logActivity({
+      organizationId: theOrg.id,
+      userId: session.user.id,
+      userName: session.user.name,
+      action: "UPDATE",
+      entityType: "user",
+      entityId: userId,
+      entityName: targetUser?.name || userId,
+      summary: `Force-disabled 2FA for ${targetUser?.name || userId}`,
+    });
+  }
+
   return { success: true };
 }
 
 export async function adminTransferOwnership(orgId: string, newOwnerId: string) {
-  await requireSiteAdmin();
+  const session = await requireSiteAdmin();
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     // Find current owner
     const currentOwner = await tx.member.findFirst({
       where: { organizationId: orgId, role: "owner" },
+      include: { user: { select: { name: true, email: true } } },
     });
 
     // Verify new owner is a member
     const newOwner = await tx.member.findFirst({
       where: { organizationId: orgId, userId: newOwnerId },
+      include: { user: { select: { name: true, email: true } } },
     });
     if (!newOwner) throw new Error("New owner must be a member of the organization.");
 
@@ -414,8 +597,25 @@ export async function adminTransferOwnership(orgId: string, newOwnerId: string) 
       data: { role: "owner" },
     });
 
-    return { success: true };
+    return { currentOwner, newOwner };
   });
+
+  await logActivity({
+    organizationId: orgId,
+    userId: session.user.id,
+    userName: session.user.name,
+    action: "UPDATE",
+    entityType: "organization",
+    entityId: orgId,
+    entityName: orgId,
+    summary: `Transferred ownership to ${result.newOwner.user.name || result.newOwner.user.email}`,
+    details: {
+      from: result.currentOwner?.user.name || result.currentOwner?.user.email,
+      to: result.newOwner.user.name || result.newOwner.user.email,
+    },
+  });
+
+  return { success: true };
 }
 
 // ─── Org Member Management (Site Admin) ───────────────────────────────────
@@ -437,7 +637,7 @@ export async function adminGetOrgCustomRoles(orgId: string) {
 }
 
 export async function adminAddMemberToOrg(orgId: string, email: string, role: string) {
-  await requireSiteAdmin();
+  const session = await requireSiteAdmin();
 
   const user = await prisma.user.findFirst({
     where: { email: email.toLowerCase().trim() },
@@ -462,27 +662,53 @@ export async function adminAddMemberToOrg(orgId: string, email: string, role: st
     data: { organizationId: orgId, userId: user.id, role },
   });
 
+  await logActivity({
+    organizationId: orgId,
+    userId: session.user.id,
+    userName: session.user.name,
+    action: "CREATE",
+    entityType: "member",
+    entityId: user.id,
+    entityName: user.name || user.email,
+    summary: `Added ${user.name || user.email} to organization as ${role}`,
+    details: { role },
+  });
+
   return { success: true };
 }
 
 export async function adminRemoveMemberFromOrg(orgId: string, memberId: string) {
-  await requireSiteAdmin();
+  const session = await requireSiteAdmin();
 
   const member = await prisma.member.findFirst({
     where: { id: memberId, organizationId: orgId },
+    include: { user: { select: { name: true, email: true } } },
   });
   if (!member) throw new Error("Member not found.");
   if (member.role === "owner") throw new Error("Cannot remove the owner. Transfer ownership first.");
 
   await prisma.member.delete({ where: { id: memberId } });
+
+  await logActivity({
+    organizationId: orgId,
+    userId: session.user.id,
+    userName: session.user.name,
+    action: "DELETE",
+    entityType: "member",
+    entityId: memberId,
+    entityName: member.user.name || member.user.email,
+    summary: `Removed ${member.user.name || member.user.email} from organization`,
+  });
+
   return { success: true };
 }
 
 export async function adminChangeMemberRole(orgId: string, memberId: string, newRole: string) {
-  await requireSiteAdmin();
+  const session = await requireSiteAdmin();
 
   const member = await prisma.member.findFirst({
     where: { id: memberId, organizationId: orgId },
+    include: { user: { select: { name: true, email: true } } },
   });
   if (!member) throw new Error("Member not found.");
   if (member.role === "owner") throw new Error("Cannot change the owner's role. Transfer ownership instead.");
@@ -499,6 +725,18 @@ export async function adminChangeMemberRole(orgId: string, memberId: string, new
   await prisma.member.update({
     where: { id: memberId },
     data: { role: newRole },
+  });
+
+  await logActivity({
+    organizationId: orgId,
+    userId: session.user.id,
+    userName: session.user.name,
+    action: "UPDATE",
+    entityType: "member",
+    entityId: memberId,
+    entityName: member.user.name || member.user.email,
+    summary: `Changed ${member.user.name || member.user.email}'s role to ${newRole}`,
+    details: { from: member.role, to: newRole },
   });
 
   return { success: true };
@@ -575,6 +813,17 @@ export async function adminInviteUser(email: string) {
     `,
   });
 
+  await logActivity({
+    organizationId: anyOrg.id,
+    userId: session.user.id,
+    userName: session.user.name,
+    action: "CREATE",
+    entityType: "invitation",
+    entityId: invitation.id,
+    entityName: normalizedEmail,
+    summary: `Invited ${normalizedEmail} to join`,
+  });
+
   return { success: true, email: normalizedEmail };
 }
 
@@ -598,7 +847,7 @@ export async function adminGetPendingInvitations() {
 }
 
 export async function adminRevokeInvitation(invitationId: string) {
-  await requireSiteAdmin();
+  const session = await requireSiteAdmin();
 
   const invitation = await prisma.invitation.findUnique({
     where: { id: invitationId },
@@ -610,6 +859,17 @@ export async function adminRevokeInvitation(invitationId: string) {
   await prisma.invitation.update({
     where: { id: invitationId },
     data: { status: "cancelled" },
+  });
+
+  await logActivity({
+    organizationId: invitation.organizationId,
+    userId: session.user.id,
+    userName: session.user.name,
+    action: "DELETE",
+    entityType: "invitation",
+    entityId: invitationId,
+    entityName: invitation.email,
+    summary: `Revoked invitation for ${invitation.email}`,
   });
 
   return { success: true };

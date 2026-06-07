@@ -589,7 +589,7 @@ function RoleDialog({
                 }
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select..." />
+                  <SelectValue placeholder="Select...">{form.watch("rateType") === "DAILY" ? "Daily" : form.watch("rateType") === "HOURLY" ? "Hourly" : form.watch("rateType") === "FLAT" ? "Flat" : form.watch("rateType")}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="DAILY">Daily</SelectItem>

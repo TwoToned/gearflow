@@ -593,3 +593,78 @@ describe("isUniqueViolation", () => {
     expect(isUniqueViolation(null)).toBe(false);
   });
 });
+
+describe("includeAccessories=false", () => {
+  beforeEach(async () => {
+    await setupIntegrationTest();
+  });
+  afterAll(async () => {
+    await testPrisma.$disconnect();
+  });
+
+  it("addLineItem with includeAccessories=false creates no accessory children", async () => {
+    const s = await seed();
+    const { org, model, project } = s;
+    const light = await createAssetFixture(org.id, model.id, { assetTag: `LIGHT-${createId().slice(0, 4)}` });
+    const cable = await createAssetFixture(org.id, model.id, { assetTag: `IEC-${createId().slice(0, 4)}` });
+    await testPrisma.asset.update({ where: { id: cable.id }, data: { parentAssetId: light.id } });
+
+    // includeAccessories=false → accessories must NOT expand.
+    const parent = await addLineItem(project.id, { type: "EQUIPMENT", modelId: model.id, assetId: light.id, quantity: 1 }, true, false, false);
+    const parentLineId = (parent as { id: string }).id;
+
+    const children = await testPrisma.projectLineItem.findMany({
+      where: { parentLineItemId: parentLineId, childKind: "ACCESSORY" },
+    });
+    expect(children).toHaveLength(0);
+  });
+
+  it("checkOutItems with includeAccessories=false does not cascade to accessories", async () => {
+    const s = await seed();
+    const { org, model, project } = s;
+    const light = await createAssetFixture(org.id, model.id, { assetTag: `LIGHT-${createId().slice(0, 4)}` });
+    const cable = await createAssetFixture(org.id, model.id, { assetTag: `IEC-${createId().slice(0, 4)}` });
+    await testPrisma.asset.update({ where: { id: cable.id }, data: { parentAssetId: light.id } });
+
+    // Add line with accessories included, so children exist.
+    const parent = await addLineItem(project.id, { type: "EQUIPMENT", modelId: model.id, assetId: light.id, quantity: 1 }, true);
+    const parentLineId = (parent as { id: string }).id;
+    expect(await testPrisma.projectLineItem.count({
+      where: { parentLineItemId: parentLineId, childKind: "ACCESSORY" },
+    })).toBe(1);
+
+    // checkOutItems with includeAccessories=false must skip the accessory cascade.
+    await checkOutItems(s.project.id, [{ lineItemId: parentLineId, assetId: light.id }], false);
+
+    // The parent should be checked out...
+    const parentLine = await testPrisma.projectLineItem.findUnique({ where: { id: parentLineId } });
+    expect(parentLine?.status).toBe("CHECKED_OUT");
+    // ...but the accessory child's asset should NOT be checked out.
+    const cableAsset = await testPrisma.asset.findUnique({ where: { id: cable.id } });
+    expect(cableAsset?.status).toBe("AVAILABLE");
+    // And the child line should have no CHECKED_OUT units.
+    const childLines = await testPrisma.projectLineItem.findMany({
+      where: { parentLineItemId: parentLineId, childKind: "ACCESSORY" },
+      include: { units: true },
+    });
+    expect(childLines).toHaveLength(1);
+    expect(childLines[0].units.every((u) => u.status === "CONFIRMED")).toBe(true);
+  });
+
+  it("addLineItem with includeAccessories=true (default) still creates accessories (smoke test)", async () => {
+    const s = await seed();
+    const { org, model, project } = s;
+    const light = await createAssetFixture(org.id, model.id, { assetTag: `SMOKE-${createId().slice(0, 4)}` });
+    const cable = await createAssetFixture(org.id, model.id, { assetTag: `SMOKE-CBL-${createId().slice(0, 4)}` });
+    await testPrisma.asset.update({ where: { id: cable.id }, data: { parentAssetId: light.id } });
+
+    const parent = await addLineItem(project.id, { type: "EQUIPMENT", modelId: model.id, assetId: light.id, quantity: 1 }, true);
+    const parentLineId = (parent as { id: string }).id;
+
+    const children = await testPrisma.projectLineItem.findMany({
+      where: { parentLineItemId: parentLineId, childKind: "ACCESSORY" },
+    });
+    expect(children).toHaveLength(1);
+    expect(children[0].assetId).toBe(cable.id);
+  });
+});

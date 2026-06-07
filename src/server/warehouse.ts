@@ -827,24 +827,27 @@ async function finalizeCheckoutItem(
     projectId: string;
     userId: string;
     projectLocationId: string | null;
+    includeAccessories?: boolean;
   },
   updated: unknown[],
 ): Promise<void> {
-  const { organizationId, lineItemId, targetAssetId, projectId, userId, projectLocationId } = params;
+  const { organizationId, lineItemId, targetAssetId, projectId, userId, projectLocationId, includeAccessories } = params;
 
-  if (targetAssetId) {
-    await expandAccessoriesForAsset(tx, { organizationId, lineItemId, assetId: targetAssetId });
+  if (includeAccessories !== false) {
+    if (targetAssetId) {
+      await expandAccessoriesForAsset(tx, { organizationId, lineItemId, assetId: targetAssetId });
+    }
+
+    await checkoutAccessoryChildren(tx, {
+      organizationId,
+      projectId,
+      parentLineItemId: lineItemId,
+      userId,
+      projectLocationId,
+    });
   }
 
   await syncLineItemRollup(tx, lineItemId);
-
-  await checkoutAccessoryChildren(tx, {
-    organizationId,
-    projectId,
-    parentLineItemId: lineItemId,
-    userId,
-    projectLocationId,
-  });
 
   updated.push(
     await tx.projectLineItem.findUnique({
@@ -863,7 +866,8 @@ export async function checkOutItems(
     assetId?: string;
     quantity?: number;
     notes?: string;
-  }>
+  }>,
+  includeAccessories = true,
 ) {
   const { organizationId, userId, userName } = await requirePermission("warehouse", "check_out");
 
@@ -942,6 +946,7 @@ export async function checkOutItems(
         projectId,
         userId,
         projectLocationId,
+        includeAccessories,
       }, updated);
     }
 

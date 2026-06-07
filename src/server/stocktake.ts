@@ -19,10 +19,7 @@ import {
   type BulkResolveValues,
 } from "@/lib/validations/stocktake";
 
-// ---------------------------------------------------------------------------
-// 0. syncStocktakeOnLocationChange — update active stocktakes when asset moves
-// ---------------------------------------------------------------------------
-
+// Update active stocktakes when an asset moves location.
 export async function syncStocktakeOnLocationChange({
   assetId,
   bulkAssetId,
@@ -89,10 +86,6 @@ export async function syncStocktakeOnLocationChange({
   }
 }
 
-// ---------------------------------------------------------------------------
-// 1. getStocktakes — paginated list
-// ---------------------------------------------------------------------------
-
 export async function getStocktakes(params?: {
   page?: number;
   pageSize?: number;
@@ -134,10 +127,6 @@ export async function getStocktakes(params?: {
   return serialize({ items, total, page, pageSize });
 }
 
-// ---------------------------------------------------------------------------
-// 2. getStocktakeById — full detail with items
-// ---------------------------------------------------------------------------
-
 export async function getStocktakeById(id: string) {
   const { organizationId } = await requirePermission("stocktake", "read");
 
@@ -161,10 +150,6 @@ export async function getStocktakeById(id: string) {
   return serialize(stocktake);
 }
 
-// ---------------------------------------------------------------------------
-// 3. getStocktakeProgress — lightweight counts for scanner tally
-// ---------------------------------------------------------------------------
-
 export async function getStocktakeProgress(id: string) {
   const { organizationId } = await requirePermission("stocktake", "read");
 
@@ -186,10 +171,6 @@ export async function getStocktakeProgress(id: string) {
     status: stocktake.status,
   });
 }
-
-// ---------------------------------------------------------------------------
-// 4. createStocktake — create DRAFT + generate expected items
-// ---------------------------------------------------------------------------
 
 export async function createStocktake(data: CreateStocktakeValues) {
   const { organizationId, userId, userName } = await requirePermission(
@@ -292,10 +273,6 @@ export async function createStocktake(data: CreateStocktakeValues) {
 
   return serialize(stocktake);
 }
-
-// ---------------------------------------------------------------------------
-// 4b. updateStocktake — edit a DRAFT stocktake
-// ---------------------------------------------------------------------------
 
 export async function updateStocktake(id: string, data: UpdateStocktakeValues) {
   const { organizationId, userId, userName } = await requirePermission(
@@ -437,10 +414,6 @@ export async function updateStocktake(id: string, data: UpdateStocktakeValues) {
   return serialize(stocktake);
 }
 
-// ---------------------------------------------------------------------------
-// 5. startStocktake — transition DRAFT → IN_PROGRESS
-// ---------------------------------------------------------------------------
-
 export async function startStocktake(id: string) {
   const { organizationId, userId, userName } = await requirePermission(
     "stocktake",
@@ -474,10 +447,6 @@ export async function startStocktake(id: string) {
     summary: `Started stocktake "${stocktake.name}"`,
   });
 }
-
-// ---------------------------------------------------------------------------
-// 6. scanStocktakeItem — process a barcode scan
-// ---------------------------------------------------------------------------
 
 export async function scanStocktakeItem(data: ScanItemValues) {
   const { organizationId, userId } = await requirePermission(
@@ -598,10 +567,6 @@ export async function scanStocktakeItem(data: ScanItemValues) {
   return serialize({ ...newItem, alreadyScanned: false, isExpected: false });
 }
 
-// ---------------------------------------------------------------------------
-// 7. updateBulkCount — update counted quantity for a bulk asset item
-// ---------------------------------------------------------------------------
-
 export async function updateBulkCount(data: UpdateBulkCountValues) {
   const { organizationId } = await requirePermission("stocktake", "update");
 
@@ -631,10 +596,6 @@ export async function updateBulkCount(data: UpdateBulkCountValues) {
     },
   });
 }
-
-// ---------------------------------------------------------------------------
-// 8. completeScanning — transition IN_PROGRESS → REVIEWING
-// ---------------------------------------------------------------------------
 
 export async function completeScanning(id: string) {
   const { organizationId, userId, userName } = await requirePermission(
@@ -712,10 +673,6 @@ export async function completeScanning(id: string) {
   });
 }
 
-// ---------------------------------------------------------------------------
-// 8b. resumeScanning — REVIEWING → IN_PROGRESS
-// ---------------------------------------------------------------------------
-
 export async function resumeScanning(id: string) {
   const { organizationId, userId, userName } = await requirePermission(
     "stocktake",
@@ -759,10 +716,6 @@ export async function resumeScanning(id: string) {
     summary: `Resumed scanning for "${stocktake.name}"`,
   });
 }
-
-// ---------------------------------------------------------------------------
-// 9. resolveDiscrepancy — per-item resolution
-// ---------------------------------------------------------------------------
 
 export async function resolveDiscrepancy(data: ResolveDiscrepancyValues) {
   const { organizationId, userId, userName } = await requirePermission(
@@ -884,10 +837,6 @@ export async function resolveDiscrepancy(data: ResolveDiscrepancyValues) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// 10. bulkResolveDiscrepancies — batch resolve
-// ---------------------------------------------------------------------------
-
 export async function bulkResolveDiscrepancies(data: BulkResolveValues) {
   const { organizationId, userId, userName } = await requirePermission(
     "stocktake",
@@ -962,10 +911,6 @@ export async function bulkResolveDiscrepancies(data: BulkResolveValues) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// 11. completeStocktake — finalize and apply
-// ---------------------------------------------------------------------------
-
 export async function completeStocktake(id: string) {
   const { organizationId, userId, userName } = await requirePermission(
     "stocktake",
@@ -1014,10 +959,6 @@ export async function completeStocktake(id: string) {
   });
 }
 
-// ---------------------------------------------------------------------------
-// 12. cancelStocktake
-// ---------------------------------------------------------------------------
-
 export async function cancelStocktake(id: string) {
   const { organizationId, userId, userName } = await requirePermission(
     "stocktake",
@@ -1048,10 +989,6 @@ export async function cancelStocktake(id: string) {
   });
 }
 
-// ---------------------------------------------------------------------------
-// 13. getRecentScans — last N scanned items for scanner UI
-// ---------------------------------------------------------------------------
-
 export async function getRecentScans(stocktakeId: string, limit = 10) {
   const { organizationId } = await requirePermission("stocktake", "read");
 
@@ -1077,10 +1014,6 @@ export async function getRecentScans(stocktakeId: string, limit = 10) {
 
   return serialize(items);
 }
-
-// ---------------------------------------------------------------------------
-// 14. searchStocktakeAssets — search expected items by model name, asset tag
-// ---------------------------------------------------------------------------
 
 export async function searchStocktakeAssets(
   stocktakeId: string,
@@ -1140,10 +1073,6 @@ export async function searchStocktakeAssets(
   return serialize(items);
 }
 
-// ---------------------------------------------------------------------------
-// 15. markStocktakeItemFound — mark an item found by stocktakeItem ID
-// ---------------------------------------------------------------------------
-
 export async function markStocktakeItemFound(itemId: string) {
   const { organizationId, userId } = await requirePermission(
     "stocktake",
@@ -1180,10 +1109,6 @@ export async function markStocktakeItemFound(itemId: string) {
 
   return serialize(updated);
 }
-
-// ---------------------------------------------------------------------------
-// 16. unmarkStocktakeItemFound — undo marking an item as found
-// ---------------------------------------------------------------------------
 
 export async function unmarkStocktakeItemFound(itemId: string) {
   const { organizationId } = await requirePermission("stocktake", "update");

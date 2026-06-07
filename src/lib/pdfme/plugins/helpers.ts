@@ -71,25 +71,8 @@ export async function getHelveticaFonts(
   return fonts;
 }
 
-/** Format currency (matching existing formatCurrency) */
-export function formatCurrency(amount: number | null | undefined): string {
-  if (amount == null) return "$0.00";
-  return `$${Number(amount).toLocaleString("en-AU", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
-
-/** Format date (matching existing formatDate) */
-export function formatDate(date: string | Date | null | undefined): string {
-  if (!date) return "-";
-  const d = new Date(date);
-  return d.toLocaleDateString("en-AU", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
+/** Shared formatting — delegates to canonical formatters so PDF and UI numbers match. */
+export { formatCurrency, formatDate } from "@/lib/formatters";
 
 /** Truncate text to fit within a given width, adding ellipsis */
 export function truncateText(

@@ -168,6 +168,10 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
 
     const hasDates = !!project?.rentalStartDate && !!project?.rentalEndDate;
 
+    // Two-mode availability check: without dates (project still being quoted),
+    // we only check conflicts within this project (the user is iterating on
+    // their quote). With dates, we check across all overlapping projects to
+    // prevent genuine double-booking across the calendar.
     if (parsed.assetId) {
       // Check if asset is in a kit
       const assetCheck = await prisma.asset.findUnique({ where: { id: parsed.assetId }, include: { kit: { select: { assetTag: true } } } });
@@ -304,7 +308,10 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
     }
   }
 
-  // If adding by model (no specific asset), merge into existing line item within the same group/category.
+  // If adding by model (no specific asset), merge into existing line item
+  // within the same group/category to keep the quote clean. Merging prevents
+  // duplicate rows when a user adds the same model twice (e.g. "2x lights"
+  // then "3x lights"), rolling them into one consolidated line.
   // Never merge across sub-hire boundaries (own stock vs third-party stock).
   // When forceSeparate is true, always create a new line item.
   if (parsed.type === "EQUIPMENT" && parsed.modelId && !parsed.assetId && !forceSeparate) {
@@ -738,7 +745,11 @@ export async function addKitLineItem(
   let nextSort = (maxSort._max.sortOrder ?? -1) + 1;
 
   const result = await prisma.$transaction(async (tx) => {
-    // Create parent kit line item
+    // Create parent kit line item — holds the kit-level pricing and serves
+    // as the anchor for all child items. Each serialized and bulk item from
+    // the kit becomes a child ProjectLineItem so the warehouse can track and
+    // deploy each piece individually while the parent maintains the kit-level
+    // unit price for quoting.
     const parentItem = await tx.projectLineItem.create({
       data: {
         organizationId, projectId, type: "EQUIPMENT", kitId,

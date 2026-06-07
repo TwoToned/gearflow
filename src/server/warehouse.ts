@@ -13,7 +13,7 @@ import {
   ensureBulkUnit,
   returnLineUnits,
   checkinAccessoryChildren,
-} from "@/server/line-item-fulfillment";
+} from "@/lib/line-item-fulfillment";
 import {
   adjustBulkAvailability,
   coalesceAdjustments,
@@ -127,10 +127,6 @@ async function assertTestTagAllowsCheckout(
   );
 }
 
-// ---------------------------------------------------------------------------
-// 1. getProjectForWarehouse
-// ---------------------------------------------------------------------------
-
 export async function getProjectForWarehouse(projectId: string) {
   const { organizationId } = await getOrgContext();
 
@@ -208,10 +204,6 @@ export async function getProjectForWarehouse(projectId: string) {
 
   return serialize(project);
 }
-
-// ---------------------------------------------------------------------------
-// 2. lookupAssetForScan
-// ---------------------------------------------------------------------------
 
 export async function lookupAssetForScan(
   projectId: string,
@@ -552,10 +544,6 @@ async function checkoutAccessoryChildren(
 }
 
 
-// ---------------------------------------------------------------------------
-// 3. checkOutItems
-// ---------------------------------------------------------------------------
-
 export async function checkOutItems(
   projectId: string,
   items: Array<{
@@ -705,6 +693,13 @@ export async function checkOutItems(
       // its quantity; syncLineItemRollup rolls the units back up onto it.
       const targetAssetId = item.assetId || lineItem.assetId || null;
 
+      // Three checkout paths based on what inventory the line targets:
+      // 1) Serialized asset (targetAssetId): creates/updates a unit row,
+      //    flips asset status to CHECKED_OUT, logs the scan.
+      // 2) Bulk asset (lineItem.bulkAssetId): creates/updates a unit carrying
+      //    the checkout quantity. No individual asset status to flip.
+      // 3) Neither (deploy-whole-line edge): no physical assignment exists,
+      //    just mark the line as deployed. Common for generic/custom lines.
       if (targetAssetId) {
         // ── Serialised checkout — one unit per physical asset ────────────
         // SECURITY: `targetAssetId` can come from the untrusted scan payload
@@ -735,6 +730,10 @@ export async function checkOutItems(
           throw new Error(`Asset ${assetRecord.assetTag} is already deployed`);
         }
         if (
+          // Asset statuses that represent permanent unavailability — these
+          // are lifecycle terminal states (retired/lost) or deliberate
+          // unavailability (in maintenance). They must never be deployed.
+          // CHECKED_OUT is already handled above (idempotent if own unit).
           assetRecord.status === "RETIRED" ||
           assetRecord.status === "IN_MAINTENANCE" ||
           assetRecord.status === "LOST"
@@ -881,10 +880,6 @@ export async function checkOutItems(
   return serialize(results);
 }
 
-// ---------------------------------------------------------------------------
-// 4. checkInItems
-// ---------------------------------------------------------------------------
-
 export async function checkInItems(
   projectId: string,
   items: Array<{
@@ -995,10 +990,6 @@ export async function checkInItems(
 
   return serialize(results);
 }
-
-// ---------------------------------------------------------------------------
-// 4b. checkOutKit — check out an entire kit and all its contents
-// ---------------------------------------------------------------------------
 
 export async function checkOutKit(projectId: string, kitId: string) {
   const { organizationId, userId, userName } = await requirePermission("warehouse", "check_out");
@@ -1186,10 +1177,6 @@ export async function checkOutKit(projectId: string, kitId: string) {
   return serialize(result);
 }
 
-// ---------------------------------------------------------------------------
-// 4c. checkInKit — check in an entire kit and all its contents
-// ---------------------------------------------------------------------------
-
 export async function checkInKit(
   projectId: string,
   kitId: string,
@@ -1332,10 +1319,6 @@ export async function checkInKit(
   return serialize(result);
 }
 
-// ---------------------------------------------------------------------------
-// 5. getScanLog
-// ---------------------------------------------------------------------------
-
 export async function getScanLog(params?: {
   projectId?: string;
   assetId?: string;
@@ -1375,10 +1358,6 @@ export async function getScanLog(params?: {
     totalPages: Math.ceil(total / pageSize),
   });
 }
-
-// ---------------------------------------------------------------------------
-// 6. quickAddAndCheckOut — add an asset to a project and check it out in one go
-// ---------------------------------------------------------------------------
 
 export async function quickAddAndCheckOut(
   projectId: string,
@@ -1454,10 +1433,6 @@ export async function quickAddAndCheckOut(
   return serialize(result);
 }
 
-// ---------------------------------------------------------------------------
-// 6b. clearPrepContainer — remove container assignment from line items
-// ---------------------------------------------------------------------------
-
 export async function clearPrepContainer(projectId: string, containerName: string) {
   const { organizationId } = await requirePermission("warehouse", "check_out");
 
@@ -1468,10 +1443,6 @@ export async function clearPrepContainer(projectId: string, containerName: strin
 
   return serialize({ success: true });
 }
-
-// ---------------------------------------------------------------------------
-// 6c. ensureContainerOnProject — add container asset as a line item if needed
-// ---------------------------------------------------------------------------
 
 export async function ensureContainerOnProject(
   projectId: string,
@@ -1517,10 +1488,6 @@ export async function ensureContainerOnProject(
 
   return serialize(lineItem);
 }
-
-// ---------------------------------------------------------------------------
-// 6d. syncContainerStatus — auto deploy/return container when contents change
-// ---------------------------------------------------------------------------
 
 export async function syncContainerStatus(projectId: string, containerName: string) {
   const { organizationId, userId } = await requirePermission("warehouse", "check_out");
@@ -1588,10 +1555,6 @@ export async function syncContainerStatus(projectId: string, containerName: stri
   return serialize({ updated: true, status: allDeployedFlag ? "CHECKED_OUT" : "RETURNED" });
 }
 
-// ---------------------------------------------------------------------------
-// 7. getAvailableAssetsForModel
-// ---------------------------------------------------------------------------
-
 export async function getAvailableAssetsForModel(modelId: string) {
   const { organizationId } = await getOrgContext();
 
@@ -1625,10 +1588,6 @@ export async function getAvailableAssetsForModel(modelId: string) {
 
   return serialize(available);
 }
-
-// ---------------------------------------------------------------------------
-// 7. getProjectPullSheet
-// ---------------------------------------------------------------------------
 
 export async function getProjectPullSheet(projectId: string) {
   const { organizationId } = await getOrgContext();
@@ -1727,10 +1686,6 @@ export async function getProjectPullSheet(projectId: string) {
   });
 }
 
-// ---------------------------------------------------------------------------
-// 8. forceReturnAsset — reset a stuck asset to AVAILABLE
-// ---------------------------------------------------------------------------
-
 export async function forceReturnAsset(assetId: string) {
   const { organizationId, userId, userName } = await requirePermission("warehouse", "check_in");
 
@@ -1782,10 +1737,6 @@ export async function forceReturnAsset(assetId: string) {
 
   return serialize({ success: true });
 }
-
-// ---------------------------------------------------------------------------
-// 9. forceReturnKit — reset a stuck kit + contents to AVAILABLE
-// ---------------------------------------------------------------------------
 
 export async function forceReturnKit(kitId: string) {
   const { organizationId, userId, userName } = await requirePermission("warehouse", "check_in");
@@ -1943,10 +1894,6 @@ export async function forceReturnKit(kitId: string) {
 
   return serialize({ success: true });
 }
-
-// ---------------------------------------------------------------------------
-// 10. bulkForceReturnAssets — force return multiple assets at once
-// ---------------------------------------------------------------------------
 
 export async function bulkForceReturnAssets(assetIds: string[]) {
   const { organizationId, userId, userName } = await requirePermission("warehouse", "check_in");

@@ -3,6 +3,7 @@
  */
 
 import { phaseLabels } from "@/lib/status-labels";
+import { formatDate } from "@/lib/formatters";
 
 interface AssignmentEmailData {
   crewFirstName: string;
@@ -20,16 +21,6 @@ interface AssignmentEmailData {
   siteContactPhone: string | null;
   notes: string | null;
   orgName: string;
-}
-
-function formatDate(date: string | null): string {
-  if (!date) return "TBC";
-  return new Date(date).toLocaleDateString("en-AU", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
 }
 
 function buildDetailsHtml(data: AssignmentEmailData): string {

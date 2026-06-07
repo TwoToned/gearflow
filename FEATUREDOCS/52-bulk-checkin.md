@@ -55,7 +55,7 @@ isolation (`src/lib/bulk-checkin.test.ts`).
     live unit rows inside the transaction; the client's numbers are never trusted.
   - **Distribution.** Per requested total, `distributeReturn` maps the quantity to
     concrete child lines; each allocation is applied through the canonical
-    `returnLineUnits` helper (`src/server/line-item-fulfillment.ts`) — the SAME
+    `returnLineUnits` helper (`src/lib/line-item-fulfillment.ts`) — the SAME
     physical-return primitive the per-parent `checkInItems` path uses, so the two
     flows can't drift. Serialised allocations flip the asset's unit (and asset
     status by condition); bulk allocations accumulate onto the shared bulk unit's

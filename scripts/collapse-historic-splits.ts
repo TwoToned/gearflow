@@ -51,7 +51,7 @@
  */
 
 import { prisma } from "../src/lib/prisma";
-import { syncLineItemRollup } from "../src/server/line-item-fulfillment";
+import { syncLineItemRollup } from "../src/lib/line-item-fulfillment";
 import { nextOrdinal } from "../src/lib/line-item-units";
 
 const args = process.argv.slice(2);

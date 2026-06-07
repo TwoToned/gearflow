@@ -20,7 +20,7 @@ import {
   type GroupPlan,
 } from "@/lib/split-sibling-collapse";
 import { nextOrdinal } from "@/lib/line-item-units";
-import { syncLineItemRollup } from "@/server/line-item-fulfillment";
+import { syncLineItemRollup } from "@/lib/line-item-fulfillment";
 
 export interface CollapseRunStats {
   groupsTotal: number;

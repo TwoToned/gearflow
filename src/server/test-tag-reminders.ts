@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
+import { formatDate } from "@/lib/formatters";
 import type { OrgSettings } from "@/server/settings";
 
 /**
@@ -175,15 +176,6 @@ export async function sendTestTagReminderDigests(): Promise<{
 }
 
 // ─── Email Template ──────────────────────────────────────────────────────────
-
-function formatDate(date: Date | string | null): string {
-  if (!date) return "N/A";
-  return new Date(date).toLocaleDateString("en-AU", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
 
 function buildDigestEmail({
   orgName,

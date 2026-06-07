@@ -55,37 +55,123 @@ src/
 │   ├── org-import.ts     # Organization ZIP import
 │   └── org-transfer-types.ts  # Export manifest types
 ├── server/               # Server actions (all "use server")
-│   ├── assets.ts         # Serialized asset CRUD
-│   ├── bulk-assets.ts    # Bulk asset CRUD
-│   ├── models.ts         # Equipment model CRUD
-│   ├── kits.ts           # Kit CRUD + item management
-│   ├── categories.ts     # Category CRUD
-│   ├── locations.ts      # Location CRUD
-│   ├── suppliers.ts      # Supplier CRUD (paginated, with orders/assets/subhires)
-│   ├── supplier-orders.ts # Supplier order CRUD + items
-│   ├── clients.ts        # Client CRUD
-│   ├── projects.ts       # Project CRUD, duplication, templates
-│   ├── line-items.ts     # Line item CRUD, availability checks, auto-accessories
-│   ├── warehouse.ts      # Checkout/checkin operations
-│   ├── maintenance.ts    # Maintenance record CRUD
-│   ├── search.ts         # globalSearch across all entities
-│   ├── scan-lookup.ts    # Barcode → entity URL resolution
-│   ├── notifications.ts  # Notification generation
-│   ├── dashboard.ts      # Dashboard stats + activity
-│   ├── reports.ts        # Business reports
-│   ├── csv.ts            # CSV import/export
-│   ├── settings.ts       # Org settings, asset tag config, branding
-│   ├── tags.ts           # Org-wide tag autocomplete
-│   ├── changelog.ts      # Version/build info
-│   ├── site-admin.ts     # Platform admin operations
-│   ├── public-org.ts     # Public org info (no session required): getTheOrgId, getTheOrgInfo, getSingleOrgSSOInfo
-│   ├── org-members.ts    # Org member management
-│   ├── custom-roles.ts   # Custom role CRUD
-│   ├── user-profile.ts   # User account operations
-│   ├── invitations.ts    # Invitation helpers
+│   │
+│   │  # ── Assets & Models ──
+│   ├── assets.ts             # Serialized asset CRUD
+│   ├── asset-accessories.ts  # Asset accessory assignments
+│   ├── asset-media.ts        # Asset photo/document management
+│   ├── bulk-assets.ts        # Bulk asset CRUD
+│   ├── models.ts             # Equipment model CRUD
+│   ├── model-accessories.ts  # Model default accessory config
+│   ├── model-media.ts        # Model photo management
+│   │
+│   │  # ── Categories, Locations & Tags ──
+│   ├── categories.ts         # Category CRUD + nested tree
+│   ├── category-slots.ts     # Category slot rules
+│   ├── locations.ts          # Location CRUD
+│   ├── location-media.ts     # Location photo management
+│   ├── tags.ts               # Org-wide tag autocomplete
+│   │
+│   │  # ── Check Items ──
+│   ├── check-items.ts        # Model/kit check item CRUD
+│   ├── check-records.ts      # Check record CRUD
+│   │
+│   │  # ── Clients & Suppliers ──
+│   ├── clients.ts            # Client CRUD
+│   ├── client-media.ts       # Client photo management
+│   ├── suppliers.ts          # Supplier CRUD (paginated, with orders/assets/subhires)
+│   ├── supplier-orders.ts    # Supplier order CRUD + items
+│   │
+│   │  # ── Crew ──
+│   ├── crew.ts               # Crew member CRUD
+│   ├── crew-assignments.ts   # Project crew assignments
+│   ├── crew-availability.ts  # Crew availability management
+│   ├── crew-calendar.ts      # Crew calendar views
+│   ├── crew-communication.ts # Crew messaging/in-app
+│   ├── crew-dashboard.ts     # Crew member dashboard
+│   ├── crew-time.ts          # Crew timesheets
+│   │
+│   │  # ── Kits ──
+│   ├── kits.ts               # Kit CRUD + item management
+│   ├── kit-media.ts          # Kit photo management
+│   │
+│   │  # ── Maintenance & Damage ──
+│   ├── maintenance.ts        # Maintenance record CRUD
+│   ├── damage.ts             # Damage reporting
+│   │
+│   │  # ── Notifications ──
+│   ├── notifications.ts          # Notification generation
+│   ├── notification-preferences.ts # Per-user notification settings
+│   ├── notification-email-sender.ts # Email notification delivery
+│   │
+│   │  # ── Projects & Line Items ──
+│   ├── projects.ts           # Project CRUD, duplication, templates
+│   ├── project-categories.ts # Project category assignments
+│   ├── project-costs.ts      # Project cost tracking
+│   ├── project-groups.ts     # Project group (sub-project) CRUD
+│   ├── project-managers.ts   # Project manager assignments
+│   ├── project-media.ts      # Project photo/document management
+│   ├── project-services.ts   # Project service line items
+│   ├── project-tasks.ts      # Project task management
+│   ├── line-items.ts         # Line item CRUD, availability checks, auto-accessories
+│   ├── documents.ts          # Document generation
 │   ├── document-templates.ts # Document template CRUD, publish, set default
+│   ├── section-presets.ts    # Document section presets
+│   ├── brand-templates.ts    # Branded document template CRUD
+│   ├── group-templates.ts    # Group template CRUD
+│   ├── custom-fields.ts      # Custom field definitions
+│   │
+│   │  # ── Reporting & Search ──
+│   ├── reports.ts            # Business reports
+│   ├── dashboard.ts          # Dashboard stats + activity
+│   ├── csv.ts                # CSV import/export
+│   ├── utilization.ts        # Utilization metrics
+│   ├── reorder.ts            # Reorder suggestions
+│   ├── search.ts             # globalSearch across all entities
+│   ├── scan-lookup.ts        # Barcode → entity URL resolution
+│   │
+│   │  # ── Saved Views & Calendar ──
+│   ├── saved-views.ts        # Saved table view presets
+│   ├── scheduled-reports.ts  # Scheduled report delivery
+│   ├── org-calendar.ts       # Organization calendar
+│   │
+│   │  # ── Settings & Admin ──
+│   ├── settings.ts           # Org settings, asset tag config, branding
+│   ├── site-admin.ts         # Platform admin operations
+│   ├── public-org.ts         # Public org info (no session required)
+│   ├── org-members.ts        # Org member management
+│   ├── custom-roles.ts       # Custom role CRUD
+│   ├── invitations.ts        # Invitation helpers
+│   ├── sso.ts                # Single Sign-On configuration
+│   ├── user-profile.ts       # User account operations
+│   ├── changelog.ts          # Version/build info
+│   ├── activity-log.ts       # Audit trail queries
+│   │
+│   │  # ── Stocktake ──
+│   ├── stocktake.ts          # Stocktake CRUD, scanning, reconciliation
+│   │
+│   │  # ── Sub-hires ──
+│   ├── sub-hires.ts          # Sub-hire order management
+│   │
+│   │  # ── Test & Tag ──
 │   ├── test-tag-assets.ts    # T&T asset CRUD
+│   ├── test-tag-auditor.ts   # T&T auditor management
+│   ├── test-tag-profiles.ts  # T&T test profiles
 │   ├── test-tag-records.ts   # T&T test record CRUD
-│   └── test-tag-reports.ts   # T&T report data + CSV
+│   ├── test-tag-reports.ts   # T&T report data + CSV
+│   ├── test-tag-reminders.ts # T&T due-date reminders
+│   │
+│   │  # ── Warehouse ──
+│   ├── warehouse.ts          # Checkout/checkin operations
+│   ├── warehouse-close.ts    # Project close-out
+│   ├── warehouse-display.ts  # Warehouse display data
+│   ├── bulk-checkin.ts       # Bulk check-in operations
+│   │
+│   │  # ── Utility ──
+│   ├── availability.ts       # Asset availability queries
+│   ├── discord-integration.ts # Discord bot integration
+│   ├── reservation-conflicts.ts # Conflict detection
+│   ├── split-sibling-collapse.ts # Line item split management
+│   └── woocommerce.ts        # WooCommerce integration
 └── middleware.ts         # Auth check, route protection
 ```

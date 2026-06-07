@@ -20,7 +20,7 @@ import { logActivity } from "@/lib/activity-log";
 import {
   returnLineUnits,
   syncLineItemRollup,
-} from "@/server/line-item-fulfillment";
+} from "@/lib/line-item-fulfillment";
 import {
   aggregateAccessoryTotals,
   accessoryGroupKey,

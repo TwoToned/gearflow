@@ -4,9 +4,7 @@
  * Damage events list. Deep-linked from the project P&L panel via
  * `/damage?projectId=...`. Filterable by status / severity.
  *
- * Inline quick-actions: charge-back toggle and resolve. The full editor
- * lives in a detail drawer (TODO: build in a follow-up if triage needs
- * more than these two toggles).
+ * Inline quick-actions: charge-back toggle and resolve.
  */
 
 import { Suspense, useState } from "react";

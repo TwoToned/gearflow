@@ -9,7 +9,7 @@ import {
   syncLineItemRollup,
   returnLineUnits,
   checkinAccessoryChildren,
-} from "@/server/line-item-fulfillment";
+} from "@/lib/line-item-fulfillment";
 import type { Prisma } from "@/generated/prisma/client";
 import {
   completeCheckAndPackSchema,

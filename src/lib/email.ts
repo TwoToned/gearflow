@@ -38,10 +38,12 @@ export async function sendEmail({
   attachments?: EmailAttachment[];
 }) {
   if (!env.RESEND_API_KEY || env.RESEND_API_KEY === "re_xxxxxxxxxxxxxxxxxxxx") {
-    console.log(`[Email] Would send to ${to}: ${subject}`);
-    console.log(`[Email] HTML: ${html.substring(0, 200)}...`);
-    if (attachments?.length) {
-      console.log(`[Email] Attachments: ${attachments.map((a) => a.filename).join(", ")}`);
+    if (process.env.NODE_ENV === "development") {
+      console.log(`[Email] Would send to ${to}: ${subject}`);
+      console.log(`[Email] HTML: ${html.substring(0, 200)}...`);
+      if (attachments?.length) {
+        console.log(`[Email] Attachments: ${attachments.map((a) => a.filename).join(", ")}`);
+      }
     }
     return { id: "dev-mock" };
   }

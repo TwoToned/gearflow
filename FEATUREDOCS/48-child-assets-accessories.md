@@ -171,6 +171,25 @@ what every existing query keys off.
   asset override wins, warehouse scan-time inheritance + idempotency, unique
   constraint, "removing the template doesn't affect past expansions" (5).
 
+## Exclude accessories toggle
+
+Both `addLineItem` and `checkOutItems` accept an optional `includeAccessories`
+parameter (default `true`):
+
+- **`addLineItem(projectId, data, allowOverbook, forceSeparate, includeAccessories)`**
+  — when `false`, skips `expandAccessoryChildren` so no accessory child lines are
+  created alongside the parent. Useful for return-only or bulk-import flows where
+  accessories are managed separately.
+- **`checkOutItems(projectId, items, includeAccessories)`** — when `false`, skips
+  `expandAccessoriesForAsset` and `checkoutAccessoryChildren` so no accessories
+  are deployed. The parent line still checks out with its units and status.
+
+The project equipment tab (`equipment-add-form.tsx`) shows a **"Include accessories"**
+checkbox when the selected model or asset has accessories (`hasAccessories` on the
+`checkAvailability` / `lookupAssetByTag` response). Unchecking it passes
+`includeAccessories: false` to the server action. The `hasAccessories` field was
+added to both return types as part of the Quattro review.
+
 ## Not in v1
 
 Bulk parents (only serialised assets can be parents), nested accessories,

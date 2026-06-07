@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   DndContext,
@@ -11,6 +11,8 @@ import {
   useSensors,
   type DragEndEvent,
   type DragOverEvent,
+  type DragStartEvent,
+  DragOverlay,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -93,6 +95,7 @@ import {
   type MixedGroupSlot,
   type OverbookedInfo,
 } from "./equipment-rows";
+import { useSelection } from "./use-selection";
 
 interface EquipmentTabProps {
   projectId: string;
@@ -111,6 +114,21 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   // Matrix 8C). Cleared on drag end / leave. Row components read this to
   // render the red left-edge rejection bar + not-allowed cursor.
   const [rejectedDropTargetId, setRejectedDropTargetId] = useState<string | null>(null);
+
+  // Multi-select DnD state
+  const selection = useSelection();
+  const [activeMultiDrag, setActiveMultiDrag] = useState<string[] | null>(null);
+
+  // Clear selection on Escape
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape" && selection.selectionSize > 0) {
+        selection.clearSelection();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selection]);
 
   // Move-sub-hire-group dialog state (Phase 6b kebab action).
   const [moveSubHireGroup, setMoveSubHireGroup] = useState<{ id: string; title: string } | null>(null);
@@ -464,20 +482,44 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     return "unknown";
   }
 
+  function handleDragStart(event: DragStartEvent) {
+    const activeId = String(event.active.id);
+    if (
+      activeId.startsWith("li-") &&
+      selection.isSelected(activeId) &&
+      selection.selectionSize > 1
+    ) {
+      setActiveMultiDrag(Array.from(selection.selectedIds));
+    } else {
+      setActiveMultiDrag(null);
+    }
+  }
+
   function handleDragOver(event: DragOverEvent) {
     const { active, over } = event;
     if (!over) {
       if (rejectedDropTargetId !== null) setRejectedDropTargetId(null);
       return;
     }
-    const reason = getDisallowedDropReason(String(active.id), String(over.id));
-    const next = reason ? String(over.id) : null;
+    const overId = String(over.id);
+
+    if (activeMultiDrag && activeMultiDrag.length > 1) {
+      const anyRejected = activeMultiDrag.some((id) => getDisallowedDropReason(id, overId));
+      const next = anyRejected ? overId : null;
+      if (next !== rejectedDropTargetId) setRejectedDropTargetId(next);
+      return;
+    }
+
+    const reason = getDisallowedDropReason(String(active.id), overId);
+    const next = reason ? overId : null;
     if (next !== rejectedDropTargetId) setRejectedDropTargetId(next);
   }
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     setRejectedDropTargetId(null);
+    const prevMultiDrag = activeMultiDrag;
+    setActiveMultiDrag(null);
     if (!over || active.id === over.id) return;
 
     const activeId = String(active.id);
@@ -488,6 +530,70 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     const disallowedReason = getDisallowedDropReason(activeId, overId);
     if (disallowedReason) {
       toast.error(disallowedReason);
+      return;
+    }
+
+    // Multi-item drag — batch-move all selected line items
+    if (prevMultiDrag && prevMultiDrag.length > 1) {
+      const idsToMove = prevMultiDrag.filter((id) => id.startsWith("li-"));
+      if (idsToMove.length > 0) {
+        let targetGroupId: string | null = null;
+        let targetCategoryId: string | null = null;
+
+        if (overId.startsWith("grp-")) {
+          targetGroupId = overId.slice(4);
+        } else if (overId.startsWith("cat-")) {
+          targetCategoryId = overId.slice(4);
+        } else if (overId.startsWith("li-")) {
+          const overRealId = overId.slice(3);
+          const cats = categories as CategoryData[];
+          for (const cat of cats) {
+            for (const group of cat.groups) {
+              if ((group.lineItems ?? []).some((i) => i.id === overRealId)) {
+                targetGroupId = group.id;
+                break;
+              }
+            }
+            if (targetGroupId) break;
+            if ((cat.lineItems ?? []).some((i) => i.id === overRealId)) {
+              targetCategoryId = cat.id;
+              break;
+            }
+          }
+          if (!targetGroupId && !targetCategoryId) {
+            const uncatItems = uncategorizedItems as LineItemData[];
+            if (uncatItems.some((i) => i.id === overRealId)) {
+              targetCategoryId = null;
+            }
+          }
+        } else {
+          return;
+        }
+
+        let successCount = 0;
+        let failCount = 0;
+        let lastError = "";
+        const promises = idsToMove.map((id) =>
+          moveLineItemToGroup({
+            lineItemId: id.slice(3),
+            targetGroupId,
+            targetCategoryId,
+          })
+            .then(() => { successCount++; })
+            .catch((e: Error) => {
+              failCount++;
+              lastError = e.message;
+            }),
+        );
+        Promise.all(promises).then(() => {
+          if (failCount === 0) {
+            toast.success(`Moved ${successCount} items`);
+          } else {
+            toast.error(`Moved ${successCount} items. ${failCount} could not be moved: ${lastError}`);
+          }
+          invalidate();
+        });
+      }
       return;
     }
 
@@ -722,6 +828,18 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     allSortableIds.push(`shg-${shGroup.id}`);
   }
 
+  const handleRowClick = (id: string, e: React.MouseEvent) => {
+    const sortableId = `li-${id}`;
+    if (e.metaKey || e.ctrlKey) {
+      selection.toggle(sortableId, true);
+    } else if (e.shiftKey) {
+      const liIds = allSortableIds.filter((sid) => sid.startsWith("li-"));
+      selection.selectTo(sortableId, liIds);
+    } else {
+      selection.select(sortableId);
+    }
+  };
+
   return (
     <div className="space-y-3">
       {/* Toolbar */}
@@ -811,9 +929,13 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
             onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}
-            onDragCancel={() => setRejectedDropTargetId(null)}
+            onDragCancel={() => {
+              setRejectedDropTargetId(null);
+              setActiveMultiDrag(null);
+            }}
           >
             <SortableContext
               items={allSortableIds}
@@ -998,6 +1120,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                 isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
                                 showCostColumn={showCostColumn}
                                 isExpanded={expandedParents.has(item.id)}
+                                isSelected={selection.isSelected(`li-${item.id}`)}
+                                onClick={(e) => handleRowClick(item.id, e)}
                                 onToggle={() => toggleParent(item.id)}
                                 onEdit={() => setEditLineItem(item)}
                                 onMoveToCategory={() => setMoveItemToCategory({
@@ -1025,6 +1149,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                           isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
                           showCostColumn={showCostColumn}
                           isExpanded={expandedParents.has(item.id)}
+                          isSelected={selection.isSelected(`li-${item.id}`)}
+                          onClick={(e) => handleRowClick(item.id, e)}
                           onToggle={() => toggleParent(item.id)}
                           onEdit={() => setEditLineItem(item)}
                           onMoveToCategory={() => setMoveItemToCategory({
@@ -1061,6 +1187,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                     isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
                     showCostColumn={showCostColumn}
                     isExpanded={expandedParents.has(item.id)}
+                    isSelected={selection.isSelected(`li-${item.id}`)}
+                    onClick={(e) => handleRowClick(item.id, e)}
                     onToggle={() => toggleParent(item.id)}
                     onEdit={() => setEditLineItem(item)}
                     onMoveToCategory={() => setMoveItemToCategory({
@@ -1132,6 +1260,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                           isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
                           showCostColumn={showCostColumn}
                           isExpanded={expandedParents.has(item.id)}
+                          isSelected={selection.isSelected(`li-${item.id}`)}
+                          onClick={(e) => handleRowClick(item.id, e)}
                           onToggle={() => toggleParent(item.id)}
                           onEdit={() => setEditLineItem(item)}
                           onMoveToCategory={() => setMoveItemToCategory({
@@ -1212,6 +1342,13 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                 })}
               </TableBody>
             </SortableContext>
+            <DragOverlay>
+              {activeMultiDrag && activeMultiDrag.length > 1 && (
+                <div className="bg-primary text-primary-foreground rounded-full px-3 py-1 text-sm font-medium shadow-lg">
+                  {activeMultiDrag.length} items
+                </div>
+              )}
+            </DragOverlay>
           </DndContext>
           </Table>
         </div>

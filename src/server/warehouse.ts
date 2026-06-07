@@ -833,13 +833,11 @@ async function finalizeCheckoutItem(
 ): Promise<void> {
   const { organizationId, lineItemId, targetAssetId, projectId, userId, projectLocationId, includeAccessories } = params;
 
-  if (includeAccessories !== false && targetAssetId) {
-    await expandAccessoriesForAsset(tx, { organizationId, lineItemId, assetId: targetAssetId });
-  }
-
-  await syncLineItemRollup(tx, lineItemId);
-
   if (includeAccessories !== false) {
+    if (targetAssetId) {
+      await expandAccessoriesForAsset(tx, { organizationId, lineItemId, assetId: targetAssetId });
+    }
+
     await checkoutAccessoryChildren(tx, {
       organizationId,
       projectId,
@@ -848,6 +846,8 @@ async function finalizeCheckoutItem(
       projectLocationId,
     });
   }
+
+  await syncLineItemRollup(tx, lineItemId);
 
   updated.push(
     await tx.projectLineItem.findUnique({

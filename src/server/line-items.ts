@@ -516,6 +516,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
     // WHY: Permanent accessories (cases, cables, mounts) must travel with the
     // parent on every booking. Expanding them as child lines ensures the
     // warehouse includes them during prep and the quote shows what's included.
+    // includeAccessories=false lets callers suppress this (e.g. return-only flow).
     if (includeAccessories && !line.subHireId && line.type === "EQUIPMENT" && (line.assetId || line.modelId)) {
       await expandAccessoryChildren(tx, organizationId, projectId, line);
     }
@@ -1064,17 +1065,17 @@ export async function checkAvailability(
     0
   );
 
+  const bulkAccessoryCount = await prisma.modelBulkAccessory.count({ where: { modelId, organizationId } });
+
   if (model.assetType === "SERIALIZED") {
     const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(model);
     const inMaintenance = model.assets.filter((a) => a.status === "IN_MAINTENANCE").length;
     const lost = model.assets.filter((a) => a.status === "LOST").length;
     const available = Math.max(0, effectiveStock - booked);
-    const bulkAccessoryCount = await prisma.modelBulkAccessory.count({ where: { modelId, organizationId } });
-    const hasAccessories = bulkAccessoryCount > 0;
 
     return serialize({
       totalStock, effectiveStock, booked, available, bookedOnThisProject,
-      unavailable, inMaintenance, lost, conflicts, dateless: !hasDates, hasAccessories,
+      unavailable, inMaintenance, lost, conflicts, dateless: !hasDates, hasAccessories: bulkAccessoryCount > 0,
     });
   } else {
     // BULK: sum up total quantity across all bulk assets
@@ -1083,12 +1084,10 @@ export async function checkAvailability(
       0
     );
     const available = Math.max(0, totalStock - booked);
-    const bulkAccessoryCount = await prisma.modelBulkAccessory.count({ where: { modelId, organizationId } });
-    const hasAccessories = bulkAccessoryCount > 0;
 
     return serialize({
       totalStock, effectiveStock: totalStock, booked, available, bookedOnThisProject,
-      unavailable: 0, inMaintenance: 0, lost: 0, conflicts, dateless: !hasDates, hasAccessories,
+      unavailable: 0, inMaintenance: 0, lost: 0, conflicts, dateless: !hasDates, hasAccessories: bulkAccessoryCount > 0,
     });
   }
 }

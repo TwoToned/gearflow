@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   DndContext,
@@ -118,6 +118,17 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   // Multi-select DnD state
   const selection = useSelection();
   const [activeMultiDrag, setActiveMultiDrag] = useState<string[] | null>(null);
+
+  // Clear selection on Escape
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape" && selection.selectionSize > 0) {
+        selection.clearSelection();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selection]);
 
   // Move-sub-hire-group dialog state (Phase 6b kebab action).
   const [moveSubHireGroup, setMoveSubHireGroup] = useState<{ id: string; title: string } | null>(null);
@@ -580,8 +591,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
           } else {
             toast.error(`Moved ${successCount} items. ${failCount} could not be moved: ${lastError}`);
           }
+          invalidate();
         });
-        invalidate();
       }
       return;
     }

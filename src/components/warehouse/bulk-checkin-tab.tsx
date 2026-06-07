@@ -10,9 +10,9 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { useCanDo } from "@/lib/use-permissions";
 import {
   getBulkCheckInTotals,
-  checkInBulkAccessoryTotals,
+  checkInBulkTotals,
 } from "@/server/bulk-checkin";
-import type { BulkCheckInTotal } from "@/lib/bulk-checkin";
+import type { BulkCheckInTotal, CheckInItemType } from "@/lib/bulk-checkin";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -43,11 +43,22 @@ const CONDITION_LABELS: Record<Condition, string> = {
   MISSING: "Missing",
 };
 
-/**
- * Bulk Check-In Totals tab. Aggregates every deployed accessory across the whole
- * project into per-identity totals ("100 clamps due back") and returns a counted
- * quantity in one action — no per-parent drill-down. Roadmap Phase 1.3.
- */
+const ITEM_TYPE_LABELS: Record<CheckInItemType, string> = {
+  OWNED_SERIALISED: "Asset",
+  OWNED_BULK: "Bulk",
+  SUBHIRE: "Sub-Hire",
+  CUSTOM: "Custom",
+  ACCESSORY: "Accessory",
+};
+
+const ITEM_TYPE_VARIANTS: Record<CheckInItemType, string> = {
+  OWNED_SERIALISED: "default",
+  OWNED_BULK: "default",
+  SUBHIRE: "default",
+  CUSTOM: "secondary",
+  ACCESSORY: "outline",
+};
+
 export function BulkCheckInTab({ projectId }: { projectId: string }) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
@@ -66,13 +77,13 @@ export function BulkCheckInTab({ projectId }: { projectId: string }) {
 
   const mutation = useMutation({
     mutationFn: (returns: Array<{ key: string; quantity: number; condition: Condition }>) =>
-      checkInBulkAccessoryTotals(projectId, returns),
+      checkInBulkTotals(projectId, returns),
     onSuccess: (res) => {
       const total = (res as { returned: Array<{ quantity: number }> }).returned.reduce(
         (s, r) => s + r.quantity,
         0,
       );
-      toast.success(total > 0 ? `Checked in ${total} accessor${total === 1 ? "y" : "ies"}` : "Nothing to check in");
+      toast.success(total > 0 ? `Checked in ${total} item${total === 1 ? "" : "s"}` : "Nothing to check in");
       setCounts({});
       queryClient.invalidateQueries({ queryKey: ["bulk-checkin-totals", orgId, projectId] });
       queryClient.invalidateQueries({ queryKey: ["warehouse-project", orgId, projectId] });
@@ -80,8 +91,6 @@ export function BulkCheckInTab({ projectId }: { projectId: string }) {
     onError: (e) => showError(e, { fallbackTitle: "Bulk check-in failed" }),
   });
 
-  // The quantity the operator intends to return for a row: their typed count,
-  // or the full outstanding total when they haven't touched it.
   const intendedQty = (row: BulkCheckInTotal): number => {
     const raw = counts[row.key];
     if (raw === undefined || raw === "") return row.totalDue;
@@ -122,8 +131,8 @@ export function BulkCheckInTab({ projectId }: { projectId: string }) {
       <div className="pt-4">
         <EmptyState
           icon={Boxes}
-          heading="No accessories to check in"
-          description="When gear with permanent accessories is deployed, their clamps, cables and adaptors show here as project-wide totals you can check in all at once."
+          heading="No deployed items to check in"
+          description="When gear is deployed, it shows here as project-wide totals you can check in all at once."
         />
       </div>
     );
@@ -134,10 +143,10 @@ export function BulkCheckInTab({ projectId }: { projectId: string }) {
       <div className="flex items-start gap-3 rounded-lg bg-bg-surface surface-ring p-4">
         <Layers className="h-5 w-5 text-fg-3 shrink-0 mt-0.5" />
         <div className="flex-1">
-          <p className="text-sm font-medium text-fg">Bulk accessory check-in</p>
+          <p className="text-sm font-medium text-fg">Bulk check-in</p>
           <p className="text-xs text-fg-3 mt-0.5">
-            Counts are aggregated across every deployed parent. Enter how many you have
-            in front of you and check the whole pile in at once.
+            Counts are aggregated across the whole project. Enter how many you have
+            in front of you and check them all in at once.
           </p>
         </div>
         <div className="w-40">
@@ -159,7 +168,7 @@ export function BulkCheckInTab({ projectId }: { projectId: string }) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Accessory</TableHead>
+              <TableHead>Item</TableHead>
               <TableHead className="text-center">Due Back</TableHead>
               <TableHead className="w-40 text-right">Check In Qty</TableHead>
             </TableRow>
@@ -180,8 +189,11 @@ export function BulkCheckInTab({ projectId }: { projectId: string }) {
                       {row.modelNumber && (
                         <span className="font-mono text-xs text-fg-4">{row.modelNumber}</span>
                       )}
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-fg-3">
-                        {row.kind === "BULK" ? "Bulk" : "Serialised"}
+                      <Badge
+                        variant={ITEM_TYPE_VARIANTS[row.itemType] as "default" | "secondary" | "outline" | "destructive"}
+                        className={`text-[10px] px-1.5 py-0 ${row.itemType === "SUBHIRE" ? "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200 border-cyan-200 dark:border-cyan-800" : row.itemType === "CUSTOM" ? "text-fg-4" : "text-fg-3"}`}
+                      >
+                        {ITEM_TYPE_LABELS[row.itemType]}
                       </Badge>
                       {row.childCount > 1 && (
                         <span className="text-xs text-fg-4">across {row.childCount} lines</span>

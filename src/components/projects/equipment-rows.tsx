@@ -997,7 +997,11 @@ export function LineItemRow({
     {/* Expanded child items (kit children / sub-hire group children) */}
     {isExpanded && hasChildren && item.childLineItems!.map((child) => (
       <TableRow key={child.id} className="bg-muted/30">
-        <TableCell className="px-0" />
+        <TableCell className="px-0">
+          <div className="flex justify-end ml-16 px-1 text-fg-3/40">
+            <GripVertical className="h-4 w-4" />
+          </div>
+        </TableCell>
         <TableCell>
           <div className={`${childIndent}`}>
             <div className="flex items-center gap-2">

@@ -311,6 +311,7 @@ function WarehouseProjectPage({
   const [selectedPrep, setSelectedPrep] = useState<Set<string>>(new Set());
   const [selectedOut, setSelectedOut] = useState<Set<string>>(new Set());
   const [selectedIn, setSelectedIn] = useState<Set<string>>(new Set());
+  const [includeAccessories, setIncludeAccessories] = useState(true);
 
   // Kit verification — track which child assets have been scanned to confirm presence
   const [verifiedKitItems, setVerifiedKitItems] = useState<Set<string>>(new Set());
@@ -629,11 +630,11 @@ function WarehouseProjectPage({
   }, [projectId]);
 
   const checkOutMutation = useMutation({
-    mutationFn: async (items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>) => {
-      const result = await checkOutItems(projectId, items);
+    mutationFn: async (params: { items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>; includeAccessories?: boolean }) => {
+      const result = await checkOutItems(projectId, params.items, params.includeAccessories);
       // Sync container status for affected containers
       const containers = new Set(
-        items.map((i) => lineItems.find((l) => l.id === i.lineItemId)?.prepContainer).filter(Boolean) as string[]
+        params.items.map((i) => lineItems.find((l) => l.id === i.lineItemId)?.prepContainer).filter(Boolean) as string[]
       );
       for (const c of containers) await syncContainerStatus(projectId, c);
       return result;
@@ -974,7 +975,7 @@ function WarehouseProjectPage({
         const matchedLi = lineItems.find((l) => l.id === result.lineItemId);
         if (matchedLi?.prepStatus === "PACKED" && matchedLi.status !== "CHECKED_OUT") {
           checkOutMutation.mutate(
-            [{ lineItemId: result.lineItemId, assetId: result.assetId || undefined }],
+            { items: [{ lineItemId: result.lineItemId, assetId: result.assetId || undefined }] },
             { onSuccess: () => toast.success(`Deployed: ${result.assetName || "Item"}`) }
           );
         } else if (matchedLi?.status === "CHECKED_OUT") {
@@ -1718,7 +1719,7 @@ function WarehouseProjectPage({
 
     if (items.length === 0) return;
 
-    checkOutMutation.mutate(items, {
+    checkOutMutation.mutate({ items, includeAccessories }, {
       onSuccess: () => toast.success(`Deployed ${selectedOutCount} items`),
     });
   };
@@ -2123,6 +2124,8 @@ function WarehouseProjectPage({
           setVerifiedKitItems={setVerifiedKitItems}
           expandedGroups={expandedGroups}
           toggleExpanded={toggleExpanded}
+          includeAccessories={includeAccessories}
+          onIncludeAccessoriesChange={setIncludeAccessories}
           handleCheckOutSelected={handleCheckOutSelected}
           handleDeprep={(ids) => {
             if (ids.size === 0) return;

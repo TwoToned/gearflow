@@ -76,6 +76,7 @@ export function EquipmentAddForm({
   const [selectedCategoryId, setSelectedCategoryId] = useState(categoryId ?? "");
   const [overbookConfirmed, setOverbookConfirmed] = useState(false);
   const [duplicateAction, setDuplicateAction] = useState<"combine" | "separate">("combine");
+  const [includeAccessories, setIncludeAccessories] = useState(true);
 
   const form = useForm<LineItemFormValues>({
     resolver: zodResolver(lineItemSchema),
@@ -183,7 +184,8 @@ export function EquipmentAddForm({
         projectId,
         { ...data, discount: disc, categoryId: effectiveCategoryId, groupId },
         overbookConfirmed,
-        duplicateAction === "separate"
+        duplicateAction === "separate",
+        includeAccessories
       );
     },
     onSuccess: (result) => {
@@ -223,6 +225,9 @@ export function EquipmentAddForm({
   const requestedQty = Number(form.watch("quantity")) || 1;
   const isOverbooked = mode === "model" && !!availability && requestedQty > availability.available;
   const hasDuplicate = mode === "model" && !!availability && availability.bookedOnThisProject > 0;
+  const modelHasAccessories = availability?.hasAccessories === true;
+  const assetHasAccessories = assetLookup?.hasAccessories === true;
+  const showAccessoriesToggle = mode === "model" ? !!selectedModelId && modelHasAccessories : !!lookupTag && assetHasAccessories;
 
   // Reset overbook confirmation when model or quantity changes
   useEffect(() => {
@@ -594,6 +599,19 @@ export function EquipmentAddForm({
             Optional item (excluded from totals)
           </Label>
         </div>
+
+        {showAccessoriesToggle && (
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="eq-includeAccessories"
+              checked={includeAccessories}
+              onCheckedChange={(c) => setIncludeAccessories(c === true)}
+            />
+            <Label htmlFor="eq-includeAccessories" className="text-sm font-normal">
+              Include accessories
+            </Label>
+          </div>
+        )}
 
         <DialogFooter>
           <Button

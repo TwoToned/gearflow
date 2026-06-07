@@ -5,6 +5,8 @@ import { sendEmail } from "@/lib/email";
 import { formatDate } from "@/lib/formatters";
 import type { OrgSettings } from "@/server/settings";
 
+const EMAIL_BODY_FONT_SIZE = "14px";
+
 /**
  * Recalculate statuses for all active test-tag assets across all orgs.
  * Transitions CURRENT → DUE_SOON → OVERDUE based on nextDueDate.
@@ -237,7 +239,7 @@ function buildDigestEmail({
     <div style="font-family:sans-serif;max-width:700px;margin:0 auto;padding:20px;">
       <div style="border-bottom:3px solid #0d9488;padding-bottom:12px;margin-bottom:20px;">
         <h2 style="margin:0;color:#111827;">Test & Tag — Daily Digest</h2>
-        <p style="margin:4px 0 0;color:#6b7280;font-size:14px;">${orgName} · ${formatDate(new Date())}</p>
+        <p style="margin:4px 0 0;color:#6b7280;font-size:${EMAIL_BODY_FONT_SIZE};">${orgName} · ${formatDate(new Date())}</p>
       </div>
 
       <div style="display:flex;gap:16px;margin-bottom:20px;">

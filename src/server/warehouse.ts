@@ -569,6 +569,9 @@ export async function checkOutItems(
     // every serialized and bulk asset id involved, and assert none have a
     // failed/overdue Test & Tag record. Throws TestTagBlockError on block,
     // rolling back the whole batch (no partial check-out across the items).
+    // WHY: Safety-critical gate — no asset with a failed or overdue electrical
+    // test can leave the warehouse. Checking all items upfront and rolling back
+    // on any failure prevents partial deployments in an inconsistent state.
     //
     // Three sources contribute to the asset set:
     //   1) legacy `line.assetId` / `line.bulkAssetId` (kit children + bulk
@@ -620,6 +623,10 @@ export async function checkOutItems(
     // on what the caller put in `item` — because the deploy tab
     // legitimately sends `quantity: N` for a multi-quantity serialised
     // line, and that must still expand to N unit deploys.
+    // WHY: Prep assigns specific assets to unit rows; deploy must materialize
+    // each prep assignment as a real checkout. Without expansion, the deploy
+    // would silently skip the prep work — the line would be marked deployed
+    // but no individual assets would actually change status or location.
     const expandedItems: typeof items = [];
     for (const item of items) {
       if (item.assetId) {
@@ -700,6 +707,9 @@ export async function checkOutItems(
       //    the checkout quantity. No individual asset status to flip.
       // 3) Neither (deploy-whole-line edge): no physical assignment exists,
       //    just mark the line as deployed. Common for generic/custom lines.
+      // WHY: Each path handles fundamentally different inventory types.
+      // Serialized assets need individual tracking per physical item; bulk
+      // assets track quantity only; deploy-whole-line has no physical inventory.
       if (targetAssetId) {
         // ── Serialised checkout — one unit per physical asset ────────────
         // SECURITY: `targetAssetId` can come from the untrusted scan payload
@@ -717,6 +727,9 @@ export async function checkOutItems(
         if (assetRecord.status === "CHECKED_OUT") {
           // Already deployed. Idempotent if it is this line's own unit;
           // otherwise the asset is genuinely double-booked.
+          // WHY: Retrying a deploy on the same asset+line pair is harmless
+          // (user pressed Deploy twice). But the same asset on a different
+          // line means two projects are fighting over one physical item.
           const ownUnit = await tx.projectLineItemUnit.findUnique({
             where: {
               lineItemId_assetId: {
@@ -734,6 +747,9 @@ export async function checkOutItems(
           // are lifecycle terminal states (retired/lost) or deliberate
           // unavailability (in maintenance). They must never be deployed.
           // CHECKED_OUT is already handled above (idempotent if own unit).
+          // WHY: Deploying a retired, lost, or in-maintenance asset would mean
+          // the customer doesn't receive their equipment. These statuses reflect
+          // physical reality — the asset simply isn't available to ship.
           assetRecord.status === "RETIRED" ||
           assetRecord.status === "IN_MAINTENANCE" ||
           assetRecord.status === "LOST"
@@ -782,6 +798,9 @@ export async function checkOutItems(
         });
       } else if (lineItem.bulkAssetId) {
         // ── Bulk checkout — one unit row carrying the quantity ───────────
+        // WHY: Bulk assets (consumables like tape, cable by the metre) don't
+        // have individual serial numbers. Tracking the quantity in one unit
+        // row is sufficient — no per-item status flips needed.
         const checkoutQty = item.quantity || lineItem.quantity;
         const { id: unitId } = await ensureBulkUnit(tx, {
           organizationId,
@@ -813,6 +832,9 @@ export async function checkOutItems(
       } else {
         // No serialised asset and no bulk asset assigned — nothing to make a
         // unit from. Flip the order line directly (deploy-whole-line edge).
+        // WHY: Generic/custom line items (e.g. "Stage setup", "Delivery fee")
+        // have no physical inventory to track. The line itself being marked
+        // deployed is sufficient — there are no individual assets to scan.
         await tx.projectLineItem.update({
           where: { id: lineItem.id },
           data: {
@@ -835,6 +857,9 @@ export async function checkOutItems(
       // line at scan time (no prep), materialise its accessory child lines now
       // so the cascade below deploys them. Idempotent — a no-op if prep already
       // expanded them.
+      // WHY: When an asset with permanent accessories (cases, cables) is
+      // scanned onto a model-level line, the accessories must be created
+      // as child lines before checkoutAccessoryChildren can deploy them.
       if (targetAssetId) {
         await expandAccessoriesForAsset(tx, { organizationId, lineItemId: lineItem.id, assetId: targetAssetId });
       }

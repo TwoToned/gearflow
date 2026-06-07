@@ -551,7 +551,7 @@ export default function AdminOrgDetailPage({
               <label className="text-sm font-medium">Role</label>
               <Select value={addRole} onValueChange={(v) => { if (v) setAddRole(v); }}>
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue>{ASSIGNABLE_BUILT_IN_ROLES.find((r) => r.value === addRole)?.label ?? (addRole.startsWith("custom:") ? customRoles.find((cr: any) => cr.id === addRole.slice(7))?.name : null) ?? addRole}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {ASSIGNABLE_BUILT_IN_ROLES.map((r) => (

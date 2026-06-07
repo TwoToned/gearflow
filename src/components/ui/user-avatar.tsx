@@ -25,10 +25,8 @@ const avatarColors = [
   "bg-blue-500/15 text-blue-600",
   "bg-green-500/15 text-green-600",
   "bg-amber-500/15 text-amber-600",
-  "bg-purple-500/15 text-purple-600",
   "bg-pink-500/15 text-pink-600",
   "bg-teal-500/15 text-teal-600",
-  "bg-indigo-500/15 text-indigo-600",
   "bg-orange-500/15 text-orange-600",
   "bg-cyan-500/15 text-cyan-600",
 ];

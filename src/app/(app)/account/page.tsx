@@ -296,7 +296,7 @@ export default function AccountPage() {
     <FadeIn className="space-y-8 max-w-2xl">
       <PageHeader
         title="Your Account"
-        description={profile?.name ? `Signed in as ${profile.name}` : "Manage your profile, security, and sessions."}
+        description={profile?.name ? `Signed in as ${profile.name}` : "Update your personal details, security preferences, and active sessions."}
       />
 
       {/* Profile */}

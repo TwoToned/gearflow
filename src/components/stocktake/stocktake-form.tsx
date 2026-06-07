@@ -19,12 +19,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 
 interface StocktakeFormProps {
   initialData?: CreateStocktakeValues & { id: string };
@@ -75,11 +69,8 @@ export function StocktakeForm({ initialData }: StocktakeFormProps) {
 
   return (
     <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))}>
-      <Card>
-        <CardHeader>
-          <CardTitle>Stocktake Details</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6 space-y-4">
+        <h3 className="t-heading text-fg">Stocktake Details</h3>
           <div className="space-y-2">
             <Label htmlFor="name">Name</Label>
             <Input
@@ -171,8 +162,7 @@ export function StocktakeForm({ initialData }: StocktakeFormProps) {
               {...form.register("notes")}
             />
           </div>
-        </CardContent>
-      </Card>
+      </div>
 
       <div className="mt-4 flex justify-end gap-2">
         <Button

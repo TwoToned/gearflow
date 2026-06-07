@@ -46,7 +46,7 @@ const columns: ColumnDef<AnyClient>[] = [
     filterType: "enum",
     filterOptions: [
       { value: "COMPANY", label: "Company", color: "bg-blue-500" },
-      { value: "INDIVIDUAL", label: "Individual", color: "bg-purple-500" },
+      { value: "INDIVIDUAL", label: "Individual", color: "bg-blue-500" },
       { value: "VENUE", label: "Venue", color: "bg-amber-500" },
       { value: "PRODUCTION_COMPANY", label: "Production Company", color: "bg-green-500" },
     ],

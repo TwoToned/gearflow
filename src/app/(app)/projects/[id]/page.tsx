@@ -243,7 +243,7 @@ export default function ProjectDetailPage({
                     label={projectStatusLabels[project.status] || formatLabel(project.status)}
                   />
                   {project.isTemplate && (
-                    <Badge variant="outline" className="bg-indigo-500/10 text-indigo-500 border-indigo-500/20">
+                    <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20">
                       <BookTemplate className="mr-1 h-3 w-3" />
                       Template
                     </Badge>

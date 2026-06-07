@@ -1677,7 +1677,7 @@ function AddCertificationDialog({
               }
             >
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue>{({"CURRENT": "Current", "EXPIRING_SOON": "Expiring Soon", "EXPIRED": "Expired", "NOT_VERIFIED": "Not Verified"} as Record<string, string>)[form.watch("status") ?? ""] ?? form.watch("status")}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="CURRENT">Current</SelectItem>
@@ -1770,7 +1770,7 @@ function AddAvailabilityDialog({
               }
             >
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue>{({"UNAVAILABLE": "Unavailable", "TENTATIVE": "Tentative", "PREFERRED": "Preferred"} as Record<string, string>)[form.watch("type") ?? ""] ?? form.watch("type")}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="UNAVAILABLE">Unavailable</SelectItem>

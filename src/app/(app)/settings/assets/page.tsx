@@ -171,7 +171,7 @@ export default function AssetsSettingsPage() {
               </div>
             </FormSection>
 
-            <FormSection title="Suppliers" description="Manage your equipment suppliers and vendors.">
+            <FormSection title="Suppliers" description="Track your equipment suppliers, vendor contacts, and procurement partners.">
               <div>
                 <Button variant="outline" render={<Link href="/suppliers" />}>
                   Manage Suppliers

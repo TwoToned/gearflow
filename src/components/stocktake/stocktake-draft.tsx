@@ -15,12 +15,6 @@ import { toast } from "sonner";
 
 import { startStocktake, cancelStocktake } from "@/server/stocktake";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 
 const scopeLabels: Record<string, string> = {
   FULL: "Full Warehouse",
@@ -66,11 +60,8 @@ export function StocktakeDraft({ stocktake, onUpdate }: StocktakeDraftProps) {
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Stocktake Details</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6 space-y-3">
+        <h3 className="t-heading text-fg">Stocktake Details</h3>
           <div className="flex items-center gap-2 text-sm">
             <MapPin className="h-4 w-4 text-muted-foreground" />
             <span className="font-medium">Location:</span>
@@ -92,8 +83,7 @@ export function StocktakeDraft({ stocktake, onUpdate }: StocktakeDraftProps) {
               <span className="text-muted-foreground">{stocktake.notes}</span>
             </div>
           )}
-        </CardContent>
-      </Card>
+      </div>
 
       <div className="flex gap-2">
         <Button

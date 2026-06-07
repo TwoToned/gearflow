@@ -544,6 +544,318 @@ async function checkoutAccessoryChildren(
 }
 
 
+// ── checkOutItems helpers ─────────────────────────────────────────────────
+
+/** Return value from checkOutSerializedItem: signals whether the caller should
+ *  `continue` (skip post-checkout finalization for this item). */
+type CheckoutItemResult = { kind: "continue" } | { kind: "done" };
+
+/**
+ * Gather every serialized and bulk asset id that will be affected by the
+ * checkout batch and assert none have a failed/overdue Test & Tag record.
+ * Returns the preflight line items (needed by the prep-unit expansion step).
+ */
+async function gatherTestTagAssetsAndAssert(
+  tx: TxClient,
+  organizationId: string,
+  userId: string,
+  projectId: string,
+  items: Array<{ lineItemId: string; assetId?: string }>,
+): Promise<Array<{ id: string; assetId: string | null; bulkAssetId: string | null }>> {
+  const lineItemIds = items.map((i) => i.lineItemId);
+  const [preflightLineItems, preflightUnits] = await Promise.all([
+    tx.projectLineItem.findMany({
+      where: { id: { in: lineItemIds }, organizationId, projectId },
+      select: { id: true, assetId: true, bulkAssetId: true },
+    }),
+    tx.projectLineItemUnit.findMany({
+      where: { lineItemId: { in: lineItemIds }, organizationId },
+      select: { assetId: true, bulkAssetId: true },
+    }),
+  ]);
+  const preflightAssetIds = [
+    ...(preflightLineItems.map((li) => li.assetId).filter(Boolean) as string[]),
+    ...(preflightUnits.map((u) => u.assetId).filter(Boolean) as string[]),
+    ...(items.map((i) => i.assetId).filter(Boolean) as string[]),
+  ];
+  const preflightBulkIds = [
+    ...(preflightLineItems.map((li) => li.bulkAssetId).filter(Boolean) as string[]),
+    ...(preflightUnits.map((u) => u.bulkAssetId).filter(Boolean) as string[]),
+  ];
+  await assertTestTagAllowsCheckout(tx, organizationId, {
+    assetIds: preflightAssetIds,
+    bulkAssetIds: preflightBulkIds,
+    projectId,
+    scannedById: userId,
+  });
+  return preflightLineItems;
+}
+
+/**
+ * Expand "deploy the whole prepped line" items into one item per prepped
+ * unit so that each prep assignment materializes as a real checkout.
+ */
+async function expandPrepUnitAssignments(
+  tx: TxClient,
+  organizationId: string,
+  items: Array<{ lineItemId: string; assetId?: string; quantity?: number; notes?: string }>,
+  preflightLineItems: Array<{ id: string; assetId: string | null; bulkAssetId: string | null }>,
+): Promise<typeof items> {
+  const expandedItems: typeof items = [];
+  for (const item of items) {
+    if (item.assetId) {
+      expandedItems.push(item);
+      continue;
+    }
+    const lineItemRow = preflightLineItems.find((l) => l.id === item.lineItemId);
+    if (lineItemRow?.assetId || lineItemRow?.bulkAssetId) {
+      expandedItems.push(item);
+      continue;
+    }
+    const lineUnits = await tx.projectLineItemUnit.findMany({
+      where: {
+        lineItemId: item.lineItemId,
+        organizationId,
+        status: { not: "CHECKED_OUT" },
+        OR: [
+          { assetId: { not: null } },
+          { bulkAssetId: { not: null } },
+        ],
+      },
+      select: { assetId: true, bulkAssetId: true, quantity: true },
+      orderBy: { ordinal: "asc" },
+    });
+    if (lineUnits.length === 0) {
+      expandedItems.push(item);
+      continue;
+    }
+    const want = item.quantity ?? lineUnits.length;
+    const toDeploy = lineUnits.slice(0, Math.max(1, Math.min(want, lineUnits.length)));
+    for (const u of toDeploy) {
+      expandedItems.push({
+        lineItemId: item.lineItemId,
+        ...(u.assetId
+          ? { assetId: u.assetId }
+          : { quantity: u.quantity }),
+        notes: item.notes,
+      });
+    }
+  }
+  return expandedItems;
+}
+
+/**
+ * Validate and execute a serialised-asset checkout: scope the asset to the
+ * caller's org, guard against double-deploy / unavailable statuses, create or
+ * update the unit row, flip asset status, and write a scan log.
+ *
+ * @returns `{ kind: "continue" }` when the asset is already deployed on its
+ *          own unit (caller should skip post-checkout finalization).
+ *          `{ kind: "done" }` on a successful fresh checkout.
+ */
+async function checkOutSerializedItem(
+  tx: TxClient,
+  params: {
+    organizationId: string;
+    lineItemId: string;
+    targetAssetId: string;
+    userId: string;
+    projectLocationId: string | null;
+    projectId: string;
+    notes?: string;
+  },
+): Promise<CheckoutItemResult> {
+  const { organizationId, lineItemId, targetAssetId, userId, projectLocationId, projectId, notes } = params;
+
+  const assetRecord = await tx.asset.findFirst({
+    where: { id: targetAssetId, organizationId },
+    select: { status: true, assetTag: true },
+  });
+  if (!assetRecord) {
+    throw new Error(`Asset not found in this organization`);
+  }
+  if (assetRecord.status === "CHECKED_OUT") {
+    const ownUnit = await tx.projectLineItemUnit.findUnique({
+      where: {
+        lineItemId_assetId: {
+          lineItemId,
+          assetId: targetAssetId,
+        },
+      },
+      select: { status: true },
+    });
+    if (ownUnit && ownUnit.status === "CHECKED_OUT") return { kind: "continue" };
+    throw new Error(`Asset ${assetRecord.assetTag} is already deployed`);
+  }
+  if (
+    assetRecord.status === "RETIRED" ||
+    assetRecord.status === "IN_MAINTENANCE" ||
+    assetRecord.status === "LOST"
+  ) {
+    throw new Error(
+      `Asset ${assetRecord.assetTag} is ${assetRecord.status
+        .replace("_", " ")
+        .toLowerCase()} and cannot be deployed`,
+    );
+  }
+
+  const { id: unitId } = await ensureSerialisedUnit(tx, {
+    organizationId,
+    lineItemId,
+    assetId: targetAssetId,
+  });
+  await tx.projectLineItemUnit.updateMany({
+    where: { id: unitId, status: { not: "CHECKED_OUT" } },
+    data: {
+      status: "CHECKED_OUT",
+      checkedOutAt: new Date(),
+      checkedOutById: userId,
+    },
+  });
+
+  await tx.asset.updateMany({
+    where: { id: targetAssetId, organizationId },
+    data: {
+      status: "CHECKED_OUT",
+      ...(projectLocationId && { locationId: projectLocationId }),
+    },
+  });
+  await tx.assetScanLog.create({
+    data: {
+      organizationId,
+      assetId: targetAssetId,
+      projectId,
+      action: "CHECK_OUT",
+      scannedById: userId,
+      notes: notes || null,
+    },
+  });
+  return { kind: "done" };
+}
+
+/**
+ * Execute a bulk-asset checkout: create or update a unit row carrying the
+ * checkout quantity and write a scan log.
+ */
+async function checkOutBulkItem(
+  tx: TxClient,
+  params: {
+    organizationId: string;
+    lineItemId: string;
+    lineItemQuantity: number;
+    bulkAssetId: string;
+    checkoutQty: number;
+    userId: string;
+    projectId: string;
+    notes?: string;
+  },
+): Promise<void> {
+  const { organizationId, lineItemId, lineItemQuantity, bulkAssetId, checkoutQty, userId, projectId, notes } = params;
+
+  const { id: unitId } = await ensureBulkUnit(tx, {
+    organizationId,
+    lineItemId,
+    bulkAssetId,
+    quantity: checkoutQty,
+  });
+  await tx.projectLineItemUnit.update({
+    where: { id: unitId },
+    data: {
+      status: "CHECKED_OUT",
+      quantity: checkoutQty,
+      checkedOutAt: new Date(),
+      checkedOutById: userId,
+    },
+  });
+  await tx.assetScanLog.create({
+    data: {
+      organizationId,
+      bulkAssetId,
+      projectId,
+      action: "CHECK_OUT",
+      scannedById: userId,
+      notes:
+        notes ||
+        `Checked out ${checkoutQty} of ${lineItemQuantity}`,
+    },
+  });
+}
+
+/**
+ * Deploy-whole-line edge: flip the line directly (no physical unit to track).
+ * Pushes the updated line into the results array and signals the caller to
+ * `continue` (skip post-checkout finalization).
+ */
+async function checkOutDeployWholeLine(
+  tx: TxClient,
+  params: {
+    lineItemId: string;
+    lineItemQuantity: number;
+    userId: string;
+  },
+  updated: unknown[],
+): Promise<void> {
+  const { lineItemId, lineItemQuantity, userId } = params;
+  await tx.projectLineItem.update({
+    where: { id: lineItemId },
+    data: {
+      status: "CHECKED_OUT",
+      checkedOutQuantity: lineItemQuantity,
+      checkedOutAt: new Date(),
+      checkedOutBy: { connect: { id: userId } },
+    },
+  });
+  updated.push(
+    await tx.projectLineItem.findUnique({
+      where: { id: lineItemId },
+      include: { model: true, asset: true, bulkAsset: true },
+    }),
+  );
+}
+
+/**
+ * Post-checkout finalization: expand accessories, roll up the unit onto the
+ * order line, cascade checkout to accessory children, and push the updated
+ * line into the results array.
+ */
+async function finalizeCheckoutItem(
+  tx: TxClient,
+  params: {
+    organizationId: string;
+    lineItemId: string;
+    targetAssetId: string | null;
+    projectId: string;
+    userId: string;
+    projectLocationId: string | null;
+  },
+  updated: unknown[],
+): Promise<void> {
+  const { organizationId, lineItemId, targetAssetId, projectId, userId, projectLocationId } = params;
+
+  if (targetAssetId) {
+    await expandAccessoriesForAsset(tx, { organizationId, lineItemId, assetId: targetAssetId });
+  }
+
+  await syncLineItemRollup(tx, lineItemId);
+
+  await checkoutAccessoryChildren(tx, {
+    organizationId,
+    projectId,
+    parentLineItemId: lineItemId,
+    userId,
+    projectLocationId,
+  });
+
+  updated.push(
+    await tx.projectLineItem.findUnique({
+      where: { id: lineItemId },
+      include: { model: true, asset: true, bulkAsset: true },
+    }),
+  );
+}
+
+// ── checkOutItems (refactored) ──────────────────────────────────────────
+
 export async function checkOutItems(
   projectId: string,
   items: Array<{
@@ -565,121 +877,15 @@ export async function checkOutItems(
     });
     const projectLocationId = project?.locationId || null;
 
-    // Pre-flight T&T compliance block — fetch all line items first, gather
-    // every serialized and bulk asset id involved, and assert none have a
-    // failed/overdue Test & Tag record. Throws TestTagBlockError on block,
-    // rolling back the whole batch (no partial check-out across the items).
-    // WHY: Safety-critical gate — no asset with a failed or overdue electrical
-    // test can leave the warehouse. Checking all items upfront and rolling back
-    // on any failure prevents partial deployments in an inconsistent state.
-    //
-    // Three sources contribute to the asset set:
-    //   1) legacy `line.assetId` / `line.bulkAssetId` (kit children + bulk
-    //      lines + un-migrated splits)
-    //   2) ProjectLineItemUnit rows already on the line (prep created
-    //      them; checkout would mark CHECKED_OUT)
-    //   3) `item.assetId` from the incoming scans (post-cutover scans
-    //      land here before the unit is written)
-    // Without (2) a prepped asset on a fresh order line could slip past
-    // the T&T check, since (1) is null on post-cutover lines.
-    const lineItemIds = items.map((i) => i.lineItemId);
-    const [preflightLineItems, preflightUnits] = await Promise.all([
-      tx.projectLineItem.findMany({
-        where: { id: { in: lineItemIds }, organizationId, projectId },
-        select: { id: true, assetId: true, bulkAssetId: true },
-      }),
-      tx.projectLineItemUnit.findMany({
-        where: { lineItemId: { in: lineItemIds }, organizationId },
-        select: { assetId: true, bulkAssetId: true },
-      }),
-    ]);
-    const preflightAssetIds = [
-      ...(preflightLineItems.map((li) => li.assetId).filter(Boolean) as string[]),
-      ...(preflightUnits.map((u) => u.assetId).filter(Boolean) as string[]),
-      ...(items.map((i) => i.assetId).filter(Boolean) as string[]),
-    ];
-    const preflightBulkIds = [
-      ...(preflightLineItems.map((li) => li.bulkAssetId).filter(Boolean) as string[]),
-      ...(preflightUnits.map((u) => u.bulkAssetId).filter(Boolean) as string[]),
-    ];
-    await assertTestTagAllowsCheckout(tx, organizationId, {
-      assetIds: preflightAssetIds,
-      bulkAssetIds: preflightBulkIds,
-      projectId,
-      scannedById: userId,
-    });
+    // Pre-flight T&T compliance block
+    const preflightLineItems = await gatherTestTagAssetsAndAssert(
+      tx, organizationId, userId, projectId, items,
+    );
 
-    // Expand any "deploy the whole prepped line" item into one item per
-    // prepped unit. Symptom this fixes: operator preps a 10x line — 10
-    // units exist with assetIds. Operator clicks Deploy, the UI sends
-    // `{ lineItemId, quantity: 10 }` (it has no UI-level identity per
-    // unit — just synthetic "Unit N" rows). Without expansion, the
-    // inner loop fell into the "deploy whole line" branch that flipped
-    // line.status without touching any unit or marking any asset
-    // CHECKED_OUT. The prep work was captured on units; the deploy
-    // ignored them. Now we consult units before the loop and turn each
-    // assigned unit into a typed serialised/bulk item. The decision to
-    // expand is based on the LINE's shape (no line-level asset), NOT
-    // on what the caller put in `item` — because the deploy tab
-    // legitimately sends `quantity: N` for a multi-quantity serialised
-    // line, and that must still expand to N unit deploys.
-    // WHY: Prep assigns specific assets to unit rows; deploy must materialize
-    // each prep assignment as a real checkout. Without expansion, the deploy
-    // would silently skip the prep work — the line would be marked deployed
-    // but no individual assets would actually change status or location.
-    const expandedItems: typeof items = [];
-    for (const item of items) {
-      if (item.assetId) {
-        // Explicit single-asset deploy (scan flow) — pass through.
-        expandedItems.push(item);
-        continue;
-      }
-      const lineItemRow = preflightLineItems.find((l) => l.id === item.lineItemId);
-      if (lineItemRow?.assetId || lineItemRow?.bulkAssetId) {
-        // Legacy line carries its own asset/bulk — existing branches
-        // handle it correctly. (Kit children, classic bulk lines.)
-        expandedItems.push(item);
-        continue;
-      }
-      // No item.assetId and no line-level asset/bulk — this is the
-      // post-cutover multi-quantity serialised case. Consult units.
-      const lineUnits = await tx.projectLineItemUnit.findMany({
-        where: {
-          lineItemId: item.lineItemId,
-          organizationId,
-          status: { not: "CHECKED_OUT" },
-          OR: [
-            { assetId: { not: null } },
-            { bulkAssetId: { not: null } },
-          ],
-        },
-        select: { assetId: true, bulkAssetId: true, quantity: true },
-        orderBy: { ordinal: "asc" },
-      });
-      if (lineUnits.length === 0) {
-        // No prepped units to deploy — fall through; the existing
-        // "deploy whole line" edge below flips status (legitimate for
-        // a generic line that's just being marked deployed).
-        expandedItems.push(item);
-        continue;
-      }
-      // If caller asked for fewer than the prepped count (partial
-      // deploy), clamp to that count — preserves the user intent that
-      // `quantity: 3` of 10 prepped should only deploy 3. With no
-      // per-unit selection in the UI today this just deploys the
-      // earliest ordinals; a future UI refactor can pass unit ids.
-      const want = item.quantity ?? lineUnits.length;
-      const toDeploy = lineUnits.slice(0, Math.max(1, Math.min(want, lineUnits.length)));
-      for (const u of toDeploy) {
-        expandedItems.push({
-          lineItemId: item.lineItemId,
-          ...(u.assetId
-            ? { assetId: u.assetId }
-            : { quantity: u.quantity }),
-          notes: item.notes,
-        });
-      }
-    }
+    // Expand deploy-whole-prep items into one item per prepped unit
+    const expandedItems = await expandPrepUnitAssignments(
+      tx, organizationId, items, preflightLineItems,
+    );
 
     for (const item of expandedItems) {
       // Verify line item belongs to this project and org
@@ -695,193 +901,48 @@ export async function checkOutItems(
         throw new Error(`Line item ${item.lineItemId} not found in project`);
       }
 
-      // Fulfillment model: scanning an asset onto a line creates a
-      // ProjectLineItemUnit, never a split line item. The order line keeps
-      // its quantity; syncLineItemRollup rolls the units back up onto it.
       const targetAssetId = item.assetId || lineItem.assetId || null;
 
-      // Three checkout paths based on what inventory the line targets:
-      // 1) Serialized asset (targetAssetId): creates/updates a unit row,
-      //    flips asset status to CHECKED_OUT, logs the scan.
-      // 2) Bulk asset (lineItem.bulkAssetId): creates/updates a unit carrying
-      //    the checkout quantity. No individual asset status to flip.
-      // 3) Neither (deploy-whole-line edge): no physical assignment exists,
-      //    just mark the line as deployed. Common for generic/custom lines.
-      // WHY: Each path handles fundamentally different inventory types.
-      // Serialized assets need individual tracking per physical item; bulk
-      // assets track quantity only; deploy-whole-line has no physical inventory.
       if (targetAssetId) {
-        // ── Serialised checkout — one unit per physical asset ────────────
-        // SECURITY: `targetAssetId` can come from the untrusted scan payload
-        // (`item.assetId`), so it MUST be re-scoped to the caller's org. A
-        // bare `findUnique`/`update` by global id would let a caller flip the
-        // status + location of another tenant's asset by scanning its id onto
-        // their own line. Scope the read; a miss means the id isn't ours.
-        const assetRecord = await tx.asset.findFirst({
-          where: { id: targetAssetId, organizationId },
-          select: { status: true, assetTag: true },
-        });
-        if (!assetRecord) {
-          throw new Error(`Asset not found in this organization`);
-        }
-        if (assetRecord.status === "CHECKED_OUT") {
-          // Already deployed. Idempotent if it is this line's own unit;
-          // otherwise the asset is genuinely double-booked.
-          // WHY: Retrying a deploy on the same asset+line pair is harmless
-          // (user pressed Deploy twice). But the same asset on a different
-          // line means two projects are fighting over one physical item.
-          const ownUnit = await tx.projectLineItemUnit.findUnique({
-            where: {
-              lineItemId_assetId: {
-                lineItemId: lineItem.id,
-                assetId: targetAssetId,
-              },
-            },
-            select: { status: true },
-          });
-          if (ownUnit && ownUnit.status === "CHECKED_OUT") continue;
-          throw new Error(`Asset ${assetRecord.assetTag} is already deployed`);
-        }
-        if (
-          // Asset statuses that represent permanent unavailability — these
-          // are lifecycle terminal states (retired/lost) or deliberate
-          // unavailability (in maintenance). They must never be deployed.
-          // CHECKED_OUT is already handled above (idempotent if own unit).
-          // WHY: Deploying a retired, lost, or in-maintenance asset would mean
-          // the customer doesn't receive their equipment. These statuses reflect
-          // physical reality — the asset simply isn't available to ship.
-          assetRecord.status === "RETIRED" ||
-          assetRecord.status === "IN_MAINTENANCE" ||
-          assetRecord.status === "LOST"
-        ) {
-          throw new Error(
-            `Asset ${assetRecord.assetTag} is ${assetRecord.status
-              .replace("_", " ")
-              .toLowerCase()} and cannot be deployed`,
-          );
-        }
-
-        const { id: unitId } = await ensureSerialisedUnit(tx, {
+        const result = await checkOutSerializedItem(tx, {
           organizationId,
           lineItemId: lineItem.id,
-          assetId: targetAssetId,
+          targetAssetId,
+          userId,
+          projectLocationId,
+          projectId,
+          notes: item.notes,
         });
-        // Guarded transition — only flip a unit that is not already out.
-        await tx.projectLineItemUnit.updateMany({
-          where: { id: unitId, status: { not: "CHECKED_OUT" } },
-          data: {
-            status: "CHECKED_OUT",
-            checkedOutAt: new Date(),
-            checkedOutById: userId,
-          },
-        });
-
-        // Defense-in-depth: scope the write to the org too (the read above
-        // already proved ownership, but updateMany keeps the guarantee local
-        // to the mutation if the read is ever refactored away).
-        await tx.asset.updateMany({
-          where: { id: targetAssetId, organizationId },
-          data: {
-            status: "CHECKED_OUT",
-            ...(projectLocationId && { locationId: projectLocationId }),
-          },
-        });
-        await tx.assetScanLog.create({
-          data: {
-            organizationId,
-            assetId: targetAssetId,
-            projectId,
-            action: "CHECK_OUT",
-            scannedById: userId,
-            notes: item.notes || null,
-          },
-        });
+        if (result.kind === "continue") continue;
       } else if (lineItem.bulkAssetId) {
-        // ── Bulk checkout — one unit row carrying the quantity ───────────
-        // WHY: Bulk assets (consumables like tape, cable by the metre) don't
-        // have individual serial numbers. Tracking the quantity in one unit
-        // row is sufficient — no per-item status flips needed.
         const checkoutQty = item.quantity || lineItem.quantity;
-        const { id: unitId } = await ensureBulkUnit(tx, {
+        await checkOutBulkItem(tx, {
           organizationId,
           lineItemId: lineItem.id,
+          lineItemQuantity: lineItem.quantity,
           bulkAssetId: lineItem.bulkAssetId,
-          quantity: checkoutQty,
-        });
-        await tx.projectLineItemUnit.update({
-          where: { id: unitId },
-          data: {
-            status: "CHECKED_OUT",
-            quantity: checkoutQty,
-            checkedOutAt: new Date(),
-            checkedOutById: userId,
-          },
-        });
-        await tx.assetScanLog.create({
-          data: {
-            organizationId,
-            bulkAssetId: lineItem.bulkAssetId,
-            projectId,
-            action: "CHECK_OUT",
-            scannedById: userId,
-            notes:
-              item.notes ||
-              `Checked out ${checkoutQty} of ${lineItem.quantity}`,
-          },
+          checkoutQty,
+          userId,
+          projectId,
+          notes: item.notes,
         });
       } else {
-        // No serialised asset and no bulk asset assigned — nothing to make a
-        // unit from. Flip the order line directly (deploy-whole-line edge).
-        // WHY: Generic/custom line items (e.g. "Stage setup", "Delivery fee")
-        // have no physical inventory to track. The line itself being marked
-        // deployed is sufficient — there are no individual assets to scan.
-        await tx.projectLineItem.update({
-          where: { id: lineItem.id },
-          data: {
-            status: "CHECKED_OUT",
-            checkedOutQuantity: lineItem.quantity,
-            checkedOutAt: new Date(),
-            checkedOutBy: { connect: { id: userId } },
-          },
-        });
-        updated.push(
-          await tx.projectLineItem.findUnique({
-            where: { id: lineItem.id },
-            include: { model: true, asset: true, bulkAsset: true },
-          }),
-        );
+        await checkOutDeployWholeLine(tx, {
+          lineItemId: lineItem.id,
+          lineItemQuantity: lineItem.quantity,
+          userId,
+        }, updated);
         continue;
       }
 
-      // If a specific asset with accessories was assigned to a model-level
-      // line at scan time (no prep), materialise its accessory child lines now
-      // so the cascade below deploys them. Idempotent — a no-op if prep already
-      // expanded them.
-      // WHY: When an asset with permanent accessories (cases, cables) is
-      // scanned onto a model-level line, the accessories must be created
-      // as child lines before checkoutAccessoryChildren can deploy them.
-      if (targetAssetId) {
-        await expandAccessoriesForAsset(tx, { organizationId, lineItemId: lineItem.id, assetId: targetAssetId });
-      }
-
-      // Roll the unit change up onto the order line.
-      await syncLineItemRollup(tx, lineItem.id);
-
-      // Permanent accessories travel with the parent — check them out too.
-      await checkoutAccessoryChildren(tx, {
+      await finalizeCheckoutItem(tx, {
         organizationId,
+        lineItemId: lineItem.id,
+        targetAssetId,
         projectId,
-        parentLineItemId: lineItem.id,
         userId,
         projectLocationId,
-      });
-
-      updated.push(
-        await tx.projectLineItem.findUnique({
-          where: { id: lineItem.id },
-          include: { model: true, asset: true, bulkAsset: true },
-        }),
-      );
+      }, updated);
     }
 
     return updated;
@@ -904,6 +965,91 @@ export async function checkOutItems(
 
   return serialize(results);
 }
+
+// ── checkInItems helper ─────────────────────────────────────────────────
+
+/**
+ * Process a single check-in item: call returnLineUnits, write scan log,
+ * sync the line rollup, cascade to accessory children, and push the
+ * updated line item into the results array.
+ */
+async function processItemCheckIn(
+  tx: TxClient,
+  params: {
+    organizationId: string;
+    projectId: string;
+    userId: string;
+    defaultLocationId: string | null;
+  },
+  item: {
+    lineItemId: string;
+    assetId?: string;
+    returnCondition: "GOOD" | "DAMAGED" | "MISSING";
+    quantity?: number;
+    notes?: string;
+  },
+  updated: unknown[],
+): Promise<void> {
+  const { organizationId, projectId, userId, defaultLocationId } = params;
+
+  const { unitsFlipped, assetsTouched } = await returnLineUnits(tx, {
+    organizationId,
+    projectId,
+    lineItemId: item.lineItemId,
+    assetId: item.assetId,
+    returnCondition: item.returnCondition,
+    quantity: item.quantity,
+    notes: item.notes,
+    userId,
+    defaultLocationId,
+  });
+
+  if (assetsTouched.length === 1) {
+    await tx.assetScanLog.create({
+      data: {
+        organizationId,
+        assetId: assetsTouched[0],
+        projectId,
+        action: "CHECK_IN",
+        scannedById: userId,
+        notes: item.notes || null,
+      },
+    });
+  } else if (unitsFlipped > 0 || assetsTouched.length > 0) {
+    await tx.assetScanLog.create({
+      data: {
+        organizationId,
+        projectId,
+        action: "CHECK_IN",
+        scannedById: userId,
+        notes: item.notes || `Returned ${unitsFlipped} unit(s)`,
+      },
+    });
+  }
+
+  await syncLineItemRollup(tx, item.lineItemId);
+
+  if (unitsFlipped > 0) {
+    await checkinAccessoryChildren(tx, {
+      organizationId,
+      projectId,
+      parentLineItemId: item.lineItemId,
+      returnCondition: item.returnCondition ?? "GOOD",
+      userId,
+      defaultLocationId,
+      returnedAssetId: item.assetId ?? null,
+    });
+  }
+
+  updated.push(
+    await tx.projectLineItem.findUnique({
+      where: { id: item.lineItemId },
+      include: { model: true, asset: true, bulkAsset: true },
+    }),
+  );
+}
+
+// ── checkInItems (refactored) ───────────────────────────────────────────
 
 export async function checkInItems(
   projectId: string,
@@ -929,71 +1075,12 @@ export async function checkInItems(
     const defaultLocationId = defaultLocation?.id || null;
 
     for (const item of items) {
-      // Delegate the unit / asset surgery to the canonical helper —
-      // also used by completeCheckAndStore so the two paths can't drift.
-      const { unitsFlipped, assetsTouched } = await returnLineUnits(tx, {
+      await processItemCheckIn(tx, {
         organizationId,
         projectId,
-        lineItemId: item.lineItemId,
-        assetId: item.assetId,
-        returnCondition: item.returnCondition,
-        quantity: item.quantity,
-        notes: item.notes,
         userId,
         defaultLocationId,
-      });
-
-      // Scan log: one entry per checkin call, with a useful note for
-      // bulk / line-level returns.
-      if (assetsTouched.length === 1) {
-        await tx.assetScanLog.create({
-          data: {
-            organizationId,
-            assetId: assetsTouched[0],
-            projectId,
-            action: "CHECK_IN",
-            scannedById: userId,
-            notes: item.notes || null,
-          },
-        });
-      } else if (unitsFlipped > 0 || assetsTouched.length > 0) {
-        await tx.assetScanLog.create({
-          data: {
-            organizationId,
-            projectId,
-            action: "CHECK_IN",
-            scannedById: userId,
-            notes: item.notes || `Returned ${unitsFlipped} unit(s)`,
-          },
-        });
-      }
-
-      await syncLineItemRollup(tx, item.lineItemId);
-
-      // Permanent accessories return with their parent — scoped to the scanned
-      // unit (item.assetId) so a multi-quantity parent doesn't return its
-      // siblings' still-deployed accessories. Only cascade when the parent
-      // return actually flipped a unit: a retry / double-scan of an already-
-      // returned unit must NOT re-return (and over-return) the shared bulk
-      // accessory while sibling units are still out.
-      if (unitsFlipped > 0) {
-        await checkinAccessoryChildren(tx, {
-          organizationId,
-          projectId,
-          parentLineItemId: item.lineItemId,
-          returnCondition: item.returnCondition ?? "GOOD",
-          userId,
-          defaultLocationId,
-          returnedAssetId: item.assetId ?? null,
-        });
-      }
-
-      updated.push(
-        await tx.projectLineItem.findUnique({
-          where: { id: item.lineItemId },
-          include: { model: true, asset: true, bulkAsset: true },
-        }),
-      );
+      }, item, updated);
     }
 
     return updated;
@@ -1763,6 +1850,102 @@ export async function forceReturnAsset(assetId: string) {
   return serialize({ success: true });
 }
 
+// ── forceReturnKit helper ───────────────────────────────────────────────
+
+/**
+ * Restore a single kit parent line item: return all children/grandchildren,
+ * reset nested kits and their assets, reset child assets, and return the
+ * parent. Collects nested kit ids into `kitsToRestore` for later bulk
+ * restoration.
+ */
+async function restoreKitParentLineItem(
+  tx: TxClient,
+  parent: { id: string; status: string },
+  params: {
+    organizationId: string;
+    returnData: { status: "RETURNED"; returnedQuantity: number; returnedAt: Date; returnCondition: "GOOD" };
+    resetData: { status: "AVAILABLE"; locationId: string | null };
+  },
+  kitsToRestore: Set<string>,
+): Promise<void> {
+  const { organizationId, returnData, resetData } = params;
+
+  const children = await tx.projectLineItem.findMany({
+    where: { parentLineItemId: parent.id, organizationId },
+    select: { id: true, assetId: true, kitId: true, status: true },
+  });
+
+  // Handle grandchildren first (children of nested kits)
+  const nestedKitChildren = children.filter((c) => c.kitId);
+  for (const child of nestedKitChildren) {
+    const grandchildren = await tx.projectLineItem.findMany({
+      where: { parentLineItemId: child.id, organizationId },
+      select: { id: true, assetId: true },
+    });
+    if (grandchildren.length > 0) {
+      await tx.projectLineItem.updateMany({
+        where: { id: { in: grandchildren.map((gc) => gc.id) }, status: "CHECKED_OUT" },
+        data: returnData,
+      });
+      const gcAssetIds = grandchildren.filter((gc) => gc.assetId).map((gc) => gc.assetId!);
+      if (gcAssetIds.length > 0) {
+        await tx.asset.updateMany({
+          where: { id: { in: gcAssetIds } },
+          data: resetData,
+        });
+      }
+    }
+  }
+
+  // Reset nested child kits to AVAILABLE + their serialized assets
+  const childKitIds = nestedKitChildren.map((c) => c.kitId!);
+  for (const nestedKitId of childKitIds) kitsToRestore.add(nestedKitId);
+  if (childKitIds.length > 0) {
+    await tx.kit.updateMany({
+      where: { id: { in: childKitIds }, organizationId },
+      data: resetData,
+    });
+    const nestedKitAssets = await tx.kitSerializedItem.findMany({
+      where: { kitId: { in: childKitIds } },
+      select: { assetId: true },
+    });
+    if (nestedKitAssets.length > 0) {
+      await tx.asset.updateMany({
+        where: { id: { in: nestedKitAssets.map((a) => a.assetId) } },
+        data: resetData,
+      });
+    }
+  }
+
+  // Return all children
+  const checkedOutChildren = children.filter((c) => c.status === "CHECKED_OUT");
+  if (checkedOutChildren.length > 0) {
+    await tx.projectLineItem.updateMany({
+      where: { id: { in: checkedOutChildren.map((c) => c.id) } },
+      data: returnData,
+    });
+  }
+
+  // Reset child assets to AVAILABLE
+  const childAssetIds = children.filter((c) => c.assetId).map((c) => c.assetId!);
+  if (childAssetIds.length > 0) {
+    await tx.asset.updateMany({
+      where: { id: { in: childAssetIds } },
+      data: resetData,
+    });
+  }
+
+  // Return parent line item
+  if (parent.status === "CHECKED_OUT") {
+    await tx.projectLineItem.update({
+      where: { id: parent.id },
+      data: returnData,
+    });
+  }
+}
+
+// ── forceReturnKit (refactored) ─────────────────────────────────────────
+
 export async function forceReturnKit(kitId: string) {
   const { organizationId, userId, userName } = await requirePermission("warehouse", "check_in");
 
@@ -1795,82 +1978,7 @@ export async function forceReturnKit(kitId: string) {
     });
 
     for (const parent of kitParentItems) {
-      // Get all children (may include nested kits with their own kitId)
-      const children = await tx.projectLineItem.findMany({
-        where: { parentLineItemId: parent.id, organizationId },
-        select: { id: true, assetId: true, kitId: true, status: true },
-      });
-
-      // Handle grandchildren first (children of nested kits)
-      const nestedKitChildren = children.filter((c) => c.kitId);
-      for (const child of nestedKitChildren) {
-        // Return grandchildren line items
-        const grandchildren = await tx.projectLineItem.findMany({
-          where: { parentLineItemId: child.id, organizationId },
-          select: { id: true, assetId: true },
-        });
-        if (grandchildren.length > 0) {
-          await tx.projectLineItem.updateMany({
-            where: { id: { in: grandchildren.map((gc) => gc.id) }, status: "CHECKED_OUT" },
-            data: returnData,
-          });
-          // Reset grandchild assets
-          const gcAssetIds = grandchildren.filter((gc) => gc.assetId).map((gc) => gc.assetId!);
-          if (gcAssetIds.length > 0) {
-            await tx.asset.updateMany({
-              where: { id: { in: gcAssetIds } },
-              data: resetData,
-            });
-          }
-        }
-      }
-
-      // Reset nested child kits to AVAILABLE + their serialized assets
-      const childKitIds = nestedKitChildren.map((c) => c.kitId!);
-      for (const nestedKitId of childKitIds) kitsToRestore.add(nestedKitId);
-      if (childKitIds.length > 0) {
-        await tx.kit.updateMany({
-          where: { id: { in: childKitIds }, organizationId },
-          data: resetData,
-        });
-        const nestedKitAssets = await tx.kitSerializedItem.findMany({
-          where: { kitId: { in: childKitIds } },
-          select: { assetId: true },
-        });
-        if (nestedKitAssets.length > 0) {
-          await tx.asset.updateMany({
-            where: { id: { in: nestedKitAssets.map((a) => a.assetId) } },
-            data: resetData,
-          });
-        }
-      }
-
-      // Return all children
-      const checkedOutChildren = children.filter((c) => c.status === "CHECKED_OUT");
-      if (checkedOutChildren.length > 0) {
-        await tx.projectLineItem.updateMany({
-          where: { id: { in: checkedOutChildren.map((c) => c.id) } },
-          data: returnData,
-        });
-      }
-
-      // Reset child assets to AVAILABLE
-      const childAssetIds = children.filter((c) => c.assetId).map((c) => c.assetId!);
-      if (childAssetIds.length > 0) {
-        await tx.asset.updateMany({
-          where: { id: { in: childAssetIds } },
-          data: resetData,
-        });
-      }
-
-      // Return parent line item
-      if (parent.status === "CHECKED_OUT") {
-        await tx.projectLineItem.update({
-          where: { id: parent.id },
-          data: returnData,
-        });
-      }
-
+      await restoreKitParentLineItem(tx, parent, { organizationId, returnData, resetData }, kitsToRestore);
     }
 
     // Reset kit status
@@ -1892,9 +2000,7 @@ export async function forceReturnKit(kitId: string) {
     }
 
     // Restore BulkAsset.availableQuantity for the root kit and every unique
-    // nested kit that was encountered. Force-return assumes the kit was in
-    // a CHECKED_OUT-like state with bulk consumption, and that the right
-    // outcome is to release it all.
+    // nested kit that was encountered.
     const bulkAdjustments: BulkAdjustment[] = [];
     for (const kid of kitsToRestore) {
       bulkAdjustments.push(

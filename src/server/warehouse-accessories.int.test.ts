@@ -33,7 +33,7 @@ import { addLineItem } from "@/server/line-items";
 import { checkOutItems, checkInItems, lookupAssetForScan } from "@/server/warehouse";
 import { completeCheckAndStore, completeCheckAndDeprep } from "@/server/check-records";
 import { addModelBulkAccessory } from "@/server/model-accessories";
-import { isUniqueViolation, createAccessoryChildIfAbsent } from "@/server/line-item-fulfillment";
+import { isUniqueViolation, createAccessoryChildIfAbsent } from "@/lib/line-item-fulfillment";
 
 async function seed() {
   const org = await createOrgFixture();

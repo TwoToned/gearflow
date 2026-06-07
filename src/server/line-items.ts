@@ -160,6 +160,8 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
   // Server-side availability enforcement for equipment.
   // Sub-hire items represent third-party stock and never consume our inventory.
   // Detection moved from `isSubhire` boolean to `subHireId != null` (Wave 2).
+  // WHY: Prevent double-booking of owned equipment. Sub-hire items are third-party
+  // stock (rented in to cover gaps) and don't consume our warehouse inventory.
   if (parsed.type === "EQUIPMENT" && parsed.modelId && !allowOverbook) {
     const project = await prisma.project.findUnique({
       where: { id: projectId, organizationId },
@@ -168,6 +170,12 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
 
     const hasDates = !!project?.rentalStartDate && !!project?.rentalEndDate;
 
+    // Two-mode availability check: without dates (project still being quoted),
+    // we only check conflicts within this project (the user is iterating on
+    // their quote). With dates, we check across all overlapping projects to
+    // prevent genuine double-booking across the calendar.
+    // WHY: Kit assets must be booked through the kit workflow to keep the kit
+    // complete. Booking a kit asset directly would leave the kit missing a piece.
     if (parsed.assetId) {
       // Check if asset is in a kit
       const assetCheck = await prisma.asset.findUnique({ where: { id: parsed.assetId }, include: { kit: { select: { assetTag: true } } } });
@@ -184,6 +192,9 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
       // (only when dates exist). The asset may be assigned via a legacy
       // line.assetId row OR via a ProjectLineItemUnit (the fulfillment
       // model) — both tables must be checked.
+      // WHY: When rental dates are confirmed, the asset must be free across all
+      // overlapping projects. Without dates (quoting phase), only check within
+      // this project since the user is iterating on a draft quote.
       if (hasDates) {
         const conflictWindow: Prisma.ProjectWhereInput = {
           status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
@@ -234,6 +245,9 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
       }
 
       // Block truly unavailable assets (retired, lost) but allow checked-out ones
+      // WHY: Retired and lost assets are permanently unavailable — booking them
+      // would create unfulfillable commitments. Checked-out assets return before
+      // the project starts, so they're still bookable.
       const asset = await prisma.asset.findUnique({ where: { id: parsed.assetId } });
       if (asset && (asset.status === "RETIRED" || asset.status === "LOST")) {
         throw new UserFacingError({
@@ -255,6 +269,9 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         },
       });
 
+      // WHY: For model-level (non-specific) adds, enforce against effective
+      // stock. With dates, check across all overlapping projects; without dates,
+      // only check this project's existing bookings since other quotes are drafts.
       if (model) {
         // When dates exist, check overlapping bookings across projects
         // When no dates, check only this project's existing bookings against stock
@@ -289,6 +306,9 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(model);
         const available = Math.max(0, effectiveStock - booked);
 
+        // WHY: Compare against effective stock (total minus unavailable), not
+        // raw count. Assets in maintenance or retired still exist on paper but
+        // can't be booked — using total stock would overstate availability.
         if (parsed.quantity > available) {
           const detail = unavailable > 0
             ? `${booked} booked, ${unavailable} unavailable, ${totalStock} total`
@@ -304,9 +324,15 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
     }
   }
 
-  // If adding by model (no specific asset), merge into existing line item within the same group/category.
+  // If adding by model (no specific asset), merge into existing line item
+  // within the same group/category to keep the quote clean. Merging prevents
+  // duplicate rows when a user adds the same model twice (e.g. "2x lights"
+  // then "3x lights"), rolling them into one consolidated line.
   // Never merge across sub-hire boundaries (own stock vs third-party stock).
   // When forceSeparate is true, always create a new line item.
+  // WHY: Consolidating same-model adds prevents duplicate rows that would confuse
+  // the customer and complicate warehouse picking. Sub-hire items must never merge
+  // with owned stock because they have different costs and availability rules.
   if (parsed.type === "EQUIPMENT" && parsed.modelId && !parsed.assetId && !forceSeparate) {
     const existing = await prisma.projectLineItem.findFirst({
       where: {
@@ -379,6 +405,9 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
   const priceOverridden = false;
 
   if (parsed.modelId && parsed.pricingType === "PER_DAY" && !parsed.unitPrice) {
+    // WHY: Automatically select the best pricing tier (daily/weekly/monthly)
+    // for the project's billing period so the customer gets the optimal rate
+    // without manual calculation. Falls through to manual pricing on failure.
     try {
       const daysPerMonth = await getOrgDaysPerMonth(organizationId);
 
@@ -484,6 +513,9 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
     // a specific serialised asset expands its own + its model's; a model-level
     // line expands the model's default accessories so they appear on the quote.
     // Sub-hire lines are third-party stock — never expand.
+    // WHY: Permanent accessories (cases, cables, mounts) must travel with the
+    // parent on every booking. Expanding them as child lines ensures the
+    // warehouse includes them during prep and the quote shows what's included.
     if (!line.subHireId && line.type === "EQUIPMENT" && (line.assetId || line.modelId)) {
       await expandAccessoryChildren(tx, organizationId, projectId, line);
     }
@@ -738,7 +770,11 @@ export async function addKitLineItem(
   let nextSort = (maxSort._max.sortOrder ?? -1) + 1;
 
   const result = await prisma.$transaction(async (tx) => {
-    // Create parent kit line item
+    // Create parent kit line item — holds the kit-level pricing and serves
+    // as the anchor for all child items. Each serialized and bulk item from
+    // the kit becomes a child ProjectLineItem so the warehouse can track and
+    // deploy each piece individually while the parent maintains the kit-level
+    // unit price for quoting.
     const parentItem = await tx.projectLineItem.create({
       data: {
         organizationId, projectId, type: "EQUIPMENT", kitId,

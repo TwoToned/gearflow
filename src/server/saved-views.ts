@@ -5,6 +5,7 @@ import { getOrgContext } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import type { Prisma } from "@/generated/prisma/client";
 import type { SavedViewConfig } from "@/lib/saved-views";
+import { logActivity } from "@/lib/activity-log";
 
 /**
  * Saved table views are personal: each is owned by the user who created it and
@@ -31,7 +32,7 @@ export async function createSavedView(data: {
   config: SavedViewConfig;
   isDefault?: boolean;
 }) {
-  const { organizationId, userId } = await getOrgContext();
+  const { organizationId, userId, userName } = await getOrgContext();
 
   const name = data.name.trim();
   if (!name) throw new Error("View name is required");
@@ -57,6 +58,18 @@ export async function createSavedView(data: {
     });
   });
 
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "CREATE",
+    entityType: "savedView",
+    entityId: view.id,
+    entityName: view.name,
+    summary: `Created saved view "${view.name}"`,
+    details: { tableId: data.tableId },
+  });
+
   return serialize(view);
 }
 
@@ -64,7 +77,7 @@ export async function updateSavedView(
   id: string,
   data: { name?: string; config?: SavedViewConfig },
 ) {
-  const { organizationId, userId } = await getOrgContext();
+  const { organizationId, userId, userName } = await getOrgContext();
 
   // Scope the existence check to org + user so one user can't edit another's view.
   const existing = await prisma.savedTableView.findFirst({
@@ -86,11 +99,23 @@ export async function updateSavedView(
     },
   });
 
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "savedView",
+    entityId: id,
+    entityName: view.name,
+    summary: `Updated saved view "${view.name}"`,
+    details: data,
+  });
+
   return serialize(view);
 }
 
 export async function deleteSavedView(id: string) {
-  const { organizationId, userId } = await getOrgContext();
+  const { organizationId, userId, userName } = await getOrgContext();
 
   const existing = await prisma.savedTableView.findFirst({
     where: { id, organizationId, userId },
@@ -98,6 +123,17 @@ export async function deleteSavedView(id: string) {
   if (!existing) throw new Error("View not found");
 
   await prisma.savedTableView.delete({ where: { id } });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "DELETE",
+    entityType: "savedView",
+    entityId: id,
+    entityName: existing.name,
+    summary: `Deleted saved view "${existing.name}"`,
+  });
 }
 
 /**
@@ -105,7 +141,7 @@ export async function deleteSavedView(id: string) {
  * sole default; passing `null` clears the default for the table entirely.
  */
 export async function setDefaultSavedView(tableId: string, id: string | null) {
-  const { organizationId, userId } = await getOrgContext();
+  const { organizationId, userId, userName } = await getOrgContext();
 
   await prisma.$transaction(async (tx) => {
     await tx.savedTableView.updateMany({
@@ -120,5 +156,23 @@ export async function setDefaultSavedView(tableId: string, id: string | null) {
       });
       if (updated.count === 0) throw new Error("View not found");
     }
+  });
+
+  const viewName = id
+    ? (await prisma.savedTableView.findUnique({ where: { id }, select: { name: true } }))?.name
+    : null;
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "savedView",
+    entityId: id || tableId,
+    entityName: viewName || tableId,
+    summary: id
+      ? `Set "${viewName}" as default view for table ${tableId}`
+      : `Cleared default view for table ${tableId}`,
+    details: { tableId, viewId: id },
   });
 }

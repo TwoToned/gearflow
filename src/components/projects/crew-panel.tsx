@@ -973,7 +973,7 @@ function AssignmentDialog({
               }
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select phase..." />
+                <SelectValue placeholder="Select phase...">{phaseLabels[(form.watch("phase") ?? "")] ?? form.watch("phase")}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {allPhases.map((p) => (
@@ -1059,7 +1059,7 @@ function AssignmentDialog({
                 }
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Default" />
+                  <SelectValue placeholder="Default">{form.watch("rateType") === "DAILY" ? "Daily" : form.watch("rateType") === "HOURLY" ? "Hourly" : form.watch("rateType") === "FLAT" ? "Flat" : form.watch("rateType")}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="DAILY">Daily</SelectItem>

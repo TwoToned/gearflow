@@ -25,9 +25,7 @@ const kitFilterColumns: FilterColumnDef[] = [
   { id: "tags", filterType: "enum" },
 ];
 
-// ---------------------------------------------------------------------------
-// getKits – paginated list with optional filters
-// ---------------------------------------------------------------------------
+// Paginated list with optional filters.
 export async function getKits(params?: {
   search?: string;
   status?: string;
@@ -112,9 +110,7 @@ export async function getKits(params?: {
   });
 }
 
-// ---------------------------------------------------------------------------
-// getKit – single kit with all relations
-// ---------------------------------------------------------------------------
+// Single kit with all relations.
 export async function getKit(id: string) {
   const { organizationId } = await getOrgContext();
 
@@ -153,9 +149,6 @@ export async function getKit(id: string) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// createKit
-// ---------------------------------------------------------------------------
 export async function createKit(data: KitFormValues) {
   const { organizationId, userId, userName } = await requirePermission("kit", "create");
   const parsed = kitSchema.parse(data);
@@ -210,9 +203,6 @@ export async function createKit(data: KitFormValues) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// updateKit
-// ---------------------------------------------------------------------------
 export async function updateKit(id: string, data: KitFormValues) {
   const { organizationId, userId, userName } = await requirePermission("kit", "update");
   const parsed = kitSchema.parse(data);
@@ -439,9 +429,6 @@ export async function deleteKit(id: string) {
   return serialize({ id, hardDeleted: true });
 }
 
-// ---------------------------------------------------------------------------
-// addSerializedItemToKit
-// ---------------------------------------------------------------------------
 export async function addSerializedItemToKit(
   kitId: string,
   data: KitSerializedItemFormValues,
@@ -495,9 +482,7 @@ export async function addSerializedItemToKit(
   );
 }
 
-// ---------------------------------------------------------------------------
-// addSerializedItemsToKit – batch add multiple serialized assets
-// ---------------------------------------------------------------------------
+// Batch add multiple serialized assets.
 export async function addSerializedItemsToKit(
   kitId: string,
   items: Array<{ assetId: string; position?: string }>,
@@ -560,9 +545,6 @@ export async function addSerializedItemsToKit(
   );
 }
 
-// ---------------------------------------------------------------------------
-// removeSerializedItemFromKit
-// ---------------------------------------------------------------------------
 export async function removeSerializedItemFromKit(
   kitId: string,
   assetId: string,
@@ -593,9 +575,6 @@ export async function removeSerializedItemFromKit(
   );
 }
 
-// ---------------------------------------------------------------------------
-// addBulkItemToKit
-// ---------------------------------------------------------------------------
 export async function addBulkItemToKit(
   kitId: string,
   data: KitBulkItemFormValues,
@@ -646,9 +625,6 @@ export async function addBulkItemToKit(
   );
 }
 
-// ---------------------------------------------------------------------------
-// removeBulkItemFromKit
-// ---------------------------------------------------------------------------
 export async function removeBulkItemFromKit(
   kitId: string,
   bulkItemId: string,
@@ -683,9 +659,7 @@ export async function removeBulkItemFromKit(
   );
 }
 
-// ---------------------------------------------------------------------------
-// getAvailableAssetsForKit – serialized assets not in any kit
-// ---------------------------------------------------------------------------
+// Serialized assets not in any kit.
 export async function getAvailableAssetsForKit(modelId?: string) {
   const { organizationId } = await getOrgContext();
 
@@ -704,9 +678,7 @@ export async function getAvailableAssetsForKit(modelId?: string) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// getAvailableBulkAssetsForKit – bulk assets with available quantity
-// ---------------------------------------------------------------------------
+// Bulk assets with available quantity.
 export async function getAvailableBulkAssetsForKit() {
   const { organizationId } = await getOrgContext();
 

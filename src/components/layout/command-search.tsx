@@ -163,6 +163,11 @@ interface DisplayItem {
   hasChildren?: boolean;
 }
 
+// ─── Design constants ────────────────────────────────────────────
+
+const KB_HINT_FONT_SIZE = "10px";
+const BREADCRUMB_MAX_WIDTH = "150px";
+
 export function CommandSearch() {
   const isMobile = useIsMobile();
   const [open, setOpen] = useState(false);
@@ -1073,7 +1078,7 @@ export function CommandSearch() {
       >
         <Search className="h-4 w-4" />
         <span>Search...</span>
-        <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border bg-bg-inset px-1.5 font-mono text-[10px] font-medium text-fg-3 sm:flex">
+        <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border bg-bg-inset px-1.5 font-mono font-medium text-fg-3 sm:flex" style={{ fontSize: KB_HINT_FONT_SIZE }}>
           <span className="text-xs">&#8984;</span>K
         </kbd>
       </button>
@@ -1102,7 +1107,7 @@ export function CommandSearch() {
                 className="shrink-0 flex items-center gap-1 rounded-md bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground hover:bg-accent/80 transition-colors"
               >
                 <breadcrumb.icon className="h-3 w-3" />
-                <span className="max-w-[150px] truncate">{breadcrumb.label}</span>
+                <span className="truncate" style={{ maxWidth: BREADCRUMB_MAX_WIDTH }}>{breadcrumb.label}</span>
                 <ChevronRight className="h-3 w-3 text-fg-3" />
                 <X className="h-3 w-3 text-fg-3/60 hover:text-fg" />
               </button>
@@ -1240,7 +1245,7 @@ export function CommandSearch() {
                           )}
                         </div>
                         {isSlashMode && item.id.startsWith("slash-") && (
-                          <span className="shrink-0 rounded border bg-bg-inset px-1.5 py-0.5 font-mono text-[10px] text-fg-3">
+                          <span className="shrink-0 rounded border bg-bg-inset px-1.5 py-0.5 font-mono text-fg-3" style={{ fontSize: KB_HINT_FONT_SIZE }}>
                             /{slashMatches.find((m) => `slash-${m.command.id}` === item.id)?.command.command}
                           </span>
                         )}
@@ -1250,7 +1255,7 @@ export function CommandSearch() {
                           </span>
                         )}
                         {item.hasChildren && idx === selectedIndex && !isMobile && (
-                          <kbd className="shrink-0 rounded border bg-bg-inset px-1 font-mono text-[10px] text-fg-3">
+                          <kbd className="shrink-0 rounded border bg-bg-inset px-1 font-mono text-fg-3" style={{ fontSize: KB_HINT_FONT_SIZE }}>
                             Tab →
                           </kbd>
                         )}
@@ -1288,34 +1293,34 @@ export function CommandSearch() {
               ) : (
                 <>
                   <span className="flex items-center gap-1">
-                    <kbd className="rounded border bg-bg-inset px-1 font-mono text-[10px]">↑↓</kbd>
+                    <kbd className="rounded border bg-bg-inset px-1 font-mono" style={{ fontSize: KB_HINT_FONT_SIZE }}>↑↓</kbd>
                     navigate
                   </span>
                   {!isDrilling && !isAtEntityMode && !isAtMode && (
                     <span className="flex items-center gap-1">
-                      <kbd className="rounded border bg-bg-inset px-1 font-mono text-[10px]">⇧↑↓</kbd>
+                      <kbd className="rounded border bg-bg-inset px-1 font-mono" style={{ fontSize: KB_HINT_FONT_SIZE }}>⇧↑↓</kbd>
                       skip
                     </span>
                   )}
                   <span className="flex items-center gap-1">
-                    <kbd className="rounded border bg-bg-inset px-1 font-mono text-[10px]">⏎</kbd>
+                    <kbd className="rounded border bg-bg-inset px-1 font-mono" style={{ fontSize: KB_HINT_FONT_SIZE }}>⏎</kbd>
                     open
                   </span>
                   {selectedHasChildren && (
                     <span className="flex items-center gap-1">
-                      <kbd className="rounded border bg-bg-inset px-1 font-mono text-[10px]">Tab</kbd>
+                      <kbd className="rounded border bg-bg-inset px-1 font-mono" style={{ fontSize: KB_HINT_FONT_SIZE }}>Tab</kbd>
                       drill in
                     </span>
                   )}
                   {(isDrilling || isAtEntityMode) && (
                     <span className="flex items-center gap-1">
-                      <kbd className="rounded border bg-bg-inset px-1 font-mono text-[10px]">Esc</kbd>
+                      <kbd className="rounded border bg-bg-inset px-1 font-mono" style={{ fontSize: KB_HINT_FONT_SIZE }}>Esc</kbd>
                       back
                     </span>
                   )}
                   {showExpandToggle && (
                     <span className="flex items-center gap-1">
-                      <kbd className="rounded border bg-bg-inset px-1 font-mono text-[10px]">⇧←→</kbd>
+                      <kbd className="rounded border bg-bg-inset px-1 font-mono" style={{ fontSize: KB_HINT_FONT_SIZE }}>⇧←→</kbd>
                       {expanded ? "collapse" : "expand"}
                     </span>
                   )}

@@ -21,6 +21,13 @@ import type { SupervisorDeps, SupervisorState } from "./bot-supervisor";
 
 const POLL_INTERVAL_MS = Number(process.env.DISCORD_POLL_INTERVAL_MS ?? 5000);
 
+/** Guarded logger: only emits console.log in non-production environments. */
+function devLog(...args: unknown[]) {
+  if (process.env.NODE_ENV !== "production") {
+    console.log(...args);
+  }
+}
+
 interface BotRuntime {
   organizationId: string;
   client: Client;
@@ -58,7 +65,7 @@ async function resolveActiveIntegration(): Promise<{
   });
 
   if (candidates.length === 0) {
-    console.log("[discord-bot] no enabled DiscordIntegration — skipping bot startup.");
+    devLog("[discord-bot] no enabled DiscordIntegration — skipping bot startup.");
     return null;
   }
   if (candidates.length > 1) {
@@ -114,7 +121,7 @@ async function startOutboxLoop(
       cursor = res.cursor;
       consecutiveFailures = 0;
       if (res.processed > 0) {
-        console.log(`[discord-bot] outbox processed=${res.processed} cursor=${cursor} failed=${res.failed}`);
+        devLog(`[discord-bot] outbox processed=${res.processed} cursor=${cursor} failed=${res.failed}`);
       }
     } catch (err) {
       consecutiveFailures += 1;
@@ -133,14 +140,14 @@ async function startOutboxLoop(
 /** Start the bot. No-op if already running, or if the integration isn't enabled. */
 export async function startBot(): Promise<void> {
   if (globalRef.__gearflowDiscordBot) {
-    console.log("[discord-bot] already running, skipping start.");
+    devLog("[discord-bot] already running, skipping start.");
     return;
   }
   const config = await resolveActiveIntegration();
   if (!config) return;
 
   const registry = loadCommands();
-  console.log(
+  devLog(
     `[discord-bot] starting (org=${config.organizationId}, guild=${config.guildId}, commands=${[...registry.keys()].join(",")})`,
   );
 
@@ -191,7 +198,7 @@ export async function startBot(): Promise<void> {
   });
 
   client.once(Events.ClientReady, async (c) => {
-    console.log(`[discord-bot] logged in as ${c.user.tag} (id=${c.user.id})`);
+    devLog(`[discord-bot] logged in as ${c.user.tag} (id=${c.user.id})`);
     // Healthy start — clear any stale startup error the admin page is showing.
     await prisma.discordIntegration
       .update({
@@ -226,9 +233,9 @@ export async function startBot(): Promise<void> {
       gateway,
       botUserId: c.user.id,
       log: (event, fields) =>
-        console.log(JSON.stringify({ scope: "discord-bot", event, ...fields })),
+        devLog(JSON.stringify({ scope: "discord-bot", event, ...fields })),
     };
-    console.log(`[discord-bot] outbox poll loop starting (every ${POLL_INTERVAL_MS}ms)`);
+    devLog(`[discord-bot] outbox poll loop starting (every ${POLL_INTERVAL_MS}ms)`);
     void startOutboxLoop(consumerDeps, isRunning);
   });
 
@@ -289,7 +296,7 @@ export async function startBot(): Promise<void> {
 export async function stopBot(): Promise<void> {
   const existing = globalRef.__gearflowDiscordBot;
   if (!existing) return;
-  console.log("[discord-bot] stopping...");
+  devLog("[discord-bot] stopping...");
   await existing.stop();
 }
 
@@ -365,6 +372,6 @@ export function createSupervisorDeps(): SupervisorDeps {
     start: startBot,
     stop: stopBot,
     writeHeartbeat: writeBotHeartbeat,
-    log: (msg) => console.log(`[discord-supervisor] ${msg}`),
+    log: (msg) => devLog(`[discord-supervisor] ${msg}`),
   };
 }

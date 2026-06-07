@@ -79,9 +79,7 @@ export async function getCategoryTree() {
   return serialize(roots);
 }
 
-// ---------------------------------------------------------------------------
-// getCaseCategoryIds — get category + all descendant IDs for container cases
-// ---------------------------------------------------------------------------
+// Get category + all descendant IDs for container cases.
 export async function getCaseCategoryIds(): Promise<string[]> {
   const { organizationId } = await getOrgContext();
 

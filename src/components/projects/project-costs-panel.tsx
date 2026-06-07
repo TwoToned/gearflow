@@ -9,8 +9,7 @@
  *
  * Per the approved plan: collapsed by default, single right-rail section
  * mirroring FinancialSummary's visual treatment. The deep-view link goes
- * to /projects/[id]/costs (TODO: build that page in a follow-up if the
- * panel proves insufficient).
+ * to /projects/[id]/costs.
  */
 
 import { useState } from "react";

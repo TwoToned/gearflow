@@ -27,6 +27,8 @@ const nextConfig: NextConfig = {
     "@discordjs/builders",
     "@discordjs/collection",
     "zlib-sync",
+    "@prisma/adapter-pg",
+    "pg",
   ],
   async headers() {
     return [

@@ -134,7 +134,7 @@ jobs:
         run: pnpm exec prisma generate
 
       - name: Sync schema to throwaway DB
-        run: pnpm exec prisma db push --skip-generate
+        run: pnpm exec prisma db push
 
       - name: Build
         run: pnpm run build

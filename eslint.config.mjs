@@ -31,6 +31,7 @@ const eslintConfig = [
       "react-hooks/purity": "warn",
       "react-hooks/immutability": "warn",
       "react-hooks/static-components": "warn",
+      "react-hooks/refs": "warn",
     },
   },
 ];

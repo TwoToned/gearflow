@@ -1,26 +1,22 @@
-import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
-import reactHooks from "eslint-plugin-react-hooks";
 
-const eslintConfig = defineConfig([
+const eslintConfig = [
   ...nextVitals,
   ...nextTs,
-  {
-    plugins: {
-      "react-hooks": reactHooks,
-    },
-  },
   // Override default ignores of eslint-config-next.
-  globalIgnores([
-    // Default ignores of eslint-config-next:
-    ".next/**",
-    "out/**",
-    "build/**",
-    "next-env.d.ts",
-    // Third-party skill files
-    ".claude/skills/gstack/**",
-  ]),
+  {
+    ignores: [
+      ".next/**",
+      "out/**",
+      "build/**",
+      "next-env.d.ts",
+      // Third-party skill files
+      ".claude/skills/gstack/**",
+      // Claude worktree artifacts (can contain massive build output)
+      ".claude/worktrees/**",
+    ],
+  },
   {
     // Next 16 bundles the React Compiler-aware eslint-plugin-react-hooks,
     // which promoted several heuristic rules to "error". These flag patterns
@@ -35,8 +31,9 @@ const eslintConfig = defineConfig([
       "react-hooks/purity": "warn",
       "react-hooks/immutability": "warn",
       "react-hooks/static-components": "warn",
+      "react-hooks/refs": "warn",
     },
   },
-]);
+];
 
 export default eslintConfig;

@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@pdfme/pdf-lib': 6.1.5
+
 importers:
 
   .:
@@ -48,7 +51,7 @@ importers:
         specifier: ^6.1.5
         version: 6.1.5(@pdfme/common@6.1.5)(@pdfme/schemas@6.1.5(@pdfme/common@6.1.5))
       '@pdfme/pdf-lib':
-        specifier: ^6.1.5
+        specifier: 6.1.5
         version: 6.1.5
       '@pdfme/schemas':
         specifier: ^6.1.5
@@ -216,6 +219,9 @@ importers:
       tailwindcss:
         specifier: ^4
         version: 4.2.1
+      ts-morph:
+        specifier: ^26.0.0
+        version: 26.0.0
       tsx:
         specifier: ^4.21.0
         version: 4.22.4
@@ -2158,9 +2164,6 @@ packages:
     peerDependencies:
       '@pdfme/common': latest
       '@pdfme/schemas': latest
-
-  '@pdfme/pdf-lib@5.5.9':
-    resolution: {integrity: sha512-Rt73209LLu+Cxk9INs3egnOAW7ta7lQXyR5yWkPqjIZVmR2HzvQanZRpq15VfFc6EVWzIvTJ3GuEOvL52icevA==}
 
   '@pdfme/pdf-lib@6.1.5':
     resolution: {integrity: sha512-VdSIEpG2EOaco0F/3UShTfguxo0cFgRY0Kj/wi9B6gNcOeoyqnQoUQycsZrGMnUa54/VTV0VRjf/ly8eByAYZA==}
@@ -4348,10 +4351,6 @@ packages:
 
   color@3.2.1:
     resolution: {integrity: sha512-aBl7dZI9ENN6fUGC7mWpMTPNHmWUSNan9tuWN6ahh5ZLNk9baLJOnSMlrQkHcrfFgz2/RigjUVAjdx36VcemKA==}
-
-  color@4.2.3:
-    resolution: {integrity: sha512-1rXeuUUiGGrykh+CeBdu5Ie7OJwinCgQY0bc7GCRxy5xVHy+moaqkpL/jqQq0MtQOeYcrqEz4abc5f0KtU7W4A==}
-    engines: {node: '>=12.5.0'}
 
   color@5.0.3:
     resolution: {integrity: sha512-ezmVcLR3xAVp8kYOm4GS45ZLLgIE6SPAFoduLr6hTDajwb3KZ2F46gulK3XpcwRFb5KKGCSezCBAY4Dw4HsyXA==}
@@ -10171,7 +10170,7 @@ snapshots:
 
   '@pdfme/common@5.5.9(antd@6.4.3(date-fns@4.1.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(form-render@2.5.6(@types/react@19.2.14)(antd@6.4.3(date-fns@4.1.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-dom@18.3.1(react@18.3.1))(react@18.3.1))':
     dependencies:
-      '@pdfme/pdf-lib': 5.5.9
+      '@pdfme/pdf-lib': 6.1.5
       acorn: 8.16.0
       antd: 6.4.3(date-fns@4.1.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       buffer: 6.0.3
@@ -10180,7 +10179,7 @@ snapshots:
 
   '@pdfme/common@6.1.5':
     dependencies:
-      '@pdfme/pdf-lib': 5.5.9
+      '@pdfme/pdf-lib': 6.1.5
       acorn: 8.16.0
       buffer: 6.0.3
       zod: 4.4.3
@@ -10188,7 +10187,7 @@ snapshots:
   '@pdfme/converter@5.5.9(antd@6.4.3(date-fns@4.1.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(form-render@2.5.6(@types/react@19.2.14)(antd@6.4.3(date-fns@4.1.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-dom@18.3.1(react@18.3.1))(react@18.3.1))':
     dependencies:
       '@pdfme/common': 5.5.9(antd@6.4.3(date-fns@4.1.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(form-render@2.5.6(@types/react@19.2.14)(antd@6.4.3(date-fns@4.1.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-dom@18.3.1(react@18.3.1))(react@18.3.1))
-      '@pdfme/pdf-lib': 5.5.9
+      '@pdfme/pdf-lib': 6.1.5
       pdfjs-dist: 3.11.174
     optionalDependencies:
       canvas: 2.11.2
@@ -10201,17 +10200,9 @@ snapshots:
   '@pdfme/generator@6.1.5(@pdfme/common@6.1.5)(@pdfme/schemas@6.1.5(@pdfme/common@6.1.5))':
     dependencies:
       '@pdfme/common': 6.1.5
-      '@pdfme/pdf-lib': 5.5.9
+      '@pdfme/pdf-lib': 6.1.5
       '@pdfme/schemas': 6.1.5(@pdfme/common@6.1.5)
       fontkit: 2.0.4
-
-  '@pdfme/pdf-lib@5.5.9':
-    dependencies:
-      '@pdf-lib/standard-fonts': 1.0.0
-      '@pdf-lib/upng': 1.0.1
-      color: 4.2.3
-      node-html-better-parser: 1.5.8
-      pako: 2.1.0
 
   '@pdfme/pdf-lib@6.1.5':
     dependencies:
@@ -10224,7 +10215,7 @@ snapshots:
   '@pdfme/schemas@6.1.5(@pdfme/common@6.1.5)':
     dependencies:
       '@pdfme/common': 6.1.5
-      '@pdfme/pdf-lib': 5.5.9
+      '@pdfme/pdf-lib': 6.1.5
       air-datepicker: 3.6.0
       bwip-js: 4.11.1
       date-fns: 4.4.0
@@ -12756,11 +12747,6 @@ snapshots:
   color@3.2.1:
     dependencies:
       color-convert: 1.9.3
-      color-string: 1.9.1
-
-  color@4.2.3:
-    dependencies:
-      color-convert: 2.0.1
       color-string: 1.9.1
 
   color@5.0.3:

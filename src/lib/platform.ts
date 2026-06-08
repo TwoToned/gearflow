@@ -11,13 +11,18 @@ export async function getPlatformName(): Promise<string> {
     return cachedName;
   }
 
-  const settings = await prisma.siteSettings.findFirst({
-    select: { platformName: true },
-  });
+  try {
+    const settings = await prisma.siteSettings.findFirst({
+      select: { platformName: true },
+    });
 
-  cachedName = settings?.platformName || "GearFlow";
-  cacheTime = now;
-  return cachedName;
+    cachedName = settings?.platformName || "GearFlow";
+    cacheTime = now;
+    return cachedName;
+  } catch {
+    // DB unavailable at build time — fall back to default
+    return "GearFlow";
+  }
 }
 
 /** Invalidate the cached platform name (call after settings update). */

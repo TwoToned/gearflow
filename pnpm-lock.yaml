@@ -4,9 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-overrides:
-  '@pdfme/pdf-lib': 6.1.5
-
 importers:
 
   .:
@@ -51,7 +48,7 @@ importers:
         specifier: ^6.1.5
         version: 6.1.5(@pdfme/common@6.1.5)(@pdfme/schemas@6.1.5(@pdfme/common@6.1.5))
       '@pdfme/pdf-lib':
-        specifier: 6.1.5
+        specifier: ^6.1.5
         version: 6.1.5
       '@pdfme/schemas':
         specifier: ^6.1.5

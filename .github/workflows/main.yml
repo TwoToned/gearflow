@@ -16,31 +16,40 @@ jobs:
         run: |
           cd ${{ vars.APP_DIR }}
           git pull origin main
- 
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
       - name: Install dependencies
         run: |
           cd ${{ vars.APP_DIR }}
-          npm ci --ignore-scripts --legacy-peer-deps
- 
+          pnpm install --frozen-lockfile
+
       - name: Generate Prisma client
         run: |
           cd ${{ vars.APP_DIR }}
-          npx prisma generate
+          pnpm exec prisma generate
 
       - name: Run tests
         run: |
           cd ${{ vars.APP_DIR }}
-          npm test
+          pnpm test
 
       - name: Run Prisma migrations
         run: |
           cd ${{ vars.APP_DIR }}
-          npx prisma migrate deploy
- 
+          pnpm exec prisma migrate deploy
+
       - name: Build Next.js app
         run: |
           cd ${{ vars.APP_DIR }}
-          npm run build
+          pnpm run build
  
       - name: Restart app + Discord bot
         run: |

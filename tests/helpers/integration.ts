@@ -17,12 +17,13 @@
  * `npm run test:integration` script to point at gearflow_test.
  */
 
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
 import { createId } from "@paralleldrive/cuid2";
 
 // Single shared client per test process — vitest --pool=forks isolates
 // connections across test files, so this is safe.
-export const testPrisma = new PrismaClient();
+export const testPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }) });
 
 /**
  * Truncates every table except _prisma_migrations. Cheap (~50ms on a

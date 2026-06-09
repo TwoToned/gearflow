@@ -430,6 +430,52 @@ this is **infra-only**.
 - Backfill `pnpm convex:backfill:templates` (0/0). Verified: tsc clean, 2185 tests,
   0 new lint errors, `pnpm build` exit 0.
 
+### Central graph — analysis & recommended sequencing (NOT yet migrated)
+
+The remaining domains (`asset`, `bulk_asset`, `kit`, `project`, `project_line_item`,
+`project_category`, `project_group`, `sub_hire`/`supplier_order` families) form **one
+deeply-interlocked cluster**, not a set of independent domains. The per-domain FK
+grep + write-site survey done this session (counts as of 2026-06-09):
+
+| domain | inbound FK | rows | why it's not independently scopable |
+|--------|-----------|------|--------------------------------------|
+| `bulk_asset` | 10 (3 req+Cascade: kit_bulk_item, asset_bulk_child, model_bulk_accessory) | 8 | **shares the registry/`asset-table.tsx` UI with `asset`** — can't make the table reactive for bulk while serialized assets stay Prisma. Must migrate WITH `asset`. |
+| `asset` | 13 | 126 | most-referenced; shared UI with bulk_asset; T&T / scan / check / damage / stocktake / line-item joins everywhere. |
+| `kit` | 10 | 0 | kit members (serialized + bulk), kit_media, kit_check_item, line items. Own page UI. 0 rows makes backfill trivial — reasonable **first** central-graph target if taken with its member sub-tables. |
+| `project_category` | 6 (1 req+Cascade: category_slot) | 12 | writes across **3 files** (project-categories, category-slots, projects-duplication tx). Delete cascades groups + reparents line items. |
+| `project_group` | 5 (category_slot nullable Cascade) | 17 | writes across **6 files** (project-groups split/merge/reorder ×11, category-slots, group-templates, line-items, project-categories deleteMany, projects-duplication). Entangled with `category_slot` cross-type "mixedGroups" ordering + `sub_hire_group`. |
+| `project_line_item` | 5 | 33 | the spine of the equipment tab; references model/asset/bulkAsset/kit/supplier/category/group/subHire; self-referential parent/child + kit children. |
+| `project` | 15 | 5 | most-referenced of all; client (already Convex), line items, assignments, services, media, documents. |
+| `sub_hire` / `supplier_order` | 4 / 3 | 1 / 1 | "families" with item + group + media sub-tables; `sub-hires.ts` is ~1750 lines; reference project + supplier + project_category/group. |
+
+**Key blockers that make these big, not small:**
+1. **Shared UI** — `asset` + `bulk_asset` render through the same `asset-table.tsx`
+   registry; migrate them as one unit (don't half-convert a shared table).
+2. **The project editor is one composition** — `project` ↔ `project_line_item` ↔
+   `project_category` ↔ `project_group` ↔ `category_slot` ↔ `sub_hire_group` are
+   read together (the equipment tab's `getProjectCategories` mixed-ordered list).
+   Their writes (split/merge/reorder/slot moves) span 6+ files with multi-row
+   `$transaction`s that all need mirroring. Migrate the grouping substructure as a
+   set, not piecemeal — a half-wired dual-write here causes silent drift.
+
+**Recommended sequencing for the next session** (smallest-blast-radius first):
+1. `kit` + kit member sub-tables (0 rows; self-contained kit page; de-risks asset).
+2. `asset` + `bulk_asset` **together** (shared registry UI; dual-write — both have
+   req+Cascade inbound from T&T/scan/check/kit/line-item).
+3. `project_category` + `project_group` **together** as dual-write **infra-only**
+   (composed only in the cross-domain equipment editor → no Phase 4; mirror the
+   create/update/delete/reorder/split/merge writes; the category-delete cascade
+   removes its groups from Convex; the project-duplication `tx.create`s in
+   `projects.ts` must mirror too).
+4. `project_line_item` (depends on 1–3 being in Convex for its FK joins).
+5. `sub_hire` / `supplier_order` families.
+6. `project` last (most-referenced).
+
+All Convex CRUD modules + schema for every table above already exist (Phase 2).
+Each follows the proven per-domain playbook (backfill → dual-write all paths incl.
+org-import + multi-row side-effects → read-lib + hook → reactive main UI → verify
+tsc + 2185 tests + 0 new lint errors + build + live round-trip).
+
 ## Phase 4 — Frontend reactive reads (in progress: Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields done)
 
 The browser now subscribes to the `clients` table directly via Convex `useQuery`,

@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, RotateCcw, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { getKits } from "@/server/kits";
+import { getKitCounts } from "@/server/kits";
+import { useKits } from "@/hooks/use-kits";
 import { getLocations } from "@/server/locations";
 import { getCategories } from "@/server/categories";
 import { forceReturnKit } from "@/server/warehouse";
@@ -178,7 +179,8 @@ export default function KitsPage() {
     onSuccess: (count) => {
       toast.success(`Force returned ${count} kits to available`);
       setSelectedIds(new Set());
-      queryClient.invalidateQueries({ queryKey: ["kits"] });
+      // Kit status is reactive via Convex; just refresh the cross-domain counts.
+      queryClient.invalidateQueries({ queryKey: ["kit-counts"] });
       queryClient.invalidateQueries({ queryKey: ["assets"] });
     },
     onError: (e) => toast.error(e.message),
@@ -198,21 +200,89 @@ export default function KitsPage() {
 
   const columns = useKitColumns(locations, categories);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["kits", orgId, { search, filters, page, pageSize, sortBy, sortOrder }],
-    queryFn: () =>
-      getKits({
-        search: search || undefined,
-        filters,
-        page,
-        pageSize,
-        sortBy,
-        sortOrder,
-      }),
+  // Reactive kit list straight from Convex (auto-updates on any kit
+  // create/update/archive and on warehouse check-out/in status changes). The
+  // member-item counts + primary photo are cross-domain (kit media still lives
+  // in Prisma) so they come from a separate, non-reactive server query and are
+  // merged in below; category/location names resolve from the lists already
+  // loaded for the filter options.
+  const allKits = useKits(orgId);
+  const { data: kitCounts } = useQuery({
+    queryKey: ["kit-counts", orgId],
+    queryFn: () => getKitCounts(),
+    enabled: !!orgId,
   });
 
-  const kits = data?.kits || [];
-  const total = data?.total || 0;
+  // Filter (active, non-prep + search tag/name/description + status/condition/
+  // location/category/tags) → sort → paginate, all client-side over the reactive
+  // list. The Convex list returns ALL kits (incl. archived + prep), so re-apply
+  // the isActive + isPrep guards the old getKits where-clause enforced.
+  const { kits, total } = useMemo(() => {
+    const source = allKits ?? [];
+    const q = search.trim().toLowerCase();
+    const statusFilter = filters?.status as string | undefined;
+    const conditionFilter = filters?.condition as string | undefined;
+    const locationFilter = filters?.locationId as string | undefined;
+    const categoryFilter = filters?.categoryId as string | undefined;
+    const tagsFilter = Array.isArray(filters?.tags) ? (filters.tags as string[]) : undefined;
+    const categoryById = new Map(categories.map((c) => [c.id, c]));
+    const locationById = new Map(locations.map((l) => [l.id, l]));
+
+    const filtered = source.filter((k) => {
+      if (k.isActive === false) return false;
+      if (k.isPrep === true) return false;
+      if (statusFilter && k.status !== statusFilter) return false;
+      if (conditionFilter && k.condition !== conditionFilter) return false;
+      if (locationFilter && k.locationId !== locationFilter) return false;
+      if (categoryFilter && k.categoryId !== categoryFilter) return false;
+      if (tagsFilter && tagsFilter.length > 0) {
+        if (!(k.tags ?? []).some((t) => tagsFilter.includes(t))) return false;
+      }
+      if (q) {
+        const hit =
+          k.assetTag.toLowerCase().includes(q) ||
+          k.name.toLowerCase().includes(q) ||
+          (k.description?.toLowerCase().includes(q) ?? false);
+        if (!hit) return false;
+      }
+      return true;
+    });
+
+    const dir = sortOrder === "desc" ? -1 : 1;
+    const sorted = [...filtered].sort((a, b) => {
+      const av = sortBy === "category"
+        ? categoryById.get(a.categoryId ?? "")?.name
+        : sortBy === "location"
+        ? locationById.get(a.locationId ?? "")?.name
+        : (a as Record<string, unknown>)[sortBy];
+      const bv = sortBy === "category"
+        ? categoryById.get(b.categoryId ?? "")?.name
+        : sortBy === "location"
+        ? locationById.get(b.locationId ?? "")?.name
+        : (b as Record<string, unknown>)[sortBy];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      return String(av).localeCompare(String(bv), undefined, { sensitivity: "base" }) * dir;
+    });
+
+    const merged = sorted.map((k) => {
+      const meta = kitCounts?.[k.id];
+      return {
+        ...k,
+        category: k.categoryId ? categoryById.get(k.categoryId) ?? null : null,
+        location: k.locationId ? locationById.get(k.locationId) ?? null : null,
+        _count: { serializedItems: meta?.serializedItems ?? 0, bulkItems: meta?.bulkItems ?? 0 },
+        media: meta?.media ? [{ file: meta.media }] : [],
+      };
+    });
+
+    const start = (page - 1) * pageSize;
+    return { kits: merged.slice(start, start + pageSize), total: merged.length };
+  }, [allKits, kitCounts, categories, locations, search, filters, sortBy, sortOrder, page, pageSize]);
+
+  const isLoading = allKits === undefined;
 
   return (
     <FadeIn>

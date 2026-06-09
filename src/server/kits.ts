@@ -119,6 +119,33 @@ export async function getKits(params?: {
   });
 }
 
+/**
+ * Per-kit member-item counts + primary photo (kitId -> meta).
+ * Cross-domain for the photo (kit_media + file_upload still live in Prisma); the
+ * item counts come from the dual-write-fresh Prisma mirror. Used by the reactive
+ * kit table, which subscribes to the kit list via Convex and merges these
+ * (non-reactive) values in. Excludes prep-kits (isPrep) to match the kit list.
+ */
+export async function getKitCounts(): Promise<
+  Record<string, { serializedItems: number; bulkItems: number; media: { url: string | null; thumbnailUrl: string | null } | null }>
+> {
+  const { organizationId } = await getOrgContext();
+  const [serializedGroups, bulkGroups, primaryMedia] = await Promise.all([
+    prisma.kitSerializedItem.groupBy({ by: ["kitId"], where: { organizationId }, _count: { _all: true } }),
+    prisma.kitBulkItem.groupBy({ by: ["kitId"], where: { organizationId }, _count: { _all: true } }),
+    prisma.kitMedia.findMany({
+      where: { kit: { organizationId }, type: "PHOTO", isPrimary: true },
+      select: { kitId: true, file: { select: { url: true, thumbnailUrl: true } } },
+    }),
+  ]);
+  const out: Record<string, { serializedItems: number; bulkItems: number; media: { url: string | null; thumbnailUrl: string | null } | null }> = {};
+  const ensure = (id: string) => (out[id] ??= { serializedItems: 0, bulkItems: 0, media: null });
+  for (const g of serializedGroups) if (g.kitId) ensure(g.kitId).serializedItems = g._count._all;
+  for (const g of bulkGroups) if (g.kitId) ensure(g.kitId).bulkItems = g._count._all;
+  for (const m of primaryMedia) ensure(m.kitId).media = { url: m.file?.url ?? null, thumbnailUrl: m.file?.thumbnailUrl ?? null };
+  return serialize(out);
+}
+
 // Single kit with all relations.
 export async function getKit(id: string) {
   const { organizationId } = await getOrgContext();

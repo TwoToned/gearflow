@@ -1,16 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Pencil, Loader2, Download, Upload, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
-import { getAssets, bulkUpdateAssets } from "@/server/assets";
+import { bulkUpdateAssets, getAssetRegistryPhotos } from "@/server/assets";
+import { useAssets, useBulkAssets } from "@/hooks/use-assets";
+import { useModels } from "@/hooks/use-models";
 import { bulkForceReturnAssets } from "@/server/warehouse";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { getBulkAssets } from "@/server/bulk-assets";
 import { getLocations } from "@/server/locations";
 import { getCategories } from "@/server/categories";
 import { exportAssetsCSV, exportBulkAssetsCSV } from "@/server/csv";
@@ -342,51 +343,146 @@ export function AssetTable() {
     queryKey: ["locations", orgId],
     queryFn: () => getLocations({ pageSize: 100 }),
   });
-  const locations = (locationsData?.locations || []) as Array<{ id: string; name: string; type: string; parent?: { name: string } | null }>;
+  const locations = useMemo(
+    () => (locationsData?.locations || []) as Array<{ id: string; name: string; type: string; parent?: { name: string } | null }>,
+    [locationsData],
+  );
 
   const { data: categoriesData } = useQuery({
     queryKey: ["categories", orgId],
     queryFn: () => getCategories(),
   });
-  const categories = (categoriesData || []) as Array<{ id: string; name: string }>;
+  const categories = useMemo(
+    () => (categoriesData || []) as Array<{ id: string; name: string }>,
+    [categoriesData],
+  );
 
   const serializedColumns = useAssetColumns(locations, categories);
   const bulkColumns = useBulkAssetColumns(locations);
 
-  const serializedQuery = useQuery({
-    queryKey: ["assets", orgId, { search, filters, page, pageSize, sortBy, sortOrder }],
-    queryFn: () => getAssets({
-      search: search || undefined,
-      filters,
-      page,
-      pageSize,
-      sortBy,
-      sortOrder,
-    }),
-    enabled: view === "serialized",
+  // Reactive asset + bulk lists straight from Convex (auto-update on any CRUD AND
+  // any warehouse status/location change). Model name/category + location resolve
+  // from the Convex models/categories/locations the table already loads; primary
+  // photos are cross-domain (asset/model media still Prisma) so they come from a
+  // separate, non-reactive server query and are merged in.
+  const allAssets = useAssets(orgId);
+  const allBulkAssets = useBulkAssets(orgId);
+  const allModels = useModels(orgId);
+  const { data: photos } = useQuery({
+    queryKey: ["asset-registry-photos", orgId],
+    queryFn: () => getAssetRegistryPhotos(),
+    enabled: !!orgId,
   });
 
-  const bulkQuery = useQuery({
-    queryKey: ["bulk-assets", orgId, { search, filters, page, pageSize, sortBy, sortOrder }],
-    queryFn: () => getBulkAssets({
-      search: search || undefined,
-      status: Array.isArray(filters.status) ? filters.status[0] : undefined,
-      locationId: Array.isArray(filters.locationId) ? filters.locationId[0] : undefined,
-      page,
-      pageSize,
-      sortBy,
-      sortOrder,
-    }),
-    enabled: view === "bulk",
-  });
+  const modelById = useMemo(() => new Map((allModels ?? []).map((m) => [m.id, m])), [allModels]);
+  const categoryById = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
+  const locationById = useMemo(() => new Map(locations.map((l) => [l.id, l])), [locations]);
 
-  const isLoading = view === "serialized" ? serializedQuery.isLoading : bulkQuery.isLoading;
-  const total = view === "serialized"
-    ? serializedQuery.data?.total || 0
-    : bulkQuery.data?.total || 0;
+  // Attach a resolved `model` (with `category` + primary `media`), `location`, and
+  // own primary `media` to a Convex asset/bulk doc, matching the old Prisma include.
+  const enrich = useMemo(() => {
+    const assetPhotos = photos?.assetPhotos ?? {};
+    const modelPhotos = photos?.modelPhotos ?? {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (row: any) => {
+      const model = modelById.get(row.modelId);
+      const category = model?.categoryId ? categoryById.get(model.categoryId) ?? null : null;
+      const mPhoto = modelPhotos[row.modelId];
+      const aPhoto = assetPhotos[row.id];
+      return {
+        ...row,
+        model: model ? { ...model, category, media: mPhoto ? [{ file: mPhoto }] : [] } : null,
+        location: row.locationId ? locationById.get(row.locationId) ?? null : null,
+        media: aPhoto ? [{ file: aPhoto }] : [],
+      };
+    };
+  }, [modelById, categoryById, locationById, photos]);
 
-  const assets = serializedQuery.data?.assets || [];
-  const bulkAssets = bulkQuery.data?.bulkAssets || [];
+  // Client-side filter → sort → paginate over the reactive serialized list.
+  const { assets, serializedTotal } = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const statusF = filters?.status as string | string[] | undefined;
+    const conditionF = filters?.condition as string | string[] | undefined;
+    const locationF = filters?.locationId as string | string[] | undefined;
+    const categoryF = filters?.categoryId as string | string[] | undefined;
+    const tagsF = Array.isArray(filters?.tags) ? (filters.tags as string[]) : undefined;
+    const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+
+    const filtered = (allAssets ?? []).filter((a) => {
+      if (a.isActive === false) return false;
+      if (pick(statusF) && a.status !== pick(statusF)) return false;
+      if (pick(conditionF) && a.condition !== pick(conditionF)) return false;
+      if (pick(locationF) && a.locationId !== pick(locationF)) return false;
+      if (pick(categoryF) && modelById.get(a.modelId)?.categoryId !== pick(categoryF)) return false;
+      if (tagsF && tagsF.length > 0 && !(a.tags ?? []).some((t) => tagsF.includes(t))) return false;
+      if (q) {
+        const name = modelById.get(a.modelId)?.name?.toLowerCase() ?? "";
+        const hit = a.assetTag.toLowerCase().includes(q)
+          || (a.serialNumber?.toLowerCase().includes(q) ?? false)
+          || (a.customName?.toLowerCase().includes(q) ?? false)
+          || name.includes(q);
+        if (!hit) return false;
+      }
+      return true;
+    });
+
+    const dir = sortOrder === "desc" ? -1 : 1;
+    const sorted = [...filtered].sort((a, b) => {
+      const av = sortBy === "model" ? modelById.get(a.modelId)?.name
+        : sortBy === "location" ? locationById.get(a.locationId ?? "")?.name
+        : (a as Record<string, unknown>)[sortBy];
+      const bv = sortBy === "model" ? modelById.get(b.modelId)?.name
+        : sortBy === "location" ? locationById.get(b.locationId ?? "")?.name
+        : (b as Record<string, unknown>)[sortBy];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      return String(av).localeCompare(String(bv), undefined, { sensitivity: "base" }) * dir;
+    });
+
+    const start = (page - 1) * pageSize;
+    return { assets: sorted.slice(start, start + pageSize).map(enrich), serializedTotal: sorted.length };
+  }, [allAssets, modelById, locationById, search, filters, sortBy, sortOrder, page, pageSize, enrich]);
+
+  // Client-side filter → sort → paginate over the reactive bulk list.
+  const { bulkAssets, bulkTotal } = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const statusF = Array.isArray(filters.status) ? filters.status[0] : (filters.status as string | undefined);
+    const locationF = Array.isArray(filters.locationId) ? filters.locationId[0] : (filters.locationId as string | undefined);
+
+    const filtered = (allBulkAssets ?? []).filter((b) => {
+      if (b.isActive === false) return false;
+      if (statusF && b.status !== statusF) return false;
+      if (locationF && b.locationId !== locationF) return false;
+      if (q) {
+        const name = modelById.get(b.modelId)?.name?.toLowerCase() ?? "";
+        if (!(b.assetTag.toLowerCase().includes(q) || name.includes(q))) return false;
+      }
+      return true;
+    });
+
+    const dir = sortOrder === "desc" ? -1 : 1;
+    const sorted = [...filtered].sort((a, b) => {
+      const av = sortBy === "model" ? modelById.get(a.modelId)?.name
+        : sortBy === "location" ? locationById.get(a.locationId ?? "")?.name
+        : (a as Record<string, unknown>)[sortBy];
+      const bv = sortBy === "model" ? modelById.get(b.modelId)?.name
+        : sortBy === "location" ? locationById.get(b.locationId ?? "")?.name
+        : (b as Record<string, unknown>)[sortBy];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      return String(av).localeCompare(String(bv), undefined, { sensitivity: "base" }) * dir;
+    });
+
+    const start = (page - 1) * pageSize;
+    return { bulkAssets: sorted.slice(start, start + pageSize).map(enrich), bulkTotal: sorted.length };
+  }, [allBulkAssets, modelById, locationById, search, filters, sortBy, sortOrder, page, pageSize, enrich]);
+
+  const isLoading = view === "serialized" ? allAssets === undefined : allBulkAssets === undefined;
+  const total = view === "serialized" ? serializedTotal : bulkTotal;
 
   const clearSelection = () => {
     setSelectedIds(new Set());

@@ -206,6 +206,37 @@ export async function getAsset(id: string) {
   }));
 }
 
+/**
+ * Primary photos for the reactive registry table (cross-domain — asset_media /
+ * model_media / file_upload all live in Prisma). Returns two maps: per-assetId
+ * (the asset's own primary photo) and per-modelId (the model's primary photo,
+ * used as a fallback). The reactive table subscribes to assets/bulkAssets via
+ * Convex and merges these (non-reactive) photos in: photo = assetPhotos[a.id] ??
+ * modelPhotos[a.modelId]. Model name / category / location resolve from the
+ * Convex models/categories/locations the table already loads.
+ */
+export async function getAssetRegistryPhotos(): Promise<{
+  assetPhotos: Record<string, { url: string | null; thumbnailUrl: string | null }>;
+  modelPhotos: Record<string, { url: string | null; thumbnailUrl: string | null }>;
+}> {
+  const { organizationId } = await getOrgContext();
+  const [assetMedia, modelMedia] = await Promise.all([
+    prisma.assetMedia.findMany({
+      where: { asset: { organizationId }, type: "PHOTO", isPrimary: true },
+      select: { assetId: true, file: { select: { url: true, thumbnailUrl: true } } },
+    }),
+    prisma.modelMedia.findMany({
+      where: { model: { organizationId }, type: "PHOTO", isPrimary: true },
+      select: { modelId: true, file: { select: { url: true, thumbnailUrl: true } } },
+    }),
+  ]);
+  const assetPhotos: Record<string, { url: string | null; thumbnailUrl: string | null }> = {};
+  const modelPhotos: Record<string, { url: string | null; thumbnailUrl: string | null }> = {};
+  for (const m of assetMedia) assetPhotos[m.assetId] = { url: m.file?.url ?? null, thumbnailUrl: m.file?.thumbnailUrl ?? null };
+  for (const m of modelMedia) modelPhotos[m.modelId] = { url: m.file?.url ?? null, thumbnailUrl: m.file?.thumbnailUrl ?? null };
+  return serialize({ assetPhotos, modelPhotos });
+}
+
 export async function createAsset(data: AssetFormValues) {
   const { organizationId, userId, userName } = await requirePermission("asset", "create");
   const parsed = assetSchema.parse(data);

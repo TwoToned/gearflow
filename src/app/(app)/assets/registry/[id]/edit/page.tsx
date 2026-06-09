@@ -3,10 +3,7 @@
 import { use, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
-import { getAsset } from "@/server/assets";
-import { getBulkAsset } from "@/server/bulk-assets";
-import { useActiveOrganization } from "@/lib/auth-client";
+import { useAsset, useBulkAsset } from "@/hooks/use-assets";
 import { AssetForm } from "@/components/assets/asset-form";
 import { BulkAssetForm } from "@/components/assets/bulk-asset-form";
 import { FadeIn } from "@/components/ui/motion";
@@ -33,26 +30,16 @@ function EditAssetContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const searchParams = useSearchParams();
   const isBulk = searchParams.get("type") === "bulk";
-  const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
 
-  const assetQuery = useQuery({
-    queryKey: ["asset", orgId, id],
-    queryFn: () => getAsset(id),
-    enabled: !isBulk,
-  });
+  // Reactive asset/bulk straight from Convex — the edit forms only need scalar
+  // fields (no cross-domain composition), so a pure useQuery subscription suffices.
+  const asset = useAsset(isBulk ? undefined : id);
+  const ba = useBulkAsset(isBulk ? id : undefined);
 
-  const bulkQuery = useQuery({
-    queryKey: ["bulk-asset", orgId, id],
-    queryFn: () => getBulkAsset(id),
-    enabled: isBulk,
-  });
-
-  const isLoading = isBulk ? bulkQuery.isLoading : assetQuery.isLoading;
+  const isLoading = isBulk ? ba === undefined : asset === undefined;
   if (isLoading) return <div className="t-body text-fg-3">Loading...</div>;
 
   if (isBulk) {
-    const ba = bulkQuery.data;
     if (!ba) return <div className="t-body text-fg-3">Bulk asset not found.</div>;
 
     const initialData: BulkAssetFormValues & { id: string } = {
@@ -97,10 +84,9 @@ function EditAssetContent({ params }: { params: Promise<{ id: string }> }) {
     );
   }
 
-  const asset = assetQuery.data;
   if (!asset) return <div className="t-body text-fg-3">Asset not found.</div>;
 
-  const formatDateForInput = (date: Date | string | null | undefined) => {
+  const formatDateForInput = (date: Date | string | number | null | undefined) => {
     if (!date) return undefined;
     const d = new Date(date);
     return d;

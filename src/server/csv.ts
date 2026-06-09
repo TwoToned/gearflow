@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { mirrorAssetCreate, patchAssetInConvex } from "@/lib/asset-mirror";
+import { attachSupplier, getSuppliersByOrg } from "@/lib/suppliers-read";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
@@ -95,15 +96,16 @@ export async function exportModelsCSV() {
 export async function exportAssetsCSV() {
   const { organizationId } = await getOrgContext();
 
-  const assets = await prisma.asset.findMany({
+  const assetRows = await prisma.asset.findMany({
     where: { organizationId, isActive: true },
     include: {
       model: { include: { category: true } },
       location: true,
-      supplier: true,
     },
     orderBy: { assetTag: "asc" },
   });
+  // Supplier lives in Convex — attach instead of a Prisma join.
+  const assets = await attachSupplier(organizationId, assetRows);
 
   const headers = [
     "assetTag",
@@ -350,7 +352,8 @@ export async function importAssetsCSV(csvContent: string): Promise<ImportResult>
   const locations = await prisma.location.findMany({ where: { organizationId } });
   const locationMap = new Map(locations.map((l) => [l.name.toLowerCase(), l.id]));
 
-  const suppliers = await prisma.supplier.findMany({ where: { organizationId } });
+  // Suppliers live in Convex — read the name→id map from there.
+  const suppliers = await getSuppliersByOrg(organizationId);
   const supplierMap = new Map(suppliers.map((s) => [s.name.toLowerCase(), s.id]));
 
   // Get next asset tag counter for auto-assignment

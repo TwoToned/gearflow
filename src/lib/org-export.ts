@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getFromS3 } from "@/lib/storage";
 import { getClientsByOrg } from "@/lib/clients-read";
+import { getSuppliersByOrg } from "@/lib/suppliers-read";
 import { MANIFEST_VERSION, type OrgExportManifest } from "./org-transfer-types";
 import { ZipArchive } from "archiver";
 import { PassThrough } from "stream";
@@ -78,7 +79,10 @@ export async function exportOrganization(orgId: string) {
     prisma.customRole.findMany({ where: { organizationId: orgId } }),
     prisma.category.findMany({ where: { organizationId: orgId } }),
     prisma.location.findMany({ where: { organizationId: orgId } }),
-    prisma.supplier.findMany({ where: { organizationId: orgId } }),
+    // Suppliers live in Convex now — strip the Convex meta fields (_id/_creationTime).
+    getSuppliersByOrg(orgId).then((ss) =>
+      ss.map(({ _id, _creationTime, ...s }) => { void _id; void _creationTime; return s; }),
+    ),
     prisma.model.findMany({ where: { organizationId: orgId } }),
     prisma.asset.findMany({ where: { organizationId: orgId } }),
     prisma.bulkAsset.findMany({ where: { organizationId: orgId } }),

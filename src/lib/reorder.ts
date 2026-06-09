@@ -14,6 +14,7 @@ import { prisma } from "@/lib/prisma";
 import { createId } from "@paralleldrive/cuid2";
 import { syncBulkAssetsToConvex } from "@/lib/asset-mirror";
 import { syncSupplierOrderToConvex } from "@/lib/sub-hire-mirror";
+import { getSupplierById } from "@/lib/suppliers-read";
 
 export interface ReorderCandidate {
   bulkAssetId: string;
@@ -108,12 +109,9 @@ export async function createReorderDraftCore(
     throw new Error("At least one line item is required");
   }
 
-  // Verify supplier belongs to org
-  const supplier = await prisma.supplier.findFirst({
-    where: { id: supplierId, organizationId },
-    select: { id: true },
-  });
-  if (!supplier) {
+  // Verify supplier belongs to org (suppliers live in Convex now).
+  const supplier = await getSupplierById(supplierId);
+  if (!supplier || supplier.organizationId !== organizationId) {
     throw new Error("Supplier not found");
   }
 

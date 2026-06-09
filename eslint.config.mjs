@@ -1,7 +1,18 @@
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
+import reactHooks from "eslint-plugin-react-hooks";
 
 const eslintConfig = [
+  {
+    plugins: { "react-hooks": reactHooks },
+  },
+  // eslint-config-next sets `react.version: "detect"`, but eslint-plugin-react
+  // 7.37.5's auto-detection calls `context.getFilename()`, which ESLint 10
+  // removed — crashing the lint with "getFilename is not a function". Pin an
+  // explicit version so detection never runs.
+  {
+    settings: { react: { version: "19" } },
+  },
   ...nextVitals,
   ...nextTs,
   // Override default ignores of eslint-config-next.

@@ -1,0 +1,83 @@
+# Self-hosted Convex backend + dashboard for GearFlow.
+#
+# This is the Phase 0 infrastructure for the Convex hybrid migration
+# (see docs/designs/convex-hybrid-migration.md). It runs alongside the existing
+# GearFlow stack and points at a SEPARATE database (gearflow_convex) on the SAME
+# PostgreSQL instance that Prisma uses — the two never share tables.
+#
+# Adapted from the upstream reference compose:
+#   https://github.com/get-convex/convex-backend/blob/main/self-hosted/docker/docker-compose.yml
+#
+# Quick start:
+#   1. cp .env.convex.example .env.convex.local   # then fill in INSTANCE_SECRET + S3 creds
+#   2. Ensure the gearflow_convex database exists:
+#        psql -h localhost -U postgres -c "CREATE DATABASE gearflow_convex;"
+#   3. docker compose -f docker-compose.convex.yml up -d
+#   4. docker compose -f docker-compose.convex.yml exec backend ./generate_admin_key.sh
+#   5. Put the URL + admin key in .env.local (gitignored), then: npx convex dev
+#
+# Images are PINNED to release precompiled-2026-06-03-7eff2e7. Bump deliberately;
+# :latest drifts ahead of tagged releases.
+
+# Fixed project name so the stack is one-per-machine (stable container names),
+# independent of which git worktree directory it's launched from.
+name: gearflow-convex
+
+services:
+  backend:
+    image: ghcr.io/get-convex/convex-backend:7eff2e7c87f3f9dd9e513c253ae8987e7f90345e
+    stop_grace_period: 10s
+    stop_signal: SIGINT
+    ports:
+      - "${CONVEX_PORT:-3210}:3210"        # backend / client API
+      - "${CONVEX_SITE_PROXY_PORT:-3211}:3211"  # HTTP actions
+    volumes:
+      - convex_data:/convex/data
+    # Linux: the backend container reaches the host's PostgreSQL (and MinIO) via
+    # host.docker.internal, which is not defined by default on Linux. Map it to
+    # the docker bridge gateway. (Docker Desktop on macOS/Windows already
+    # provides this, but the mapping is harmless there.)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env.convex.local
+    environment:
+      - INSTANCE_NAME=${CONVEX_INSTANCE_NAME:-gearflow-convex}
+      # Origins the backend advertises to clients. For non-localhost deploys,
+      # override these in .env.convex.local with the public URLs.
+      - CONVEX_CLOUD_ORIGIN=${CONVEX_CLOUD_ORIGIN:-http://127.0.0.1:${CONVEX_PORT:-3210}}
+      - CONVEX_SITE_ORIGIN=${CONVEX_SITE_ORIGIN:-http://127.0.0.1:${CONVEX_SITE_PROXY_PORT:-3211}}
+      # Lower default document retention to 2 days (upstream default).
+      - DOCUMENT_RETENTION_DELAY=${DOCUMENT_RETENTION_DELAY:-172800}
+      - DISABLE_BEACON=${DISABLE_BEACON:-true}
+      - DISABLE_METRICS_ENDPOINT=${DISABLE_METRICS_ENDPOINT:-true}
+      - RUST_LOG=${RUST_LOG:-info}
+      # --- The following are supplied by .env.convex.local (see the example) ---
+      #   INSTANCE_SECRET            64-char hex, generate with: openssl rand -hex 32
+      #   POSTGRES_URL               conn string WITHOUT db name or query params
+      #   DO_NOT_REQUIRE_SSL         set to 1 for a local Postgres without TLS
+      #   AWS_REGION / AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
+      #   S3_ENDPOINT_URL            MinIO / S3-compatible endpoint
+      #   AWS_S3_FORCE_PATH_STYLE    required for MinIO
+      #   S3_STORAGE_*_BUCKET        file/exports/modules/search/snapshot buckets
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3210/version"]
+      interval: 5s
+      start_period: 10s
+      timeout: 5s
+      retries: 10
+
+  dashboard:
+    image: ghcr.io/get-convex/convex-dashboard:7eff2e7c87f3f9dd9e513c253ae8987e7f90345e
+    stop_grace_period: 10s
+    stop_signal: SIGINT
+    ports:
+      - "${CONVEX_DASHBOARD_PORT:-6791}:6791"
+    environment:
+      - NEXT_PUBLIC_DEPLOYMENT_URL=${CONVEX_CLOUD_ORIGIN:-http://127.0.0.1:${CONVEX_PORT:-3210}}
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  convex_data:

@@ -144,6 +144,35 @@ stays in Prisma per Phase 6).
 > generated — they're added by hand per domain as Phases 3–4 cut each domain over
 > (report-style queries stay as server actions that call these + post-process).
 
+## Phase 3 — Server-action integration (in progress: Clients pilot)
+
+Pilot domain: **Clients** (chosen as the simplest), strategy: **one-time backfill,
+Convex source-of-truth**. Groundwork landed:
+- [`src/lib/convex-client.ts`](../src/lib/convex-client.ts) — server-side
+  `ConvexHttpClient` for actions/scripts to call the public Convex functions
+  (no token; they're unauthed) + `toConvexDoc` mapping (Date→ms, Decimal→number,
+  null→absent).
+- [`scripts/convex-backfill-clients.ts`](../scripts/convex-backfill-clients.ts)
+  (`pnpm convex:backfill:clients`) — idempotent Prisma→Convex copy. Ran clean,
+  6/6 clients mirrored.
+
+### ⚠️ Finding: "simplest" domain is relationally coupled
+
+Before cutting writes over, an audit found `prisma.client` is read/written
+**directly in 8+ files** beyond `src/server/clients.ts` (WooCommerce order sync,
+dashboard `reports`, `tags`, org import/export, `client-media`) **and pulled via
+Prisma relational joins** (`include: { client }`) in ~6 more (`projects`,
+`dashboard`, `calendar` feed, `availability`, `permissions`, `woocommerce`).
+
+A hard cutover ("stop writing Prisma `client`, Convex is source of truth") would
+leave every one of those reading a **stale** table, and — since Convex has no
+joins — each `project→client` join must be rewired to a separate Convex fetch +
+compose. So even the simplest domain's cutover is a ~14-file, careful change, not
+a mechanical swap. This is the relational-coupling risk the design doc flags, and
+it argues for **dual-write** (mirror Client writes to both stores during the
+transition so the relational readers keep working) over a hard cutover — pending
+a decision. The backfill + server client above are reusable under either path.
+
 ## Migration phases (roadmap)
 
 | Phase | Scope | Verification |
@@ -151,7 +180,7 @@ stays in Prisma per Phase 6).
 | **0 Infra** ✅ | Docker stack, empty schema, provider, env | dashboard up, `convex dev` connects |
 | **1 Schema** ✅ | 95 models + 65 enums → `defineTable()` | deployed clean, typechecks, tests green |
 | **2 Thin CRUD** ✅ | 81 tables × 5 = 405 functions | deployed, typechecks, CRUD round-trip verified |
-| 3 Server actions | 86 `"use server"` files call Convex | data appears in Convex on action |
+| **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients pilot) | infra + backfill done; cutover strategy pending (see finding above) |
 | 4 Frontend | 177 React Query sites → Convex `useQuery` | components auto-update on mutation |
 | 5 Auth bridge | Better Auth → Convex JWT (admin key meanwhile) | mutations rejected without auth |
 | 6 Decommission | Remove React Query + SSE event bus | [FEATUREDOCS/53](./53-realtime-sync.md) marked superseded |

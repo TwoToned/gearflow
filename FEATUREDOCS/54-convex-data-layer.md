@@ -763,14 +763,46 @@ registry, kit list, and the config/library domains; the deep cross-domain
 compositions (equipment editor, dashboards, PDF pipeline) remain Prisma reads
 until decommission.
 
-**Still ahead (post-central-graph):** deferred crew scheduling/timesheet
-sub-tables (crew_assignment / crew_shift / crew_availability / crew_certification /
-crew_time_entry — their Convex CRUD exists; they reference project via
-crew_assignment.projectId and were scoped out of step 6); Phase 5 (auth bridge);
-Phase 6 (decommission — rewire the deferred cross-domain Prisma joins off the
-mirror, tear out the SSE/EventEmitter system, and run a clean truncate+backfill to
-clear any regenerate-orphaned sub-hire line-item rows). The Clients hard-cutover
-latent FK bug (`project.clientId` → net-new Convex-only client) also remains.
+### Crew scheduling / timesheet sub-tables — DONE (infra-only) — DUAL-WRITE SURFACE COMPLETE
+
+`crew_assignment`, `crew_shift`, `crew_availability`, `crew_certification`,
+`crew_time_entry` — the project-coupled, cascade-child layer of the crew domain
+(the roster trio role/member/skill was migrated earlier in `crew-mirror.ts`) — are
+**dual-written infra-only** (no Phase 4; composed only inside project-joining and
+member-detail views that stay on Prisma reads). With these wired, the **entire
+dual-write surface is finished** — every Convex-mirrored table is now kept current.
+
+- **Mirror**: [`src/lib/crew-scheduling-mirror.ts`](../src/lib/crew-scheduling-mirror.ts)
+  — generic create/patch/remove per table (relation-strip + tolerant remove) +
+  `syncCrewAssignmentToConvex(id)` / `…ForProjectToConvex` / `…ForServiceToConvex`
+  (re-read head + shifts + time-entries and upsert — the workhorse for multi-row
+  writes and shift regeneration) + `syncCrewTimeEntriesToConvex(ids)` for the
+  submit/approve `updateMany`s.
+- **Cascade handling** (Convex has no FK cascade): the delete paths snapshot the
+  descendant ids from Prisma BEFORE the cascading delete (`snapshotAssignmentCascade`
+  / `snapshotServiceCrew` / `snapshotProjectCrew` / `snapshotCrewMemberCascade`),
+  then `removeCrewAssignmentCascadeFromConvex` / `removeCrewMemberCascadeFromConvex`
+  AFTER commit. Removes are tolerant of rows missing from Convex (pre-dual-write data).
+- **Write sites** (8 files): crew-assignments.ts (create/update/status/delete +
+  shift generate/update/delete — `generateShifts` drops the regenerated-orphaned
+  shifts then re-syncs), crew-availability.ts (add/remove), crew.ts
+  (cert add/remove + `deleteCrewMember` cascade), crew-time.ts
+  (create/update/delete + submit/approve/dispute), crew-communication.ts
+  (`sendCrewOffer`), `app/api/crew/respond/[token]` (accept/decline),
+  project-services.ts (create/update/delete service crew reconcile +
+  `updateServiceCrewStatus` + `cloneServicesFromProject`), projects.ts
+  (`deleteProject` cascade), org-import.ts (all 5 creates).
+- **Clear-to-null caveat** applies (nullable FK→null is a no-op in Convex);
+  tolerable for a consumer-less mirror, heals on a backfill run.
+- **Backfill**: `pnpm convex:backfill:crew-scheduling` (12 rows = 9 assignments +
+  3 certifications; P==C, idempotent re-run verified).
+
+**Still ahead (post-central-graph):** ~~deferred crew scheduling/timesheet
+sub-tables~~ **DONE** (see "Crew scheduling / timesheet sub-tables" above — the
+dual-write surface is now complete); Phase 5 (auth bridge); Phase 6 (decommission —
+rewire the deferred cross-domain Prisma joins off the mirror, tear out the
+SSE/EventEmitter system, and run a clean truncate+backfill to clear any
+regenerate-orphaned sub-hire line-item rows).
 
 ## Remaining work & session sizing (post-central-graph)
 
@@ -778,11 +810,10 @@ The central graph is fully dual-written. What's left, with honest per-item effor
 estimates (validated against this session's pace of ~1 domain per ~hour for
 mechanical dual-write, much slower for design/security/teardown work):
 
-1. **Deferred crew scheduling/timesheet sub-tables** — `crew_assignment`,
-   `crew_shift`, `crew_availability`, `crew_certification`, `crew_time_entry`.
-   Convex CRUD already exists; project-coupled (cascade children of the project
-   graph). Pure mechanical dual-write playbook (mirror + backfill + wire writes +
-   verify). **Size: ~half a session.** Finishes the entire dual-write surface.
+1. ~~**Deferred crew scheduling/timesheet sub-tables**~~ — **DONE.**
+   `crew_assignment`, `crew_shift`, `crew_availability`, `crew_certification`,
+   `crew_time_entry` are now dual-written (see the section above). The entire
+   dual-write surface is complete.
 2. **Clients hard-cutover latent FK bug** — `project.clientId` → a net-new
    Convex-only client FK-fails, because Clients was hard-cutover but the Prisma
    `project.clientId` FK is still live. Fix: either dual-write a minimal Prisma
@@ -817,7 +848,7 @@ sessions.
 | **0 Infra** ✅ | Docker stack, empty schema, provider, env | dashboard up, `convex dev` connects |
 | **1 Schema** ✅ | 95 models + 65 enums → `defineTable()` | deployed clean, typechecks, tests green |
 | **2 Thin CRUD** ✅ | 81 tables × 5 = 405 functions | deployed, typechecks, CRUD round-trip verified |
-| **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets + file_upload + crew + doc/service-template + **Kit** + **Asset/Bulk** + **project_category/group** + **project_line_item** + **sub_hire/supplier_order families** + **project (infra-only)** dual-write done — CENTRAL GRAPH COMPLETE) | per-domain backfill + cutover; tsc/tests/build green each |
+| **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets + file_upload + crew + doc/service-template + **Kit** + **Asset/Bulk** + **project_category/group** + **project_line_item** + **sub_hire/supplier_order families** + **project** + **crew scheduling sub-tables (infra-only)** dual-write done — CENTRAL GRAPH COMPLETE + DUAL-WRITE SURFACE COMPLETE) | per-domain backfill + cutover; tsc/tests/build green each |
 | **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields + crew + **Kit** + **Asset/Bulk registry** done) | table/dropdown/edit live-update on mutation |
 | 5 Auth bridge | Better Auth → Convex JWT (admin key meanwhile) | mutations rejected without auth |
 | 6 Decommission | Remove React Query + SSE event bus | [FEATUREDOCS/53](./53-realtime-sync.md) marked superseded |

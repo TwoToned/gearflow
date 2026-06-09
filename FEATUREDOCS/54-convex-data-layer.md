@@ -193,6 +193,35 @@ round-trip. **Still TODO for the Clients domain**: Phase 4 (convert the client
 React Query `useQuery` sites to Convex `useQuery` for real-time) — the data is
 already in Convex, this is the reactive-reads upgrade.
 
+## Phase 4 — Frontend reactive reads (in progress: Clients done)
+
+The browser now subscribes to the `clients` table directly via Convex `useQuery`,
+so a client create/update/archive (through the server actions) pushes a live
+update to every viewer — no `staleTime`, no manual `invalidateQueries`.
+
+- **Hooks**: [`src/hooks/use-clients.ts`](../src/hooks/use-clients.ts) —
+  `useClients(orgId)` and `useClient(id)`, thin wrappers over
+  `useQuery(api.clients.*)`. (In `src/hooks`, NOT `convex/`, so the Convex
+  function bundler never sees the React import.)
+- **Converted sites**:
+  - `clients/[id]/edit/page.tsx` → `useClient(id)` (form only needs client fields).
+  - `components/projects/project-form.tsx` client dropdown → `useClients(orgId)`
+    (a client added in the quick-create dialog now appears instantly).
+  - `components/clients/client-table.tsx` → `useClients(orgId)` + **client-side**
+    search / type-filter / sort / pagination over the reactive list. Project
+    counts are cross-domain (projects still in Prisma) so they come from a
+    separate, non-reactive `getClientProjectCounts()` server query, merged in.
+- **Left on server actions (intentional)**:
+  - `clients/[id]/page.tsx` detail view — composes projects + media (cross-domain,
+    still Prisma), so a pure Convex `useQuery` is insufficient; its client data is
+    already sourced from Convex via `getClient`.
+  - `quick-create-client.tsx` and all forms — **writes** stay in server actions
+    (permissions/validation/`logActivity`); the Convex-subscribed lists react to
+    them automatically.
+
+Writes still flow browser → server action → Convex (admin-less HTTP). Direct
+browser → Convex mutations are Phase 5+ (auth bridge) material.
+
 ## Migration phases (roadmap)
 
 | Phase | Scope | Verification |
@@ -201,7 +230,7 @@ already in Convex, this is the reactive-reads upgrade.
 | **1 Schema** ✅ | 95 models + 65 enums → `defineTable()` | deployed clean, typechecks, tests green |
 | **2 Thin CRUD** ✅ | 81 tables × 5 = 405 functions | deployed, typechecks, CRUD round-trip verified |
 | **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients pilot) | infra + backfill done; cutover strategy pending (see finding above) |
-| 4 Frontend | 177 React Query sites → Convex `useQuery` | components auto-update on mutation |
+| **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients done) | client table/dropdown/edit live-update on mutation |
 | 5 Auth bridge | Better Auth → Convex JWT (admin key meanwhile) | mutations rejected without auth |
 | 6 Decommission | Remove React Query + SSE event bus | [FEATUREDOCS/53](./53-realtime-sync.md) marked superseded |
 

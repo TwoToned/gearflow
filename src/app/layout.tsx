@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { DM_Sans, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/providers/theme-provider";
+import { ConvexClientProvider } from "@/components/providers/convex-provider";
 import { QueryProvider } from "@/components/providers/query-provider";
 import { GoogleMapsProvider } from "@/components/providers/google-maps-provider";
 import { GlobalErrorBoundary } from "@/components/error-boundary";
@@ -71,11 +72,13 @@ export default function RootLayout({
           <OverlayLockReset />
           <ThemeProvider>
             <GoogleMapsProvider>
-              <QueryProvider>
-                <RealtimeProvider>
-                  <ReducedMotionProvider>{children}</ReducedMotionProvider>
-                </RealtimeProvider>
-              </QueryProvider>
+              <ConvexClientProvider>
+                <QueryProvider>
+                  <RealtimeProvider>
+                    <ReducedMotionProvider>{children}</ReducedMotionProvider>
+                  </RealtimeProvider>
+                </QueryProvider>
+              </ConvexClientProvider>
             </GoogleMapsProvider>
           </ThemeProvider>
           <Toaster />

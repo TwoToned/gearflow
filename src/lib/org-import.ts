@@ -207,9 +207,9 @@ export async function importOrganization(
     });
   }
 
-  // ── 2. Categories (hierarchical) ─────────────────────────────────
+  // ── 2. Categories (hierarchical; dual-written: Prisma FK anchor + Convex doc) ──
   await insertWithHierarchy("category", manifest.categories as Rec[], async (r, id) => {
-    await prisma.category.create({
+    const created = await prisma.category.create({
       data: {
         ...stripRelations(r),
         id,
@@ -219,6 +219,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await getConvexClient().mutation(api.categories.create, toConvexDoc(created) as any);
   });
 
   // ── 3. Locations (hierarchical; dual-written: Prisma FK anchor + Convex doc) ──

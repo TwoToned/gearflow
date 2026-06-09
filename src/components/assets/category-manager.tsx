@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -9,7 +9,8 @@ import { toast } from "sonner";
 
 import { categorySchema, type CategoryFormValues } from "@/lib/validations/category";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { getCategories, createCategory, updateCategory, deleteCategory } from "@/server/categories";
+import { getCategoryCounts, createCategory, updateCategory, deleteCategory } from "@/server/categories";
+import { useCategories } from "@/hooks/use-categories";
 import { getOrgTags } from "@/server/tags";
 import { TagInput } from "@/components/ui/tag-input";
 import { Button } from "@/components/ui/button";
@@ -37,10 +38,35 @@ export function CategoryManager() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: categories = [], isLoading } = useQuery({
-    queryKey: ["categories", orgId],
-    queryFn: () => getCategories(),
+  // Reactive category list straight from Convex (auto-updates on any category
+  // create/update/delete). Model/kit counts are cross-domain (still in Prisma) so
+  // they come from a separate, non-reactive server query; children counts are
+  // derived from the flat reactive list itself.
+  const allCategories = useCategories(orgId);
+  const { data: categoryCounts } = useQuery({
+    queryKey: ["category-counts", orgId],
+    queryFn: () => getCategoryCounts(),
+    enabled: !!orgId,
   });
+  const isLoading = allCategories === undefined;
+
+  const categories = useMemo(() => {
+    const source = allCategories ?? [];
+    const childCount = new Map<string, number>();
+    for (const c of source) if (c.parentId) childCount.set(c.parentId, (childCount.get(c.parentId) ?? 0) + 1);
+    const sorted = [...source].sort((a, b) => {
+      const so = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+      return so !== 0 ? so : a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    });
+    return sorted.map((c) => ({
+      ...c,
+      _count: {
+        models: categoryCounts?.[c.id]?.models ?? 0,
+        kits: categoryCounts?.[c.id]?.kits ?? 0,
+        children: childCount.get(c.id) ?? 0,
+      },
+    }));
+  }, [allCategories, categoryCounts]);
 
   const { data: orgTags } = useQuery({
     queryKey: ["org-tags", orgId],
@@ -98,12 +124,12 @@ export function CategoryManager() {
 
   function openEdit(cat: typeof categories[0]) {
     setEditingId(cat.id);
-    setParentId(cat.parentId);
+    setParentId(cat.parentId ?? null);
     form.reset({
       name: cat.name,
       description: cat.description || "",
       icon: cat.icon || "",
-      sortOrder: cat.sortOrder,
+      sortOrder: cat.sortOrder ?? 0,
       tags: cat.tags ?? [],
     });
     setDialogOpen(true);

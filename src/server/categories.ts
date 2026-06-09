@@ -1,10 +1,38 @@
 "use server";
 
+import { type FunctionArgs } from "convex/server";
 import { prisma } from "@/lib/prisma";
+import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { categorySchema, type CategoryFormValues } from "@/lib/validations/category";
 import { logActivity } from "@/lib/activity-log";
+
+// Categories are DUAL-WRITTEN: every create/update/delete writes the Prisma
+// `category` row (the durable FK anchor — model.categoryId + kit.categoryId carry
+// a live nullable FK, plus the self-referential parentId) AND the Convex
+// `categories` doc (the reactive read source). Prisma is written first; the Convex
+// payload is derived from the written row via toConvexDoc so the two can't drift.
+// Cross-domain joins + the category dropdowns in cross-domain-composing forms stay
+// on the always-fresh Prisma mirror and migrate at decommission. See FEATUREDOCS/54.
+
+/** Mirror a freshly written Prisma category row into Convex (create). */
+async function mirrorCategoryToConvex(row: Record<string, unknown>) {
+  await getConvexClient().mutation(
+    api.categories.create,
+    toConvexDoc(row) as FunctionArgs<typeof api.categories.create>,
+  );
+}
+
+/** Mirror an updated Prisma category row into Convex (patch, id stripped). */
+async function patchCategoryInConvex(id: string, row: Record<string, unknown>) {
+  const { id: _id, ...patch } = toConvexDoc(row);
+  await getConvexClient().mutation(api.categories.update, {
+    id,
+    patch: patch as FunctionArgs<typeof api.categories.update>["patch"],
+  });
+}
 
 export async function getCategories() {
   const { organizationId } = await getOrgContext();
@@ -51,6 +79,26 @@ export async function getCategory(id: string) {
 
   if (!category) throw new Error("Category not found");
   return serialize(category);
+}
+
+/**
+ * Per-category model + kit counts (categoryId -> counts). Cross-domain: models
+ * and kits still live in Prisma, so this can't come from Convex. Used by the
+ * reactive category manager, which subscribes to the category list via Convex and
+ * merges these (non-reactive) counts in. (Children counts are derived client-side
+ * from the reactive list itself.)
+ */
+export async function getCategoryCounts(): Promise<Record<string, { models: number; kits: number }>> {
+  const { organizationId } = await getOrgContext();
+  const [modelGroups, kitGroups] = await Promise.all([
+    prisma.model.groupBy({ by: ["categoryId"], where: { organizationId, categoryId: { not: null } }, _count: { _all: true } }),
+    prisma.kit.groupBy({ by: ["categoryId"], where: { organizationId, categoryId: { not: null } }, _count: { _all: true } }),
+  ]);
+  const counts: Record<string, { models: number; kits: number }> = {};
+  const ensure = (id: string) => (counts[id] ??= { models: 0, kits: 0 });
+  for (const g of modelGroups) if (g.categoryId) ensure(g.categoryId).models = g._count._all;
+  for (const g of kitGroups) if (g.categoryId) ensure(g.categoryId).kits = g._count._all;
+  return serialize(counts);
 }
 
 export async function getCategoryTree() {
@@ -176,6 +224,7 @@ export async function createCategory(data: CategoryFormValues) {
       organizationId,
     },
   });
+  await mirrorCategoryToConvex(result);
 
   await logActivity({
     organizationId,
@@ -201,6 +250,7 @@ export async function updateCategory(id: string, data: CategoryFormValues) {
       parentId: parsed.parentId || null,
     },
   });
+  await patchCategoryInConvex(id, updated);
 
   await logActivity({
     organizationId,
@@ -228,6 +278,7 @@ export async function deleteCategory(id: string) {
   if (category._count.models > 0) throw new Error("Cannot delete category with models");
 
   await prisma.category.delete({ where: { id, organizationId } });
+  await getConvexClient().mutation(api.categories.remove, { id });
 
   await logActivity({
     organizationId,

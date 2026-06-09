@@ -144,7 +144,16 @@ stays in Prisma per Phase 6).
 > generated — they're added by hand per domain as Phases 3–4 cut each domain over
 > (report-style queries stay as server actions that call these + post-process).
 
-## Phase 3 — Server-action integration (in progress: Clients pilot)
+## Phase 3 — Server-action integration (in progress: Clients + Suppliers done)
+
+> **Two cutover strategies have emerged.** **Hard cutover** (Clients): Convex is
+> sole source of truth, every Prisma reader rewired — used when nothing else in
+> Prisma holds a hard FK to the table. **Dual-write** (Suppliers): Prisma row kept
+> as the durable FK anchor + Convex as the reactive read source — required when
+> Prisma tables hold **required/Cascade** FKs to the migrating table (you can't
+> orphan them mid-migration). Pick per domain by grepping
+> `pg_constraint` for inbound FKs first.
+
 
 Pilot domain: **Clients** (chosen as the simplest), strategy: **one-time backfill,
 Convex source-of-truth**. Groundwork landed:
@@ -189,11 +198,46 @@ but ordering by them is skipped — a Prisma relation sort would order by the st
 `client` table). Acceptable for the pilot; revisit if needed.
 
 Verified: `tsc` clean, 2185 tests pass, lint 0 errors, backfill 6/6, Convex CRUD
-round-trip. **Still TODO for the Clients domain**: Phase 4 (convert the client
-React Query `useQuery` sites to Convex `useQuery` for real-time) — the data is
-already in Convex, this is the reactive-reads upgrade.
+round-trip. Phase 4 reactive reads for Clients also done (below).
 
-## Phase 4 — Frontend reactive reads (in progress: Clients done)
+### Suppliers cutover — DONE (dual-write: Prisma FK anchor + Convex reactive doc)
+
+Second domain. Unlike Clients, the `supplier` table is referenced by **6 live
+Prisma FK constraints** — `asset`, `bulk_asset` (`preferredSupplierId`),
+`project_line_item`, `sub_hire`, plus **required + Cascade** FKs from
+`supplier_order` and `supplier_model_rate` (both sub-domains that stay in Prisma).
+A Convex-only-writes cutover (the Clients pattern) would make a *newly-created*
+supplier fail those FKs the moment you raise a supplier order / sub-hire against
+it. So Suppliers uses a **dual-write**:
+
+- **Writes** go to **Prisma first** (the durable FK anchor) **then Convex** (the
+  reactive read source). The Convex payload is derived from the just-written
+  Prisma row via `toConvexDoc`, so the two stores can't drift; the idempotent
+  backfill is the heal path if a Convex write ever fails after its Prisma write.
+  `createSupplier` uses an explicit `createId()` cuid shared by both stores.
+  Permissions / validation / `buildChanges` / `logActivity` unchanged. Sites:
+  `server/suppliers.ts` (create/update/delete), `lib/org-import.ts`.
+- **Reads**: the supplier domain's own reactive surfaces read Convex via
+  [`src/lib/suppliers-read.ts`](../src/lib/suppliers-read.ts) (`getSupplierById` /
+  `getSuppliersByOrg` / `getSupplierMap` / `attachSupplier`) and the
+  `use-suppliers` hooks. Backfill: [`scripts/convex-backfill-suppliers.ts`](../scripts/convex-backfill-suppliers.ts)
+  (`pnpm convex:backfill:suppliers`), 3/3 mirrored, idempotent.
+- **Deferred (intentional)**: the ~40 cross-domain `include: { supplier:
+  { select: { name } } }` joins deep inside warehouse / category-slots /
+  sub-hires / line-items / project-categories / the **PDF pipeline**
+  (`build-document-data.ts`) stay on the **dual-write-fresh Prisma mirror** — they
+  remain correct (the mirror is never stale) and rewiring the PDF pipeline for a
+  field that's just `name` is gratuitous regression risk. These migrate to Convex
+  attach in the Prisma-decommission phase, when the FKs + mirror drop together.
+  `csv.ts` / `reorder.ts` / `org-export.ts` supplier reads likewise stay on the
+  mirror (org-export reads the Prisma anchor so a backup can't miss an un-healed
+  row).
+
+Verified: `tsc` clean, 2185 tests pass, 0 new lint errors, `pnpm build` green,
+backfill 3/3 + idempotent re-run, live `api.suppliers.list` per-org round-trip
+(Prisma 3 == Convex 3).
+
+## Phase 4 — Frontend reactive reads (in progress: Clients + Suppliers done)
 
 The browser now subscribes to the `clients` table directly via Convex `useQuery`,
 so a client create/update/archive (through the server actions) pushes a live
@@ -222,6 +266,30 @@ update to every viewer — no `staleTime`, no manual `invalidateQueries`.
 Writes still flow browser → server action → Convex (admin-less HTTP). Direct
 browser → Convex mutations are Phase 5+ (auth bridge) material.
 
+### Suppliers reactive reads — DONE
+
+The browser subscribes to the `suppliers` table via Convex `useQuery`, so any
+supplier create/update/delete (through the dual-write server actions) live-updates
+every viewer.
+
+- **Hooks**: [`src/hooks/use-suppliers.ts`](../src/hooks/use-suppliers.ts) —
+  `useSuppliers(orgId)` and `useSupplier(id)`.
+- **Converted sites**:
+  - `components/suppliers/supplier-table.tsx` → `useSuppliers(orgId)` +
+    **client-side** search / `isActive`-filter / sort / pagination. Asset + order
+    counts are cross-domain (Prisma) so they come from a separate, non-reactive
+    `getSupplierCounts()` server query, merged in. (The supplier table shows
+    active **and** archived, filterable — not active-only like the client table.)
+  - Supplier dropdowns → `useSuppliers(orgId)`, **active-only** (matches the old
+    `getSuppliers` `where: { isActive }`): `assets/asset-form.tsx`,
+    `assets/bulk-asset-form.tsx`, `projects/sub-hire-add-form.tsx`,
+    `projects/sub-hire-order-dialog.tsx` (a supplier added via quick-create now
+    appears instantly).
+  - `suppliers/[id]/edit/page.tsx` → `useSupplier(id)` (form needs supplier fields).
+- **Left on server actions (intentional)**: `suppliers/[id]/page.tsx` detail
+  (composes assets + sub-hires + orders, cross-domain) and
+  `suppliers/[id]/orders/new/page.tsx`.
+
 ## Migration phases (roadmap)
 
 | Phase | Scope | Verification |
@@ -229,8 +297,8 @@ browser → Convex mutations are Phase 5+ (auth bridge) material.
 | **0 Infra** ✅ | Docker stack, empty schema, provider, env | dashboard up, `convex dev` connects |
 | **1 Schema** ✅ | 95 models + 65 enums → `defineTable()` | deployed clean, typechecks, tests green |
 | **2 Thin CRUD** ✅ | 81 tables × 5 = 405 functions | deployed, typechecks, CRUD round-trip verified |
-| **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients pilot) | infra + backfill done; cutover strategy pending (see finding above) |
-| **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients done) | client table/dropdown/edit live-update on mutation |
+| **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover, Suppliers dual-write done) | per-domain backfill + cutover; tsc/tests/build green each |
+| **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers done) | table/dropdown/edit live-update on mutation |
 | 5 Auth bridge | Better Auth → Convex JWT (admin key meanwhile) | mutations rejected without auth |
 | 6 Decommission | Remove React Query + SSE event bus | [FEATUREDOCS/53](./53-realtime-sync.md) marked superseded |
 

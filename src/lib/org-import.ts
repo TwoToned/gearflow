@@ -900,10 +900,10 @@ export async function importOrganization(
     });
   }
 
-  // ── 20c. Check items (FEATUREDOCS/37, Track B) ──────────────────
+  // ── 20c. Check items (FEATUREDOCS/37, Track B; dual-written) ─────
   for (const r of (manifest.checkItems ?? []) as Rec[]) {
     const id = newId("checkItem", r.id);
-    await prisma.checkItem.create({
+    const created = await prisma.checkItem.create({
       data: {
         ...stripRelations(r),
         id,
@@ -913,6 +913,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await getConvexClient().mutation(api.checkItems.create, toConvexDoc(created) as any);
   }
   for (const r of (manifest.modelCheckItems ?? []) as Rec[]) {
     const modelId = remap("model", r.modelId);

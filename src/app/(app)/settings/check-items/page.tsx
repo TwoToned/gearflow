@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -20,11 +20,12 @@ import {
 import { toast } from "sonner";
 
 import {
-  getCheckItems,
+  getCheckItemCounts,
   createCheckItem,
   updateCheckItem,
   deleteCheckItem,
 } from "@/server/check-items";
+import { useCheckItems } from "@/hooks/use-check-items";
 import {
   checkItemSchema,
   type CheckItemFormValues,
@@ -99,22 +100,35 @@ export default function CheckItemsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
 
-  const { data: checkItems = [], isLoading } = useQuery({
-    queryKey: ["check-items", orgId],
-    queryFn: () => getCheckItems(),
+  // Reactive check-item library straight from Convex (auto-updates on any
+  // create/update/delete). Usage counts (model assignments + check records) are
+  // cross-domain (still in Prisma) so they come from a separate, non-reactive
+  // server query, merged in below.
+  const allCheckItems = useCheckItems(orgId);
+  const { data: checkItemCounts } = useQuery({
+    queryKey: ["check-item-counts", orgId],
+    queryFn: () => getCheckItemCounts(),
+    enabled: !!orgId,
   });
+  const isLoading = allCheckItems === undefined;
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteCheckItem(id),
     onSuccess: () => {
       toast.success("Check item deleted");
-      queryClient.invalidateQueries({ queryKey: ["check-items", orgId] });
     },
     onError: (e) => toast.error(e.message),
   });
 
-  // Group by category
-  const items = checkItems as Record<string, unknown>[];
+  // Sort by [category, label] (Convex list is unordered) + merge usage counts.
+  const items = useMemo(() => {
+    const source = (allCheckItems ?? []) as Record<string, unknown>[];
+    const sorted = [...source].sort((a, b) => {
+      const ca = ((a.category as string) || "").localeCompare((b.category as string) || "", undefined, { sensitivity: "base" });
+      return ca !== 0 ? ca : (a.label as string).localeCompare(b.label as string, undefined, { sensitivity: "base" });
+    });
+    return sorted.map((i) => ({ ...i, _count: checkItemCounts?.[i.id as string] ?? { modelCheckItems: 0, checkRecords: 0 } })) as Record<string, unknown>[];
+  }, [allCheckItems, checkItemCounts]);
   const filtered = searchQuery
     ? items.filter(
         (i) =>

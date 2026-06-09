@@ -1,7 +1,10 @@
 "use server";
 
+import { type FunctionArgs } from "convex/server";
 import { prisma } from "@/lib/prisma";
-import { requirePermission } from "@/lib/org-context";
+import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
+import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import {
@@ -10,6 +13,31 @@ import {
   reorderModelCheckItemsSchema,
   type ReorderModelCheckItemsValues,
 } from "@/lib/validations/check-item";
+
+// Check items are DUAL-WRITTEN: every create/update/delete writes the Prisma
+// `check_item` row (the durable FK anchor — model_check_item, kit_check_item, and
+// check_record all carry a required + Cascade FK to it) AND the Convex
+// `checkItems` doc (the reactive read source). Prisma is written first; the Convex
+// payload is derived from the written row via toConvexDoc so they can't drift. The
+// model/kit assignment join tables + cross-domain readers stay on the always-fresh
+// Prisma mirror. See FEATUREDOCS/54.
+
+/** Mirror a freshly written Prisma check-item row into Convex (create). */
+async function mirrorCheckItemToConvex(row: Record<string, unknown>) {
+  await getConvexClient().mutation(
+    api.checkItems.create,
+    toConvexDoc(row) as FunctionArgs<typeof api.checkItems.create>,
+  );
+}
+
+/** Mirror an updated Prisma check-item row into Convex (patch, id stripped). */
+async function patchCheckItemInConvex(id: string, row: Record<string, unknown>) {
+  const { id: _id, ...patch } = toConvexDoc(row);
+  await getConvexClient().mutation(api.checkItems.update, {
+    id,
+    patch: patch as FunctionArgs<typeof api.checkItems.update>["patch"],
+  });
+}
 
 // ─── Check Item Library ─────────────────────────────────────────────────────
 
@@ -25,6 +53,25 @@ export async function getCheckItems() {
       orderBy: [{ category: "asc" }, { label: "asc" }],
     })
   );
+}
+
+/**
+ * Per-check-item usage counts (checkItemId -> { modelCheckItems, checkRecords }).
+ * Cross-domain: the assignment + record join tables stay in Prisma, so this can't
+ * come from Convex. Used by the reactive check-item library, which subscribes to
+ * the list via Convex and merges these (non-reactive) counts in.
+ */
+export async function getCheckItemCounts(): Promise<Record<string, { modelCheckItems: number; checkRecords: number }>> {
+  const { organizationId } = await getOrgContext();
+  const [modelGroups, recordGroups] = await Promise.all([
+    prisma.modelCheckItem.groupBy({ by: ["checkItemId"], where: { organizationId }, _count: { _all: true } }),
+    prisma.checkRecord.groupBy({ by: ["checkItemId"], where: { organizationId }, _count: { _all: true } }),
+  ]);
+  const counts: Record<string, { modelCheckItems: number; checkRecords: number }> = {};
+  const ensure = (id: string) => (counts[id] ??= { modelCheckItems: 0, checkRecords: 0 });
+  for (const g of modelGroups) if (g.checkItemId) ensure(g.checkItemId).modelCheckItems = g._count._all;
+  for (const g of recordGroups) if (g.checkItemId) ensure(g.checkItemId).checkRecords = g._count._all;
+  return serialize(counts);
 }
 
 export async function getCheckItem(id: string) {
@@ -63,6 +110,7 @@ export async function createCheckItem(data: CheckItemFormValues) {
       createdById: userId,
     },
   });
+  await mirrorCheckItemToConvex(result);
 
   await logActivity({
     organizationId,
@@ -92,6 +140,7 @@ export async function updateCheckItem(id: string, data: CheckItemFormValues) {
       dropdownOptions: parsed.dropdownOptions as unknown as undefined,
     },
   });
+  await patchCheckItemInConvex(id, result);
 
   await logActivity({
     organizationId,
@@ -135,6 +184,7 @@ export async function deleteCheckItem(id: string) {
   const result = await prisma.checkItem.delete({
     where: { id, organizationId },
   });
+  await getConvexClient().mutation(api.checkItems.remove, { id });
 
   await logActivity({
     organizationId,

@@ -1,6 +1,9 @@
 "use server";
 
+import { type FunctionArgs } from "convex/server";
 import { prisma } from "@/lib/prisma";
+import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { serialize } from "@/lib/serialize";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { modelSchema, type ModelFormValues } from "@/lib/validations/model";
@@ -9,6 +12,32 @@ import { backfillTestTagAssets } from "@/server/test-tag-assets";
 import { getOrgTestTagSettings } from "@/server/settings";
 import { logActivity } from "@/lib/activity-log";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
+
+// Models are DUAL-WRITTEN: every create/update/archive writes the Prisma `model`
+// row (the durable FK anchor — asset/bulk_asset hold a required + Restrict FK;
+// model_media/model_check_item/supplier_model_rate/model_bulk_accessory hold a
+// required + Cascade FK; project_line_item/supplier_order_item/group_template_item/
+// sub_hire_item hold nullable FKs) AND the Convex `models` doc (the reactive read
+// source). Prisma is written first; the Convex payload is derived from the written
+// row via toConvexDoc so the two can't drift. Cross-domain `model.*` joins stay on
+// the always-fresh Prisma mirror and migrate at decommission. See FEATUREDOCS/54.
+
+/** Mirror a freshly written Prisma model row into Convex (create). */
+async function mirrorModelToConvex(row: Record<string, unknown>) {
+  await getConvexClient().mutation(
+    api.models.create,
+    toConvexDoc(row) as FunctionArgs<typeof api.models.create>,
+  );
+}
+
+/** Mirror an updated Prisma model row into Convex (patch, id stripped). */
+async function patchModelInConvex(id: string, row: Record<string, unknown>) {
+  const { id: _id, ...patch } = toConvexDoc(row);
+  await getConvexClient().mutation(api.models.update, {
+    id,
+    patch: patch as FunctionArgs<typeof api.models.update>["patch"],
+  });
+}
 
 const modelFilterColumns: FilterColumnDef[] = [
   { id: "categoryId", filterType: "enum" },
@@ -77,6 +106,32 @@ export async function getModels(params?: {
   return serialize({ models, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
 }
 
+/**
+ * Per-model asset/bulk-asset counts + primary photo (modelId -> meta).
+ * Cross-domain: assets, bulk assets, and model media still live in Prisma, so
+ * this can't come from Convex. Used by the reactive model table, which subscribes
+ * to the model list via Convex and merges these (non-reactive) values in.
+ */
+export async function getModelCounts(): Promise<
+  Record<string, { assets: number; bulkAssets: number; media: { url: string | null; thumbnailUrl: string | null } | null }>
+> {
+  const { organizationId } = await getOrgContext();
+  const [assetGroups, bulkGroups, primaryMedia] = await Promise.all([
+    prisma.asset.groupBy({ by: ["modelId"], where: { organizationId, isActive: true }, _count: { _all: true } }),
+    prisma.bulkAsset.groupBy({ by: ["modelId"], where: { organizationId, isActive: true }, _count: { _all: true } }),
+    prisma.modelMedia.findMany({
+      where: { model: { organizationId }, type: "PHOTO", isPrimary: true },
+      select: { modelId: true, file: { select: { url: true, thumbnailUrl: true } } },
+    }),
+  ]);
+  const out: Record<string, { assets: number; bulkAssets: number; media: { url: string | null; thumbnailUrl: string | null } | null }> = {};
+  const ensure = (id: string) => (out[id] ??= { assets: 0, bulkAssets: 0, media: null });
+  for (const g of assetGroups) if (g.modelId) ensure(g.modelId).assets = g._count._all;
+  for (const g of bulkGroups) if (g.modelId) ensure(g.modelId).bulkAssets = g._count._all;
+  for (const m of primaryMedia) ensure(m.modelId).media = { url: m.file?.url ?? null, thumbnailUrl: m.file?.thumbnailUrl ?? null };
+  return serialize(out);
+}
+
 export async function getModel(id: string) {
   const { organizationId } = await getOrgContext();
   const model = await prisma.model.findUnique({
@@ -143,6 +198,7 @@ export async function createModel(data: ModelFormValues) {
       tags: parsed.tags,
     },
   });
+  await mirrorModelToConvex(model);
 
   if (parsed.requiresTestAndTag) {
     await backfillTestTagAssets();
@@ -200,6 +256,7 @@ export async function updateModel(id: string, data: ModelFormValues) {
       tags: parsed.tags,
     },
   });
+  await patchModelInConvex(id, model);
 
   if (parsed.requiresTestAndTag) {
     await backfillTestTagAssets();
@@ -260,6 +317,7 @@ export async function archiveModel(id: string) {
     where: { id, organizationId },
     data: { isActive: false },
   });
+  await patchModelInConvex(id, archived);
 
   await logActivity({
     organizationId,
@@ -322,7 +380,11 @@ export async function bulkUpdateRates(
     });
   });
 
-  await prisma.$transaction(updates);
+  const updatedRows = await prisma.$transaction(updates);
+  // Mirror each rate change into Convex (the reactive read source).
+  for (const row of updatedRows) {
+    await patchModelInConvex(row.id, row);
+  }
 
   await logActivity({
     organizationId,

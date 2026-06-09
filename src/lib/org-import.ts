@@ -254,7 +254,7 @@ export async function importOrganization(
   // ── 5. Models ────────────────────────────────────────────────────
   for (const r of manifest.models as Rec[]) {
     const id = newId("model", r.id);
-    await prisma.model.create({
+    const created = await prisma.model.create({
       data: {
         ...stripRelations(r),
         id,
@@ -264,6 +264,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await getConvexClient().mutation(api.models.create, toConvexDoc(created) as any);
   }
 
   // ── 6. Kits ──────────────────────────────────────────────────────
@@ -660,7 +661,7 @@ export async function importOrganization(
       const hasImages = r.images?.length && r.images.some((u: string) => urlMap.has(u));
       const hasManuals = r.manuals?.length && r.manuals.some((u: string) => urlMap.has(u));
       if (hasImage || hasImages || hasManuals) {
-        await prisma.model.update({
+        const updated = await prisma.model.update({
           where: { id: newModelId },
           data: {
             ...(hasImage ? { image: remapUrl(r.image) } : {}),
@@ -668,6 +669,8 @@ export async function importOrganization(
             ...(hasManuals ? { manuals: remapUrls(r.manuals) } : {}),
           },
         });
+        const { id: _mid, ...mPatch } = toConvexDoc(updated);
+        await getConvexClient().mutation(api.models.update, { id: newModelId, patch: mPatch as any });
       }
     }
 

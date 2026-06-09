@@ -1,9 +1,28 @@
 "use server";
 
+import { type FunctionArgs } from "convex/server";
 import { prisma } from "@/lib/prisma";
+import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+
+// Model writes in CSV import are dual-written to Convex (the reactive read
+// source) just like the Models server actions — see src/server/models.ts.
+async function mirrorModelCreate(row: Record<string, unknown>) {
+  await getConvexClient().mutation(
+    api.models.create,
+    toConvexDoc(row) as FunctionArgs<typeof api.models.create>,
+  );
+}
+async function mirrorModelPatch(id: string, row: Record<string, unknown>) {
+  const { id: _id, ...patch } = toConvexDoc(row);
+  await getConvexClient().mutation(api.models.update, {
+    id,
+    patch: patch as FunctionArgs<typeof api.models.update>["patch"],
+  });
+}
 import {
   buildModelIndex,
   hasIdentifierColumn,
@@ -268,7 +287,7 @@ export async function importModelsCSV(csvContent: string): Promise<ImportResult>
       });
 
       if (existing) {
-        await prisma.model.update({
+        const updated = await prisma.model.update({
           where: { id: existing.id },
           data: {
             categoryId: data.categoryId ?? existing.categoryId,
@@ -289,14 +308,16 @@ export async function importModelsCSV(csvContent: string): Promise<ImportResult>
             ...(data.tags.length > 0 ? { tags: data.tags } : {}),
           },
         });
+        await mirrorModelPatch(updated.id, updated);
         result.updated++;
       } else {
-        await prisma.model.create({
+        const created = await prisma.model.create({
           data: {
             organizationId,
             ...data,
           },
         });
+        await mirrorModelCreate(created);
         result.created++;
       }
     } catch (e) {
@@ -519,10 +540,11 @@ export async function importModelRatesCSV(csvContent: string): Promise<ImportRes
         data.defaultRentalPrice = parsed.rates.dailyRate;
       }
 
-      await prisma.model.update({
+      const updated = await prisma.model.update({
         where: { id: match.modelId, organizationId },
         data,
       });
+      await mirrorModelPatch(updated.id, updated);
       result.updated++;
     } catch (e) {
       result.errors.push({ row: i + 1, message: e instanceof Error ? e.message : "Unknown error" });

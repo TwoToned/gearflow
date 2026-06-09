@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
+import { getClientById } from "@/lib/clients-read";
 import { serialize } from "@/lib/serialize";
 import { computeOverbookedStatus } from "@/lib/availability";
 import type { Prisma } from "@/generated/prisma/client";
@@ -133,7 +134,6 @@ export async function getProjectForWarehouse(projectId: string) {
   const project = await prisma.project.findUnique({
     where: { id: projectId, organizationId },
     include: {
-      client: true,
       location: true,
       lineItems: {
         where: { type: "EQUIPMENT" },
@@ -202,7 +202,9 @@ export async function getProjectForWarehouse(projectId: string) {
     throw new Error("Cannot perform warehouse operations on a template");
   }
 
-  return serialize(project);
+  // Clients live in Convex — attach instead of a Prisma join.
+  const client = project.clientId ? await getClientById(project.clientId) : null;
+  return serialize({ ...project, client });
 }
 
 export async function lookupAssetForScan(
@@ -1713,7 +1715,6 @@ export async function getProjectPullSheet(projectId: string) {
     where: { id: projectId, organizationId },
     include: {
       location: true,
-      client: true,
       lineItems: {
         where: {
           type: "EQUIPMENT",
@@ -1797,8 +1798,10 @@ export async function getProjectPullSheet(projectId: string) {
     groups[key].push(item);
   }
 
+  // Clients live in Convex — attach instead of a Prisma join.
+  const client = project.clientId ? await getClientById(project.clientId) : null;
   return serialize({
-    project,
+    project: { ...project, client },
     groups,
   });
 }

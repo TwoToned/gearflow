@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/org-context";
+import { getClientById } from "@/lib/clients-read";
 import { serialize } from "@/lib/serialize";
 import { deleteFromS3 } from "@/lib/storage";
 import type { MediaType } from "@/generated/prisma/client";
@@ -14,10 +15,8 @@ export async function addClientMedia(data: {
 }) {
   const { organizationId } = await getOrgContext();
 
-  const client = await prisma.client.findFirst({
-    where: { id: data.clientId, organizationId },
-  });
-  if (!client) throw new Error("Client not found");
+  const client = await getClientById(data.clientId);
+  if (!client || client.organizationId !== organizationId) throw new Error("Client not found");
 
   const file = await prisma.fileUpload.findFirst({
     where: { id: data.fileId, organizationId },

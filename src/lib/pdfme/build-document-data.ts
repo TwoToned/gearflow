@@ -4,6 +4,7 @@
  * plus complex data arrays for custom plugins.
  */
 import { prisma } from "@/lib/prisma";
+import { getClientById } from "@/lib/clients-read";
 import { computeOverbookedStatus } from "@/lib/availability";
 import { getFileAsDataUri } from "@/lib/storage";
 import { formatCurrency, formatDate } from "./plugins/helpers";
@@ -154,10 +155,9 @@ export async function buildDocumentData(
   const docColor = branding?.documentColor || branding?.primaryColor || DEFAULT_DOC_COLOR;
 
   // Load project with deep includes + categories/groups for document structure
-  const project = await prisma.project.findUnique({
+  const projectRow = await prisma.project.findUnique({
     where: { id: projectId, organizationId },
     include: {
-      client: true,
       location: true,
       categories: {
         orderBy: { sortOrder: "asc" },
@@ -214,9 +214,15 @@ export async function buildDocumentData(
     },
   });
 
-  if (!project) {
+  if (!projectRow) {
     throw new Error(`Project ${projectId} not found`);
   }
+
+  // Clients live in Convex — attach instead of a Prisma join.
+  const project = {
+    ...projectRow,
+    client: projectRow.clientId ? await getClientById(projectRow.clientId) : null,
+  };
 
   // Compute overbooking status
   const overbookedMap = await computeOverbookedStatus(

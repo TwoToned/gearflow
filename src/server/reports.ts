@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
+import { getClientsByOrg } from "@/lib/clients-read";
 import { serialize } from "@/lib/serialize";
 import { executeReport, generateCSV } from "@/lib/report-engine";
 import { logActivity } from "@/lib/activity-log";
@@ -34,7 +35,8 @@ export async function getReportsSummary() {
       where: { organizationId, isTemplate: false },
       _count: { status: true },
     }),
-    prisma.client.count({ where: { organizationId, isActive: true } }),
+    // Clients live in Convex now — count active ones there.
+    getClientsByOrg(organizationId).then((cs) => cs.filter((c) => c.isActive ?? true).length),
     prisma.project.findMany({
       where: {
         organizationId,

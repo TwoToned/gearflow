@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getFromS3 } from "@/lib/storage";
+import { getClientsByOrg } from "@/lib/clients-read";
 import { MANIFEST_VERSION, type OrgExportManifest } from "./org-transfer-types";
 import { ZipArchive } from "archiver";
 import { PassThrough } from "stream";
@@ -84,7 +85,10 @@ export async function exportOrganization(orgId: string) {
     prisma.kit.findMany({ where: { organizationId: orgId } }),
     prisma.kitSerializedItem.findMany({ where: { organizationId: orgId } }),
     prisma.kitBulkItem.findMany({ where: { organizationId: orgId } }),
-    prisma.client.findMany({ where: { organizationId: orgId } }),
+    // Clients live in Convex now — strip the Convex meta fields (_id/_creationTime).
+    getClientsByOrg(orgId).then((cs) =>
+      cs.map(({ _id, _creationTime, ...c }) => { void _id; void _creationTime; return c; }),
+    ),
     prisma.project.findMany({ where: { organizationId: orgId } }),
     prisma.projectLineItem.findMany({ where: { organizationId: orgId } }),
     prisma.assetScanLog.findMany({ where: { organizationId: orgId } }),

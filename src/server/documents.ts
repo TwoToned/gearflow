@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/org-context";
+import { getClientById } from "@/lib/clients-read";
 import { serialize } from "@/lib/serialize";
 
 export async function getProjectForDocument(projectId: string) {
@@ -11,10 +12,9 @@ export async function getProjectForDocument(projectId: string) {
     where: { id: organizationId },
   });
 
-  const project = await prisma.project.findUnique({
+  const projectRow = await prisma.project.findUnique({
     where: { id: projectId, organizationId },
     include: {
-      client: true,
       location: true,
       lineItems: {
         where: { status: { not: "CANCELLED" } },
@@ -28,7 +28,13 @@ export async function getProjectForDocument(projectId: string) {
     },
   });
 
-  if (!project) throw new Error("Project not found");
+  if (!projectRow) throw new Error("Project not found");
+
+  // Clients live in Convex — attach instead of a Prisma join.
+  const project = {
+    ...projectRow,
+    client: projectRow.clientId ? await getClientById(projectRow.clientId) : null,
+  };
 
   let orgSettings: Record<string, unknown> = {};
   if (org?.metadata) {

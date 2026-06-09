@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
+import { getClientMap } from "@/lib/clients-read";
 import { locationSchema, type LocationFormValues } from "@/lib/validations/asset";
 import type { Prisma } from "@/generated/prisma/client";
 import { serialize } from "@/lib/serialize";
@@ -112,7 +113,6 @@ export async function getLocation(id: string) {
       projects: {
         orderBy: { createdAt: "desc" },
         take: 20,
-        include: { client: true },
       },
       media: {
         include: { file: true },
@@ -122,7 +122,17 @@ export async function getLocation(id: string) {
     },
   });
   if (!location) return null;
-  return serialize(location);
+
+  // Clients live in Convex — attach to each project instead of a Prisma join.
+  const clientMap = await getClientMap(organizationId);
+  const withClients = {
+    ...location,
+    projects: location.projects.map((p) => ({
+      ...p,
+      client: p.clientId ? clientMap.get(p.clientId) ?? null : null,
+    })),
+  };
+  return serialize(withClients);
 }
 
 export async function createLocation(data: LocationFormValues) {

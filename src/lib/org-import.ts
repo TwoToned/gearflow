@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { prisma } from "@/lib/prisma";
 import { uploadToS3, ensureBucket } from "@/lib/storage";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { MANIFEST_VERSION, type OrgExportManifest } from "./org-transfer-types";
 import { createId } from "@paralleldrive/cuid2";
 import unzipper from "unzipper";
@@ -354,17 +356,31 @@ export async function importOrganization(
     });
   }
 
-  // ── 11. Clients ──────────────────────────────────────────────────
+  // ── 11. Clients (live in Convex) ─────────────────────────────────
   for (const r of manifest.clients as Rec[]) {
     const id = newId("client", r.id);
-    await prisma.client.create({
-      data: {
-        ...stripRelations(r),
-        id,
-        organizationId: newOrgId,
-        createdAt: safeDate(r.createdAt),
-        updatedAt: safeDate(r.updatedAt),
-      } as any,
+    await getConvexClient().mutation(api.clients.create, {
+      id,
+      organizationId: newOrgId,
+      name: String(r.name),
+      type: (r.type as any) ?? "COMPANY",
+      contactName: r.contactName ?? undefined,
+      contactEmail: r.contactEmail ?? undefined,
+      contactPhone: r.contactPhone ?? undefined,
+      billingAddress: r.billingAddress ?? undefined,
+      billingLatitude: r.billingLatitude ?? undefined,
+      billingLongitude: r.billingLongitude ?? undefined,
+      shippingAddress: r.shippingAddress ?? undefined,
+      shippingLatitude: r.shippingLatitude ?? undefined,
+      shippingLongitude: r.shippingLongitude ?? undefined,
+      taxId: r.taxId ?? undefined,
+      paymentTerms: r.paymentTerms ?? undefined,
+      defaultDiscount: r.defaultDiscount ?? undefined,
+      notes: r.notes ?? undefined,
+      tags: (r.tags as string[]) ?? [],
+      isActive: r.isActive ?? true,
+      createdAt: safeDate(r.createdAt).getTime(),
+      updatedAt: safeDate(r.updatedAt).getTime(),
     });
   }
 

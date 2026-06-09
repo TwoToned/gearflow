@@ -106,8 +106,8 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                   <h1 className="t-title text-fg">{client.name}</h1>
                   <StatusIndicator
                     category="clientType"
-                    value={client.type}
-                    label={clientTypeLabels[client.type] || client.type}
+                    value={client.type ?? "COMPANY"}
+                    label={(client.type && clientTypeLabels[client.type]) || client.type || "Company"}
                   />
                   {!client.isActive && <Badge variant="destructive">Archived</Badge>}
                 </div>

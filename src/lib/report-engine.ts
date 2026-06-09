@@ -4,6 +4,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { getClientMap } from "@/lib/clients-read";
 import type {
   ReportConfig,
   ReportResult,
@@ -94,6 +95,33 @@ function buildFilterCondition(filter: FilterConfig): Record<string, unknown> {
 
 // ─── Select/Include builder ──────────────────────────────────────────────────
 
+/**
+ * Attach Convex clients onto report rows (clients no longer join via Prisma).
+ * Handles a direct `client` relation (data source = projects) and a nested
+ * `project.client` relation. Mutates rows in place; no-op when nothing needs it.
+ */
+async function attachClientsToRows(
+  rows: Record<string, unknown>[],
+  organizationId: string,
+): Promise<void> {
+  const needsDirect = rows.some((r) => typeof r.clientId === "string");
+  const needsNested = rows.some(
+    (r) => r.project && typeof (r.project as Record<string, unknown>).clientId === "string",
+  );
+  if (!needsDirect && !needsNested) return;
+
+  const clientMap = await getClientMap(organizationId);
+  for (const row of rows) {
+    if (typeof row.clientId === "string") {
+      row.client = clientMap.get(row.clientId) ?? null;
+    }
+    const proj = row.project as Record<string, unknown> | undefined;
+    if (proj && typeof proj.clientId === "string") {
+      proj.client = clientMap.get(proj.clientId) ?? null;
+    }
+  }
+}
+
 function buildSelectAndInclude(
   columns: ColumnConfig[],
   dataSource: DataSource,
@@ -116,16 +144,20 @@ function buildSelectAndInclude(
     }
   }
 
-  // Build include for data sources that need computed fields or relations
+  // Build include for data sources that need computed fields or relations.
+  // The `client` relation is NOT included from Prisma (clients live in Convex
+  // now — stale Prisma rows). It's attached post-fetch by attachClientsToRows.
   for (const rel of needsRelations) {
     if (rel === "model") {
       include.model = { include: { category: true } };
     } else if (rel === "project") {
-      include.project = { include: { client: true, location: true } };
+      include.project = { include: { location: true } };
     } else if (rel === "crewMember") {
       include.crewMember = true;
     } else if (rel === "crewRole") {
       include.crewRole = true;
+    } else if (rel === "client") {
+      // attached from Convex post-fetch, not via a Prisma join
     } else {
       include[rel] = true;
     }
@@ -218,9 +250,12 @@ function buildOrderBy(config: ReportConfig): Record<string, unknown>[] {
     }
     return obj;
   }).filter((o) => {
-    // Skip computed field sorts - handle in post-processing
+    // Skip computed field sorts - handle in post-processing.
+    // Skip `client` sorts too: clients live in Convex, so a Prisma relation sort
+    // would order by the stale `client` table. Client column VALUES are still
+    // correct (attached from Convex post-fetch); only ordering by them is a no-op.
     const key = Object.keys(o)[0];
-    return !key.startsWith("_");
+    return !key.startsWith("_") && key !== "client";
   });
 }
 
@@ -336,6 +371,7 @@ async function executeGroupedReport(
     where,
     ...(include ? { include } : {}),
   }) as Record<string, unknown>[];
+  await attachClientsToRows(allRows, organizationId);
 
   // Flatten all rows
   const flatRows = allRows.map((row) => flattenRow(row, config.columns));
@@ -650,6 +686,8 @@ export async function executeReport(
   ]);
 
   const rows = rawRows as Record<string, unknown>[];
+  // Clients live in Convex — attach for display (see attachClientsToRows).
+  await attachClientsToRows(rows, organizationId);
 
   // Add computed fields
   await addComputedFields(rows, config, organizationId);

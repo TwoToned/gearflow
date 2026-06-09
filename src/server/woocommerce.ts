@@ -1,7 +1,11 @@
 "use server";
 
 import crypto from "crypto";
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
+import { getConvexClient } from "@/lib/convex-client";
+import { getClientsByOrg, getClientById, type ConvexClient } from "@/lib/clients-read";
+import { api } from "../../convex/_generated/api";
 import { requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
@@ -376,19 +380,21 @@ function generateSecret(): string {
 async function findOrCreateClient(orgId: string, billing: WooOrder["billing"]) {
   const hasCompany = !!billing.company?.trim();
 
+  // Clients live in Convex — fetch the org's clients once and match in memory.
+  const all = await getClientsByOrg(orgId);
+
   // 1. Try exact email match first
   //    But if the order has a company name and the email match is an INDIVIDUAL client,
   //    skip it — we want to create/match a COMPANY client instead.
-  let client = await prisma.client.findFirst({
-    where: { organizationId: orgId, contactEmail: billing.email, isActive: true },
-  });
+  let client: ConvexClient | null =
+    all.find((c) => (c.isActive ?? true) && c.contactEmail === billing.email) ?? null;
   if (client && hasCompany && client.type === "INDIVIDUAL") {
     client = null; // skip personal match, fall through to company matching
   }
 
   // 2. If company name provided, try fuzzy company matching
   if (!client && hasCompany) {
-    client = await fuzzyMatchCompany(orgId, billing.company!.trim());
+    client = fuzzyMatchCompany(all, billing.company!.trim());
   }
 
   // 3. If still no match, create a new client
@@ -402,19 +408,25 @@ async function findOrCreateClient(orgId: string, billing: WooOrder["billing"]) {
       billing.country,
     ].filter(Boolean).join(", ");
 
-    client = await prisma.client.create({
-      data: {
-        organizationId: orgId,
-        name: hasCompany ? billing.company!.trim() : `${billing.first_name} ${billing.last_name}`,
-        type: hasCompany ? "COMPANY" : "INDIVIDUAL",
-        contactName: `${billing.first_name} ${billing.last_name}`,
-        contactEmail: billing.email,
-        contactPhone: billing.phone || null,
-        billingAddress: address || null,
-        tags: ["website-order"],
-        isActive: true,
-      },
+    const id = createId();
+    const now = Date.now();
+    const name = hasCompany ? billing.company!.trim() : `${billing.first_name} ${billing.last_name}`;
+    await getConvexClient().mutation(api.clients.create, {
+      id,
+      organizationId: orgId,
+      name,
+      type: hasCompany ? "COMPANY" : "INDIVIDUAL",
+      contactName: `${billing.first_name} ${billing.last_name}`,
+      contactEmail: billing.email,
+      contactPhone: billing.phone || undefined,
+      billingAddress: address || undefined,
+      tags: ["website-order"],
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
     });
+    client = await getClientById(id);
+    if (!client) throw new Error("Failed to load auto-created client");
 
     await logActivity({
       organizationId: orgId,
@@ -422,8 +434,8 @@ async function findOrCreateClient(orgId: string, billing: WooOrder["billing"]) {
       userName: "WooCommerce",
       action: "CREATE",
       entityType: "client",
-      entityId: client.id,
-      entityName: client.name,
+      entityId: id,
+      entityName: name,
       summary: `Auto-created client from WooCommerce order`,
     });
   }
@@ -440,12 +452,8 @@ async function findOrCreateClient(orgId: string, billing: WooOrder["billing"]) {
  * 2. Try exact normalized match first
  * 3. Fall back to bigram similarity (Dice coefficient) — threshold 0.7
  */
-async function fuzzyMatchCompany(orgId: string, companyName: string) {
-  const candidates = await prisma.client.findMany({
-    where: { organizationId: orgId, type: "COMPANY", isActive: true },
-    select: { id: true, name: true },
-  });
-
+function fuzzyMatchCompany(allClients: ConvexClient[], companyName: string): ConvexClient | null {
+  const candidates = allClients.filter((c) => c.type === "COMPANY" && (c.isActive ?? true));
   if (candidates.length === 0) return null;
 
   const normalizedInput = normalizeCompanyName(companyName);
@@ -454,13 +462,11 @@ async function fuzzyMatchCompany(orgId: string, companyName: string) {
   const exact = candidates.find(
     (c) => normalizeCompanyName(c.name) === normalizedInput,
   );
-  if (exact) {
-    return prisma.client.findUnique({ where: { id: exact.id } });
-  }
+  if (exact) return exact;
 
   // Bigram similarity match
   const inputBigrams = getBigrams(normalizedInput);
-  let bestMatch: { id: string; score: number } | null = null;
+  let bestMatch: { client: ConvexClient; score: number } | null = null;
 
   for (const candidate of candidates) {
     const candidateNormalized = normalizeCompanyName(candidate.name);
@@ -468,15 +474,11 @@ async function fuzzyMatchCompany(orgId: string, companyName: string) {
     const score = diceCoefficient(inputBigrams, candidateBigrams);
 
     if (score >= 0.7 && (!bestMatch || score > bestMatch.score)) {
-      bestMatch = { id: candidate.id, score };
+      bestMatch = { client: candidate, score };
     }
   }
 
-  if (bestMatch) {
-    return prisma.client.findUnique({ where: { id: bestMatch.id } });
-  }
-
-  return null;
+  return bestMatch ? bestMatch.client : null;
 }
 
 /** Strip common business suffixes, punctuation, and normalize whitespace */

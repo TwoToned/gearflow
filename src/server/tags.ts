@@ -2,6 +2,7 @@
 
 import { getOrgContext } from "@/lib/org-context";
 import { prisma } from "@/lib/prisma";
+import { getClientsByOrg } from "@/lib/clients-read";
 
 /**
  * Get all distinct tags used across the organization.
@@ -20,7 +21,8 @@ export async function getOrgTags(): Promise<string[]> {
     prisma.category.findMany({ where: { organizationId }, select: { tags: true } }),
     prisma.maintenanceRecord.findMany({ where: { organizationId }, select: { tags: true } }),
     prisma.project.findMany({ where: { organizationId }, select: { tags: true } }),
-    prisma.client.findMany({ where: { organizationId }, select: { tags: true } }),
+    // Clients live in Convex now — normalise to the same { tags } shape.
+    getClientsByOrg(organizationId).then((cs) => cs.map((c) => ({ tags: c.tags ?? [] }))),
   ]);
 
   const allTags = new Set<string>();

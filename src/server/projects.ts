@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
+import { getClientById, getClientMap, attachClient } from "@/lib/clients-read";
 import {
   projectSchema,
   type ProjectFormValues,
@@ -226,11 +227,15 @@ export async function getProjects(params?: {
     ...filterWhere,
   };
 
-  const [projects, total] = await Promise.all([
+  // Clients live in Convex (no Prisma join). Sorting by client name therefore
+  // can't happen in the DB — when sortBy === "client" we fetch all matching
+  // projects, attach clients, then sort + paginate in JS. Other sorts keep DB
+  // pagination and just attach clients to the page.
+  const sortByClient = sortBy === "client";
+  const [projectsRaw, total] = await Promise.all([
     prisma.project.findMany({
       where,
       include: {
-        client: true,
         location: true,
         ...(includeLineItems && {
           lineItems: {
@@ -239,13 +244,27 @@ export async function getProjects(params?: {
           },
         }),
       },
-      orderBy: sortBy === "client" ? { client: { name: sortOrder } }
-        : { [sortBy]: sortOrder },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
+      ...(sortByClient
+        ? {}
+        : { orderBy: { [sortBy]: sortOrder }, skip: (page - 1) * pageSize, take: pageSize }),
     }),
     prisma.project.count({ where }),
   ]);
+
+  const clientMap = await getClientMap(organizationId);
+  let projects = projectsRaw.map((p) => ({
+    ...p,
+    client: p.clientId ? clientMap.get(p.clientId) ?? null : null,
+  }));
+
+  if (sortByClient) {
+    const dir = sortOrder === "desc" ? -1 : 1;
+    projects.sort(
+      (a, b) =>
+        (a.client?.name ?? "").localeCompare(b.client?.name ?? "", undefined, { sensitivity: "base" }) * dir,
+    );
+    projects = projects.slice((page - 1) * pageSize, page * pageSize);
+  }
 
   return serialize({
     projects,
@@ -318,7 +337,6 @@ export async function getProject(id: string) {
   const project = await prisma.project.findUnique({
     where: { id, organizationId },
     include: {
-      client: true,
       location: { include: { parent: true } },
       projectManagers: {
         include: {
@@ -441,7 +459,9 @@ export async function getProject(id: string) {
     };
   });
 
-  return serialize({ ...project, lineItems: enrichedLineItems });
+  // Clients live in Convex — attach instead of a Prisma join.
+  const client = project.clientId ? await getClientById(project.clientId) : null;
+  return serialize({ ...project, client, lineItems: enrichedLineItems });
 }
 
 export async function createProject(data: ProjectFormValues & { isTemplate?: boolean }) {
@@ -1039,14 +1059,14 @@ export async function getTemplates() {
   const templates = await prisma.project.findMany({
     where: { organizationId, isTemplate: true },
     include: {
-      client: true,
       location: true,
       _count: { select: { lineItems: { where: { isKitChild: false } } } },
     },
     orderBy: { updatedAt: "desc" },
   });
 
-  return serialize(templates);
+  // Clients live in Convex — attach instead of a Prisma join.
+  return serialize(await attachClient(organizationId, templates));
 }
 
 export async function deleteTemplate(id: string) {

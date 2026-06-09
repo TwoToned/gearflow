@@ -12,6 +12,11 @@ import {
   removeSupplierOrderItemFromConvex,
   syncSupplierOrderToConvex,
 } from "@/lib/sub-hire-mirror";
+import {
+  attachSupplier,
+  getMatchingSupplierIds,
+  getSupplierById,
+} from "@/lib/suppliers-read";
 import type { FilterValue } from "@/lib/table-utils";
 
 export async function getSupplierOrders(params: {
@@ -33,10 +38,15 @@ export async function getSupplierOrders(params: {
   if (type) where.type = type;
   if (status) where.status = status;
   if (search) {
+    // Supplier lives in Convex — resolve matching supplier ids and fold them
+    // into the search OR as a supplierId predicate (omit on no match so we
+    // never emit `in: []`). Sort/page is by createdAt/order columns, never the
+    // supplier name, so id-resolution is order-safe here.
+    const matchingSupplierIds = await getMatchingSupplierIds(organizationId, search);
     where.OR = [
       { orderNumber: { contains: search, mode: "insensitive" } },
       { notes: { contains: search, mode: "insensitive" } },
-      { supplier: { name: { contains: search, mode: "insensitive" } } },
+      ...(matchingSupplierIds.length > 0 ? [{ supplierId: { in: matchingSupplierIds } }] : []),
     ];
   }
 
@@ -44,7 +54,6 @@ export async function getSupplierOrders(params: {
     prisma.supplierOrder.findMany({
       where,
       include: {
-        supplier: { select: { id: true, name: true } },
         project: { select: { id: true, name: true, projectNumber: true } },
         _count: { select: { items: true } },
       },
@@ -55,7 +64,9 @@ export async function getSupplierOrders(params: {
     prisma.supplierOrder.count({ where }),
   ]);
 
-  return serialize({ orders, total });
+  // Attach the Convex supplier docs (replaces the old `include: { supplier }`).
+  const ordersWithSupplier = await attachSupplier(organizationId, orders);
+  return serialize({ orders: ordersWithSupplier, total });
 }
 
 export async function getSupplierOrderById(id: string) {
@@ -63,7 +74,6 @@ export async function getSupplierOrderById(id: string) {
   const order = await prisma.supplierOrder.findUnique({
     where: { id, organizationId },
     include: {
-      supplier: { select: { id: true, name: true } },
       project: { select: { id: true, name: true, projectNumber: true } },
       createdBy: { select: { id: true, name: true } },
       items: {
@@ -76,7 +86,9 @@ export async function getSupplierOrderById(id: string) {
     },
   });
   if (!order) throw new Error("Order not found");
-  return serialize(order);
+  // Supplier lives in Convex — attach instead of a Prisma join.
+  const supplier = await getSupplierById(order.supplierId);
+  return serialize({ ...order, supplier });
 }
 
 export async function createSupplierOrder(data: SupplierOrderFormValues) {

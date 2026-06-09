@@ -460,6 +460,8 @@ grep + write-site survey done this session (counts as of 2026-06-09):
 
 **Recommended sequencing for the next session** (smallest-blast-radius first):
 1. `kit` + kit member sub-tables (0 rows; self-contained kit page; de-risks asset).
+   ✅ **DONE** — see "Kit reactive reads" above. Dual-write across kits.ts +
+   org-import + warehouse + projects + site-admin; reactive kit list + edit page.
 2. `asset` + `bulk_asset` **together** (shared registry UI; dual-write — both have
    req+Cascade inbound from T&T/scan/check/kit/line-item).
 3. `project_category` + `project_group` **together** as dual-write **infra-only**
@@ -570,6 +572,46 @@ every viewer.
   cross-domain-composing forms keep `getModels` against the dual-write-fresh Prisma
   mirror (never stale). Migrate at decommission.
 
+### Kit reactive reads — DONE (central-graph step 1)
+
+The kit cluster (`kit` + member sub-tables `kit_serialized_item` /
+`kit_bulk_item`) is **dual-written** — required+Cascade inbound FKs from the
+member tables / `kit_media` / `kit_check_item` plus nullable refs from `asset` /
+`project_line_item` / scan/check/maintenance / `group_template_item` mean a
+Convex-only cutover would FK-fail. The first central-graph domain (0 rows;
+self-contained kit page; de-risks `asset`).
+
+- **Mirror**: [`src/lib/kit-mirror.ts`](../src/lib/kit-mirror.ts) — generic
+  mirror-core (create/patch/remove) for the kit + both member sub-tables, plus
+  `syncKitsToConvex(kitIds)` for the multi-row `kit.status`/`locationId` updates
+  in the warehouse check-out/in/force-return and project-cancel `$transaction`s
+  (each returns the affected kit ids — root + nested kits — and mirrors after
+  commit). Member add/remove transactions return the written/deleted row so the
+  Convex mirror runs post-commit (Convex is an out-of-transaction HTTP write);
+  the nested `asset`/`bulkAsset` include is stripped before mirroring.
+- **Write sites**: `kits.ts` (create/update/notes/archive/delete + member
+  add/addBatch/remove), `org-import.ts` (3 creates + image patch),
+  `warehouse.ts` (checkOutKit/checkInKit/forceReturnKit), `projects.ts`
+  (deleteProject frees kits), `site-admin.ts` (adminDeleteUser removes a user's
+  kit items).
+- **Hooks**: [`src/hooks/use-kits.ts`](../src/hooks/use-kits.ts) —
+  `useKits(orgId)` / `useKit(id)`.
+- **Converted sites**:
+  - `kits/page.tsx` → `useKits(orgId)` + **client-side** filter (active,
+    non-prep, status/condition/location/category/tags + search) / sort
+    (incl. category & location by name) / paginate. Member-item counts + primary
+    photo are cross-domain (kit media still Prisma) → non-reactive
+    `getKitCounts()` merged in; category/location names resolve from the lists
+    already loaded for the filter options.
+  - `kits/[id]/edit` → `useKit(id)` (form needs only scalar kit fields).
+- **Left on server actions (intentional)**: `kits/[id]/page.tsx` detail
+  (composes assets / bulk / line items / scan logs / maintenance / media — all
+  cross-domain, still Prisma) stays on `getKit`. `kit_media` / `kit_check_item`
+  stay Prisma-only (media composes on the mirror; check-config join not yet
+  migrated), so kit delete's media/check cleanup needs no Convex mirror.
+- **Backfill**: `pnpm convex:backfill:kit` (0/0 — kit tables empty). Live
+  create→patch→remove round-trip verified against the running backend.
+
 ## Migration phases (roadmap)
 
 | Phase | Scope | Verification |
@@ -577,8 +619,8 @@ every viewer.
 | **0 Infra** ✅ | Docker stack, empty schema, provider, env | dashboard up, `convex dev` connects |
 | **1 Schema** ✅ | 95 models + 65 enums → `defineTable()` | deployed clean, typechecks, tests green |
 | **2 Thin CRUD** ✅ | 81 tables × 5 = 405 functions | deployed, typechecks, CRUD round-trip verified |
-| **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets dual-write done) | per-domain backfill + cutover; tsc/tests/build green each |
-| **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields done) | table/dropdown/edit live-update on mutation |
+| **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets + file_upload + crew + doc/service-template + **Kit** dual-write done) | per-domain backfill + cutover; tsc/tests/build green each |
+| **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields + crew + **Kit** done) | table/dropdown/edit live-update on mutation |
 | 5 Auth bridge | Better Auth → Convex JWT (admin key meanwhile) | mutations rejected without auth |
 | 6 Decommission | Remove React Query + SSE event bus | [FEATUREDOCS/53](./53-realtime-sync.md) marked superseded |
 

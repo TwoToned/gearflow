@@ -23,11 +23,11 @@ import type { Doc } from "../../convex/_generated/dataModel";
 export type ConvexLocation = Doc<"locations">;
 
 export async function getLocationById(id: string): Promise<ConvexLocation | null> {
-  return await getConvexClient().query(api.locations.getById, { id });
+  return await (await getConvexClient()).query(api.locations.getById, { id });
 }
 
 export async function getLocationsByOrg(orgId: string): Promise<ConvexLocation[]> {
-  return await getConvexClient().query(api.locations.list, { orgId });
+  return await (await getConvexClient()).query(api.locations.list, { orgId });
 }
 
 /** All of an org's locations keyed by cuid `id`, for attaching to joined rows. */

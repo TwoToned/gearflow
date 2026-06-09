@@ -20,7 +20,7 @@ import { api } from "../convex/_generated/api";
 type LocationCreateArgs = FunctionArgs<typeof api.locations.create>;
 
 async function main() {
-  const convex = getConvexClient();
+  const convex = (await getConvexClient());
   const locations = await prisma.location.findMany({ orderBy: { createdAt: "asc" } });
   console.log(`Found ${locations.length} locations in Prisma.`);
 

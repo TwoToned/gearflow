@@ -19,7 +19,7 @@ import { api } from "../convex/_generated/api";
 type SectionPresetCreateArgs = FunctionArgs<typeof api.sectionPresets.create>;
 
 async function main() {
-  const convex = getConvexClient();
+  const convex = (await getConvexClient());
   const presets = await prisma.sectionPreset.findMany({ orderBy: { createdAt: "asc" } });
   console.log(`Found ${presets.length} section presets in Prisma.`);
 

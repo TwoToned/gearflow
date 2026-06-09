@@ -28,18 +28,18 @@ type AnyRef = FunctionReference<"mutation", "public", any, any>;
 
 async function create(fn: AnyRef, row: Record<string, unknown>) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await getConvexClient().mutation(fn, toConvexDoc(row) as any);
+  await (await getConvexClient()).mutation(fn, toConvexDoc(row) as any);
 }
 
 async function patch(fn: AnyRef, id: string, row: Record<string, unknown>) {
   const { id: _id, ...rest } = toConvexDoc(row);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await getConvexClient().mutation(fn, { id, patch: rest } as any);
+  await (await getConvexClient()).mutation(fn, { id, patch: rest } as any);
 }
 
 async function remove(fn: AnyRef, id: string) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await getConvexClient().mutation(fn, { id } as any);
+  await (await getConvexClient()).mutation(fn, { id } as any);
 }
 
 // Strip nested relations a family read may include before mirroring (scalar-only
@@ -112,7 +112,7 @@ export async function syncSupplierOrderToConvex(orderId: string | null | undefin
 async function upsert(getRef: FunctionReference<"query", "public", any, any>, createRef: AnyRef, updateRef: AnyRef, row: Record<string, unknown>) {
   const id = row.id as string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const existing = await getConvexClient().query(getRef, { id } as any);
+  const existing = await (await getConvexClient()).query(getRef, { id } as any);
   if (existing) await patch(updateRef, id, strip(row));
   else await create(createRef, strip(row));
 }

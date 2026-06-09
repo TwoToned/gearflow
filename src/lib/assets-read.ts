@@ -15,17 +15,17 @@ export type ConvexAsset = Doc<"assets">;
 export type ConvexBulkAsset = Doc<"bulkAssets">;
 
 export async function getAssetById(id: string): Promise<ConvexAsset | null> {
-  return await getConvexClient().query(api.assets.getById, { id });
+  return await (await getConvexClient()).query(api.assets.getById, { id });
 }
 
 export async function getAssetsByOrg(orgId: string): Promise<ConvexAsset[]> {
-  return await getConvexClient().query(api.assets.list, { orgId });
+  return await (await getConvexClient()).query(api.assets.list, { orgId });
 }
 
 export async function getBulkAssetById(id: string): Promise<ConvexBulkAsset | null> {
-  return await getConvexClient().query(api.bulkAssets.getById, { id });
+  return await (await getConvexClient()).query(api.bulkAssets.getById, { id });
 }
 
 export async function getBulkAssetsByOrg(orgId: string): Promise<ConvexBulkAsset[]> {
-  return await getConvexClient().query(api.bulkAssets.list, { orgId });
+  return await (await getConvexClient()).query(api.bulkAssets.list, { orgId });
 }

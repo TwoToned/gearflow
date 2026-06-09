@@ -16,19 +16,19 @@ export type ConvexCrewRole = Doc<"crewRoles">;
 export type ConvexCrewSkill = Doc<"crewSkills">;
 
 export async function getCrewMemberById(id: string): Promise<ConvexCrewMember | null> {
-  return await getConvexClient().query(api.crewMembers.getById, { id });
+  return await (await getConvexClient()).query(api.crewMembers.getById, { id });
 }
 
 export async function getCrewMembersByOrg(orgId: string): Promise<ConvexCrewMember[]> {
-  return await getConvexClient().query(api.crewMembers.list, { orgId });
+  return await (await getConvexClient()).query(api.crewMembers.list, { orgId });
 }
 
 export async function getCrewRolesByOrg(orgId: string): Promise<ConvexCrewRole[]> {
-  return await getConvexClient().query(api.crewRoles.list, { orgId });
+  return await (await getConvexClient()).query(api.crewRoles.list, { orgId });
 }
 
 export async function getCrewSkillsByOrg(orgId: string): Promise<ConvexCrewSkill[]> {
-  return await getConvexClient().query(api.crewSkills.list, { orgId });
+  return await (await getConvexClient()).query(api.crewSkills.list, { orgId });
 }
 
 /** All of an org's crew members keyed by cuid `id`, for attaching to joined rows. */

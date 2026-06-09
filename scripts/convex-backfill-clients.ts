@@ -18,7 +18,7 @@ import { api } from "../convex/_generated/api";
 type ClientCreateArgs = FunctionArgs<typeof api.clients.create>;
 
 async function main() {
-  const convex = getConvexClient();
+  const convex = (await getConvexClient());
   const clients = await prisma.client.findMany({ orderBy: { createdAt: "asc" } });
   console.log(`Found ${clients.length} clients in Prisma.`);
 

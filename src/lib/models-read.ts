@@ -21,11 +21,11 @@ import type { Doc } from "../../convex/_generated/dataModel";
 export type ConvexModel = Doc<"models">;
 
 export async function getModelById(id: string): Promise<ConvexModel | null> {
-  return await getConvexClient().query(api.models.getById, { id });
+  return await (await getConvexClient()).query(api.models.getById, { id });
 }
 
 export async function getModelsByOrg(orgId: string): Promise<ConvexModel[]> {
-  return await getConvexClient().query(api.models.list, { orgId });
+  return await (await getConvexClient()).query(api.models.list, { orgId });
 }
 
 /** All of an org's models keyed by cuid `id`, for attaching to joined rows. */

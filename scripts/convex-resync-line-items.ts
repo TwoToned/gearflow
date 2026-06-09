@@ -31,7 +31,7 @@ function strip(row: Record<string, unknown>): Record<string, unknown> {
 }
 
 async function main() {
-  const convex = getConvexClient();
+  const convex = (await getConvexClient());
 
   const orgIds = (
     await prisma.projectLineItem.findMany({

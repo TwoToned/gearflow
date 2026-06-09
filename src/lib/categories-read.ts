@@ -19,11 +19,11 @@ import type { Doc } from "../../convex/_generated/dataModel";
 export type ConvexCategory = Doc<"categories">;
 
 export async function getCategoryById(id: string): Promise<ConvexCategory | null> {
-  return await getConvexClient().query(api.categories.getById, { id });
+  return await (await getConvexClient()).query(api.categories.getById, { id });
 }
 
 export async function getCategoriesByOrg(orgId: string): Promise<ConvexCategory[]> {
-  return await getConvexClient().query(api.categories.list, { orgId });
+  return await (await getConvexClient()).query(api.categories.list, { orgId });
 }
 
 /** All of an org's categories keyed by cuid `id`, for attaching to joined rows. */

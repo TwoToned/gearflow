@@ -19,7 +19,7 @@ import { api } from "../convex/_generated/api";
 type TestProfileCreateArgs = FunctionArgs<typeof api.testProfiles.create>;
 
 async function main() {
-  const convex = getConvexClient();
+  const convex = (await getConvexClient());
   const profiles = await prisma.testProfile.findMany({ orderBy: { createdAt: "asc" } });
   console.log(`Found ${profiles.length} test profiles in Prisma.`);
 

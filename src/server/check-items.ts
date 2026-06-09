@@ -24,7 +24,7 @@ import {
 
 /** Mirror a freshly written Prisma check-item row into Convex (create). */
 async function mirrorCheckItemToConvex(row: Record<string, unknown>) {
-  await getConvexClient().mutation(
+  await (await getConvexClient()).mutation(
     api.checkItems.create,
     toConvexDoc(row) as FunctionArgs<typeof api.checkItems.create>,
   );
@@ -33,7 +33,7 @@ async function mirrorCheckItemToConvex(row: Record<string, unknown>) {
 /** Mirror an updated Prisma check-item row into Convex (patch, id stripped). */
 async function patchCheckItemInConvex(id: string, row: Record<string, unknown>) {
   const { id: _id, ...patch } = toConvexDoc(row);
-  await getConvexClient().mutation(api.checkItems.update, {
+  await (await getConvexClient()).mutation(api.checkItems.update, {
     id,
     patch: patch as FunctionArgs<typeof api.checkItems.update>["patch"],
   });
@@ -184,7 +184,7 @@ export async function deleteCheckItem(id: string) {
   const result = await prisma.checkItem.delete({
     where: { id, organizationId },
   });
-  await getConvexClient().mutation(api.checkItems.remove, { id });
+  await (await getConvexClient()).mutation(api.checkItems.remove, { id });
 
   await logActivity({
     organizationId,

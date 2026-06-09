@@ -20,7 +20,7 @@ import { api } from "../convex/_generated/api";
 type FileUploadCreateArgs = FunctionArgs<typeof api.fileUploads.create>;
 
 async function main() {
-  const convex = getConvexClient();
+  const convex = (await getConvexClient());
   const files = await prisma.fileUpload.findMany({ orderBy: { createdAt: "asc" } });
   console.log(`Found ${files.length} file uploads in Prisma.`);
 

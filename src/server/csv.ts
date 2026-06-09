@@ -12,14 +12,14 @@ import { logActivity } from "@/lib/activity-log";
 // Model writes in CSV import are dual-written to Convex (the reactive read
 // source) just like the Models server actions — see src/server/models.ts.
 async function mirrorModelCreate(row: Record<string, unknown>) {
-  await getConvexClient().mutation(
+  await (await getConvexClient()).mutation(
     api.models.create,
     toConvexDoc(row) as FunctionArgs<typeof api.models.create>,
   );
 }
 async function mirrorModelPatch(id: string, row: Record<string, unknown>) {
   const { id: _id, ...patch } = toConvexDoc(row);
-  await getConvexClient().mutation(api.models.update, {
+  await (await getConvexClient()).mutation(api.models.update, {
     id,
     patch: patch as FunctionArgs<typeof api.models.update>["patch"],
   });

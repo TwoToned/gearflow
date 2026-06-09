@@ -19,7 +19,7 @@ import { SEED_PROFILES } from "@/lib/test-profiles/seed-data";
 
 /** Mirror a freshly written Prisma test-profile row into Convex (create). */
 async function mirrorTestProfileToConvex(row: Record<string, unknown>) {
-  await getConvexClient().mutation(
+  await (await getConvexClient()).mutation(
     api.testProfiles.create,
     toConvexDoc(row) as FunctionArgs<typeof api.testProfiles.create>,
   );
@@ -28,7 +28,7 @@ async function mirrorTestProfileToConvex(row: Record<string, unknown>) {
 /** Mirror an updated Prisma test-profile row into Convex (patch, id stripped). */
 async function patchTestProfileInConvex(id: string, row: Record<string, unknown>) {
   const { id: _id, ...patch } = toConvexDoc(row);
-  await getConvexClient().mutation(api.testProfiles.update, {
+  await (await getConvexClient()).mutation(api.testProfiles.update, {
     id,
     patch: patch as FunctionArgs<typeof api.testProfiles.update>["patch"],
   });
@@ -368,7 +368,7 @@ export async function deleteTestProfile(id: string) {
   }
 
   await prisma.testProfile.delete({ where: { id } });
-  await getConvexClient().mutation(api.testProfiles.remove, { id });
+  await (await getConvexClient()).mutation(api.testProfiles.remove, { id });
 
   await logActivity({
     organizationId,

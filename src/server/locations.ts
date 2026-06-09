@@ -26,7 +26,7 @@ import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/
 
 /** Mirror a freshly written Prisma location row into Convex (create). */
 async function mirrorLocationToConvex(row: Record<string, unknown>) {
-  await getConvexClient().mutation(
+  await (await getConvexClient()).mutation(
     api.locations.create,
     toConvexDoc(row) as FunctionArgs<typeof api.locations.create>,
   );
@@ -35,7 +35,7 @@ async function mirrorLocationToConvex(row: Record<string, unknown>) {
 /** Mirror an updated Prisma location row into Convex (patch, id stripped). */
 async function patchLocationInConvex(id: string, row: Record<string, unknown>) {
   const { id: _id, ...patch } = toConvexDoc(row);
-  await getConvexClient().mutation(api.locations.update, {
+  await (await getConvexClient()).mutation(api.locations.update, {
     id,
     patch: patch as FunctionArgs<typeof api.locations.update>["patch"],
   });
@@ -51,7 +51,7 @@ async function unsetDefaultsInConvex(organizationId: string, exceptId?: string) 
     where: { organizationId, isDefault: true, ...(exceptId ? { id: { not: exceptId } } : {}) },
     select: { id: true },
   });
-  const convex = getConvexClient();
+  const convex = (await getConvexClient());
   for (const d of prevDefaults) {
     await convex.mutation(api.locations.update, { id: d.id, patch: { isDefault: false } });
   }
@@ -291,7 +291,7 @@ export async function deleteLocation(id: string) {
     throw new Error("Cannot delete location with assets assigned to it");
   }
   await prisma.location.delete({ where: { id, organizationId } });
-  await getConvexClient().mutation(api.locations.remove, { id });
+  await (await getConvexClient()).mutation(api.locations.remove, { id });
 
   await logActivity({
     organizationId,

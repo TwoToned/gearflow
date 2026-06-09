@@ -19,7 +19,7 @@ import { logActivity } from "@/lib/activity-log";
 
 /** Mirror a freshly written Prisma category row into Convex (create). */
 async function mirrorCategoryToConvex(row: Record<string, unknown>) {
-  await getConvexClient().mutation(
+  await (await getConvexClient()).mutation(
     api.categories.create,
     toConvexDoc(row) as FunctionArgs<typeof api.categories.create>,
   );
@@ -28,7 +28,7 @@ async function mirrorCategoryToConvex(row: Record<string, unknown>) {
 /** Mirror an updated Prisma category row into Convex (patch, id stripped). */
 async function patchCategoryInConvex(id: string, row: Record<string, unknown>) {
   const { id: _id, ...patch } = toConvexDoc(row);
-  await getConvexClient().mutation(api.categories.update, {
+  await (await getConvexClient()).mutation(api.categories.update, {
     id,
     patch: patch as FunctionArgs<typeof api.categories.update>["patch"],
   });
@@ -278,7 +278,7 @@ export async function deleteCategory(id: string) {
   if (category._count.models > 0) throw new Error("Cannot delete category with models");
 
   await prisma.category.delete({ where: { id, organizationId } });
-  await getConvexClient().mutation(api.categories.remove, { id });
+  await (await getConvexClient()).mutation(api.categories.remove, { id });
 
   await logActivity({
     organizationId,

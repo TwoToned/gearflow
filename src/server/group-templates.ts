@@ -27,7 +27,7 @@ import { addKitLineItem, recalculateProjectTotals } from "./line-items";
 /** Mirror a freshly written Prisma group-template parent row into Convex (create). */
 async function mirrorGroupTemplateToConvex(row: Record<string, unknown>) {
   const { items: _items, ...scalar } = row;
-  await getConvexClient().mutation(
+  await (await getConvexClient()).mutation(
     api.groupTemplates.create,
     toConvexDoc(scalar) as FunctionArgs<typeof api.groupTemplates.create>,
   );
@@ -37,7 +37,7 @@ async function mirrorGroupTemplateToConvex(row: Record<string, unknown>) {
 async function patchGroupTemplateInConvex(id: string, row: Record<string, unknown>) {
   const { id: _id, items: _items, ...rest } = row;
   const patch = toConvexDoc(rest);
-  await getConvexClient().mutation(api.groupTemplates.update, {
+  await (await getConvexClient()).mutation(api.groupTemplates.update, {
     id,
     patch: patch as FunctionArgs<typeof api.groupTemplates.update>["patch"],
   });
@@ -422,7 +422,7 @@ export async function deleteGroupTemplate(templateId: string) {
   await prisma.groupTemplate.delete({
     where: { id: templateId, organizationId },
   });
-  await getConvexClient().mutation(api.groupTemplates.remove, { id: templateId });
+  await (await getConvexClient()).mutation(api.groupTemplates.remove, { id: templateId });
 
   await logActivity({
     organizationId,

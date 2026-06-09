@@ -19,7 +19,7 @@ import { api } from "../convex/_generated/api";
 type BrandTemplateCreateArgs = FunctionArgs<typeof api.brandTemplates.create>;
 
 async function main() {
-  const convex = getConvexClient();
+  const convex = (await getConvexClient());
   const templates = await prisma.brandTemplate.findMany({ orderBy: { createdAt: "asc" } });
   console.log(`Found ${templates.length} brand templates in Prisma.`);
 

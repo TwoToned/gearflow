@@ -22,7 +22,7 @@ import {
 
 /** Mirror a freshly written Prisma brand-template row into Convex (create). */
 async function mirrorBrandTemplateToConvex(row: Record<string, unknown>) {
-  await getConvexClient().mutation(
+  await (await getConvexClient()).mutation(
     api.brandTemplates.create,
     toConvexDoc(row) as FunctionArgs<typeof api.brandTemplates.create>,
   );
@@ -31,7 +31,7 @@ async function mirrorBrandTemplateToConvex(row: Record<string, unknown>) {
 /** Mirror an updated Prisma brand-template row into Convex (patch, id stripped). */
 async function patchBrandTemplateInConvex(id: string, row: Record<string, unknown>) {
   const { id: _id, ...patch } = toConvexDoc(row);
-  await getConvexClient().mutation(api.brandTemplates.update, {
+  await (await getConvexClient()).mutation(api.brandTemplates.update, {
     id,
     patch: patch as FunctionArgs<typeof api.brandTemplates.update>["patch"],
   });
@@ -43,7 +43,7 @@ async function unsetBrandDefaultsInConvex(organizationId: string, exceptId?: str
     where: { organizationId, isDefault: true, ...(exceptId ? { id: { not: exceptId } } : {}) },
     select: { id: true },
   });
-  const convex = getConvexClient();
+  const convex = (await getConvexClient());
   for (const d of prev) {
     await convex.mutation(api.brandTemplates.update, { id: d.id, patch: { isDefault: false } });
   }
@@ -200,7 +200,7 @@ export async function deleteBrandTemplate(id: string) {
       where: { id },
     }),
   ]);
-  await getConvexClient().mutation(api.brandTemplates.remove, { id });
+  await (await getConvexClient()).mutation(api.brandTemplates.remove, { id });
 
   await logActivity({
     organizationId,
@@ -243,7 +243,7 @@ export async function setDefaultBrandTemplate(id: string) {
       data: { isDefault: true },
     }),
   ]);
-  await getConvexClient().mutation(api.brandTemplates.update, { id, patch: { isDefault: true } });
+  await (await getConvexClient()).mutation(api.brandTemplates.update, { id, patch: { isDefault: true } });
 
   await logActivity({
     organizationId,

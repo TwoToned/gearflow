@@ -20,11 +20,11 @@ import type { Doc } from "../../convex/_generated/dataModel";
 export type ConvexKit = Doc<"kits">;
 
 export async function getKitById(id: string): Promise<ConvexKit | null> {
-  return await getConvexClient().query(api.kits.getById, { id });
+  return await (await getConvexClient()).query(api.kits.getById, { id });
 }
 
 export async function getKitsByOrg(orgId: string): Promise<ConvexKit[]> {
-  return await getConvexClient().query(api.kits.list, { orgId });
+  return await (await getConvexClient()).query(api.kits.list, { orgId });
 }
 
 /** All of an org's kits keyed by cuid `id`, for attaching to joined rows. */

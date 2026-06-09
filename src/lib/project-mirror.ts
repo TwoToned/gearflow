@@ -35,16 +35,16 @@ function strip(row: Record<string, unknown>): Record<string, unknown> {
 
 async function create(fn: AnyRef, row: Record<string, unknown>) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await getConvexClient().mutation(fn, toConvexDoc(strip(row)) as any);
+  await (await getConvexClient()).mutation(fn, toConvexDoc(strip(row)) as any);
 }
 async function patch(fn: AnyRef, id: string, row: Record<string, unknown>) {
   const { id: _id, ...rest } = toConvexDoc(strip(row));
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await getConvexClient().mutation(fn, { id, patch: rest } as any);
+  await (await getConvexClient()).mutation(fn, { id, patch: rest } as any);
 }
 async function remove(fn: AnyRef, id: string) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await getConvexClient().mutation(fn, { id } as any);
+  await (await getConvexClient()).mutation(fn, { id } as any);
 }
 
 export const mirrorProjectCreate = (row: Record<string, unknown>) => create(api.projects.create, row);

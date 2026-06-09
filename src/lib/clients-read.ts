@@ -18,11 +18,11 @@ import type { Doc } from "../../convex/_generated/dataModel";
 export type ConvexClient = Doc<"clients">;
 
 export async function getClientById(id: string): Promise<ConvexClient | null> {
-  return await getConvexClient().query(api.clients.getById, { id });
+  return await (await getConvexClient()).query(api.clients.getById, { id });
 }
 
 export async function getClientsByOrg(orgId: string): Promise<ConvexClient[]> {
-  return await getConvexClient().query(api.clients.list, { orgId });
+  return await (await getConvexClient()).query(api.clients.list, { orgId });
 }
 
 /** All of an org's clients keyed by cuid `id`, for attaching to joined rows. */

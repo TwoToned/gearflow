@@ -25,11 +25,11 @@ import type { Doc } from "../../convex/_generated/dataModel";
 export type ConvexSupplier = Doc<"suppliers">;
 
 export async function getSupplierById(id: string): Promise<ConvexSupplier | null> {
-  return await getConvexClient().query(api.suppliers.getById, { id });
+  return await (await getConvexClient()).query(api.suppliers.getById, { id });
 }
 
 export async function getSuppliersByOrg(orgId: string): Promise<ConvexSupplier[]> {
-  return await getConvexClient().query(api.suppliers.list, { orgId });
+  return await (await getConvexClient()).query(api.suppliers.list, { orgId });
 }
 
 /** All of an org's suppliers keyed by cuid `id`, for attaching to joined rows. */

@@ -19,7 +19,7 @@ import { api } from "../convex/_generated/api";
 type ModelCreateArgs = FunctionArgs<typeof api.models.create>;
 
 async function main() {
-  const convex = getConvexClient();
+  const convex = (await getConvexClient());
   const models = await prisma.model.findMany({ orderBy: { createdAt: "asc" } });
   console.log(`Found ${models.length} models in Prisma.`);
 

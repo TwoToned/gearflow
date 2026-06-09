@@ -19,7 +19,7 @@ import { api } from "../convex/_generated/api";
 type GroupTemplateCreateArgs = FunctionArgs<typeof api.groupTemplates.create>;
 
 async function main() {
-  const convex = getConvexClient();
+  const convex = (await getConvexClient());
   // No `include: items` — the Convex doc holds only the parent scalar fields.
   const templates = await prisma.groupTemplate.findMany({ orderBy: { createdAt: "asc" } });
   console.log(`Found ${templates.length} group templates in Prisma.`);

@@ -56,13 +56,13 @@ function strip(row: Record<string, unknown>): Record<string, unknown> {
 
 async function create(fn: AnyRef, row: Record<string, unknown>) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await getConvexClient().mutation(fn, toConvexDoc(strip(row)) as any);
+  await (await getConvexClient()).mutation(fn, toConvexDoc(strip(row)) as any);
 }
 
 async function patch(fn: AnyRef, id: string, row: Record<string, unknown>) {
   const { id: _id, ...rest } = toConvexDoc(strip(row));
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await getConvexClient().mutation(fn, { id, patch: rest } as any);
+  await (await getConvexClient()).mutation(fn, { id, patch: rest } as any);
 }
 
 /** Remove tolerant of a missing Convex row — a cascade may touch rows created
@@ -70,7 +70,7 @@ async function patch(fn: AnyRef, id: string, row: Record<string, unknown>) {
 async function removeSafe(fn: AnyRef, id: string) {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await getConvexClient().mutation(fn, { id } as any);
+    await (await getConvexClient()).mutation(fn, { id } as any);
   } catch (e) {
     if (!(e instanceof Error && /not found/i.test(e.message))) throw e;
   }
@@ -79,7 +79,7 @@ async function removeSafe(fn: AnyRef, id: string) {
 async function upsert(getRef: AnyQueryRef, createRef: AnyRef, updateRef: AnyRef, row: Record<string, unknown>) {
   const id = row.id as string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const existing = await getConvexClient().query(getRef, { id } as any);
+  const existing = await (await getConvexClient()).query(getRef, { id } as any);
   if (existing) await patch(updateRef, id, row);
   else await create(createRef, row);
 }

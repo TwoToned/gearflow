@@ -24,7 +24,7 @@ import type { ColumnDef } from "@/components/ui/data-table";
 
 /** Mirror a freshly written Prisma supplier row into Convex (create). */
 async function mirrorSupplierToConvex(row: Record<string, unknown>) {
-  await getConvexClient().mutation(
+  await (await getConvexClient()).mutation(
     api.suppliers.create,
     toConvexDoc(row) as FunctionArgs<typeof api.suppliers.create>,
   );
@@ -33,7 +33,7 @@ async function mirrorSupplierToConvex(row: Record<string, unknown>) {
 /** Mirror an updated Prisma supplier row into Convex (patch, id stripped). */
 async function patchSupplierInConvex(id: string, row: Record<string, unknown>) {
   const { id: _id, ...patch } = toConvexDoc(row);
-  await getConvexClient().mutation(api.suppliers.update, {
+  await (await getConvexClient()).mutation(api.suppliers.update, {
     id,
     patch: patch as FunctionArgs<typeof api.suppliers.update>["patch"],
   });
@@ -306,7 +306,7 @@ export async function deleteSupplier(id: string) {
     throw new Error("Cannot delete supplier with existing orders. Archive it instead.");
   }
   await prisma.supplier.delete({ where: { id, organizationId } });
-  await getConvexClient().mutation(api.suppliers.remove, { id });
+  await (await getConvexClient()).mutation(api.suppliers.remove, { id });
 
   await logActivity({
     organizationId,

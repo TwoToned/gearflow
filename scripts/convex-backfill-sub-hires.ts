@@ -16,7 +16,7 @@ import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { api } from "../convex/_generated/api";
 
 async function main() {
-  const convex = getConvexClient();
+  const convex = (await getConvexClient());
   let created = 0;
   let skipped = 0;
 

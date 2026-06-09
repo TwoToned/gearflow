@@ -37,7 +37,7 @@ import { translatePrismaError, UserFacingError } from "@/lib/errors";
 
 /** Mirror a freshly written Prisma custom-field row into Convex (create). */
 async function mirrorCustomFieldToConvex(row: Record<string, unknown>) {
-  await getConvexClient().mutation(
+  await (await getConvexClient()).mutation(
     api.customFieldDefinitions.create,
     toConvexDoc(row) as FunctionArgs<typeof api.customFieldDefinitions.create>,
   );
@@ -46,7 +46,7 @@ async function mirrorCustomFieldToConvex(row: Record<string, unknown>) {
 /** Mirror an updated Prisma custom-field row into Convex (patch, id stripped). */
 async function patchCustomFieldInConvex(id: string, row: Record<string, unknown>) {
   const { id: _id, ...patch } = toConvexDoc(row);
-  await getConvexClient().mutation(api.customFieldDefinitions.update, {
+  await (await getConvexClient()).mutation(api.customFieldDefinitions.update, {
     id,
     patch: patch as FunctionArgs<typeof api.customFieldDefinitions.update>["patch"],
   });
@@ -196,7 +196,7 @@ export async function deleteCustomFieldDefinition(id: string) {
   }
 
   await prisma.customFieldDefinition.delete({ where: { id, organizationId } });
-  await getConvexClient().mutation(api.customFieldDefinitions.remove, { id });
+  await (await getConvexClient()).mutation(api.customFieldDefinitions.remove, { id });
 
   await logActivity({
     organizationId,
@@ -224,7 +224,7 @@ export async function reorderCustomFieldDefinitions(orderedIds: string[]) {
     ),
   );
   // Mirror the new sort order into Convex (the reactive read source).
-  const convex = getConvexClient();
+  const convex = (await getConvexClient());
   for (let idx = 0; idx < orderedIds.length; idx++) {
     await convex.mutation(api.customFieldDefinitions.update, { id: orderedIds[idx], patch: { sortOrder: idx } });
   }

@@ -17,7 +17,7 @@ import { templateSectionsSchema } from "@/lib/validations/template-section";
 
 /** Mirror a freshly written Prisma section-preset row into Convex (create). */
 async function mirrorSectionPresetToConvex(row: Record<string, unknown>) {
-  await getConvexClient().mutation(
+  await (await getConvexClient()).mutation(
     api.sectionPresets.create,
     toConvexDoc(row) as FunctionArgs<typeof api.sectionPresets.create>,
   );
@@ -26,7 +26,7 @@ async function mirrorSectionPresetToConvex(row: Record<string, unknown>) {
 /** Mirror an updated Prisma section-preset row into Convex (patch, id stripped). */
 async function patchSectionPresetInConvex(id: string, row: Record<string, unknown>) {
   const { id: _id, ...patch } = toConvexDoc(row);
-  await getConvexClient().mutation(api.sectionPresets.update, {
+  await (await getConvexClient()).mutation(api.sectionPresets.update, {
     id,
     patch: patch as FunctionArgs<typeof api.sectionPresets.update>["patch"],
   });
@@ -146,7 +146,7 @@ export async function deleteSectionPreset(id: string) {
   if (!existing) throw new Error("Section preset not found");
 
   await prisma.sectionPreset.delete({ where: { id } });
-  await getConvexClient().mutation(api.sectionPresets.remove, { id });
+  await (await getConvexClient()).mutation(api.sectionPresets.remove, { id });
 
   await logActivity({
     organizationId,

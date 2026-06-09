@@ -25,7 +25,7 @@ import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/
 
 /** Mirror a freshly written Prisma model row into Convex (create). */
 async function mirrorModelToConvex(row: Record<string, unknown>) {
-  await getConvexClient().mutation(
+  await (await getConvexClient()).mutation(
     api.models.create,
     toConvexDoc(row) as FunctionArgs<typeof api.models.create>,
   );
@@ -34,7 +34,7 @@ async function mirrorModelToConvex(row: Record<string, unknown>) {
 /** Mirror an updated Prisma model row into Convex (patch, id stripped). */
 async function patchModelInConvex(id: string, row: Record<string, unknown>) {
   const { id: _id, ...patch } = toConvexDoc(row);
-  await getConvexClient().mutation(api.models.update, {
+  await (await getConvexClient()).mutation(api.models.update, {
     id,
     patch: patch as FunctionArgs<typeof api.models.update>["patch"],
   });

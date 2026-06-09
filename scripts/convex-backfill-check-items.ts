@@ -18,7 +18,7 @@ import { api } from "../convex/_generated/api";
 type CheckItemCreateArgs = FunctionArgs<typeof api.checkItems.create>;
 
 async function main() {
-  const convex = getConvexClient();
+  const convex = (await getConvexClient());
   const items = await prisma.checkItem.findMany({ orderBy: { createdAt: "asc" } });
   console.log(`Found ${items.length} check items in Prisma.`);
 

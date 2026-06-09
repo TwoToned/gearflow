@@ -18,7 +18,7 @@ import { api } from "../convex/_generated/api";
 type CustomFieldCreateArgs = FunctionArgs<typeof api.customFieldDefinitions.create>;
 
 async function main() {
-  const convex = getConvexClient();
+  const convex = (await getConvexClient());
   const defs = await prisma.customFieldDefinition.findMany({ orderBy: { createdAt: "asc" } });
   console.log(`Found ${defs.length} custom field definitions in Prisma.`);
 

@@ -19,7 +19,7 @@ import { api } from "../convex/_generated/api";
 type CategoryCreateArgs = FunctionArgs<typeof api.categories.create>;
 
 async function main() {
-  const convex = getConvexClient();
+  const convex = (await getConvexClient());
   const categories = await prisma.category.findMany({ orderBy: { createdAt: "asc" } });
   console.log(`Found ${categories.length} categories in Prisma.`);
 

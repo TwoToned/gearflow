@@ -415,7 +415,7 @@ async function findOrCreateClient(orgId: string, billing: WooOrder["billing"]) {
     const id = createId();
     const now = Date.now();
     const name = hasCompany ? billing.company!.trim() : `${billing.first_name} ${billing.last_name}`;
-    await getConvexClient().mutation(api.clients.create, {
+    await (await getConvexClient()).mutation(api.clients.create, {
       id,
       organizationId: orgId,
       name,

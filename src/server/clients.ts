@@ -150,7 +150,7 @@ export async function createClient(data: ClientFormValues) {
 
   const id = createId();
   const now = Date.now();
-  await getConvexClient().mutation(api.clients.create, {
+  await (await getConvexClient()).mutation(api.clients.create, {
     id,
     organizationId,
     ...toClientFields(parsed),
@@ -183,7 +183,7 @@ export async function updateClient(id: string, data: ClientFormValues) {
     throw new Error("Client not found");
   }
 
-  await getConvexClient().mutation(api.clients.update, {
+  await (await getConvexClient()).mutation(api.clients.update, {
     id,
     patch: { ...toClientFields(parsed), updatedAt: Date.now() },
   });
@@ -210,7 +210,7 @@ export async function updateClientNotes(id: string, notes: string) {
   if (!existing || existing.organizationId !== organizationId) {
     throw new Error("Client not found");
   }
-  await getConvexClient().mutation(api.clients.update, {
+  await (await getConvexClient()).mutation(api.clients.update, {
     id,
     patch: { notes: notes || undefined, updatedAt: Date.now() },
   });
@@ -225,7 +225,7 @@ export async function archiveClient(id: string) {
   if (!existing || existing.organizationId !== organizationId) {
     throw new Error("Client not found");
   }
-  await getConvexClient().mutation(api.clients.update, {
+  await (await getConvexClient()).mutation(api.clients.update, {
     id,
     patch: { isActive: false, updatedAt: Date.now() },
   });

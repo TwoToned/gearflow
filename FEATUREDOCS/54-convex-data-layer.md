@@ -398,6 +398,38 @@ stay composed on the Prisma mirror).
 - Backfill `pnpm convex:backfill:crew` (roster trio only; 8 roles + 8 members + 0
   skills). Verified: tsc clean, 2185 tests, 0 new lint errors, `pnpm build` exit 0.
 
+### document_template + service_template cutover — DONE (dual-write, infra-only)
+
+The two templates deferred from the small-domain batch. The FK grep found **zero
+inbound FKs** on either (both reference *other* tables outbound: document_template →
+brand_template via `brandTemplateId`), and both are **0 rows**. Despite no inbound
+FKs, both are **dual-write, not hard cutover**: document_template is read all over
+the PDF pipeline (`build-document-data` and friends), so a hard cutover would force
+a gratuitous PDF-pipeline rewrite — exactly the risk the Models/Suppliers notes warn
+against. Like the other 0-row PDF/doc-coupled domains (brand_template, section_preset),
+this is **infra-only**.
+
+- **Writes** (Prisma first, then mirror via `src/lib/template-mirror.ts`):
+  `server/document-templates.ts` — all 15 write paths (5 creates: create + 3
+  duplicate variants + import; 8 single-row updates incl. the two `tx.*` section/
+  block saves and the thumbnail save; 1 delete; and `setDefaultTemplate`, whose
+  multi-row `updateMany` unset is mirrored by capturing the prior-default ids and
+  patching each `isDefault:false` before patching the new default `true`).
+  `server/project-services.ts` — service template create/update/delete.
+- **Not mirrored (intentional):** the brand-template-delete unlink in
+  `brand-templates.ts` (`documentTemplate.updateMany … brandTemplateId: null`) — the
+  generated Convex `update` can't clear an optional field (validator rejects null;
+  an absent key is a patch no-op), and document_template is 0-row infra, so the
+  Convex copy's `brandTemplateId` re-syncs on the template's next edit. The universal
+  toConvexDoc null→absent limitation applies to all clear-to-null patches.
+- **No Phase 4 / reactive reader:** the document settings page has gnarly virtual
+  system-default composition and the service settings/services-panel are low-traffic;
+  both stay on the server-action reads over the fresh Prisma mirror (which the PDF
+  pipeline reads anyway). The Convex CRUD + hooks can be wired when those UIs go
+  reactive.
+- Backfill `pnpm convex:backfill:templates` (0/0). Verified: tsc clean, 2185 tests,
+  0 new lint errors, `pnpm build` exit 0.
+
 ## Phase 4 — Frontend reactive reads (in progress: Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields done)
 
 The browser now subscribes to the `clients` table directly via Convex `useQuery`,

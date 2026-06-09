@@ -5,6 +5,11 @@ import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import {
+  mirrorDocumentTemplateCreate,
+  patchDocumentTemplateInConvex,
+  removeDocumentTemplateFromConvex,
+} from "@/lib/template-mirror";
+import {
   createDocumentTemplateSchema,
   updateDocumentTemplateSchema,
   DOCUMENT_TYPES,
@@ -178,6 +183,7 @@ export async function createDocumentTemplate(
       organizationId,
     },
   });
+  await mirrorDocumentTemplateCreate(template);
 
   await logActivity({
     organizationId,
@@ -214,6 +220,7 @@ export async function updateDocumentTemplate(
       version: { increment: 1 },
     },
   });
+  await patchDocumentTemplateInConvex(template.id, template);
 
   await logActivity({
     organizationId,
@@ -245,6 +252,7 @@ export async function publishDocumentTemplate(id: string) {
       publishedAt: new Date(),
     },
   });
+  await patchDocumentTemplateInConvex(template.id, template);
 
   await logActivity({
     organizationId,
@@ -277,6 +285,13 @@ export async function setDefaultTemplate(id: string) {
   if (!template) throw new Error("Template not found");
   if (template.isDraft) throw new Error("Cannot set a draft template as default");
 
+  // Capture the prior defaults of this type so the multi-row unset can be mirrored
+  // to Convex (updateMany has no per-row return — mirror by id).
+  const priorDefaults = await prisma.documentTemplate.findMany({
+    where: { organizationId, type: template.type, isDefault: true },
+    select: { id: true },
+  });
+
   await prisma.$transaction([
     // Unset all defaults for this type
     prisma.documentTemplate.updateMany({
@@ -289,6 +304,8 @@ export async function setDefaultTemplate(id: string) {
       data: { isDefault: true },
     }),
   ]);
+  for (const d of priorDefaults) await patchDocumentTemplateInConvex(d.id, { isDefault: false });
+  await patchDocumentTemplateInConvex(id, { isDefault: true });
 
   await logActivity({
     organizationId,
@@ -317,6 +334,7 @@ export async function unsetDefaultTemplate(id: string) {
     where: { id, organizationId },
     data: { isDefault: false },
   });
+  await patchDocumentTemplateInConvex(template.id, template);
 
   await logActivity({
     organizationId,
@@ -350,6 +368,7 @@ export async function deleteDocumentTemplate(id: string) {
   await prisma.documentTemplate.delete({
     where: { id },
   });
+  await removeDocumentTemplateFromConvex(id);
 
   await logActivity({
     organizationId,
@@ -391,6 +410,7 @@ export async function duplicateSystemDefault(type: string) {
       isDraft: true,
     },
   });
+  await mirrorDocumentTemplateCreate(template);
 
   await logActivity({
     organizationId,
@@ -440,6 +460,7 @@ export async function saveTemplateSettings(
     where: { id, organizationId },
     data: updateData,
   });
+  await patchDocumentTemplateInConvex(updated.id, updated);
 
   await logActivity({
     organizationId,
@@ -545,6 +566,7 @@ export async function duplicateDocumentTemplate(id: string) {
       isDraft: true,
     },
   });
+  await mirrorDocumentTemplateCreate(template);
 
   await logActivity({
     organizationId,
@@ -596,6 +618,7 @@ export async function saveTemplateSections(data: SaveTemplateSectionsValues) {
       },
     });
   });
+  await patchDocumentTemplateInConvex(template.id, template);
 
   await logActivity({
     organizationId,
@@ -650,6 +673,7 @@ export async function saveTemplateBlocks(data: SaveTemplateBlocksValues) {
       },
     });
   });
+  await patchDocumentTemplateInConvex(template.id, template);
 
   await logActivity({
     organizationId,
@@ -687,6 +711,7 @@ export async function duplicateSystemDefaultWithSections(type: string) {
       isDraft: true,
     },
   });
+  await mirrorDocumentTemplateCreate(template);
 
   await logActivity({
     organizationId,
@@ -761,6 +786,7 @@ export async function importTemplate(data: TemplateImportData) {
       isDraft: true,
     },
   });
+  await mirrorDocumentTemplateCreate(template);
 
   await logActivity({
     organizationId,
@@ -794,6 +820,7 @@ export async function saveTemplateThumbnail(id: string, thumbnailData: string) {
     where: { id, organizationId },
     data: { thumbnailData },
   });
+  await patchDocumentTemplateInConvex(id, { thumbnailData });
 
   return serialize({ success: true });
 }

@@ -10,6 +10,11 @@ import {
   type ServiceTemplateFormValues,
 } from "@/lib/validations/project-service";
 import { logActivity } from "@/lib/activity-log";
+import {
+  mirrorServiceTemplateCreate,
+  patchServiceTemplateInConvex,
+  removeServiceTemplateFromConvex,
+} from "@/lib/template-mirror";
 import { roundCurrency } from "@/lib/formatters";
 import { sendCrewOffer } from "@/server/crew-communication";
 import { recalculateProjectTotals } from "@/server/line-items";
@@ -1283,6 +1288,7 @@ export async function createServiceTemplate(data: ServiceTemplateFormValues) {
       sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
     },
   });
+  await mirrorServiceTemplateCreate(template);
 
   await logActivity({
     organizationId,
@@ -1330,6 +1336,7 @@ export async function updateServiceTemplate(
       isActive: parsed.isActive,
     },
   });
+  await patchServiceTemplateInConvex(template.id, template);
 
   await logActivity({
     organizationId,
@@ -1357,6 +1364,7 @@ export async function deleteServiceTemplate(id: string) {
   if (!template) throw new Error("Template not found");
 
   await prisma.serviceTemplate.delete({ where: { id } });
+  await removeServiceTemplateFromConvex(id);
 
   await logActivity({
     organizationId,

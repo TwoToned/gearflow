@@ -55,15 +55,21 @@ export const mirrorLineItemCreate = (row: Record<string, unknown>) => create(api
 export const patchLineItemInConvex = (id: string, row: Record<string, unknown>) => patch(api.projectLineItems.update, id, row);
 export const removeLineItemFromConvex = (id: string) => remove(api.projectLineItems.remove, id);
 
+/** Relation keys a line-item read may include — stripped before mirroring so the
+ *  Convex create/update arg validators (scalars only) don't reject extra fields. */
+const LINE_ITEM_RELATION_KEYS = new Set([
+  "model", "asset", "bulkAsset", "kit", "supplier", "category", "group",
+  "parentLineItem", "childLineItems", "units", "project", "subHire",
+  "subHireItem", "subHireGroup", "checkRecords", "damageEvents",
+]);
+
 /** Strip the nested relations a line-item read may include before mirroring. */
 function stripLineItemRelations(row: Record<string, unknown>): Record<string, unknown> {
-  const {
-    model: _m, asset: _a, bulkAsset: _b, kit: _k, supplier: _s, category: _c,
-    group: _g, parentLineItem: _p, childLineItems: _cl, units: _u, project: _pr,
-    subHire: _sh, subHireItem: _shi, subHireGroup: _shg, checkRecords: _cr,
-    damageEvents: _de, ...rest
-  } = row;
-  return rest;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(row)) {
+    if (!LINE_ITEM_RELATION_KEYS.has(k)) out[k] = v;
+  }
+  return out;
 }
 
 /** Mirror a freshly written line item (strips any included relations). */

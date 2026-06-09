@@ -5,6 +5,11 @@
  */
 import { prisma } from "@/lib/prisma";
 import { getClientById } from "@/lib/clients-read";
+import {
+  buildLineItemAttachMaps,
+  attachLineItemTree,
+  resolveAttachedSupplier,
+} from "@/lib/line-item-tree-read";
 import { computeOverbookedStatus } from "@/lib/availability";
 import { getFileAsDataUri } from "@/lib/storage";
 import { formatCurrency, formatDate } from "./plugins/helpers";
@@ -45,35 +50,37 @@ const assetWithLocation = {
   include: { location: { select: { name: true } } },
 } as const;
 
-/** Deep include for line items — 2 levels of children for nested kits */
+/**
+ * Deep include for line items — 2 levels of children for nested kits.
+ *
+ * `model` and `supplier` are NOT joined here — they're dual-written to Convex
+ * and attached in JS via `attachLineItemTree` (Phase 6 decommission). The
+ * physical-asset joins (`asset` / `bulkAsset` / `kit` / `units`) and the
+ * project-grouping joins (`category` = project_category, `group` = project_group)
+ * stay on Prisma. See `src/lib/line-item-tree-read.ts`.
+ */
 const lineItemInclude = {
-  model: { include: { category: true } },
   asset: assetWithLocation,
   bulkAsset: assetWithLocation,
   kit: true,
   units: unitInclude,
-  supplier: { select: { name: true } },
   category: { select: { id: true, name: true, sortOrder: true } },
   group: { select: { id: true, title: true, sortOrder: true, categoryId: true } },
   childLineItems: {
     orderBy: { sortOrder: "asc" as const },
     include: {
-      model: { include: { category: true } },
       asset: assetWithLocation,
       bulkAsset: assetWithLocation,
       kit: true,
       units: unitInclude,
-      supplier: { select: { name: true } },
       category: { select: { id: true, name: true, sortOrder: true } },
       group: { select: { id: true, title: true, sortOrder: true, categoryId: true } },
       childLineItems: {
         orderBy: { sortOrder: "asc" as const },
         include: {
-          model: { include: { category: true } },
           asset: assetWithLocation,
           bulkAsset: assetWithLocation,
           units: unitInclude,
-          supplier: { select: { name: true } },
         },
       },
     },
@@ -169,9 +176,9 @@ export async function buildDocumentData(
       // feature). Phase 0 includes them but doesn't consume them yet so the
       // include shape is locked alongside the snapshot fixtures.
       // SubHireGroup is nested under SubHire, not directly on Project.
+      // supplier is dual-written to Convex — attached below, not joined here.
       subHires: {
         include: {
-          supplier: { select: { name: true } },
           groups: { orderBy: { sortOrder: "asc" } },
         },
       },
@@ -218,10 +225,17 @@ export async function buildDocumentData(
     throw new Error(`Project ${projectId} not found`);
   }
 
-  // Clients live in Convex — attach instead of a Prisma join.
+  // model / supplier / client live in Convex — attach instead of a Prisma join.
+  // One maps round-trip serves both the line-item tree and the sub-hire shells.
+  const attachMaps = await buildLineItemAttachMaps(organizationId);
   const project = {
     ...projectRow,
     client: projectRow.clientId ? await getClientById(projectRow.clientId) : null,
+    lineItems: attachLineItemTree(projectRow.lineItems, attachMaps),
+    subHires: projectRow.subHires.map((sh) => ({
+      ...sh,
+      supplier: resolveAttachedSupplier(sh.supplierId, attachMaps),
+    })),
   };
 
   // Compute overbooking status

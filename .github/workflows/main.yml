@@ -49,6 +49,8 @@ jobs:
         run: |
           cd ${{ vars.APP_DIR }}
           pnpm run build
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
  
       - name: Restart app + Discord bot
         run: |

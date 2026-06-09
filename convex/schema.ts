@@ -7,7 +7,7 @@ import * as enums from "./lib/validators";
  *
  * 95 tables mirroring the Prisma models. Conventions:
  *  - The Prisma primary cuid `@id` is PRESERVED as a stored `id: v.string()`
- *    field with a `by_id` index — NOT dropped in favour of Convex's `_id`. The
+ *    field with a `by_cuid` index — NOT dropped in favour of Convex's `_id`. The
  *    app holds cuids everywhere (URLs, FK strings, server-action args), so every
  *    lookup keys off `id`; Convex's own `_id` stays internal/unused.
  *  - Foreign keys are stored as `v.string()` (the source cuid) during the hybrid

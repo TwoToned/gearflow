@@ -13,10 +13,11 @@ actions** (`src/server/`) — Convex functions are thin CRUD stubs.
 | Permissions (`requirePermission`), validation (Zod), activity log, PDF, email, Discord | Next.js server actions (`src/server/`) |
 | Database reads/writes + real-time propagation | Convex (this directory) |
 
-Server actions call Convex over HTTP via `fetchMutation`/`fetchQuery` from
-`convex/nextjs`, authenticated with the **admin key**. The browser subscribes to
-reads via `useQuery` from `convex/react` (the real-time magic). Mutations are
-**not** called from the browser during Phases 0–5.
+Server actions call Convex over HTTP via the shared `ConvexHttpClient`
+(`src/lib/convex-client.ts`), authenticated with a **service token** (Phase 5).
+The browser subscribes to reads via `useQuery` from `convex/react` with a **user
+token** (Better Auth), scoped to its org. Mutations are **not** callable from the
+browser — they require the service token.
 
 ## Conventions
 
@@ -24,9 +25,14 @@ reads via `useQuery` from `convex/react` (the real-time magic). Mutations are
   `warehouse.ts`, … Mirrors the Prisma model domains.
 - **Each entity exposes**: `list`, `getById`, `create`, `update`, `remove`
   (5–10 lines each). Complex entities may add `search`, `count`, `listByStatus`.
-- **Functions are UNauthed.** Trust is delegated to the server action that calls
-  them — it already authenticated the user and checked permissions. Never put a
-  permission check here; never expose the admin key to the browser.
+- **Functions are authenticated (Phase 5, `convex/lib/auth.ts`).** Mutations call
+  `requireService` (only the trusted backend writes — RBAC stays in the server
+  action, which still owns permissions/validation/audit). Org-scoped `list`/
+  `getById` call `requireOrgRead`/`requireOrgReadDoc` (service OR a user token
+  scoped to the same org). Do **not** put fine-grained permission checks here —
+  Convex is never the authZ source of truth. The CRUD generator injects these
+  guards; hand-written functions call the same helpers. See
+  `docs/designs/convex-phase5-auth-bridge.md`.
 - **Every list query takes `orgId` as its first arg** and scopes by it via an
   index. Multi-tenant isolation is enforced by always filtering on `orgId`.
 - **Index everything you filter on**: every foreign key + every common filter

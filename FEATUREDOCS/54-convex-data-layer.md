@@ -32,11 +32,13 @@ Browser  ──useQuery(api.domain.op)──►  Self-hosted Convex backend (Doc
    └─────────── live diffs over WS ──────────┘  └─ PostgreSQL (gearflow_convex DB)
 ```
 
-Trust model: the browser only **reads** from Convex. All **writes** go through
-server actions that already authenticated the user. Convex functions are
-themselves unauthed and trust their caller — so the Convex URL + admin key must
-never reach the browser. (The Better Auth → Convex JWT bridge for direct
-browser writes is Phase 5.)
+Trust model (Phase 5, **now authenticated**): every Convex function requires a
+valid ES256 JWT. The **browser** carries a Better Auth **user token** (org-scoped
+reads only). **Server actions / scripts / webhooks** carry a **service token**
+(full access — the explicit form of the old "trust the caller"). Browser **writes
+are rejected** at Convex (RBAC stays in Prisma server actions — Convex is never
+the authZ source of truth). See [Phase 5 below](#phase-5--auth-bridge-done) and
+[`docs/designs/convex-phase5-auth-bridge.md`](../docs/designs/convex-phase5-auth-bridge.md).
 
 ## Phase 0 — Infrastructure (done)
 
@@ -837,6 +839,55 @@ rewire the deferred cross-domain Prisma joins off the mirror, tear out the
 SSE/EventEmitter system, and run a clean truncate+backfill to clear any
 regenerate-orphaned sub-hire line-item rows).
 
+## Phase 5 — Auth bridge (done)
+
+The browser now talks to Convex with a **real identity**, and **every Convex
+function is authenticated**. Full design + threat model + codex review:
+[`docs/designs/convex-phase5-auth-bridge.md`](../docs/designs/convex-phase5-auth-bridge.md).
+
+**The hole it closed:** through Phases 0–4 every function was public + unauthed
+and `NEXT_PUBLIC_CONVEX_URL` is public — anyone could read any org's data *and run
+any mutation* directly from a browser. Phase 5 shuts that before production.
+
+**Two ES256 JWTs, one Better-Auth JWKS, one Convex `customJwt` provider**
+(`convex/auth.config.ts`), distinguished by claim:
+
+- **User token** — Better Auth `jwt()` plugin, `GET /api/auth/token`
+  (session-gated, 401 without a session). `sub`=userId + `orgId`/`role` claims
+  read **fresh from membership at mint** (can't be elevated by stale session
+  metadata). Forwarded by the browser via `ConvexProviderWithAuth`
+  (`src/components/providers/convex-provider.tsx`). Grants **org-scoped reads**.
+- **Service token** — minted in-process via `auth.api.signJWT`
+  (`src/lib/convex-auth.ts`), a **path-less** Better-Auth endpoint (no HTTP route —
+  `POST/GET /api/auth/sign-jwt` → 404). `sub`=`gearflow-service` + `svc:true`,
+  cached, 5-min TTL. Attached to the shared server `ConvexHttpClient` by
+  `getConvexClient()` (now async). Grants **everything** — the explicit form of the
+  old implicit "trust the caller"; server actions still own permissions/validation/
+  audit before calling Convex.
+
+**Enforcement** (`convex/lib/auth.ts`, applied uniformly by the CRUD generator):
+mutations → `requireService` (browser writes rejected; RBAC stays in Prisma).
+Org-scoped `list`/`getById` → `requireOrgRead`/`requireOrgReadDoc` (service OR a
+user whose org matches). Non-org reads → `requireService` (no browser subscriber
+yet). Service detection is strict: `sub===gearflow-service` **AND** `svc===true`;
+a non-service token bearing `svc` is rejected.
+
+- **Key storage**: Better Auth's `jwt()` plugin keypair lives in the new Prisma
+  `jwks` table (`Jwks` model; migration `20260610000000_add_jwks_table`),
+  encrypted with `BETTER_AUTH_SECRET`. Auth-owned → present in the Convex *schema*
+  for completeness like the other auth tables, but **excluded from Convex CRUD**
+  (`jwkses` in the generator EXCLUDE set).
+- **Env**: `CONVEX_AUTH_ISSUER` (= `BETTER_AUTH_URL`) and `CONVEX_AUTH_JWKS_URL`
+  are read by `convex/auth.config.ts` at push time; set them in the Convex
+  deployment env (`npx convex env set …`).
+- **Verified** (`pnpm convex:auth:roundtrip`, 6/6): anon read REJECTED, service
+  read ALLOWED, user-match read ALLOWED, user-wrong-org read REJECTED, user
+  mutation REJECTED, anon mutation REJECTED. Plus `sign-jwt` 404, `/token` 401
+  without session, and tsc + 2185 tests + 0 new lint + build all green.
+- **Not in scope (future):** direct browser *writes* (need per-mutation
+  authorization in Convex), and hardening the non-org reads as their UIs go
+  reactive. The service-token path is the only writer during the hybrid period.
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort
@@ -851,12 +902,10 @@ mechanical dual-write, much slower for design/security/teardown work):
    below. Both live FKs into the frozen Prisma `client` table
    (`project.clientId`, `client_media.clientId`) were dropped; the columns stay as
    plain external ids holding the Convex cuid.
-3. **Phase 5 — auth bridge** — Better Auth → self-hosted Convex JWT, so the
-   browser talks to Convex directly (mutations are currently unauthed, trust
-   delegated to server actions — every domain so far deliberately punted this).
-   This is **design + security** work, not a mechanical sweep; getting auth subtly
-   wrong ships a vuln. **Size: a full session of its own + a `/cso` review before
-   landing.**
+3. ~~**Phase 5 — auth bridge**~~ — **DONE.** See "Phase 5 — Auth bridge" above:
+   every Convex function is now authenticated (user token → org-scoped reads;
+   service token → trusted backend; browser writes rejected). Verified 6/6
+   round-trip + `/cso`.
 4. **Phase 6 — decommission** — the tail of the ~3-month effort, explicitly
    **multi-session**. Rewire the deferred cross-domain Prisma joins off the mirror
    (supplier/model/`*_media` reads + the whole PDF pipeline — 5 independent
@@ -882,7 +931,7 @@ sessions.
 | **2 Thin CRUD** ✅ | 81 tables × 5 = 405 functions | deployed, typechecks, CRUD round-trip verified |
 | **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets + file_upload + crew + doc/service-template + **Kit** + **Asset/Bulk** + **project_category/group** + **project_line_item** + **sub_hire/supplier_order families** + **project** + **crew scheduling sub-tables (infra-only)** dual-write done — CENTRAL GRAPH COMPLETE + DUAL-WRITE SURFACE COMPLETE) | per-domain backfill + cutover; tsc/tests/build green each |
 | **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields + crew + **Kit** + **Asset/Bulk registry** done) | table/dropdown/edit live-update on mutation |
-| 5 Auth bridge | Better Auth → Convex JWT (admin key meanwhile) | mutations rejected without auth |
+| **5 Auth bridge** ✅ | Better Auth → Convex ES256 JWT; user token (org-scoped reads) + service token (trusted backend); browser writes rejected | round-trip 6/6: rejected without a valid token, accepted with; `/cso` clean |
 | 6 Decommission | Remove React Query + SSE event bus | [FEATUREDOCS/53](./53-realtime-sync.md) marked superseded |
 
 ## Conventions

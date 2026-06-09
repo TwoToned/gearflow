@@ -84,6 +84,7 @@ Detailed docs for each system are in the [`FEATUREDOCS/`](./FEATUREDOCS/) folder
 | 50 | [Project Tasks](./FEATUREDOCS/50-project-tasks.md) | ProjectTask model (status/priority/dueDate/checklist), user-or-crew assignee, Tasks tab panel, getMyOpenTasks cross-project query |
 | 52 | [Bulk Check-In Totals](./FEATUREDOCS/52-bulk-checkin.md) | Project-wide accessory totals check-in: aggregate deployed accessory children by identity, deterministic distribution back to child lines, over-return rejection, idempotent/empty-safe submit, Bulk Check-In warehouse tab |
 | 53 | [Real-Time Sync](./FEATUREDOCS/53-realtime-sync.md) | SSE + Event Bus + React Query invalidation: multi-user real-time updates, no page refreshes |
+| 54 | [Convex Data Layer](./FEATUREDOCS/54-convex-data-layer.md) | Hybrid migration to self-hosted Convex reactive DB (replaces Prisma reads + SSE/React Query). Phase 0 infra: Docker stack, empty schema, client provider. Plan: [docs/designs/convex-hybrid-migration.md](./docs/designs/convex-hybrid-migration.md) |
 
 **When making changes**: Read the relevant feature doc(s) first, follow documented patterns, and update the relevant doc(s) after. If no doc exists for the feature you're working on, create a new numbered file in `FEATUREDOCS/` and add it to the table above.
 

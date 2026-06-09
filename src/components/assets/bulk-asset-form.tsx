@@ -15,7 +15,7 @@ import { getOrgTags } from "@/server/tags";
 import { TagInput } from "@/components/ui/tag-input";
 import { peekNextAssetTags } from "@/server/settings";
 import { getModels } from "@/server/models";
-import { getLocations } from "@/server/locations";
+import { useLocations } from "@/hooks/use-locations";
 import { useSuppliers } from "@/hooks/use-suppliers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,11 +44,13 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
     queryFn: () => getModels({ assetType: "BULK", pageSize: 200 }),
   });
 
-  const { data: locationsData } = useQuery({
-    queryKey: ["locations", orgId],
-    queryFn: () => getLocations({ pageSize: 100 }),
-  });
-  const locations = locationsData?.locations || [];
+  // Reactive location list from Convex; parent.name resolved from the flat list.
+  const rawLocations = useLocations(orgId) ?? [];
+  const locNameById = new Map(rawLocations.map((l) => [l.id, l.name]));
+  const locations = rawLocations.map((l) => ({
+    ...l,
+    parent: l.parentId ? { name: locNameById.get(l.parentId) ?? "" } : null,
+  }));
 
   // Reactive supplier list from Convex; active-only (matches old getSuppliers).
   const allSuppliers = useSuppliers(orgId);

@@ -15,7 +15,7 @@ import { getOrgTags } from "@/server/tags";
 import { TagInput } from "@/components/ui/tag-input";
 import { peekNextAssetTags } from "@/server/settings";
 import { getCategories } from "@/server/categories";
-import { getLocations } from "@/server/locations";
+import { useLocations } from "@/hooks/use-locations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScanInput } from "@/components/ui/scan-input";
@@ -42,11 +42,13 @@ export function KitForm({ initialData }: KitFormProps) {
     queryFn: () => getCategories(),
   });
 
-  const { data: locationsData } = useQuery({
-    queryKey: ["locations", orgId],
-    queryFn: () => getLocations({ pageSize: 100 }),
-  });
-  const locations = locationsData?.locations || [];
+  // Reactive location list from Convex; parent.name resolved from the flat list.
+  const rawLocations = useLocations(orgId) ?? [];
+  const locNameById = new Map(rawLocations.map((l) => [l.id, l.name]));
+  const locations = rawLocations.map((l) => ({
+    ...l,
+    parent: l.parentId ? { name: locNameById.get(l.parentId) ?? "" } : null,
+  }));
 
   const { data: orgTags } = useQuery({
     queryKey: ["org-tags", orgId],

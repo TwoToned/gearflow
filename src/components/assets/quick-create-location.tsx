@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { useActiveOrganization } from "@/lib/auth-client";
-import { createLocation, getLocations } from "@/server/locations";
+import { createLocation } from "@/server/locations";
+import { useLocations } from "@/hooks/use-locations";
 import {
   Dialog,
   DialogContent,
@@ -33,12 +34,8 @@ export function QuickCreateLocation({ open, onOpenChange, onCreated }: QuickCrea
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: locationsData } = useQuery({
-    queryKey: ["locations", orgId],
-    queryFn: () => getLocations({ pageSize: 100 }),
-    staleTime: 0,
-  });
-  const locations = locationsData?.locations || [];
+  // Reactive location list from Convex.
+  const locations = useLocations(orgId) ?? [];
 
   // Only top-level locations can be parents
   const parentOptions = locations

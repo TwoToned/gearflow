@@ -15,7 +15,7 @@ import { getOrgTags } from "@/server/tags";
 import { TagInput } from "@/components/ui/tag-input";
 import { peekNextAssetTags } from "@/server/settings";
 import { getModels } from "@/server/models";
-import { getLocations } from "@/server/locations";
+import { useLocations } from "@/hooks/use-locations";
 import { useSuppliers } from "@/hooks/use-suppliers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,11 +48,15 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
     queryFn: () => getModels({ assetType: "SERIALIZED", pageSize: 200 }),
   });
 
-  const { data: locationsData } = useQuery({
-    queryKey: ["locations", orgId],
-    queryFn: () => getLocations({ pageSize: 100 }),
-  });
-  const locations = locationsData?.locations || [];
+  // Reactive location list from Convex; a location added via quick-create now
+  // appears in the dropdown instantly. parent.name resolved from the flat list
+  // (the Convex doc carries parentId, not a parent relation).
+  const rawLocations = useLocations(orgId) ?? [];
+  const locNameById = new Map(rawLocations.map((l) => [l.id, l.name]));
+  const locations = rawLocations.map((l) => ({
+    ...l,
+    parent: l.parentId ? { name: locNameById.get(l.parentId) ?? "" } : null,
+  }));
 
   // Reactive supplier list from Convex; a supplier added via the quick-create
   // dialog now appears in the dropdown instantly. Active-only (matches the old

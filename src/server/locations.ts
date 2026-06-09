@@ -119,6 +119,28 @@ export async function getLocations(params?: {
   });
 }
 
+/**
+ * Asset + bulk-asset + kit counts per location (locationId -> counts).
+ * Cross-domain: assets / bulk assets / kits still live in Prisma, so this can't
+ * come from Convex. Used by the reactive location table, which subscribes to the
+ * location list via Convex and merges these (non-reactive) counts. (Children
+ * counts are derived client-side from the reactive list itself.)
+ */
+export async function getLocationCounts(): Promise<Record<string, { assets: number; bulkAssets: number; kits: number }>> {
+  const { organizationId } = await getOrgContext();
+  const [assetGroups, bulkGroups, kitGroups] = await Promise.all([
+    prisma.asset.groupBy({ by: ["locationId"], where: { organizationId, locationId: { not: null } }, _count: { _all: true } }),
+    prisma.bulkAsset.groupBy({ by: ["locationId"], where: { organizationId, locationId: { not: null } }, _count: { _all: true } }),
+    prisma.kit.groupBy({ by: ["locationId"], where: { organizationId, locationId: { not: null } }, _count: { _all: true } }),
+  ]);
+  const counts: Record<string, { assets: number; bulkAssets: number; kits: number }> = {};
+  const ensure = (id: string) => (counts[id] ??= { assets: 0, bulkAssets: 0, kits: 0 });
+  for (const g of assetGroups) if (g.locationId) ensure(g.locationId).assets = g._count._all;
+  for (const g of bulkGroups) if (g.locationId) ensure(g.locationId).bulkAssets = g._count._all;
+  for (const g of kitGroups) if (g.locationId) ensure(g.locationId).kits = g._count._all;
+  return serialize(counts);
+}
+
 /** Inherit address/coordinates from parent when a child location has none of its own. */
 function resolveLocationInheritance<T extends { address?: string | null; latitude?: number | null; longitude?: number | null; parent?: { address?: string | null; latitude?: number | null; longitude?: number | null } | null }>(location: T): T {
   if (location.parent) {

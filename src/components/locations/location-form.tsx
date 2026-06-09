@@ -9,7 +9,8 @@ import { toast } from "sonner";
 import { locationSchema, type LocationFormValues } from "@/lib/validations/asset";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrgCountry } from "@/lib/use-org-country";
-import { createLocation, updateLocation, getLocations } from "@/server/locations";
+import { createLocation, updateLocation } from "@/server/locations";
+import { useLocations } from "@/hooks/use-locations";
 import { getOrgTags } from "@/server/tags";
 import { TagInput } from "@/components/ui/tag-input";
 import { AddressInput } from "@/components/ui/address-input";
@@ -39,12 +40,9 @@ export function LocationForm({ initialData }: LocationFormProps) {
   const orgId = activeOrg?.id;
   const orgCountry = useOrgCountry();
 
-  const { data: locationsData } = useQuery({
-    queryKey: ["locations", orgId, { pageSize: 100 }],
-    queryFn: () => getLocations({ pageSize: 100 }),
-  });
-
-  const allLocations = (locationsData?.locations || []).filter(
+  // Reactive location list from Convex (a sibling created elsewhere appears as a
+  // selectable parent instantly). Exclude self — a location can't be its own parent.
+  const allLocations = (useLocations(orgId) ?? []).filter(
     (l) => l.id !== initialData?.id
   );
 

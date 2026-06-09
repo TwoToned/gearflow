@@ -15,7 +15,7 @@ import {
 import { createProject, updateProject, peekNextProjectNumber } from "@/server/projects";
 import { addProjectManager, removeProjectManager } from "@/server/project-managers";
 import { useClients } from "@/hooks/use-clients";
-import { getLocations } from "@/server/locations";
+import { useLocations } from "@/hooks/use-locations";
 import { getOrgMembers } from "@/server/org-members";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -152,10 +152,8 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp, initialMa
     description: c.contactName || undefined,
   }));
 
-  const { data: locationsData } = useQuery({
-    queryKey: ["locations", orgId],
-    queryFn: () => getLocations({ pageSize: 100 }),
-  });
+  // Reactive location list from Convex (a quick-created location appears instantly).
+  const rawLocations = useLocations(orgId) ?? [];
 
   const { data: orgTags } = useQuery({
     queryKey: ["org-tags", orgId],
@@ -173,9 +171,10 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp, initialMa
     description: m.user.name ? m.user.email : undefined,
   }));
 
-  const locationOptions = (locationsData?.locations || []).map((l) => ({
+  const locNameById = new Map(rawLocations.map((l) => [l.id, l.name]));
+  const locationOptions = rawLocations.map((l) => ({
     value: l.id,
-    label: l.parent ? `${l.parent.name} → ${l.name}` : l.name,
+    label: l.parentId ? `${locNameById.get(l.parentId) ?? ""} → ${l.name}` : l.name,
     description: l.address || undefined,
   }));
 

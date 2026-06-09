@@ -12,7 +12,7 @@ import {
   type CreateStocktakeValues,
 } from "@/lib/validations/stocktake";
 import { createStocktake, updateStocktake } from "@/server/stocktake";
-import { getLocations } from "@/server/locations";
+import { useLocations } from "@/hooks/use-locations";
 import { getCategories } from "@/server/categories";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
@@ -30,10 +30,8 @@ export function StocktakeForm({ initialData }: StocktakeFormProps) {
   const orgId = activeOrg?.id;
   const isEditing = !!initialData?.id;
 
-  const { data: locationsData } = useQuery({
-    queryKey: ["locations", orgId],
-    queryFn: () => getLocations(),
-  });
+  // Reactive location list from Convex.
+  const locations = useLocations(orgId) ?? [];
 
   const { data: categoriesData } = useQuery({
     queryKey: ["categories", orgId],
@@ -64,7 +62,6 @@ export function StocktakeForm({ initialData }: StocktakeFormProps) {
     onError: (e) => toast.error(e.message),
   });
 
-  const locations = locationsData?.locations ?? [];
   const categories = categoriesData ?? [];
 
   return (

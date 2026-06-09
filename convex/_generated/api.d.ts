@@ -43,6 +43,7 @@ import type * as kitCheckItems from "../kitCheckItems.js";
 import type * as kitMedia from "../kitMedia.js";
 import type * as kitSerializedItems from "../kitSerializedItems.js";
 import type * as kits from "../kits.js";
+import type * as lib_auth from "../lib/auth.js";
 import type * as lib_validators from "../lib/validators.js";
 import type * as lineItemMergeMaps from "../lineItemMergeMaps.js";
 import type * as locationMedia from "../locationMedia.js";
@@ -133,6 +134,7 @@ declare const fullApi: ApiFromModules<{
   kitMedia: typeof kitMedia;
   kitSerializedItems: typeof kitSerializedItems;
   kits: typeof kits;
+  "lib/auth": typeof lib_auth;
   "lib/validators": typeof lib_validators;
   lineItemMergeMaps: typeof lineItemMergeMaps;
   locationMedia: typeof locationMedia;

@@ -1,17 +1,35 @@
 /**
- * Convex auth provider configuration.
+ * Convex auth provider configuration (Phase 5 — Auth Bridge).
  *
- * Phases 0–4: NO browser-facing user auth on Convex. Every write flows through a
- * Next.js server action that (a) authenticates the user via Better Auth, (b)
- * enforces permissions with requirePermission(), then (c) calls the Convex
- * mutation using the server-side admin key (CONVEX_SELF_HOSTED_ADMIN_KEY). The
- * browser never calls Convex mutations directly, so Convex itself needs no
- * identity provider yet.
+ * Both the USER token (Better Auth /api/auth/token) and the SERVICE token
+ * (auth.api.signJWT, in-process) are ES256 JWTs signed by Better Auth's single
+ * JWKS, with the same issuer + audience. One customJwt provider validates both;
+ * convex/lib/auth.ts then distinguishes them by claim and enforces access. See
+ * docs/designs/convex-phase5-auth-bridge.md.
  *
- * Phase 5 (Auth Bridge) adds a Better Auth -> Convex JWT provider here so the
- * browser can do direct, identity-scoped reads/optimistic writes. See
- * docs/designs/convex-hybrid-migration.md (Phase 5).
+ * customJwt requires RS256/ES256 (not Better Auth's default EdDSA) — the jwt()
+ * plugin is configured with keyPairConfig.alg = "ES256".
+ *
+ * Values are read from the Convex deployment env at push time:
+ *   • CONVEX_AUTH_ISSUER   — must EXACTLY equal the token `iss` (= BETTER_AUTH_URL).
+ *   • CONVEX_AUTH_JWKS_URL — JWKS endpoint the backend fetches. Must be reachable
+ *     FROM the Convex container (local: http://host.docker.internal:3000/...).
+ * applicationID pins the required `aud` ("convex") — never omit it (Convex docs
+ * warn omitting it is insecure).
  */
+const issuer = process.env.CONVEX_AUTH_ISSUER ?? "http://localhost:3000";
+const jwks =
+  process.env.CONVEX_AUTH_JWKS_URL ??
+  "http://host.docker.internal:3000/api/auth/jwks";
+
 export default {
-  providers: [],
+  providers: [
+    {
+      type: "customJwt",
+      applicationID: "convex",
+      issuer,
+      jwks,
+      algorithm: "ES256",
+    },
+  ],
 };

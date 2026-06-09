@@ -1,11 +1,19 @@
 #!/usr/bin/env node
-/* Deterministic thin-CRUD generator for GearFlow Phase 2.
+/* Deterministic thin-CRUD generator for GearFlow Phase 2 (auth-hardened in Phase 5).
  *
  * For each app-data table, emits convex/<tableKey>.ts with list / getById /
- * create / update / remove (the doc's standard 5). Stubs are UNAUTHED — the
- * Next.js server actions that call them keep all permission/validation/audit
- * logic. Lookups key off the preserved cuid (`id`) via the by_cuid index;
- * org-scoped tables list by_organizationId, others by their parent FK.
+ * create / update / remove (the doc's standard 5). Lookups key off the preserved
+ * cuid (`id`) via the by_cuid index; org-scoped tables list by_organizationId,
+ * others by their parent FK.
+ *
+ * Phase 5 auth (convex/lib/auth.ts, docs/designs/convex-phase5-auth-bridge.md):
+ *   • every MUTATION (create/update/remove) → requireService (the trusted backend
+ *     service token; browser writes rejected, RBAC stays in Prisma server actions).
+ *   • org-scoped list/getById → requireOrgRead / requireOrgReadDoc (service OR a
+ *     user token whose orgId matches), so the browser can read its own org only.
+ *   • non-org list/getById → requireService (server-only; the browser doesn't
+ *     subscribe to these yet — they graduate to a scoped guard when one does).
+ *
  * Parsing is shared with the schema gen (scripts/lib/prisma-to-convex.cjs).
  * See FEATUREDOCS/54. Run: node scripts/generate-convex-crud.cjs . */
 const fs = require("fs");
@@ -22,6 +30,10 @@ const EXCLUDE = new Set([
   "users", "sessions", "accounts", "verifications", "organizations",
   "members", "invitations", "customRoles", "ssoProviders", "pendingSSOApprovals",
   "twoFactors", "backupCodes", "passkeys", "activityLogs",
+  // Better Auth jwt() plugin key store (Phase 5 auth bridge) — auth-owned, never
+  // written from Convex. Present in the Convex schema for completeness like the
+  // other auth tables, but gets no CRUD.
+  "jwkses",
 ]);
 
 function fieldExpr(f) {
@@ -67,21 +79,33 @@ for (const mdl of models) {
 
   const lookup = `ctx.db.query("${key}").withIndex("by_cuid", (q) => q.eq("id", id)).unique()`;
 
+  // Auth guards (Phase 5). Org-scoped reads use the org guards; everything else
+  // is service-only. Import only the helpers this module actually references so
+  // the generated file has no unused imports.
+  const authImports = mdl.orgScoped
+    ? `import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";\n`
+    : `import { requireService } from "./lib/auth";\n`;
+
   let out = `import { v } from "convex/values";\n`;
   out += `import { query, mutation } from "./_generated/server";\n`;
+  out += authImports;
   if (usesEnums) out += `import * as enums from "./lib/validators";\n`;
   out += `\n`;
-  out += `/**\n * Thin CRUD for ${mdl.name} (Convex table "${key}"). GENERATED — Phase 2.\n *\n * UNAUTHED by design: the Next.js server action that calls each function has\n * already authenticated the user, checked requirePermission, validated input,\n * and will write the activity log. Do not add auth here. Lookups use the cuid\n * (\`id\`) via the by_cuid index. See FEATUREDOCS/54 and convex/README.md.\n */\n\n`;
+  out += `/**\n * Thin CRUD for ${mdl.name} (Convex table "${key}"). GENERATED — Phase 2/5.\n *\n * AUTH (Phase 5, convex/lib/auth.ts): mutations require the trusted backend\n * SERVICE token (browser writes rejected — RBAC stays in the Next.js server\n * actions, which still own permission/validation/audit). ${mdl.orgScoped ? "Org-scoped reads\n * accept the service token OR a user token scoped to the same org." : "Reads are\n * service-only (no browser subscriber yet)."} Lookups use the\n * cuid (\`id\`) via by_cuid. See FEATUREDOCS/54 and docs/designs/convex-phase5-auth-bridge.md.\n */\n\n`;
 
-  out += `export const list = query({\n  args: ${listArgs},\n  handler: async (ctx, ${listDestructure}) =>\n    await ${listBody},\n});\n\n`;
+  if (mdl.orgScoped) {
+    out += `export const list = query({\n  args: ${listArgs},\n  handler: async (ctx, ${listDestructure}) => {\n    await requireOrgRead(ctx, orgId);\n    return await ${listBody};\n  },\n});\n\n`;
+    out += `export const getById = query({\n  args: { id: ${idValidator} },\n  handler: async (ctx, { id }) => {\n    const doc = await ${lookup};\n    await requireOrgReadDoc(ctx, doc);\n    return doc;\n  },\n});\n\n`;
+  } else {
+    out += `export const list = query({\n  args: ${listArgs},\n  handler: async (ctx, ${listDestructure}) => {\n    await requireService(ctx);\n    return await ${listBody};\n  },\n});\n\n`;
+    out += `export const getById = query({\n  args: { id: ${idValidator} },\n  handler: async (ctx, { id }) => {\n    await requireService(ctx);\n    return await ${lookup};\n  },\n});\n\n`;
+  }
 
-  out += `export const getById = query({\n  args: { id: ${idValidator} },\n  handler: async (ctx, { id }) =>\n    await ${lookup},\n});\n\n`;
+  out += `export const create = mutation({\n  args: {\n${createArgs}\n  },\n  handler: async (ctx, args) => {\n    await requireService(ctx);\n    return await ctx.db.insert("${key}", args);\n  },\n});\n\n`;
 
-  out += `export const create = mutation({\n  args: {\n${createArgs}\n  },\n  handler: async (ctx, args) => await ctx.db.insert("${key}", args),\n});\n\n`;
+  out += `export const update = mutation({\n  args: {\n    id: ${idValidator},\n    patch: v.object({\n${patchArgs}\n    }),\n  },\n  handler: async (ctx, { id, patch }) => {\n    await requireService(ctx);\n    const doc = await ${lookup};\n    if (!doc) throw new Error("${key} not found: " + id);\n    await ctx.db.patch(doc._id, patch);\n    return doc._id;\n  },\n});\n\n`;
 
-  out += `export const update = mutation({\n  args: {\n    id: ${idValidator},\n    patch: v.object({\n${patchArgs}\n    }),\n  },\n  handler: async (ctx, { id, patch }) => {\n    const doc = await ${lookup};\n    if (!doc) throw new Error("${key} not found: " + id);\n    await ctx.db.patch(doc._id, patch);\n    return doc._id;\n  },\n});\n\n`;
-
-  out += `export const remove = mutation({\n  args: { id: ${idValidator} },\n  handler: async (ctx, { id }) => {\n    const doc = await ${lookup};\n    if (!doc) throw new Error("${key} not found: " + id);\n    await ctx.db.delete(doc._id);\n  },\n});\n`;
+  out += `export const remove = mutation({\n  args: { id: ${idValidator} },\n  handler: async (ctx, { id }) => {\n    await requireService(ctx);\n    const doc = await ${lookup};\n    if (!doc) throw new Error("${key} not found: " + id);\n    await ctx.db.delete(doc._id);\n  },\n});\n`;
 
   fs.writeFileSync(path.join(ROOT, "convex", `${key}.ts`), out);
   written++;

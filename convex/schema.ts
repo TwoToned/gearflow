@@ -5,7 +5,7 @@ import * as enums from "./lib/validators";
 /**
  * GearFlow Convex schema — generated from prisma/schema.prisma (Phase 1).
  *
- * 95 tables mirroring the Prisma models. Conventions:
+ * 96 tables mirroring the Prisma models. Conventions:
  *  - The Prisma primary cuid `@id` is PRESERVED as a stored `id: v.string()`
  *    field with a `by_cuid` index — NOT dropped in favour of Convex's `_id`. The
  *    app holds cuids everywhere (URLs, FK strings, server-action args), so every
@@ -87,6 +87,16 @@ export default defineSchema({
     expiresAt: v.number(),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"]),
+
+  // Jwks
+  jwkses: defineTable({
+    id: v.string(),
+    publicKey: v.string(),
+    privateKey: v.string(),
+    createdAt: v.optional(v.number()),
+    expiresAt: v.optional(v.number()),
   })
     .index("by_cuid", ["id"]),
 
@@ -791,12 +801,12 @@ export default defineSchema({
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
-    .index("by_clientId", ["clientId"])
     .index("by_locationId", ["locationId"])
     .index("by_projectManagerId", ["projectManagerId"])
     .index("by_discordChannelId", ["discordChannelId"])
     .index("by_organizationId_projectNumber", ["organizationId", "projectNumber"])
     .index("by_status", ["status"])
+    .index("by_clientId", ["clientId"])
     .index("by_rentalStartDate_rentalEndDate", ["rentalStartDate", "rentalEndDate"])
     .index("by_isTemplate", ["isTemplate"]),
 
@@ -1152,9 +1162,9 @@ export default defineSchema({
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
-    .index("by_clientId", ["clientId"])
     .index("by_fileId", ["fileId"])
-    .index("by_clientId_fileId", ["clientId", "fileId"]),
+    .index("by_clientId_fileId", ["clientId", "fileId"])
+    .index("by_clientId", ["clientId"]),
 
   // LocationMedia
   locationMedia: defineTable({

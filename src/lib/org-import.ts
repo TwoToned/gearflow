@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { prisma } from "@/lib/prisma";
 import { uploadToS3, ensureBucket } from "@/lib/storage";
-import { getConvexClient } from "@/lib/convex-client";
+import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { MANIFEST_VERSION, type OrgExportManifest } from "./org-transfer-types";
 import { createId } from "@paralleldrive/cuid2";
@@ -235,10 +235,10 @@ export async function importOrganization(
     });
   });
 
-  // ── 4. Suppliers ─────────────────────────────────────────────────
+  // ── 4. Suppliers (dual-written: Prisma FK anchor + Convex reactive doc) ──
   for (const r of manifest.suppliers as Rec[]) {
     const id = newId("supplier", r.id);
-    await prisma.supplier.create({
+    const created = await prisma.supplier.create({
       data: {
         ...stripRelations(r),
         id,
@@ -247,6 +247,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await getConvexClient().mutation(api.suppliers.create, toConvexDoc(created) as any);
   }
 
   // ── 5. Models ────────────────────────────────────────────────────

@@ -22,7 +22,8 @@
     "bot:start": "tsx --env-file=.env scripts/discord-bot.ts",
     "seed": "tsx --env-file=.env prisma/seed.ts",
     "convex:schema": "node scripts/generate-convex-schema.cjs .",
-    "convex:crud": "node scripts/generate-convex-crud.cjs ."
+    "convex:crud": "node scripts/generate-convex-crud.cjs .",
+    "convex:backfill:clients": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-clients.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1063.0",

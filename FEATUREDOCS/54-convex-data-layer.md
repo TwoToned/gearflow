@@ -894,6 +894,81 @@ token bearing `svc` is rejected.
   authorization in Convex), and hardening the non-org reads as their UIs go
   reactive. The service-token path is the only writer during the hybrid period.
 
+## Phase 6 — Decommission (in progress)
+
+Multi-session tail. Three independent, independently-shippable subsystems; do ONE
+per session and leave a clean handoff. The full enumeration is in "Remaining work
+& session sizing" below. Progress so far:
+
+### Truncate + backfill resync — DONE
+
+`pnpm convex:resync:line-items` ran (33 removed, 33 re-created, Convex == Prisma)
+to clear the sub-hire-regeneration orphans documented in the sub-hire family
+section. A full per-org parity check across every dual-written table
+(`suppliers`, `subHires`, `subHireItems`, `subHireGroups`, `supplierOrders`,
+`supplierOrderItems`, `projects`, `projectLineItems`, `kits`, `assets`,
+`bulkAssets`, `projectCategories`, `projectGroups`) confirmed **only
+`projectLineItem` had orphans** — child tables (`subHireItem`/`subHireGroup`/
+`supplierOrderItem`) are managed by precise create/patch/remove, never bulk
+delete-and-recreate, so they stay in parity. No other table needs a resync.
+
+### Supplier dimension — FLAT reads decommissioned (nested deferred)
+
+The deferred cross-domain `supplier` joins split cleanly into two kinds. **Flat**
+reads — where `supplier` is a top-level relation on the queried row — are now off
+the Prisma mirror and onto Convex attach (`src/lib/suppliers-read.ts`:
+`attachSupplier` / `getSupplierById` / `getSuppliersByOrg`, plus the new
+`getMatchingSupplierIds` for search filters). Rewired:
+
+- `server/supplier-orders.ts` — `getSupplierOrders` (list + the
+  `WHERE supplier.name CONTAINS` search → resolve ids, fold `supplierId in [...]`
+  into the OR, omit on no match) and `getSupplierOrderById`.
+- `server/sub-hires.ts` — `getSubHires` (list + search filter), `getSubHire`,
+  `getSupplierRateHistory`, and every write path that only needed
+  `supplier.name` for its activity-log label / return shape (`createSubHire`,
+  `updateSubHire`, `deleteSubHire`, `updateSubHireStatus`, `changeSubHireProject`,
+  `updateSubHirePaymentStatus`; removed a vestigial unused include in
+  `duplicateSubHire`).
+- `server/assets.ts` `getAsset`, `server/line-items.ts` `addLineItem` /
+  `updateLineItem` returns, `server/csv.ts` (asset CSV export + import name→id
+  map), `lib/org-export.ts` (export uses `getSuppliersByOrg`, strips `_id`/
+  `_creationTime` like clients), `lib/reorder.ts` (org-scoped existence check via
+  `getSupplierById`).
+
+**Search-filter rule (codex-reviewed):** id-resolution is only order-safe because
+neither search query sorts or paginates by the supplier name (`getSupplierOrders`
+is `pageSize`-capped but ordered by `createdAt`; `getSubHires` is unpaginated,
+`createdAt`-ordered). A query that sorts/pages by `supplier.name` CANNOT use this
+shortcut after the join is removed — keep it on Prisma or fetch-all-then-sort.
+
+**Deferred (next PDF/model session — they share one line-item tree):** the
+**nested** supplier joins, where `supplier` sits inside a `lineItems → childLineItems`
+tree alongside the still-Prisma `model.*` includes: `server/warehouse.ts` (×6,
+3-deep), `server/category-slots.ts` (×5), `server/project-categories.ts` (×5),
+`server/projects.ts` `getProject` (×1), and the PDF `lib/pdfme/build-document-data.ts`
+(×4). These belong with the model.* + `*_media` + PDF-pipeline rewire as ONE
+coherent session: the equipment editor is a single delicate read composition, the
+PDF pipeline has 5 independent `DocumentLineItem` consumers (CLAUDE.md "gratuitous
+risk"), and a recursive line-item-tree attach helper should land once and serve
+supplier + model + media together. `prisma.supplier.*` direct reads are otherwise
+fully gone (only `server/suppliers.ts` dual-write source + `lib/org-import.ts`
+mirror-write remain, which is correct).
+
+### SSE / EventEmitter teardown — NOT started (blocked on React Query removal)
+
+`src/hooks/use-realtime.ts` exists only to call React Query's
+`queryClient.invalidateQueries`. 172 files still use `@tanstack/react-query`;
+Convex reactive replaces SSE only for already-converted domains. Removing SSE now
+would strip cross-user live updates from every non-converted page with no
+replacement, so this MUST follow the React Query removal, not precede it.
+
+### React Query removal — NOT started (large)
+
+~172 files / ~875 `useQuery`/`useMutation` calls remain. Too large for one clean
+session; the survivors are mostly hard cross-domain-composing pages
+(projects/warehouse/dashboard/crew). Newly-reactive tables must be added to the
+`BROWSER_READABLE` allowlist (Phase 5) and must hold no secrets.
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort
@@ -938,7 +1013,7 @@ sessions.
 | **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets + file_upload + crew + doc/service-template + **Kit** + **Asset/Bulk** + **project_category/group** + **project_line_item** + **sub_hire/supplier_order families** + **project** + **crew scheduling sub-tables (infra-only)** dual-write done — CENTRAL GRAPH COMPLETE + DUAL-WRITE SURFACE COMPLETE) | per-domain backfill + cutover; tsc/tests/build green each |
 | **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields + crew + **Kit** + **Asset/Bulk registry** done) | table/dropdown/edit live-update on mutation |
 | **5 Auth bridge** ✅ | Better Auth → Convex ES256 JWT; user token (org-scoped reads) + service token (trusted backend); browser writes rejected | round-trip 6/6: rejected without a valid token, accepted with; `/cso` clean |
-| 6 Decommission | Remove React Query + SSE event bus | [FEATUREDOCS/53](./53-realtime-sync.md) marked superseded |
+| **6 Decommission** 🔄 | Rewire deferred mirror reads off Prisma + remove React Query + SSE event bus (truncate+backfill resync DONE; supplier FLAT reads rewired; nested supplier/model/media + PDF + SSE + React Query remain) | per-subsystem; tsc/tests/build green each. [FEATUREDOCS/53](./53-realtime-sync.md) to be marked superseded when SSE is torn out |
 
 ## Conventions
 

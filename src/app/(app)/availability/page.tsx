@@ -154,7 +154,7 @@ function AvailabilityPage() {
       result.push(week);
     }
     return result;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/use-memo
   }, [gridStart.toISOString(), gridEnd.toISOString()]);
 
   const selectedProjects = selectedDay

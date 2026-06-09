@@ -49,6 +49,8 @@ const eslintConfig = [
       "react-hooks/immutability": "warn",
       "react-hooks/static-components": "warn",
       "react-hooks/refs": "warn",
+      "react-hooks/use-memo": "warn",
+      "react-hooks/preserve-manual-memoization": "warn",
     },
   },
 ];

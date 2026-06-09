@@ -5,6 +5,13 @@ import { requirePermission } from "@/lib/org-context";
 import { projectCategorySchema, type ProjectCategoryFormValues } from "@/lib/validations/project-category";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import {
+  mirrorProjectCategoryCreate,
+  patchProjectCategoryInConvex,
+  removeProjectCategoryFromConvex,
+  removeProjectGroupFromConvex,
+  syncProjectCategoriesToConvex,
+} from "@/lib/project-grouping-mirror";
 import { computeOverbookedStatus } from "@/lib/availability";
 
 export async function getProjectCategories(projectId: string) {
@@ -122,6 +129,7 @@ export async function createProjectCategory(
       sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
     },
   });
+  await mirrorProjectCategoryCreate(category);
 
   await logActivity({
     organizationId,
@@ -150,6 +158,7 @@ export async function updateProjectCategory(
       ...(data.sortOrder !== undefined && { sortOrder: Number(data.sortOrder) }),
     },
   });
+  await patchProjectCategoryInConvex(category.id, category);
 
   await logActivity({
     organizationId,
@@ -201,6 +210,13 @@ export async function deleteProjectCategory(categoryId: string) {
       where: { id: categoryId, organizationId },
     }),
   ]);
+
+  // Mirror the cascade to Convex: groups removed first, then the category. (The
+  // line-item categoryId/groupId clears live in the line_item domain — migrated
+  // in step 4. project_group.categoryId clear-to-null on orphaned groups would be
+  // a no-op anyway; here they're hard-deleted.)
+  for (const g of category.groups) await removeProjectGroupFromConvex(g.id);
+  await removeProjectCategoryFromConvex(categoryId);
 
   await logActivity({
     organizationId,
@@ -261,6 +277,7 @@ export async function reorderProjectCategories(
       })
     )
   );
+  await syncProjectCategoriesToConvex(orderedIds);
 
   return serialize({ success: true });
 }

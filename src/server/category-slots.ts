@@ -30,6 +30,10 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import {
+  mirrorProjectCategoryCreate,
+  syncProjectGroupsToConvex,
+} from "@/lib/project-grouping-mirror";
 import { recalculateProjectTotals } from "@/server/line-items";
 import {
   moveSubHireGroupToCategorySchema,
@@ -384,6 +388,10 @@ export async function moveProjectGroupToCategory(
     }
   });
 
+  // Mirror the group's categoryId move. NB a move to Uncategorised clears
+  // categoryId→null — a no-op in Convex (documented); infra-only, tolerable.
+  await syncProjectGroupsToConvex([parsed.groupId]);
+
   await recalculateProjectTotals(group.projectId);
   await logActivity({
     organizationId,
@@ -632,6 +640,10 @@ export async function createCategoryAndPlaceGroup(input: CreateCategoryAndPlaceG
 
     return category;
   });
+
+  // Mirror the new category + the placed group's categoryId update to Convex.
+  await mirrorProjectCategoryCreate(result);
+  if (projectGroupId) await syncProjectGroupsToConvex([projectGroupId]);
 
   await logActivity({
     organizationId,

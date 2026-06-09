@@ -12,6 +12,7 @@ import {
 } from "@/lib/validations/group-template";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import { mirrorProjectGroupCreate, syncProjectGroupsToConvex } from "@/lib/project-grouping-mirror";
 import { calculateSuggestedPrice } from "./project-groups";
 import { addKitLineItem, recalculateProjectTotals } from "./line-items";
 
@@ -288,6 +289,8 @@ export async function applyGroupTemplate(
 
     return newGroup;
   });
+  // Mirror the new project group to Convex (line items are step-4 domain).
+  await mirrorProjectGroupCreate(group);
 
   // Expand kit items outside the tx. Each call creates parent + children and
   // runs its own availability check. We skip kits that conflict (already on an
@@ -322,6 +325,7 @@ export async function applyGroupTemplate(
     where: { id: group.id },
     data: { suggestedPrice: suggested },
   });
+  await syncProjectGroupsToConvex([group.id]);
 
   // Kit expansion touched line items — refresh project totals.
   if (kitItems.length > 0) {

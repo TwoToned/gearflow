@@ -14,6 +14,7 @@ import { recalculateProjectTotals } from "@/server/line-items";
 import { logActivity } from "@/lib/activity-log";
 import { syncKitsToConvex } from "@/lib/kit-mirror";
 import { syncAssetsToConvex } from "@/lib/asset-mirror";
+import { mirrorProjectCategoryCreate, mirrorProjectGroupCreate } from "@/lib/project-grouping-mirror";
 import { emitIfDiscordEnabled } from "@/lib/services/outbox-service";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
@@ -771,6 +772,10 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
     },
   });
 
+  // Mirror the duplicated grouping substructure to Convex after the tx commits
+  // (the new project + line items are step-6 / step-4 domains, not mirrored here).
+  const createdCategories: Array<Record<string, unknown>> = [];
+  const createdGroups: Array<Record<string, unknown>> = [];
   try {
     const result = await prisma.$transaction(async (tx) => {
       const newProject = await tx.project.create({
@@ -888,6 +893,7 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
             sortOrder: cat.sortOrder,
           },
         });
+        createdCategories.push(newCat);
 
         for (const group of cat.groups) {
           const newGroup = await tx.projectGroup.create({
@@ -905,6 +911,7 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
               sortOrder: group.sortOrder,
             },
           });
+          createdGroups.push(newGroup);
 
           for (const li of group.lineItems) {
             await copyLineItem(li, newProject.id, newCat.id, newGroup.id);
@@ -924,6 +931,10 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
 
       return newProject;
     });
+
+    // Mirror the duplicated categories + groups to Convex.
+    for (const c of createdCategories) await mirrorProjectCategoryCreate(c);
+    for (const g of createdGroups) await mirrorProjectGroupCreate(g);
 
     // Recalculate totals after transaction commits
     await recalculateProjectTotals(result.id);

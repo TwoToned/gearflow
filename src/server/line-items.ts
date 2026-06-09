@@ -11,6 +11,7 @@ import {
 } from "@/lib/validations/line-item";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import { syncProjectGroupsToConvex } from "@/lib/project-grouping-mirror";
 import { roundCurrency } from "@/lib/formatters";
 import { calculateSuggestedPrice, getGroupBillingPeriod } from "./project-groups";
 import { optimizePrice, computeTotalDays } from "@/lib/pricing";
@@ -531,6 +532,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
       where: { id: result.groupId },
       data: { suggestedPrice: suggested },
     });
+    await syncProjectGroupsToConvex([result.groupId]);
   }
 
   await recalculateProjectTotals(projectId);

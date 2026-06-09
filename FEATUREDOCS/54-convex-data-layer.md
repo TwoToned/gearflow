@@ -797,6 +797,36 @@ dual-write surface is finished** — every Convex-mirrored table is now kept cur
 - **Backfill**: `pnpm convex:backfill:crew-scheduling` (12 rows = 9 assignments +
   3 certifications; P==C, idempotent re-run verified).
 
+### Clients FK bug fix — DONE
+
+Clients were **hard-cutover** to Convex (sole source of truth): new clients are
+created ONLY in Convex, and the Prisma `client` table is frozen at its
+cutover-time rows (read only by the one-time backfill). But the Prisma DB still had
+**live FK constraints into that frozen table** — `project.clientId → client(id)`
+(nullable, NO ACTION) and `client_media.clientId → client(id)` (required, CASCADE).
+Assigning a net-new (Convex-only) client to a project, or uploading media for one,
+FK-failed because there was no matching Prisma `client` row. (Not caught by tests
+because the fixtures only used the 6 backfilled clients.)
+
+**Fix (codex-reviewed: drop the FKs, not a shadow dual-write).** A shadow dual-write
+would be a partial rollback of the cutover and would preserve an attractive
+nuisance — a stale relational model that no longer reflects ownership. Instead:
+
+- Migration `20260609000000_drop_client_fk_constraints` drops both constraints
+  (`IF EXISTS`, idempotent). The columns + indexes stay. Applied via
+  `prisma migrate deploy` (NOT `migrate dev` — see [[prisma-preexisting-drift]]).
+- `schema.prisma`: removed the `Project.client` / `ClientMedia.client` relations and
+  the `Client.projects` / `Client.media` back-relations; `clientId` is now a plain
+  `String` holding the Convex cuid (matching how Convex stores FKs). Removing the
+  relations also removes the footgun of a query accidentally JOINing the frozen
+  6-row table. Verified no live Prisma `include:{client}` and no `prisma.client.*`
+  access remained (only the backfill's relation-free `findMany`).
+- Cascade note: dropping `client_media`'s ON DELETE CASCADE is moot — Prisma
+  `client` rows are never deleted. A future Convex client delete must clean up
+  `project.clientId` / `client_media` rows in app logic.
+- Test: `src/server/project-client-fk.int.test.ts` — creating a project (and client
+  media) against a brand-new, Prisma-absent clientId succeeds.
+
 **Still ahead (post-central-graph):** ~~deferred crew scheduling/timesheet
 sub-tables~~ **DONE** (see "Crew scheduling / timesheet sub-tables" above — the
 dual-write surface is now complete); Phase 5 (auth bridge); Phase 6 (decommission —
@@ -814,11 +844,10 @@ mechanical dual-write, much slower for design/security/teardown work):
    `crew_assignment`, `crew_shift`, `crew_availability`, `crew_certification`,
    `crew_time_entry` are now dual-written (see the section above). The entire
    dual-write surface is complete.
-2. **Clients hard-cutover latent FK bug** — `project.clientId` → a net-new
-   Convex-only client FK-fails, because Clients was hard-cutover but the Prisma
-   `project.clientId` FK is still live. Fix: either dual-write a minimal Prisma
-   `client` shadow row, or drop the Prisma FK constraint. **Size: ~1 hour.** Real
-   prod hazard — do it early.
+2. ~~**Clients hard-cutover latent FK bug**~~ — **DONE.** See "Clients FK bug fix"
+   below. Both live FKs into the frozen Prisma `client` table
+   (`project.clientId`, `client_media.clientId`) were dropped; the columns stay as
+   plain external ids holding the Convex cuid.
 3. **Phase 5 — auth bridge** — Better Auth → self-hosted Convex JWT, so the
    browser talks to Convex directly (mutations are currently unauthed, trust
    delegated to server actions — every domain so far deliberately punted this).

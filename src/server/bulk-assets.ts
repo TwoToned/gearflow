@@ -7,6 +7,11 @@ import type { Prisma } from "@/generated/prisma/client";
 import { serialize } from "@/lib/serialize";
 import { reserveAssetTags } from "@/server/settings";
 import { logActivity } from "@/lib/activity-log";
+import {
+  mirrorBulkAssetCreate,
+  patchBulkAssetInConvex,
+  removeBulkAssetFromConvex,
+} from "@/lib/asset-mirror";
 
 export type BulkAssetWithRelations = Prisma.BulkAssetGetPayload<{
   include: {
@@ -121,6 +126,7 @@ export async function createBulkAsset(data: BulkAssetFormValues) {
       },
     });
     await reserveAssetTags(1);
+    await mirrorBulkAssetCreate(result);
 
     await logActivity({
       organizationId,
@@ -170,6 +176,7 @@ export async function updateBulkAsset(id: string, data: BulkAssetFormValues) {
       tags: parsed.tags,
     },
   });
+  await patchBulkAssetInConvex(updated.id, updated);
 
   await logActivity({
     organizationId,
@@ -204,6 +211,7 @@ export async function deleteBulkAsset(id: string) {
   }
 
   await prisma.bulkAsset.delete({ where: { id, organizationId } });
+  await removeBulkAssetFromConvex(id);
 
   await logActivity({
     organizationId,
@@ -222,16 +230,20 @@ export async function deleteBulkAsset(id: string) {
 
 export async function updateBulkAssetNotes(id: string, notes: string) {
   const { organizationId } = await requirePermission("bulkAsset", "update");
-  return serialize(await prisma.bulkAsset.update({
+  const updated = await prisma.bulkAsset.update({
     where: { id, organizationId },
     data: { notes: notes || null },
-  }));
+  });
+  await patchBulkAssetInConvex(updated.id, updated);
+  return serialize(updated);
 }
 
 export async function archiveBulkAsset(id: string) {
   const { organizationId } = await requirePermission("bulkAsset", "update");
-  return serialize(await prisma.bulkAsset.update({
+  const updated = await prisma.bulkAsset.update({
     where: { id, organizationId },
     data: { isActive: false, status: "RETIRED" },
-  }));
+  });
+  await patchBulkAssetInConvex(updated.id, updated);
+  return serialize(updated);
 }

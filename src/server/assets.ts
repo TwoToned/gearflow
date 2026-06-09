@@ -8,6 +8,12 @@ import { serialize } from "@/lib/serialize";
 import { reserveAssetTags, getOrgTestTagSettings } from "@/server/settings";
 import { backfillTestTagAssets } from "@/server/test-tag-assets";
 import { logActivity } from "@/lib/activity-log";
+import {
+  mirrorAssetCreate,
+  patchAssetInConvex,
+  removeAssetFromConvex,
+  syncAssetsToConvex,
+} from "@/lib/asset-mirror";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
 import { validateCustomFieldValues } from "@/lib/validations/custom-field";
@@ -241,6 +247,7 @@ export async function createAsset(data: AssetFormValues) {
     });
     // Advance the counter now that the asset is actually created
     await reserveAssetTags(1);
+    await mirrorAssetCreate(result);
 
     // Auto-register in T&T registry if model requires it
     if (model?.requiresTestAndTag) {
@@ -339,6 +346,7 @@ export async function createAssets(
 
   // Advance the counter now that assets are actually created
   await reserveAssetTags(assets.length);
+  for (const result of results) await mirrorAssetCreate(result);
 
   // Auto-register in T&T registry if model requires it
   if (model?.requiresTestAndTag) {
@@ -426,6 +434,7 @@ export async function updateAsset(id: string, data: AssetFormValues) {
     if (translated) throw translated;
     throw e;
   }
+  await patchAssetInConvex(updated.id, updated);
 
   await logActivity({
     organizationId,
@@ -482,6 +491,7 @@ export async function bulkUpdateAssets(
     where: { id: { in: ids }, organizationId },
     data: updateData,
   });
+  await syncAssetsToConvex(ids);
 
   return { count: result.count };
 }
@@ -543,6 +553,7 @@ export async function deleteAsset(id: string) {
   }
 
   await prisma.asset.delete({ where: { id, organizationId } });
+  await removeAssetFromConvex(id);
 
   await logActivity({
     organizationId,
@@ -561,10 +572,12 @@ export async function deleteAsset(id: string) {
 
 export async function updateAssetNotes(id: string, notes: string) {
   const { organizationId } = await requirePermission("asset", "update");
-  return serialize(await prisma.asset.update({
+  const updated = await prisma.asset.update({
     where: { id, organizationId },
     data: { notes: notes || null },
-  }));
+  });
+  await patchAssetInConvex(updated.id, updated);
+  return serialize(updated);
 }
 
 export async function archiveAsset(id: string) {
@@ -576,8 +589,10 @@ export async function archiveAsset(id: string) {
     data: { status: "RETIRED", isActive: false },
   });
 
-  return serialize(await prisma.asset.update({
+  const updated = await prisma.asset.update({
     where: { id, organizationId },
     data: { isActive: false, status: "RETIRED" },
-  }));
+  });
+  await patchAssetInConvex(updated.id, updated);
+  return serialize(updated);
 }

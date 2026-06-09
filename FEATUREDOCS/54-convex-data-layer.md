@@ -475,6 +475,8 @@ grep + write-site survey done this session (counts as of 2026-06-09):
    ✅ **DONE** — see "Project grouping substructure" above. 6 files mirrored;
    category_slot stays Prisma-only.
 4. `project_line_item` (depends on 1–3 being in Convex for its FK joins).
+   ✅ **DONE** — see "Project line items" above. Infra-only; upsert-by-project
+   sweep covers the warehouse/check status paths. Sub-hire line-item writes → step 5.
 5. `sub_hire` / `supplier_order` families.
 6. `project` last (most-referenced).
 
@@ -685,6 +687,33 @@ Prisma-only.
   consumer-less substructure, heals on next non-null write or backfill.
 - **Backfill**: `pnpm convex:backfill:project-grouping` (29 rows; P==C).
 
+### Project line items — DONE (central-graph step 4, infra-only)
+
+`project_line_item` (33 rows) — the equipment-tab spine — is **dual-written
+infra-only** (no Phase 4; composed only in the equipment editor + PDF pipeline,
+both Prisma reads). Dual-write: `project_line_item_unit` is required+Cascade, the
+table self-references (parent/child + kit children), project_service /
+check_record / damage_event are nullable refs.
+
+- **Mirror**: [`src/lib/line-item-mirror.ts`](../src/lib/line-item-mirror.ts) —
+  explicit create/patch/remove for CRUD + `upsertProjectLineItemsToConvex(projectId)`
+  (the workhorse: a project has few line items, so re-read-and-create-or-patch
+  each after a status `$transaction` commits — captures status flips AND scan-time
+  accessory/kit-child row EXPANSIONS, and can't miss an internal site) +
+  `syncLineItemsToConvex(ids)` for non-project-scoped multi-row writes.
+- **Write sites** (the spine is written from ~17 files): line-items.ts (CRUD;
+  remove cascades children), warehouse.ts (all check-out/in/kit/force-return),
+  check-records.ts (all prep/deprep/pack/flag/store/complete*), bulk-checkin.ts,
+  woocommerce.ts + org-import.ts (create), projects.ts (duplicate mirror + delete
+  remove), project-groups.ts (recalc-prices + move), category-slots.ts (group
+  moves resync followed items), project-services.ts (linked-item deletes),
+  split-sibling-collapse.ts, reservation-conflicts.ts.
+- **Remaining (documented)**: sub-hire line-item writes (8, in sub-hires.ts) land
+  with **step 5**; category/group-delete reparenting (`categoryId`/`groupId`→null)
+  + user-delete FK clears are clear-to-null no-ops that heal on a backfill run.
+- **Backfill**: `pnpm convex:backfill:line-items` (33; P==C). Live upsert
+  round-trip verified.
+
 ## Migration phases (roadmap)
 
 | Phase | Scope | Verification |
@@ -692,7 +721,7 @@ Prisma-only.
 | **0 Infra** ✅ | Docker stack, empty schema, provider, env | dashboard up, `convex dev` connects |
 | **1 Schema** ✅ | 95 models + 65 enums → `defineTable()` | deployed clean, typechecks, tests green |
 | **2 Thin CRUD** ✅ | 81 tables × 5 = 405 functions | deployed, typechecks, CRUD round-trip verified |
-| **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets + file_upload + crew + doc/service-template + **Kit** + **Asset/Bulk** + **project_category/group (infra-only)** dual-write done) | per-domain backfill + cutover; tsc/tests/build green each |
+| **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets + file_upload + crew + doc/service-template + **Kit** + **Asset/Bulk** + **project_category/group** + **project_line_item (infra-only)** dual-write done) | per-domain backfill + cutover; tsc/tests/build green each |
 | **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields + crew + **Kit** + **Asset/Bulk registry** done) | table/dropdown/edit live-update on mutation |
 | 5 Auth bridge | Better Auth → Convex JWT (admin key meanwhile) | mutations rejected without auth |
 | 6 Decommission | Remove React Query + SSE event bus | [FEATUREDOCS/53](./53-realtime-sync.md) marked superseded |

@@ -4,6 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getClientById, getClientMap, attachClient } from "@/lib/clients-read";
 import {
+  buildLineItemAttachMaps,
+  attachLineItemTree,
+} from "@/lib/line-item-tree-read";
+import {
   projectSchema,
   type ProjectFormValues,
 } from "@/lib/validations/project";
@@ -350,6 +354,8 @@ export async function getProject(id: string) {
         },
         orderBy: { addedAt: "asc" },
       },
+      // model + supplier are dual-written to Convex and attached in JS via
+      // attachLineItemTree below (Phase 6 decommission) — not joined here.
       categories: {
         include: {
           groups: {
@@ -360,11 +366,11 @@ export async function getProject(id: string) {
                 // so CANCELLED line items are only ever inert merge residue.
                 where: { status: { not: "CANCELLED" } },
                 include: {
-                  model: true, asset: true, bulkAsset: true, kit: true,
+                  asset: true, bulkAsset: true, kit: true,
                   units: PROJECT_UNIT_INCLUDE,
                   childLineItems: {
                     include: {
-                      model: true, asset: true, bulkAsset: true, kit: true,
+                      asset: true, bulkAsset: true, kit: true,
                       units: PROJECT_UNIT_INCLUDE,
                     },
                     orderBy: { sortOrder: "asc" },
@@ -378,11 +384,11 @@ export async function getProject(id: string) {
           lineItems: {
             where: { groupId: null, status: { not: "CANCELLED" } },
             include: {
-              model: true, asset: true, bulkAsset: true, kit: true,
+              asset: true, bulkAsset: true, kit: true,
               units: PROJECT_UNIT_INCLUDE,
               childLineItems: {
                 include: {
-                  model: true, asset: true, bulkAsset: true, kit: true,
+                  asset: true, bulkAsset: true, kit: true,
                   units: PROJECT_UNIT_INCLUDE,
                 },
                 orderBy: { sortOrder: "asc" },
@@ -396,19 +402,17 @@ export async function getProject(id: string) {
       lineItems: {
         where: { status: { not: "CANCELLED" } },
         include: {
-          model: true,
           asset: true,
           bulkAsset: true,
           kit: true,
-          supplier: true,
           units: PROJECT_UNIT_INCLUDE,
           childLineItems: {
             include: {
-              model: true, asset: true, bulkAsset: true, kit: true,
+              asset: true, bulkAsset: true, kit: true,
               units: PROJECT_UNIT_INCLUDE,
               childLineItems: {
                 include: {
-                  model: true, asset: true, bulkAsset: true,
+                  asset: true, bulkAsset: true,
                   units: PROJECT_UNIT_INCLUDE,
                 },
                 orderBy: { sortOrder: "asc" },
@@ -440,15 +444,29 @@ export async function getProject(id: string) {
     }
   }
 
+  // model + supplier live in Convex — attach across every line-item tree in the
+  // equipment composition (the two grouped trees under each category and the
+  // top-level list). One maps round-trip serves them all.
+  const attachMaps = await buildLineItemAttachMaps(organizationId);
+  const categories = project.categories.map((cat) => ({
+    ...cat,
+    groups: cat.groups.map((g) => ({
+      ...g,
+      lineItems: attachLineItemTree(g.lineItems, attachMaps),
+    })),
+    lineItems: attachLineItemTree(cat.lineItems, attachMaps),
+  }));
+  const topLineItems = attachLineItemTree(project.lineItems, attachMaps);
+
   const overbookedMap = await computeOverbookedStatus(
     organizationId,
-    project.lineItems,
+    topLineItems,
     project.rentalStartDate,
     project.rentalEndDate,
     project.id,
   );
 
-  const enrichedLineItems = project.lineItems.map((li) => {
+  const enrichedLineItems = topLineItems.map((li) => {
     const info = overbookedMap.get(li.id);
     return {
       ...li,
@@ -467,7 +485,7 @@ export async function getProject(id: string) {
 
   // Clients live in Convex — attach instead of a Prisma join.
   const client = project.clientId ? await getClientById(project.clientId) : null;
-  return serialize({ ...project, client, lineItems: enrichedLineItems });
+  return serialize({ ...project, categories, client, lineItems: enrichedLineItems });
 }
 
 export async function createProject(data: ProjectFormValues & { isTemplate?: boolean }) {

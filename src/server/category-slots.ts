@@ -35,6 +35,11 @@ import {
   syncProjectGroupsToConvex,
 } from "@/lib/project-grouping-mirror";
 import { upsertProjectLineItemsToConvex } from "@/lib/line-item-mirror";
+import {
+  buildLineItemAttachMaps,
+  attachLineItemTree,
+  resolveAttachedSupplier,
+} from "@/lib/line-item-tree-read";
 import { syncSubHireToConvex } from "@/lib/sub-hire-mirror";
 import { recalculateProjectTotals } from "@/server/line-items";
 import {
@@ -61,19 +66,17 @@ export async function getUncategorizedSubHireGroups(projectId: string) {
   // Mirrors the lineItem include used by getProjectCategories so the
   // equipment tab can render orphan sub-hire groups with full child
   // expansion without an additional query.
+  // model + supplier are dual-written to Convex — attached in JS below, not
+  // joined here. See src/lib/line-item-tree-read.ts (Phase 6 decommission).
   const lineItemInclude = {
-    model: true,
     asset: true,
     bulkAsset: true,
     kit: true,
-    supplier: { select: { name: true } },
     childLineItems: {
       include: {
-        model: true,
         asset: true,
         bulkAsset: true,
         kit: true,
-        supplier: { select: { name: true } },
       },
       orderBy: { sortOrder: "asc" as const },
     },
@@ -89,7 +92,7 @@ export async function getUncategorizedSubHireGroups(projectId: string) {
           id: true,
           orderNumber: true,
           status: true,
-          supplier: { select: { id: true, name: true } },
+          supplierId: true,
         },
       },
       items: true,
@@ -101,7 +104,16 @@ export async function getUncategorizedSubHireGroups(projectId: string) {
     },
     orderBy: { sortOrder: "asc" },
   });
-  return serialize(groups);
+  const attachMaps = await buildLineItemAttachMaps(organizationId);
+  const attached = groups.map((g) => ({
+    ...g,
+    subHire: {
+      ...g.subHire,
+      supplier: resolveAttachedSupplier(g.subHire.supplierId, attachMaps),
+    },
+    lineItems: attachLineItemTree(g.lineItems, attachMaps),
+  }));
+  return serialize(attached);
 }
 
 /**
@@ -118,6 +130,7 @@ export async function getUncategorizedSubHireGroups(projectId: string) {
  */
 export async function getUncategorizedProjectGroups(projectId: string) {
   const { organizationId } = await requirePermission("project", "read");
+  // model + supplier are dual-written to Convex — attached in JS below.
   const groups = await prisma.projectGroup.findMany({
     where: {
       categoryId: null,
@@ -127,18 +140,14 @@ export async function getUncategorizedProjectGroups(projectId: string) {
     include: {
       lineItems: {
         include: {
-          model: true,
           asset: true,
           bulkAsset: true,
           kit: true,
-          supplier: { select: { name: true } },
           childLineItems: {
             include: {
-              model: true,
               asset: true,
               bulkAsset: true,
               kit: true,
-              supplier: { select: { name: true } },
             },
             orderBy: { sortOrder: "asc" as const },
           },
@@ -148,7 +157,12 @@ export async function getUncategorizedProjectGroups(projectId: string) {
     },
     orderBy: { sortOrder: "asc" },
   });
-  return serialize(groups);
+  const attachMaps = await buildLineItemAttachMaps(organizationId);
+  const attached = groups.map((g) => ({
+    ...g,
+    lineItems: attachLineItemTree(g.lineItems, attachMaps),
+  }));
+  return serialize(attached);
 }
 
 // ── Mutations ───────────────────────────────────────────────────────────────

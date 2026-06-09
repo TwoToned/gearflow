@@ -472,6 +472,8 @@ grep + write-site survey done this session (counts as of 2026-06-09):
    create/update/delete/reorder/split/merge writes; the category-delete cascade
    removes its groups from Convex; the project-duplication `tx.create`s in
    `projects.ts` must mirror too).
+   ✅ **DONE** — see "Project grouping substructure" above. 6 files mirrored;
+   category_slot stays Prisma-only.
 4. `project_line_item` (depends on 1–3 being in Convex for its FK joins).
 5. `sub_hire` / `supplier_order` families.
 6. `project` last (most-referenced).
@@ -659,6 +661,30 @@ asset_bulk_child / model_bulk_accessory) plus many nullable refs → dual-write.
 - **Backfill**: `pnpm convex:backfill:asset` (134 rows; counts verified P==C).
   Live patch round-trip verified against the running backend.
 
+### Project grouping substructure — DONE (central-graph step 3, infra-only)
+
+`project_category` (12 rows) + `project_group` (17 rows) are **dual-written
+infra-only** — there is **no Phase 4**. They are composed only inside the
+cross-domain equipment editor (project ↔ line_item ↔ category ↔ group ↔
+category_slot ↔ sub_hire_group, read as the equipment tab's mixed-ordered list),
+which stays on Prisma reads. The mirror keeps the Convex graph complete for the
+eventual decommission. `category_slot` (the cross-type ordering layer) stays
+Prisma-only.
+
+- **Mirror**: [`src/lib/project-grouping-mirror.ts`](../src/lib/project-grouping-mirror.ts)
+  — create/patch/remove for both + `syncProjectGroupsToConvex` /
+  `syncProjectCategoriesToConvex` for the reorder/split/merge/move transactions.
+- **Write sites** (6 files): `project-categories.ts` (create/update/reorder/delete
+  — delete cascades its groups out of Convex), `project-groups.ts`
+  (create/update/price/accept/move/reorder/delete), `category-slots.ts`
+  (move-to-category + create-category-and-move; reorder stays on category_slot),
+  `group-templates.ts` (applyGroupTemplate), `line-items.ts` (group suggestedPrice
+  recalc on add), `projects.ts` (duplicateProject copies categories + groups).
+- **Clear-to-null**: moving a group to the Uncategorised zone clears
+  `categoryId`→null — a no-op in Convex (documented); tolerable for a
+  consumer-less substructure, heals on next non-null write or backfill.
+- **Backfill**: `pnpm convex:backfill:project-grouping` (29 rows; P==C).
+
 ## Migration phases (roadmap)
 
 | Phase | Scope | Verification |
@@ -666,7 +692,7 @@ asset_bulk_child / model_bulk_accessory) plus many nullable refs → dual-write.
 | **0 Infra** ✅ | Docker stack, empty schema, provider, env | dashboard up, `convex dev` connects |
 | **1 Schema** ✅ | 95 models + 65 enums → `defineTable()` | deployed clean, typechecks, tests green |
 | **2 Thin CRUD** ✅ | 81 tables × 5 = 405 functions | deployed, typechecks, CRUD round-trip verified |
-| **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets + file_upload + crew + doc/service-template + **Kit** + **Asset/Bulk** dual-write done) | per-domain backfill + cutover; tsc/tests/build green each |
+| **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets + file_upload + crew + doc/service-template + **Kit** + **Asset/Bulk** + **project_category/group (infra-only)** dual-write done) | per-domain backfill + cutover; tsc/tests/build green each |
 | **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields + crew + **Kit** + **Asset/Bulk registry** done) | table/dropdown/edit live-update on mutation |
 | 5 Auth bridge | Better Auth → Convex JWT (admin key meanwhile) | mutations rejected without auth |
 | 6 Decommission | Remove React Query + SSE event bus | [FEATUREDOCS/53](./53-realtime-sync.md) marked superseded |

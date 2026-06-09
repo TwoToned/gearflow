@@ -478,6 +478,8 @@ grep + write-site survey done this session (counts as of 2026-06-09):
    ✅ **DONE** — see "Project line items" above. Infra-only; upsert-by-project
    sweep covers the warehouse/check status paths. Sub-hire line-item writes → step 5.
 5. `sub_hire` / `supplier_order` families.
+   ✅ **DONE** — see "Sub-hire + supplier-order families" above. Also closed the
+   deferred step-4 sub-hire line-item writes.
 6. `project` last (most-referenced).
 
 All Convex CRUD modules + schema for every table above already exist (Phase 2).
@@ -714,6 +716,30 @@ check_record / damage_event are nullable refs.
 - **Backfill**: `pnpm convex:backfill:line-items` (33; P==C). Live upsert
   round-trip verified.
 
+### Sub-hire + supplier-order families — DONE (central-graph step 5, infra-only)
+
+`sub_hire` (+ `sub_hire_item`, `sub_hire_group`) and `supplier_order`
+(+ `supplier_order_item`) — **dual-written infra-only** (1 row each). Each head
+carries required+Cascade inbound from its sub-tables; project_line_item /
+category_slot carry nullable refs.
+
+- **Mirror**: [`src/lib/sub-hire-mirror.ts`](../src/lib/sub-hire-mirror.ts) —
+  create/patch/remove for all 5 tables + `syncSubHireToConvex(id)` /
+  `syncSupplierOrderToConvex(id)` (re-read head + sub-rows, upsert each — the
+  workhorse for the family `$transaction`s).
+- **Write sites**: supplier-orders.ts (order + item CRUD/status), sub-hires.ts
+  (~17 actions — create/update/delete/status/item·group CRUD/setItemGroup/pricing/
+  placement/changeProject/duplicate/payment; each syncs the family + upserts the
+  project's line items), reorder.ts + org-import.ts (creates), category-slots.ts
+  (sub-hire group moves). `sub_hire_media` stays Prisma-only.
+- **Also closed the step-4 gap**: the deferred sub-hire `project_line_item` writes
+  are now mirrored (via `upsertProjectLineItemsToConvex` at each sub-hire action).
+- **Known limitation (documented)**: sub-hire line-item **regeneration**
+  (`generateSubHireLineItemsTx` does deleteMany + recreate with FRESH ids) orphans
+  the pre-regen line-item rows in Convex — infra-only, no consumer; a decommission
+  re-sync (truncate + backfill) clears them.
+- **Backfill**: `pnpm convex:backfill:sub-hires` (5 rows; P==C). Live sync verified.
+
 ## Migration phases (roadmap)
 
 | Phase | Scope | Verification |
@@ -721,7 +747,7 @@ check_record / damage_event are nullable refs.
 | **0 Infra** ✅ | Docker stack, empty schema, provider, env | dashboard up, `convex dev` connects |
 | **1 Schema** ✅ | 95 models + 65 enums → `defineTable()` | deployed clean, typechecks, tests green |
 | **2 Thin CRUD** ✅ | 81 tables × 5 = 405 functions | deployed, typechecks, CRUD round-trip verified |
-| **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets + file_upload + crew + doc/service-template + **Kit** + **Asset/Bulk** + **project_category/group** + **project_line_item (infra-only)** dual-write done) | per-domain backfill + cutover; tsc/tests/build green each |
+| **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets + file_upload + crew + doc/service-template + **Kit** + **Asset/Bulk** + **project_category/group** + **project_line_item** + **sub_hire/supplier_order families (infra-only)** dual-write done) | per-domain backfill + cutover; tsc/tests/build green each |
 | **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields + crew + **Kit** + **Asset/Bulk registry** done) | table/dropdown/edit live-update on mutation |
 | 5 Auth bridge | Better Auth → Convex JWT (admin key meanwhile) | mutations rejected without auth |
 | 6 Decommission | Remove React Query + SSE event bus | [FEATUREDOCS/53](./53-realtime-sync.md) marked superseded |

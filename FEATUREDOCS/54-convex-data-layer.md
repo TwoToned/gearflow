@@ -339,6 +339,31 @@ coupled) and `service_template` (project sub-domain) are **deferred to the
 big-domain session**. All backfill scripts are `pnpm convex:backfill:<domain>`.
 Verified each: tsc clean, 2185 tests, 0 new lint errors, `pnpm build` exit 0.
 
+### file_upload cutover — DONE (dual-write, infra-only — the media hub)
+
+First domain of the big-domain session. The step-0 FK grep found `file_upload`
+referenced by **7 inbound FKs, every one REQUIRED + Cascade** — `model_media`,
+`asset_media`, `kit_media`, `project_media`, `client_media`, `location_media`,
+`sub_hire_media`. All seven `*_media` tables stay in Prisma, so a Convex-only
+cutover would FK-fail the instant any media row is attached to a net-new
+Convex-only file (the Clients trap, in its sharpest form) → **dual-write**. 0 rows
+today, so this is infra + heal-path: it unblocks the `*_media` tables for later.
+
+- **Writes** (Prisma first, then mirror): the two creates — the uploads API route
+  `app/api/uploads/route.ts` and `org-import.ts` — and the **seven** deletes spread
+  across the `*-media` server actions plus the shared-file conditional delete in
+  `sub-hires.ts` (mirrored only inside its `if (otherUsages.length === 0)` guard).
+  Because the write paths live across 9 files rather than one server module, the
+  mirror is a shared helper: `src/lib/file-upload-mirror.ts`
+  (`mirrorFileUploadCreate` / `mirrorFileUploadDelete`).
+- **No Phase 4 / reactive reader** (like Brand-templates / Section-presets): there
+  is no file-upload list UI. Media galleries compose `file_upload` cross-domain
+  through the `*_media` joins (`include: { file }`) on the always-fresh Prisma
+  mirror, so there is nothing to subscribe to. The ownership-check `findFirst`
+  lookups and the org-export `findMany` also stay on Prisma.
+- Backfill `pnpm convex:backfill:file-upload` (0/0). Verified: tsc clean, 2185
+  tests, 0 new lint errors, `pnpm build` exit 0.
+
 ## Phase 4 — Frontend reactive reads (in progress: Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields done)
 
 The browser now subscribes to the `clients` table directly via Convex `useQuery`,

@@ -628,7 +628,7 @@ export async function importOrganization(
       if (oldUrl) urlMap.set(oldUrl, newUrl);
     }
 
-    await prisma.fileUpload.create({
+    const createdFile = await prisma.fileUpload.create({
       data: {
         ...stripRelations(r),
         id,
@@ -641,6 +641,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await getConvexClient().mutation(api.fileUploads.create, toConvexDoc(createdFile) as any);
   }
 
   // ── 19b. Update image URL references on models, assets, kits ────

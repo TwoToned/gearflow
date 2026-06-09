@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { mirrorFileUploadDelete } from "@/lib/file-upload-mirror";
 import { getOrgContext } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { deleteFromS3 } from "@/lib/storage";
@@ -83,6 +84,7 @@ export async function removeModelMedia(mediaId: string) {
     // S3 cleanup is best-effort
   }
   await prisma.fileUpload.delete({ where: { id: media.fileId } });
+  await mirrorFileUploadDelete(media.fileId);
 
   // Promote next photo if deleted was primary
   if (wasPrimary && media.type === "PHOTO") {

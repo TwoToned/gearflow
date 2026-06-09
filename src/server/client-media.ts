@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { mirrorFileUploadDelete } from "@/lib/file-upload-mirror";
 import { getOrgContext } from "@/lib/org-context";
 import { getClientById } from "@/lib/clients-read";
 import { serialize } from "@/lib/serialize";
@@ -64,4 +65,5 @@ export async function removeClientMedia(mediaId: string) {
     // Best-effort cleanup
   }
   await prisma.fileUpload.delete({ where: { id: media.fileId } });
+  await mirrorFileUploadDelete(media.fileId);
 }

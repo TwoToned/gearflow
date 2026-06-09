@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { mirrorFileUploadDelete } from "@/lib/file-upload-mirror";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
@@ -1747,6 +1748,7 @@ export async function removeSubHireMedia(mediaId: string) {
 
   if (otherUsages.length === 0) {
     await prisma.fileUpload.delete({ where: { id: media.fileId } });
+    await mirrorFileUploadDelete(media.fileId);
   }
 
   return serialize({ success: true });

@@ -23,6 +23,7 @@ import {
 } from "@/lib/inventory-mutations";
 import { TestTagBlockError } from "@/lib/errors/test-tag-block-error";
 import { syncKitsToConvex } from "@/lib/kit-mirror";
+import { syncAssetsToConvex, syncBulkAssetsToConvex } from "@/lib/asset-mirror";
 
 // ---------------------------------------------------------------------------
 // Kit bulk-content traversal
@@ -514,6 +515,9 @@ async function checkoutAccessoryChildren(
     scannedById: userId,
   });
 
+  // Collect every serialised accessory asset whose status flips, for the Convex
+  // mirror (asset is dual-written). Returned to the caller to sync post-commit.
+  const assetsTouched: string[] = [];
   for (const child of children) {
     if (child.assetId) {
       const asset = await tx.asset.findUnique({ where: { id: child.assetId }, select: { status: true } });
@@ -528,6 +532,7 @@ async function checkoutAccessoryChildren(
           where: { id: child.assetId, organizationId },
           data: { status: "CHECKED_OUT", ...(projectLocationId && { locationId: projectLocationId }) },
         });
+        assetsTouched.push(child.assetId);
       }
       await tx.assetScanLog.create({
         data: { organizationId, assetId: child.assetId, projectId, action: "CHECK_OUT", scannedById: userId, notes: "Accessory — moved with parent" },
@@ -544,6 +549,7 @@ async function checkoutAccessoryChildren(
     }
     await syncLineItemRollup(tx, child.id);
   }
+  return { assetsTouched };
 }
 
 
@@ -833,21 +839,23 @@ async function finalizeCheckoutItem(
     includeAccessories?: boolean;
   },
   updated: unknown[],
-): Promise<void> {
+): Promise<{ assetsTouched: string[] }> {
   const { organizationId, lineItemId, targetAssetId, projectId, userId, projectLocationId, includeAccessories } = params;
 
+  let assetsTouched: string[] = [];
   if (includeAccessories !== false) {
     if (targetAssetId) {
       await expandAccessoriesForAsset(tx, { organizationId, lineItemId, assetId: targetAssetId });
     }
 
-    await checkoutAccessoryChildren(tx, {
+    const r = await checkoutAccessoryChildren(tx, {
       organizationId,
       projectId,
       parentLineItemId: lineItemId,
       userId,
       projectLocationId,
     });
+    assetsTouched = r.assetsTouched;
   }
 
   await syncLineItemRollup(tx, lineItemId);
@@ -858,6 +866,7 @@ async function finalizeCheckoutItem(
       include: { model: true, asset: true, bulkAsset: true },
     }),
   );
+  return { assetsTouched };
 }
 
 // ── checkOutItems (refactored) ──────────────────────────────────────────
@@ -874,6 +883,7 @@ export async function checkOutItems(
 ) {
   const { organizationId, userId, userName } = await requirePermission("warehouse", "check_out");
 
+  const touchedAssetIds = new Set<string>();
   const results = await prisma.$transaction(async (tx) => {
     const updated: unknown[] = [];
 
@@ -921,6 +931,7 @@ export async function checkOutItems(
           notes: item.notes,
         });
         if (result.kind === "continue") continue;
+        touchedAssetIds.add(targetAssetId);
       } else if (lineItem.bulkAssetId) {
         const checkoutQty = item.quantity || lineItem.quantity;
         await checkOutBulkItem(tx, {
@@ -942,7 +953,7 @@ export async function checkOutItems(
         continue;
       }
 
-      await finalizeCheckoutItem(tx, {
+      const fin = await finalizeCheckoutItem(tx, {
         organizationId,
         lineItemId: lineItem.id,
         targetAssetId,
@@ -951,10 +962,15 @@ export async function checkOutItems(
         projectLocationId,
         includeAccessories,
       }, updated);
+      for (const id of fin.assetsTouched) touchedAssetIds.add(id);
     }
 
     return updated;
   });
+
+  // Mirror the checked-out asset status/location changes (scanned assets +
+  // cascaded accessories) to Convex.
+  await syncAssetsToConvex([...touchedAssetIds]);
 
   for (const item of items) {
     await logActivity({
@@ -997,7 +1013,7 @@ async function processItemCheckIn(
     notes?: string;
   },
   updated: unknown[],
-): Promise<void> {
+): Promise<{ assetsTouched: string[] }> {
   const { organizationId, projectId, userId, defaultLocationId } = params;
 
   const { unitsFlipped, assetsTouched } = await returnLineUnits(tx, {
@@ -1037,8 +1053,9 @@ async function processItemCheckIn(
 
   await syncLineItemRollup(tx, item.lineItemId);
 
+  const touched = [...assetsTouched];
   if (unitsFlipped > 0) {
-    await checkinAccessoryChildren(tx, {
+    const acc = await checkinAccessoryChildren(tx, {
       organizationId,
       projectId,
       parentLineItemId: item.lineItemId,
@@ -1047,6 +1064,7 @@ async function processItemCheckIn(
       defaultLocationId,
       returnedAssetId: item.assetId ?? null,
     });
+    touched.push(...acc.assetsTouched);
   }
 
   updated.push(
@@ -1055,6 +1073,7 @@ async function processItemCheckIn(
       include: { model: true, asset: true, bulkAsset: true },
     }),
   );
+  return { assetsTouched: touched };
 }
 
 // ── checkInItems (refactored) ───────────────────────────────────────────
@@ -1072,6 +1091,7 @@ export async function checkInItems(
 ) {
   const { organizationId, userId, userName } = await requirePermission("warehouse", "check_in");
 
+  const touchedAssetIds = new Set<string>();
   const results = await prisma.$transaction(async (tx) => {
     const updated: unknown[] = [];
 
@@ -1083,16 +1103,20 @@ export async function checkInItems(
     const defaultLocationId = defaultLocation?.id || null;
 
     for (const item of items) {
-      await processItemCheckIn(tx, {
+      const r = await processItemCheckIn(tx, {
         organizationId,
         projectId,
         userId,
         defaultLocationId,
       }, item, updated);
+      for (const id of r.assetsTouched) touchedAssetIds.add(id);
     }
 
     return updated;
   });
+
+  // Mirror the returned asset status/location changes to Convex.
+  await syncAssetsToConvex([...touchedAssetIds]);
 
   for (const item of items) {
     await logActivity({
@@ -1175,6 +1199,11 @@ export async function checkOutKit(projectId: string, kitId: string) {
       kitId,
     });
 
+    // Accumulate every asset/bulk id whose row this checkout mutates, for the
+    // Convex mirror (both dual-written) after the transaction commits.
+    const txTouchedAssets = new Set<string>();
+    const txTouchedBulk = new Set<string>();
+
     // Update kit parent line item
     await tx.projectLineItem.update({
       where: { id: kitLineItem.id },
@@ -1213,6 +1242,7 @@ export async function checkOutKit(projectId: string, kitId: string) {
           where: { id: { in: nestedKitItems.map((ki) => ki.assetId) } },
           data: { status: "CHECKED_OUT", ...(projectLocationId && { locationId: projectLocationId }) },
         });
+        for (const ki of nestedKitItems) txTouchedAssets.add(ki.assetId);
       }
     }
 
@@ -1223,6 +1253,7 @@ export async function checkOutKit(projectId: string, kitId: string) {
         where: { id: { in: childAssetIds } },
         data: { status: "CHECKED_OUT", ...(projectLocationId && { locationId: projectLocationId }) },
       });
+      for (const id of childAssetIds) txTouchedAssets.add(id);
     }
     // Also update grandchild assets
     if (nestedKitChildren.length > 0) {
@@ -1236,6 +1267,7 @@ export async function checkOutKit(projectId: string, kitId: string) {
           where: { id: { in: grandchildAssetIds } },
           data: { status: "CHECKED_OUT", ...(projectLocationId && { locationId: projectLocationId }) },
         });
+        for (const id of grandchildAssetIds) txTouchedAssets.add(id);
       }
     }
 
@@ -1255,6 +1287,7 @@ export async function checkOutKit(projectId: string, kitId: string) {
         where: { id: { in: kitItems.map((ki) => ki.assetId) } },
         data: { status: "CHECKED_OUT", ...(projectLocationId && { locationId: projectLocationId }) },
       });
+      for (const ki of kitItems) txTouchedAssets.add(ki.assetId);
     }
 
     // Decrement BulkAsset.availableQuantity for every KitBulkItem in this kit
@@ -1271,6 +1304,7 @@ export async function checkOutKit(projectId: string, kitId: string) {
     }
     if (bulkAdjustments.length > 0) {
       await adjustBulkAvailability(tx, organizationId, coalesceAdjustments(bulkAdjustments));
+      for (const a of bulkAdjustments) txTouchedBulk.add(a.bulkAssetId);
     }
 
     // Create scan log for the kit
@@ -1282,11 +1316,16 @@ export async function checkOutKit(projectId: string, kitId: string) {
       success: true,
       kitId,
       affectedKitIds: [kitId, ...nestedKitChildren.map((c) => c.kitId!)],
+      touchedAssets: [...txTouchedAssets],
+      touchedBulk: [...txTouchedBulk],
     };
   });
 
-  // Mirror the kit status/location changes (this kit + any nested kits) to Convex.
+  // Mirror the kit status/location changes (this kit + any nested kits) + the
+  // affected serialized assets + bulk quantity changes to Convex.
   await syncKitsToConvex(result.affectedKitIds);
+  await syncAssetsToConvex(result.touchedAssets);
+  await syncBulkAssetsToConvex(result.touchedBulk);
 
   await logActivity({
     organizationId,
@@ -1323,6 +1362,11 @@ export async function checkInKit(
       select: { id: true },
     });
     const defaultLocationId = defaultLocation?.id || null;
+
+    // Accumulate every asset/bulk id whose row this check-in mutates, for the
+    // Convex mirror (both dual-written) after the transaction commits.
+    const txTouchedAssets = new Set<string>();
+    const txTouchedBulk = new Set<string>();
 
     // Update kit parent line item
     await tx.projectLineItem.update({
@@ -1365,6 +1409,7 @@ export async function checkInKit(
           where: { id: { in: nestedKitItems.map((ki) => ki.assetId) } },
           data: { status: assetStatus, locationId: defaultLocationId },
         });
+        for (const ki of nestedKitItems) txTouchedAssets.add(ki.assetId);
       }
     }
 
@@ -1375,6 +1420,7 @@ export async function checkInKit(
         where: { id: { in: childAssetIds } },
         data: { status: assetStatus, locationId: defaultLocationId },
       });
+      for (const id of childAssetIds) txTouchedAssets.add(id);
     }
     // Also reset grandchild assets
     if (nestedKitChildren.length > 0) {
@@ -1388,6 +1434,7 @@ export async function checkInKit(
           where: { id: { in: grandchildAssetIds } },
           data: { status: assetStatus, locationId: defaultLocationId },
         });
+        for (const id of grandchildAssetIds) txTouchedAssets.add(id);
       }
     }
 
@@ -1404,6 +1451,7 @@ export async function checkInKit(
         where: { id: { in: kitItems.map((ki) => ki.assetId) } },
         data: { status: assetStatus, locationId: defaultLocationId },
       });
+      for (const ki of kitItems) txTouchedAssets.add(ki.assetId);
     }
 
     // Restore BulkAsset.availableQuantity for every KitBulkItem in this kit
@@ -1420,6 +1468,7 @@ export async function checkInKit(
     }
     if (bulkAdjustments.length > 0) {
       await adjustBulkAvailability(tx, organizationId, coalesceAdjustments(bulkAdjustments));
+      for (const a of bulkAdjustments) txTouchedBulk.add(a.bulkAssetId);
     }
 
     // Create scan log
@@ -1431,11 +1480,16 @@ export async function checkInKit(
       success: true,
       kitId,
       affectedKitIds: [kitId, ...nestedKitChildren.map((c) => c.kitId!)],
+      touchedAssets: [...txTouchedAssets],
+      touchedBulk: [...txTouchedBulk],
     };
   });
 
-  // Mirror the kit status/location changes (this kit + any nested kits) to Convex.
+  // Mirror the kit status/location changes (this kit + any nested kits) + the
+  // affected serialized assets + bulk quantity changes to Convex.
   await syncKitsToConvex(result.affectedKitIds);
+  await syncAssetsToConvex(result.touchedAssets);
+  await syncBulkAssetsToConvex(result.touchedBulk);
 
   await logActivity({
     organizationId,
@@ -1678,12 +1732,13 @@ export async function syncContainerStatus(projectId: string, containerName: stri
 
   // Update the container asset status too
   if (containerLI.assetId) {
-    await prisma.asset.update({
+    const updatedAsset = await prisma.asset.update({
       where: { id: containerLI.assetId },
       data: {
         status: allDeployedFlag ? "CHECKED_OUT" : "AVAILABLE",
       },
     });
+    await syncAssetsToConvex([updatedAsset.id]);
   }
 
   return serialize({ updated: true, status: allDeployedFlag ? "CHECKED_OUT" : "RETURNED" });
@@ -1858,6 +1913,7 @@ export async function forceReturnAsset(assetId: string) {
       },
     });
   });
+  await syncAssetsToConvex([assetId]);
 
   await logActivity({
     organizationId,
@@ -1890,6 +1946,7 @@ async function restoreKitParentLineItem(
     resetData: { status: "AVAILABLE"; locationId: string | null };
   },
   kitsToRestore: Set<string>,
+  assetsTouched: Set<string>,
 ): Promise<void> {
   const { organizationId, returnData, resetData } = params;
 
@@ -1916,6 +1973,7 @@ async function restoreKitParentLineItem(
           where: { id: { in: gcAssetIds } },
           data: resetData,
         });
+        for (const id of gcAssetIds) assetsTouched.add(id);
       }
     }
   }
@@ -1937,6 +1995,7 @@ async function restoreKitParentLineItem(
         where: { id: { in: nestedKitAssets.map((a) => a.assetId) } },
         data: resetData,
       });
+      for (const a of nestedKitAssets) assetsTouched.add(a.assetId);
     }
   }
 
@@ -1956,6 +2015,7 @@ async function restoreKitParentLineItem(
       where: { id: { in: childAssetIds } },
       data: resetData,
     });
+    for (const id of childAssetIds) assetsTouched.add(id);
   }
 
   // Return parent line item
@@ -1991,8 +2051,11 @@ export async function forceReturnKit(kitId: string) {
     const resetData = { status: "AVAILABLE" as const, locationId: defaultLocation?.id ?? null };
 
     // Track every kit id that needs bulk restoration (this kit + every unique
-    // nested kit encountered across all parent line items).
+    // nested kit encountered across all parent line items), plus every asset/
+    // bulk row whose status/quantity this force-return mutates (Convex mirror).
     const kitsToRestore = new Set<string>([kitId]);
+    const assetsTouched = new Set<string>();
+    const bulkTouched = new Set<string>();
 
     // Find all parent line items for this kit across all projects
     const kitParentItems = await tx.projectLineItem.findMany({
@@ -2001,7 +2064,7 @@ export async function forceReturnKit(kitId: string) {
     });
 
     for (const parent of kitParentItems) {
-      await restoreKitParentLineItem(tx, parent, { organizationId, returnData, resetData }, kitsToRestore);
+      await restoreKitParentLineItem(tx, parent, { organizationId, returnData, resetData }, kitsToRestore, assetsTouched);
     }
 
     // Reset kit status
@@ -2020,6 +2083,7 @@ export async function forceReturnKit(kitId: string) {
         where: { id: { in: kitItems.map((ki) => ki.assetId) } },
         data: resetData,
       });
+      for (const ki of kitItems) assetsTouched.add(ki.assetId);
     }
 
     // Restore BulkAsset.availableQuantity for the root kit and every unique
@@ -2032,13 +2096,17 @@ export async function forceReturnKit(kitId: string) {
     }
     if (bulkAdjustments.length > 0) {
       await adjustBulkAvailability(tx, organizationId, coalesceAdjustments(bulkAdjustments));
+      for (const a of bulkAdjustments) bulkTouched.add(a.bulkAssetId);
     }
 
-    return [...kitsToRestore];
+    return { kitIds: [...kitsToRestore], assets: [...assetsTouched], bulk: [...bulkTouched] };
   });
 
-  // Mirror the kit status/location resets (root kit + every nested kit) to Convex.
-  await syncKitsToConvex(affectedKitIds);
+  // Mirror the kit status/location resets (root kit + every nested kit) + the
+  // affected assets + bulk quantity restores to Convex.
+  await syncKitsToConvex(affectedKitIds.kitIds);
+  await syncAssetsToConvex(affectedKitIds.assets);
+  await syncBulkAssetsToConvex(affectedKitIds.bulk);
 
   await logActivity({
     organizationId,
@@ -2094,6 +2162,7 @@ export async function bulkForceReturnAssets(assetIds: string[]) {
       },
     });
   });
+  await syncAssetsToConvex(ids);
 
   await logActivity({
     organizationId,

@@ -368,11 +368,15 @@ export async function checkinAccessoryChildren(
     perUnitBulk = new Map(bulks.map((b) => [b.bulkAssetId, b.quantity]));
   }
 
+  // Collect every serialised accessory asset whose status flips, so the caller
+  // can mirror them to Convex (asset is dual-written) after the transaction.
+  const assetsTouched: string[] = [];
   for (const child of children) {
     if (child.assetId) {
       // Serialised accessory — belongs to exactly one parent unit.
       if (returnedAssetId && child.asset?.parentAssetId !== returnedAssetId) continue;
-      await returnLineUnits(tx, { organizationId, projectId, lineItemId: child.id, returnCondition, userId, defaultLocationId });
+      const r = await returnLineUnits(tx, { organizationId, projectId, lineItemId: child.id, returnCondition, userId, defaultLocationId });
+      assetsTouched.push(...r.assetsTouched);
     } else if (child.bulkAssetId) {
       // Bulk accessory — return the returned unit's share (or the whole lot).
       const quantity = returnedAssetId ? (perUnitBulk?.get(child.bulkAssetId) ?? 0) : child.quantity;
@@ -383,6 +387,7 @@ export async function checkinAccessoryChildren(
     }
     await syncLineItemRollup(tx, child.id);
   }
+  return { assetsTouched };
 }
 
 /** A parent asset's per-unit accessory profile: the specific serialised child

@@ -105,6 +105,23 @@ export async function getClients(params?: {
   return serialize({ clients: withCounts, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
 }
 
+/**
+ * Project counts per client (clientId -> count). Cross-domain: projects still
+ * live in Prisma, so this can't come from Convex. Used by the reactive client
+ * table, which subscribes to the client list via Convex and merges these counts.
+ */
+export async function getClientProjectCounts(): Promise<Record<string, number>> {
+  const { organizationId } = await getOrgContext();
+  const groups = await prisma.project.groupBy({
+    by: ["clientId"],
+    where: { organizationId, clientId: { not: null } },
+    _count: { _all: true },
+  });
+  const counts: Record<string, number> = {};
+  for (const g of groups) if (g.clientId) counts[g.clientId] = g._count._all;
+  return serialize(counts);
+}
+
 export async function getClient(id: string) {
   const { organizationId } = await getOrgContext();
   const client = await getClientById(id);

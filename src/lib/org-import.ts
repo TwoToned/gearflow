@@ -768,27 +768,29 @@ export async function importOrganization(
   // shifts, availability, and time entries.
   for (const r of (manifest.crewRoles ?? []) as Rec[]) {
     const id = newId("crewRole", r.id);
-    await prisma.crewRole.create({
+    const created = await prisma.crewRole.create({
       data: {
         ...stripRelations(r),
         id,
         organizationId: newOrgId,
       } as any,
     });
+    await getConvexClient().mutation(api.crewRoles.create, toConvexDoc(created) as any);
   }
   for (const r of (manifest.crewSkills ?? []) as Rec[]) {
     const id = newId("crewSkill", r.id);
-    await prisma.crewSkill.create({
+    const created = await prisma.crewSkill.create({
       data: {
         ...stripRelations(r),
         id,
         organizationId: newOrgId,
       } as any,
     });
+    await getConvexClient().mutation(api.crewSkills.create, toConvexDoc(created) as any);
   }
   for (const r of (manifest.crewMembers ?? []) as Rec[]) {
     const id = newId("crewMember", r.id);
-    await prisma.crewMember.create({
+    const created = await prisma.crewMember.create({
       data: {
         ...stripRelations(r),
         id,
@@ -803,6 +805,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await getConvexClient().mutation(api.crewMembers.create, toConvexDoc(created) as any);
   }
   // Re-link crew members <-> skills (implicit m:n join table)
   for (const link of (manifest.crewMemberSkills ?? []) as Array<{

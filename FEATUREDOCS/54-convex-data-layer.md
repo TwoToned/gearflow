@@ -364,6 +364,40 @@ today, so this is infra + heal-path: it unblocks the `*_media` tables for later.
 - Backfill `pnpm convex:backfill:file-upload` (0/0). Verified: tsc clean, 2185
   tests, 0 new lint errors, `pnpm build` exit 0.
 
+### Crew roster cutover — DONE (dual-write: member / role / skill only)
+
+The crew cluster has 8 tables, but only the **roster trio — crew_member, crew_role,
+crew_skill — is migrated** here. The FK grep showed dual-write is mandatory: live
+inbound FKs cross the cluster boundary from tables that stay in Prisma —
+`project_service.crewRoleId` → crew_role; `damage_event` / `project_task` /
+`discord_account_link` / `discord_link_token` → crew_member; plus the implicit m2m
+`_CrewMemberToCrewSkill` (which has **no Convex representation** — a member's skills
+stay composed on the Prisma mirror).
+
+- **Scope decision:** the project-coupled scheduling/timesheet sub-tables
+  (`crew_assignment`, `crew_shift`, `crew_availability`, `crew_certification`,
+  `crew_time_entry`) are **deliberately left Prisma-only** for now. They are
+  leaf/child tables with cascade-delete semantics Convex can't cheaply replicate,
+  and they are only ever composed inside project-joining or member-detail views
+  that stay on the Prisma mirror (the crew dashboard, planner, timesheets, member
+  detail). Their Convex CRUD + schema already exist (Phase 2); they get dual-written
+  when those UIs go reactive alongside the project/central-graph migration.
+- **Writes** (Prisma first, then mirror via `src/lib/crew-mirror.ts`): `server/crew.ts`
+  (member/role/skill create/update/delete + image + user-link), `server/crew-calendar.ts`
+  (iCal enable/disable/regenerate → member patch), `app/api/crew/avatar/route.ts`
+  (avatar set/clear), and `org-import.ts` (role/skill/member creates).
+- **Reactive read — DONE:** the crew roster table (`components/crew/crew-table.tsx`,
+  used by both the manager dashboard and the read-only list view) now subscribes via
+  `useCrewMembers` + `useCrewRoles` (`src/hooks/use-crew.ts`) and does
+  filter/sort/paginate client-side. crewRole name/color resolves from the reactive
+  roles list; the linked user, skills (m2m), and cert count are cross-domain and
+  merged in non-reactively via `getCrewMemberExtras()`. The roles/skills **settings
+  page** stays on the server-action reads over the fresh Prisma mirror for now
+  (low-traffic config; the `useCrewRoles`/`useCrewSkills` hooks exist for when it's
+  revisited) — same call as the deferred low-traffic surfaces in Locations.
+- Backfill `pnpm convex:backfill:crew` (roster trio only; 8 roles + 8 members + 0
+  skills). Verified: tsc clean, 2185 tests, 0 new lint errors, `pnpm build` exit 0.
+
 ## Phase 4 — Frontend reactive reads (in progress: Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields done)
 
 The browser now subscribes to the `clients` table directly via Convex `useQuery`,

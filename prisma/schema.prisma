@@ -118,6 +118,20 @@ model Verification {
   @@map("verification")
 }
 
+// Better Auth `jwt()` plugin key storage (Convex Phase 5 auth bridge). Holds the
+// ES256 signing keypair used to mint Convex-compatible JWTs (user tokens via
+// /api/auth/token, service tokens via auth.api.signJWT). privateKey is encrypted
+// with BETTER_AUTH_SECRET. Auth-owned — no Convex CRUD (stays in Prisma forever).
+model Jwks {
+  id         String    @id @default(cuid())
+  publicKey  String
+  privateKey String
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime?
+
+  @@map("jwks")
+}
+
 // ─── Better Auth Organization Tables ─────────────────────────────────────────
 
 model Organization {

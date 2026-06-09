@@ -954,6 +954,69 @@ supplier + model + media together. `prisma.supplier.*` direct reads are otherwis
 fully gone (only `server/suppliers.ts` dual-write source + `lib/org-import.ts`
 mirror-write remain, which is correct).
 
+### Nested supplier + model dimension — line-item trees decommissioned (warehouse + media deferred)
+
+The nested `lineItems → childLineItems` joins for **supplier + model** are now off
+the Prisma mirror and onto a single recursive Convex attach helper,
+[`src/lib/line-item-tree-read.ts`](../src/lib/line-item-tree-read.ts):
+
+- `buildLineItemAttachMaps(orgId)` fetches the org's models / suppliers /
+  categories from Convex in one `Promise.all` and keys them by cuid `id`.
+- `attachLineItemTree(rows, maps)` walks a tree and attaches `model` (with the
+  equipment `category` nested, replacing `model: { include: { category } }`) +
+  `supplier` (replacing `supplier: { select: { name } }`) onto every node,
+  recursing into `childLineItems`. The Prisma query keeps its physical-asset joins
+  (`asset`/`bulkAsset`/`kit`/`units`) and the project-grouping joins (`category` =
+  project_category, `group` = project_group) — separate decommission dimensions —
+  and drops only `model` + `supplier`. **No Prisma fallback on a map miss** (codex
+  steer): a miss yields `null` like a Prisma join against a deleted row; falling
+  back would hide mirror drift and re-introduce the join.
+
+**Two distinct "category" concepts** live on the same node and must not be
+conflated: the line item's own `category` (a project_category relation, stays
+Prisma) vs. the equipment `model.category` attached from Convex `categories`.
+
+Rewired reads (each tree fully converted — never half a tree):
+`lib/pdfme/build-document-data.ts` (3-deep line-item tree + the `subHires[].supplier`
+shells), `server/projects.ts` `getProject` (3 trees: grouped + ungrouped per
+category + top-level), `server/category-slots.ts` (`getUncategorizedSubHireGroups` +
+`getUncategorizedProjectGroups`, incl. the `subHire.supplier` shell),
+`server/project-categories.ts` (`getProjectCategories` — grouped + sub-hire-group +
+ungrouped trees + the `subHire.supplier` shell — and `getUncategorizedLineItems`).
+
+**PDF cross-cutting audit (CLAUDE.md mandate).** The attach produces the exact
+shape the dropped Prisma include produced, so all 5 independent `DocumentLineItem`
+consumers (gearflow-table render + top-level filter, section-renderer
+`calculateItemHeight` + `getFilteredParentItems`, `buildDeliveryDocketGroups`) see
+identical data — verified against the full field-consumption map (`model.name` /
+`modelNumber` / `weight` / `category.name`, `supplier.name`→`supplierName`). New
+integration test [`src/lib/pdfme/line-item-tree-attach.test.ts`](../src/lib/pdfme/line-item-tree-attach.test.ts)
+exercises the WHOLE pipeline (attach → enrichment → `structureLineItems` →
+`getFilteredParentItems` → `gearflowTable.pdf` render) against a realistic
+equipment tree (owned line + sub-hire item + kit-with-member + stale-FK miss) and
+asserts model/category/supplier reach the page with no tail-drop.
+
+**Deferred this session (documented split):**
+- **`warehouse.ts`** (`getProjectForWarehouse` + `getProjectPullSheet`) — its model
+  join carries `model._count.modelCheckItems`, read by 8+ warehouse-prep UI sites,
+  and `model_check_item` is **NOT dual-written to Convex**. Converting it needs a
+  separate Prisma count-attach (scalars from Convex, the check-item count from
+  Prisma) — a distinct concern best done as its own pass, not bolted onto this
+  already-high-risk PDF/equipment-editor session (codex agreed: keep warehouse
+  fully Prisma until then, don't half-convert the tree).
+- **`*_media`** (`model_media`/`asset_media`/…) — these join tables have Phase-2
+  Convex CRUD modules but are **NOT dual-written** (no mirror, no backfill), so
+  their Convex copies are empty/stale. All `*_media` reads stay on Prisma. (They
+  don't appear inside these particular line-item trees anyway — the project-media
+  gallery composes separately.)
+
+Verified: tsc clean, 2191 tests (2185 + 6 new), 0 new lint (8 errors / 344 warnings
+baseline), `pnpm build` exit 0, codex diff review (no correctness bugs), + a live
+round-trip ([`scripts/convex-roundtrip-line-item-attach.ts`](../scripts/convex-roundtrip-line-item-attach.ts))
+proving the attached model/category/supplier match a direct Prisma join (5/5 models,
+supplier exact). `prisma.supplier.*` / `prisma.model.*` cross-domain reads remaining
+in app code are now only warehouse (deferred) + the dual-write sources.
+
 ### SSE / EventEmitter teardown — NOT started (blocked on React Query removal)
 
 `src/hooks/use-realtime.ts` exists only to call React Query's
@@ -1013,7 +1076,7 @@ sessions.
 | **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets + file_upload + crew + doc/service-template + **Kit** + **Asset/Bulk** + **project_category/group** + **project_line_item** + **sub_hire/supplier_order families** + **project** + **crew scheduling sub-tables (infra-only)** dual-write done — CENTRAL GRAPH COMPLETE + DUAL-WRITE SURFACE COMPLETE) | per-domain backfill + cutover; tsc/tests/build green each |
 | **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields + crew + **Kit** + **Asset/Bulk registry** done) | table/dropdown/edit live-update on mutation |
 | **5 Auth bridge** ✅ | Better Auth → Convex ES256 JWT; user token (org-scoped reads) + service token (trusted backend); browser writes rejected | round-trip 6/6: rejected without a valid token, accepted with; `/cso` clean |
-| **6 Decommission** 🔄 | Rewire deferred mirror reads off Prisma + remove React Query + SSE event bus (truncate+backfill resync DONE; supplier FLAT reads rewired; nested supplier/model/media + PDF + SSE + React Query remain) | per-subsystem; tsc/tests/build green each. [FEATUREDOCS/53](./53-realtime-sync.md) to be marked superseded when SSE is torn out |
+| **6 Decommission** 🔄 | Rewire deferred mirror reads off Prisma + remove React Query + SSE event bus (truncate+backfill resync DONE; supplier FLAT reads rewired; **nested supplier+model+category in all line-item trees + PDF pipeline rewired** via `attachLineItemTree`; warehouse `_count` + `*_media` + SSE + React Query remain) | per-subsystem; tsc/tests/build green each. [FEATUREDOCS/53](./53-realtime-sync.md) to be marked superseded when SSE is torn out |
 
 ## Conventions
 

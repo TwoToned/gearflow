@@ -14,6 +14,7 @@ import {
   removeAssetFromConvex,
   syncAssetsToConvex,
 } from "@/lib/asset-mirror";
+import { getSupplierById } from "@/lib/suppliers-read";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
 import { validateCustomFieldValues } from "@/lib/validations/custom-field";
@@ -145,7 +146,7 @@ export async function getAssets(params?: {
 
 export async function getAsset(id: string) {
   const { organizationId } = await getOrgContext();
-  return serialize(await prisma.asset.findUnique({
+  const asset = await prisma.asset.findUnique({
     where: { id, organizationId },
     include: {
       model: {
@@ -162,7 +163,6 @@ export async function getAsset(id: string) {
         },
       },
       location: true,
-      supplier: true,
       media: {
         include: { file: true },
         orderBy: { sortOrder: "asc" },
@@ -203,7 +203,10 @@ export async function getAsset(id: string) {
         orderBy: { sortOrder: "asc" },
       },
     },
-  }));
+  });
+  // Supplier lives in Convex — attach instead of a Prisma join.
+  const supplier = asset?.supplierId ? await getSupplierById(asset.supplierId) : null;
+  return serialize(asset ? { ...asset, supplier } : asset);
 }
 
 /**

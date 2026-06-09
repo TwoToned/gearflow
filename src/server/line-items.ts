@@ -14,6 +14,7 @@ import { logActivity } from "@/lib/activity-log";
 import { syncProjectGroupsToConvex } from "@/lib/project-grouping-mirror";
 import { upsertProjectLineItemsToConvex, removeLineItemFromConvex } from "@/lib/line-item-mirror";
 import { patchProjectInConvex } from "@/lib/project-mirror";
+import { getSupplierById } from "@/lib/suppliers-read";
 import { roundCurrency } from "@/lib/formatters";
 import { calculateSuggestedPrice, getGroupBillingPeriod } from "./project-groups";
 import { optimizePrice, computeTotalDays } from "@/lib/pricing";
@@ -509,7 +510,6 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         model: true,
         asset: true,
         bulkAsset: true,
-        supplier: true,
       },
     });
 
@@ -554,7 +554,9 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
 
   await upsertProjectLineItemsToConvex(projectId);
 
-  return serialize(result);
+  // Supplier lives in Convex — attach instead of a Prisma join.
+  const supplier = result.supplierId ? await getSupplierById(result.supplierId) : null;
+  return serialize({ ...result, supplier });
 }
 
 export async function updateLineItem(id: string, data: LineItemFormValues, allowOverbook = false) {
@@ -693,7 +695,6 @@ export async function updateLineItem(id: string, data: LineItemFormValues, allow
       model: true,
       asset: true,
       bulkAsset: true,
-      supplier: true,
     },
   });
 
@@ -712,7 +713,9 @@ export async function updateLineItem(id: string, data: LineItemFormValues, allow
   });
 
   await upsertProjectLineItemsToConvex(result.projectId);
-  return serialize(result);
+  // Supplier lives in Convex — attach instead of a Prisma join.
+  const supplier = result.supplierId ? await getSupplierById(result.supplierId) : null;
+  return serialize({ ...result, supplier });
 }
 
 export async function addKitLineItem(

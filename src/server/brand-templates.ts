@@ -1,6 +1,9 @@
 "use server";
 
+import { type FunctionArgs } from "convex/server";
 import { prisma } from "@/lib/prisma";
+import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
@@ -8,6 +11,43 @@ import {
   createBrandTemplateSchema,
   updateBrandTemplateSchema,
 } from "@/lib/validations/template-section";
+
+// Brand templates are DUAL-WRITTEN: every create/update/delete/default-toggle
+// writes the Prisma `brand_template` row (the durable FK anchor — document_template
+// carries a live nullable FK to it) AND the Convex `brandTemplates` doc. Prisma is
+// written first; the Convex payload is derived from the written row via toConvexDoc
+// so they can't drift. The single-default invariant (one isDefault per org) is a
+// multi-row unset, mirrored to Convex too. headerSettings/footerSettings are JSON
+// strings, passed straight through. See FEATUREDOCS/54.
+
+/** Mirror a freshly written Prisma brand-template row into Convex (create). */
+async function mirrorBrandTemplateToConvex(row: Record<string, unknown>) {
+  await getConvexClient().mutation(
+    api.brandTemplates.create,
+    toConvexDoc(row) as FunctionArgs<typeof api.brandTemplates.create>,
+  );
+}
+
+/** Mirror an updated Prisma brand-template row into Convex (patch, id stripped). */
+async function patchBrandTemplateInConvex(id: string, row: Record<string, unknown>) {
+  const { id: _id, ...patch } = toConvexDoc(row);
+  await getConvexClient().mutation(api.brandTemplates.update, {
+    id,
+    patch: patch as FunctionArgs<typeof api.brandTemplates.update>["patch"],
+  });
+}
+
+/** Clear isDefault in Convex for the org's current defaults (mirrors the Prisma updateMany). */
+async function unsetBrandDefaultsInConvex(organizationId: string, exceptId?: string) {
+  const prev = await prisma.brandTemplate.findMany({
+    where: { organizationId, isDefault: true, ...(exceptId ? { id: { not: exceptId } } : {}) },
+    select: { id: true },
+  });
+  const convex = getConvexClient();
+  for (const d of prev) {
+    await convex.mutation(api.brandTemplates.update, { id: d.id, patch: { isDefault: false } });
+  }
+}
 import type {
   CreateBrandTemplateValues,
   UpdateBrandTemplateValues,
@@ -75,6 +115,7 @@ export async function createBrandTemplate(data: CreateBrandTemplateValues) {
       accentColor: validated.accentColor || null,
     },
   });
+  await mirrorBrandTemplateToConvex(template);
 
   await logActivity({
     organizationId,
@@ -118,6 +159,7 @@ export async function updateBrandTemplate(data: UpdateBrandTemplateValues) {
     where: { id, organizationId },
     data: updateData,
   });
+  await patchBrandTemplateInConvex(id, template);
 
   await logActivity({
     organizationId,
@@ -158,6 +200,7 @@ export async function deleteBrandTemplate(id: string) {
       where: { id },
     }),
   ]);
+  await getConvexClient().mutation(api.brandTemplates.remove, { id });
 
   await logActivity({
     organizationId,
@@ -189,6 +232,7 @@ export async function setDefaultBrandTemplate(id: string) {
 
   if (!template) throw new Error("Brand template not found");
 
+  await unsetBrandDefaultsInConvex(organizationId, id);
   await prisma.$transaction([
     prisma.brandTemplate.updateMany({
       where: { organizationId, isDefault: true },
@@ -199,6 +243,7 @@ export async function setDefaultBrandTemplate(id: string) {
       data: { isDefault: true },
     }),
   ]);
+  await getConvexClient().mutation(api.brandTemplates.update, { id, patch: { isDefault: true } });
 
   await logActivity({
     organizationId,
@@ -227,6 +272,7 @@ export async function unsetDefaultBrandTemplate(id: string) {
     where: { id, organizationId },
     data: { isDefault: false },
   });
+  await patchBrandTemplateInConvex(id, template);
 
   await logActivity({
     organizationId,

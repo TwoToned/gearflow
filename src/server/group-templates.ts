@@ -1,6 +1,9 @@
 "use server";
 
+import { type FunctionArgs } from "convex/server";
 import { prisma } from "@/lib/prisma";
+import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { requirePermission } from "@/lib/org-context";
 import {
   groupTemplateSchema,
@@ -11,6 +14,33 @@ import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { calculateSuggestedPrice } from "./project-groups";
 import { addKitLineItem, recalculateProjectTotals } from "./line-items";
+
+// Group templates are DUAL-WRITTEN: every create/update/delete writes the Prisma
+// `group_template` row (the durable FK anchor — group_template_item carries a
+// required + Cascade FK to it) AND the Convex `groupTemplates` doc. Only the PARENT
+// scalar fields live in Convex; the child items (with model/kit joins) stay in
+// Prisma and are composed by getGroupTemplates, which therefore stays on the
+// always-fresh Prisma mirror (no Phase 4 reactive conversion). The nested `items`
+// relation is stripped before mirroring. See FEATUREDOCS/54.
+
+/** Mirror a freshly written Prisma group-template parent row into Convex (create). */
+async function mirrorGroupTemplateToConvex(row: Record<string, unknown>) {
+  const { items: _items, ...scalar } = row;
+  await getConvexClient().mutation(
+    api.groupTemplates.create,
+    toConvexDoc(scalar) as FunctionArgs<typeof api.groupTemplates.create>,
+  );
+}
+
+/** Mirror an updated Prisma group-template parent row into Convex (patch, id stripped). */
+async function patchGroupTemplateInConvex(id: string, row: Record<string, unknown>) {
+  const { id: _id, items: _items, ...rest } = row;
+  const patch = toConvexDoc(rest);
+  await getConvexClient().mutation(api.groupTemplates.update, {
+    id,
+    patch: patch as FunctionArgs<typeof api.groupTemplates.update>["patch"],
+  });
+}
 
 export async function getGroupTemplates() {
   const { organizationId } = await requirePermission("project", "read");
@@ -79,6 +109,7 @@ export async function createGroupTemplate(data: GroupTemplateFormValues) {
       },
     },
   });
+  await mirrorGroupTemplateToConvex(template);
 
   await logActivity({
     organizationId,
@@ -158,6 +189,7 @@ export async function saveGroupAsTemplate(
       },
     },
   });
+  await mirrorGroupTemplateToConvex(template);
 
   await logActivity({
     organizationId,
@@ -357,6 +389,7 @@ export async function updateGroupTemplate(
 
     return updated;
   });
+  await patchGroupTemplateInConvex(templateId, template);
 
   await logActivity({
     organizationId,
@@ -385,6 +418,7 @@ export async function deleteGroupTemplate(templateId: string) {
   await prisma.groupTemplate.delete({
     where: { id: templateId, organizationId },
   });
+  await getConvexClient().mutation(api.groupTemplates.remove, { id: templateId });
 
   await logActivity({
     organizationId,

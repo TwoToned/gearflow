@@ -732,10 +732,10 @@ export async function importOrganization(
     }
   }
 
-  // ── 20a. Group templates (Track B) ──────────────────────────────
+  // ── 20a. Group templates (Track B; parent dual-written) ─────────
   for (const r of (manifest.groupTemplates ?? []) as Rec[]) {
     const id = newId("groupTemplate", r.id);
-    await prisma.groupTemplate.create({
+    const created = await prisma.groupTemplate.create({
       data: {
         ...stripRelations(r),
         id,
@@ -744,6 +744,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await getConvexClient().mutation(api.groupTemplates.create, toConvexDoc(created) as any);
   }
   for (const r of (manifest.groupTemplateItems ?? []) as Rec[]) {
     const templateId = remap("groupTemplate", r.templateId);

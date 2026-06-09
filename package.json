@@ -40,7 +40,8 @@
     "convex:backfill:kit": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-kit.ts",
     "convex:backfill:asset": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-asset.ts",
     "convex:backfill:project-grouping": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-project-grouping.ts",
-    "convex:backfill:line-items": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-line-items.ts"
+    "convex:backfill:line-items": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-line-items.ts",
+    "convex:backfill:sub-hires": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-sub-hires.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1063.0",

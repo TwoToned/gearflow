@@ -772,6 +772,44 @@ mirror, tear out the SSE/EventEmitter system, and run a clean truncate+backfill 
 clear any regenerate-orphaned sub-hire line-item rows). The Clients hard-cutover
 latent FK bug (`project.clientId` → net-new Convex-only client) also remains.
 
+## Remaining work & session sizing (post-central-graph)
+
+The central graph is fully dual-written. What's left, with honest per-item effort
+estimates (validated against this session's pace of ~1 domain per ~hour for
+mechanical dual-write, much slower for design/security/teardown work):
+
+1. **Deferred crew scheduling/timesheet sub-tables** — `crew_assignment`,
+   `crew_shift`, `crew_availability`, `crew_certification`, `crew_time_entry`.
+   Convex CRUD already exists; project-coupled (cascade children of the project
+   graph). Pure mechanical dual-write playbook (mirror + backfill + wire writes +
+   verify). **Size: ~half a session.** Finishes the entire dual-write surface.
+2. **Clients hard-cutover latent FK bug** — `project.clientId` → a net-new
+   Convex-only client FK-fails, because Clients was hard-cutover but the Prisma
+   `project.clientId` FK is still live. Fix: either dual-write a minimal Prisma
+   `client` shadow row, or drop the Prisma FK constraint. **Size: ~1 hour.** Real
+   prod hazard — do it early.
+3. **Phase 5 — auth bridge** — Better Auth → self-hosted Convex JWT, so the
+   browser talks to Convex directly (mutations are currently unauthed, trust
+   delegated to server actions — every domain so far deliberately punted this).
+   This is **design + security** work, not a mechanical sweep; getting auth subtly
+   wrong ships a vuln. **Size: a full session of its own + a `/cso` review before
+   landing.**
+4. **Phase 6 — decommission** — the tail of the ~3-month effort, explicitly
+   **multi-session**. Rewire the deferred cross-domain Prisma joins off the mirror
+   (supplier/model/`*_media` reads + the whole PDF pipeline — 5 independent
+   `DocumentLineItem` consumers, flagged "gratuitous risk" in CLAUDE.md), tear out
+   the SSE/EventEmitter system ([FEATUREDOCS/53](./53-realtime-sync.md)), remove
+   the ~177 React Query sites, flip the infra-only domains to reactive, and run a
+   clean **truncate + backfill** across all dual-written tables to clear the
+   regenerate-orphaned sub-hire line-item rows. **Size: a sequence of scoped,
+   independently-shippable sessions (one per subsystem: PDF pipeline → SSE
+   teardown → React Query removal).** Do NOT attempt in one pass.
+
+**Recommended next session:** items 1 + 2 together (finish dual-write + remove the
+FK hazard), plus a clean truncate+backfill to clear the regenerate orphans —
+contained, fully verifiable, clean stopping point. Treat 3 and 4 as their own
+sessions.
+
 ## Migration phases (roadmap)
 
 | Phase | Scope | Verification |

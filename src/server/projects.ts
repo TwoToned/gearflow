@@ -12,6 +12,7 @@ import { serialize } from "@/lib/serialize";
 import { computeOverbookedStatus } from "@/lib/availability";
 import { recalculateProjectTotals } from "@/server/line-items";
 import { logActivity } from "@/lib/activity-log";
+import { syncKitsToConvex } from "@/lib/kit-mirror";
 import { emitIfDiscordEnabled } from "@/lib/services/outbox-service";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
@@ -1188,6 +1189,9 @@ export async function deleteProject(id: string) {
     // Delete the project (cascades to line items, media, etc.)
     await tx.project.delete({ where: { id, organizationId } });
   });
+
+  // Mirror the freed kits' status/location resets to Convex.
+  await syncKitsToConvex(checkedOutKitIds);
 
   await logActivity({
     organizationId,

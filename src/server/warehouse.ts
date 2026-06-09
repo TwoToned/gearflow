@@ -22,6 +22,7 @@ import {
   type TxClient,
 } from "@/lib/inventory-mutations";
 import { TestTagBlockError } from "@/lib/errors/test-tag-block-error";
+import { syncKitsToConvex } from "@/lib/kit-mirror";
 
 // ---------------------------------------------------------------------------
 // Kit bulk-content traversal
@@ -1277,8 +1278,15 @@ export async function checkOutKit(projectId: string, kitId: string) {
       data: { organizationId, kitId, projectId, action: "CHECK_OUT", scannedById: userId, notes: "Kit deployed with all contents" },
     });
 
-    return { success: true, kitId };
+    return {
+      success: true,
+      kitId,
+      affectedKitIds: [kitId, ...nestedKitChildren.map((c) => c.kitId!)],
+    };
   });
+
+  // Mirror the kit status/location changes (this kit + any nested kits) to Convex.
+  await syncKitsToConvex(result.affectedKitIds);
 
   await logActivity({
     organizationId,
@@ -1419,8 +1427,15 @@ export async function checkInKit(
       data: { organizationId, kitId, projectId, action: "CHECK_IN", scannedById: userId, notes: `Kit returned — condition: ${returnCondition}` },
     });
 
-    return { success: true, kitId };
+    return {
+      success: true,
+      kitId,
+      affectedKitIds: [kitId, ...nestedKitChildren.map((c) => c.kitId!)],
+    };
   });
+
+  // Mirror the kit status/location changes (this kit + any nested kits) to Convex.
+  await syncKitsToConvex(result.affectedKitIds);
 
   await logActivity({
     organizationId,
@@ -1970,7 +1985,7 @@ export async function forceReturnKit(kitId: string) {
     select: { id: true },
   });
 
-  await prisma.$transaction(async (tx) => {
+  const affectedKitIds = await prisma.$transaction(async (tx) => {
     const now = new Date();
     const returnData = { status: "RETURNED" as const, returnedQuantity: 1, returnedAt: now, returnCondition: "GOOD" as const };
     const resetData = { status: "AVAILABLE" as const, locationId: defaultLocation?.id ?? null };
@@ -2018,7 +2033,12 @@ export async function forceReturnKit(kitId: string) {
     if (bulkAdjustments.length > 0) {
       await adjustBulkAvailability(tx, organizationId, coalesceAdjustments(bulkAdjustments));
     }
+
+    return [...kitsToRestore];
   });
+
+  // Mirror the kit status/location resets (root kit + every nested kit) to Convex.
+  await syncKitsToConvex(affectedKitIds);
 
   await logActivity({
     organizationId,

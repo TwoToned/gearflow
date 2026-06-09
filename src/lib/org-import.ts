@@ -3,6 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { uploadToS3, ensureBucket } from "@/lib/storage";
 import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
+import {
+  mirrorKitCreate,
+  patchKitInConvex,
+  mirrorKitSerializedItemCreate,
+  mirrorKitBulkItemCreate,
+} from "@/lib/kit-mirror";
 import { MANIFEST_VERSION, type OrgExportManifest } from "./org-transfer-types";
 import { createId } from "@paralleldrive/cuid2";
 import unzipper from "unzipper";
@@ -271,7 +277,7 @@ export async function importOrganization(
   // ── 6. Kits ──────────────────────────────────────────────────────
   for (const r of manifest.kits as Rec[]) {
     const id = newId("kit", r.id);
-    await prisma.kit.create({
+    const created = await prisma.kit.create({
       data: {
         ...stripRelations(r),
         id,
@@ -282,6 +288,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await mirrorKitCreate(created);
   }
 
   // ── 7. Assets ────────────────────────────────────────────────────
@@ -326,7 +333,7 @@ export async function importOrganization(
   // ── 9. Kit Serialized Items ──────────────────────────────────────
   for (const r of manifest.kitSerializedItems as Rec[]) {
     const id = newId("kitSerializedItem", r.id);
-    await prisma.kitSerializedItem.create({
+    const created = await prisma.kitSerializedItem.create({
       data: {
         id,
         organizationId: newOrgId,
@@ -339,12 +346,13 @@ export async function importOrganization(
         notes: r.notes ?? null,
       } as any,
     });
+    await mirrorKitSerializedItemCreate(created);
   }
 
   // ── 10. Kit Bulk Items ───────────────────────────────────────────
   for (const r of manifest.kitBulkItems as Rec[]) {
     const id = newId("kitBulkItem", r.id);
-    await prisma.kitBulkItem.create({
+    const created = await prisma.kitBulkItem.create({
       data: {
         id,
         organizationId: newOrgId,
@@ -358,6 +366,7 @@ export async function importOrganization(
         notes: r.notes ?? null,
       } as any,
     });
+    await mirrorKitBulkItemCreate(created);
   }
 
   // ── 11. Clients (live in Convex) ─────────────────────────────────
@@ -696,13 +705,14 @@ export async function importOrganization(
       const hasImage = r.image && urlMap.has(r.image);
       const hasImages = r.images?.length && r.images.some((u: string) => urlMap.has(u));
       if (hasImage || hasImages) {
-        await prisma.kit.update({
+        const updated = await prisma.kit.update({
           where: { id: newKitId },
           data: {
             ...(hasImage ? { image: remapUrl(r.image) } : {}),
             ...(hasImages ? { images: remapUrls(r.images) } : {}),
           },
         });
+        await patchKitInConvex(updated.id, updated);
       }
     }
   }

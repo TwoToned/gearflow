@@ -1,0 +1,115 @@
+import { v } from "convex/values";
+import { query, mutation } from "./_generated/server";
+import * as enums from "./lib/validators";
+
+/**
+ * Thin CRUD for CrewMember (Convex table "crewMembers"). GENERATED — Phase 2.
+ *
+ * UNAUTHED by design: the Next.js server action that calls each function has
+ * already authenticated the user, checked requirePermission, validated input,
+ * and will write the activity log. Do not add auth here. Lookups use the cuid
+ * (`id`) via the by_cuid index. See FEATUREDOCS/54 and convex/README.md.
+ */
+
+export const list = query({
+  args: { orgId: v.string() },
+  handler: async (ctx, { orgId }) =>
+    await ctx.db
+      .query("crewMembers")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .collect(),
+});
+
+export const getById = query({
+  args: { id: v.string() },
+  handler: async (ctx, { id }) =>
+    await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", id)).unique(),
+});
+
+export const create = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    firstName: v.string(),
+    lastName: v.string(),
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    image: v.optional(v.string()),
+    userId: v.optional(v.string()),
+    type: v.optional(enums.CrewMemberType),
+    status: v.optional(enums.CrewMemberStatus),
+    department: v.optional(v.string()),
+    defaultDayRate: v.optional(v.number()),
+    defaultHourlyRate: v.optional(v.number()),
+    overtimeMultiplier: v.optional(v.number()),
+    currency: v.optional(v.string()),
+    address: v.optional(v.string()),
+    addressLatitude: v.optional(v.number()),
+    addressLongitude: v.optional(v.number()),
+    emergencyContactName: v.optional(v.string()),
+    emergencyContactPhone: v.optional(v.string()),
+    dateOfBirth: v.optional(v.number()),
+    abnOrGst: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    tags: v.optional(v.array(v.string())),
+    icalEnabled: v.optional(v.boolean()),
+    icalToken: v.optional(v.string()),
+    crewRoleId: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+    isActive: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => await ctx.db.insert("crewMembers", args),
+});
+
+export const update = mutation({
+  args: {
+    id: v.string(),
+    patch: v.object({
+      organizationId: v.optional(v.string()),
+      firstName: v.optional(v.string()),
+      lastName: v.optional(v.string()),
+      email: v.optional(v.string()),
+      phone: v.optional(v.string()),
+      image: v.optional(v.string()),
+      userId: v.optional(v.string()),
+      type: v.optional(enums.CrewMemberType),
+      status: v.optional(enums.CrewMemberStatus),
+      department: v.optional(v.string()),
+      defaultDayRate: v.optional(v.number()),
+      defaultHourlyRate: v.optional(v.number()),
+      overtimeMultiplier: v.optional(v.number()),
+      currency: v.optional(v.string()),
+      address: v.optional(v.string()),
+      addressLatitude: v.optional(v.number()),
+      addressLongitude: v.optional(v.number()),
+      emergencyContactName: v.optional(v.string()),
+      emergencyContactPhone: v.optional(v.string()),
+      dateOfBirth: v.optional(v.number()),
+      abnOrGst: v.optional(v.string()),
+      notes: v.optional(v.string()),
+      tags: v.optional(v.array(v.string())),
+      icalEnabled: v.optional(v.boolean()),
+      icalToken: v.optional(v.string()),
+      crewRoleId: v.optional(v.string()),
+      createdAt: v.optional(v.number()),
+      updatedAt: v.optional(v.number()),
+      isActive: v.optional(v.boolean()),
+    }),
+  },
+  handler: async (ctx, { id, patch }) => {
+    const doc = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    if (!doc) throw new Error("crewMembers not found: " + id);
+    await ctx.db.patch(doc._id, patch);
+    return doc._id;
+  },
+});
+
+export const remove = mutation({
+  args: { id: v.string() },
+  handler: async (ctx, { id }) => {
+    const doc = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    if (!doc) throw new Error("crewMembers not found: " + id);
+    await ctx.db.delete(doc._id);
+  },
+});

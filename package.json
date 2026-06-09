@@ -21,7 +21,8 @@
     "lint:server-actions": "tsx scripts/audit-server-actions.ts",
     "bot:start": "tsx --env-file=.env scripts/discord-bot.ts",
     "seed": "tsx --env-file=.env prisma/seed.ts",
-    "convex:schema": "node scripts/generate-convex-schema.cjs ."
+    "convex:schema": "node scripts/generate-convex-schema.cjs .",
+    "convex:crud": "node scripts/generate-convex-crud.cjs ."
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1063.0",

@@ -19,6 +19,12 @@ import { roundCurrency } from "@/lib/formatters";
 import { sendCrewOffer } from "@/server/crew-communication";
 import { recalculateProjectTotals } from "@/server/line-items";
 import { removeLineItemFromConvex } from "@/lib/line-item-mirror";
+import {
+  syncCrewAssignmentsForServiceToConvex,
+  syncCrewAssignmentsForProjectToConvex,
+  snapshotServiceCrew,
+  removeCrewAssignmentCascadeFromConvex,
+} from "@/lib/crew-scheduling-mirror";
 import { SERVICE_TYPE_LABELS } from "@/lib/constants/services";
 import type { ServiceType, PricingType, ProjectPhase } from "@/generated/prisma/client";
 
@@ -226,6 +232,11 @@ export async function createProjectService(
     return svc;
   });
 
+  // Mirror any crew assignments created with the service (dual-write).
+  if (parsed.crewMemberIds && parsed.crewMemberIds.length > 0) {
+    await syncCrewAssignmentsForServiceToConvex(service.id);
+  }
+
   // Always recalculate project totals — service charge/cost affects financials
   await recalculateProjectTotals(projectId);
 
@@ -260,6 +271,10 @@ export async function updateProjectService(
   if (!existing) throw new Error("Service not found");
 
   const { fields, serviceDate, serviceEndDate } = buildServiceData(parsed);
+
+  // Capture the service's crew cascade before the tx may delete assignments, so
+  // removed assignments (+ their shifts/time-entries) can be dropped from Convex.
+  const crewBefore = parsed.crewMemberIds != null ? await snapshotServiceCrew(id) : [];
 
   // Wrap in transaction (Arch fix #1)
   const service = await prisma.$transaction(async (tx) => {
@@ -337,6 +352,17 @@ export async function updateProjectService(
     });
   }
 
+  // Reconcile the service's crew assignments in Convex: drop the ones removed by
+  // the tx (cascade their shifts/time-entries), then upsert the survivors + adds.
+  if (parsed.crewMemberIds != null) {
+    const currentIds = new Set(
+      (await snapshotServiceCrew(id)).map((c) => c.assignmentId),
+    );
+    const removed = crewBefore.filter((c) => !currentIds.has(c.assignmentId));
+    await removeCrewAssignmentCascadeFromConvex(removed);
+    await syncCrewAssignmentsForServiceToConvex(id);
+  }
+
   // Always recalculate project totals — service charge/cost affects financials
   await recalculateProjectTotals(existing.projectId);
 
@@ -366,6 +392,9 @@ export async function deleteProjectService(id: string) {
   });
   if (!service) throw new Error("Service not found");
 
+  // Capture the service's crew cascade before the deleteMany removes it.
+  const crewCascade = await snapshotServiceCrew(id);
+
   // Wrap in transaction (Arch fix #1)
   await prisma.$transaction(async (tx) => {
     // Unlink line item — set lineItemId to null, don't delete the line item (Arch fix #7)
@@ -388,6 +417,7 @@ export async function deleteProjectService(id: string) {
     await tx.projectService.delete({ where: { id } });
   });
   if (service.lineItemId) await removeLineItemFromConvex(service.lineItemId);
+  await removeCrewAssignmentCascadeFromConvex(crewCascade);
 
   await recalculateProjectTotals(service.projectId);
 
@@ -523,6 +553,9 @@ export async function updateServiceCrewStatus(
       data: { status },
     });
     updatedCount = result.count;
+    // Mirror the bulk status change to Convex (the OFFERED branch mirrors per-offer
+    // via sendCrewOffer).
+    await syncCrewAssignmentsForServiceToConvex(serviceId);
   }
 
   const statusLabels: Record<string, string> = {
@@ -952,6 +985,9 @@ export async function cloneServicesFromProject(
     }
     return results;
   });
+
+  // Mirror the cloned crew assignments (across all cloned services) to Convex.
+  await syncCrewAssignmentsForProjectToConvex(targetProjectId);
 
   await recalculateProjectTotals(targetProjectId);
 

@@ -17,6 +17,7 @@ import { syncAssetsToConvex } from "@/lib/asset-mirror";
 import { mirrorProjectCategoryCreate, mirrorProjectGroupCreate } from "@/lib/project-grouping-mirror";
 import { upsertProjectLineItemsToConvex, removeLineItemFromConvex } from "@/lib/line-item-mirror";
 import { mirrorProjectCreate, patchProjectInConvex, removeProjectFromConvex } from "@/lib/project-mirror";
+import { snapshotProjectCrew, removeCrewAssignmentCascadeFromConvex } from "@/lib/crew-scheduling-mirror";
 import { emitIfDiscordEnabled } from "@/lib/services/outbox-service";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
@@ -1175,6 +1176,10 @@ export async function deleteProject(id: string) {
     select: { id: true },
   });
 
+  // Capture the project's crew cascade (assignments → shifts/time-entries) before
+  // the project delete cascades them away, so they can be dropped from Convex.
+  const crewCascade = await snapshotProjectCrew(id);
+
   const freedKitAssetIds = await prisma.$transaction(async (tx) => {
     // Reset checked-out assets to AVAILABLE
     if (checkedOutAssetIds.length > 0) {
@@ -1224,6 +1229,7 @@ export async function deleteProject(id: string) {
   await syncKitsToConvex(checkedOutKitIds);
   await syncAssetsToConvex([...checkedOutAssetIds, ...freedKitAssetIds]);
   for (const li of project.lineItems) await removeLineItemFromConvex(li.id);
+  await removeCrewAssignmentCascadeFromConvex(crewCascade);
   await removeProjectFromConvex(id);
 
   await logActivity({

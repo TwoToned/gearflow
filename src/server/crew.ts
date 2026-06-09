@@ -24,6 +24,12 @@ import {
   mirrorCrewSkillCreate,
   removeCrewSkillFromConvex,
 } from "@/lib/crew-mirror";
+import {
+  mirrorCrewCertificationCreate,
+  removeCrewCertificationFromConvex,
+  snapshotCrewMemberCascade,
+  removeCrewMemberCascadeFromConvex,
+} from "@/lib/crew-scheduling-mirror";
 import { buildFilterWhere, type FilterValue } from "@/lib/table-utils";
 import type { ColumnDef } from "@/components/ui/data-table";
 
@@ -286,8 +292,13 @@ export async function deleteCrewMember(id: string) {
   });
   if (!member) throw new Error("Crew member not found");
 
+  // Capture cascade children (assignments → shifts/time-entries, plus standalone
+  // time entries, certifications and availability) before the delete removes them.
+  const cascade = await snapshotCrewMemberCascade(id);
+
   await prisma.crewMember.delete({ where: { id, organizationId } });
   await removeCrewMemberFromConvex(id);
+  await removeCrewMemberCascadeFromConvex(cascade);
 
   await logActivity({
     organizationId,
@@ -460,6 +471,8 @@ export async function addCertification(crewMemberId: string, data: CrewCertifica
     },
   });
 
+  await mirrorCrewCertificationCreate(result as unknown as Record<string, unknown>);
+
   await logActivity({
     organizationId,
     userId,
@@ -484,6 +497,7 @@ export async function removeCertification(certId: string) {
     throw new Error("Certification not found");
   }
   await prisma.crewCertification.delete({ where: { id: certId } });
+  await removeCrewCertificationFromConvex(certId);
   return { success: true };
 }
 

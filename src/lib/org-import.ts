@@ -17,6 +17,13 @@ import {
 import { mirrorLineItemRow } from "@/lib/line-item-mirror";
 import { mirrorSupplierOrderCreate, mirrorSupplierOrderItemCreate } from "@/lib/sub-hire-mirror";
 import { mirrorProjectCreate } from "@/lib/project-mirror";
+import {
+  mirrorCrewCertificationCreate,
+  mirrorCrewAssignmentCreate,
+  mirrorCrewShiftCreate,
+  mirrorCrewAvailabilityCreate,
+  mirrorCrewTimeEntryCreate,
+} from "@/lib/crew-scheduling-mirror";
 import { MANIFEST_VERSION, type OrgExportManifest } from "./org-transfer-types";
 import { createId } from "@paralleldrive/cuid2";
 import unzipper from "unzipper";
@@ -848,7 +855,7 @@ export async function importOrganization(
   for (const r of (manifest.crewCertifications ?? []) as Rec[]) {
     const crewMemberId = remap("crewMember", r.crewMemberId);
     if (!crewMemberId) continue;
-    await prisma.crewCertification.create({
+    const createdCert = await prisma.crewCertification.create({
       data: {
         ...stripRelations(r),
         id: createId(),
@@ -857,13 +864,14 @@ export async function importOrganization(
         expiryDate: safeDateOpt(r.expiryDate),
       } as any,
     });
+    await mirrorCrewCertificationCreate(createdCert as unknown as Record<string, unknown>);
   }
   for (const r of (manifest.crewAssignments ?? []) as Rec[]) {
     const projectId = remap("project", r.projectId);
     const crewMemberId = remap("crewMember", r.crewMemberId);
     if (!projectId || !crewMemberId) continue;
     const id = newId("crewAssignment", r.id);
-    await prisma.crewAssignment.create({
+    const createdAssignment = await prisma.crewAssignment.create({
       data: {
         ...stripRelations(r),
         id,
@@ -883,11 +891,12 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await mirrorCrewAssignmentCreate(createdAssignment as unknown as Record<string, unknown>);
   }
   for (const r of (manifest.crewShifts ?? []) as Rec[]) {
     const assignmentId = remap("crewAssignment", r.assignmentId);
     if (!assignmentId) continue;
-    await prisma.crewShift.create({
+    const createdShift = await prisma.crewShift.create({
       data: {
         ...stripRelations(r),
         id: createId(),
@@ -895,11 +904,12 @@ export async function importOrganization(
         date: safeDate(r.date),
       } as any,
     });
+    await mirrorCrewShiftCreate(createdShift as unknown as Record<string, unknown>);
   }
   for (const r of (manifest.crewAvailability ?? []) as Rec[]) {
     const crewMemberId = remap("crewMember", r.crewMemberId);
     if (!crewMemberId) continue;
-    await prisma.crewAvailability.create({
+    const createdAvail = await prisma.crewAvailability.create({
       data: {
         ...stripRelations(r),
         id: createId(),
@@ -910,11 +920,12 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await mirrorCrewAvailabilityCreate(createdAvail as unknown as Record<string, unknown>);
   }
   for (const r of (manifest.crewTimeEntries ?? []) as Rec[]) {
     const crewMemberId = remap("crewMember", r.crewMemberId);
     if (!crewMemberId) continue;
-    await prisma.crewTimeEntry.create({
+    const createdTimeEntry = await prisma.crewTimeEntry.create({
       data: {
         ...stripRelations(r),
         id: createId(),
@@ -928,6 +939,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await mirrorCrewTimeEntryCreate(createdTimeEntry as unknown as Record<string, unknown>);
   }
 
   // ── 20c. Check items (FEATUREDOCS/37, Track B; dual-written) ─────

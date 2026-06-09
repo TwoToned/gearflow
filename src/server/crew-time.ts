@@ -8,6 +8,12 @@ import {
   type CrewTimeEntryFormValues,
 } from "@/lib/validations/crew";
 import { logActivity } from "@/lib/activity-log";
+import {
+  mirrorCrewTimeEntryCreate,
+  patchCrewTimeEntryInConvex,
+  removeCrewTimeEntryFromConvex,
+  syncCrewTimeEntriesToConvex,
+} from "@/lib/crew-scheduling-mirror";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -204,6 +210,8 @@ export async function createTimeEntry(data: CrewTimeEntryFormValues) {
     },
   });
 
+  await mirrorCrewTimeEntryCreate(entry as unknown as Record<string, unknown>);
+
   await logActivity({
     organizationId,
     userId,
@@ -274,6 +282,8 @@ export async function updateTimeEntry(
     },
   });
 
+  await patchCrewTimeEntryInConvex(id, entry as unknown as Record<string, unknown>);
+
   await logActivity({
     organizationId,
     userId,
@@ -308,6 +318,7 @@ export async function deleteTimeEntry(id: string) {
   }
 
   await prisma.crewTimeEntry.delete({ where: { id } });
+  await removeCrewTimeEntryFromConvex(id);
 
   await logActivity({
     organizationId,
@@ -345,6 +356,8 @@ export async function submitTimeEntries(ids: string[]) {
     data: { status: "SUBMITTED" },
   });
 
+  await syncCrewTimeEntriesToConvex(entries.map((e) => e.id));
+
   await logActivity({
     organizationId,
     userId,
@@ -379,6 +392,8 @@ export async function approveTimeEntries(ids: string[]) {
       approvedAt: new Date(),
     },
   });
+
+  await syncCrewTimeEntriesToConvex(entries.map((e) => e.id));
 
   await logActivity({
     organizationId,
@@ -420,6 +435,8 @@ export async function disputeTimeEntry(id: string, reason?: string) {
       notes: reason || entry.notes,
     },
   });
+
+  await syncCrewTimeEntriesToConvex([id]);
 
   await logActivity({
     organizationId,

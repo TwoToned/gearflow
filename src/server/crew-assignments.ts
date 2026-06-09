@@ -11,6 +11,14 @@ import {
 } from "@/lib/validations/crew";
 import { logActivity } from "@/lib/activity-log";
 import { emitIfDiscordEnabled } from "@/lib/services/outbox-service";
+import {
+  syncCrewAssignmentToConvex,
+  patchCrewAssignmentInConvex,
+  snapshotAssignmentCascade,
+  removeCrewAssignmentCascadeFromConvex,
+  patchCrewShiftInConvex,
+  removeCrewShiftFromConvex,
+} from "@/lib/crew-scheduling-mirror";
 
 // ─── Rate Cascade ────────────────────────────────────────────────────────────
 
@@ -195,6 +203,9 @@ export async function createAssignment(projectId: string, data: CrewAssignmentFo
     }
   }
 
+  // Mirror the assignment + any auto-generated shifts to Convex (dual-write).
+  await syncCrewAssignmentToConvex(assignment.id);
+
   await logActivity({
     organizationId,
     userId,
@@ -269,6 +280,8 @@ export async function updateAssignment(id: string, data: CrewAssignmentFormValue
     },
   });
 
+  await patchCrewAssignmentInConvex(id, updated as unknown as Record<string, unknown>);
+
   await logActivity({
     organizationId,
     userId,
@@ -296,6 +309,9 @@ export async function deleteAssignment(id: string) {
   });
   if (!assignment) throw new Error("Assignment not found");
 
+  // Capture the cascade (shifts + time entries) before the delete removes them.
+  const cascade = await snapshotAssignmentCascade(id);
+
   await prisma.$transaction(async (tx) => {
     await tx.crewAssignment.delete({ where: { id, organizationId } });
 
@@ -313,6 +329,8 @@ export async function deleteAssignment(id: string) {
       dedupeKey: `crew.assignment.changed:${id}:removed`,
     });
   });
+
+  await removeCrewAssignmentCascadeFromConvex(cascade);
 
   await logActivity({
     organizationId,
@@ -352,6 +370,8 @@ export async function updateAssignmentStatus(id: string, status: string) {
     data: updateData,
   });
 
+  await patchCrewAssignmentInConvex(id, updated as unknown as Record<string, unknown>);
+
   await logActivity({
     organizationId,
     userId,
@@ -380,7 +400,14 @@ export async function generateShifts(assignmentId: string) {
     throw new Error("Assignment must have start and end dates to generate shifts");
   }
 
-  // Delete existing SCHEDULED shifts (preserve completed ones)
+  // Delete existing SCHEDULED shifts (preserve completed ones). Capture their ids
+  // first so we can drop the regenerated-orphaned rows from Convex.
+  const oldShiftIds = (
+    await prisma.crewShift.findMany({
+      where: { assignmentId, status: "SCHEDULED" },
+      select: { id: true },
+    })
+  ).map((s) => s.id);
   await prisma.crewShift.deleteMany({
     where: { assignmentId, status: "SCHEDULED" },
   });
@@ -402,6 +429,10 @@ export async function generateShifts(assignmentId: string) {
   if (shifts.length > 0) {
     await prisma.crewShift.createMany({ data: shifts });
   }
+
+  // Drop the deleted-and-regenerated shifts, then mirror the fresh ones.
+  for (const sid of oldShiftIds) await removeCrewShiftFromConvex(sid);
+  await syncCrewAssignmentToConvex(assignmentId);
 
   return serialize({ count: shifts.length });
 }
@@ -431,6 +462,8 @@ export async function updateShift(shiftId: string, data: CrewShiftFormValues) {
     },
   });
 
+  await patchCrewShiftInConvex(shiftId, updated as unknown as Record<string, unknown>);
+
   return serialize(updated);
 }
 
@@ -446,6 +479,7 @@ export async function deleteShift(shiftId: string) {
   }
 
   await prisma.crewShift.delete({ where: { id: shiftId } });
+  await removeCrewShiftFromConvex(shiftId);
   return { success: true };
 }
 

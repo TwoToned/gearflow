@@ -8,6 +8,10 @@ import {
   type CrewAvailabilityFormValues,
 } from "@/lib/validations/crew";
 import { logActivity } from "@/lib/activity-log";
+import {
+  mirrorCrewAvailabilityCreate,
+  removeCrewAvailabilityFromConvex,
+} from "@/lib/crew-scheduling-mirror";
 
 // ─── Availability CRUD ──────────────────────────────────────────────────────
 
@@ -65,6 +69,8 @@ export async function addAvailability(data: CrewAvailabilityFormValues) {
     },
   });
 
+  await mirrorCrewAvailabilityCreate(record as unknown as Record<string, unknown>);
+
   await logActivity({
     organizationId,
     userId,
@@ -95,6 +101,7 @@ export async function removeAvailability(id: string) {
   }
 
   await prisma.crewAvailability.delete({ where: { id } });
+  await removeCrewAvailabilityFromConvex(id);
   return { success: true };
 }
 

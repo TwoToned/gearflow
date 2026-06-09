@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { syncCrewAssignmentToConvex } from "@/lib/crew-scheduling-mirror";
 
 /**
  * GET /api/crew/respond/[token]?action=accept|decline
@@ -73,6 +74,8 @@ export async function GET(
       responseToken: null, // Invalidate token after use
     },
   });
+
+  await syncCrewAssignmentToConvex(assignment.id);
 
   const crewName = `${assignment.crewMember.firstName} ${assignment.crewMember.lastName}`;
   const projectName = `${assignment.project.projectNumber} — ${assignment.project.name}`;

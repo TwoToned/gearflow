@@ -31,7 +31,9 @@
     "convex:backfill:check-items": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-check-items.ts",
     "convex:backfill:test-profiles": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-test-profiles.ts",
     "convex:backfill:brand-templates": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-brand-templates.ts",
-    "convex:backfill:group-templates": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-group-templates.ts"
+    "convex:backfill:group-templates": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-group-templates.ts",
+    "convex:backfill:custom-fields": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-custom-fields.ts",
+    "convex:backfill:section-presets": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-section-presets.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1063.0",

@@ -8,19 +8,19 @@
  * leaves room for kit / project / bulk-asset later.
  */
 
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Pencil, GripVertical, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import {
-  getCustomFieldDefinitions,
   createCustomFieldDefinition,
   updateCustomFieldDefinition,
   deleteCustomFieldDefinition,
 } from "@/server/custom-fields";
+import { useCustomFieldDefinitions } from "@/hooks/use-custom-fields";
 import {
   customFieldDefinitionSchema,
   type CustomFieldDefinitionInput,
@@ -244,24 +244,31 @@ export default function CustomFieldsSettingsPage() {
   const [editing, setEditing] = useState<Def | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Def | null>(null);
 
-  const { data: defs, isLoading } = useQuery({
-    queryKey: ["custom-field-definitions", orgId, "ASSET"],
-    queryFn: () => getCustomFieldDefinitions("ASSET"),
-    enabled: !!orgId,
-  });
+  // Reactive custom-field list straight from Convex (auto-updates on any
+  // create/update/delete/reorder). The Convex list returns ALL entity types for
+  // the org; this v1 settings page is ASSET-scoped, so filter + sort client-side.
+  const allDefs = useCustomFieldDefinitions(orgId);
+  const isLoading = allDefs === undefined;
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteCustomFieldDefinition(id),
     onSuccess: () => {
       toast.success("Custom field removed");
-      queryClient.invalidateQueries({ queryKey: ["custom-field-definitions"] });
       queryClient.invalidateQueries({ queryKey: ["active-custom-fields"] });
       setDeleteTarget(null);
     },
     onError: (e) => showError(e),
   });
 
-  const list = (defs ?? []) as Def[];
+  const list = useMemo(() => {
+    const source = (allDefs ?? []) as unknown as Def[];
+    return source
+      .filter((d) => (d as { entityType?: string }).entityType === "ASSET")
+      .sort((a, b) => {
+        const so = ((a as { sortOrder?: number }).sortOrder ?? 0) - ((b as { sortOrder?: number }).sortOrder ?? 0);
+        return so !== 0 ? so : 0;
+      });
+  }, [allDefs]);
 
   return (
     <div className="space-y-6">

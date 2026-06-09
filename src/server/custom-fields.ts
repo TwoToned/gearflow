@@ -12,7 +12,10 @@
  * org-configuration task, same surface as Assets / Test & Tag settings.
  */
 
+import { type FunctionArgs } from "convex/server";
 import { prisma } from "@/lib/prisma";
+import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
@@ -24,6 +27,30 @@ import {
   type CustomFieldEntity,
 } from "@/lib/validations/custom-field";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
+
+// Custom field definitions are DUAL-WRITTEN: every create/update/delete/reorder
+// writes the Prisma `custom_field_definition` row AND the Convex
+// `customFieldDefinitions` doc (the reactive read source the settings page
+// subscribes to). The actual field VALUES live in each entity's customFieldValues
+// JSON column (unchanged, still Prisma). Prisma is written first; the Convex
+// payload is derived from the written row via toConvexDoc. See FEATUREDOCS/54.
+
+/** Mirror a freshly written Prisma custom-field row into Convex (create). */
+async function mirrorCustomFieldToConvex(row: Record<string, unknown>) {
+  await getConvexClient().mutation(
+    api.customFieldDefinitions.create,
+    toConvexDoc(row) as FunctionArgs<typeof api.customFieldDefinitions.create>,
+  );
+}
+
+/** Mirror an updated Prisma custom-field row into Convex (patch, id stripped). */
+async function patchCustomFieldInConvex(id: string, row: Record<string, unknown>) {
+  const { id: _id, ...patch } = toConvexDoc(row);
+  await getConvexClient().mutation(api.customFieldDefinitions.update, {
+    id,
+    patch: patch as FunctionArgs<typeof api.customFieldDefinitions.update>["patch"],
+  });
+}
 
 /** All definitions for an entity type, ordered for display. Includes
  *  inactive ones — the settings page needs to show + toggle them. */
@@ -70,6 +97,7 @@ export async function createCustomFieldDefinition(input: CustomFieldDefinitionIn
         isActive: parsed.isActive,
       },
     });
+    await mirrorCustomFieldToConvex(def);
 
     await logActivity({
       organizationId,
@@ -125,6 +153,7 @@ export async function updateCustomFieldDefinition(
         isActive: parsed.isActive,
       },
     });
+    await patchCustomFieldInConvex(id, def);
 
     await logActivity({
       organizationId,
@@ -167,6 +196,7 @@ export async function deleteCustomFieldDefinition(id: string) {
   }
 
   await prisma.customFieldDefinition.delete({ where: { id, organizationId } });
+  await getConvexClient().mutation(api.customFieldDefinitions.remove, { id });
 
   await logActivity({
     organizationId,
@@ -193,5 +223,10 @@ export async function reorderCustomFieldDefinitions(orderedIds: string[]) {
       }),
     ),
   );
+  // Mirror the new sort order into Convex (the reactive read source).
+  const convex = getConvexClient();
+  for (let idx = 0; idx < orderedIds.length; idx++) {
+    await convex.mutation(api.customFieldDefinitions.update, { id: orderedIds[idx], patch: { sortOrder: idx } });
+  }
   return { ok: true };
 }

@@ -1,10 +1,36 @@
 "use server";
 
+import { type FunctionArgs } from "convex/server";
 import { prisma } from "@/lib/prisma";
+import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { requirePermission } from "@/lib/org-context";
 import { logActivity } from "@/lib/activity-log";
 import { serialize } from "@/lib/serialize";
 import { templateSectionsSchema } from "@/lib/validations/template-section";
+
+// Section presets are DUAL-WRITTEN: every create/update/delete writes the Prisma
+// `section_preset` row AND the Convex `sectionPresets` doc. `sections` is a JSON
+// string, passed straight through. getSectionPresets is consumed only by the
+// (cross-domain) document editor, which stays on the always-fresh Prisma mirror —
+// so this is dual-write infra, no Phase 4 reader conversion. See FEATUREDOCS/54.
+
+/** Mirror a freshly written Prisma section-preset row into Convex (create). */
+async function mirrorSectionPresetToConvex(row: Record<string, unknown>) {
+  await getConvexClient().mutation(
+    api.sectionPresets.create,
+    toConvexDoc(row) as FunctionArgs<typeof api.sectionPresets.create>,
+  );
+}
+
+/** Mirror an updated Prisma section-preset row into Convex (patch, id stripped). */
+async function patchSectionPresetInConvex(id: string, row: Record<string, unknown>) {
+  const { id: _id, ...patch } = toConvexDoc(row);
+  await getConvexClient().mutation(api.sectionPresets.update, {
+    id,
+    patch: patch as FunctionArgs<typeof api.sectionPresets.update>["patch"],
+  });
+}
 
 /**
  * Get all section presets for the current org.
@@ -44,6 +70,7 @@ export async function createSectionPreset(data: {
       sections: JSON.stringify(parsed.data),
     },
   });
+  await mirrorSectionPresetToConvex(preset);
 
   await logActivity({
     organizationId,
@@ -91,6 +118,7 @@ export async function updateSectionPreset(
     where: { id },
     data: updateData,
   });
+  await patchSectionPresetInConvex(id, preset);
 
   await logActivity({
     organizationId,
@@ -118,6 +146,7 @@ export async function deleteSectionPreset(id: string) {
   if (!existing) throw new Error("Section preset not found");
 
   await prisma.sectionPreset.delete({ where: { id } });
+  await getConvexClient().mutation(api.sectionPresets.remove, { id });
 
   await logActivity({
     organizationId,

@@ -116,8 +116,17 @@ const models = []; // {name, key, fields:[{name,validator,optional}], indexes:[{
         if (relm) relm[1].split(",").forEach(s => cur.fkFields.push(s.trim()));
         continue;
       }
-      // primary id -> Convex _id; skip
-      if (isId) continue;
+      // Primary Prisma id (cuid): preserve as a stored, indexed `id` field
+      // (Convex only reserves underscore-prefixed names). The app keys every
+      // lookup and FK on this cuid during the hybrid migration; Convex's own
+      // `_id` stays internal/unused. See FEATUREDOCS/54.
+      if (isId) {
+        let idValidator = mapType(base);
+        if (isList) idValidator = `v.array(${idValidator})`;
+        cur.fields.push({ name: fname, validator: idValidator, optional: false });
+        cur.idField = fname; // -> by_cuid index ("by_id" is reserved by Convex)
+        continue;
+      }
 
       let validator = mapType(base);
       if (isList) validator = `v.array(${validator})`;
@@ -144,6 +153,11 @@ for (const mdl of models) {
     seen.add(name);
     idx.push({ name, fields: fs2 });
   };
+  // cuid lookup index (Convex reserves the name "by_id", so use "by_cuid")
+  if (mdl.idField && fieldNames.has(mdl.idField)) {
+    idx.push({ name: "by_cuid", fields: [mdl.idField] });
+    seen.add("by_cuid");
+  }
   for (const fk of mdl.fkFields) add([fk]);
   for (const u of mdl.uniques) add([u]);
   for (const c of mdl.compounds) add(c);
@@ -162,7 +176,7 @@ for (const name of Object.keys(enums)) {
 
 // ── Emit schema.ts ──────────────────────────────────────────────────────────
 let sOut = `import { defineSchema, defineTable } from "convex/server";\nimport { v } from "convex/values";\nimport * as enums from "./lib/validators";\n\n`;
-sOut += `/**\n * GearFlow Convex schema — generated from prisma/schema.prisma (Phase 1).\n *\n * ${models.length} tables mirroring the Prisma models. Conventions:\n *  - Primary cuid \`@id\` becomes Convex's built-in \`_id\`; not stored explicitly.\n *  - Foreign keys are stored as \`v.string()\` (the source cuid) during the hybrid\n *    migration — NOT v.id() — so Convex docs interoperate with the existing\n *    Prisma id space and with auth-owned entities (user/organization) that stay\n *    in Better Auth. FK fields drive indexes. (Native v.id() is a post-data-\n *    migration optimization.) See FEATUREDOCS/54.\n *  - DateTime/Decimal -> v.number(); Json -> v.any(); enums -> ./lib/validators.\n *  - Optional iff the Prisma field is nullable, has a default, is a list, or is\n *    @updatedAt (so inserts/migration backfill aren't forced to set them).\n *  - createdAt/updatedAt are kept (optional) to preserve migrated timestamps;\n *    Convex also exposes _creationTime automatically.\n *  - @unique is NOT enforced by Convex indexes — uniqueness is enforced in the\n *    mutations that own each table. The by_<field> index still exists for lookup.\n *\n * Regenerate with: node scripts/generate-convex-schema.cjs . — if the Prisma\n * schema changes. Review by hand afterwards (generated scaffolding, not final).\n */\nexport default defineSchema({\n`;
+sOut += `/**\n * GearFlow Convex schema — generated from prisma/schema.prisma (Phase 1).\n *\n * ${models.length} tables mirroring the Prisma models. Conventions:\n *  - The Prisma primary cuid \`@id\` is PRESERVED as a stored \`id: v.string()\`\n *    field with a \`by_id\` index — NOT dropped in favour of Convex's \`_id\`. The\n *    app holds cuids everywhere (URLs, FK strings, server-action args), so every\n *    lookup keys off \`id\`; Convex's own \`_id\` stays internal/unused.\n *  - Foreign keys are stored as \`v.string()\` (the source cuid) during the hybrid\n *    migration — NOT v.id() — so Convex docs interoperate with the existing\n *    Prisma id space and with auth-owned entities (user/organization) that stay\n *    in Better Auth. FK fields drive indexes. (Native v.id() is a post-data-\n *    migration optimization.) See FEATUREDOCS/54.\n *  - DateTime/Decimal -> v.number(); Json -> v.any(); enums -> ./lib/validators.\n *  - Optional iff the Prisma field is nullable, has a default, is a list, or is\n *    @updatedAt (so inserts/migration backfill aren't forced to set them).\n *  - createdAt/updatedAt are kept (optional) to preserve migrated timestamps;\n *    Convex also exposes _creationTime automatically.\n *  - @unique is NOT enforced by Convex indexes — uniqueness is enforced in the\n *    mutations that own each table. The by_<field> index still exists for lookup.\n *\n * Regenerate with: node scripts/generate-convex-schema.cjs . — if the Prisma\n * schema changes. Review by hand afterwards (generated scaffolding, not final).\n */\nexport default defineSchema({\n`;
 for (const mdl of models) {
   sOut += `  // ${mdl.name}\n`;
   sOut += `  ${mdl.key}: defineTable({\n`;

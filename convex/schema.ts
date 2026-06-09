@@ -6,7 +6,10 @@ import * as enums from "./lib/validators";
  * GearFlow Convex schema — generated from prisma/schema.prisma (Phase 1).
  *
  * 95 tables mirroring the Prisma models. Conventions:
- *  - Primary cuid `@id` becomes Convex's built-in `_id`; not stored explicitly.
+ *  - The Prisma primary cuid `@id` is PRESERVED as a stored `id: v.string()`
+ *    field with a `by_id` index — NOT dropped in favour of Convex's `_id`. The
+ *    app holds cuids everywhere (URLs, FK strings, server-action args), so every
+ *    lookup keys off `id`; Convex's own `_id` stays internal/unused.
  *  - Foreign keys are stored as `v.string()` (the source cuid) during the hybrid
  *    migration — NOT v.id() — so Convex docs interoperate with the existing
  *    Prisma id space and with auth-owned entities (user/organization) that stay
@@ -26,6 +29,7 @@ import * as enums from "./lib/validators";
 export default defineSchema({
   // User
   users: defineTable({
+    id: v.string(),
     name: v.string(),
     email: v.string(),
     emailVerified: v.optional(v.boolean()),
@@ -37,10 +41,12 @@ export default defineSchema({
     updatedAt: v.optional(v.number()),
     twoFactorEnabled: v.optional(v.boolean()),
   })
+    .index("by_cuid", ["id"])
     .index("by_email", ["email"]),
 
   // Session
   sessions: defineTable({
+    id: v.string(),
     expiresAt: v.number(),
     token: v.string(),
     createdAt: v.optional(v.number()),
@@ -50,11 +56,13 @@ export default defineSchema({
     userId: v.string(),
     activeOrganizationId: v.optional(v.string()),
   })
+    .index("by_cuid", ["id"])
     .index("by_userId", ["userId"])
     .index("by_token", ["token"]),
 
   // Account
   accounts: defineTable({
+    id: v.string(),
     accountId: v.string(),
     providerId: v.string(),
     userId: v.string(),
@@ -68,19 +76,23 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_userId", ["userId"]),
 
   // Verification
   verifications: defineTable({
+    id: v.string(),
     identifier: v.string(),
     value: v.string(),
     expiresAt: v.number(),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
-  }),
+  })
+    .index("by_cuid", ["id"]),
 
   // Organization
   organizations: defineTable({
+    id: v.string(),
     name: v.string(),
     slug: v.string(),
     logo: v.optional(v.string()),
@@ -89,20 +101,24 @@ export default defineSchema({
     metadata: v.optional(v.string()),
     defaultTaxRate: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_slug", ["slug"]),
 
   // Member
   members: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     userId: v.string(),
     role: v.string(),
     createdAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_userId", ["userId"]),
 
   // Invitation
   invitations: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     email: v.string(),
     role: v.optional(v.string()),
@@ -111,10 +127,12 @@ export default defineSchema({
     inviterId: v.string(),
     createdAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"]),
 
   // CustomRole
   customRoles: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     name: v.string(),
     description: v.optional(v.string()),
@@ -124,11 +142,13 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_organizationId_name", ["organizationId", "name"]),
 
   // SsoProvider
   ssoProviders: defineTable({
+    id: v.string(),
     issuer: v.string(),
     oidcConfig: v.optional(v.string()),
     samlConfig: v.optional(v.string()),
@@ -140,6 +160,7 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_userId", ["userId"])
     .index("by_organizationId", ["organizationId"])
     .index("by_providerId", ["providerId"])
@@ -147,6 +168,7 @@ export default defineSchema({
 
   // PendingSSOApproval
   pendingSSOApprovals: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     userId: v.string(),
     email: v.string(),
@@ -160,6 +182,7 @@ export default defineSchema({
     reviewNote: v.optional(v.string()),
     createdAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_userId", ["userId"])
     .index("by_reviewedById", ["reviewedById"])
@@ -168,6 +191,7 @@ export default defineSchema({
 
   // Category
   categories: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     name: v.string(),
     parentId: v.optional(v.string()),
@@ -179,11 +203,13 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_parentId", ["parentId"]),
 
   // Model
   models: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     name: v.string(),
     manufacturer: v.optional(v.string()),
@@ -217,6 +243,7 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_categoryId", ["categoryId"])
     .index("by_defaultTestProfileId", ["defaultTestProfileId"])
@@ -225,6 +252,7 @@ export default defineSchema({
 
   // Supplier
   suppliers: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     name: v.string(),
     contactName: v.optional(v.string()),
@@ -243,11 +271,13 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_organizationId_name", ["organizationId", "name"]),
 
   // SupplierOrder
   supplierOrders: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     supplierId: v.string(),
     orderNumber: v.string(),
@@ -265,6 +295,7 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_supplierId", ["supplierId"])
     .index("by_projectId", ["projectId"])
@@ -274,6 +305,7 @@ export default defineSchema({
 
   // SupplierOrderItem
   supplierOrderItems: defineTable({
+    id: v.string(),
     orderId: v.string(),
     description: v.string(),
     quantity: v.optional(v.number()),
@@ -284,12 +316,14 @@ export default defineSchema({
     notes: v.optional(v.string()),
     sortOrder: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_orderId", ["orderId"])
     .index("by_modelId", ["modelId"])
     .index("by_assetId", ["assetId"]),
 
   // SubHire
   subHires: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     supplierId: v.string(),
     projectId: v.optional(v.string()),
@@ -312,6 +346,7 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_supplierId", ["supplierId"])
     .index("by_projectId", ["projectId"])
@@ -325,6 +360,7 @@ export default defineSchema({
 
   // SubHireItem
   subHireItems: defineTable({
+    id: v.string(),
     subHireId: v.string(),
     groupId: v.optional(v.string()),
     modelId: v.optional(v.string()),
@@ -341,6 +377,7 @@ export default defineSchema({
     targetCategoryId: v.optional(v.string()),
     targetGroupId: v.optional(v.string()),
   })
+    .index("by_cuid", ["id"])
     .index("by_subHireId", ["subHireId"])
     .index("by_groupId", ["groupId"])
     .index("by_modelId", ["modelId"])
@@ -349,6 +386,7 @@ export default defineSchema({
 
   // SubHireGroup
   subHireGroups: defineTable({
+    id: v.string(),
     subHireId: v.string(),
     title: v.string(),
     sortOrder: v.optional(v.number()),
@@ -360,12 +398,14 @@ export default defineSchema({
     targetCategoryId: v.optional(v.string()),
     targetGroupId: v.optional(v.string()),
   })
+    .index("by_cuid", ["id"])
     .index("by_subHireId", ["subHireId"])
     .index("by_targetCategoryId", ["targetCategoryId"])
     .index("by_targetGroupId", ["targetGroupId"]),
 
   // SupplierModelRate
   supplierModelRates: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     supplierId: v.string(),
     modelId: v.string(),
@@ -374,6 +414,7 @@ export default defineSchema({
     lastUsedAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_supplierId", ["supplierId"])
     .index("by_modelId", ["modelId"])
@@ -383,6 +424,7 @@ export default defineSchema({
 
   // Kit
   kits: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     assetTag: v.string(),
     name: v.string(),
@@ -409,6 +451,7 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_categoryId", ["categoryId"])
     .index("by_locationId", ["locationId"])
@@ -418,6 +461,7 @@ export default defineSchema({
 
   // KitSerializedItem
   kitSerializedItems: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     kitId: v.string(),
     assetId: v.string(),
@@ -427,6 +471,7 @@ export default defineSchema({
     addedById: v.string(),
     notes: v.optional(v.string()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_kitId", ["kitId"])
     .index("by_assetId", ["assetId"])
@@ -435,6 +480,7 @@ export default defineSchema({
 
   // KitBulkItem
   kitBulkItems: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     kitId: v.string(),
     bulkAssetId: v.string(),
@@ -445,6 +491,7 @@ export default defineSchema({
     addedById: v.string(),
     notes: v.optional(v.string()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_kitId", ["kitId"])
     .index("by_bulkAssetId", ["bulkAssetId"])
@@ -452,6 +499,7 @@ export default defineSchema({
 
   // Asset
   assets: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     modelId: v.string(),
     assetTag: v.string(),
@@ -481,6 +529,7 @@ export default defineSchema({
     kitId: v.optional(v.string()),
     parentAssetId: v.optional(v.string()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_modelId", ["modelId"])
     .index("by_supplierId", ["supplierId"])
@@ -494,6 +543,7 @@ export default defineSchema({
 
   // BulkAsset
   bulkAssets: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     modelId: v.string(),
     assetTag: v.string(),
@@ -511,6 +561,7 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_modelId", ["modelId"])
     .index("by_locationId", ["locationId"])
@@ -521,6 +572,7 @@ export default defineSchema({
 
   // AssetBulkChild
   assetBulkChildren: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     parentAssetId: v.string(),
     bulkAssetId: v.string(),
@@ -531,6 +583,7 @@ export default defineSchema({
     addedAt: v.optional(v.number()),
     addedById: v.string(),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_parentAssetId", ["parentAssetId"])
     .index("by_bulkAssetId", ["bulkAssetId"])
@@ -538,6 +591,7 @@ export default defineSchema({
 
   // ModelBulkAccessory
   modelBulkAccessories: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     modelId: v.string(),
     bulkAssetId: v.string(),
@@ -547,6 +601,7 @@ export default defineSchema({
     addedAt: v.optional(v.number()),
     addedById: v.string(),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_modelId", ["modelId"])
     .index("by_bulkAssetId", ["bulkAssetId"])
@@ -555,6 +610,7 @@ export default defineSchema({
 
   // Location
   locations: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     name: v.string(),
     address: v.optional(v.string()),
@@ -568,11 +624,13 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_parentId", ["parentId"]),
 
   // MaintenanceRecord
   maintenanceRecords: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     kitId: v.optional(v.string()),
     projectId: v.optional(v.string()),
@@ -594,6 +652,7 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_kitId", ["kitId"])
     .index("by_projectId", ["projectId"])
@@ -604,6 +663,7 @@ export default defineSchema({
 
   // DamageEvent
   damageEvents: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     projectId: v.optional(v.string()),
     lineItemId: v.optional(v.string()),
@@ -624,6 +684,7 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_projectId", ["projectId"])
     .index("by_lineItemId", ["lineItemId"])
@@ -638,15 +699,18 @@ export default defineSchema({
 
   // MaintenanceRecordAsset
   maintenanceRecordAssets: defineTable({
+    id: v.string(),
     maintenanceRecordId: v.string(),
     assetId: v.string(),
   })
+    .index("by_cuid", ["id"])
     .index("by_maintenanceRecordId", ["maintenanceRecordId"])
     .index("by_assetId", ["assetId"])
     .index("by_maintenanceRecordId_assetId", ["maintenanceRecordId", "assetId"]),
 
   // Client
   clients: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     name: v.string(),
     type: v.optional(enums.ClientType),
@@ -668,11 +732,13 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_isActive", ["isActive"]),
 
   // Project
   projects: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     projectNumber: v.string(),
     name: v.string(),
@@ -723,6 +789,7 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_clientId", ["clientId"])
     .index("by_locationId", ["locationId"])
@@ -735,6 +802,7 @@ export default defineSchema({
 
   // ProjectLineItem
   projectLineItems: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     projectId: v.string(),
     type: v.optional(enums.LineItemType),
@@ -790,6 +858,7 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_projectId", ["projectId"])
     .index("by_modelId", ["modelId"])
@@ -809,6 +878,7 @@ export default defineSchema({
 
   // ProjectLineItemUnit
   projectLineItemUnits: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     lineItemId: v.string(),
     ordinal: v.number(),
@@ -829,6 +899,7 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_lineItemId", ["lineItemId"])
     .index("by_assetId", ["assetId"])
@@ -841,6 +912,7 @@ export default defineSchema({
 
   // LineItemMergeMap
   lineItemMergeMaps: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     oldLineItemId: v.string(),
     canonicalLineItemId: v.string(),
@@ -851,12 +923,14 @@ export default defineSchema({
     notes: v.optional(v.string()),
     mergedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_oldLineItemId", ["oldLineItemId"])
     .index("by_canonicalLineItemId", ["canonicalLineItemId"]),
 
   // ProjectCategory
   projectCategories: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     projectId: v.string(),
     name: v.string(),
@@ -864,11 +938,13 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_projectId", ["projectId"]),
 
   // CategorySlot
   categorySlots: defineTable({
+    id: v.string(),
     projectCategoryId: v.string(),
     sortOrder: v.number(),
     projectGroupId: v.optional(v.string()),
@@ -876,6 +952,7 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_projectCategoryId", ["projectCategoryId"])
     .index("by_projectGroupId", ["projectGroupId"])
     .index("by_subHireGroupId", ["subHireGroupId"])
@@ -883,6 +960,7 @@ export default defineSchema({
 
   // ProjectGroup
   projectGroups: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     projectId: v.string(),
     categoryId: v.optional(v.string()),
@@ -900,17 +978,20 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_projectId", ["projectId"])
     .index("by_categoryId", ["categoryId"]),
 
   // ProjectManager
   projectManagers: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     projectId: v.string(),
     userId: v.string(),
     addedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_projectId", ["projectId"])
     .index("by_userId", ["userId"])
@@ -918,16 +999,19 @@ export default defineSchema({
 
   // GroupTemplate
   groupTemplates: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     name: v.string(),
     description: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"]),
 
   // GroupTemplateItem
   groupTemplateItems: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     templateId: v.string(),
     modelId: v.optional(v.string()),
@@ -935,6 +1019,7 @@ export default defineSchema({
     quantity: v.optional(v.number()),
     sortOrder: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_templateId", ["templateId"])
     .index("by_modelId", ["modelId"])
@@ -942,6 +1027,7 @@ export default defineSchema({
 
   // AssetScanLog
   assetScanLogs: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     assetId: v.optional(v.string()),
     bulkAssetId: v.optional(v.string()),
@@ -953,6 +1039,7 @@ export default defineSchema({
     notes: v.optional(v.string()),
     location: v.optional(v.string()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_assetId", ["assetId"])
     .index("by_bulkAssetId", ["bulkAssetId"])
@@ -963,6 +1050,7 @@ export default defineSchema({
 
   // FileUpload
   fileUploads: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     fileName: v.string(),
     fileSize: v.number(),
@@ -976,11 +1064,13 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_uploadedById", ["uploadedById"]),
 
   // ModelMedia
   modelMedia: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     modelId: v.string(),
     fileId: v.string(),
@@ -990,6 +1080,7 @@ export default defineSchema({
     sortOrder: v.optional(v.number()),
     createdAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_modelId", ["modelId"])
     .index("by_fileId", ["fileId"])
@@ -997,6 +1088,7 @@ export default defineSchema({
 
   // AssetMedia
   assetMedia: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     assetId: v.string(),
     fileId: v.string(),
@@ -1006,6 +1098,7 @@ export default defineSchema({
     sortOrder: v.optional(v.number()),
     createdAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_assetId", ["assetId"])
     .index("by_fileId", ["fileId"])
@@ -1013,6 +1106,7 @@ export default defineSchema({
 
   // KitMedia
   kitMedia: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     kitId: v.string(),
     fileId: v.string(),
@@ -1022,6 +1116,7 @@ export default defineSchema({
     sortOrder: v.optional(v.number()),
     createdAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_kitId", ["kitId"])
     .index("by_fileId", ["fileId"])
@@ -1029,6 +1124,7 @@ export default defineSchema({
 
   // ProjectMedia
   projectMedia: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     projectId: v.string(),
     fileId: v.string(),
@@ -1037,6 +1133,7 @@ export default defineSchema({
     sortOrder: v.optional(v.number()),
     createdAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_projectId", ["projectId"])
     .index("by_fileId", ["fileId"])
@@ -1044,6 +1141,7 @@ export default defineSchema({
 
   // ClientMedia
   clientMedia: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     clientId: v.string(),
     fileId: v.string(),
@@ -1052,6 +1150,7 @@ export default defineSchema({
     sortOrder: v.optional(v.number()),
     createdAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_clientId", ["clientId"])
     .index("by_fileId", ["fileId"])
@@ -1059,6 +1158,7 @@ export default defineSchema({
 
   // LocationMedia
   locationMedia: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     locationId: v.string(),
     fileId: v.string(),
@@ -1067,6 +1167,7 @@ export default defineSchema({
     sortOrder: v.optional(v.number()),
     createdAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_locationId", ["locationId"])
     .index("by_fileId", ["fileId"])
@@ -1074,6 +1175,7 @@ export default defineSchema({
 
   // SubHireMedia
   subHireMedia: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     subHireId: v.string(),
     fileId: v.string(),
@@ -1082,6 +1184,7 @@ export default defineSchema({
     sortOrder: v.optional(v.number()),
     createdAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_subHireId", ["subHireId"])
     .index("by_fileId", ["fileId"])
@@ -1089,6 +1192,7 @@ export default defineSchema({
 
   // TestProfile
   testProfiles: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     name: v.string(),
     equipmentClass: v.optional(enums.EquipmentClass),
@@ -1104,6 +1208,7 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_organizationId_name", ["organizationId", "name"])
     .index("by_organizationId_isActive", ["organizationId", "isActive"])
@@ -1111,6 +1216,7 @@ export default defineSchema({
 
   // TestTagAsset
   testTagAssets: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     testTagId: v.string(),
     description: v.string(),
@@ -1133,6 +1239,7 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_assetId", ["assetId"])
     .index("by_bulkAssetId", ["bulkAssetId"])
@@ -1145,6 +1252,7 @@ export default defineSchema({
 
   // TestTagRecord
   testTagRecords: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     testTagAssetId: v.string(),
     testProfileId: v.optional(v.string()),
@@ -1183,6 +1291,7 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_testTagAssetId", ["testTagAssetId"])
     .index("by_testProfileId", ["testProfileId"])
@@ -1192,6 +1301,7 @@ export default defineSchema({
 
   // SubTestRecord
   subTestRecords: defineTable({
+    id: v.string(),
     testTagRecordId: v.string(),
     label: v.string(),
     sortOrder: v.optional(v.number()),
@@ -1206,28 +1316,34 @@ export default defineSchema({
     notes: v.optional(v.string()),
     createdAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_testTagRecordId", ["testTagRecordId"])
     .index("by_testTagRecordId_sortOrder", ["testTagRecordId", "sortOrder"]),
 
   // TwoFactor
   twoFactors: defineTable({
+    id: v.string(),
     secret: v.string(),
     backupCodes: v.string(),
     userId: v.string(),
   })
+    .index("by_cuid", ["id"])
     .index("by_userId", ["userId"]),
 
   // BackupCode
   backupCodes: defineTable({
+    id: v.string(),
     code: v.string(),
     used: v.optional(v.boolean()),
     userId: v.string(),
     createdAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_userId", ["userId"]),
 
   // Passkey
   passkeys: defineTable({
+    id: v.string(),
     name: v.optional(v.string()),
     publicKey: v.string(),
     userId: v.string(),
@@ -1239,11 +1355,13 @@ export default defineSchema({
     aaguid: v.optional(v.string()),
     createdAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_userId", ["userId"])
     .index("by_credentialID", ["credentialID"]),
 
   // SiteSettings
   siteSettings: defineTable({
+    id: v.string(),
     platformName: v.optional(v.string()),
     platformIcon: v.optional(v.string()),
     platformLogo: v.optional(v.string()),
@@ -1256,10 +1374,12 @@ export default defineSchema({
     socialLoginMicrosoft: v.optional(v.boolean()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
-  }),
+  })
+    .index("by_cuid", ["id"]),
 
   // ActivityLog
   activityLogs: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     action: v.string(),
     entityType: v.string(),
@@ -1275,6 +1395,7 @@ export default defineSchema({
     kitId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_userId", ["userId"])
     .index("by_organizationId_createdAt", ["organizationId", "createdAt"])
@@ -1286,6 +1407,7 @@ export default defineSchema({
 
   // CrewMember
   crewMembers: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     firstName: v.string(),
     lastName: v.string(),
@@ -1316,6 +1438,7 @@ export default defineSchema({
     updatedAt: v.optional(v.number()),
     isActive: v.optional(v.boolean()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_userId", ["userId"])
     .index("by_crewRoleId", ["crewRoleId"])
@@ -1325,6 +1448,7 @@ export default defineSchema({
 
   // CrewRole
   crewRoles: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     name: v.string(),
     description: v.optional(v.string()),
@@ -1335,20 +1459,24 @@ export default defineSchema({
     sortOrder: v.optional(v.number()),
     isActive: v.optional(v.boolean()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_organizationId_name", ["organizationId", "name"]),
 
   // CrewSkill
   crewSkills: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     name: v.string(),
     category: v.optional(v.string()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_organizationId_name", ["organizationId", "name"]),
 
   // CrewCertification
   crewCertifications: defineTable({
+    id: v.string(),
     crewMemberId: v.string(),
     name: v.string(),
     issuedBy: v.optional(v.string()),
@@ -1357,10 +1485,12 @@ export default defineSchema({
     expiryDate: v.optional(v.number()),
     status: v.optional(enums.CrewCertStatus),
   })
+    .index("by_cuid", ["id"])
     .index("by_crewMemberId", ["crewMemberId"]),
 
   // CrewAssignment
   crewAssignments: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     projectId: v.string(),
     crewMemberId: v.string(),
@@ -1388,6 +1518,7 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_projectId", ["projectId"])
     .index("by_crewMemberId", ["crewMemberId"])
@@ -1400,6 +1531,7 @@ export default defineSchema({
 
   // CrewShift
   crewShifts: defineTable({
+    id: v.string(),
     assignmentId: v.string(),
     date: v.number(),
     callTime: v.optional(v.string()),
@@ -1409,11 +1541,13 @@ export default defineSchema({
     notes: v.optional(v.string()),
     status: v.optional(enums.ShiftStatus),
   })
+    .index("by_cuid", ["id"])
     .index("by_assignmentId", ["assignmentId"])
     .index("by_assignmentId_date", ["assignmentId", "date"]),
 
   // CrewAvailability
   crewAvailabilities: defineTable({
+    id: v.string(),
     crewMemberId: v.string(),
     startDate: v.number(),
     endDate: v.number(),
@@ -1425,11 +1559,13 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_crewMemberId", ["crewMemberId"])
     .index("by_crewMemberId_startDate_endDate", ["crewMemberId", "startDate", "endDate"]),
 
   // CrewTimeEntry
   crewTimeEntries: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     assignmentId: v.optional(v.string()),
     crewMemberId: v.string(),
@@ -1446,6 +1582,7 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_assignmentId", ["assignmentId"])
     .index("by_crewMemberId", ["crewMemberId"])
@@ -1454,6 +1591,7 @@ export default defineSchema({
 
   // ProjectService
   projectServices: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     projectId: v.string(),
     type: enums.ServiceType,
@@ -1489,6 +1627,7 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_projectId", ["projectId"])
     .index("by_lineItemId", ["lineItemId"])
@@ -1498,6 +1637,7 @@ export default defineSchema({
 
   // ServiceTemplate
   serviceTemplates: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     type: enums.ServiceType,
     title: v.string(),
@@ -1513,10 +1653,12 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"]),
 
   // BrandTemplate
   brandTemplates: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     name: v.string(),
     headerSettings: v.string(),
@@ -1526,10 +1668,12 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"]),
 
   // DocumentTemplate
   documentTemplates: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     name: v.string(),
     type: v.string(),
@@ -1547,12 +1691,14 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_brandTemplateId", ["brandTemplateId"])
     .index("by_organizationId_type", ["organizationId", "type"]),
 
   // SectionPreset
   sectionPresets: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     name: v.string(),
     description: v.optional(v.string()),
@@ -1560,10 +1706,12 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"]),
 
   // WarehouseDashboardToken
   warehouseDashboardTokens: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     name: v.string(),
     token: v.string(),
@@ -1575,6 +1723,7 @@ export default defineSchema({
     lastAccessedAt: v.optional(v.number()),
     createdAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_locationId", ["locationId"])
     .index("by_createdById", ["createdById"])
@@ -1582,6 +1731,7 @@ export default defineSchema({
 
   // TestTagAuditorToken
   testTagAuditorTokens: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     name: v.string(),
     token: v.string(),
@@ -1593,12 +1743,14 @@ export default defineSchema({
     lastAccessedAt: v.optional(v.number()),
     createdAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_createdById", ["createdById"])
     .index("by_tokenHash", ["tokenHash"]),
 
   // WooCommerceIntegration
   wooCommerceIntegrations: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     isEnabled: v.optional(v.boolean()),
     webhookSecret: v.string(),
@@ -1620,10 +1772,12 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"]),
 
   // WooCommerceOrderLog
   wooCommerceOrderLogs: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     wooOrderId: v.number(),
     wooOrderNumber: v.optional(v.string()),
@@ -1636,12 +1790,14 @@ export default defineSchema({
     dateExtraction: v.optional(v.any()),
     createdAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_projectId", ["projectId"])
     .index("by_wooOrderId", ["wooOrderId"]),
 
   // DiscordIntegration
   discordIntegrations: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     isEnabled: v.optional(v.boolean()),
     signingSecret: v.string(),
@@ -1667,10 +1823,12 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"]),
 
   // DiscordOutbox
   discordOutboxes: defineTable({
+    id: v.number(),
     organizationId: v.string(),
     eventType: v.string(),
     payload: v.any(),
@@ -1683,18 +1841,22 @@ export default defineSchema({
     lastError: v.optional(v.string()),
     createdAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_dedupeKey", ["dedupeKey"])
+    .index("by_organizationId_id", ["organizationId", "id"])
     .index("by_status_nextAttemptAt", ["status", "nextAttemptAt"]),
 
   // DiscordAccountLink
   discordAccountLinks: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     crewMemberId: v.string(),
     discordUserId: v.string(),
     linkedAt: v.optional(v.number()),
     linkedById: v.optional(v.string()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_crewMemberId", ["crewMemberId"])
     .index("by_organizationId_discordUserId", ["organizationId", "discordUserId"])
@@ -1702,6 +1864,7 @@ export default defineSchema({
 
   // DiscordLinkToken
   discordLinkTokens: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     crewMemberId: v.string(),
     tokenHash: v.string(),
@@ -1711,6 +1874,7 @@ export default defineSchema({
     consumedAt: v.optional(v.number()),
     createdAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_crewMemberId", ["crewMemberId"])
     .index("by_tokenHash", ["tokenHash"])
@@ -1718,6 +1882,7 @@ export default defineSchema({
 
   // SavedReport
   savedReports: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     name: v.string(),
     description: v.optional(v.string()),
@@ -1736,6 +1901,7 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_createdById", ["createdById"])
     .index("by_organizationId_createdById", ["organizationId", "createdById"])
@@ -1743,6 +1909,7 @@ export default defineSchema({
 
   // CheckItem
   checkItems: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     label: v.string(),
     description: v.optional(v.string()),
@@ -1756,18 +1923,21 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_createdById", ["createdById"])
     .index("by_organizationId_category", ["organizationId", "category"]),
 
   // ModelCheckItem
   modelCheckItems: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     modelId: v.string(),
     checkItemId: v.string(),
     sortOrder: v.optional(v.number()),
     createdAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_modelId", ["modelId"])
     .index("by_checkItemId", ["checkItemId"])
@@ -1776,12 +1946,14 @@ export default defineSchema({
 
   // KitCheckItem
   kitCheckItems: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     kitId: v.string(),
     checkItemId: v.string(),
     sortOrder: v.optional(v.number()),
     createdAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_kitId", ["kitId"])
     .index("by_checkItemId", ["checkItemId"])
@@ -1790,6 +1962,7 @@ export default defineSchema({
 
   // CheckRecord
   checkRecords: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     context: enums.CheckContext,
     lineItemId: v.optional(v.string()),
@@ -1807,6 +1980,7 @@ export default defineSchema({
     performedById: v.string(),
     performedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_lineItemId", ["lineItemId"])
     .index("by_lineItemUnitId", ["lineItemUnitId"])
@@ -1820,6 +1994,7 @@ export default defineSchema({
 
   // WarehouseClose
   warehouseCloses: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     projectId: v.string(),
     closedById: v.string(),
@@ -1828,6 +2003,7 @@ export default defineSchema({
     damagedCount: v.optional(v.number()),
     lostCount: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_projectId", ["projectId"])
     .index("by_closedById", ["closedById"])
@@ -1835,11 +2011,13 @@ export default defineSchema({
 
   // NotificationDismissal
   notificationDismissals: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     userId: v.string(),
     notificationKey: v.string(),
     dismissedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_userId", ["userId"])
     .index("by_userId_notificationKey", ["userId", "notificationKey"])
@@ -1847,6 +2025,7 @@ export default defineSchema({
 
   // UserNotificationPreference
   userNotificationPreferences: defineTable({
+    id: v.string(),
     userId: v.string(),
     overdueMaintenance: v.optional(v.boolean()),
     overdueReturn: v.optional(v.boolean()),
@@ -1859,15 +2038,18 @@ export default defineSchema({
     flaggedAsset: v.optional(v.boolean()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_userId", ["userId"]),
 
   // NotificationEmailLog
   notificationEmailLogs: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     userId: v.string(),
     notificationKey: v.string(),
     sentAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_userId", ["userId"])
     .index("by_userId_notificationKey", ["userId", "notificationKey"])
@@ -1875,6 +2057,7 @@ export default defineSchema({
 
   // Stocktake
   stocktakes: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     name: v.string(),
     locationId: v.string(),
@@ -1894,6 +2077,7 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_locationId", ["locationId"])
     .index("by_startedById", ["startedById"])
@@ -1901,6 +2085,7 @@ export default defineSchema({
 
   // StocktakeItem
   stocktakeItems: defineTable({
+    id: v.string(),
     stocktakeId: v.string(),
     assetId: v.optional(v.string()),
     bulkAssetId: v.optional(v.string()),
@@ -1914,12 +2099,14 @@ export default defineSchema({
     conditionNote: v.optional(v.string()),
     actionTaken: v.optional(v.string()),
   })
+    .index("by_cuid", ["id"])
     .index("by_stocktakeId", ["stocktakeId"])
     .index("by_assetId", ["assetId"])
     .index("by_bulkAssetId", ["bulkAssetId"]),
 
   // CustomFieldDefinition
   customFieldDefinitions: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     entityType: v.optional(enums.CustomFieldEntity),
     label: v.string(),
@@ -1933,22 +2120,26 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_organizationId_entityType_fieldKey", ["organizationId", "entityType", "fieldKey"])
     .index("by_organizationId_entityType", ["organizationId", "entityType"]),
 
   // ProjectNumberSequence
   projectNumberSequences: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     scopeKey: v.string(),
     value: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_organizationId_scopeKey", ["organizationId", "scopeKey"]),
 
   // ProjectTask
   projectTasks: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     projectId: v.string(),
     title: v.string(),
@@ -1965,6 +2156,7 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_projectId", ["projectId"])
     .index("by_assigneeUserId", ["assigneeUserId"])
@@ -1976,6 +2168,7 @@ export default defineSchema({
 
   // SavedTableView
   savedTableViews: defineTable({
+    id: v.string(),
     organizationId: v.string(),
     userId: v.string(),
     tableId: v.string(),
@@ -1985,6 +2178,7 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
+    .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_userId", ["userId"])
     .index("by_organizationId_userId_tableId_name", ["organizationId", "userId", "tableId", "name"])

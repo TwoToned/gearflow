@@ -144,7 +144,7 @@ stays in Prisma per Phase 6).
 > generated — they're added by hand per domain as Phases 3–4 cut each domain over
 > (report-style queries stay as server actions that call these + post-process).
 
-## Phase 3 — Server-action integration (in progress: Clients + Suppliers + Locations done)
+## Phase 3 — Server-action integration (in progress: Clients + Suppliers + Locations + Models done)
 
 > **Two cutover strategies have emerged.** **Hard cutover** (Clients): Convex is
 > sole source of truth, every Prisma reader rewired — used when nothing else in
@@ -266,7 +266,35 @@ Read helper: [`src/lib/locations-read.ts`](../src/lib/locations-read.ts). Backfi
 clean, 2185 tests, 0 new lint problems, `pnpm build` green, live
 `api.locations.list` round-trip (Prisma 8 == Convex 8, defaults P==C).
 
-## Phase 4 — Frontend reactive reads (in progress: Clients + Suppliers + Locations done)
+### Models cutover — DONE (dual-write, like Suppliers)
+
+Fourth domain, and the most heavily-referenced so far. The step-0 FK grep found
+`model` referenced by **10 inbound FKs**, several **required**: `asset` and
+`bulk_asset` (required + **Restrict**), `model_media`, `model_check_item`,
+`supplier_model_rate`, `model_bulk_accessory` (required + **Cascade**); plus
+nullable FKs from `project_line_item`, `supplier_order_item`, `group_template_item`,
+`sub_hire_item`. Creating an asset against a net-new Convex-only model would
+FK-fail instantly → **dual-write** (mandatory, not optional).
+
+- **Writes** (`server/models.ts` create/update/archive/`bulkUpdateRates`,
+  `server/csv.ts` import + rate-import, `lib/org-import.ts`): Prisma first, then
+  Convex via `toConvexDoc(writtenRow)`. The model row carries `Decimal` rates and
+  two `Json` columns (`specifications`, `customFields`) — `toConvexDoc` maps
+  Decimal→number and passes Json straight through to the Convex `v.any()` fields.
+  `bulkUpdateRates` mirrors **each** row returned from the `$transaction`.
+- **Deferred (intentional)**: the ~200 cross-domain `model: { select }` / `model: true`
+  joins (assets, line-items, availability, the whole PDF `build-document-data`
+  pipeline) stay on the dual-write-fresh Prisma mirror — never stale, and rewiring
+  the PDF pipeline for a `name`/`rate` lookup is gratuitous risk; defer to
+  decommission. Same call as Suppliers' ~40 `supplier.name` joins.
+
+Read helper: [`src/lib/models-read.ts`](../src/lib/models-read.ts). Backfill:
+[`scripts/convex-backfill-models.ts`](../scripts/convex-backfill-models.ts)
+(`pnpm convex:backfill:models`), 37/37 mirrored, idempotent. Verified: `tsc`
+clean, 2185 tests, 0 new lint problems, `pnpm build` green, live
+`api.models.list` round-trip (Prisma 37 == Convex 37).
+
+## Phase 4 — Frontend reactive reads (in progress: Clients + Suppliers + Locations + Models done)
 
 The browser now subscribes to the `clients` table directly via Convex `useQuery`,
 so a client create/update/archive (through the server actions) pushes a live
@@ -341,6 +369,25 @@ every viewer.
   cross-domain) and the low-traffic location filters/settings still on
   `getLocations`.
 
+### Models reactive reads — DONE
+
+- **Hooks**: [`src/hooks/use-models.ts`](../src/hooks/use-models.ts) —
+  `useModels(orgId)` and `useModel(id)`.
+- **Converted sites**:
+  - `components/assets/model-table.tsx` → `useModels(orgId)` + **client-side**
+    `isActive`-filter (Convex `list` returns archived too) / search
+    (name·manufacturer·modelNumber·sku) / category·assetType filter / sort /
+    paginate. Asset+bulk counts **and the primary photo** are cross-domain
+    (assets + `model_media` still Prisma) so they come from a non-reactive
+    `getModelCounts()` server query, merged in; the category Badge resolves from
+    the already-loaded `getCategories()` list by `categoryId`.
+- **Left on server actions (intentional)**: `models/[id]/page.tsx` detail +
+  `models/[id]/edit/page.tsx` (compose assets/bulk/media via `getModel`), and the
+  model **dropdowns** in `assets/asset-form`, `assets/bulk-asset-form`,
+  `projects/equipment-add-form`, `projects/sub-hire-order-dialog` — these
+  cross-domain-composing forms keep `getModels` against the dual-write-fresh Prisma
+  mirror (never stale). Migrate at decommission.
+
 ## Migration phases (roadmap)
 
 | Phase | Scope | Verification |
@@ -348,8 +395,8 @@ every viewer.
 | **0 Infra** ✅ | Docker stack, empty schema, provider, env | dashboard up, `convex dev` connects |
 | **1 Schema** ✅ | 95 models + 65 enums → `defineTable()` | deployed clean, typechecks, tests green |
 | **2 Thin CRUD** ✅ | 81 tables × 5 = 405 functions | deployed, typechecks, CRUD round-trip verified |
-| **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations dual-write done) | per-domain backfill + cutover; tsc/tests/build green each |
-| **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations done) | table/dropdown/edit live-update on mutation |
+| **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models dual-write done) | per-domain backfill + cutover; tsc/tests/build green each |
+| **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations + Models done) | table/dropdown/edit live-update on mutation |
 | 5 Auth bridge | Better Auth → Convex JWT (admin key meanwhile) | mutations rejected without auth |
 | 6 Decommission | Remove React Query + SSE event bus | [FEATUREDOCS/53](./53-realtime-sync.md) marked superseded |
 

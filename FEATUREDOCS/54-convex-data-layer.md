@@ -464,6 +464,9 @@ grep + write-site survey done this session (counts as of 2026-06-09):
    org-import + warehouse + projects + site-admin; reactive kit list + edit page.
 2. `asset` + `bulk_asset` **together** (shared registry UI; dual-write — both have
    req+Cascade inbound from T&T/scan/check/kit/line-item).
+   ✅ **DONE** — see "Asset + Bulk-asset reactive reads" above. Dual-write across
+   ~16 files (CRUD + warehouse hot path + maintenance/stocktake/fault/accessories/
+   reorder/checkin/import); reactive shared registry + edit pages.
 3. `project_category` + `project_group` **together** as dual-write **infra-only**
    (composed only in the cross-domain equipment editor → no Phase 4; mirror the
    create/update/delete/reorder/split/merge writes; the category-delete cascade
@@ -612,6 +615,50 @@ self-contained kit page; de-risks `asset`).
 - **Backfill**: `pnpm convex:backfill:kit` (0/0 — kit tables empty). Live
   create→patch→remove round-trip verified against the running backend.
 
+### Asset + Bulk-asset reactive reads — DONE (central-graph step 2)
+
+`asset` (serialized, 126 rows) + `bulk_asset` (8 rows) are **dual-written** and
+migrated **together** — they share the `asset-table.tsx` registry UI, so the
+table can't go reactive for one while the other stays on Prisma. Both carry
+required+Cascade inbound FKs (asset: kit_serialized_item / asset_media /
+maintenance_record_asset / asset_bulk_child; bulk: kit_bulk_item /
+asset_bulk_child / model_bulk_accessory) plus many nullable refs → dual-write.
+
+- **Mirror**: [`src/lib/asset-mirror.ts`](../src/lib/asset-mirror.ts) —
+  create/patch/remove for both tables + `syncAssetsToConvex(ids)` /
+  `syncBulkAssetsToConvex(ids)`, the workhorses for the warehouse / stocktake /
+  maintenance / fault / project `$transaction`s that mutate status / location /
+  quantity across many rows (re-read Prisma rows post-commit, patch each).
+- **Write sites** (asset is the hottest-write domain): `assets.ts` +
+  `bulk-assets.ts` (CRUD), `warehouse.ts` (check-out/in/kit/force-return — touched
+  ids accumulated through the line-item-fulfillment helpers and synced after
+  commit), `kits.ts` (kit member/archive/delete release assets + bulk qty),
+  `maintenance.ts` (hold/release), `stocktake.ts`, `test-tag-records.ts`,
+  `asset-fault-service.ts`, `asset-accessories.ts` (attach/detach + DEDICATED bulk),
+  `bulk-checkin.ts`, `check-records.ts`, `reorder.ts`, `csv.ts`, `org-import.ts`,
+  `models.ts` (cascade delete), `projects.ts` (deleteProject frees assets).
+- **Hooks**: [`src/hooks/use-assets.ts`](../src/hooks/use-assets.ts) —
+  `useAssets` / `useAsset` / `useBulkAssets` / `useBulkAsset`.
+- **Converted sites**:
+  - `asset-table.tsx` (shared registry) → `useAssets` + `useBulkAssets` +
+    **client-side** filter / sort / paginate for BOTH views. Model name+category
+    + location resolve from the Convex models/categories/locations the table
+    already loads; primary photos come from a non-reactive `getAssetRegistryPhotos()`
+    (asset_media + model_media fallback, cross-domain) merged in. Warehouse status
+    flips now live-update the registry.
+  - `assets/registry/[id]/edit` → `useAsset` / `useBulkAsset` (scalar forms).
+- **Left on server actions (intentional)**: the asset/bulk **detail** pages
+  (compose T&T / scan / check / maintenance / accessories / media — all Prisma)
+  stay on `getAsset` / `getBulkAsset`.
+- **Clear-to-null caveat (matters here)**: detaching an accessory clears
+  `asset.parentAssetId`→null and removing an asset from a kit clears
+  `asset.kitId`→null; both are no-ops in Convex (toConvexDoc drops null, the patch
+  validator rejects null). The Convex doc keeps the stale FK until the next
+  non-null write or a backfill run. Documented in asset-mirror.ts; the reactive
+  registry tolerates it. A general fix (null-aware Convex update) is decommission-era.
+- **Backfill**: `pnpm convex:backfill:asset` (134 rows; counts verified P==C).
+  Live patch round-trip verified against the running backend.
+
 ## Migration phases (roadmap)
 
 | Phase | Scope | Verification |
@@ -619,8 +666,8 @@ self-contained kit page; de-risks `asset`).
 | **0 Infra** ✅ | Docker stack, empty schema, provider, env | dashboard up, `convex dev` connects |
 | **1 Schema** ✅ | 95 models + 65 enums → `defineTable()` | deployed clean, typechecks, tests green |
 | **2 Thin CRUD** ✅ | 81 tables × 5 = 405 functions | deployed, typechecks, CRUD round-trip verified |
-| **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets + file_upload + crew + doc/service-template + **Kit** dual-write done) | per-domain backfill + cutover; tsc/tests/build green each |
-| **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields + crew + **Kit** done) | table/dropdown/edit live-update on mutation |
+| **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets + file_upload + crew + doc/service-template + **Kit** + **Asset/Bulk** dual-write done) | per-domain backfill + cutover; tsc/tests/build green each |
+| **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields + crew + **Kit** + **Asset/Bulk registry** done) | table/dropdown/edit live-update on mutation |
 | 5 Auth bridge | Better Auth → Convex JWT (admin key meanwhile) | mutations rejected without auth |
 | 6 Decommission | Remove React Query + SSE event bus | [FEATUREDOCS/53](./53-realtime-sync.md) marked superseded |
 

@@ -1381,8 +1381,10 @@ model Client {
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
 
-  projects Project[]
-  media    ClientMedia[]
+  // NOTE: Clients were HARD-CUTOVER to Convex (sole source of truth). This Prisma
+  // table is frozen/vestigial (read only by the one-time backfill). The former
+  // `projects` / `media` back-relations were removed so the live FKs into this
+  // frozen table don't reject net-new Convex-only clients. See FEATUREDOCS/54.
 
   @@index([organizationId])
   @@index([isActive])
@@ -1397,8 +1399,10 @@ model Project {
   organization          Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   projectNumber         String
   name                  String
+  // clientId references a Convex `clients` doc (cuid). Clients were HARD-CUTOVER to
+  // Convex (sole source of truth), so this is a plain external id, NOT a Prisma FK —
+  // a net-new Convex-only client would otherwise FK-fail. See FEATUREDOCS/54.
   clientId              String?
-  client                Client?       @relation(fields: [clientId], references: [id])
   status                ProjectStatus @default(ENQUIRY)
   type                  ProjectType   @default(OTHER)
   description           String?
@@ -1963,8 +1967,10 @@ model ClientMedia {
   id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  // clientId references a Convex `clients` doc (cuid) — see Project.clientId. Not a
+  // Prisma FK (Clients hard-cutover to Convex). client-media writes for a net-new
+  // client would otherwise FK-fail. See FEATUREDOCS/54.
   clientId       String
-  client         Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
   fileId         String
   file           FileUpload   @relation(fields: [fileId], references: [id], onDelete: Cascade)
   type           MediaType    @default(DOCUMENT)

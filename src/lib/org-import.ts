@@ -221,9 +221,9 @@ export async function importOrganization(
     });
   });
 
-  // ── 3. Locations (hierarchical) ──────────────────────────────────
+  // ── 3. Locations (hierarchical; dual-written: Prisma FK anchor + Convex doc) ──
   await insertWithHierarchy("location", manifest.locations as Rec[], async (r, id) => {
-    await prisma.location.create({
+    const created = await prisma.location.create({
       data: {
         ...stripRelations(r),
         id,
@@ -233,6 +233,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await getConvexClient().mutation(api.locations.create, toConvexDoc(created) as any);
   });
 
   // ── 4. Suppliers (dual-written: Prisma FK anchor + Convex reactive doc) ──

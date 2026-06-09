@@ -18,10 +18,15 @@ export const auth = betterAuth({
       enabled: true,
       trustedProviders: async () => {
         // Trust all SSO providers dynamically so account linking works with random provider IDs
-        const providers = await prisma.ssoProvider.findMany({
-          select: { providerId: true },
-        });
-        return providers.map((p) => p.providerId);
+        try {
+          const providers = await prisma.ssoProvider.findMany({
+            select: { providerId: true },
+          });
+          return providers.map((p) => p.providerId);
+        } catch {
+          // DB unavailable at build time — trust no providers (SSO will work at runtime)
+          return [] as string[];
+        }
       },
     },
   },

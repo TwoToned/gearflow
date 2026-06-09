@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getFromS3 } from "@/lib/storage";
 import { MANIFEST_VERSION, type OrgExportManifest } from "./org-transfer-types";
-import archiver from "archiver";
+import { ZipArchive } from "archiver";
 import { PassThrough } from "stream";
 
 /** Serialize Prisma Decimals and Dates for JSON */
@@ -256,7 +256,7 @@ export async function exportOrganization(orgId: string) {
 
   // Create a zip archive stream
   const passthrough = new PassThrough();
-  const archive = archiver("zip", { zlib: { level: 6 } });
+  const archive = new ZipArchive({ zlib: { level: 6 } });
   archive.pipe(passthrough);
 
   // Add manifest

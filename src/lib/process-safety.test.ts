@@ -41,9 +41,9 @@ describe("installProcessSafetyNet", () => {
   it("registers unhandledRejection and uncaughtException once", () => {
     installProcessSafetyNet("test");
     installProcessSafetyNet("test"); // idempotent — second call is a no-op
-    const calls = onSpy.mock.calls.map((c) => c[0]);
-    expect(calls.filter((e) => e === "unhandledRejection")).toHaveLength(1);
-    expect(calls.filter((e) => e === "uncaughtException")).toHaveLength(1);
+    const calls = onSpy.mock.calls.map((c: string[]) => c[0]);
+    expect(calls.filter((e: string) => e === "unhandledRejection")).toHaveLength(1);
+    expect(calls.filter((e: string) => e === "uncaughtException")).toHaveLength(1);
   });
 
   it("logs and reports an unhandled rejection WITHOUT exiting", () => {

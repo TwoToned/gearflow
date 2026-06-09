@@ -25,11 +25,8 @@ export default defineConfig({
     // pollution that happens when a shared connection sees state from
     // concurrent test files.
     pool: "forks",
-    poolOptions: {
-      forks: {
-        singleFork: false,
-      },
-    },
+    // poolOptions removed in vitest 4 — with fileParallelism: false,
+    // singleFork behavior is no longer needed.
     // Integration tests need a sequential run within each file to avoid
     // racing on TRUNCATE.
     fileParallelism: false,

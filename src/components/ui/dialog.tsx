@@ -48,6 +48,8 @@ function DialogContent({
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
 }) {
+  // style can be CSSProperties or a function in newer @base-ui/react types — narrow to CSSProperties for close-button positioning
+  const cssStyle = typeof style === 'function' ? undefined : style
   return (
     <DialogPortal>
       <DialogOverlay />
@@ -69,7 +71,7 @@ function DialogContent({
                 variant="ghost"
                 className="absolute right-2"
                 size="icon-sm"
-                style={{ top: style?.paddingTop ? `calc(0.5rem + ${typeof style.paddingTop === 'string' ? style.paddingTop : '0px'})` : "0.5rem" }}
+                style={{ top: cssStyle?.paddingTop ? `calc(0.5rem + ${typeof cssStyle.paddingTop === 'string' ? cssStyle.paddingTop : '0px'})` : "0.5rem" }}
               />
             }
           >

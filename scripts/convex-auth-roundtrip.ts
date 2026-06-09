@@ -46,7 +46,6 @@ async function probe(fn: () => Promise<unknown>): Promise<Outcome> {
 
 function check(label: string, got: Outcome, want: Outcome): boolean {
   const ok = got === want;
-  // eslint-disable-next-line no-console
   console.log(`${ok ? "✅" : "❌"} ${label}: got ${got}, want ${want}`);
   return ok;
 }
@@ -107,16 +106,30 @@ async function main() {
   results.push(
     check("anon → clients.create (mutation)", await probe(() => anon.mutation(api.clients.create, { id: "x", organizationId: orgId, name: "x" })), "REJECTED"),
   );
+  // Secret-bearing org table (not on the browser-readable allowlist) must reject a
+  // user token even though its org matches — only the service token may read it.
+  results.push(
+    check(
+      "user(match) → wooCommerceIntegrations.list (secret table)",
+      await probe(() => userOk.query(api.wooCommerceIntegrations.list, { orgId })),
+      "REJECTED",
+    ),
+  );
+  results.push(
+    check(
+      "service → wooCommerceIntegrations.list (secret table)",
+      await probe(() => svc.query(api.wooCommerceIntegrations.list, { orgId })),
+      "ALLOWED",
+    ),
+  );
 
   const passed = results.filter(Boolean).length;
-  // eslint-disable-next-line no-console
   console.log(`\n${passed}/${results.length} checks passed`);
   if (passed !== results.length) process.exitCode = 1;
 }
 
 main()
   .catch((e) => {
-    // eslint-disable-next-line no-console
     console.error(e);
     process.exitCode = 1;
   })

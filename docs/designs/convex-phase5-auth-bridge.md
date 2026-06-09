@@ -111,13 +111,24 @@ role }`, or `null`.
 Applied uniformly by the CRUD **generator** (`generate-convex-crud.cjs`), so all
 81 modules / 405 functions are hardened in one regen and can't drift:
 
-- **org-scoped table** (`organizationId` field): `list` → `requireOrgRead`,
-  `getById` → `requireOrgReadDoc`. (All 13 browser-subscribed tables are
-  org-scoped.)
-- **non-org table** (child/leaf tables, listed by a parent FK): `list` /
-  `getById` → `requireService`. The browser never subscribes to these today;
-  when one goes reactive it graduates to a scoped rule in the same place.
 - **all mutations** (`create`/`update`/`remove`): `requireService`.
+- **reads are service-only by default.** `list`/`getById` → `requireService`
+  UNLESS the table is org-scoped **and** on the explicit `BROWSER_READABLE`
+  allowlist, in which case `list` → `requireOrgRead` and `getById` →
+  `requireOrgReadDoc`.
+
+**Why an allowlist, not "has `organizationId`".** The first cut keyed browser-read
+on the presence of an `organizationId` column. That was wrong: several org-scoped
+tables carry **plaintext secrets** in their columns — warehouse + test-tag-auditor
+access tokens, the WooCommerce webhook secret, the Discord signing secret. Since
+generated functions are public, "org-scoped ⇒ user-readable" would hand those
+secrets to **any** authenticated org member (down to a `viewer`, because single-org
+means every member's token org matches) via a direct
+`client.query(api.wooCommerceIntegrations.list, { orgId })` — bypassing the Prisma
+RBAC that gates them. (Caught by the /cso adversarial pass.) The allowlist is
+**exactly** the tables with a reactive `src/hooks/use-*.ts` subscriber; a table
+joins it only when its UI goes reactive and its columns hold no secrets. New tables
+are service-only until then.
 
 ## Server path (`src/lib/convex-client.ts` + `convex-service-token.ts`)
 
@@ -166,9 +177,12 @@ same `convex/lib/auth.ts` helpers directly.
   `GET /api/auth/token` without a session → 401 (user tokens are session-gated).
 - `/cso` security review of the diff — hard gate before landing.
 
-**Verified 2026-06-10:** all 6 round-trip checks pass (anon read REJECTED, service
+**Verified 2026-06-10:** all 8 round-trip checks pass (anon read REJECTED, service
 read ALLOWED, user-match read ALLOWED, user-wrong-org read REJECTED, user mutation
-REJECTED, anon mutation REJECTED); sign-jwt 404; tsc/2185 tests/0-new-lint/build all green.
+REJECTED, anon mutation REJECTED, user read of a secret table REJECTED, service read
+of it ALLOWED); sign-jwt 404; `/token` 401 without a session; tsc/2185 tests/0-new-
+lint/build all green; `/cso` adversarial pass clean (it caught the
+secret-table-exposure finding, now fixed by the `BROWSER_READABLE` allowlist).
 
 > **Local-dev JWKS reachability gotcha.** Convex (Docker) must fetch the JWKS from
 > the Next app. The self-hosted backend runs on its own compose network
@@ -180,6 +194,21 @@ REJECTED, anon mutation REJECTED); sign-jwt 404; tsc/2185 tests/0-new-lint/build
 > open the host firewall for that port, or (for a one-off verification) serve the
 > JWKS from a sidecar container on the Convex network. In production the app's JWKS
 > URL is normally directly reachable, so this is a local-only wrinkle.
+
+## Known residual (sub-8, tracked)
+
+`crewMembers` is browser-readable (the crew dashboard subscribes to it) and its
+row carries `icalToken` — a per-member calendar-feed token. So an org member's
+user-token read of `api.crewMembers.list` returns coworkers' `icalToken`s, letting
+a member subscribe to a coworker's crew-schedule feed. This is **internal-only**
+(authenticated org members, not the public — and pre-existing: the reactive crew
+table already streamed the whole `crewMember` doc to the browser; Phase 5 actually
+narrowed it from "anyone with the URL" to "org members"). It is a low-value feed
+token, not a system credential, so it sits below the `/cso` 8/10 gate. The proper
+fix is **field-level redaction** for browser reads (strip sensitive columns from
+user-token responses, or drop `icalToken` from the Convex mirror entirely since the
+iCal route reads it from Prisma) — a generator capability worth building once for
+all such fields during Phase 6, not a one-off here. Tracked.
 
 ## Env vars added
 

@@ -1,21 +1,21 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { requireService } from "./lib/auth";
 
 /**
  * Thin CRUD for GroupTemplate (Convex table "groupTemplates"). GENERATED — Phase 2/5.
  *
  * AUTH (Phase 5, convex/lib/auth.ts): mutations require the trusted backend
  * SERVICE token (browser writes rejected — RBAC stays in the Next.js server
- * actions, which still own permission/validation/audit). Org-scoped reads
- * accept the service token OR a user token scoped to the same org. Lookups use the
+ * actions, which still own permission/validation/audit). Reads are
+ * service-only (not on the browser-readable allowlist). Lookups use the
  * cuid (`id`) via by_cuid. See FEATUREDOCS/54 and docs/designs/convex-phase5-auth-bridge.md.
  */
 
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireService(ctx);
     return await ctx.db
       .query("groupTemplates")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
@@ -26,9 +26,8 @@ export const list = query({
 export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
-    const doc = await ctx.db.query("groupTemplates").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireOrgReadDoc(ctx, doc);
-    return doc;
+    await requireService(ctx);
+    return await ctx.db.query("groupTemplates").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
   },
 });
 

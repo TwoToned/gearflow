@@ -867,10 +867,14 @@ any mutation* directly from a browser. Phase 5 shuts that before production.
 
 **Enforcement** (`convex/lib/auth.ts`, applied uniformly by the CRUD generator):
 mutations → `requireService` (browser writes rejected; RBAC stays in Prisma).
-Org-scoped `list`/`getById` → `requireOrgRead`/`requireOrgReadDoc` (service OR a
-user whose org matches). Non-org reads → `requireService` (no browser subscriber
-yet). Service detection is strict: `sub===gearflow-service` **AND** `svc===true`;
-a non-service token bearing `svc` is rejected.
+Reads are **service-only by default**; a table opens to org-scoped user reads
+(`requireOrgRead`/`requireOrgReadDoc`) only if it's org-scoped **and** on the
+explicit `BROWSER_READABLE` allowlist (= the tables with a `use-*` hook). This
+default-deny is deliberate: several org-scoped tables carry plaintext secrets
+(access tokens, webhook/signing secrets), and "org-scoped ⇒ readable" would have
+leaked them to any org member via the public read (flagged by /cso). Service
+detection is strict: `sub===gearflow-service` **AND** `svc===true`; a non-service
+token bearing `svc` is rejected.
 
 - **Key storage**: Better Auth's `jwt()` plugin keypair lives in the new Prisma
   `jwks` table (`Jwks` model; migration `20260610000000_add_jwks_table`),
@@ -880,10 +884,12 @@ a non-service token bearing `svc` is rejected.
 - **Env**: `CONVEX_AUTH_ISSUER` (= `BETTER_AUTH_URL`) and `CONVEX_AUTH_JWKS_URL`
   are read by `convex/auth.config.ts` at push time; set them in the Convex
   deployment env (`npx convex env set …`).
-- **Verified** (`pnpm convex:auth:roundtrip`, 6/6): anon read REJECTED, service
+- **Verified** (`pnpm convex:auth:roundtrip`, 8/8): anon read REJECTED, service
   read ALLOWED, user-match read ALLOWED, user-wrong-org read REJECTED, user
-  mutation REJECTED, anon mutation REJECTED. Plus `sign-jwt` 404, `/token` 401
-  without session, and tsc + 2185 tests + 0 new lint + build all green.
+  mutation REJECTED, anon mutation REJECTED, **user read of a secret table
+  (wooCommerceIntegrations) REJECTED, service read ALLOWED**. Plus `sign-jwt` 404,
+  `/token` 401 without session, and tsc + 2185 tests + 0 new lint + build all green,
+  and a clean `/cso` pass (the secret-table finding above was caught and fixed).
 - **Not in scope (future):** direct browser *writes* (need per-mutation
   authorization in Convex), and hardening the non-org reads as their UIs go
   reactive. The service-token path is the only writer during the hybrid period.

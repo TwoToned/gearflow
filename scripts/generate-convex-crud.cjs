@@ -9,10 +9,17 @@
  * Phase 5 auth (convex/lib/auth.ts, docs/designs/convex-phase5-auth-bridge.md):
  *   • every MUTATION (create/update/remove) → requireService (the trusted backend
  *     service token; browser writes rejected, RBAC stays in Prisma server actions).
- *   • org-scoped list/getById → requireOrgRead / requireOrgReadDoc (service OR a
- *     user token whose orgId matches), so the browser can read its own org only.
- *   • non-org list/getById → requireService (server-only; the browser doesn't
- *     subscribe to these yet — they graduate to a scoped guard when one does).
+ *   • list/getById are **service-only by default** (requireService). A table opens
+ *     to org-scoped user reads (requireOrgRead / requireOrgReadDoc) ONLY if it is
+ *     org-scoped AND on the explicit BROWSER_READABLE allowlist below.
+ *
+ * Why an allowlist, not "has organizationId": several org-scoped tables carry
+ * plaintext secrets in their columns (warehouse/auditor access tokens, WooCommerce
+ * webhook secret, Discord signing secret). "org-scoped ⇒ user-readable" would hand
+ * those secrets to any authenticated org member (incl. a viewer) via the public
+ * Convex read, bypassing Prisma RBAC. Default-deny: a table only becomes
+ * browser-readable when its UI actually goes reactive and it's added here. The
+ * allowlist is exactly the tables with a src/hooks/use-*.ts subscriber.
  *
  * Parsing is shared with the schema gen (scripts/lib/prisma-to-convex.cjs).
  * See FEATUREDOCS/54. Run: node scripts/generate-convex-crud.cjs . */
@@ -34,6 +41,17 @@ const EXCLUDE = new Set([
   // written from Convex. Present in the Convex schema for completeness like the
   // other auth tables, but gets no CRUD.
   "jwkses",
+]);
+
+// Tables the BROWSER may read with a user token (org-scoped). Everything else is
+// service-only. This is exactly the set with a reactive src/hooks/use-*.ts
+// subscriber; add a table here only when its UI goes reactive AND its columns
+// hold no secrets. Default-deny — keeps secret-bearing org tables (access tokens,
+// webhook/signing secrets) off the browser-readable path. See the header note.
+const BROWSER_READABLE = new Set([
+  "clients", "suppliers", "locations", "models", "categories", "checkItems",
+  "testProfiles", "customFieldDefinitions", "crewMembers", "crewRoles",
+  "crewSkills", "kits", "assets", "bulkAssets",
 ]);
 
 function fieldExpr(f) {
@@ -79,10 +97,11 @@ for (const mdl of models) {
 
   const lookup = `ctx.db.query("${key}").withIndex("by_cuid", (q) => q.eq("id", id)).unique()`;
 
-  // Auth guards (Phase 5). Org-scoped reads use the org guards; everything else
-  // is service-only. Import only the helpers this module actually references so
-  // the generated file has no unused imports.
-  const authImports = mdl.orgScoped
+  // Auth guards (Phase 5). A table's reads open to org-scoped USER tokens only
+  // when it's org-scoped AND explicitly browser-readable; otherwise reads (like
+  // all writes) are service-only. Import only the helpers the file references.
+  const browserReadable = mdl.orgScoped && BROWSER_READABLE.has(key);
+  const authImports = browserReadable
     ? `import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";\n`
     : `import { requireService } from "./lib/auth";\n`;
 
@@ -91,9 +110,9 @@ for (const mdl of models) {
   out += authImports;
   if (usesEnums) out += `import * as enums from "./lib/validators";\n`;
   out += `\n`;
-  out += `/**\n * Thin CRUD for ${mdl.name} (Convex table "${key}"). GENERATED — Phase 2/5.\n *\n * AUTH (Phase 5, convex/lib/auth.ts): mutations require the trusted backend\n * SERVICE token (browser writes rejected — RBAC stays in the Next.js server\n * actions, which still own permission/validation/audit). ${mdl.orgScoped ? "Org-scoped reads\n * accept the service token OR a user token scoped to the same org." : "Reads are\n * service-only (no browser subscriber yet)."} Lookups use the\n * cuid (\`id\`) via by_cuid. See FEATUREDOCS/54 and docs/designs/convex-phase5-auth-bridge.md.\n */\n\n`;
+  out += `/**\n * Thin CRUD for ${mdl.name} (Convex table "${key}"). GENERATED — Phase 2/5.\n *\n * AUTH (Phase 5, convex/lib/auth.ts): mutations require the trusted backend\n * SERVICE token (browser writes rejected — RBAC stays in the Next.js server\n * actions, which still own permission/validation/audit). ${browserReadable ? "Org-scoped reads\n * accept the service token OR a user token scoped to the same org." : "Reads are\n * service-only (not on the browser-readable allowlist)."} Lookups use the\n * cuid (\`id\`) via by_cuid. See FEATUREDOCS/54 and docs/designs/convex-phase5-auth-bridge.md.\n */\n\n`;
 
-  if (mdl.orgScoped) {
+  if (browserReadable) {
     out += `export const list = query({\n  args: ${listArgs},\n  handler: async (ctx, ${listDestructure}) => {\n    await requireOrgRead(ctx, orgId);\n    return await ${listBody};\n  },\n});\n\n`;
     out += `export const getById = query({\n  args: { id: ${idValidator} },\n  handler: async (ctx, { id }) => {\n    const doc = await ${lookup};\n    await requireOrgReadDoc(ctx, doc);\n    return doc;\n  },\n});\n\n`;
   } else {

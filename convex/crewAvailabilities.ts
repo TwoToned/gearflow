@@ -9,7 +9,7 @@ import * as enums from "./lib/validators";
  * AUTH (Phase 5, convex/lib/auth.ts): mutations require the trusted backend
  * SERVICE token (browser writes rejected — RBAC stays in the Next.js server
  * actions, which still own permission/validation/audit). Reads are
- * service-only (no browser subscriber yet). Lookups use the
+ * service-only (not on the browser-readable allowlist). Lookups use the
  * cuid (`id`) via by_cuid. See FEATUREDOCS/54 and docs/designs/convex-phase5-auth-bridge.md.
  */
 

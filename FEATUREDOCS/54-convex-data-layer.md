@@ -144,7 +144,7 @@ stays in Prisma per Phase 6).
 > generated — they're added by hand per domain as Phases 3–4 cut each domain over
 > (report-style queries stay as server actions that call these + post-process).
 
-## Phase 3 — Server-action integration (in progress: Clients + Suppliers done)
+## Phase 3 — Server-action integration (in progress: Clients + Suppliers + Locations done)
 
 > **Two cutover strategies have emerged.** **Hard cutover** (Clients): Convex is
 > sole source of truth, every Prisma reader rewired — used when nothing else in
@@ -237,7 +237,36 @@ Verified: `tsc` clean, 2185 tests pass, 0 new lint errors, `pnpm build` green,
 backfill 3/3 + idempotent re-run, live `api.suppliers.list` per-org round-trip
 (Prisma 3 == Convex 3).
 
-## Phase 4 — Frontend reactive reads (in progress: Clients + Suppliers done)
+### Locations cutover — DONE (dual-write, like Suppliers)
+
+Third domain. The step-0 FK grep found `location` referenced by 8 inbound FKs —
+mostly nullable + SET NULL (`asset`, `bulk_asset`, `kit`, `project`,
+`warehouse_dashboard_token`, and the self-referential `parentId`) but **required +
+Cascade** from `location_media` and `stocktake`. Starting a stocktake against a
+newly-created location would FK-fail under a Convex-only cutover → **dual-write**.
+
+- **Writes** (`server/locations.ts` create/update/delete/notes, `lib/org-import.ts`):
+  Prisma first, then Convex via `toConvexDoc(writtenRow)`. New wrinkle vs
+  Suppliers — the **single-default invariant** (`isDefault` unset via a Prisma
+  `updateMany`) is a multi-row write, so `unsetDefaultsInConvex` reads the current
+  Prisma defaults and patches them `false` in Convex too, else the reactive list
+  would show two defaults. (The seed data already had 2 defaults in one org — a
+  pre-existing quirk the next default-set will heal.)
+- **Hierarchy**: `parentId` is a plain `v.string()` in Convex (no real FK), so the
+  backfill needs no ordering and the parent/children tree composition stays on the
+  dual-write-fresh Prisma mirror (the detail page) — the reactive table rebuilds
+  the tree client-side from the flat Convex list.
+- **Deferred (intentional)**: cross-domain `location: { select }` joins + the
+  low-traffic location **filters/settings** (`kits/page`, `asset-table` filter,
+  `settings/displays`, `settings/woocommerce`) stay on the fresh Prisma mirror.
+
+Read helper: [`src/lib/locations-read.ts`](../src/lib/locations-read.ts). Backfill:
+[`scripts/convex-backfill-locations.ts`](../scripts/convex-backfill-locations.ts)
+(`pnpm convex:backfill:locations`), 8/8 mirrored, idempotent. Verified: `tsc`
+clean, 2185 tests, 0 new lint problems, `pnpm build` green, live
+`api.locations.list` round-trip (Prisma 8 == Convex 8, defaults P==C).
+
+## Phase 4 — Frontend reactive reads (in progress: Clients + Suppliers + Locations done)
 
 The browser now subscribes to the `clients` table directly via Convex `useQuery`,
 so a client create/update/archive (through the server actions) pushes a live
@@ -290,6 +319,28 @@ every viewer.
   (composes assets + sub-hires + orders, cross-domain) and
   `suppliers/[id]/orders/new/page.tsx`.
 
+### Locations reactive reads — DONE
+
+- **Hooks**: [`src/hooks/use-locations.ts`](../src/hooks/use-locations.ts) —
+  `useLocations(orgId)` and `useLocation(id)`.
+- **Converted sites**:
+  - `components/locations/location-table.tsx` → `useLocations(orgId)` +
+    **client-side** search / type-filter / sort / **tree build** / paginate.
+    Asset+bulk+kit counts from a non-reactive `getLocationCounts()`; children
+    counts derived from the flat reactive list.
+  - Location dropdowns → `useLocations(orgId)`: `assets/asset-form`,
+    `assets/bulk-asset-form`, `kits/kit-form`, `projects/project-form`,
+    `stocktake/stocktake-form`, `locations/location-form` (parent picker),
+    `assets/quick-create-location` (parent picker). The Convex doc carries
+    `parentId` not a `parent` relation, so `parent.name` labels resolve from the
+    flat list via a name map (or a synthetic `parent` field to keep the option JSX
+    unchanged).
+  - `locations/[id]/edit/page.tsx` → `useLocation(id)`.
+- **Left on server actions (intentional)**: `locations/[id]/page.tsx` detail
+  (composes the children tree + assets + bulk + kits + projects + media,
+  cross-domain) and the low-traffic location filters/settings still on
+  `getLocations`.
+
 ## Migration phases (roadmap)
 
 | Phase | Scope | Verification |
@@ -297,8 +348,8 @@ every viewer.
 | **0 Infra** ✅ | Docker stack, empty schema, provider, env | dashboard up, `convex dev` connects |
 | **1 Schema** ✅ | 95 models + 65 enums → `defineTable()` | deployed clean, typechecks, tests green |
 | **2 Thin CRUD** ✅ | 81 tables × 5 = 405 functions | deployed, typechecks, CRUD round-trip verified |
-| **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover, Suppliers dual-write done) | per-domain backfill + cutover; tsc/tests/build green each |
-| **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers done) | table/dropdown/edit live-update on mutation |
+| **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations dual-write done) | per-domain backfill + cutover; tsc/tests/build green each |
+| **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations done) | table/dropdown/edit live-update on mutation |
 | 5 Auth bridge | Better Auth → Convex JWT (admin key meanwhile) | mutations rejected without auth |
 | 6 Decommission | Remove React Query + SSE event bus | [FEATUREDOCS/53](./53-realtime-sync.md) marked superseded |
 

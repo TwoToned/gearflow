@@ -8,25 +8,28 @@
 
 ## Where things stand
 
-Phases **0–2 complete**. **Two domains fully migrated end-to-end** (Phase 3 + 4),
-one per cutover strategy:
+Phases **0–2 complete**. **Three domains fully migrated end-to-end** (Phase 3 + 4):
 - **Clients** — *hard cutover* (Convex is sole source of truth). Reference for
   tables with **no inbound required FKs**.
 - **Suppliers** — *dual-write* (Prisma row = durable FK anchor, Convex = reactive
   read source). Reference for tables that **other Prisma tables hard-FK**
   (Suppliers had 6 inbound FKs, two **required + Cascade** from `supplier_order` /
   `supplier_model_rate`, which a Convex-only cutover would orphan).
+- **Locations** — *dual-write* (8 inbound FKs incl. required+Cascade from
+  `location_media` / `stocktake`). Adds the **self-referential hierarchy** +
+  **multi-row side-effect** patterns (the single-`isDefault` invariant must be
+  mirrored to Convex via `unsetDefaultsInConvex`).
 
-Every step verified: `tsc` clean · 2185 tests · 0 *new* lint errors · `pnpm build`
-green. ⚠️ `pnpm lint` exits 1 on **8 pre-existing** `no-require-imports` errors
-(`convex/_generated/*`, `convex/auth.config.ts`, `convex/siteSettings.ts`,
+Every step verified: `tsc` clean · 2185 tests · 0 *new* lint problems · `pnpm
+build` green. ⚠️ `pnpm lint` exits 1 on **8 pre-existing** `no-require-imports`
+errors (`convex/_generated/*`, `convex/auth.config.ts`, `convex/siteSettings.ts`,
 `scripts/*.cjs`) — NOT from domain work; flag for a separate cleanup commit.
 
 | Phase | State |
 |---|---|
 | 0 Infra · 1 Schema (95 tables, 476 indexes) · 2 CRUD (81 modules, 405 fns) | ✅ generated + deployed |
-| 3 Server actions | 🔄 **Clients (hard) + Suppliers (dual-write) done**; ~84 domains to go |
-| 4 Frontend reactive reads | 🔄 **Clients + Suppliers done**; rest follow per domain |
+| 3 Server actions | 🔄 **Clients (hard) + Suppliers + Locations (dual-write) done**; ~83 domains to go |
+| 4 Frontend reactive reads | 🔄 **Clients + Suppliers + Locations done**; rest follow per domain |
 | 5 Auth bridge · 6 Decommission | not started |
 
 ---
@@ -106,18 +109,19 @@ green. ⚠️ `pnpm lint` exits 1 on **8 pre-existing** `no-require-imports` err
 
 ## Suggested next target
 
-**Locations** — the natural third domain, but it brings **two new wrinkles** worth
-planning for: (a) a **self-referential parent/child hierarchy** (`LocationHierarchy`)
-— the backfill must handle the self-FK and the tree composition is new; (b) wide
-fan-out (referenced by asset / bulk_asset / kit / project / location_media /
-warehouse_dashboard_token / stocktake). Run the step-0 FK grep — Location has
-several inbound FKs, so expect **dual-write** like Suppliers. Lighter alternatives
-if you want another flat dual-write rep first: **Model** or **Tag**.
+**Model** (`model` — the equipment-catalogue entity) is a strong fourth: heavily
+referenced (assets/bulk-assets/line-items/rates all carry `modelId`) so it proves
+the dual-write attach at scale, and it's flat (no hierarchy). **Category** or
+**Tag** are lighter flat reps. Always run the **step-0 FK grep** first to pick
+hard-cutover vs dual-write — anything with a required/Cascade inbound FK needs
+dual-write.
 
-Deferred polish (either domain): migrate the cross-domain `supplier.name` /
-`client.*` joins (warehouse / category-slots / PDF pipeline) off the Prisma mirror
-to Convex attach — but this is genuinely decommission-phase work; the mirrors are
-fresh so there's no correctness gap today.
+Deferred polish (all dual-write domains): migrate the cross-domain `supplier.name`
+/ `client.*` / `location.*` joins (warehouse / category-slots / PDF pipeline) off
+the Prisma mirror to Convex attach — genuinely decommission-phase work; the mirrors
+are fresh so there's no correctness gap today. Also still on Prisma `getLocations`:
+the low-traffic location filters/settings (`kits/page`, `asset-table`,
+`settings/displays`, `settings/woocommerce`).
 
 ---
 
@@ -129,10 +133,14 @@ fresh so there's no correctness gap today.
   convex infra/generated files + `scripts/*.cjs` — unrelated to domain work, but
   CI lint will be red until someone fixes them (eslint-disable the `.cjs`/generated
   paths). Verify your own diff adds **0 new** errors (`git stash` + lint compare).
-- **Dual-write failure modes** (Suppliers): Prisma is written first, so a Convex
-  outage leaves a supplier that works for FKs but is invisible in the reactive UI
-  until `pnpm convex:backfill:suppliers` heals it. The two stores are otherwise
-  kept identical via `toConvexDoc(writtenPrismaRow)`.
+- **Dual-write failure modes** (Suppliers/Locations): Prisma is written first, so a
+  Convex outage leaves a row that works for FKs but is invisible in the reactive UI
+  until `pnpm convex:backfill:<domain>` heals it. The two stores are otherwise kept
+  identical via `toConvexDoc(writtenPrismaRow)`.
+- **Multi-row side-effects must mirror to Convex** (Locations `isDefault`): when a
+  write does a Prisma `updateMany` (unset-other-defaults, bulk reassign, etc.),
+  read the affected ids and patch them in Convex too, or the reactive list drifts.
+  Pattern: `unsetDefaultsInConvex` in `server/locations.ts`.
 - Report-builder sorting by a `client.*` column is a documented **no-op** (values
   correct from Convex, ordering skipped — a Prisma relation sort would hit the
   stale `client` table).

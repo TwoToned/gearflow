@@ -737,8 +737,11 @@ category_slot carry nullable refs.
   are now mirrored (via `upsertProjectLineItemsToConvex` at each sub-hire action).
 - **Known limitation (documented)**: sub-hire line-item **regeneration**
   (`generateSubHireLineItemsTx` does deleteMany + recreate with FRESH ids) orphans
-  the pre-regen line-item rows in Convex — infra-only, no consumer; a decommission
-  re-sync (truncate + backfill) clears them.
+  the pre-regen line-item rows in Convex — infra-only, no consumer. Cleared by
+  `pnpm convex:resync:line-items` (a clean per-org truncate + backfill of the Convex
+  `projectLineItems` table that re-establishes exact Convex==Prisma parity; safe to
+  run any time while line items remain infra-only). Run after this session: 33
+  removed, 33 re-created, parity confirmed.
 - **Backfill**: `pnpm convex:backfill:sub-hires` (5 rows; P==C). Live sync verified.
 
 ### Project — DONE (central-graph step 6, infra-only) — CENTRAL GRAPH COMPLETE

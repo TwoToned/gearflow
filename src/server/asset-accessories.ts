@@ -12,6 +12,7 @@ import { getOrgContext } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { adjustBulkAvailability } from "@/lib/inventory-mutations";
+import { syncAssetsToConvex, syncBulkAssetsToConvex } from "@/lib/asset-mirror";
 import { UserFacingError } from "@/lib/errors";
 
 /**
@@ -134,6 +135,8 @@ export async function addSerializedChildToAsset(
     }
     return tx.asset.findUniqueOrThrow({ where: { id: child.id }, include: { model: true } });
   });
+  // Mirror the child's new parentAssetId + inherited location to Convex.
+  await syncAssetsToConvex([child.id]);
 
   await logActivity({
     organizationId,
@@ -214,6 +217,8 @@ export async function addBulkChildToAsset(
       include: { bulkAsset: { include: { model: true } } },
     });
   });
+  // DEDICATED allocation decremented the shared pool — mirror the bulk quantity.
+  if (parsed.allocationMode === "DEDICATED") await syncBulkAssetsToConvex([parsed.bulkAssetId]);
 
   await logActivity({
     organizationId,
@@ -258,6 +263,12 @@ export async function removeSerializedChildFromAsset(
     where: { id: childAssetId },
     data: { parentAssetId: null },
   });
+  // Mirror to Convex. NB: clearing parentAssetId→null is a no-op in Convex
+  // (toConvexDoc drops null→absent and the patch validator is v.optional, which
+  // rejects null) — the documented clear-to-null limitation. The Convex doc keeps
+  // its stale parentAssetId until the next non-null write or a backfill run. The
+  // reactive registry tolerates this; see src/lib/asset-mirror.ts + FEATUREDOCS/54.
+  await syncAssetsToConvex([childAssetId]);
 
   await logActivity({
     organizationId,
@@ -314,6 +325,8 @@ export async function removeBulkChildFromAsset(
     }
     await tx.assetBulkChild.delete({ where: { id: bulkChildId } });
   });
+  // DEDICATED allocation returned stock to the shared pool — mirror the quantity.
+  if (bulkChild.allocationMode === "DEDICATED") await syncBulkAssetsToConvex([bulkChild.bulkAssetId]);
 
   await logActivity({
     organizationId,

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import { syncAssetsToConvex } from "@/lib/asset-mirror";
 import {
   prepUnit,
   syncLineItemRollup,
@@ -887,8 +888,9 @@ export async function completeCheckAndStore(
     //     when the parent return flipped a unit, so a re-check-and-store of an
     //     already-returned unit can't re-return the shared bulk accessory.
     //     No-op for non-parent lines.
+    const touchedAssets = [...assetsTouched];
     if (unitsFlipped > 0) {
-      await checkinAccessoryChildren(tx, {
+      const acc = await checkinAccessoryChildren(tx, {
         organizationId,
         projectId: parsed.projectId,
         parentLineItemId: parsed.lineItemId,
@@ -897,6 +899,7 @@ export async function completeCheckAndStore(
         defaultLocationId: locationId,
         returnedAssetId: resolvedAssetId || null,
       });
+      touchedAssets.push(...acc.assetsTouched);
     }
 
     // 6. Scan log
@@ -919,8 +922,11 @@ export async function completeCheckAndStore(
       include: { model: true, asset: true, bulkAsset: true },
     });
 
-    return { updatedItem, resolvedAssetId };
+    return { updatedItem, resolvedAssetId, touchedAssets };
   });
+
+  // Mirror the returned asset(s) status/location changes to Convex.
+  await syncAssetsToConvex(result.touchedAssets);
 
   // Post-commit: predictive maintenance
   const failedChecks = parsed.checks.filter((c) => c.result === "FAIL");

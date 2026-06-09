@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import { syncAssetsToConvex } from "@/lib/asset-mirror";
 import {
   returnLineUnits,
   syncLineItemRollup,
@@ -137,6 +138,7 @@ export async function checkInBulkTotals(
     return serialize({ returned: [] as Array<{ key: string; quantity: number }> });
   }
 
+  const allTouchedAssets = new Set<string>();
   const returned = await prisma.$transaction(async (tx) => {
     const defaultLocation = await tx.location.findFirst({
       where: { organizationId, isDefault: true },
@@ -243,6 +245,7 @@ export async function checkInBulkTotals(
         });
         await syncLineItemRollup(tx, alloc.lineItemId);
         assetsTouched.push(...touched);
+        for (const id of touched) allTouchedAssets.add(id);
       }
 
       for (const assetId of assetsTouched) {
@@ -272,6 +275,9 @@ export async function checkInBulkTotals(
 
     return summary;
   });
+
+  // Mirror the returned serialized assets' status/location changes to Convex.
+  await syncAssetsToConvex([...allTouchedAssets]);
 
   for (const r of returned) {
     await logActivity({

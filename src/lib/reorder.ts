@@ -12,6 +12,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { createId } from "@paralleldrive/cuid2";
+import { syncBulkAssetsToConvex } from "@/lib/asset-mirror";
 
 export interface ReorderCandidate {
   bulkAssetId: string;
@@ -175,6 +176,9 @@ export async function createReorderDraftCore(
 
     return { id: order.id, orderNumber: order.orderNumber, lineCount: order.items.length };
   });
+
+  // Mirror the lastReorderedAt stamp on each bulk asset to Convex.
+  await syncBulkAssetsToConvex(lines.map((l) => l.bulkAssetId));
 
   return result;
 }

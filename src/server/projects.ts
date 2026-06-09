@@ -13,6 +13,7 @@ import { computeOverbookedStatus } from "@/lib/availability";
 import { recalculateProjectTotals } from "@/server/line-items";
 import { logActivity } from "@/lib/activity-log";
 import { syncKitsToConvex } from "@/lib/kit-mirror";
+import { syncAssetsToConvex } from "@/lib/asset-mirror";
 import { emitIfDiscordEnabled } from "@/lib/services/outbox-service";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
@@ -1149,7 +1150,7 @@ export async function deleteProject(id: string) {
     select: { id: true },
   });
 
-  await prisma.$transaction(async (tx) => {
+  const freedKitAssetIds = await prisma.$transaction(async (tx) => {
     // Reset checked-out assets to AVAILABLE
     if (checkedOutAssetIds.length > 0) {
       await tx.asset.updateMany({
@@ -1162,6 +1163,7 @@ export async function deleteProject(id: string) {
     }
 
     // Reset checked-out kits and their contents to AVAILABLE
+    let kitAssetIds: string[] = [];
     if (checkedOutKitIds.length > 0) {
       await tx.kit.updateMany({
         where: { id: { in: checkedOutKitIds }, organizationId },
@@ -1175,9 +1177,10 @@ export async function deleteProject(id: string) {
         where: { kitId: { in: checkedOutKitIds } },
         select: { assetId: true },
       });
-      if (kitAssets.length > 0) {
+      kitAssetIds = kitAssets.map((ka) => ka.assetId);
+      if (kitAssetIds.length > 0) {
         await tx.asset.updateMany({
-          where: { id: { in: kitAssets.map((ka) => ka.assetId) }, organizationId },
+          where: { id: { in: kitAssetIds }, organizationId },
           data: {
             status: "AVAILABLE",
             locationId: defaultLocation?.id ?? null,
@@ -1188,10 +1191,13 @@ export async function deleteProject(id: string) {
 
     // Delete the project (cascades to line items, media, etc.)
     await tx.project.delete({ where: { id, organizationId } });
+    return kitAssetIds;
   });
 
-  // Mirror the freed kits' status/location resets to Convex.
+  // Mirror the freed kits + assets (direct line-item assets + kit-content assets)
+  // status/location resets to Convex.
   await syncKitsToConvex(checkedOutKitIds);
+  await syncAssetsToConvex([...checkedOutAssetIds, ...freedKitAssetIds]);
 
   await logActivity({
     organizationId,

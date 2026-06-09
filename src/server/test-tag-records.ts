@@ -5,6 +5,7 @@ import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import type { OrgSettings } from "@/server/settings";
 import { logActivity } from "@/lib/activity-log";
+import { syncAssetsToConvex } from "@/lib/asset-mirror";
 
 /**
  * Recalculate and update a TestTagAsset's status based on its latest test record and dates.
@@ -263,6 +264,8 @@ export async function createTestTagRecord(data: {
 
     return created;
   });
+  // A FAIL referral may have flipped the linked asset to IN_MAINTENANCE — mirror it.
+  if (testTagAsset.assetId) await syncAssetsToConvex([testTagAsset.assetId]);
 
   await logActivity({
     organizationId,

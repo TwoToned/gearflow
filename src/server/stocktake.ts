@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import { syncAssetsToConvex, syncBulkAssetsToConvex } from "@/lib/asset-mirror";
 import {
   createStocktakeSchema,
   type CreateStocktakeValues,
@@ -835,6 +836,11 @@ export async function resolveDiscrepancy(data: ResolveDiscrepancyValues) {
       break;
     }
   }
+
+  // Mirror any asset/bulk status/location/quantity change to Convex (no-op for
+  // IGNORE; the helpers skip null ids and re-patch current values idempotently).
+  await syncAssetsToConvex([item.assetId]);
+  await syncBulkAssetsToConvex([item.bulkAssetId]);
 }
 
 export async function bulkResolveDiscrepancies(data: BulkResolveValues) {
@@ -886,6 +892,8 @@ export async function bulkResolveDiscrepancies(data: BulkResolveValues) {
         data: { actionTaken: "Marked as LOST (bulk)" },
       });
     });
+    // Mirror the assets flipped to LOST.
+    await syncAssetsToConvex(assetIds);
 
     await logActivity({
       organizationId,

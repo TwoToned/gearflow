@@ -9,6 +9,7 @@ import {
 import type { Prisma, MaintenanceStatus } from "@/generated/prisma/client";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import { syncAssetsToConvex } from "@/lib/asset-mirror";
 import { UserFacingError } from "@/lib/errors";
 
 const assetInclude = {
@@ -251,6 +252,8 @@ export async function createMaintenanceRecord(data: MaintenanceFormValues) {
 
     return created;
   });
+  // Mirror any asset status flips (hold/release) to Convex.
+  await syncAssetsToConvex(assetIds);
 
   await logActivity({
     organizationId,
@@ -366,6 +369,8 @@ export async function updateMaintenanceRecord(
 
     return updated;
   });
+  // Mirror any asset status flips (removed-asset release + remaining hold/release).
+  await syncAssetsToConvex([...toRemove, ...newAssetIds]);
 
   await logActivity({
     organizationId,
@@ -440,6 +445,8 @@ export async function setMaintenanceStatus(
     }
     return u;
   });
+  // Mirror any asset status flips (hold/release) to Convex.
+  await syncAssetsToConvex(assetIds);
 
   await logActivity({
     organizationId,
@@ -484,6 +491,8 @@ export async function deleteMaintenanceRecord(id: string) {
       where: { id, organizationId },
     });
   });
+  // Mirror any released asset status flips to Convex.
+  await syncAssetsToConvex(record.assets.map((a) => a.assetId));
 
   await logActivity({
     organizationId,

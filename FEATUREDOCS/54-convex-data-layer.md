@@ -156,22 +156,42 @@ Convex source-of-truth**. Groundwork landed:
   (`pnpm convex:backfill:clients`) — idempotent Prisma→Convex copy. Ran clean,
   6/6 clients mirrored.
 
-### ⚠️ Finding: "simplest" domain is relationally coupled
+### Clients cutover — DONE (hard cutover, Convex is source of truth)
 
-Before cutting writes over, an audit found `prisma.client` is read/written
-**directly in 8+ files** beyond `src/server/clients.ts` (WooCommerce order sync,
-dashboard `reports`, `tags`, org import/export, `client-media`) **and pulled via
-Prisma relational joins** (`include: { client }`) in ~6 more (`projects`,
-`dashboard`, `calendar` feed, `availability`, `permissions`, `woocommerce`).
+The "simplest" domain turned out to be relationally coupled: `prisma.client` was
+read/written in **~20 sites**. All were rewired — there is now **zero**
+`prisma.client` access in app code (only the backfill reads Prisma, to copy out).
+Convex (`convex/clients.ts`) is the single source of truth; cross-domain joins
+are composed in JS via [`src/lib/clients-read.ts`](../src/lib/clients-read.ts)
+(`getClientById` / `getClientsByOrg` / `getClientMap` / `attachClient`).
 
-A hard cutover ("stop writing Prisma `client`, Convex is source of truth") would
-leave every one of those reading a **stale** table, and — since Convex has no
-joins — each `project→client` join must be rewired to a separate Convex fetch +
-compose. So even the simplest domain's cutover is a ~14-file, careful change, not
-a mechanical swap. This is the relational-coupling risk the design doc flags, and
-it argues for **dual-write** (mirror Client writes to both stores during the
-transition so the relational readers keep working) over a hard cutover — pending
-a decision. The backfill + server client above are reusable under either path.
+Sites rewired:
+- **Writes**: `server/clients.ts` (create/update/notes/archive — generate cuid +
+  `fetchMutation`, keep permission/validation/`logActivity`), `server/woocommerce.ts`
+  (find/create + in-memory fuzzy match), `lib/org-import.ts`.
+- **Direct reads**: `server/clients.ts` (`getClients` filters/sorts/paginates in
+  JS + project counts from Prisma; `getClient` attaches projects+media),
+  `server/tags.ts`, `server/reports.ts`, `server/client-media.ts`, `lib/org-export.ts`.
+- **Relational joins** (`include: { client }` → attach from Convex):
+  `server/projects.ts` (×3, incl. sort-by-client done in JS), `server/dashboard.ts`
+  (×2), `server/availability.ts` (×4), `server/warehouse.ts` (×2), `server/documents.ts`,
+  `server/locations.ts`, `app/api/calendar/.../route.ts`, `lib/report-engine.ts`,
+  `lib/pdfme/build-document-data.ts`.
+
+**Pattern**: fetch the Prisma rows without the client join, then attach the
+Convex client(s) by `clientId` (one `getClientMap` round-trip for lists,
+`getClientById` for singletons). Sorting projects/lists by client name is done in
+JS (DB can't sort across the dropped join).
+
+**Known limitation**: in the generic **report builder**, sorting a report by a
+`client.*` column is a no-op (client values still display correctly from Convex,
+but ordering by them is skipped — a Prisma relation sort would order by the stale
+`client` table). Acceptable for the pilot; revisit if needed.
+
+Verified: `tsc` clean, 2185 tests pass, lint 0 errors, backfill 6/6, Convex CRUD
+round-trip. **Still TODO for the Clients domain**: Phase 4 (convert the client
+React Query `useQuery` sites to Convex `useQuery` for real-time) — the data is
+already in Convex, this is the reactive-reads upgrade.
 
 ## Migration phases (roadmap)
 

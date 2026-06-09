@@ -2,10 +2,8 @@
 
 import { use } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
-import { getClient } from "@/server/clients";
+import { useClient } from "@/hooks/use-clients";
 import { ClientForm } from "@/components/clients/client-form";
-import { useActiveOrganization } from "@/lib/auth-client";
 import { FadeIn } from "@/components/ui/motion";
 import {
   Breadcrumb,
@@ -19,21 +17,17 @@ import type { ClientFormValues } from "@/lib/validations/client";
 
 export default function EditClientPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
 
-  const { data: client, isLoading } = useQuery({
-    queryKey: ["client", orgId, id],
-    queryFn: () => getClient(id),
-  });
+  // Reactive read straight from Convex — edits by another user show live.
+  const client = useClient(id);
 
-  if (isLoading) return <div className="text-fg-3">Loading...</div>;
+  if (client === undefined) return <div className="text-fg-3">Loading...</div>;
   if (!client) return <div className="text-fg-3">Client not found.</div>;
 
   const initialData: ClientFormValues & { id: string } = {
     id: client.id,
     name: client.name,
-    type: client.type,
+    type: client.type ?? "COMPANY",
     contactName: client.contactName || "",
     contactEmail: client.contactEmail || "",
     contactPhone: client.contactPhone || "",
@@ -45,10 +39,10 @@ export default function EditClientPage({ params }: { params: Promise<{ id: strin
     shippingLongitude: client.shippingLongitude ?? null,
     taxId: client.taxId || "",
     paymentTerms: client.paymentTerms || "",
-    defaultDiscount: client.defaultDiscount ? Number(client.defaultDiscount) : undefined,
+    defaultDiscount: client.defaultDiscount ?? undefined,
     notes: client.notes || "",
-    tags: client.tags,
-    isActive: client.isActive,
+    tags: client.tags ?? [],
+    isActive: client.isActive ?? true,
   };
 
   return (

@@ -14,7 +14,7 @@ import {
 } from "@/lib/validations/project";
 import { createProject, updateProject, peekNextProjectNumber } from "@/server/projects";
 import { addProjectManager, removeProjectManager } from "@/server/project-managers";
-import { getClients } from "@/server/clients";
+import { useClients } from "@/hooks/use-clients";
 import { getLocations } from "@/server/locations";
 import { getOrgMembers } from "@/server/org-members";
 import { Button } from "@/components/ui/button";
@@ -142,12 +142,11 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp, initialMa
   const watchType = form.watch("type");
   const watchStatus = form.watch("status");
 
-  const { data: clientsData } = useQuery({
-    queryKey: ["clients", orgId, { pageSize: 200 }],
-    queryFn: () => getClients({ pageSize: 200 }),
-  });
+  // Reactive client list straight from Convex — a client created in the
+  // quick-create dialog appears in this dropdown instantly.
+  const clients = useClients(orgId);
 
-  const clientOptions = (clientsData?.clients || []).map((c) => ({
+  const clientOptions = (clients ?? []).map((c) => ({
     value: c.id,
     label: c.name,
     description: c.contactName || undefined,

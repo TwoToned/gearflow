@@ -80,12 +80,44 @@ docker compose -f docker-compose.convex.yml down             # stop
 
 Dashboard: http://localhost:6791 · Backend: http://127.0.0.1:3210
 
+## Phase 1 — Schema (done)
+
+All **95 Prisma models → `defineTable()`** in `convex/schema.ts` (1206 fields, 380
+indexes) and all **65 enums → `v.union(v.literal(...))`** in `convex/lib/validators.ts`.
+Generated deterministically from `prisma/schema.prisma` by
+[`scripts/generate-convex-schema.cjs`](../scripts/generate-convex-schema.cjs)
+(`pnpm convex:schema`), then reviewed. Deployed clean to the backend
+(`convex dev --once`), typechecks, full suite green.
+
+**Decisions baked into the schema:**
+- **Foreign keys are `v.string()`, not `v.id()`.** During the hybrid migration,
+  Convex docs must interoperate with the existing Prisma **cuid** id space, and
+  auth-owned entities (user/organization/member/…) stay in Better Auth/Prisma.
+  Storing FKs as the source cuid string matches the design doc's own Phase 2
+  example (`orgId: v.string()`). FK fields drive **indexes** only. Converting
+  hot-path FKs to native `v.id()` is a post-data-migration optimization.
+- **Table names**: camelCase **plural** of the Prisma model (`ProjectLineItem` →
+  `projectLineItems`). Generated from one map so FK/index references stay consistent.
+- **Primary cuid `@id` → Convex `_id`** (not stored explicitly).
+- **Type map**: `DateTime`/`Decimal`/`Int`/`Float` → `v.number()`; `Json` →
+  `v.any()`; `String[]` → `v.array(v.string())`; enum → `enums.<Name>`.
+- **Optional** iff the Prisma field is nullable, has a default, is a list, or is
+  `@updatedAt` — so inserts and migration backfill aren't forced to set them.
+  `createdAt`/`updatedAt` kept (optional) to preserve migrated timestamps
+  (Convex also exposes `_creationTime`).
+- **Indexes**: one per FK, per `@unique` field, and per `@@unique`/`@@index`/`@@id`
+  compound (named `by_<f1>_<f2>`). `@unique` is **not** enforced by Convex — the
+  owning mutation enforces uniqueness; the index is for lookup.
+
+> Regenerate after any `prisma/schema.prisma` change: `pnpm convex:schema`, then
+> `npx convex dev --once` to redeploy + codegen, and review the diff.
+
 ## Migration phases (roadmap)
 
 | Phase | Scope | Verification |
 |------|-------|--------------|
 | **0 Infra** ✅ | Docker stack, empty schema, provider, env | dashboard up, `convex dev` connects |
-| 1 Schema | 95 models + 65 enums → `defineTable()` | `convex deploy` succeeds, schema in dashboard |
+| **1 Schema** ✅ | 95 models + 65 enums → `defineTable()` | deployed clean, typechecks, tests green |
 | 2 Thin CRUD | ~80 query/mutation stubs | callable from dashboard |
 | 3 Server actions | 86 `"use server"` files call Convex | data appears in Convex on action |
 | 4 Frontend | 177 React Query sites → Convex `useQuery` | components auto-update on mutation |

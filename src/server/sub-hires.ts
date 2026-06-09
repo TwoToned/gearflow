@@ -2,6 +2,13 @@
 
 import { prisma } from "@/lib/prisma";
 import { mirrorFileUploadDelete } from "@/lib/file-upload-mirror";
+import {
+  syncSubHireToConvex,
+  removeSubHireFromConvex,
+  removeSubHireItemFromConvex,
+  removeSubHireGroupFromConvex,
+} from "@/lib/sub-hire-mirror";
+import { upsertProjectLineItemsToConvex, removeLineItemFromConvex } from "@/lib/line-item-mirror";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
@@ -204,6 +211,7 @@ export async function createSubHire(input: unknown) {
 
     return subHire;
   });
+  await syncSubHireToConvex(result.id);
 
   await logActivity({
     organizationId,
@@ -246,6 +254,7 @@ export async function updateSubHire(id: string, input: unknown) {
       supplier: { select: { name: true } },
     },
   });
+  await syncSubHireToConvex(id);
 
   await logActivity({
     organizationId,
@@ -269,6 +278,8 @@ export async function deleteSubHire(id: string) {
     include: {
       supplier: { select: { name: true } },
       lineItems: { select: { id: true, status: true } },
+      items: { select: { id: true } },
+      groups: { select: { id: true } },
     },
   });
   if (!subHire) throw new Error("Sub-hire not found");
@@ -295,6 +306,13 @@ export async function deleteSubHire(id: string) {
       where: { id, organizationId },
     });
   });
+
+  // Mirror the cascade delete to Convex (line items + sub-hire items + groups +
+  // the head). sub_hire_media stays Prisma-only.
+  for (const li of subHire.lineItems) await removeLineItemFromConvex(li.id);
+  for (const it of subHire.items) await removeSubHireItemFromConvex(it.id);
+  for (const g of subHire.groups) await removeSubHireGroupFromConvex(g.id);
+  await removeSubHireFromConvex(id);
 
   // Recalculate project totals if linked to a project
   if (projectId) {
@@ -363,6 +381,10 @@ export async function updateSubHireStatus(id: string, newStatus: SubHireStatus) 
       await recalculateProjectTotals(subHire.projectId);
     }
   }
+
+  // Mirror the status change + any generated line items to Convex.
+  await syncSubHireToConvex(id);
+  await upsertProjectLineItemsToConvex(subHire.projectId);
 
   await logActivity({
     organizationId,
@@ -440,6 +462,8 @@ export async function addSubHireItem(subHireId: string, input: unknown) {
 
   // Sync line items to project (works for any status including DRAFT)
   await syncSubHireToProject(subHireId, organizationId, subHire.projectId);
+  await syncSubHireToConvex(subHireId);
+  await upsertProjectLineItemsToConvex(subHire.projectId);
 
   await logActivity({
     organizationId,
@@ -500,6 +524,8 @@ export async function updateSubHireItem(itemId: string, input: unknown) {
 
   // Sync line items to project
   await syncSubHireToProject(existing.subHire.id, organizationId, existing.subHire.projectId);
+  await syncSubHireToConvex(existing.subHire.id);
+  await upsertProjectLineItemsToConvex(existing.subHire.projectId);
 
   await logActivity({
     organizationId,
@@ -544,6 +570,9 @@ export async function removeSubHireItem(itemId: string) {
 
   // Regenerate project line items (removes orphaned items, recalculates totals)
   await syncSubHireToProject(existing.subHire.id, organizationId, existing.subHire.projectId);
+  await removeSubHireItemFromConvex(itemId);
+  await syncSubHireToConvex(existing.subHire.id);
+  await upsertProjectLineItemsToConvex(existing.subHire.projectId);
 
   await logActivity({
     organizationId,
@@ -574,6 +603,7 @@ export async function reorderSubHireItems(subHireId: string, itemIds: string[]) 
       }),
     ),
   );
+  await syncSubHireToConvex(subHireId);
 }
 
 // ─── Totals ──────────────────────────────────────────────────────────────────
@@ -1067,6 +1097,13 @@ export async function changeSubHireProject(subHireId: string, newProjectId: stri
   }
   await recalculateProjectTotals(newProjectId);
 
+  // Mirror the project move: sub-hire head + line items on both projects. (The
+  // old project's regenerated line items orphan their pre-move rows in Convex —
+  // the documented regenerate limitation; decommission re-sync clears them.)
+  await syncSubHireToConvex(subHireId);
+  await upsertProjectLineItemsToConvex(oldProjectId);
+  await upsertProjectLineItemsToConvex(newProjectId);
+
   await logActivity({
     organizationId,
     userId,
@@ -1129,6 +1166,8 @@ export async function createSubHireGroup(subHireId: string, input: unknown) {
 
   // Sync line items to project (group structure may have changed)
   await syncSubHireToProject(subHireId, organizationId, subHire.projectId);
+  await syncSubHireToConvex(subHireId);
+  await upsertProjectLineItemsToConvex(subHire.projectId);
 
   await logActivity({
     organizationId,
@@ -1184,6 +1223,8 @@ export async function updateSubHireGroup(groupId: string, input: unknown) {
 
   // Sync line items to project (title, placement, pricing may have changed)
   await syncSubHireToProject(existing.subHire.id, organizationId, existing.subHire.projectId);
+  await syncSubHireToConvex(existing.subHire.id);
+  await upsertProjectLineItemsToConvex(existing.subHire.projectId);
 
   await logActivity({
     organizationId,
@@ -1225,6 +1266,9 @@ export async function deleteSubHireGroup(groupId: string) {
 
   // Regenerate line items (handles parent cleanup + ungrouped restructure)
   await syncSubHireToProject(existing.subHire.id, organizationId, existing.subHire.projectId);
+  await removeSubHireGroupFromConvex(groupId);
+  await syncSubHireToConvex(existing.subHire.id);
+  await upsertProjectLineItemsToConvex(existing.subHire.projectId);
 
   await logActivity({
     organizationId,
@@ -1259,6 +1303,8 @@ export async function setItemGroup(itemId: string, groupId: string | null) {
 
   // Regenerate line items (handles parent-child restructuring)
   await syncSubHireToProject(existing.subHire.id, organizationId, existing.subHire.projectId);
+  await syncSubHireToConvex(existing.subHire.id);
+  await upsertProjectLineItemsToConvex(existing.subHire.projectId);
 
   return serialize({ success: true });
 }
@@ -1289,6 +1335,7 @@ export async function updateSubHireOrderPricing(subHireId: string, input: unknow
     const { recalculateProjectTotals } = await import("@/server/line-items");
     await recalculateProjectTotals(subHire.projectId);
   }
+  await syncSubHireToConvex(subHireId);
 
   await logActivity({
     organizationId,
@@ -1373,6 +1420,8 @@ export async function updateSubHirePlacement(
 
   // Regenerate line items with new placements
   await syncSubHireToProject(subHireId, organizationId, projectId);
+  await syncSubHireToConvex(subHireId);
+  await upsertProjectLineItemsToConvex(projectId);
 
   return serialize({ success: true });
 }
@@ -1540,6 +1589,8 @@ export async function duplicateSubHire(sourceId: string) {
 
     return newSubHire;
   });
+  // Mirror the duplicated sub-hire (head + copied groups + items) to Convex.
+  await syncSubHireToConvex(result.id);
 
   await logActivity({
     organizationId,
@@ -1647,6 +1698,7 @@ export async function updateSubHirePaymentStatus(id: string, paymentStatus: SubH
     where: { id, organizationId },
     data: { paymentStatus },
   });
+  await syncSubHireToConvex(id);
 
   await logActivity({
     organizationId,

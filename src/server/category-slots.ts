@@ -35,6 +35,7 @@ import {
   syncProjectGroupsToConvex,
 } from "@/lib/project-grouping-mirror";
 import { upsertProjectLineItemsToConvex } from "@/lib/line-item-mirror";
+import { syncSubHireToConvex } from "@/lib/sub-hire-mirror";
 import { recalculateProjectTotals } from "@/server/line-items";
 import {
   moveSubHireGroupToCategorySchema,
@@ -254,7 +255,11 @@ export async function moveSubHireGroupToCategory(
     }
   });
 
+  // Mirror the sub-hire group's targetCategoryId move + the synthetic parent
+  // line item's categoryId to Convex.
+  await syncSubHireToConvex(group.subHire.id);
   if (group.subHire.projectId) {
+    await upsertProjectLineItemsToConvex(group.subHire.projectId);
     await recalculateProjectTotals(group.subHire.projectId);
     await logActivity({
       organizationId,

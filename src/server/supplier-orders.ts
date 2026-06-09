@@ -5,6 +5,13 @@ import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { supplierOrderSchema, type SupplierOrderFormValues, supplierOrderItemSchema, type SupplierOrderItemFormValues } from "@/lib/validations/supplier-order";
 import { logActivity, buildChanges } from "@/lib/activity-log";
+import {
+  mirrorSupplierOrderCreate,
+  patchSupplierOrderInConvex,
+  removeSupplierOrderFromConvex,
+  removeSupplierOrderItemFromConvex,
+  syncSupplierOrderToConvex,
+} from "@/lib/sub-hire-mirror";
 import type { FilterValue } from "@/lib/table-utils";
 
 export async function getSupplierOrders(params: {
@@ -91,6 +98,7 @@ export async function createSupplierOrder(data: SupplierOrderFormValues) {
       createdById: userId,
     },
   });
+  await mirrorSupplierOrderCreate(order);
 
   await logActivity({
     organizationId,
@@ -127,6 +135,8 @@ export async function updateSupplierOrder(id: string, data: Partial<SupplierOrde
     data: updateData,
   });
 
+  await patchSupplierOrderInConvex(updated.id, updated);
+
   const changes = buildChanges(before, updated, [
     "orderNumber", "type", "status", "notes",
   ]);
@@ -161,6 +171,7 @@ export async function updateSupplierOrderStatus(id: string, status: string) {
     where: { id, organizationId },
     data: updateData,
   });
+  await patchSupplierOrderInConvex(updated.id, updated);
 
   await logActivity({
     organizationId,
@@ -183,7 +194,11 @@ export async function deleteSupplierOrder(id: string) {
   const order = await prisma.supplierOrder.findUnique({ where: { id, organizationId } });
   if (!order) throw new Error("Order not found");
 
+  // Capture the cascade-deleted items so we can mirror their removal.
+  const itemsToRemove = await prisma.supplierOrderItem.findMany({ where: { orderId: id }, select: { id: true } });
   await prisma.supplierOrder.delete({ where: { id, organizationId } });
+  for (const it of itemsToRemove) await removeSupplierOrderItemFromConvex(it.id);
+  await removeSupplierOrderFromConvex(id);
 
   await logActivity({
     organizationId,
@@ -228,6 +243,7 @@ export async function addOrderItem(orderId: string, data: SupplierOrderItemFormV
   });
 
   await recalculateOrderTotals(orderId);
+  await syncSupplierOrderToConvex(orderId);
 
   await logActivity({
     organizationId,
@@ -271,6 +287,7 @@ export async function updateOrderItem(itemId: string, data: Partial<SupplierOrde
   });
 
   await recalculateOrderTotals(item.orderId);
+  await syncSupplierOrderToConvex(item.orderId);
 
   await logActivity({
     organizationId,
@@ -297,6 +314,8 @@ export async function removeOrderItem(itemId: string) {
 
   await prisma.supplierOrderItem.delete({ where: { id: itemId } });
   await recalculateOrderTotals(item.orderId);
+  await removeSupplierOrderItemFromConvex(itemId);
+  await syncSupplierOrderToConvex(item.orderId);
 
   await logActivity({
     organizationId,

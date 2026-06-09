@@ -15,6 +15,7 @@ import {
   mirrorBulkAssetCreate,
 } from "@/lib/asset-mirror";
 import { mirrorLineItemRow } from "@/lib/line-item-mirror";
+import { mirrorSupplierOrderCreate, mirrorSupplierOrderItemCreate } from "@/lib/sub-hire-mirror";
 import { MANIFEST_VERSION, type OrgExportManifest } from "./org-transfer-types";
 import { createId } from "@paralleldrive/cuid2";
 import unzipper from "unzipper";
@@ -431,7 +432,7 @@ export async function importOrganization(
   // ── 12b. Supplier Orders ────────────────────────────────────────────
   for (const r of (manifest.supplierOrders ?? []) as Rec[]) {
     const id = newId("supplierOrder", r.id);
-    await prisma.supplierOrder.create({
+    const created = await prisma.supplierOrder.create({
       data: {
         ...stripRelations(r),
         id,
@@ -446,6 +447,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await mirrorSupplierOrderCreate(created as unknown as Record<string, unknown>);
   }
 
   // ── 12c. Supplier Order Items ──────────────────────────────────────
@@ -453,7 +455,7 @@ export async function importOrganization(
     const id = newId("supplierOrderItem", r.id);
     const orderId = remap("supplierOrder", r.orderId);
     if (!orderId) continue;
-    await prisma.supplierOrderItem.create({
+    const created = await prisma.supplierOrderItem.create({
       data: {
         id,
         orderId,
@@ -467,6 +469,7 @@ export async function importOrganization(
         sortOrder: r.sortOrder ?? 0,
       } as any,
     });
+    await mirrorSupplierOrderItemCreate(created as unknown as Record<string, unknown>);
   }
 
   // ── 13. Project Line Items (with parent hierarchy for kit children) ──

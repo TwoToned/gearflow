@@ -16,6 +16,7 @@ import { syncKitsToConvex } from "@/lib/kit-mirror";
 import { syncAssetsToConvex } from "@/lib/asset-mirror";
 import { mirrorProjectCategoryCreate, mirrorProjectGroupCreate } from "@/lib/project-grouping-mirror";
 import { upsertProjectLineItemsToConvex, removeLineItemFromConvex } from "@/lib/line-item-mirror";
+import { mirrorProjectCreate, patchProjectInConvex, removeProjectFromConvex } from "@/lib/project-mirror";
 import { emitIfDiscordEnabled } from "@/lib/services/outbox-service";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
@@ -560,6 +561,7 @@ export async function createProject(data: ProjectFormValues & { isTemplate?: boo
 
       return project;
     });
+    await mirrorProjectCreate(result);
 
     await logActivity({
       organizationId,
@@ -642,6 +644,7 @@ export async function updateProject(id: string, data: ProjectFormValues) {
     }
     return result;
   });
+  await patchProjectInConvex(updated.id, updated);
 
   // Recalculate totals if tax rate changed
   if (parsed.taxRate !== undefined) {
@@ -700,6 +703,7 @@ export async function updateProjectStatus(
     }
     return result;
   });
+  await patchProjectInConvex(updated.id, updated);
 
   await logActivity({
     organizationId,
@@ -723,20 +727,22 @@ export async function updateProjectNotes(
   notes: string,
 ) {
   const { organizationId } = await requirePermission("project", "update");
-  return serialize(await prisma.project.update({
+  const updated = await prisma.project.update({
     where: { id, organizationId },
     data: { [field]: notes || null },
-  }));
+  });
+  await patchProjectInConvex(updated.id, updated);
+  return serialize(updated);
 }
 
 export async function archiveProject(id: string) {
   const { organizationId } = await requirePermission("project", "update");
-  return serialize(
-    await prisma.project.update({
-      where: { id, organizationId },
-      data: { status: "CANCELLED" },
-    })
-  );
+  const updated = await prisma.project.update({
+    where: { id, organizationId },
+    data: { status: "CANCELLED" },
+  });
+  await patchProjectInConvex(updated.id, updated);
+  return serialize(updated);
 }
 
 export async function duplicateProject(sourceId: string, newProjectNumber: string, newName: string) {
@@ -933,7 +939,8 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
       return newProject;
     });
 
-    // Mirror the duplicated categories + groups + line items to Convex.
+    // Mirror the duplicated project + categories + groups + line items to Convex.
+    await mirrorProjectCreate(result);
     for (const c of createdCategories) await mirrorProjectCategoryCreate(c);
     for (const g of createdGroups) await mirrorProjectGroupCreate(g);
     await upsertProjectLineItemsToConvex(result.id);
@@ -1057,6 +1064,10 @@ export async function saveAsTemplate(projectId: string, templateName: string) {
       return template;
     });
 
+    // Mirror the new template project + its copied line items to Convex.
+    await mirrorProjectCreate(result);
+    await upsertProjectLineItemsToConvex(result.id);
+
     // Recalculate totals after transaction commits
     await recalculateProjectTotals(result.id);
 
@@ -1106,6 +1117,7 @@ export async function deleteTemplate(id: string) {
   }
 
   await prisma.project.delete({ where: { id, organizationId } });
+  await removeProjectFromConvex(id);
   return { success: true };
 }
 
@@ -1212,6 +1224,7 @@ export async function deleteProject(id: string) {
   await syncKitsToConvex(checkedOutKitIds);
   await syncAssetsToConvex([...checkedOutAssetIds, ...freedKitAssetIds]);
   for (const li of project.lineItems) await removeLineItemFromConvex(li.id);
+  await removeProjectFromConvex(id);
 
   await logActivity({
     organizationId,

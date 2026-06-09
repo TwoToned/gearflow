@@ -13,6 +13,7 @@ import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { syncProjectGroupsToConvex } from "@/lib/project-grouping-mirror";
 import { upsertProjectLineItemsToConvex, removeLineItemFromConvex } from "@/lib/line-item-mirror";
+import { patchProjectInConvex } from "@/lib/project-mirror";
 import { roundCurrency } from "@/lib/formatters";
 import { calculateSuggestedPrice, getGroupBillingPeriod } from "./project-groups";
 import { optimizePrice, computeTotalDays } from "@/lib/pricing";
@@ -1381,7 +1382,7 @@ export async function recalculateProjectTotals(projectId: string) {
   const total = roundCurrency(taxableAmount + taxAmount);
   const margin = roundCurrency(total - (serviceCostTotal + labourCostTotal + subHireCostTotal));
 
-  await prisma.project.update({
+  const updated = await prisma.project.update({
     where: { id: projectId },
     data: {
       equipmentRevenue,
@@ -1395,4 +1396,6 @@ export async function recalculateProjectTotals(projectId: string) {
       margin,
     },
   });
+  // Mirror the recomputed project totals to Convex (project is dual-written).
+  await patchProjectInConvex(updated.id, updated);
 }

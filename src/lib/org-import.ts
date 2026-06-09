@@ -16,6 +16,7 @@ import {
 } from "@/lib/asset-mirror";
 import { mirrorLineItemRow } from "@/lib/line-item-mirror";
 import { mirrorSupplierOrderCreate, mirrorSupplierOrderItemCreate } from "@/lib/sub-hire-mirror";
+import { mirrorProjectCreate } from "@/lib/project-mirror";
 import { MANIFEST_VERSION, type OrgExportManifest } from "./org-transfer-types";
 import { createId } from "@paralleldrive/cuid2";
 import unzipper from "unzipper";
@@ -409,7 +410,7 @@ export async function importOrganization(
   // ── 12. Projects ─────────────────────────────────────────────────
   for (const r of manifest.projects as Rec[]) {
     const id = newId("project", r.id);
-    await prisma.project.create({
+    const created = await prisma.project.create({
       data: {
         ...stripRelations(r, ["_count"]),
         id,
@@ -427,6 +428,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await mirrorProjectCreate(created as unknown as Record<string, unknown>);
   }
 
   // ── 12b. Supplier Orders ────────────────────────────────────────────

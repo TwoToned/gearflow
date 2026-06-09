@@ -11,6 +11,7 @@ import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { recalculateProjectTotals } from "@/server/line-items";
 import { upsertProjectLineItemsToConvex } from "@/lib/line-item-mirror";
+import { mirrorProjectCreate } from "@/lib/project-mirror";
 import { flexibleDateParse } from "@/lib/woocommerce-utils";
 import {
   wooCommerceIntegrationSchema,
@@ -301,6 +302,7 @@ export async function processWooCommerceOrder(
         tags: ["website-order"],
       },
     });
+    await mirrorProjectCreate(project);
 
     // 7. Add line items for matched and unmatched products
     let sortOrder = 0;

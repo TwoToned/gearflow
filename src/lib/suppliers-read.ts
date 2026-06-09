@@ -53,3 +53,19 @@ export async function attachSupplier<T extends { supplierId: string | null }>(
     supplier: r.supplierId ? map.get(r.supplierId) ?? null : null,
   }));
 }
+
+/**
+ * cuids of the org's suppliers whose `name` matches `term` (case-insensitive
+ * substring), for converting a Prisma `where: { supplier: { name: { contains } } }`
+ * filter to a `supplierId: { in: [...] }` predicate now that the join lives in
+ * Convex. Returns `[]` on no match — callers MUST omit the `supplierId in`
+ * branch entirely rather than emit `in: []` (which would match nothing in an OR
+ * and is a footgun in an AND). Matches Prisma's `mode: "insensitive"` for the
+ * ASCII supplier names this app uses. Only safe when the query does NOT sort or
+ * paginate by the joined supplier name (it can't, post-join-removal).
+ */
+export async function getMatchingSupplierIds(orgId: string, term: string): Promise<string[]> {
+  const needle = term.toLowerCase();
+  const all = await getSuppliersByOrg(orgId);
+  return all.filter((s) => s.name.toLowerCase().includes(needle)).map((s) => s.id);
+}

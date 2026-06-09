@@ -144,7 +144,7 @@ stays in Prisma per Phase 6).
 > generated — they're added by hand per domain as Phases 3–4 cut each domain over
 > (report-style queries stay as server actions that call these + post-process).
 
-## Phase 3 — Server-action integration (in progress: Clients + Suppliers + Locations + Models done)
+## Phase 3 — Server-action integration (in progress: Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets done)
 
 > **Two cutover strategies have emerged.** **Hard cutover** (Clients): Convex is
 > sole source of truth, every Prisma reader rewired — used when nothing else in
@@ -294,7 +294,52 @@ Read helper: [`src/lib/models-read.ts`](../src/lib/models-read.ts). Backfill:
 clean, 2185 tests, 0 new lint problems, `pnpm build` green, live
 `api.models.list` round-trip (Prisma 37 == Convex 37).
 
-## Phase 4 — Frontend reactive reads (in progress: Clients + Suppliers + Locations + Models done)
+### Small-domain batch — DONE (Categories, Check-items, Test-profiles, Brand/Group-templates, Custom-fields, Section-presets)
+
+Seven config/library domains cleared in one pass so a later session can focus on
+the big central graph (asset/project/kit/bulk_asset/line-items/sub-hire/
+supplier-order/documents/warehouse). Every one is **dual-write** — the deciding
+factor each time was a *live* inbound Prisma FK that a Convex-only cutover would
+break (the Clients latent-bug trap):
+
+- **Categories** (`category`, 23 rows): 3 inbound FKs all nullable+SET NULL, but
+  `model.categoryId`/`kit.categoryId` are live → dual-write. Self-ref `parentId`
+  (plain string in Convex, no backfill ordering). Reactive: `category-manager.tsx`
+  → `useCategories` + `getCategoryCounts()` (model/kit counts) + children from the
+  flat list. Backfill 23/23.
+- **Check-items** (`check_item`, 6 rows): 3 inbound FKs all required+Cascade
+  (model_check_item/kit_check_item/check_record) → dual-write. Reactive:
+  `settings/check-items/page.tsx` → `useCheckItems` + `getCheckItemCounts()`. Json
+  `dropdownOptions` → `v.any()`. Backfill 6/6.
+- **Test-profiles** (`test_profile`, 0 rows): 3 inbound nullable FKs, but
+  `model.defaultTestProfileId` is live → dual-write across all 6 write paths
+  (create/update/duplicate/seed/delete+deactivate). 3 *required* Json fields
+  (visualChecks/electricalTests/thresholds) → `v.any()`. Reactive:
+  `settings/test-and-tag/profiles/page.tsx` → `useTestProfiles` + active filter.
+- **Brand-templates** (`brand_template`, 0 rows): ← document_template (live
+  nullable FK) → dual-write incl. the default-toggle (unset prior defaults in
+  Convex too). headerSettings/footerSettings are JSON *strings*. **No client
+  consumer exists**, so dual-write infra only (no Phase 4 reader).
+- **Group-templates** (`group_template`, 0 rows): ← group_template_item
+  (required+Cascade) → dual-write. Only the PARENT scalar fields live in Convex;
+  the child items (model/kit joins) stay in Prisma and `getGroupTemplates`
+  composes them, so it stays on the mirror (nested `items` stripped before
+  mirroring; no Phase 4).
+- **Custom-fields** (`custom_field_definition`, 0 rows): leaf table → dual-write
+  create/update/delete/reorder (field VALUES stay in entity customFieldValues
+  JSON). Reactive: `settings/custom-fields/page.tsx` → `useCustomFieldDefinitions`
+  + client-side ASSET-entityType filter (Convex list returns all entity types).
+- **Section-presets** (`section_preset`, 0 rows): leaf → dual-write
+  create/update/delete; `sections` JSON string. Consumed only by the cross-domain
+  document editor → stays on the mirror (no Phase 4).
+
+**Excluded / deferred:** `custom_role` is **excluded** from Convex (RBAC stays in
+Prisma — no convex module). `document_template` (14 write sites, PDF-pipeline
+coupled) and `service_template` (project sub-domain) are **deferred to the
+big-domain session**. All backfill scripts are `pnpm convex:backfill:<domain>`.
+Verified each: tsc clean, 2185 tests, 0 new lint errors, `pnpm build` exit 0.
+
+## Phase 4 — Frontend reactive reads (in progress: Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields done)
 
 The browser now subscribes to the `clients` table directly via Convex `useQuery`,
 so a client create/update/archive (through the server actions) pushes a live
@@ -395,8 +440,8 @@ every viewer.
 | **0 Infra** ✅ | Docker stack, empty schema, provider, env | dashboard up, `convex dev` connects |
 | **1 Schema** ✅ | 95 models + 65 enums → `defineTable()` | deployed clean, typechecks, tests green |
 | **2 Thin CRUD** ✅ | 81 tables × 5 = 405 functions | deployed, typechecks, CRUD round-trip verified |
-| **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models dual-write done) | per-domain backfill + cutover; tsc/tests/build green each |
-| **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations + Models done) | table/dropdown/edit live-update on mutation |
+| **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets dual-write done) | per-domain backfill + cutover; tsc/tests/build green each |
+| **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields done) | table/dropdown/edit live-update on mutation |
 | 5 Auth bridge | Better Auth → Convex JWT (admin key meanwhile) | mutations rejected without auth |
 | 6 Decommission | Remove React Query + SSE event bus | [FEATUREDOCS/53](./53-realtime-sync.md) marked superseded |
 

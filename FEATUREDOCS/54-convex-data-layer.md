@@ -481,6 +481,7 @@ grep + write-site survey done this session (counts as of 2026-06-09):
    ✅ **DONE** — see "Sub-hire + supplier-order families" above. Also closed the
    deferred step-4 sub-hire line-item writes.
 6. `project` last (most-referenced).
+   ✅ **DONE** — see "Project" above. **The central graph is fully dual-written.**
 
 All Convex CRUD modules + schema for every table above already exist (Phase 2).
 Each follows the proven per-domain playbook (backfill → dual-write all paths incl.
@@ -740,6 +741,37 @@ category_slot carry nullable refs.
   re-sync (truncate + backfill) clears them.
 - **Backfill**: `pnpm convex:backfill:sub-hires` (5 rows; P==C). Live sync verified.
 
+### Project — DONE (central-graph step 6, infra-only) — CENTRAL GRAPH COMPLETE
+
+`project` (incl. templates; 5 rows) — the most-referenced central table (15
+inbound FK, most required+Cascade) — is **dual-written infra-only**. clientId
+already lives in Convex.
+
+- **Mirror**: [`src/lib/project-mirror.ts`](../src/lib/project-mirror.ts) —
+  create/patch/remove + `syncProjectToConvex(id)`.
+- **Write sites**: projects.ts (create / update / status / notes / archive /
+  duplicate / saveAsTemplate / deleteTemplate / deleteProject), woocommerce.ts +
+  org-import.ts (create), line-items.ts `recalculateProjectTotals` (the recomputed
+  totals — fired after most line-item mutations), channel-sync-service.ts
+  (discordChannelId claim).
+- **Backfill**: `pnpm convex:backfill:projects` (5; P==C). Live sync verified.
+
+With this, **every central-graph table is dual-written into Convex**: kit + asset
++ bulk + project_category + project_group + project_line_item + sub_hire family +
+supplier_order family + project. The reactive UIs that ship now are the asset/bulk
+registry, kit list, and the config/library domains; the deep cross-domain
+compositions (equipment editor, dashboards, PDF pipeline) remain Prisma reads
+until decommission.
+
+**Still ahead (post-central-graph):** deferred crew scheduling/timesheet
+sub-tables (crew_assignment / crew_shift / crew_availability / crew_certification /
+crew_time_entry — their Convex CRUD exists; they reference project via
+crew_assignment.projectId and were scoped out of step 6); Phase 5 (auth bridge);
+Phase 6 (decommission — rewire the deferred cross-domain Prisma joins off the
+mirror, tear out the SSE/EventEmitter system, and run a clean truncate+backfill to
+clear any regenerate-orphaned sub-hire line-item rows). The Clients hard-cutover
+latent FK bug (`project.clientId` → net-new Convex-only client) also remains.
+
 ## Migration phases (roadmap)
 
 | Phase | Scope | Verification |
@@ -747,7 +779,7 @@ category_slot carry nullable refs.
 | **0 Infra** ✅ | Docker stack, empty schema, provider, env | dashboard up, `convex dev` connects |
 | **1 Schema** ✅ | 95 models + 65 enums → `defineTable()` | deployed clean, typechecks, tests green |
 | **2 Thin CRUD** ✅ | 81 tables × 5 = 405 functions | deployed, typechecks, CRUD round-trip verified |
-| **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets + file_upload + crew + doc/service-template + **Kit** + **Asset/Bulk** + **project_category/group** + **project_line_item** + **sub_hire/supplier_order families (infra-only)** dual-write done) | per-domain backfill + cutover; tsc/tests/build green each |
+| **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets + file_upload + crew + doc/service-template + **Kit** + **Asset/Bulk** + **project_category/group** + **project_line_item** + **sub_hire/supplier_order families** + **project (infra-only)** dual-write done — CENTRAL GRAPH COMPLETE) | per-domain backfill + cutover; tsc/tests/build green each |
 | **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields + crew + **Kit** + **Asset/Bulk registry** done) | table/dropdown/edit live-update on mutation |
 | 5 Auth bridge | Better Auth → Convex JWT (admin key meanwhile) | mutations rejected without auth |
 | 6 Decommission | Remove React Query + SSE event bus | [FEATUREDOCS/53](./53-realtime-sync.md) marked superseded |

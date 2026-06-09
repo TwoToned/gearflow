@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -16,7 +16,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { getModels, bulkUpdateRates } from "@/server/models";
+import { getModelCounts, bulkUpdateRates } from "@/server/models";
+import { useModels } from "@/hooks/use-models";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -223,21 +224,74 @@ export function ModelTable() {
 
   const columns = useModelColumns(categories);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["models", orgId, { search, filters, page, pageSize, sortBy, sortOrder }],
-    queryFn: () =>
-      getModels({
-        search: search || undefined,
-        filters,
-        page,
-        pageSize,
-        sortBy,
-        sortOrder,
-      }),
+  // Reactive model list straight from Convex (auto-updates on any model
+  // create/update/archive). Asset/bulk counts + the primary photo are
+  // cross-domain (assets + model media still live in Prisma) so they come from a
+  // separate, non-reactive server query and are merged in below.
+  const allModels = useModels(orgId);
+  const { data: modelCounts } = useQuery({
+    queryKey: ["model-counts", orgId],
+    queryFn: () => getModelCounts(),
+    enabled: !!orgId,
   });
 
-  const models = data?.models || [];
-  const total = data?.total || 0;
+  // Filter (active only + search name/manufacturer/modelNumber/sku + category +
+  // assetType) → sort → paginate, all client-side over the reactive list. The
+  // Convex list returns ALL models including archived, so re-apply isActive.
+  // Category, counts, and primary media are merged in (cross-domain).
+  const { models, total } = useMemo(() => {
+    const source = allModels ?? [];
+    const q = search.trim().toLowerCase();
+    const categoryFilter = filters?.categoryId as string | undefined;
+    const assetTypeFilter = filters?.assetType as string | undefined;
+    const categoryById = new Map(categories.map((c) => [c.id, c]));
+
+    const filtered = source.filter((m) => {
+      if (m.isActive === false) return false;
+      if (categoryFilter && m.categoryId !== categoryFilter) return false;
+      if (assetTypeFilter && m.assetType !== assetTypeFilter) return false;
+      if (q) {
+        const hit =
+          m.name.toLowerCase().includes(q) ||
+          (m.manufacturer?.toLowerCase().includes(q) ?? false) ||
+          (m.modelNumber?.toLowerCase().includes(q) ?? false) ||
+          (m.sku?.toLowerCase().includes(q) ?? false);
+        if (!hit) return false;
+      }
+      return true;
+    });
+
+    const dir = sortOrder === "desc" ? -1 : 1;
+    const sorted = [...filtered].sort((a, b) => {
+      const av = sortBy === "category"
+        ? categoryById.get(a.categoryId ?? "")?.name
+        : (a as Record<string, unknown>)[sortBy];
+      const bv = sortBy === "category"
+        ? categoryById.get(b.categoryId ?? "")?.name
+        : (b as Record<string, unknown>)[sortBy];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      return String(av).localeCompare(String(bv), undefined, { sensitivity: "base" }) * dir;
+    });
+
+    const merged = sorted.map((m) => {
+      const meta = modelCounts?.[m.id];
+      const category = m.categoryId ? categoryById.get(m.categoryId) ?? null : null;
+      return {
+        ...m,
+        category,
+        _count: { assets: meta?.assets ?? 0, bulkAssets: meta?.bulkAssets ?? 0 },
+        media: meta?.media ? [{ file: meta.media }] : [],
+      };
+    });
+
+    const start = (page - 1) * pageSize;
+    return { models: merged.slice(start, start + pageSize), total: merged.length };
+  }, [allModels, modelCounts, categories, search, filters, sortBy, sortOrder, page, pageSize]);
+
+  const isLoading = allModels === undefined;
 
   const clearSelection = () => {
     setSelectedIds(new Set());

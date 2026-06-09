@@ -16,7 +16,7 @@ import { TagInput } from "@/components/ui/tag-input";
 import { peekNextAssetTags } from "@/server/settings";
 import { getModels } from "@/server/models";
 import { getLocations } from "@/server/locations";
-import { getSuppliers } from "@/server/suppliers";
+import { useSuppliers } from "@/hooks/use-suppliers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScanInput } from "@/components/ui/scan-input";
@@ -54,10 +54,11 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
   });
   const locations = locationsData?.locations || [];
 
-  const { data: suppliers = [] } = useQuery({
-    queryKey: ["suppliers", orgId],
-    queryFn: () => getSuppliers(),
-  });
+  // Reactive supplier list from Convex; a supplier added via the quick-create
+  // dialog now appears in the dropdown instantly. Active-only (matches the old
+  // getSuppliers where: isActive).
+  const allSuppliers = useSuppliers(orgId);
+  const suppliers = (allSuppliers ?? []).filter((s) => s.isActive ?? true);
 
   const { data: orgTags } = useQuery({
     queryKey: ["org-tags", orgId],

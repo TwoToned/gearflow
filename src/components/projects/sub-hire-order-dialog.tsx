@@ -28,7 +28,7 @@ import {
   removeSubHireMedia,
 } from "@/server/sub-hires";
 import { getProjectCategories } from "@/server/project-categories";
-import { getSuppliers } from "@/server/suppliers";
+import { useSuppliers } from "@/hooks/use-suppliers";
 import { getModels } from "@/server/models";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { subHireStatusLabels, formatLabel } from "@/lib/status-labels";
@@ -447,14 +447,11 @@ function SubHireCreateView({
   const [showOnDocs, setShowOnDocs] = useState(false);
   const [notes, setNotes] = useState("");
 
-  const { data: suppliersData } = useQuery({
-    queryKey: ["suppliers", orgId],
-    queryFn: () => getSuppliers(),
-  });
-  const supplierOptions = ((suppliersData || []) as Array<Record<string, unknown>>).map((s) => ({
-    value: s.id as string,
-    label: s.name as string,
-  }));
+  // Reactive supplier list from Convex; active-only (matches old getSuppliers).
+  const allSuppliers = useSuppliers(orgId);
+  const supplierOptions = (allSuppliers ?? [])
+    .filter((s) => s.isActive ?? true)
+    .map((s) => ({ value: s.id, label: s.name }));
 
   const createMutation = useMutation({
     mutationFn: () =>

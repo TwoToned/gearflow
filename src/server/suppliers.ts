@@ -100,6 +100,36 @@ export async function getSuppliersPaginated(params: {
   return serialize({ suppliers, total });
 }
 
+/**
+ * Asset + order counts per supplier (supplierId -> { assets, orders }).
+ * Cross-domain: assets and supplier orders still live in Prisma, so this can't
+ * come from Convex. Used by the reactive supplier table, which subscribes to the
+ * supplier list via Convex and merges these (non-reactive) counts.
+ */
+export async function getSupplierCounts(): Promise<Record<string, { assets: number; orders: number }>> {
+  const { organizationId } = await getOrgContext();
+  const [assetGroups, orderGroups] = await Promise.all([
+    prisma.asset.groupBy({
+      by: ["supplierId"],
+      where: { organizationId, supplierId: { not: null } },
+      _count: { _all: true },
+    }),
+    prisma.supplierOrder.groupBy({
+      by: ["supplierId"],
+      where: { organizationId },
+      _count: { _all: true },
+    }),
+  ]);
+  const counts: Record<string, { assets: number; orders: number }> = {};
+  for (const g of assetGroups) {
+    if (g.supplierId) (counts[g.supplierId] ??= { assets: 0, orders: 0 }).assets = g._count._all;
+  }
+  for (const g of orderGroups) {
+    if (g.supplierId) (counts[g.supplierId] ??= { assets: 0, orders: 0 }).orders = g._count._all;
+  }
+  return serialize(counts);
+}
+
 export async function getSupplierById(id: string) {
   const { organizationId } = await getOrgContext();
   const supplier = await prisma.supplier.findUnique({

@@ -13,12 +13,12 @@
  */
 
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { createSubHire } from "@/server/sub-hires";
-import { getSuppliers } from "@/server/suppliers";
+import { useSuppliers } from "@/hooks/use-suppliers";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,13 +64,11 @@ export function SubHireAddForm({
   const [hireEnd, setHireEnd] = useState(toDateInput(rentalEndDate));
   const [notes, setNotes] = useState("");
 
-  const { data: suppliersData } = useQuery({
-    queryKey: ["suppliers", orgId],
-    queryFn: () => getSuppliers(),
-  });
-  const supplierOptions = ((suppliersData || []) as Array<Record<string, unknown>>).map(
-    (s) => ({ value: s.id as string, label: s.name as string }),
-  );
+  // Reactive supplier list from Convex; active-only (matches old getSuppliers).
+  const allSuppliers = useSuppliers(orgId);
+  const supplierOptions = (allSuppliers ?? [])
+    .filter((s) => s.isActive ?? true)
+    .map((s) => ({ value: s.id, label: s.name }));
 
   const createMut = useMutation({
     mutationFn: () =>

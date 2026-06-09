@@ -16,7 +16,7 @@ import { TagInput } from "@/components/ui/tag-input";
 import { peekNextAssetTags } from "@/server/settings";
 import { getModels } from "@/server/models";
 import { getLocations } from "@/server/locations";
-import { getSuppliers } from "@/server/suppliers";
+import { useSuppliers } from "@/hooks/use-suppliers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScanInput } from "@/components/ui/scan-input";
@@ -50,11 +50,9 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
   });
   const locations = locationsData?.locations || [];
 
-  const { data: suppliersData } = useQuery({
-    queryKey: ["suppliers", orgId],
-    queryFn: () => getSuppliers(),
-  });
-  const suppliers = Array.isArray(suppliersData) ? suppliersData : [];
+  // Reactive supplier list from Convex; active-only (matches old getSuppliers).
+  const allSuppliers = useSuppliers(orgId);
+  const suppliers = (allSuppliers ?? []).filter((s) => s.isActive ?? true);
 
   const { data: orgTags } = useQuery({
     queryKey: ["org-tags", orgId],

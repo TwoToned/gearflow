@@ -34,6 +34,7 @@ import {
   mirrorProjectCategoryCreate,
   syncProjectGroupsToConvex,
 } from "@/lib/project-grouping-mirror";
+import { upsertProjectLineItemsToConvex } from "@/lib/line-item-mirror";
 import { recalculateProjectTotals } from "@/server/line-items";
 import {
   moveSubHireGroupToCategorySchema,
@@ -388,9 +389,11 @@ export async function moveProjectGroupToCategory(
     }
   });
 
-  // Mirror the group's categoryId move. NB a move to Uncategorised clears
-  // categoryId→null — a no-op in Convex (documented); infra-only, tolerable.
+  // Mirror the group's categoryId move + the line items that followed it. NB a
+  // move to Uncategorised clears categoryId→null — a no-op in Convex (documented);
+  // infra-only, tolerable.
   await syncProjectGroupsToConvex([parsed.groupId]);
+  await upsertProjectLineItemsToConvex(group.projectId);
 
   await recalculateProjectTotals(group.projectId);
   await logActivity({
@@ -641,9 +644,11 @@ export async function createCategoryAndPlaceGroup(input: CreateCategoryAndPlaceG
     return category;
   });
 
-  // Mirror the new category + the placed group's categoryId update to Convex.
+  // Mirror the new category + the placed group's categoryId update + the line
+  // items that followed it to Convex.
   await mirrorProjectCategoryCreate(result);
   if (projectGroupId) await syncProjectGroupsToConvex([projectGroupId]);
+  await upsertProjectLineItemsToConvex(parsed.projectId);
 
   await logActivity({
     organizationId,

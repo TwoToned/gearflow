@@ -10,6 +10,7 @@ import { requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { recalculateProjectTotals } from "@/server/line-items";
+import { upsertProjectLineItemsToConvex } from "@/lib/line-item-mirror";
 import { flexibleDateParse } from "@/lib/woocommerce-utils";
 import {
   wooCommerceIntegrationSchema,
@@ -327,6 +328,7 @@ export async function processWooCommerceOrder(
 
     // 8. Recalculate project totals
     await recalculateProjectTotals(project.id);
+    await upsertProjectLineItemsToConvex(project.id);
 
     // 9. Log success
     const matchedCount = matchResults.filter((m) => m.matched).length;

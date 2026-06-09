@@ -24,6 +24,7 @@ import {
 import { TestTagBlockError } from "@/lib/errors/test-tag-block-error";
 import { syncKitsToConvex } from "@/lib/kit-mirror";
 import { syncAssetsToConvex, syncBulkAssetsToConvex } from "@/lib/asset-mirror";
+import { upsertProjectLineItemsToConvex, syncLineItemsToConvex } from "@/lib/line-item-mirror";
 
 // ---------------------------------------------------------------------------
 // Kit bulk-content traversal
@@ -969,8 +970,10 @@ export async function checkOutItems(
   });
 
   // Mirror the checked-out asset status/location changes (scanned assets +
-  // cascaded accessories) to Convex.
+  // cascaded accessories) + the project's line-item status flips / scan-time
+  // accessory expansions to Convex.
   await syncAssetsToConvex([...touchedAssetIds]);
+  await upsertProjectLineItemsToConvex(projectId);
 
   for (const item of items) {
     await logActivity({
@@ -1115,8 +1118,10 @@ export async function checkInItems(
     return updated;
   });
 
-  // Mirror the returned asset status/location changes to Convex.
+  // Mirror the returned asset status/location changes + the project's line-item
+  // status flips to Convex.
   await syncAssetsToConvex([...touchedAssetIds]);
+  await upsertProjectLineItemsToConvex(projectId);
 
   for (const item of items) {
     await logActivity({
@@ -1326,6 +1331,7 @@ export async function checkOutKit(projectId: string, kitId: string) {
   await syncKitsToConvex(result.affectedKitIds);
   await syncAssetsToConvex(result.touchedAssets);
   await syncBulkAssetsToConvex(result.touchedBulk);
+  await upsertProjectLineItemsToConvex(projectId);
 
   await logActivity({
     organizationId,
@@ -1490,6 +1496,7 @@ export async function checkInKit(
   await syncKitsToConvex(result.affectedKitIds);
   await syncAssetsToConvex(result.touchedAssets);
   await syncBulkAssetsToConvex(result.touchedBulk);
+  await upsertProjectLineItemsToConvex(projectId);
 
   await logActivity({
     organizationId,
@@ -1740,6 +1747,8 @@ export async function syncContainerStatus(projectId: string, containerName: stri
     });
     await syncAssetsToConvex([updatedAsset.id]);
   }
+  // Mirror the container line item's status flip to Convex.
+  await upsertProjectLineItemsToConvex(projectId);
 
   return serialize({ updated: true, status: allDeployedFlag ? "CHECKED_OUT" : "RETURNED" });
 }
@@ -1914,6 +1923,11 @@ export async function forceReturnAsset(assetId: string) {
     });
   });
   await syncAssetsToConvex([assetId]);
+  // Mirror the returned line items across every affected project.
+  const farProjects = await prisma.projectLineItem.findMany({
+    where: { assetId, organizationId }, select: { projectId: true }, distinct: ["projectId"],
+  });
+  for (const p of farProjects) await upsertProjectLineItemsToConvex(p.projectId);
 
   await logActivity({
     organizationId,
@@ -2107,6 +2121,11 @@ export async function forceReturnKit(kitId: string) {
   await syncKitsToConvex(affectedKitIds.kitIds);
   await syncAssetsToConvex(affectedKitIds.assets);
   await syncBulkAssetsToConvex(affectedKitIds.bulk);
+  // Mirror the returned line items across every project this kit appears on.
+  const frkProjects = await prisma.projectLineItem.findMany({
+    where: { kitId, organizationId }, select: { projectId: true }, distinct: ["projectId"],
+  });
+  for (const p of frkProjects) await upsertProjectLineItemsToConvex(p.projectId);
 
   await logActivity({
     organizationId,
@@ -2163,6 +2182,11 @@ export async function bulkForceReturnAssets(assetIds: string[]) {
     });
   });
   await syncAssetsToConvex(ids);
+  // Mirror the returned line items across every affected project.
+  const bfrProjects = await prisma.projectLineItem.findMany({
+    where: { assetId: { in: ids }, organizationId }, select: { projectId: true }, distinct: ["projectId"],
+  });
+  for (const p of bfrProjects) await upsertProjectLineItemsToConvex(p.projectId);
 
   await logActivity({
     organizationId,

@@ -5,6 +5,7 @@ import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { syncAssetsToConvex } from "@/lib/asset-mirror";
+import { upsertProjectLineItemsToConvex } from "@/lib/line-item-mirror";
 import {
   returnLineUnits,
   syncLineItemRollup,
@@ -276,8 +277,10 @@ export async function checkInBulkTotals(
     return summary;
   });
 
-  // Mirror the returned serialized assets' status/location changes to Convex.
+  // Mirror the returned serialized assets' status/location changes + the
+  // project's line-item status flips to Convex.
   await syncAssetsToConvex([...allTouchedAssets]);
+  await upsertProjectLineItemsToConvex(projectId);
 
   for (const r of returned) {
     await logActivity({

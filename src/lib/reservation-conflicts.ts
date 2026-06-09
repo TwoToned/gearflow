@@ -19,6 +19,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { syncLineItemsToConvex } from "@/lib/line-item-mirror";
 
 /**
  * Project statuses where the booking is released — excluded from conflict
@@ -415,6 +416,7 @@ export async function swapLineItemAssetCore(
       data: { assetId: newAssetId },
     });
   });
+  await syncLineItemsToConvex([lineItemId]);
 
   return { lineItemId, assetId: newAssetId };
 }

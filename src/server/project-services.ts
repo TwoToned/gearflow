@@ -18,6 +18,7 @@ import {
 import { roundCurrency } from "@/lib/formatters";
 import { sendCrewOffer } from "@/server/crew-communication";
 import { recalculateProjectTotals } from "@/server/line-items";
+import { removeLineItemFromConvex } from "@/lib/line-item-mirror";
 import { SERVICE_TYPE_LABELS } from "@/lib/constants/services";
 import type { ServiceType, PricingType, ProjectPhase } from "@/generated/prisma/client";
 
@@ -329,6 +330,7 @@ export async function updateProjectService(
     await prisma.projectLineItem.delete({
       where: { id: existing.lineItemId },
     }).catch(() => {});
+    await removeLineItemFromConvex(existing.lineItemId);
     await prisma.projectService.update({
       where: { id },
       data: { lineItemId: null },
@@ -385,6 +387,7 @@ export async function deleteProjectService(id: string) {
 
     await tx.projectService.delete({ where: { id } });
   });
+  if (service.lineItemId) await removeLineItemFromConvex(service.lineItemId);
 
   await recalculateProjectTotals(service.projectId);
 

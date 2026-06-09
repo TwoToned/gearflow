@@ -15,6 +15,7 @@ import {
   removeProjectGroupFromConvex,
   syncProjectGroupsToConvex,
 } from "@/lib/project-grouping-mirror";
+import { upsertProjectLineItemsToConvex, syncLineItemsToConvex } from "@/lib/line-item-mirror";
 import { roundCurrency } from "@/lib/formatters";
 import { recalculateProjectTotals } from "./line-items";
 import { optimizePrice, computeTotalDays } from "@/lib/pricing";
@@ -189,6 +190,7 @@ export async function recalculateGroupPrices(groupId: string): Promise<number> {
   if (updates.length === 0) return 0;
 
   await prisma.$transaction(updates);
+  await upsertProjectLineItemsToConvex(group.projectId);
 
   // Recalculate suggested price and project totals
   const suggested = await calculateSuggestedPrice(groupId);
@@ -483,8 +485,10 @@ export async function moveLineItemToGroup(
       data: { suggestedPrice: suggested },
     });
   }
-  // The line-item move itself is mirrored in the line_item domain (step 4); here
-  // we mirror only the affected groups' suggestedPrice recalcs.
+  // Mirror the moved line item's new groupId/categoryId + the affected groups'
+  // suggestedPrice recalcs. (Move to standalone clears groupId→null — the
+  // documented clear-to-null no-op in Convex.)
+  await syncLineItemsToConvex([parsed.lineItemId]);
   await syncProjectGroupsToConvex([oldGroupId, parsed.targetGroupId]);
 
   await logActivity({

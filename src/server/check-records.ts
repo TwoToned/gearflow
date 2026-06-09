@@ -5,6 +5,7 @@ import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { syncAssetsToConvex } from "@/lib/asset-mirror";
+import { upsertProjectLineItemsToConvex } from "@/lib/line-item-mirror";
 import {
   prepUnit,
   syncLineItemRollup,
@@ -193,6 +194,7 @@ export async function pullItem(projectId: string, lineItemId: string) {
     assetId: lineItem.assetId || undefined,
   });
 
+  await upsertProjectLineItemsToConvex(projectId);
   return serialize(result);
 }
 
@@ -246,6 +248,7 @@ export async function prepItemDirect(
     assetId: assetId || result.assetId || undefined,
   });
 
+  await upsertProjectLineItemsToConvex(projectId);
   return serialize(result);
 }
 
@@ -354,6 +357,7 @@ export async function deprepItem(
     assetId: result.assetId || undefined,
   });
 
+  await upsertProjectLineItemsToConvex(projectId);
   return serialize(result);
 }
 
@@ -472,6 +476,7 @@ export async function completeCheckAndDeprep(data: {
     assetId: result.assetId || undefined,
   });
 
+  await upsertProjectLineItemsToConvex(data.projectId);
   return serialize(result);
 }
 
@@ -551,6 +556,7 @@ export async function deprepKit(
     projectId,
   });
 
+  await upsertProjectLineItemsToConvex(projectId);
   return serialize({ success: true });
 }
 
@@ -622,6 +628,7 @@ export async function prepKitChildren(
     projectId,
   });
 
+  await upsertProjectLineItemsToConvex(projectId);
   return serialize({ success: true });
 }
 
@@ -659,6 +666,7 @@ export async function unpackItem(projectId: string, lineItemId: string) {
     assetId: lineItem.assetId || undefined,
   });
 
+  await upsertProjectLineItemsToConvex(projectId);
   return serialize(result);
 }
 
@@ -737,6 +745,7 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
     assetId: result.resolvedAssetId || undefined,
   });
 
+  await upsertProjectLineItemsToConvex(parsed.projectId);
   return serialize(result.updatedItem);
 }
 
@@ -806,6 +815,7 @@ export async function completeCheckAndFlag(data: CompleteCheckAndFlagValues) {
     assetId: result.resolvedAssetId || undefined,
   });
 
+  await upsertProjectLineItemsToConvex(parsed.projectId);
   return serialize(result.updatedItem);
 }
 
@@ -953,6 +963,7 @@ export async function completeCheckAndStore(
     assetId: result.resolvedAssetId || undefined,
   });
 
+  await upsertProjectLineItemsToConvex(parsed.projectId);
   return serialize(result.updatedItem);
 }
 

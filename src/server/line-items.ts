@@ -12,6 +12,7 @@ import {
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { syncProjectGroupsToConvex } from "@/lib/project-grouping-mirror";
+import { upsertProjectLineItemsToConvex, removeLineItemFromConvex } from "@/lib/line-item-mirror";
 import { roundCurrency } from "@/lib/formatters";
 import { calculateSuggestedPrice, getGroupBillingPeriod } from "./project-groups";
 import { optimizePrice, computeTotalDays } from "@/lib/pricing";
@@ -394,6 +395,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         projectId,
       });
 
+      await upsertProjectLineItemsToConvex(projectId);
       return serialize({ ...result, _merged: true, _newQuantity: newQuantity });
     }
   }
@@ -548,6 +550,8 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
     summary: `Added line item to project`,
     projectId,
   });
+
+  await upsertProjectLineItemsToConvex(projectId);
 
   return serialize(result);
 }
@@ -706,6 +710,7 @@ export async function updateLineItem(id: string, data: LineItemFormValues, allow
     projectId: result.projectId,
   });
 
+  await upsertProjectLineItemsToConvex(result.projectId);
   return serialize(result);
 }
 
@@ -824,6 +829,7 @@ export async function addKitLineItem(
   });
 
   await recalculateProjectTotals(projectId);
+  await upsertProjectLineItemsToConvex(projectId);
   return serialize(result.parentItem);
 }
 
@@ -892,6 +898,7 @@ export async function addCustomLineItem(projectId: string, data: CustomLineItemF
     projectId,
   });
 
+  await upsertProjectLineItemsToConvex(projectId);
   return serialize(result);
 }
 
@@ -928,12 +935,19 @@ export async function removeLineItem(id: string) {
 
   // Parent line (kit parent OR accessory parent): cascade-delete its children
   // atomically with the parent.
+  const children = await prisma.projectLineItem.findMany({
+    where: { parentLineItemId: item.id, organizationId },
+    select: { id: true },
+  });
   await prisma.$transaction(async (tx) => {
     await tx.projectLineItem.deleteMany({
       where: { parentLineItemId: item.id, organizationId },
     });
     await tx.projectLineItem.delete({ where: { id } });
   });
+  // Mirror the cascade delete to Convex (children first, then the parent).
+  for (const c of children) await removeLineItemFromConvex(c.id);
+  await removeLineItemFromConvex(id);
   await recalculateProjectTotals(item.projectId);
 
   await logActivity({
@@ -977,6 +991,7 @@ export async function reorderLineItems(
   }
 
   await prisma.$transaction(updates);
+  await upsertProjectLineItemsToConvex(projectId);
 
   return serialize({ success: true });
 }

@@ -14,6 +14,7 @@ import {
   patchAssetInConvex,
   mirrorBulkAssetCreate,
 } from "@/lib/asset-mirror";
+import { mirrorLineItemRow } from "@/lib/line-item-mirror";
 import { MANIFEST_VERSION, type OrgExportManifest } from "./org-transfer-types";
 import { createId } from "@paralleldrive/cuid2";
 import unzipper from "unzipper";
@@ -470,7 +471,7 @@ export async function importOrganization(
 
   // ── 13. Project Line Items (with parent hierarchy for kit children) ──
   await insertWithHierarchy("projectLineItem", manifest.projectLineItems as Rec[], async (r, id) => {
-    await prisma.projectLineItem.create({
+    const created = await prisma.projectLineItem.create({
       data: {
         ...stripRelations(r),
         id,
@@ -490,6 +491,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await mirrorLineItemRow(created as unknown as Record<string, unknown>);
   });
 
   // ── 14. Asset Scan Logs ──────────────────────────────────────────

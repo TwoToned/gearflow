@@ -36,6 +36,7 @@
     "convex:backfill:section-presets": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-section-presets.ts",
     "convex:backfill:file-upload": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-file-upload.ts",
     "convex:backfill:crew": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-crew.ts",
+    "convex:backfill:crew-scheduling": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-crew-scheduling.ts",
     "convex:backfill:templates": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-templates.ts",
     "convex:backfill:kit": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-kit.ts",
     "convex:backfill:asset": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-asset.ts",

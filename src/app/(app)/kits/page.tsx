@@ -190,13 +190,19 @@ export default function KitsPage() {
     queryKey: ["locations", orgId],
     queryFn: () => getLocations({ pageSize: 100 }),
   });
-  const locations = (locationsData?.locations || []) as Array<{ id: string; name: string }>;
+  const locations = useMemo(
+    () => (locationsData?.locations || []) as Array<{ id: string; name: string }>,
+    [locationsData],
+  );
 
   const { data: categoriesData } = useQuery({
     queryKey: ["categories", orgId],
     queryFn: () => getCategories(),
   });
-  const categories = (categoriesData || []) as Array<{ id: string; name: string }>;
+  const categories = useMemo(
+    () => (categoriesData || []) as Array<{ id: string; name: string }>,
+    [categoriesData],
+  );
 
   const columns = useKitColumns(locations, categories);
 

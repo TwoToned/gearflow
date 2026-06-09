@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Plus,
@@ -14,13 +14,13 @@ import {
 } from "lucide-react";
 
 import {
-  getTestProfiles,
   createTestProfile,
   updateTestProfile,
   duplicateTestProfile,
   deleteTestProfile,
   seedDefaultProfiles,
 } from "@/server/test-tag-profiles";
+import { useTestProfiles } from "@/hooks/use-test-profiles";
 import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { FadeIn } from "@/components/ui/motion";
@@ -105,11 +105,12 @@ export default function TestProfilesPage() {
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
-  const { data: profiles, isLoading } = useQuery({
-    queryKey: ["testProfiles", orgId],
-    queryFn: () => getTestProfiles(),
-    enabled: !!orgId,
-  });
+  // Reactive test-profile list straight from Convex (auto-updates on any
+  // create/update/duplicate/seed/delete). The Convex list returns ALL profiles
+  // including inactive, so re-apply the active filter (matches the old
+  // getTestProfiles default) and sort by name client-side.
+  const allProfiles = useTestProfiles(orgId);
+  const isLoading = allProfiles === undefined;
 
   const seedMutation = useMutation({
     mutationFn: seedDefaultProfiles,
@@ -138,7 +139,12 @@ export default function TestProfilesPage() {
     onError: (e) => toast.error(e.message),
   });
 
-  const profileList = (profiles || []) as unknown as Profile[];
+  const profileList = useMemo(() => {
+    const source = (allProfiles ?? []) as unknown as Profile[];
+    return source
+      .filter((p) => p.isActive !== false)
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  }, [allProfiles]);
 
   if (isLoading) {
     return (

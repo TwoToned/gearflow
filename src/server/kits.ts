@@ -25,6 +25,7 @@ import {
   mirrorKitBulkItemCreate,
   removeKitBulkItemFromConvex,
 } from "@/lib/kit-mirror";
+import { syncAssetsToConvex, syncBulkAssetsToConvex } from "@/lib/asset-mirror";
 
 const kitFilterColumns: FilterColumnDef[] = [
   { id: "status", filterType: "enum" },
@@ -342,10 +343,14 @@ export async function archiveKit(id: string) {
   });
 
   // Mirror to Convex: the kit's member items were removed and the kit was
-  // soft-deleted (status/isActive patched, not deleted — the row remains).
+  // soft-deleted (status/isActive patched, not deleted — the row remains). The
+  // released serialized assets (kitId→null, AVAILABLE) and restored bulk
+  // quantities are reactive too.
   for (const item of kit.serializedItems) await removeKitSerializedItemFromConvex(item.id);
   for (const item of kit.bulkItems) await removeKitBulkItemFromConvex(item.id);
   await patchKitInConvex(archived.id, archived);
+  await syncAssetsToConvex(kit.serializedItems.map((i) => i.assetId));
+  await syncBulkAssetsToConvex(kit.bulkItems.map((i) => i.bulkAssetId));
 
   await logActivity({
     organizationId,
@@ -462,10 +467,13 @@ export async function deleteKit(id: string) {
   });
 
   // Mirror the hard delete to Convex (member items first, then the kit). kit_media
-  // / kit_check_item stay Prisma-only, so they need no Convex cleanup here.
+  // / kit_check_item stay Prisma-only, so they need no Convex cleanup here. The
+  // released assets / restored bulk quantities are reactive too.
   for (const item of kit.serializedItems) await removeKitSerializedItemFromConvex(item.id);
   for (const item of kit.bulkItems) await removeKitBulkItemFromConvex(item.id);
   await removeKitFromConvex(id);
+  await syncAssetsToConvex(kit.serializedItems.map((i) => i.assetId));
+  await syncBulkAssetsToConvex(kit.bulkItems.map((i) => i.bulkAssetId));
 
   await logActivity({
     organizationId,
@@ -531,9 +539,11 @@ export async function addSerializedItemToKit(
     return created;
   });
 
-  // Mirror the member row to Convex (strip the nested asset relation).
+  // Mirror the member row to Convex (strip the nested asset relation) + the
+  // asset's kitId/location change.
   const { asset: _asset, ...itemRow } = item;
   await mirrorKitSerializedItemCreate(itemRow);
+  await syncAssetsToConvex([parsed.assetId]);
 
   return serialize(item);
 }
@@ -598,11 +608,13 @@ export async function addSerializedItemsToKit(
     return records;
   });
 
-  // Mirror each member row to Convex (strip the nested asset relation).
+  // Mirror each member row to Convex (strip the nested asset relation) + the
+  // assets' kitId/location changes.
   for (const record of created) {
     const { asset: _asset, ...itemRow } = record;
     await mirrorKitSerializedItemCreate(itemRow);
   }
+  await syncAssetsToConvex(items.map((i) => i.assetId));
 
   return serialize(created);
 }
@@ -635,6 +647,7 @@ export async function removeSerializedItemFromKit(
   });
 
   await removeKitSerializedItemFromConvex(deleted.id);
+  await syncAssetsToConvex([assetId]);
 
   return serialize({ success: true });
 }
@@ -686,9 +699,11 @@ export async function addBulkItemToKit(
     return created;
   });
 
-  // Mirror the member row to Convex (strip the nested bulkAsset relation).
+  // Mirror the member row to Convex (strip the nested bulkAsset relation) + the
+  // bulk asset's availableQuantity decrement.
   const { bulkAsset: _bulkAsset, ...itemRow } = item;
   await mirrorKitBulkItemCreate(itemRow);
+  await syncBulkAssetsToConvex([parsed.bulkAssetId]);
 
   return serialize(item);
 }
@@ -707,7 +722,7 @@ export async function removeBulkItemFromKit(
     throw new Error("Items can only be removed from AVAILABLE kits");
   }
 
-  await prisma.$transaction(async (tx) => {
+  const bulkAssetId = await prisma.$transaction(async (tx) => {
     const bulkItem = await tx.kitBulkItem.findUnique({
       where: { id: bulkItemId, organizationId },
     });
@@ -720,9 +735,12 @@ export async function removeBulkItemFromKit(
       where: { id: bulkItem.bulkAssetId },
       data: { availableQuantity: { increment: bulkItem.quantity } },
     });
+
+    return bulkItem.bulkAssetId;
   });
 
   await removeKitBulkItemFromConvex(bulkItemId);
+  await syncBulkAssetsToConvex([bulkAssetId]);
 
   return serialize({ success: true });
 }

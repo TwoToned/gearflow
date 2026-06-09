@@ -4,6 +4,7 @@ import { type FunctionArgs } from "convex/server";
 import { prisma } from "@/lib/prisma";
 import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
+import { mirrorAssetCreate, patchAssetInConvex } from "@/lib/asset-mirror";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
@@ -419,7 +420,7 @@ export async function importAssetsCSV(csvContent: string): Promise<ImportResult>
       });
 
       if (existing) {
-        await prisma.asset.update({
+        const updated = await prisma.asset.update({
           where: { id: existing.id },
           data: {
             serialNumber: get("serialnumber") || get("serial_number") || existing.serialNumber,
@@ -435,9 +436,10 @@ export async function importAssetsCSV(csvContent: string): Promise<ImportResult>
             ...(tags.length > 0 ? { tags } : {}),
           },
         });
+        await patchAssetInConvex(updated.id, updated);
         result.updated++;
       } else {
-        await prisma.asset.create({
+        const created = await prisma.asset.create({
           data: {
             organizationId,
             modelId: model.id,
@@ -455,6 +457,7 @@ export async function importAssetsCSV(csvContent: string): Promise<ImportResult>
             tags,
           },
         });
+        await mirrorAssetCreate(created);
         result.created++;
       }
     } catch (e) {

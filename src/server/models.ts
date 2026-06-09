@@ -3,6 +3,7 @@
 import { type FunctionArgs } from "convex/server";
 import { prisma } from "@/lib/prisma";
 import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import { removeAssetFromConvex, removeBulkAssetFromConvex } from "@/lib/asset-mirror";
 import { api } from "../../convex/_generated/api";
 import { serialize } from "@/lib/serialize";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
@@ -307,11 +308,18 @@ export async function updateModel(id: string, data: ModelFormValues) {
 export async function archiveModel(id: string) {
   const { organizationId, userId, userName } = await requirePermission("model", "delete");
 
-  // Delete all assets and bulk assets under this model
+  // Delete all assets and bulk assets under this model — capture their ids first
+  // so we can mirror the removals to Convex (both are dual-written).
+  const [assetsToRemove, bulkToRemove] = await Promise.all([
+    prisma.asset.findMany({ where: { modelId: id, organizationId }, select: { id: true } }),
+    prisma.bulkAsset.findMany({ where: { modelId: id, organizationId }, select: { id: true } }),
+  ]);
   await Promise.all([
     prisma.asset.deleteMany({ where: { modelId: id, organizationId } }),
     prisma.bulkAsset.deleteMany({ where: { modelId: id, organizationId } }),
   ]);
+  for (const a of assetsToRemove) await removeAssetFromConvex(a.id);
+  for (const b of bulkToRemove) await removeBulkAssetFromConvex(b.id);
 
   const archived = await prisma.model.update({
     where: { id, organizationId },

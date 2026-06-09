@@ -9,6 +9,11 @@ import {
   mirrorKitSerializedItemCreate,
   mirrorKitBulkItemCreate,
 } from "@/lib/kit-mirror";
+import {
+  mirrorAssetCreate,
+  patchAssetInConvex,
+  mirrorBulkAssetCreate,
+} from "@/lib/asset-mirror";
 import { MANIFEST_VERSION, type OrgExportManifest } from "./org-transfer-types";
 import { createId } from "@paralleldrive/cuid2";
 import unzipper from "unzipper";
@@ -294,7 +299,7 @@ export async function importOrganization(
   // ── 7. Assets ────────────────────────────────────────────────────
   for (const r of manifest.assets as Rec[]) {
     const id = newId("asset", r.id);
-    await prisma.asset.create({
+    const created = await prisma.asset.create({
       data: {
         ...stripRelations(r),
         id,
@@ -312,12 +317,13 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await mirrorAssetCreate(created);
   }
 
   // ── 8. Bulk Assets ───────────────────────────────────────────────
   for (const r of manifest.bulkAssets as Rec[]) {
     const id = newId("bulkAsset", r.id);
-    await prisma.bulkAsset.create({
+    const created = await prisma.bulkAsset.create({
       data: {
         ...stripRelations(r),
         id,
@@ -328,6 +334,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await mirrorBulkAssetCreate(created);
   }
 
   // ── 9. Kit Serialized Items ──────────────────────────────────────
@@ -691,10 +698,11 @@ export async function importOrganization(
       if (!newAssetId) continue;
       const hasImages = r.images?.length && r.images.some((u: string) => urlMap.has(u));
       if (hasImages) {
-        await prisma.asset.update({
+        const updated = await prisma.asset.update({
           where: { id: newAssetId },
           data: { images: remapUrls(r.images) },
         });
+        await patchAssetInConvex(updated.id, updated);
       }
     }
 

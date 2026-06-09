@@ -37,7 +37,8 @@
     "convex:backfill:file-upload": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-file-upload.ts",
     "convex:backfill:crew": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-crew.ts",
     "convex:backfill:templates": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-templates.ts",
-    "convex:backfill:kit": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-kit.ts"
+    "convex:backfill:kit": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-kit.ts",
+    "convex:backfill:asset": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-asset.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1063.0",

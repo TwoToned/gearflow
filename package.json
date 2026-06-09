@@ -24,7 +24,8 @@
     "convex:schema": "node scripts/generate-convex-schema.cjs .",
     "convex:crud": "node scripts/generate-convex-crud.cjs .",
     "convex:backfill:clients": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-clients.ts",
-    "convex:backfill:suppliers": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-suppliers.ts"
+    "convex:backfill:suppliers": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-suppliers.ts",
+    "convex:backfill:locations": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-locations.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1063.0",

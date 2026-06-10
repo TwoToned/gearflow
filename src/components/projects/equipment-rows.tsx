@@ -401,7 +401,7 @@ export function GroupRow({
   const rejectionClasses = isRejectedDropTarget
     ? "border-l-2 border-l-red-500 cursor-not-allowed"
     : "";
-  const shortcuts = useRowShortcuts({ e: onEdit, m: onMove, d: onDelete });
+  const shortcuts = useRowShortcuts({ e: onEdit, m: onMove, d: onDelete }, "equipment");
 
   return (
     <TableRow
@@ -570,7 +570,7 @@ export function SubHireGroupRow({
   const rejectionClasses = isRejectedDropTarget
     ? "border-l-2 border-l-red-500 cursor-not-allowed"
     : "";
-  const shortcuts = useRowShortcuts({ e: onEdit, m: onMove });
+  const shortcuts = useRowShortcuts({ e: onEdit, m: onMove }, "equipment");
 
   return (
     <TableRow
@@ -827,7 +827,7 @@ export function LineItemRow({
   // pick (an item with no group is still meaningful). Group moves
   // need the explicit kebab path. Matches the precedent set by
   // category-only being the default destination state.
-  const shortcuts = useRowShortcuts({ e: onEdit, m: onMoveToCategory, d: onRemove });
+  const shortcuts = useRowShortcuts({ e: onEdit, m: onMoveToCategory, d: onRemove }, "equipment");
 
   return (
     <>

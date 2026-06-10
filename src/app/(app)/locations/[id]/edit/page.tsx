@@ -8,6 +8,7 @@ import { getLocation } from "@/server/locations";
 import { LocationForm } from "@/components/locations/location-form";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { FadeIn } from "@/components/ui/motion";
+import { FormSkeleton } from "@/components/ui/skeleton";
 import type { LocationFormValues } from "@/lib/validations/asset";
 
 export default function EditLocationPage({ params }: { params: Promise<{ id: string }> }) {
@@ -20,7 +21,7 @@ export default function EditLocationPage({ params }: { params: Promise<{ id: str
     queryFn: () => getLocation(id),
   });
 
-  if (isLoading) return <div className="text-fg-3">Loading...</div>;
+  if (isLoading) return <FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>;
   if (!location) return <div className="text-fg-3">Location not found.</div>;
 
   const initialData: LocationFormValues & { id: string } = {

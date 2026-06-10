@@ -20,6 +20,7 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { getProject } from "@/server/projects";
 import { getProjectServices } from "@/server/project-services";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { SERVICE_STATUS_LABELS } from "@/lib/constants/services";
 import { FadeIn, StaggerList, StaggerItem } from "@/components/ui/motion";
 import { cn } from "@/lib/utils";
@@ -144,11 +145,19 @@ export default function RunsheetPage({
             </Link>
             <div className="min-w-0 flex-1">
               <h1 className="text-base font-bold text-fg truncate">
-                {project?.name || "Loading..."}
+                {project?.name ?? (
+                  <Skeleton className="inline-block h-4 w-36 max-w-full align-middle rounded" />
+                )}
               </h1>
               <p className="text-xs text-fg-3">
-                {project?.projectNumber}
-                {project?.location && ` · ${(project.location as { name: string }).name}`}
+                {project ? (
+                  <>
+                    {project.projectNumber}
+                    {project.location && ` · ${(project.location as { name: string }).name}`}
+                  </>
+                ) : (
+                  <Skeleton className="inline-block h-3 w-24 align-middle rounded" />
+                )}
               </p>
             </div>
           </div>
@@ -169,15 +178,15 @@ export default function RunsheetPage({
           )}
         </div>
 
-        {/* Loading state */}
+        {/* Loading state — runsheet-shaped skeleton (date header + service cards) */}
         {isLoading && (
           <div className="space-y-6 pt-6">
             {[1, 2].map((i) => (
               <div key={i} className="space-y-3">
-                <div className="h-3 w-32 rounded bg-bg-inset animate-pulse" />
+                <Skeleton className="h-3 w-32 rounded" />
                 <div className="space-y-2">
-                  <div className="h-20 rounded-md bg-bg-inset animate-pulse" />
-                  <div className="h-20 rounded-md bg-bg-inset animate-pulse" />
+                  <Skeleton className="h-20 rounded-md" />
+                  <Skeleton className="h-20 rounded-md" />
                 </div>
               </div>
             ))}

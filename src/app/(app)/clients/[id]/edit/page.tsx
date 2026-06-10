@@ -7,6 +7,7 @@ import { getClient } from "@/server/clients";
 import { ClientForm } from "@/components/clients/client-form";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { FadeIn } from "@/components/ui/motion";
+import { FormSkeleton } from "@/components/ui/skeleton";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -27,7 +28,7 @@ export default function EditClientPage({ params }: { params: Promise<{ id: strin
     queryFn: () => getClient(id),
   });
 
-  if (isLoading) return <div className="text-fg-3">Loading...</div>;
+  if (isLoading) return <FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>;
   if (!client) return <div className="text-fg-3">Client not found.</div>;
 
   const initialData: ClientFormValues & { id: string } = {

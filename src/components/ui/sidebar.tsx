@@ -514,7 +514,12 @@ function SidebarMenuButton({
     defaultTagName: "button",
     props: mergeProps<"button">(
       {
-        className: cn(sidebarMenuButtonVariants({ variant, size }), className),
+        className: cn(
+          sidebarMenuButtonVariants({ variant, size }),
+          // Ensure ≥44px touch targets on mobile while keeping desktop compact.
+          isMobile && "min-h-11 py-2.5",
+          className
+        ),
       },
       props
     ),

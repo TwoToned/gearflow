@@ -120,6 +120,16 @@ to "Move to category". On `LineItemRow`, `m` binds to "Move to
 category" — the broader, lossless pick. Group moves need the explicit
 kebab path.
 
+The hook takes an optional second `scope` argument (`useRowShortcuts(cbs,
+"equipment")`); when set it only fires while an element with the matching
+`data-shortcut-scope` attribute is in the DOM. The equipment table wrapper in
+`equipment-tab.tsx` carries `data-shortcut-scope="equipment"`, so these
+single-key actions stay scoped to that table and don't leak onto other pages.
+The hook also accepts an optional `c` callback (copy/close) for rows that have a
+natural such action — currently unbound here, as equipment rows have none. The
+same `scope` mechanism exists on the global `useKeyboardShortcut` hook
+(`src/hooks/use-keyboard-shortcut.ts`) as an optional 4th argument.
+
 ## Dialogs
 
 All under `src/components/projects/`:

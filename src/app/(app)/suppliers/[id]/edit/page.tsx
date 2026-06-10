@@ -8,6 +8,7 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { getSupplierById } from "@/server/suppliers";
 import { SupplierForm } from "@/components/suppliers/supplier-form";
 import { FadeIn } from "@/components/ui/motion";
+import { FormSkeleton } from "@/components/ui/skeleton";
 
 export default function EditSupplierPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -19,7 +20,7 @@ export default function EditSupplierPage({ params }: { params: Promise<{ id: str
     queryFn: () => getSupplierById(id),
   });
 
-  if (isLoading) return <div className="text-fg-3">Loading...</div>;
+  if (isLoading) return <FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>;
   if (!supplier) return <div className="text-fg-3">Supplier not found.</div>;
 
   return (

@@ -21,6 +21,11 @@ shadcn/ui v4 uses Base UI, which uses `render` prop for composition (NOT Radix's
 - **AddressInput** (`src/components/ui/address-input.tsx`) — Text input with Google Places API (New) autocomplete. Shows suggestions as user types (debounced 300ms, min 3 chars). On selection, fires `onPlaceSelect` with lat/lng. Freeform text clears coordinates. Shows teal MapPin icon when geocoded. Use with `Controller` from React Hook Form.
 - **AddressMap** (`src/components/ui/address-map.tsx`) — Google Maps via `@vis.gl/react-google-maps` with teal `AdvancedMarker`. Dynamic import (no SSR). Built-in dark/light mode via `colorScheme`. Shows "Get Directions" link (Google Maps / Apple Maps). Props: `latitude`, `longitude`, `address`, `label`, `height`, `zoom`, `interactive`, `showDirectionsLink`.
 - **AddressDisplay** (`src/components/ui/address-display.tsx`) — Conditional wrapper: renders `AddressMap` if coordinates exist, plain text if only address, nothing if empty. Use on all detail pages. Props: `address`, `latitude`, `longitude`, `label`, `compact` (150px non-interactive map for cards).
+- **Skeletons** (`src/components/ui/skeleton.tsx`) — design-system shimmer placeholders. Base `Skeleton` plus shape presets `TableSkeleton`, `CardSkeleton`, `DetailPageSkeleton`, `FormSkeleton`, `ListPageSkeleton`. **Prefer these over bare "Loading…" text or ad-hoc `animate-pulse` divs** when a page's shape is known: form/edit pages use `FormSkeleton`, list pages `ListPageSkeleton`, detail pages `DetailPageSkeleton`. Match the page's own layout — e.g. the mobile runsheet uses shape-appropriate `Skeleton` blocks rather than the (card-grid) `DetailPageSkeleton`.
+
+## Providers
+- **BrandingProvider** (`src/components/providers/branding-provider.tsx`) — applies per-org primary-color palette overrides.
+- **MiraContextProvider** (`src/components/providers/mira-context-provider.tsx`) — lightweight client context for Mira (AI assistant) state (`open`, `pageContext`); `useMira()` reads it (returns `null` if unmounted). Mounted in the app layout inside `BrandingProvider`. Kept trivial so it never blocks paint — defer the heavy assistant UI at its own mount point rather than wrapping the app in an `ssr:false` dynamic boundary (which would drop SSR for the whole subtree).
 
 ## Layout Primitives
 

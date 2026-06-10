@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { toast } from "sonner";
 import { ChevronRight, Loader2 } from "lucide-react";
 
@@ -52,7 +53,7 @@ function NewTestTagAssetInner() {
     },
   });
 
-  const peekQuery = useQuery({
+  const peekQuery = useServerQuery({
     queryKey: ["peek-test-tag-ids", orgId],
     queryFn: () => peekNextTestTagIds(1),
   });

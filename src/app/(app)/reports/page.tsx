@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import Link from "next/link";
 import {
   Package,
@@ -90,7 +91,7 @@ export default function ReportsPage() {
     title: string;
   } | null>(null);
 
-  const { data: summary, isLoading: summaryLoading } = useQuery({
+  const { data: summary, isLoading: summaryLoading } = useServerQuery({
     queryKey: ["reports-summary", orgId],
     queryFn: getReportsSummary,
   });

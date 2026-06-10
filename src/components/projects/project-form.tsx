@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { Loader2, X, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 
@@ -84,11 +85,10 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp, initialMa
 
   // When creating a project and the org has auto project numbers configured,
   // preview the next code so the user can leave the field blank.
-  const { data: nextProjectNumber } = useQuery({
+  const { data: nextProjectNumber } = useServerQuery({
     queryKey: ["project-number-next", orgId],
     queryFn: () => peekNextProjectNumber(),
     enabled: !isTemplate && !isEditing && !!orgId,
-    staleTime: 30_000,
   });
   const [quickCreateClientOpen, setQuickCreateClientOpen] = useState(false);
   const [quickCreateLocationOpen, setQuickCreateLocationOpen] = useState(false);

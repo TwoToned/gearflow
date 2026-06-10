@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import {
   Copy,
   Eye,
@@ -90,7 +91,7 @@ export default function WooCommerceSettingsPage() {
     enabled: !!orgId,
   });
 
-  const { data: metaKeys } = useQuery({
+  const { data: metaKeys } = useServerQuery({
     queryKey: ["woocommerce-meta-keys", orgId],
     queryFn: () => getLastPayloadMetaKeys(),
     enabled: !!orgId && showMetaDetect,

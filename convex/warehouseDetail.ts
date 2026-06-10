@@ -67,23 +67,33 @@ export const listVersion = query({
       (p) => p.isTemplate !== true && WAREHOUSE_STATUSES.has(p.status ?? ""),
     );
 
-    // The card renders `project.client.name` (a cross-domain join in getProjects),
-    // and clients are dual-written to Convex but a client rename does NOT touch the
-    // project row — so fold the referenced clients' name into the signature, or a
-    // cross-user rename would leave the card stale until a separate project change
-    // (codex review). Resolve only the distinct clientIds the pipeline references.
-    const clientIds = [...new Set(pipeline.map((p) => p.clientId).filter(Boolean) as string[])];
-    const clientDocs = await Promise.all(
-      clientIds.map((id) =>
-        ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", id)).unique(),
-      ),
-    );
-    const clientName = new Map(clientDocs.filter(Boolean).map((c) => [c!.id, c!.name ?? ""]));
+    // getProjects' dependencies beyond the project row are TWO cross-domain joins
+    // that don't touch the project row when they change (so project.updatedAt won't
+    // move): the displayed `client.name`, and `location.name` which getProjects'
+    // SEARCH matches on (`OR: [{ name }, { projectNumber }, { location: { name } }]`).
+    // project.name/projectNumber ARE on the project row → covered by updatedAt. Both
+    // clients and locations are dual-written, so fold their names in — else a
+    // cross-user client/location rename leaves the (possibly search-filtered) list
+    // stale until a separate project change (codex review, both flagged P2). This
+    // CLOSES the getProjects dependency set; resolve only the distinct ids referenced.
+    const resolveNames = async (table: "clients" | "locations", ids: (string | undefined)[]) => {
+      const unique = [...new Set(ids.filter(Boolean) as string[])];
+      const docs = await Promise.all(
+        unique.map((id) =>
+          ctx.db.query(table).withIndex("by_cuid", (q) => q.eq("id", id)).unique(),
+        ),
+      );
+      return new Map(docs.filter(Boolean).map((d) => [d!.id, d!.name ?? ""]));
+    };
+    const [clientName, locationName] = await Promise.all([
+      resolveNames("clients", pipeline.map((p) => p.clientId)),
+      resolveNames("locations", pipeline.map((p) => p.locationId)),
+    ]);
 
     const sig = pipeline
       .map(
         (p) =>
-          `${p.id}:${p.status ?? ""}:${p.rentalStartDate ?? ""}:${p.rentalEndDate ?? ""}:${p.clientId ?? ""}:${p.clientId ? (clientName.get(p.clientId) ?? "") : ""}:${p.updatedAt ?? p._creationTime}`,
+          `${p.id}:${p.status ?? ""}:${p.rentalStartDate ?? ""}:${p.rentalEndDate ?? ""}:${p.clientId ?? ""}:${p.clientId ? (clientName.get(p.clientId) ?? "") : ""}:${p.locationId ? (locationName.get(p.locationId) ?? "") : ""}:${p.updatedAt ?? p._creationTime}`,
       )
       .sort()
       .join("|");

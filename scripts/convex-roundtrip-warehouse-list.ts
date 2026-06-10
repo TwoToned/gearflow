@@ -7,12 +7,14 @@
  *   1. listVersion() is browser-readable (user token, same org) and returns a vector.
  *   2. creating a project in a warehouse-pipeline status (CONFIRMED) changes it.
  *   3. an in-place status flip within the pipeline (CONFIRMED → PREPPING) changes it.
- *   4. ★ renaming the referenced CLIENT (project row untouched) changes it — the
- *      codex-review fix (the card renders client.name, a cross-domain join).
- *   5. leaving the pipeline (PREPPING → COMPLETED) changes it (the card disappears).
- *   6. ★ a change between two NON-pipeline statuses (COMPLETED → INVOICED) does NOT
+ *   4. ★ renaming the referenced CLIENT (project row untouched) changes it — codex
+ *      fix #1 (the card renders client.name, a cross-domain join).
+ *   5. ★ renaming the referenced LOCATION (project row untouched) changes it — codex
+ *      fix #2 (getProjects' search matches location.name, a cross-domain join).
+ *   6. leaving the pipeline (PREPPING → COMPLETED) changes it (the card disappears).
+ *   7. ★ a change between two NON-pipeline statuses (COMPLETED → INVOICED) does NOT
  *      change it — the tight-scope proof (no over-eager refresh for off-list projects).
- *   7. a user token for a DIFFERENT org is rejected (org scoping).
+ *   8. a user token for a DIFFERENT org is rejected (org scoping).
  *
  * The synthetic project is removed in `finally` (idempotent).
  *
@@ -64,6 +66,7 @@ async function main() {
 
   const rtProjectId = `rt-proj-${createId()}`;
   const rtClientId = `rt-client-${createId()}`;
+  const rtLocationId = `rt-loc-${createId()}`;
 
   const ver = () =>
     userClient.query(api.warehouseDetail.listVersion, { orgId }) as Promise<Vector>;
@@ -73,6 +76,11 @@ async function main() {
       id: rtClientId,
       organizationId: orgId,
       name: "RT Client A",
+    });
+    await svc.mutation(api.locations.create, {
+      id: rtLocationId,
+      organizationId: orgId,
+      name: "RT Location A",
     });
 
     const v0 = await ver();
@@ -86,6 +94,7 @@ async function main() {
       name: "Roundtrip Warehouse Project",
       status: "CONFIRMED",
       clientId: rtClientId,
+      locationId: rtLocationId,
       updatedAt: Date.now(),
     });
     const v1 = await ver();
@@ -100,12 +109,18 @@ async function main() {
     // renders client.name, so the vector must move.
     await svc.mutation(api.clients.update, { id: rtClientId, patch: { name: "RT Client B" } });
     const v2b = await ver();
-    check("renaming the referenced client changes the vector (codex fix)", !!v2 && !!v2b && v2b.projects !== v2.projects);
+    check("renaming the referenced client changes the vector (codex fix #1)", !!v2 && !!v2b && v2b.projects !== v2.projects);
 
-    // (5) leaving the pipeline (card disappears).
+    // (5) ★ codex fix #2: rename the LOCATION (project row untouched) → getProjects'
+    // search matches location.name, so the vector must move.
+    await svc.mutation(api.locations.update, { id: rtLocationId, patch: { name: "RT Location B" } });
+    const v2c = await ver();
+    check("renaming the referenced location changes the vector (codex fix #2)", !!v2b && !!v2c && v2c.projects !== v2b.projects);
+
+    // (6) leaving the pipeline (card disappears).
     await svc.mutation(api.projects.update, { id: rtProjectId, patch: { status: "COMPLETED" } });
     const v3 = await ver();
-    check("PREPPING → COMPLETED (leaves the list) changes the vector", !!v2b && !!v3 && v3.projects !== v2b.projects);
+    check("PREPPING → COMPLETED (leaves the list) changes the vector", !!v2c && !!v3 && v3.projects !== v2c.projects);
 
     // (6) ★ tight-scope: two non-pipeline statuses → NO change.
     await svc.mutation(api.projects.update, { id: rtProjectId, patch: { status: "INVOICED" } });
@@ -126,6 +141,7 @@ async function main() {
   } finally {
     await svc.mutation(api.projects.remove, { id: rtProjectId }).catch(() => {});
     await svc.mutation(api.clients.remove, { id: rtClientId }).catch(() => {});
+    await svc.mutation(api.locations.remove, { id: rtLocationId }).catch(() => {});
   }
 
   const passed = results.filter(Boolean).length;

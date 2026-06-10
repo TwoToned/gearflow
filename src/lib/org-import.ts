@@ -17,6 +17,7 @@ import {
 import { mirrorLineItemRow } from "@/lib/line-item-mirror";
 import { mirrorSupplierOrderCreate, mirrorSupplierOrderItemCreate } from "@/lib/sub-hire-mirror";
 import { mirrorProjectCreate } from "@/lib/project-mirror";
+import { mirrorMediaCreate, type MediaKind } from "@/lib/media-mirror";
 import {
   mirrorModelCheckItemCreate,
   mirrorKitCheckItemCreate,
@@ -758,7 +759,7 @@ export async function importOrganization(
       const fkId = remap(fkEntity, r[fkField]);
       const fileId = remap("fileUpload", r.fileId);
       if (!fkId || !fileId) continue;
-      await create({
+      const created = await create({
         ...stripRelations(r),
         id: createId(),
         organizationId: newOrgId,
@@ -766,6 +767,9 @@ export async function importOrganization(
         fileId,
         createdAt: safeDate(r.createdAt),
       });
+      // Mirror to Convex (the *_media tables are dual-written). fkEntity is one
+      // of model/asset/kit/project/client/location — all MediaKind values.
+      await mirrorMediaCreate(fkEntity as MediaKind, created as Record<string, unknown>);
     }
   }
 

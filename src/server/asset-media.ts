@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { mirrorFileUploadDelete } from "@/lib/file-upload-mirror";
+import { mirrorMediaCreate, syncMediaForParent } from "@/lib/media-mirror";
 import { getOrgContext } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { deleteFromS3 } from "@/lib/storage";
@@ -51,6 +52,8 @@ export async function addAssetMedia(data: {
     include: { file: true },
   });
 
+  await mirrorMediaCreate("asset", media);
+
   return serialize(media);
 }
 
@@ -92,6 +95,10 @@ export async function removeAssetMedia(mediaId: string) {
       });
     }
   }
+
+  // Reconcile the asset's media into Convex (removes the deleted row, upserts
+  // the newly-promoted primary).
+  await syncMediaForParent("asset", organizationId, assetId);
 }
 
 export async function setAssetPrimaryPhoto(assetId: string, mediaId: string) {
@@ -112,6 +119,8 @@ export async function setAssetPrimaryPhoto(assetId: string, mediaId: string) {
       data: { isPrimary: true },
     }),
   ]);
+
+  await syncMediaForParent("asset", organizationId, assetId);
 }
 
 export async function getAssetMedia(assetId: string) {

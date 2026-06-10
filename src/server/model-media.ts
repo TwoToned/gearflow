@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { mirrorFileUploadDelete } from "@/lib/file-upload-mirror";
+import { mirrorMediaCreate, syncMediaForParent } from "@/lib/media-mirror";
 import { getOrgContext } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { deleteFromS3 } from "@/lib/storage";
@@ -55,6 +56,8 @@ export async function addModelMedia(data: {
     include: { file: true },
   });
 
+  await mirrorMediaCreate("model", media);
+
   return serialize(media);
 }
 
@@ -99,6 +102,10 @@ export async function removeModelMedia(mediaId: string) {
       });
     }
   }
+
+  // Reconcile the model's media into Convex (removes the deleted row, upserts
+  // the newly-promoted primary).
+  await syncMediaForParent("model", organizationId, modelId);
 }
 
 export async function setModelPrimaryPhoto(modelId: string, mediaId: string) {
@@ -121,6 +128,8 @@ export async function setModelPrimaryPhoto(modelId: string, mediaId: string) {
       data: { isPrimary: true },
     }),
   ]);
+
+  await syncMediaForParent("model", organizationId, modelId);
 }
 
 export async function reorderModelMedia(modelId: string, orderedIds: string[]) {
@@ -140,6 +149,8 @@ export async function reorderModelMedia(modelId: string, orderedIds: string[]) {
       })
     )
   );
+
+  await syncMediaForParent("model", organizationId, modelId);
 }
 
 export async function getModelMedia(modelId: string) {

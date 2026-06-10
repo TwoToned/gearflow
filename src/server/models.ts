@@ -4,6 +4,7 @@ import { type FunctionArgs } from "convex/server";
 import { prisma } from "@/lib/prisma";
 import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { removeAssetFromConvex, removeBulkAssetFromConvex } from "@/lib/asset-mirror";
+import { getPrimaryPhotoMap } from "@/lib/media-read";
 import { api } from "../../convex/_generated/api";
 import { serialize } from "@/lib/serialize";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
@@ -109,27 +110,26 @@ export async function getModels(params?: {
 
 /**
  * Per-model asset/bulk-asset counts + primary photo (modelId -> meta).
- * Cross-domain: assets, bulk assets, and model media still live in Prisma, so
- * this can't come from Convex. Used by the reactive model table, which subscribes
- * to the model list via Convex and merges these (non-reactive) values in.
+ * Cross-domain: assets + bulk assets still live in Prisma (counts come off the
+ * fresh mirror); the primary photo comes off the Convex `modelMedia` +
+ * `fileUploads` mirror via getPrimaryPhotoMap (Phase 6 decommission — model_media
+ * is now dual-written). Used by the reactive model table, which subscribes to the
+ * model list via Convex and merges these (non-reactive) values in.
  */
 export async function getModelCounts(): Promise<
   Record<string, { assets: number; bulkAssets: number; media: { url: string | null; thumbnailUrl: string | null } | null }>
 > {
   const { organizationId } = await getOrgContext();
-  const [assetGroups, bulkGroups, primaryMedia] = await Promise.all([
+  const [assetGroups, bulkGroups, photoMap] = await Promise.all([
     prisma.asset.groupBy({ by: ["modelId"], where: { organizationId, isActive: true }, _count: { _all: true } }),
     prisma.bulkAsset.groupBy({ by: ["modelId"], where: { organizationId, isActive: true }, _count: { _all: true } }),
-    prisma.modelMedia.findMany({
-      where: { model: { organizationId }, type: "PHOTO", isPrimary: true },
-      select: { modelId: true, file: { select: { url: true, thumbnailUrl: true } } },
-    }),
+    getPrimaryPhotoMap("model", organizationId),
   ]);
   const out: Record<string, { assets: number; bulkAssets: number; media: { url: string | null; thumbnailUrl: string | null } | null }> = {};
   const ensure = (id: string) => (out[id] ??= { assets: 0, bulkAssets: 0, media: null });
   for (const g of assetGroups) if (g.modelId) ensure(g.modelId).assets = g._count._all;
   for (const g of bulkGroups) if (g.modelId) ensure(g.modelId).bulkAssets = g._count._all;
-  for (const m of primaryMedia) ensure(m.modelId).media = { url: m.file?.url ?? null, thumbnailUrl: m.file?.thumbnailUrl ?? null };
+  for (const [modelId, meta] of Object.entries(photoMap)) ensure(modelId).media = meta;
   return serialize(out);
 }
 

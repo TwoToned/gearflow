@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { mirrorFileUploadDelete } from "@/lib/file-upload-mirror";
+import { mirrorMediaCreate, syncMediaForParent } from "@/lib/media-mirror";
 import { getOrgContext } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { deleteFromS3 } from "@/lib/storage";
@@ -42,6 +43,8 @@ export async function addLocationMedia(data: {
     include: { file: true },
   });
 
+  await mirrorMediaCreate("location", media);
+
   return serialize(media);
 }
 
@@ -67,4 +70,6 @@ export async function removeLocationMedia(mediaId: string) {
   }
   await prisma.fileUpload.delete({ where: { id: media.fileId } });
   await mirrorFileUploadDelete(media.fileId);
+
+  await syncMediaForParent("location", organizationId, media.locationId);
 }

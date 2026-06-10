@@ -15,6 +15,7 @@ import {
   syncAssetsToConvex,
 } from "@/lib/asset-mirror";
 import { getSupplierById } from "@/lib/suppliers-read";
+import { getPrimaryPhotoMaps } from "@/lib/media-read";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
 import { validateCustomFieldValues } from "@/lib/validations/custom-field";
@@ -210,34 +211,24 @@ export async function getAsset(id: string) {
 }
 
 /**
- * Primary photos for the reactive registry table (cross-domain — asset_media /
- * model_media / file_upload all live in Prisma). Returns two maps: per-assetId
- * (the asset's own primary photo) and per-modelId (the model's primary photo,
- * used as a fallback). The reactive table subscribes to assets/bulkAssets via
- * Convex and merges these (non-reactive) photos in: photo = assetPhotos[a.id] ??
- * modelPhotos[a.modelId]. Model name / category / location resolve from the
- * Convex models/categories/locations the table already loads.
+ * Primary photos for the reactive registry table. Both maps now come off the
+ * Convex `assetMedia` / `modelMedia` + `fileUploads` mirror via getPrimaryPhotoMap
+ * (Phase 6 decommission — those tables are now dual-written). Returns two maps:
+ * per-assetId (the asset's own primary photo) and per-modelId (the model's
+ * primary photo, used as a fallback). The reactive table subscribes to
+ * assets/bulkAssets via Convex and merges these (non-reactive) photos in:
+ * photo = assetPhotos[a.id] ?? modelPhotos[a.modelId]. Model name / category /
+ * location resolve from the Convex models/categories/locations the table already
+ * loads.
  */
 export async function getAssetRegistryPhotos(): Promise<{
   assetPhotos: Record<string, { url: string | null; thumbnailUrl: string | null }>;
   modelPhotos: Record<string, { url: string | null; thumbnailUrl: string | null }>;
 }> {
   const { organizationId } = await getOrgContext();
-  const [assetMedia, modelMedia] = await Promise.all([
-    prisma.assetMedia.findMany({
-      where: { asset: { organizationId }, type: "PHOTO", isPrimary: true },
-      select: { assetId: true, file: { select: { url: true, thumbnailUrl: true } } },
-    }),
-    prisma.modelMedia.findMany({
-      where: { model: { organizationId }, type: "PHOTO", isPrimary: true },
-      select: { modelId: true, file: { select: { url: true, thumbnailUrl: true } } },
-    }),
-  ]);
-  const assetPhotos: Record<string, { url: string | null; thumbnailUrl: string | null }> = {};
-  const modelPhotos: Record<string, { url: string | null; thumbnailUrl: string | null }> = {};
-  for (const m of assetMedia) assetPhotos[m.assetId] = { url: m.file?.url ?? null, thumbnailUrl: m.file?.thumbnailUrl ?? null };
-  for (const m of modelMedia) modelPhotos[m.modelId] = { url: m.file?.url ?? null, thumbnailUrl: m.file?.thumbnailUrl ?? null };
-  return serialize({ assetPhotos, modelPhotos });
+  // One shared fileUploads collect for both maps (asset + model).
+  const maps = await getPrimaryPhotoMaps(["asset", "model"], organizationId);
+  return serialize({ assetPhotos: maps.asset, modelPhotos: maps.model });
 }
 
 export async function createAsset(data: AssetFormValues) {

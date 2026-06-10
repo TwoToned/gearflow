@@ -30,6 +30,7 @@
     "convex:backfill:categories": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-categories.ts",
     "convex:backfill:check-items": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-check-items.ts",
     "convex:backfill:check-item-assignments": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-check-item-assignments.ts",
+    "convex:backfill:media": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-media.ts",
     "convex:backfill:test-profiles": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-test-profiles.ts",
     "convex:backfill:brand-templates": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-brand-templates.ts",
     "convex:backfill:group-templates": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-group-templates.ts",

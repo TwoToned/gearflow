@@ -27,6 +27,8 @@ import {
 } from "@/lib/kit-mirror";
 import { syncAssetsToConvex, syncBulkAssetsToConvex } from "@/lib/asset-mirror";
 import { removeKitCheckItemFromConvex } from "@/lib/check-item-assignment-mirror";
+import { syncMediaForParent } from "@/lib/media-mirror";
+import { getPrimaryPhotoMap } from "@/lib/media-read";
 
 const kitFilterColumns: FilterColumnDef[] = [
   { id: "status", filterType: "enum" },
@@ -123,28 +125,27 @@ export async function getKits(params?: {
 
 /**
  * Per-kit member-item counts + primary photo (kitId -> meta).
- * Cross-domain for the photo (kit_media + file_upload still live in Prisma); the
- * item counts come from the dual-write-fresh Prisma mirror. Used by the reactive
- * kit table, which subscribes to the kit list via Convex and merges these
- * (non-reactive) values in. Excludes prep-kits (isPrep) to match the kit list.
+ * Cross-domain for the counts (kit member tables come off the fresh Prisma
+ * mirror); the primary photo comes off the Convex `kitMedia` + `fileUploads`
+ * mirror via getPrimaryPhotoMap (Phase 6 decommission — kit_media is now
+ * dual-written). Used by the reactive kit table, which subscribes to the kit
+ * list via Convex and merges these (non-reactive) values in. Excludes prep-kits
+ * (isPrep) to match the kit list.
  */
 export async function getKitCounts(): Promise<
   Record<string, { serializedItems: number; bulkItems: number; media: { url: string | null; thumbnailUrl: string | null } | null }>
 > {
   const { organizationId } = await getOrgContext();
-  const [serializedGroups, bulkGroups, primaryMedia] = await Promise.all([
+  const [serializedGroups, bulkGroups, photoMap] = await Promise.all([
     prisma.kitSerializedItem.groupBy({ by: ["kitId"], where: { organizationId }, _count: { _all: true } }),
     prisma.kitBulkItem.groupBy({ by: ["kitId"], where: { organizationId }, _count: { _all: true } }),
-    prisma.kitMedia.findMany({
-      where: { kit: { organizationId }, type: "PHOTO", isPrimary: true },
-      select: { kitId: true, file: { select: { url: true, thumbnailUrl: true } } },
-    }),
+    getPrimaryPhotoMap("kit", organizationId),
   ]);
   const out: Record<string, { serializedItems: number; bulkItems: number; media: { url: string | null; thumbnailUrl: string | null } | null }> = {};
   const ensure = (id: string) => (out[id] ??= { serializedItems: 0, bulkItems: 0, media: null });
   for (const g of serializedGroups) if (g.kitId) ensure(g.kitId).serializedItems = g._count._all;
   for (const g of bulkGroups) if (g.kitId) ensure(g.kitId).bulkItems = g._count._all;
-  for (const m of primaryMedia) ensure(m.kitId).media = { url: m.file?.url ?? null, thumbnailUrl: m.file?.thumbnailUrl ?? null };
+  for (const [kitId, meta] of Object.entries(photoMap)) ensure(kitId).media = meta;
   return serialize(out);
 }
 
@@ -475,11 +476,13 @@ export async function deleteKit(id: string) {
   });
 
   // Mirror the hard delete to Convex (member items + check items first, then the
-  // kit). kit_media stays Prisma-only, so it needs no Convex cleanup here. The
+  // kit). kit_media is dual-written, so reconcile it too (Prisma rows for this
+  // kit are gone → all of the kit's Convex kitMedia rows are removed). The
   // released assets / restored bulk quantities are reactive too.
   for (const item of kit.serializedItems) await removeKitSerializedItemFromConvex(item.id);
   for (const item of kit.bulkItems) await removeKitBulkItemFromConvex(item.id);
   for (const row of kitCheckItemRows) await removeKitCheckItemFromConvex(row.id);
+  await syncMediaForParent("kit", organizationId, id);
   await removeKitFromConvex(id);
   await syncAssetsToConvex(kit.serializedItems.map((i) => i.assetId));
   await syncBulkAssetsToConvex(kit.bulkItems.map((i) => i.bulkAssetId));

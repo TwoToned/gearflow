@@ -1017,6 +1017,56 @@ proving the attached model/category/supplier match a direct Prisma join (5/5 mod
 supplier exact). `prisma.supplier.*` / `prisma.model.*` cross-domain reads remaining
 in app code are now only warehouse (deferred) + the dual-write sources.
 
+### Warehouse line-item trees decommissioned — ★ line-item-tree dimension COMPLETE ★ (session 2026-06-10d)
+
+The two deferred warehouse readers — `server/warehouse.ts` `getProjectForWarehouse`
+(3-deep) + `getProjectPullSheet` (3-deep) — are now off the Prisma mirror, finishing
+the nested supplier+model+category line-item-tree dimension. Both drop their
+`model` + `supplier` includes and attach from Convex via `attachLineItemTree`
+(reusing the helper from the previous session — `getProjectPullSheet`'s `model.category`
+now comes off the mirror too). `kit` stays a Prisma join in both: the attach helper
+never touches it, and `getProjectForWarehouse`'s `kit._count.kitCheckItems` reads a
+table (`kit_check_item`) that, like `model_check_item`, is not dual-written.
+
+**The `model._count.modelCheckItems` graft (approach (a), codex-confirmed).**
+`model_check_item` is NOT dual-written to Convex, so the per-model check-item count
+that gates per-line check prompts (read by 8+ sites in
+`warehouse/[projectId]/page.tsx`, plus `warehouse-types.ts` + `item-check-form.tsx`)
+cannot come off the mirror. So model **scalars + category + supplier** come from
+Convex, but the **count stays sourced from Prisma**: one indexed grouped query
+(`prisma.modelCheckItem.groupBy({ by: ['modelId'], where: { organizationId,
+modelId: { in } }, _count: { _all: true } })` — `@@index([organizationId, modelId])`),
+then `attachModelCheckItemCounts` grafts `_count: { modelCheckItems: n }` back onto
+each Convex-attached `model` node (recursing children, absent → `0`, null model
+preserved). This keeps the warehouse payload byte-identical to the old
+`model: { ..., _count: { modelCheckItems } }` include. New pure helpers in
+[`src/lib/line-item-tree-read.ts`](../src/lib/line-item-tree-read.ts):
+`collectTreeModelIds`, `attachModelCheckItemCounts`, type `ModelWithCheckCount`;
+the `groupBy` lives in `warehouse.ts` `getModelCheckItemCountMap` (Prisma can't be
+imported into the pure module). Codex consult endorsed (a) over (b) (dual-writing
+model_check_item + kit_check_item first) — (a) keeps decommission scope tight,
+preserves payload compat, avoids hiding mirror misses, and leaves the config-ish
+check-item tables as a deliberate later migration.
+
+**The deferred-from-(a) split still holds:** `kit_check_item` count stays Prisma
+(kit kept a Prisma join), and `*_media` joins stay Prisma (not dual-written). When
+those tables are eventually mirrored, the `kit` join + the `model._count` graft can
+collapse fully onto Convex.
+
+Verified: tsc clean (also fixed a pre-existing type error in
+`line-item-tree-attach.test.ts` — `RawNode` intersected `Partial<DocumentLineItem>`'s
+`childLineItems` and forced children to be full `DocumentLineItem`; `Omit`'d the
+field), 2198 tests (2191 + 7 new in
+[`src/lib/line-item-tree-read.test.ts`](../src/lib/line-item-tree-read.test.ts)),
+0 new lint (8/344 baseline), `pnpm build` exit 0, codex diff review, + a live
+round-trip ([`scripts/convex-roundtrip-warehouse-tree.ts`](../scripts/convex-roundtrip-warehouse-tree.ts))
+proving model/category/supplier AND the grafted `_count.modelCheckItems` match the
+dropped Prisma joins/include (DB currently has 0 `model_check_item` rows, so the live
+count is 0==0; the non-zero graft is covered by the unit test). After this,
+**every line-item-tree reader is off the mirror** — the only remaining
+`prisma.model.*` / `prisma.supplier.*` cross-domain reads are the dual-write sources
+(`server/models.ts`, `server/suppliers.ts`) + `lib/org-import.ts` (mirror writes).
+
 ### SSE / EventEmitter teardown — NOT started (blocked on React Query removal)
 
 `src/hooks/use-realtime.ts` exists only to call React Query's
@@ -1076,7 +1126,7 @@ sessions.
 | **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets + file_upload + crew + doc/service-template + **Kit** + **Asset/Bulk** + **project_category/group** + **project_line_item** + **sub_hire/supplier_order families** + **project** + **crew scheduling sub-tables (infra-only)** dual-write done — CENTRAL GRAPH COMPLETE + DUAL-WRITE SURFACE COMPLETE) | per-domain backfill + cutover; tsc/tests/build green each |
 | **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields + crew + **Kit** + **Asset/Bulk registry** done) | table/dropdown/edit live-update on mutation |
 | **5 Auth bridge** ✅ | Better Auth → Convex ES256 JWT; user token (org-scoped reads) + service token (trusted backend); browser writes rejected | round-trip 6/6: rejected without a valid token, accepted with; `/cso` clean |
-| **6 Decommission** 🔄 | Rewire deferred mirror reads off Prisma + remove React Query + SSE event bus (truncate+backfill resync DONE; supplier FLAT reads rewired; **nested supplier+model+category in all line-item trees + PDF pipeline rewired** via `attachLineItemTree`; warehouse `_count` + `*_media` + SSE + React Query remain) | per-subsystem; tsc/tests/build green each. [FEATUREDOCS/53](./53-realtime-sync.md) to be marked superseded when SSE is torn out |
+| **6 Decommission** 🔄 | Rewire deferred mirror reads off Prisma + remove React Query + SSE event bus (truncate+backfill resync DONE; supplier FLAT reads rewired; **nested supplier+model+category in ALL line-item trees incl. warehouse + PDF pipeline rewired** via `attachLineItemTree` + the Prisma `model._count.modelCheckItems` graft — line-item-tree dimension COMPLETE; `*_media` + `kit_check_item`/`model_check_item` mirror + SSE + React Query remain) | per-subsystem; tsc/tests/build green each. [FEATUREDOCS/53](./53-realtime-sync.md) to be marked superseded when SSE is torn out |
 
 ## Conventions
 

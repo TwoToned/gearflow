@@ -1488,10 +1488,30 @@ async load), 0 new lint (normalized base-vs-HEAD compare), build exit 0.
 **NEXT = the reactive tail** (slower, ~1–3 conversions/session; needs reactive Convex `useQuery`
 hooks, NOT `useServerQuery`; the graph is fully dual-written so composites are possible):
 notifications (drop the 60s poll for a WS push — check the notifications table is dual-written
-first), the `client` / `location` / `bulk-asset` detail pages (rewire the child `queryKey`-prop
-invalidation to the reactive hook or a passed `refetch`), `stocktake*` + `crew-availability`
+first), the `client` / `location` / `bulk-asset` detail pages, `stocktake*` + `crew-availability`
 (scanner / scheduling live workflows), and the hard project / warehouse / dashboard detail
-composites. Auth/RBAC/platform datums (organization / custom-roles / members / sso-* / profile /
+composites.
+
+**Reactive-tail blocker confirmed (the detail-page coupling point).** The detail-page readers
+are NOT independent: `MediaUploader` (`src/components/media/media-uploader.tsx`) and `NotesEditor`
+(`src/components/ui/notes-editor.tsx`) are **shared write-components (9 consumers)** that take a
+`queryKey: unknown[]` prop and internally `useMutation` + `queryClient.invalidateQueries(queryKey)`
+after an upload / note-save. The keys passed are the detail pages' own reader keys —
+`["model"|"asset"|"kit"|"project"|"client"|"location"|"sub-hire", orgId, id]` — and several of
+those (`model`, `asset`, `kit`, `project`) are ALSO in the SSE `getInvalidationKeys` map, so the
+same key is the refresh channel for BOTH "refresh my view after my own write" (the child prop) AND
+cross-user SSE pushes. This means: (a) the SSE-keyed detail pages (model/asset/kit/project) are
+genuinely live and must become **reactive Convex `useQuery` hooks** (`useAsset`/`useKit`/`useModel`
+exist but return only the table doc — the detail pages compose cross-domain media + projects +
+sub-graphs, so they need hand-written composite Convex queries, NOT `useServerQuery`); (b) you
+canNOT convert one detail page in isolation — `MediaUploader`/`NotesEditor` must convert WITH the
+pages (replace the `queryKey` prop + internal invalidation with an `onChanged?: () => void`
+callback wired to the page's reactive refresh, and flip their own `useMutation` →
+`useServerMutation`), which touches all 9 consumers at once. Treat "detail pages + the two shared
+write-components" as ONE reactive-tail unit. `client`/`location` detail (keys not in the SSE map)
+are refreshed ONLY by the child prop today (same-view, no cross-user) so they could in principle go
+`useServerQuery` + `onChanged={refetch}` — but only after the shared-component API change, so they
+ride along with the same unit. Auth/RBAC/platform datums (organization / custom-roles / members / sso-* / profile /
 notifications-prefs / admin) stay Prisma forever — most become `useServerQuery` but check the
 same-view read+write `refetch` relationship first. SSE / `use-realtime.ts` teardown stays
 BLOCKED until RQ is FULLY gone.

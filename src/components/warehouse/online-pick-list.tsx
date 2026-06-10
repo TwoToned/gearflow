@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { Container, Check, Loader2 } from "lucide-react";
 import { getProjectPullSheet } from "@/server/warehouse";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -36,7 +36,7 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useServerQuery({
     queryKey: ["warehouse-pullsheet", orgId, projectId],
     queryFn: () => getProjectPullSheet(projectId),
   });

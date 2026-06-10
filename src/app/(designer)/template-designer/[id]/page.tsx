@@ -1,7 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { Loader2 } from "lucide-react";
 import { getTemplateForEditor } from "@/server/document-templates";
 import { TemplateEditor } from "@/components/settings/template-editor/template-editor";
@@ -21,7 +21,7 @@ export default function DesignerPage({
     data: template,
     isLoading,
     error,
-  } = useQuery({
+  } = useServerQuery({
     queryKey: ["template-editor", id],
     queryFn: () => getTemplateForEditor(id),
   });

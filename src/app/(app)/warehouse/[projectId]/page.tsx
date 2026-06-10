@@ -4,6 +4,7 @@ import { use, useState, useRef, useCallback, useMemo, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import {
   ScanBarcode,
   ChevronRight,
@@ -1228,10 +1229,9 @@ function WarehouseProjectPage({
   const lineItems = project ? (project.lineItems || []) as unknown as LineItem[] : [];
 
   // Fetch container assets from the configured case category
-  const { data: caseAssets } = useQuery({
+  const { data: caseAssets } = useServerQuery({
     queryKey: ["containerAssets", orgId],
     queryFn: () => searchContainerAssets(""),
-    staleTime: 60_000,
   });
 
   type ContainerAsset = { value: string; label: string; assetId?: string; assetTag?: string; modelId?: string };

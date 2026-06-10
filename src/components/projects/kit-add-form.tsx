@@ -11,7 +11,8 @@
  */
 
 import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { toast } from "sonner";
 
 import { addKitLineItem, checkKitAvailability } from "@/server/line-items";
@@ -77,7 +78,7 @@ export function KitAddForm({
       }));
   }, [kits, categories]);
 
-  const { data: kitAvailability } = useQuery({
+  const { data: kitAvailability } = useServerQuery({
     queryKey: ["kit-availability", orgId, selectedKitId, projectId],
     queryFn: () =>
       checkKitAvailability(

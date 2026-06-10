@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { Plus, AlertTriangle } from "lucide-react";
 
 import { getProjects, getProjectIssueFlags } from "@/server/projects";
@@ -265,7 +266,7 @@ export function ProjectTable() {
   const total = data?.total || 0;
 
   const projectIds = projects.map((p: AnyProject) => p.id);
-  const { data: issueFlags } = useQuery({
+  const { data: issueFlags } = useServerQuery({
     queryKey: ["project-issues", projectIds],
     queryFn: () => getProjectIssueFlags(projectIds),
     enabled: projectIds.length > 0,

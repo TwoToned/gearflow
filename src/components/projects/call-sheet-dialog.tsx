@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { Loader2, FileText, Calendar } from "lucide-react";
 import { toast } from "sonner";
 
@@ -67,7 +68,7 @@ export function CallSheetDialog({
     enabled: open,
   });
 
-  const datesQuery = useQuery({
+  const datesQuery = useServerQuery({
     queryKey: ["call-sheet-dates", projectId],
     queryFn: () => getCallSheetDates(projectId),
     enabled: open,

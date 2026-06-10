@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { toast } from "sonner";
 import { X, Camera } from "lucide-react";
 
@@ -62,7 +63,7 @@ export function MaintenanceForm({ initialData }: MaintenanceFormProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: assets } = useQuery({
+  const { data: assets } = useServerQuery({
     queryKey: ["maintenance-assets", orgId],
     queryFn: getAssetsForMaintenanceSelect,
   });

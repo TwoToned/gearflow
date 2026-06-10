@@ -2,7 +2,7 @@
 
 import { use } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { Edit, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +16,7 @@ import { DATA_SOURCE_LABELS, type ReportConfig, type DataSource } from "@/lib/re
 export default function SavedReportPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
 
-  const { data: report, isLoading } = useQuery({
+  const { data: report, isLoading } = useServerQuery({
     queryKey: ["saved-report", id],
     queryFn: () => getSavedReportById(id),
   });

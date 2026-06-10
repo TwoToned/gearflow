@@ -4,6 +4,7 @@ import { use, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import {
   Pencil,
   Archive,
@@ -147,10 +148,9 @@ export default function ProjectDetailPage({
     queryFn: () => getProject(id),
   });
 
-  const { data: customTemplates } = useQuery({
+  const { data: customTemplates } = useServerQuery({
     queryKey: ["document-templates-dropdown", orgId],
     queryFn: () => getPublishedTemplatesForDropdown(),
-    staleTime: 60_000,
   });
 
   const statusMutation = useMutation({

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { useRouter } from "next/navigation";
 import {
   ChevronLeft,
@@ -127,7 +127,7 @@ export function BookingCalendar({
     endDate: gridEnd.toISOString(),
   };
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useServerQuery({
     queryKey: ["bookings", orgId, entityType, entityId, format(currentMonth, "yyyy-MM")],
     queryFn: async () => {
       if (entityType === "model") {
@@ -143,7 +143,7 @@ export function BookingCalendar({
   });
 
   // For serialized assets: also fetch model-level bookings to show "model booked" days
-  const { data: modelData } = useQuery({
+  const { data: modelData } = useServerQuery({
     queryKey: ["bookings", orgId, "model-context", modelId, format(currentMonth, "yyyy-MM")],
     queryFn: () => getModelBookings(modelId!, dateRange),
     enabled: entityType === "asset" && !!modelId,

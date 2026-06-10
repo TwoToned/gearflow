@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { toast } from "sonner";
 import {
   Copy,
@@ -171,7 +172,7 @@ export default function DisplaySettingsPage() {
     queryFn: getDisplayTokens,
   });
 
-  const { data: locationsData } = useQuery({
+  const { data: locationsData } = useServerQuery({
     queryKey: ["locations-for-display"],
     queryFn: () => getLocations({ pageSize: 100, sortBy: "name" }),
   });

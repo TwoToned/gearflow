@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import {
   Loader2,
   ClipboardCheck,
@@ -37,7 +37,7 @@ export function AssetChecksTab({ assetId }: { assetId: string }) {
   const orgId = activeOrg?.id;
   const [filter, setFilter] = useState<ContextFilter>("ALL");
 
-  const { data: records = [], isLoading } = useQuery({
+  const { data: records = [], isLoading } = useServerQuery({
     queryKey: ["asset-check-history", orgId, assetId, filter],
     queryFn: () => getCheckHistory(assetId, filter === "ALL" ? undefined : filter),
   });

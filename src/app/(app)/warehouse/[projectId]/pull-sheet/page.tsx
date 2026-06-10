@@ -2,7 +2,7 @@
 
 import React, { use } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { ArrowLeft, Printer, Square, Container } from "lucide-react";
 
 import { getProjectPullSheet } from "@/server/warehouse";
@@ -122,7 +122,7 @@ export default function PullSheetPage({
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useServerQuery({
     queryKey: ["warehouse-pullsheet", orgId, projectId],
     queryFn: () => getProjectPullSheet(projectId),
   });

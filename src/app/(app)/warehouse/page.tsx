@@ -2,7 +2,9 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useReactiveServerQuery } from "@/hooks/use-reactive-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useWarehouseListVersion } from "@/hooks/use-warehouse";
 import {
   Warehouse as WarehouseIcon,
   CalendarDays,
@@ -131,11 +133,16 @@ export default function WarehousePage() {
   const [search, setSearch] = useState("");
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [selectedForClose, setSelectedForClose] = useState<Set<string>>(new Set());
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data, isLoading } = useQuery({
+  // Reactive composite: subscribe to the cheap Convex version vector (a signature
+  // over the org's warehouse-pipeline projects) and re-run the unchanged
+  // getProjects server action whenever any of them changes status/dates/client —
+  // cross-user over the WebSocket. See convex/warehouseDetail.ts.
+  const listVersion = useWarehouseListVersion(orgId);
+  const { data, isLoading, refetch } = useReactiveServerQuery({
+    watch: listVersion,
     queryKey: ["warehouse-projects", orgId, { search }],
     queryFn: () =>
       getProjects({
@@ -147,19 +154,19 @@ export default function WarehousePage() {
       }),
   });
 
-  const statusMutation = useMutation({
+  const statusMutation = useServerMutation({
     mutationFn: ({ id, status }: { id: string; status: "CHECKED_OUT" | "RETURNED" | "COMPLETED" }) =>
       updateProjectStatus(id, status),
     onSuccess: (_, { status }) => {
       const label = status === "CHECKED_OUT" ? "Deployed" : status === "RETURNED" ? "Returned" : "Completed";
       toast.success(`Project marked as ${label}`);
-      queryClient.invalidateQueries({ queryKey: ["warehouse-projects"] });
+      refetch();
       setPendingAction(null);
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const batchCloseMutation = useMutation({
+  const batchCloseMutation = useServerMutation({
     mutationFn: (projectIds: string[]) => batchCloseOut(projectIds),
     onSuccess: (results) => {
       const r = results as Array<{ projectId: string; success: boolean; error?: string }>;
@@ -171,7 +178,7 @@ export default function WarehousePage() {
         toast.warning(`${succeeded} closed, ${failed} failed`);
       }
       setSelectedForClose(new Set());
-      queryClient.invalidateQueries({ queryKey: ["warehouse-projects"] });
+      refetch();
     },
     onError: (e) => toast.error(e.message),
   });

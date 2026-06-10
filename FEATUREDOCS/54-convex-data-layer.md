@@ -1067,6 +1067,59 @@ count is 0==0; the non-zero graft is covered by the unit test). After this,
 `prisma.model.*` / `prisma.supplier.*` cross-domain reads are the dual-write sources
 (`server/models.ts`, `server/suppliers.ts`) + `lib/org-import.ts` (mirror writes).
 
+### Check-item assignment mirrors + warehouse counts off Convex (session 2026-06-10e)
+
+The two check-item ASSIGNMENT join tables — `model_check_item` and
+`kit_check_item` — are now **dual-written** (they had Phase-2 CRUD but empty/stale
+Convex copies). `src/lib/check-item-assignment-mirror.ts` (scalar-projecting
+mirror-core create/remove — relation includes stripped before the strict Convex
+validator — + `syncModelCheckItemsForModels` / `syncKitCheckItemsForKit` heal
+helpers for the `updateMany`-reorder and `createMany`-bulk paths that return no
+ids; a **tolerant remove** that swallows a missing mirror row so a delete during
+migration drift never errors after the durable Prisma delete — codex-flagged,
+matches crew-scheduling-mirror's `removeSafe`). Wired every write site:
+`check-items.ts` (add/remove/reorder/bulk for both), `kits.ts` deleteKit (capture
+ids before the cascade, remove from Convex after), `org-import.ts` (both creates).
+Backfill `pnpm convex:backfill:check-item-assignments` (idempotent heal path; DB
+currently has 0 rows of each).
+
+With both tables mirrored, the **warehouse line-item-tree count graft collapses
+onto Convex** (the bit session 2026-06-10d deliberately left on Prisma):
+`getModelCheckItemCountMap(orgId)` / `getKitCheckItemCountMap(orgId)` in
+`line-item-tree-read.ts` now source the per-model/per-kit count from one org-scoped
+Convex `list` counted in JS (codex-endorsed over a hand-maintained Convex count fn
+the generator would overwrite), replacing the Prisma `groupBy`. New `attachKitTree`
+grafts the Convex `kits` doc + `_count.kitCheckItems` onto every tree node (**no
+Prisma fallback** on a map miss), so `warehouse.ts` `getProjectForWarehouse` +
+`getProjectPullSheet` drop their last `kit` Prisma join too. Payload stays
+shape-identical (`model._count.modelCheckItems` + `kit._count.kitCheckItems`, read
+by 8+ warehouse-prep UI sites). The model/kit **"Checks" tabs + the check-item
+library usage count go reactive** (`use-check-item-assignments.ts` →
+`modelCheckItems`/`kitCheckItems` added to `BROWSER_READABLE` — no secrets).
+
+**`crewMembers.icalToken` field-level redaction (the tracked sub-8 Phase-5
+residual — now CLOSED).** crewMembers is browser-readable, so its per-member
+calendar-feed secret leaked to any org member via the public Convex read. The CRUD
+generator gained a `REDACTED_FIELDS` map; browser-readable reads now strip listed
+fields for USER tokens (the service token still sees the full row, and the crew
+detail page reads the token via a Prisma-backed server action — unaffected).
+Helper `redactFields()` in `convex/lib/auth.ts`.
+
+Verified: tsc clean, **2203 tests** (2198 + 5 new attachKitTree), 0 new lint (8
+errors / 345 warnings — +1 sanctioned `_id`-strip), `pnpm build` exit 0, codex diff
+review (fixed the one P2 — tolerant remove), + a live round-trip
+([`scripts/convex-roundtrip-check-items.ts`](../scripts/convex-roundtrip-check-items.ts))
+**7/7**: Convex-sourced model/kit counts see an inserted assignment, and
+`icalToken` is VISIBLE to the service token but REDACTED for the user token on both
+`list` + `getById` (non-secret fields intact). Used the JWKS-sidecar recipe (dev
+:3007 → curl jwks → sidecar on `gearflow-convex_default` net → env-set → ran →
+RESTORED `CONVEX_AUTH_JWKS_URL` to host.docker.internal:3000 + tore down).
+
+**Remaining Phase 6:** `*_media` reads (model_media/asset_media/… — Phase-2 CRUD
+exists but NOT dual-written, no mirror/backfill → stay Prisma until those tables
+migrate), then SSE/EventEmitter teardown (blocked on React Query removal), then
+React Query removal (172 files / ~875 `useQuery`).
+
 ### SSE / EventEmitter teardown — NOT started (blocked on React Query removal)
 
 `src/hooks/use-realtime.ts` exists only to call React Query's
@@ -1126,7 +1179,7 @@ sessions.
 | **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets + file_upload + crew + doc/service-template + **Kit** + **Asset/Bulk** + **project_category/group** + **project_line_item** + **sub_hire/supplier_order families** + **project** + **crew scheduling sub-tables (infra-only)** dual-write done — CENTRAL GRAPH COMPLETE + DUAL-WRITE SURFACE COMPLETE) | per-domain backfill + cutover; tsc/tests/build green each |
 | **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields + crew + **Kit** + **Asset/Bulk registry** done) | table/dropdown/edit live-update on mutation |
 | **5 Auth bridge** ✅ | Better Auth → Convex ES256 JWT; user token (org-scoped reads) + service token (trusted backend); browser writes rejected | round-trip 6/6: rejected without a valid token, accepted with; `/cso` clean |
-| **6 Decommission** 🔄 | Rewire deferred mirror reads off Prisma + remove React Query + SSE event bus (truncate+backfill resync DONE; supplier FLAT reads rewired; **nested supplier+model+category in ALL line-item trees incl. warehouse + PDF pipeline rewired** via `attachLineItemTree` + the Prisma `model._count.modelCheckItems` graft — line-item-tree dimension COMPLETE; `*_media` + `kit_check_item`/`model_check_item` mirror + SSE + React Query remain) | per-subsystem; tsc/tests/build green each. [FEATUREDOCS/53](./53-realtime-sync.md) to be marked superseded when SSE is torn out |
+| **6 Decommission** 🔄 | Rewire deferred mirror reads off Prisma + remove React Query + SSE event bus (truncate+backfill resync DONE; supplier FLAT reads rewired; **nested supplier+model+category in ALL line-item trees incl. warehouse + PDF pipeline rewired** via `attachLineItemTree` — line-item-tree dimension COMPLETE; **`model_check_item` + `kit_check_item` now dual-written → warehouse counts + kit join fully off Convex via `attachKitTree`, "Checks" tabs reactive, `crewMembers.icalToken` redacted for browser reads**; `*_media` mirror + SSE + React Query remain) | per-subsystem; tsc/tests/build green each. [FEATUREDOCS/53](./53-realtime-sync.md) to be marked superseded when SSE is torn out |
 
 ## Conventions
 

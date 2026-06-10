@@ -8,8 +8,8 @@ import { toast } from "sonner";
 
 import { getKitCounts } from "@/server/kits";
 import { useKits } from "@/hooks/use-kits";
-import { getLocations } from "@/server/locations";
 import { getCategories } from "@/server/categories";
+import { useLocations } from "@/hooks/use-locations";
 import { forceReturnKit } from "@/server/warehouse";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
@@ -186,13 +186,18 @@ export default function KitsPage() {
     onError: (e) => toast.error(e.message),
   });
 
-  const { data: locationsData } = useQuery({
-    queryKey: ["locations", orgId],
-    queryFn: () => getLocations({ pageSize: 100 }),
-  });
+  // Reactive locations (Convex) → {id,name}, default-first then alphabetical.
+  const locationsDocs = useLocations(orgId);
   const locations = useMemo(
-    () => (locationsData?.locations || []) as Array<{ id: string; name: string }>,
-    [locationsData],
+    () =>
+      [...(locationsDocs ?? [])]
+        .sort(
+          (a, b) =>
+            Number(b.isDefault ?? false) - Number(a.isDefault ?? false) ||
+            a.name.localeCompare(b.name),
+        )
+        .map((l) => ({ id: l.id, name: l.name })),
+    [locationsDocs],
   );
 
   const { data: categoriesData } = useQuery({

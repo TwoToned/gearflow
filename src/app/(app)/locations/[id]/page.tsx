@@ -3,7 +3,7 @@
 import { use, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Pencil,
   Trash2,
@@ -51,7 +51,6 @@ import {
 export default function LocationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
@@ -64,7 +63,6 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
     mutationFn: () => deleteLocation(id),
     onSuccess: () => {
       toast.success("Location deleted");
-      queryClient.invalidateQueries({ queryKey: ["locations"] });
       router.push("/locations");
     },
     onError: (e) => toast.error(e.message),

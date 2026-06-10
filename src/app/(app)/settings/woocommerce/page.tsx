@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -33,7 +33,7 @@ import {
   getLastPayloadMetaKeys,
   retryFailedOrder,
 } from "@/server/woocommerce";
-import { getLocations } from "@/server/locations";
+import { useLocations } from "@/hooks/use-locations";
 import { useActiveOrganization } from "@/lib/auth-client";
 
 import { Button } from "@/components/ui/button";
@@ -96,12 +96,22 @@ export default function WooCommerceSettingsPage() {
     enabled: !!orgId && showMetaDetect,
   });
 
-  const { data: locationsData } = useQuery({
-    queryKey: ["locations", orgId],
-    queryFn: () => getLocations({ pageSize: 200 }),
-    enabled: !!orgId,
-  });
-  const locationsList = locationsData?.locations as { id: string; name: string }[] | undefined;
+  // Reactive locations (Convex). The org-scoped list returns all rows; map to the
+  // {id,name} shape the select needs, default-location-first then alphabetical.
+  const locationsDocs = useLocations(orgId);
+  const locationsList = useMemo<{ id: string; name: string }[] | undefined>(
+    () =>
+      locationsDocs
+        ? [...locationsDocs]
+            .sort(
+              (a, b) =>
+                Number(b.isDefault ?? false) - Number(a.isDefault ?? false) ||
+                a.name.localeCompare(b.name),
+            )
+            .map((l) => ({ id: l.id, name: l.name }))
+        : undefined,
+    [locationsDocs],
+  );
 
   const form = useForm<WooCommerceIntegrationFormValues>({
     resolver: zodResolver(wooCommerceIntegrationSchema),

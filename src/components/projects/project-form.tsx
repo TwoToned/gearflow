@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Loader2, X, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 
@@ -77,7 +77,6 @@ function formatDateForInput(date: unknown): string {
 
 export function ProjectForm({ initialData, isTemplate: isTemplateProp, initialManagerIds = [] }: ProjectFormProps) {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const isEditing = !!initialData;
@@ -678,9 +677,6 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp, initialMa
         onOpenChange={setQuickCreateClientOpen}
         onCreated={(id) => {
           form.setValue("clientId", id);
-          queryClient.invalidateQueries({
-            queryKey: ["clients"],
-          });
         }}
       />
       <QuickCreateLocation
@@ -688,9 +684,6 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp, initialMa
         onOpenChange={setQuickCreateLocationOpen}
         onCreated={(id) => {
           form.setValue("locationId", id);
-          queryClient.invalidateQueries({
-            queryKey: ["locations"],
-          });
         }}
       />
     </>

@@ -12,7 +12,7 @@ import { useAssets, useBulkAssets } from "@/hooks/use-assets";
 import { useModels } from "@/hooks/use-models";
 import { bulkForceReturnAssets } from "@/server/warehouse";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { getLocations } from "@/server/locations";
+import { useLocations } from "@/hooks/use-locations";
 import { getCategories } from "@/server/categories";
 import { exportAssetsCSV, exportBulkAssetsCSV } from "@/server/csv";
 import { CSVImportDialog } from "@/components/assets/csv-import-dialog";
@@ -339,14 +339,26 @@ export function AssetTable() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: locationsData } = useQuery({
-    queryKey: ["locations", orgId],
-    queryFn: () => getLocations({ pageSize: 100 }),
-  });
-  const locations = useMemo(
-    () => (locationsData?.locations || []) as Array<{ id: string; name: string; type: string; parent?: { name: string } | null }>,
-    [locationsData],
-  );
+  // Reactive locations (Convex). Org-scoped list returns all rows; rebuild the
+  // {id,name,type,parent} shape the columns need (parent name resolved from the
+  // flat list — the sanctioned hierarchy pattern), default-first then alphabetical.
+  const locationsDocs = useLocations(orgId);
+  const locations = useMemo(() => {
+    const list = locationsDocs ?? [];
+    const nameById = new Map(list.map((l) => [l.id, l.name]));
+    return [...list]
+      .sort(
+        (a, b) =>
+          Number(b.isDefault ?? false) - Number(a.isDefault ?? false) ||
+          a.name.localeCompare(b.name),
+      )
+      .map((l) => ({
+        id: l.id,
+        name: l.name,
+        type: l.type ?? "",
+        parent: l.parentId ? { name: nameById.get(l.parentId) ?? "" } : null,
+      }));
+  }, [locationsDocs]);
 
   const { data: categoriesData } = useQuery({
     queryKey: ["categories", orgId],

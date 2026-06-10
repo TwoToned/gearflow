@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { locationSchema, type LocationFormValues } from "@/lib/validations/asset";
@@ -11,6 +11,7 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrgCountry } from "@/lib/use-org-country";
 import { createLocation, updateLocation } from "@/server/locations";
 import { useLocations } from "@/hooks/use-locations";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { getOrgTags } from "@/server/tags";
 import { TagInput } from "@/components/ui/tag-input";
 import { AddressInput } from "@/components/ui/address-input";
@@ -34,7 +35,6 @@ interface LocationFormProps {
 
 export function LocationForm({ initialData }: LocationFormProps) {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const isEditing = !!initialData?.id;
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
@@ -65,11 +65,10 @@ export function LocationForm({ initialData }: LocationFormProps) {
     },
   });
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (data: LocationFormValues) =>
       isEditing ? updateLocation(initialData!.id, data) : createLocation(data),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["locations"] });
       toast.success(isEditing ? "Location updated" : "Location created");
       const id = isEditing ? initialData!.id : (result as { id: string }).id;
       router.push(`/locations/${id}`);

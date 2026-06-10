@@ -63,9 +63,15 @@ export function useServerMutation<TData = unknown, TVariables = void>(
 
   // Keep the latest options without re-creating mutate/mutateAsync each render
   // (call sites pass inline closures/objects). A ref avoids stale callbacks while
-  // keeping the returned functions referentially stable.
+  // keeping the returned functions referentially stable. The ref is seeded at
+  // init (first-render correctness) and refreshed after each commit in an effect
+  // — writing a ref during render trips react-compiler's lint rule, and mutate()
+  // only ever fires from event handlers (post-commit), so the effect-updated ref
+  // is always current by the time it's read.
   const optionsRef = useRef(options);
-  optionsRef.current = options;
+  useEffect(() => {
+    optionsRef.current = options;
+  });
 
   // Guard against setting state after unmount (the await can outlive the view).
   const mountedRef = useRef(true);

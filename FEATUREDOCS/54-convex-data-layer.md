@@ -1325,6 +1325,68 @@ safe parallel fan-out as-is: the config "domains" entangle through shared big fi
 sequential per-datum batches. Add each newly-reactive table to `BROWSER_READABLE`
 (no secrets) before relying on its browser read.
 
+**Done session 2026-06-10i (org-tags + the `useServerQuery` keystone + 14 no-liveness
+datums; 5 commits pushed; ~164 → 156 files import RQ).** Two distinct conversion
+*kinds* were used this session, and the distinction is the key lesson:
+
+1. **org-tags** — NOT a Convex table. `getOrgTags()` is a read-only aggregate over the
+   `tags[]` arrays of 9 entity tables, autocomplete-only, never invalidated. So the
+   prompt's "add the tag table to `BROWSER_READABLE` + round-trip" did **not** apply.
+   New one-shot hook [`use-org-tags.ts`](../src/hooks/use-org-tags.ts) wrapping the
+   existing server action; converted all 11 entity forms. Clears on org change to
+   mirror RQ's per-key isolation (codex caught this). No Convex change, no round-trip.
+
+2. **The `useServerQuery` keystone** ([`src/hooks/use-server-query.ts`](../src/hooks/use-server-query.ts),
+   7 unit tests) — the **read analogue of `useServerMutation`** for the large
+   *no-liveness read* tail. Drop-in for RQ's `useQuery`
+   (`{ queryKey, queryFn, enabled }` → `{ data, isLoading, error, refetch }`),
+   one-shot, keyed on a serialized `queryKey`. **Staleness is derived during render**
+   (a result is tagged with the key it was fetched for; a result under a different key
+   reads as stale → `undefined`) rather than cleared via `setState` in an effect —
+   that both guarantees RQ's per-key isolation AND avoids the "synchronous setState in
+   an effect" cascading-render lint. **Use it ONLY for datums proven no-liveness:
+   never in any `invalidateQueries` call AND not in `use-realtime.ts`'s SSE key map.**
+   For anything that must update live, use a reactive Convex `useQuery` hook instead.
+
+   Converted with it (all verified never-invalidated + not SSE-mapped, so a one-shot is
+   data-identical — RQ gave them no liveness beyond mount/focus refetch anyway):
+   - **7 cross-domain count badges**: supplier-counts, location-counts, model-counts,
+     client-project-counts, crew-skill-counts, category-counts (both readers), kit-counts.
+     Each is a secondary badge merged into an already-reactive Convex table list. Dropped
+     the **spurious** `["kit-counts"]` invalidation in the kits-page force-return mutation
+     (getKitCounts returns only member-item counts + primary photo; a force-return returns
+     checked-out assets, changing neither — codex confirmed). Kept the `["assets"]` one.
+   - **7 previews / lookups / summaries**: project-number-preview, utilization-summary,
+     kit-delete-info, reports-summary, peek-test-tag-ids, project-number-next,
+     woocommerce-meta-keys. Dropped two `staleTime` options (no useServerQuery
+     equivalent; key-change still drives the refetch — at worst slightly more eager).
+
+   8 files became **fully** React-Query-free (location-form, supplier/location/client
+   tables, crew settings, both category readers, utilization page, project-numbering
+   settings). The rest are partial-file (the page keeps RQ for its other datums).
+
+**RQ-removal datum verification rule, refined this session.** Before converting a datum,
+classify it: (a) **reactive** (it IS or should be live — a table list, detail page,
+or anything in `use-realtime.ts`'s SSE map / explicitly invalidated) → convert to a
+reactive Convex `useQuery` hook; (b) **no-liveness** (never invalidated anywhere AND
+not in the SSE map) → `useServerQuery`. Two cheap greps settle it: `grep '"<key>"' | grep
+invalidate` and check `use-realtime.ts`'s `getInvalidationKeys`. NB React Query's
+`invalidateQueries({queryKey:["dashboard"]})` is a *prefix* match on the first element —
+`["dashboard-stats"]` does NOT match `["dashboard"]`, so most `dashboard-*` datums are
+actually no-liveness despite the SSE entry; verify per key, don't assume.
+
+**Remaining (~156 files import RQ).** Survivors split into: **(a)** more no-liveness
+single-datum reads (mechanical via `useServerQuery` — e.g. the remaining `*-summary` /
+analytics / settings-preview reads); **(b)** auth/RBAC/platform datums (organization,
+custom-roles, members, sso-*, profile, notifications, admin) that **stay Prisma forever**
+— most should also become `useServerQuery`, BUT first check the invalidation relationship:
+those read+written in the same view can refetch via the reader's `refetch()` from the
+writer's `onSuccess`; cross-component invalidated ones need more care; **(c)** hard
+cross-domain-composing pages (projects / warehouse / dashboard / crew scheduling, detail
+pages) needing hand-written Convex composite queries or a careful multi-hook client-join
+— slowest, ~1–3/session; **(d)** assets/bulk-assets (test-and-tag/new needs a 4-way
+client join). SSE/`use-realtime.ts` teardown stays blocked until RQ is FULLY gone.
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort
@@ -1369,7 +1431,7 @@ sessions.
 | **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets + file_upload + crew + doc/service-template + **Kit** + **Asset/Bulk** + **project_category/group** + **project_line_item** + **sub_hire/supplier_order families** + **project** + **crew scheduling sub-tables (infra-only)** dual-write done — CENTRAL GRAPH COMPLETE + DUAL-WRITE SURFACE COMPLETE) | per-domain backfill + cutover; tsc/tests/build green each |
 | **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields + crew + **Kit** + **Asset/Bulk registry** done) | table/dropdown/edit live-update on mutation |
 | **5 Auth bridge** ✅ | Better Auth → Convex ES256 JWT; user token (org-scoped reads) + service token (trusted backend); browser writes rejected | round-trip 6/6: rejected without a valid token, accepted with; `/cso` clean |
-| **6 Decommission** 🔄 | Rewire deferred mirror reads off Prisma + remove React Query + SSE event bus (truncate+backfill resync DONE; supplier FLAT reads rewired; **nested supplier+model+category in ALL line-item trees incl. warehouse + PDF pipeline rewired** via `attachLineItemTree` — line-item-tree dimension COMPLETE; **`model_check_item` + `kit_check_item` now dual-written → warehouse counts + kit join fully off Convex via `attachKitTree`, "Checks" tabs reactive, `crewMembers.icalToken` redacted for browser reads**; **all 7 `*_media` tables now dual-written + reactive-list photo grafts off the mirror via `media-read.ts`; warehouse scan-path single-model reads off the mirror**; **React Query removal IN PROGRESS — `useServerMutation` keystone + 11 datums off RQ (custom-fields/testProfiles/check-item-library + suppliers/clients/kits/locations/categories/crew-roles/crew-skills/models)**; SSE remains) | per-subsystem; tsc/tests/build green each. [FEATUREDOCS/53](./53-realtime-sync.md) to be marked superseded when SSE is torn out |
+| **6 Decommission** 🔄 | Rewire deferred mirror reads off Prisma + remove React Query + SSE event bus (truncate+backfill resync DONE; supplier FLAT reads rewired; **nested supplier+model+category in ALL line-item trees incl. warehouse + PDF pipeline rewired** via `attachLineItemTree` — line-item-tree dimension COMPLETE; **`model_check_item` + `kit_check_item` now dual-written → warehouse counts + kit join fully off Convex via `attachKitTree`, "Checks" tabs reactive, `crewMembers.icalToken` redacted for browser reads**; **all 7 `*_media` tables now dual-written + reactive-list photo grafts off the mirror via `media-read.ts`; warehouse scan-path single-model reads off the mirror**; **React Query removal IN PROGRESS — `useServerMutation` (writes) + `useServerQuery` (no-liveness reads) keystones; 26 datums off RQ: the 11 reactive config domains + org-tags + 7 count badges + 7 previews/summaries via `useServerQuery`**; SSE remains) | per-subsystem; tsc/tests/build green each. [FEATUREDOCS/53](./53-realtime-sync.md) to be marked superseded when SSE is torn out |
 
 ## Conventions
 

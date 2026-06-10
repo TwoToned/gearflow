@@ -49,6 +49,23 @@ export async function getAuthContext(
   return { kind: "user", userId: identity.subject, orgId, role };
 }
 
+/**
+ * Return a shallow copy of `doc` with the named fields removed. Used at the read
+ * boundary to keep sensitive-but-internal columns (e.g. `crewMembers.icalToken`,
+ * a per-member calendar-feed secret) out of BROWSER reads while the trusted
+ * service identity still sees the full row. The generated browser-readable
+ * queries apply this for non-service callers (see scripts/generate-convex-crud.cjs
+ * REDACTED_FIELDS).
+ */
+export function redactFields<T extends Record<string, unknown>>(
+  doc: T,
+  fields: readonly string[],
+): T {
+  const out = { ...doc };
+  for (const f of fields) delete (out as Record<string, unknown>)[f];
+  return out;
+}
+
 /** Throw unless the caller is the trusted GearFlow backend. Use for all writes. */
 export async function requireService(ctx: AuthCtx): Promise<void> {
   const auth = await getAuthContext(ctx);

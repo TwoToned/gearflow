@@ -52,7 +52,20 @@ const BROWSER_READABLE = new Set([
   "clients", "suppliers", "locations", "models", "categories", "checkItems",
   "testProfiles", "customFieldDefinitions", "crewMembers", "crewRoles",
   "crewSkills", "kits", "assets", "bulkAssets",
+  // Check-item assignment join tables (model/kit "Checks" tabs go reactive). No
+  // secrets — just modelId/kitId + checkItemId + sortOrder.
+  "modelCheckItems", "kitCheckItems",
 ]);
+
+// Per-table fields stripped from BROWSER reads (the user token never sees them;
+// the trusted service token still does). For browser-readable tables that hold a
+// sensitive-but-internal column the reactive UI doesn't need. Default: nothing
+// redacted. `crewMembers.icalToken` is a per-member calendar-feed secret —
+// browser members get the rest of the row but not the token (the crew detail
+// page reads the token via a Prisma-backed server action, not this read).
+const REDACTED_FIELDS = {
+  crewMembers: ["icalToken"],
+};
 
 function fieldExpr(f) {
   return f.optional ? `v.optional(${f.validator})` : f.validator;
@@ -101,8 +114,12 @@ for (const mdl of models) {
   // when it's org-scoped AND explicitly browser-readable; otherwise reads (like
   // all writes) are service-only. Import only the helpers the file references.
   const browserReadable = mdl.orgScoped && BROWSER_READABLE.has(key);
+  const redactedFields = (browserReadable && REDACTED_FIELDS[key]) || null;
+  const redactArg = redactedFields
+    ? `[${redactedFields.map((f) => `"${f}"`).join(", ")}]`
+    : null;
   const authImports = browserReadable
-    ? `import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";\n`
+    ? `import { requireOrgRead, requireOrgReadDoc, requireService${redactedFields ? ", getAuthContext, redactFields" : ""} } from "./lib/auth";\n`
     : `import { requireService } from "./lib/auth";\n`;
 
   let out = `import { v } from "convex/values";\n`;
@@ -112,7 +129,12 @@ for (const mdl of models) {
   out += `\n`;
   out += `/**\n * Thin CRUD for ${mdl.name} (Convex table "${key}"). GENERATED — Phase 2/5.\n *\n * AUTH (Phase 5, convex/lib/auth.ts): mutations require the trusted backend\n * SERVICE token (browser writes rejected — RBAC stays in the Next.js server\n * actions, which still own permission/validation/audit). ${browserReadable ? "Org-scoped reads\n * accept the service token OR a user token scoped to the same org." : "Reads are\n * service-only (not on the browser-readable allowlist)."} Lookups use the\n * cuid (\`id\`) via by_cuid. See FEATUREDOCS/54 and docs/designs/convex-phase5-auth-bridge.md.\n */\n\n`;
 
-  if (browserReadable) {
+  if (browserReadable && redactArg) {
+    // Browser-readable WITH field redaction: the user token gets the row minus
+    // the redacted column(s); the trusted service token gets everything.
+    out += `export const list = query({\n  args: ${listArgs},\n  handler: async (ctx, ${listDestructure}) => {\n    await requireOrgRead(ctx, orgId);\n    const docs = await ${listBody};\n    const auth = await getAuthContext(ctx);\n    return auth?.kind === "service" ? docs : docs.map((d) => redactFields(d, ${redactArg}));\n  },\n});\n\n`;
+    out += `export const getById = query({\n  args: { id: ${idValidator} },\n  handler: async (ctx, { id }) => {\n    const doc = await ${lookup};\n    await requireOrgReadDoc(ctx, doc);\n    if (!doc) return doc;\n    const auth = await getAuthContext(ctx);\n    return auth?.kind === "service" ? doc : redactFields(doc, ${redactArg});\n  },\n});\n\n`;
+  } else if (browserReadable) {
     out += `export const list = query({\n  args: ${listArgs},\n  handler: async (ctx, ${listDestructure}) => {\n    await requireOrgRead(ctx, orgId);\n    return await ${listBody};\n  },\n});\n\n`;
     out += `export const getById = query({\n  args: { id: ${idValidator} },\n  handler: async (ctx, { id }) => {\n    const doc = await ${lookup};\n    await requireOrgReadDoc(ctx, doc);\n    return doc;\n  },\n});\n\n`;
   } else {

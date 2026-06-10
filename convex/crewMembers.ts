@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { requireOrgRead, requireOrgReadDoc, requireService, getAuthContext, redactFields } from "./lib/auth";
 import * as enums from "./lib/validators";
 
 /**
@@ -17,10 +17,12 @@ export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
     await requireOrgRead(ctx, orgId);
-    return await ctx.db
+    const docs = await ctx.db
       .query("crewMembers")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
       .collect();
+    const auth = await getAuthContext(ctx);
+    return auth?.kind === "service" ? docs : docs.map((d) => redactFields(d, ["icalToken"]));
   },
 });
 
@@ -29,7 +31,9 @@ export const getById = query({
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     await requireOrgReadDoc(ctx, doc);
-    return doc;
+    if (!doc) return doc;
+    const auth = await getAuthContext(ctx);
+    return auth?.kind === "service" ? doc : redactFields(doc, ["icalToken"]);
   },
 });
 

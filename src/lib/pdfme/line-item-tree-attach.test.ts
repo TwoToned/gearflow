@@ -61,7 +61,7 @@ const maps: LineItemAttachMaps = {
  * REMOVED — only `modelId` / `supplierId` remain, plus `childLineItems`). Shaped
  * like `DocumentLineItem` so the post-attach enrichment + structurer accept it.
  */
-type RawNode = Partial<DocumentLineItem> & {
+type RawNode = Omit<Partial<DocumentLineItem>, "childLineItems"> & {
   id: string;
   modelId?: string | null;
   supplierId?: string | null;

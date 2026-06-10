@@ -119,3 +119,74 @@ export function attachLineItemTree<T extends LineItemNode>(
     };
   }) as Array<AttachedLineItem<T>>;
 }
+
+// ---------------------------------------------------------------------------
+// model_check_item count graft (warehouse-only)
+// ---------------------------------------------------------------------------
+//
+// `model_check_item` is the one cross-domain join on the line-item tree that is
+// NOT served off the Convex mirror: it has Phase-2 CRUD but no mirror/backfill,
+// so the Convex copy is empty/stale. The warehouse-prep reads
+// (getProjectForWarehouse / getProjectPullSheet) gate per-line check prompts on
+// `model._count.modelCheckItems` across 8+ UI sites, so that single count keeps
+// being sourced from Prisma and grafted back onto the Convex-attached `model`
+// node — preserving the exact `model: { ..., _count: { modelCheckItems } }`
+// shape the old Prisma include produced. Everything else on the model (scalars,
+// category, supplier) comes off the mirror via attachLineItemTree above.
+
+/** A Convex-attached model node with the Prisma-sourced check-item count grafted
+ * back on, matching the old `model: { _count: { modelCheckItems } }` include. */
+export type ModelWithCheckCount = AttachedModel & {
+  _count: { modelCheckItems: number };
+};
+
+/**
+ * Collect every distinct `modelId` referenced anywhere in a line-item tree
+ * (recursing into `childLineItems`). Use this to scope the single
+ * `prisma.modelCheckItem.groupBy` that feeds {@link attachModelCheckItemCounts}.
+ */
+export function collectTreeModelIds<T extends LineItemNode>(rows: T[]): string[] {
+  const ids = new Set<string>();
+  const walk = (nodes: LineItemNode[]) => {
+    for (const node of nodes) {
+      if (node.modelId) ids.add(node.modelId);
+      if (Array.isArray(node.childLineItems)) walk(node.childLineItems as LineItemNode[]);
+    }
+  };
+  walk(rows);
+  return [...ids];
+}
+
+/** A tree node that already has `model` attached (output of attachLineItemTree). */
+type AttachedNode = { model: AttachedModel | null; childLineItems?: unknown };
+
+/**
+ * Graft `_count.modelCheckItems` onto every Convex-attached `model` node in a
+ * line-item tree, sourcing the count from `countByModelId` (built once per
+ * request by the caller via `prisma.modelCheckItem.groupBy`). A model absent from
+ * the map gets `0`; a null model stays null. Returns new nodes; input is not
+ * mutated. Run AFTER {@link attachLineItemTree}.
+ */
+export function attachModelCheckItemCounts<T extends AttachedNode>(
+  rows: T[],
+  countByModelId: Map<string, number>,
+): Array<Omit<T, "model"> & { model: ModelWithCheckCount | null }> {
+  return rows.map((row) => {
+    const children = row.childLineItems;
+    const model: ModelWithCheckCount | null = row.model
+      ? { ...row.model, _count: { modelCheckItems: countByModelId.get(row.model.id) ?? 0 } }
+      : null;
+    return {
+      ...row,
+      model,
+      ...(Array.isArray(children)
+        ? {
+            childLineItems: attachModelCheckItemCounts(
+              children as AttachedNode[],
+              countByModelId,
+            ),
+          }
+        : {}),
+    };
+  }) as Array<Omit<T, "model"> & { model: ModelWithCheckCount | null }>;
+}

@@ -4,7 +4,10 @@ import { use, useState, useRef, useCallback, useMemo, Suspense } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useReactiveServerQuery } from "@/hooks/use-reactive-server-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useKitDetailVersion } from "@/hooks/use-kits";
 import { Pencil, Plus, Trash2, Loader2, X, ScanBarcode, Camera, RotateCcw, ChevronRight, Package, Boxes } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { toast } from "sonner";
@@ -80,7 +83,6 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const queryClient = useQueryClient();
 
   const initialDate = useMemo(() => {
     const d = searchParams.get("date");
@@ -105,24 +107,32 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: kit, isLoading } = useQuery({
+  // Reactive composite: subscribe to the cheap Convex version vector and re-run the
+  // unchanged getKit server action whenever the kit or its contents change (cross-user
+  // over the WebSocket — replaces the SSE `kit:updated` → invalidate path). See
+  // convex/kitDetail.ts + src/hooks/use-reactive-server-query.ts.
+  const kitVersion = useKitDetailVersion(id);
+  const { data: kit, isLoading, refetch: refetchKit } = useReactiveServerQuery({
+    watch: kitVersion,
     queryKey: ["kit", orgId, id],
     queryFn: () => getKit(id),
   });
 
-  const { data: availableAssets = [] } = useQuery({
+  // Dialog-gated cross-domain reads (NOT in the SSE map; no cross-user liveness).
+  // After an add, the mutation calls refetch() to drop the just-added rows.
+  const { data: availableAssets = [], refetch: refetchAvailableAssets } = useServerQuery({
     queryKey: ["available-assets-for-kit", orgId],
     queryFn: () => getAvailableAssetsForKit(),
     enabled: showAddItem,
   });
 
-  const { data: availableBulkAssets = [] } = useQuery({
+  const { data: availableBulkAssets = [], refetch: refetchAvailableBulkAssets } = useServerQuery({
     queryKey: ["available-bulk-assets-for-kit", orgId],
     queryFn: () => getAvailableBulkAssetsForKit(),
     enabled: showAddBulkItem,
   });
 
-  const statusMutation = useMutation({
+  const statusMutation = useServerMutation({
     mutationFn: (newStatus: string) => {
       if (!kit) throw new Error("Kit not loaded");
       return updateKit(id, {
@@ -143,21 +153,21 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
     },
     onSuccess: () => {
       toast.success("Status updated");
-      queryClient.invalidateQueries({ queryKey: ["kit", orgId, id] });
+      refetchKit();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const forceReturnMutation = useMutation({
+  const forceReturnMutation = useServerMutation({
     mutationFn: () => forceReturnKit(id),
     onSuccess: () => {
       toast.success("Kit force returned to available");
-      queryClient.invalidateQueries({ queryKey: ["kit", orgId, id] });
+      refetchKit();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const addItemsMutation = useMutation({
+  const addItemsMutation = useServerMutation({
     mutationFn: () =>
       addSerializedItemsToKit(
         id,
@@ -165,24 +175,24 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
       ),
     onSuccess: () => {
       toast.success(`${stagedItems.length} item${stagedItems.length > 1 ? "s" : ""} added to kit`);
-      queryClient.invalidateQueries({ queryKey: ["kit", orgId, id] });
-      queryClient.invalidateQueries({ queryKey: ["available-assets-for-kit", orgId] });
+      refetchKit();
+      refetchAvailableAssets();
       setShowAddItem(false);
       setStagedItems([]);
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const removeItemMutation = useMutation({
+  const removeItemMutation = useServerMutation({
     mutationFn: (assetId: string) => removeSerializedItemFromKit(id, assetId),
     onSuccess: () => {
       toast.success("Item removed from kit");
-      queryClient.invalidateQueries({ queryKey: ["kit", orgId, id] });
+      refetchKit();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const addBulkMutation = useMutation({
+  const addBulkMutation = useServerMutation({
     mutationFn: () =>
       addBulkItemToKit(id, {
         bulkAssetId: addBulkAssetId,
@@ -191,8 +201,8 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
       }),
     onSuccess: () => {
       toast.success("Bulk item added to kit");
-      queryClient.invalidateQueries({ queryKey: ["kit", orgId, id] });
-      queryClient.invalidateQueries({ queryKey: ["available-bulk-assets-for-kit", orgId] });
+      refetchKit();
+      refetchAvailableBulkAssets();
       setShowAddBulkItem(false);
       setAddBulkAssetId("");
       setAddBulkQuantity(1);
@@ -201,11 +211,11 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
     onError: (e) => toast.error(e.message),
   });
 
-  const removeBulkMutation = useMutation({
+  const removeBulkMutation = useServerMutation({
     mutationFn: (bulkItemId: string) => removeBulkItemFromKit(id, bulkItemId),
     onSuccess: () => {
       toast.success("Bulk item removed from kit");
-      queryClient.invalidateQueries({ queryKey: ["kit", orgId, id] });
+      refetchKit();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -508,9 +518,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
               entityId={id}
               accept="image/*"
               existingMedia={kitPhotos}
-              onChanged={() =>
-                queryClient.invalidateQueries({ queryKey: ["kit", orgId, id] })
-              }
+              onChanged={() => refetchKit()}
               onUploadComplete={async (fileUpload) => {
                 await addKitMedia({
                   kitId: id,
@@ -530,9 +538,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
           {/* Notes */}
           <NotesEditor
             initialNotes={kit.notes || ""}
-            onChanged={() =>
-              queryClient.invalidateQueries({ queryKey: ["kit", orgId, id] })
-            }
+            onChanged={() => refetchKit()}
             onSave={(notes) => updateKitNotes(id, notes)}
             placeholder="Add notes about this kit..."
           />

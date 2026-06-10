@@ -3,7 +3,7 @@
 import { use, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Pencil,
   Archive,
@@ -50,7 +50,6 @@ import {
 export default function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
@@ -63,7 +62,6 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
     mutationFn: () => archiveClient(id),
     onSuccess: () => {
       toast.success("Client archived");
-      queryClient.invalidateQueries({ queryKey: ["clients"] });
       router.push("/clients");
     },
   });

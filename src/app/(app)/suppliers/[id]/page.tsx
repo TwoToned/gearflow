@@ -3,7 +3,7 @@
 import { use, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Pencil, Mail, Phone, Globe, MapPin, Trash2, Plus, ChevronRight } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AddressDisplay } from "@/components/ui/address-display";
@@ -48,7 +48,6 @@ const orderTypeLabels: Record<string, string> = {
 export default function SupplierDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
@@ -79,7 +78,6 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
     mutationFn: () => deleteSupplier(id),
     onSuccess: () => {
       toast.success("Supplier deleted");
-      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
       router.push("/suppliers");
     },
     onError: (e) => toast.error(e.message),

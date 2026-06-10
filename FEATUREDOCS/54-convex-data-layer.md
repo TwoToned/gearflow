@@ -1212,12 +1212,72 @@ Convex reactive replaces SSE only for already-converted domains. Removing SSE no
 would strip cross-user live updates from every non-converted page with no
 replacement, so this MUST follow the React Query removal, not precede it.
 
-### React Query removal — NOT started (large)
+### React Query removal — IN PROGRESS (foundation + first domains, session 2026-06-10g)
 
-~172 files / ~875 `useQuery`/`useMutation` calls remain. Too large for one clean
-session; the survivors are mostly hard cross-domain-composing pages
-(projects/warehouse/dashboard/crew). Newly-reactive tables must be added to the
-`BROWSER_READABLE` allowlist (Phase 5) and must hold no secrets.
+~172 files / ~875 `useQuery` (534) + `useMutation` (417) calls. Multi-session,
+batched by **data-island**. Foundation + 3 domains done this session.
+
+**End-state model.** Reads → Convex `useQuery` (natively reactive over WebSocket —
+works even for cross-domain reads because the whole graph is dual-written). Writes
+stay **browser → server action → Convex** (browser writes rejected per Phase 5).
+Convex pushes a live update to every subscriber after a write, so there is **NO
+cache to invalidate** — React Query's `invalidateQueries` glue disappears as each
+datum is converted. SSE/`use-realtime.ts` can only be torn out once RQ is fully
+gone (it has no readers left to invalidate).
+
+**The keystone: [`src/hooks/use-server-mutation.ts`](../src/hooks/use-server-mutation.ts)**
+— `useServerMutation`, a drop-in replacement for RQ's `useMutation`. Same
+object-config API (`{ mutationFn, onSuccess, onError, onSettled }` →
+`{ mutate, mutateAsync, isPending, error, data, reset }`) so a call site converts
+with a one-line swap. Invalidation-free; `onSuccess` is for view-local effects
+only (toast / close dialog / `router.refresh()`). Hardened (codex): in-flight
+**counter** so `isPending` survives overlapping calls (`remove.mutate(id)` per
+row), latest-call-wins `data`/`error`, callback errors logged not merged with the
+mutation error, options ref updated in an effect (react-compiler), unmount-guarded.
+11 unit tests.
+
+**The unit of conversion is a DATUM, not a file (the critical safety rule).** A
+writer can drop a datum's invalidation only once **every reader of that datum** is
+Convex-subscribed — otherwise a still-RQ reader loses its post-write refresh
+(silent staleness — the one hazard codex flagged). So: (1) find every reader of
+the datum (`grep` the query key + the server action), (2) convert each reader to
+the reactive `use-*` hook (a file may keep RQ for its *other* data — per-datum,
+not per-file), (3) convert the writers to `useServerMutation` and drop that
+datum's `invalidateQueries`, (4) the table must already be in `BROWSER_READABLE`
+(add it + regen if not; no secrets). The org-scoped Convex `list` returns all rows
+(all entity types / archived) — re-apply the old `where` filter client-side, the
+sanctioned Phase-4 pattern (testProfiles/suppliers/models all do this).
+
+**Done this session (3 domains/datums):**
+- **custom-fields** — fully clean per-file island (3 files). New
+  `useActiveCustomFields(orgId, entityType)` (filters the reactive list) replaces
+  `getActiveCustomFields` in `custom-fields-input`/`-display`; settings page
+  create/update/delete → `useServerMutation`, both invalidations dropped.
+- **testProfiles** — per-datum: `model-form.tsx` + `test-and-tag/new` testProfiles
+  read → `useTestProfiles` (both keep RQ for other data); settings page (5
+  mutations) → `useServerMutation`, fully RQ-free.
+- **check-item library** (`[check-items]`) — per-datum: `model-table.tsx`
+  bulk-assign dialog read → `useCheckItems(open ? orgId : undefined)` (mirrors the
+  old `enabled:open`); settings page (create/update/delete) → `useServerMutation`,
+  fully RQ-free. (The `[model-check-items]`/`[kit-check-items]` ASSIGNMENT datum in
+  `item-check-form` is separate, untouched.)
+
+No `BROWSER_READABLE` change needed (all 3 tables were already reactive from Phase
+4). Verified: tsc clean, 2221 tests (2210 + 11 hook tests), 0 new lint (8 err /
+345 warn — actually −1 warn from removed dead imports), `pnpm build` exit 0, codex
+review (no dropped-invalidation bug; the keystone hook design endorsed). No live
+JWKS round-trip needed — no new Convex table/function exposed; the new logic is the
+client hook, covered by unit tests.
+
+**Remaining (~169 files).** The survivors are mostly hard cross-domain-composing
+pages (projects / warehouse / dashboard / crew) whose reads compose data a pure
+table `useQuery` can't express yet — those either get hand-written Convex composite
+queries (the dual-write graph makes this possible) or stay on RQ until then. The
+clean config/dropdown/edit reads convert mechanically by the playbook above. NOT a
+safe parallel fan-out as-is: the config "domains" entangle through shared big files
+(`model-table`, `model-form`, warehouse) so parallel agents would conflict — do
+sequential per-datum batches. Add each newly-reactive table to `BROWSER_READABLE`
+(no secrets) before relying on its browser read.
 
 ## Remaining work & session sizing (post-central-graph)
 
@@ -1263,7 +1323,7 @@ sessions.
 | **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets + file_upload + crew + doc/service-template + **Kit** + **Asset/Bulk** + **project_category/group** + **project_line_item** + **sub_hire/supplier_order families** + **project** + **crew scheduling sub-tables (infra-only)** dual-write done — CENTRAL GRAPH COMPLETE + DUAL-WRITE SURFACE COMPLETE) | per-domain backfill + cutover; tsc/tests/build green each |
 | **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields + crew + **Kit** + **Asset/Bulk registry** done) | table/dropdown/edit live-update on mutation |
 | **5 Auth bridge** ✅ | Better Auth → Convex ES256 JWT; user token (org-scoped reads) + service token (trusted backend); browser writes rejected | round-trip 6/6: rejected without a valid token, accepted with; `/cso` clean |
-| **6 Decommission** 🔄 | Rewire deferred mirror reads off Prisma + remove React Query + SSE event bus (truncate+backfill resync DONE; supplier FLAT reads rewired; **nested supplier+model+category in ALL line-item trees incl. warehouse + PDF pipeline rewired** via `attachLineItemTree` — line-item-tree dimension COMPLETE; **`model_check_item` + `kit_check_item` now dual-written → warehouse counts + kit join fully off Convex via `attachKitTree`, "Checks" tabs reactive, `crewMembers.icalToken` redacted for browser reads**; **all 7 `*_media` tables now dual-written + reactive-list photo grafts off the mirror via `media-read.ts`; warehouse scan-path single-model reads off the mirror**; SSE + React Query remain) | per-subsystem; tsc/tests/build green each. [FEATUREDOCS/53](./53-realtime-sync.md) to be marked superseded when SSE is torn out |
+| **6 Decommission** 🔄 | Rewire deferred mirror reads off Prisma + remove React Query + SSE event bus (truncate+backfill resync DONE; supplier FLAT reads rewired; **nested supplier+model+category in ALL line-item trees incl. warehouse + PDF pipeline rewired** via `attachLineItemTree` — line-item-tree dimension COMPLETE; **`model_check_item` + `kit_check_item` now dual-written → warehouse counts + kit join fully off Convex via `attachKitTree`, "Checks" tabs reactive, `crewMembers.icalToken` redacted for browser reads**; **all 7 `*_media` tables now dual-written + reactive-list photo grafts off the mirror via `media-read.ts`; warehouse scan-path single-model reads off the mirror**; **React Query removal STARTED — `useServerMutation` keystone + custom-fields/testProfiles/check-item-library datums off RQ**; SSE remains) | per-subsystem; tsc/tests/build green each. [FEATUREDOCS/53](./53-realtime-sync.md) to be marked superseded when SSE is torn out |
 
 ## Conventions
 

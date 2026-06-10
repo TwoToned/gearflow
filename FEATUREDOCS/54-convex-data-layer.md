@@ -1516,6 +1516,56 @@ notifications-prefs / admin) stay Prisma forever — most become `useServerQuery
 same-view read+write `refetch` relationship first. SSE / `use-realtime.ts` teardown stays
 BLOCKED until RQ is FULLY gone.
 
+**Done session 2026-06-10l (★ REACTIVE-TAIL BLOCKER CLEARED ★ — shared write-components
+decoupled; 1 commit pushed; 135 → 131 files import RQ; 4 files newly fully RQ-free).** The
+first reactive-tail unit. `MediaUploader` (`src/components/media/media-uploader.tsx`) and
+`NotesEditor` (`src/components/ui/notes-editor.tsx`) — the two shared write-components that took a
+`queryKey: unknown[]` prop and called `queryClient.invalidateQueries(queryKey)` internally — now
+take an **`onChanged?: () => void`** callback instead, with their internal `useMutation` flipped to
+`useServerMutation`. Both components are fully RQ-free; the refresh channel is caller-provided. This
+is the coupling the 2026-06-10k entry flagged as the blocker for converting any detail page, and it
+landed **entirely data-identical** (no composite Convex hook needed yet — the callback can wire to
+either the existing RQ invalidation OR a reactive refetch). All 7 consumers rewired in the same
+(forced-atomic) commit:
+- **model / asset / kit / project** detail pages keep their RQ reader (asset/kit/project are in the
+  SSE `getInvalidationKeys` map; `model` is not but the page is a big cross-domain composite left for
+  later) and pass `onChanged={() => queryClient.invalidateQueries({ queryKey: [...same key...] })}` —
+  byte-for-byte the invalidation the component used to run internally.
+- **clients/[id] + locations/[id]** — the KEY WIN. Both are non-SSE same-view single-reader islands
+  (one `useQuery` detail reader + one archive/delete `useMutation`, NO `queryClient`, and no external
+  reader/invalidator of `["client"|"location", orgId, id]` anywhere). Reader → `useServerQuery`,
+  mutation → `useServerMutation`, `onChanged={refetch}`. Both pages now FULLY RQ-free. Data-identical:
+  under RQ these keys were only ever invalidated by the media/notes child (same-user, same-view), so
+  mount + `refetch()` is the same refresh.
+- **sub-hire-order-dialog** — the old `queryKey={["sub-hire", subHire.id]}` was a **latent no-op**:
+  the real reader key is the 3-element `["sub-hire", orgId, subHireId]`, so the 2-element prefix never
+  matched (RQ invalidation is prefix-match from element 0). The functional refresh was the explicit
+  `invalidate()` calls in `onUploadComplete`/`onRemove`. Wired `onChanged={invalidate}` and dropped the
+  now-redundant manual calls.
+
+**Why this was safe to do first / data-identical.** The SSE map (`use-realtime.ts`
+`getInvalidationKeys`) contains ONLY `project`/`asset`/`kit` (+ `warehouse-project`, `projects`,
+`dashboard`, `crew-members`, …) — NOT `model`, `bulk-asset`, `client`, `location`, or `sub-hire`. So
+the only genuinely cross-user-live detail keys among the 7 consumers are asset/kit/project, and those
+keep their RQ reader untouched (onChanged just reproduces the old invalidation). The non-SSE pages lose
+nothing by moving to `useServerQuery`+refetch. Verified: tsc clean, **2228 tests** (unchanged — the
+changes are client hook swaps + JSX prop rewires, no test touched the components), 0 new lint
+(normalized base-vs-HEAD compare vs 248943a9 — only line-number shifts in sub-hire-order-dialog from
+the two deleted `invalidate()` lines, same file/rule), build exit 0, **codex review clean** (no dropped
+refresh, no onChanged/invalidation ordering mismatch). No JWKS round-trip (no new Convex table/fn — the
+new logic is the two client hooks, already keystoned + unit-tested).
+
+**NEXT reactive-tail units (unchanged from 2026-06-10k, now UNBLOCKED for the detail pages):** the
+SSE-live detail pages (model/asset/kit/project) need hand-written **reactive Convex composite `useQuery`
+hooks** to drop their RQ reader (they compose cross-domain media + projects + sub-graphs; `useAsset`/
+`useKit`/`useModel` exist but return only the table doc) — flip `onChanged` from invalidate → the hook's
+reactive refresh (often a no-op since Convex pushes) at that point. Also: `stocktake*` + `crew-availability`
+(live scanner / scheduling workflows), `notifications` (60s poll → needs a real reactive Convex
+notifications hook; **verify the `notification` table is dual-written first — it is NOT today** (only
+`notificationDismissals` is in the Convex schema), so notifications stays Prisma+RQ until that table is
+dual-written), and the hard project/warehouse/dashboard composites. Auth/RBAC/platform datums stay
+Prisma. SSE/`use-realtime.ts` teardown stays BLOCKED until RQ is FULLY gone.
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort
@@ -1560,7 +1610,7 @@ sessions.
 | **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets + file_upload + crew + doc/service-template + **Kit** + **Asset/Bulk** + **project_category/group** + **project_line_item** + **sub_hire/supplier_order families** + **project** + **crew scheduling sub-tables (infra-only)** dual-write done — CENTRAL GRAPH COMPLETE + DUAL-WRITE SURFACE COMPLETE) | per-domain backfill + cutover; tsc/tests/build green each |
 | **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields + crew + **Kit** + **Asset/Bulk registry** done) | table/dropdown/edit live-update on mutation |
 | **5 Auth bridge** ✅ | Better Auth → Convex ES256 JWT; user token (org-scoped reads) + service token (trusted backend); browser writes rejected | round-trip 6/6: rejected without a valid token, accepted with; `/cso` clean |
-| **6 Decommission** 🔄 | Rewire deferred mirror reads off Prisma + remove React Query + SSE event bus (truncate+backfill resync DONE; supplier FLAT reads rewired; **nested supplier+model+category in ALL line-item trees incl. warehouse + PDF pipeline rewired** via `attachLineItemTree` — line-item-tree dimension COMPLETE; **`model_check_item` + `kit_check_item` now dual-written → warehouse counts + kit join fully off Convex via `attachKitTree`, "Checks" tabs reactive, `crewMembers.icalToken` redacted for browser reads**; **all 7 `*_media` tables now dual-written + reactive-list photo grafts off the mirror via `media-read.ts`; warehouse scan-path single-model reads off the mirror**; **React Query removal IN PROGRESS — `useServerMutation` (writes) + `useServerQuery` (no-liveness reads) keystones; **76 datums off RQ — the no-liveness read tail is now EXHAUSTED** (143 files still import RQ but all 124 remaining `useQuery` calls are genuinely reactive): 11 reactive config domains + org-tags + the entire no-liveness tail via `useServerQuery` (count badges, previews, dashboard, crew analytics/pickers, admin, analytics/lookups, supplier/accessory detail, activity/category/calendar/auditor/check-items/members) + 2 read+write islands (saved-views, project-tasks) via `useServerQuery`+`useServerMutation`; classify with a MULTILINE-aware invalidate grep + anchored key attribution — stocktake/crew-availability/notifications-polling/detail-pages-with-child-queryKey-props are live, excluded for the reactive tail**; SSE remains) | per-subsystem; tsc/tests/build green each. [FEATUREDOCS/53](./53-realtime-sync.md) to be marked superseded when SSE is torn out |
+| **6 Decommission** 🔄 | Rewire deferred mirror reads off Prisma + remove React Query + SSE event bus (truncate+backfill resync DONE; supplier FLAT reads rewired; **nested supplier+model+category in ALL line-item trees incl. warehouse + PDF pipeline rewired** via `attachLineItemTree` — line-item-tree dimension COMPLETE; **`model_check_item` + `kit_check_item` now dual-written → warehouse counts + kit join fully off Convex via `attachKitTree`, "Checks" tabs reactive, `crewMembers.icalToken` redacted for browser reads**; **all 7 `*_media` tables now dual-written + reactive-list photo grafts off the mirror via `media-read.ts`; warehouse scan-path single-model reads off the mirror**; **React Query removal IN PROGRESS — `useServerMutation` (writes) + `useServerQuery` (no-liveness reads) keystones; **76 datums off RQ — the no-liveness read tail is now EXHAUSTED** (was 143 files; all 124 remaining `useQuery` calls genuinely reactive): 11 reactive config domains + org-tags + the entire no-liveness tail via `useServerQuery` (count badges, previews, dashboard, crew analytics/pickers, admin, analytics/lookups, supplier/accessory detail, activity/category/calendar/auditor/check-items/members) + 2 read+write islands (saved-views, project-tasks) via `useServerQuery`+`useServerMutation`; classify with a MULTILINE-aware invalidate grep + anchored key attribution. **Reactive tail STARTED: shared write-components `MediaUploader`+`NotesEditor` decoupled from RQ (`queryKey` prop → `onChanged` callback + `useServerMutation`), unblocking all detail-page conversions; clients/[id]+locations/[id] (non-SSE islands) taken fully off RQ via `useServerQuery`+`onChanged={refetch}` — 135 → 131 files import RQ**; SSE remains) | per-subsystem; tsc/tests/build green each. [FEATUREDOCS/53](./53-realtime-sync.md) to be marked superseded when SSE is torn out |
 
 ## Conventions
 

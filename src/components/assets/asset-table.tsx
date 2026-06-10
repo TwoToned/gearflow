@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Pencil, Loader2, Download, Upload, RotateCcw } from "lucide-react";
@@ -353,22 +353,15 @@ export function AssetTable() {
   const serializedColumns = useAssetColumns(locations, categories);
   const bulkColumns = useBulkAssetColumns(locations);
 
-  const serializedQuery = useQuery({
-    queryKey: ["assets", orgId, { search, filters, page, pageSize, sortBy, sortOrder }],
-    queryFn: () => getAssets({
-      search: search || undefined,
-      filters,
-      page,
-      pageSize,
-      sortBy,
-      sortOrder,
-    }),
-    enabled: view === "serialized",
-  });
+  // Memoize the query args so the same object backs both the queryKey and the
+  // queryFn (built once per dependency change instead of twice per render).
+  const serializedArgs = useMemo(
+    () => ({ search: search || undefined, filters, page, pageSize, sortBy, sortOrder }),
+    [search, filters, page, pageSize, sortBy, sortOrder],
+  );
 
-  const bulkQuery = useQuery({
-    queryKey: ["bulk-assets", orgId, { search, filters, page, pageSize, sortBy, sortOrder }],
-    queryFn: () => getBulkAssets({
+  const bulkArgs = useMemo(
+    () => ({
       search: search || undefined,
       status: Array.isArray(filters.status) ? filters.status[0] : undefined,
       locationId: Array.isArray(filters.locationId) ? filters.locationId[0] : undefined,
@@ -377,6 +370,18 @@ export function AssetTable() {
       sortBy,
       sortOrder,
     }),
+    [search, filters, page, pageSize, sortBy, sortOrder],
+  );
+
+  const serializedQuery = useQuery({
+    queryKey: ["assets", orgId, serializedArgs],
+    queryFn: () => getAssets(serializedArgs),
+    enabled: view === "serialized",
+  });
+
+  const bulkQuery = useQuery({
+    queryKey: ["bulk-assets", orgId, bulkArgs],
+    queryFn: () => getBulkAssets(bulkArgs),
     enabled: view === "bulk",
   });
 

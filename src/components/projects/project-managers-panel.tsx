@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+
 import { Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -38,7 +40,7 @@ export function ProjectManagersPanel({
   const { data: activeOrg } = useActiveOrganization();
   const [showPicker, setShowPicker] = useState(false);
 
-  const { data: members } = useQuery({
+  const { data: members } = useServerQuery({
     queryKey: ["members", activeOrg?.id],
     queryFn: getMembers,
     enabled: showPicker,

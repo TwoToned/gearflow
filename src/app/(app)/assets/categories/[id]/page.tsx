@@ -2,7 +2,7 @@
 
 import { use } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { useRouter } from "next/navigation";
 import {
   ChevronRight,
@@ -41,7 +41,7 @@ export default function CategoryDetailPage({ params }: { params: Promise<{ id: s
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: category, isLoading } = useQuery({
+  const { data: category, isLoading } = useServerQuery({
     queryKey: ["category", orgId, id],
     queryFn: () => getCategory(id),
   });

@@ -68,7 +68,7 @@ export function MaintenanceForm({ initialData }: MaintenanceFormProps) {
     queryFn: getAssetsForMaintenanceSelect,
   });
 
-  const { data: members } = useQuery({
+  const { data: members } = useServerQuery({
     queryKey: ["members", orgId],
     queryFn: getMembers,
   });

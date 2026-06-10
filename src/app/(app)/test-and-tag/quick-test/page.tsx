@@ -2,7 +2,9 @@
 
 import { useReducer, useEffect, useCallback, Suspense, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+
 import { toast } from "sonner";
 import Link from "next/link";
 import { ArrowLeft, Volume2, VolumeX, ChevronDown, ChevronUp } from "lucide-react";
@@ -115,7 +117,7 @@ function QuickTestContent() {
   }, [preloadId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch org members for tester picker
-  const { data: members } = useQuery({
+  const { data: members } = useServerQuery({
     queryKey: ["members", orgId],
     queryFn: getMembers,
     enabled: !!orgId,

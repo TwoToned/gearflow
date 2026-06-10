@@ -747,7 +747,7 @@ function AssignmentDialog({
       ? new Date(watchEndDate as string | Date).toISOString().split("T")[0]
       : "";
 
-  const { data: conflicts } = useQuery({
+  const { data: conflicts } = useServerQuery({
     queryKey: [
       "crew-conflicts",
       watchCrewMemberId,

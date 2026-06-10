@@ -2,7 +2,9 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+
 import { Plus, Pencil, Loader2, Download, Upload, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
@@ -385,7 +387,7 @@ export function AssetTable() {
   const allAssets = useAssets(orgId);
   const allBulkAssets = useBulkAssets(orgId);
   const allModels = useModels(orgId);
-  const { data: photos } = useQuery({
+  const { data: photos } = useServerQuery({
     queryKey: ["asset-registry-photos", orgId],
     queryFn: () => getAssetRegistryPhotos(),
     enabled: !!orgId,

@@ -9,6 +9,7 @@ import { getKit } from "@/server/kits";
 import { KitForm } from "@/components/kits/kit-form";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { FadeIn } from "@/components/ui/motion";
+import { FormSkeleton } from "@/components/ui/skeleton";
 
 export default function EditKitPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -20,7 +21,7 @@ export default function EditKitPage({ params }: { params: Promise<{ id: string }
     queryFn: () => getKit(id),
   });
 
-  if (isLoading) return <div className="t-body text-fg-3">Loading...</div>;
+  if (isLoading) return <FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>;
   if (!kit) return <div className="t-body text-fg-3">Kit not found.</div>;
 
   return (

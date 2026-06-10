@@ -9,6 +9,7 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
+import { FormSkeleton } from "@/components/ui/skeleton";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -41,7 +42,7 @@ export default function EditProjectPage({
   });
 
   if (isLoading)
-    return <div className="text-fg-3">Loading...</div>;
+    return <FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>;
   if (!project)
     return <div className="text-fg-3">Project not found.</div>;
 

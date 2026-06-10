@@ -2,6 +2,7 @@
 
 import { use, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { toast } from "sonner";
 import Link from "next/link";
 import { AdminShell } from "@/components/admin/admin-shell";
@@ -141,7 +142,7 @@ export default function AdminOrgDetailPage({
     queryFn: () => adminGetOrganizationDetails(orgId),
   });
 
-  const { data: customRoles = [] } = useQuery({
+  const { data: customRoles = [] } = useServerQuery({
     queryKey: ["admin-org-custom-roles", orgId],
     queryFn: () => adminGetOrgCustomRoles(orgId),
   });

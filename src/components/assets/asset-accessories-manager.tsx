@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
 import { Loader2, Plus, X, Cable } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -52,6 +52,11 @@ interface Props {
   /** Bulk accessories from the asset's MODEL — read-only, render with a "from model" tag.
    *  An entry is hidden when the asset has its own row for the same bulkAssetId (override). */
   inheritedBulkItems?: InheritedBulk[];
+  /** Called after an attach/detach succeeds so the parent detail page re-reads
+   *  getAsset (the source of truth for childAssets / childBulkItems). Replaces the
+   *  old React Query `invalidateQueries(["asset"])` now that the page is on the
+   *  Convex version-vector reactive composite. */
+  onChanged?: () => void;
 }
 
 export function AssetAccessoriesManager({
@@ -59,10 +64,10 @@ export function AssetAccessoriesManager({
   childAssets,
   childBulkItems,
   inheritedBulkItems = [],
+  onChanged,
 }: Props) {
   const ownBulkIds = new Set(childBulkItems.map((c) => c.bulkAssetId).filter(Boolean) as string[]);
   const visibleInherited = inheritedBulkItems.filter((i) => !ownBulkIds.has(i.bulkAssetId));
-  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"serialized" | "bulk">("serialized");
 
@@ -70,7 +75,7 @@ export function AssetAccessoriesManager({
   const [bulkId, setBulkId] = useState("");
   const [bulkQty, setBulkQty] = useState(1);
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["asset"] });
+  const refresh = () => onChanged?.();
   const hasAny =
     childAssets.length > 0 || childBulkItems.length > 0 || visibleInherited.length > 0;
 
@@ -88,7 +93,7 @@ export function AssetAccessoriesManager({
     enabled: open && tab === "bulk",
   });
 
-  const addSerial = useMutation({
+  const addSerial = useServerMutation({
     mutationFn: () => addSerializedChildToAsset(assetId, { childAssetId: serialId }),
     onSuccess: () => {
       toast.success("Accessory attached");
@@ -98,7 +103,7 @@ export function AssetAccessoriesManager({
     },
     onError: (e) => toast.error(e.message),
   });
-  const addBulk = useMutation({
+  const addBulk = useServerMutation({
     mutationFn: () => addBulkChildToAsset(assetId, { bulkAssetId: bulkId, quantity: bulkQty }),
     onSuccess: () => {
       toast.success("Accessory attached");
@@ -109,7 +114,7 @@ export function AssetAccessoriesManager({
     },
     onError: (e) => toast.error(e.message),
   });
-  const removeSerial = useMutation({
+  const removeSerial = useServerMutation({
     mutationFn: (childId: string) => removeSerializedChildFromAsset(assetId, childId),
     onSuccess: () => {
       toast.success("Accessory detached");
@@ -117,7 +122,7 @@ export function AssetAccessoriesManager({
     },
     onError: (e) => toast.error(e.message),
   });
-  const removeBulk = useMutation({
+  const removeBulk = useServerMutation({
     mutationFn: (bulkChildId: string) => removeBulkChildFromAsset(assetId, bulkChildId),
     onSuccess: () => {
       toast.success("Accessory detached");

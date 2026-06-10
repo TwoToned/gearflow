@@ -4,7 +4,10 @@ import { use, Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useSearchParams } from "next/navigation";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useReactiveServerQuery } from "@/hooks/use-reactive-server-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useAssetDetailVersion } from "@/hooks/use-assets";
 import { Archive, ChevronRight, Pencil, Trash2, FileText, RotateCcw, MapPin, Wrench, CalendarClock, Cable } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -65,7 +68,6 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const searchParams = useSearchParams();
   const isBulk = searchParams.get("type") === "bulk";
   const router = useRouter();
-  const queryClient = useQueryClient();
 
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
@@ -79,45 +81,48 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
     return isNaN(parsed.getTime()) ? null : parsed;
   }, [searchParams]);
 
-  const assetQuery = useQuery({
+  // Reactive composite: subscribe to the cheap Convex version vector and re-run
+  // the unchanged getAsset server action whenever the asset, its media, or its
+  // accessories change (cross-user over the WebSocket). The bulk path redirects
+  // to the model page and is not in the realtime scope → a plain useServerQuery.
+  // See convex/assetDetail.ts + src/hooks/use-reactive-server-query.ts.
+  const assetVersion = useAssetDetailVersion(isBulk ? undefined : id);
+  const { data: asset, isLoading: assetLoading, refetch: refetchAsset } = useReactiveServerQuery({
+    watch: assetVersion,
     queryKey: ["asset", orgId, id],
     queryFn: () => getAsset(id),
     enabled: !isBulk,
   });
 
-  const bulkQuery = useQuery({
+  const { data: bulkAsset, isLoading: bulkLoading } = useServerQuery({
     queryKey: ["bulk-asset", orgId, id],
     queryFn: () => getBulkAsset(id),
     enabled: isBulk,
   });
 
-  const archiveMutation = useMutation({
+  const archiveMutation = useServerMutation({
     mutationFn: async () => { isBulk ? await archiveBulkAsset(id) : await archiveAsset(id); },
     onSuccess: () => {
       toast.success("Asset archived");
-      queryClient.invalidateQueries({ queryKey: ["assets"] });
-      queryClient.invalidateQueries({ queryKey: ["bulk-assets"] });
-      router.push("/assets/registry");
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async () => { isBulk ? await deleteBulkAsset(id) : await deleteAsset(id); },
-    onSuccess: () => {
-      toast.success("Asset deleted");
-      queryClient.invalidateQueries({ queryKey: ["assets"] });
-      queryClient.invalidateQueries({ queryKey: ["bulk-assets"] });
       router.push("/assets/registry");
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const forceReturnMutation = useMutation({
+  const deleteMutation = useServerMutation({
+    mutationFn: async () => { isBulk ? await deleteBulkAsset(id) : await deleteAsset(id); },
+    onSuccess: () => {
+      toast.success("Asset deleted");
+      router.push("/assets/registry");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const forceReturnMutation = useServerMutation({
     mutationFn: () => forceReturnAsset(id),
     onSuccess: () => {
       toast.success("Asset force returned to available");
-      queryClient.invalidateQueries({ queryKey: ["asset", orgId, id] });
-      queryClient.invalidateQueries({ queryKey: ["assets"] });
+      refetchAsset();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -127,23 +132,22 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   // ─── Bulk Asset → Redirect to Model page ────────────────────────────
-  const bulkModelId = isBulk ? bulkQuery.data?.modelId : null;
+  const bulkModelId = isBulk ? bulkAsset?.modelId : null;
   useEffect(() => {
     if (bulkModelId) {
       router.replace(`/assets/models/${bulkModelId}`);
     }
   }, [bulkModelId, router]);
 
-  const isLoading = isBulk ? bulkQuery.isLoading : assetQuery.isLoading;
+  const isLoading = isBulk ? bulkLoading : assetLoading;
   if (isLoading) return <DetailPageSkeleton />;
 
   if (isBulk) {
-    if (!bulkQuery.data) return <div className="text-fg-3 py-12 text-center">Bulk asset not found.</div>;
+    if (!bulkAsset) return <div className="text-fg-3 py-12 text-center">Bulk asset not found.</div>;
     return <div className="text-fg-3">Redirecting to model...</div>;
   }
 
   // ─── Serialized Asset Detail ─────────────────────────────────────────
-  const asset = assetQuery.data;
   if (!asset) return <div className="text-fg-3 py-12 text-center">Asset not found.</div>;
 
   const assetPhotos = ((asset.media || []) as MediaItem[]).filter((m) => m.type === "PHOTO");
@@ -358,11 +362,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
               <TabsContent value="notes" className="mt-4">
                 <NotesEditor
                   initialNotes={asset.notes || ""}
-                  onChanged={() =>
-                    queryClient.invalidateQueries({
-                      queryKey: ["asset", orgId, id],
-                    })
-                  }
+                  onChanged={() => refetchAsset()}
                   onSave={(notes) => updateAssetNotes(id, notes)}
                   placeholder="Add notes about this asset..."
                 />
@@ -388,11 +388,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     entityId={id}
                     accept="image/*"
                     existingMedia={assetPhotos}
-                    onChanged={() =>
-                      queryClient.invalidateQueries({
-                        queryKey: ["asset", orgId, id],
-                      })
-                    }
+                    onChanged={() => refetchAsset()}
                     onUploadComplete={async (fileUpload) => {
                       await addAssetMedia({
                         assetId: id,
@@ -620,6 +616,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       childAssets={asset.childAssets}
                       childBulkItems={asset.childBulkItems}
                       inheritedBulkItems={asset.model?.bulkAccessories ?? []}
+                      onChanged={() => refetchAsset()}
                     />
                   </CanDo>
                 </SidebarSection>

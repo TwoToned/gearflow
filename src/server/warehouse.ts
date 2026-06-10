@@ -25,6 +25,34 @@ import { TestTagBlockError } from "@/lib/errors/test-tag-block-error";
 import { syncKitsToConvex } from "@/lib/kit-mirror";
 import { syncAssetsToConvex, syncBulkAssetsToConvex } from "@/lib/asset-mirror";
 import { upsertProjectLineItemsToConvex, syncLineItemsToConvex } from "@/lib/line-item-mirror";
+import {
+  buildLineItemAttachMaps,
+  attachLineItemTree,
+  attachModelCheckItemCounts,
+  collectTreeModelIds,
+} from "@/lib/line-item-tree-read";
+
+/**
+ * `model_check_item` is NOT dual-written to Convex, so the per-model check-item
+ * count that gates warehouse-prep check prompts (`model._count.modelCheckItems`,
+ * read by 8+ UI sites) is sourced from Prisma rather than the Convex mirror that
+ * now serves the rest of the line-item tree. One indexed grouped query over the
+ * distinct model ids in a tree; `attachModelCheckItemCounts` grafts the result
+ * back onto the Convex-attached model nodes. See src/lib/line-item-tree-read.ts.
+ */
+async function getModelCheckItemCountMap(
+  organizationId: string,
+  tree: Array<{ modelId?: string | null; supplierId?: string | null; childLineItems?: unknown }>,
+): Promise<Map<string, number>> {
+  const modelIds = collectTreeModelIds(tree);
+  if (modelIds.length === 0) return new Map();
+  const grouped = await prisma.modelCheckItem.groupBy({
+    by: ["modelId"],
+    where: { organizationId, modelId: { in: modelIds } },
+    _count: { _all: true },
+  });
+  return new Map(grouped.map((g) => [g.modelId, g._count._all]));
+}
 
 // ---------------------------------------------------------------------------
 // Kit bulk-content traversal
@@ -134,6 +162,11 @@ async function assertTestTagAllowsCheckout(
 export async function getProjectForWarehouse(projectId: string) {
   const { organizationId } = await getOrgContext();
 
+  // model + supplier are dual-written to Convex and attached in JS via
+  // attachLineItemTree below (Phase 6 decommission) — not joined here. `kit`
+  // stays a Prisma join: the attach helper never touches it, and its
+  // `_count.kitCheckItems` (like model's check-item count) reads a table that is
+  // NOT dual-written to Convex.
   const project = await prisma.project.findUnique({
     where: { id: projectId, organizationId },
     include: {
@@ -142,7 +175,6 @@ export async function getProjectForWarehouse(projectId: string) {
         where: { type: "EQUIPMENT" },
         orderBy: { sortOrder: "asc" },
         include: {
-          model: { include: { _count: { select: { modelCheckItems: true } } } },
           asset: true,
           bulkAsset: true,
           // Per-unit assignments (post-cutover, the source of truth for
@@ -157,11 +189,9 @@ export async function getProjectForWarehouse(projectId: string) {
             },
           },
           kit: { include: { _count: { select: { kitCheckItems: true } } } },
-          supplier: { select: { name: true } },
           childLineItems: {
             orderBy: { sortOrder: "asc" },
             include: {
-              model: { include: { _count: { select: { modelCheckItems: true } } } },
               asset: true, bulkAsset: true,
               units: {
                 orderBy: { ordinal: "asc" },
@@ -172,11 +202,9 @@ export async function getProjectForWarehouse(projectId: string) {
                 },
               },
               kit: { include: { _count: { select: { kitCheckItems: true } } } },
-              supplier: { select: { name: true } },
               childLineItems: {
                 orderBy: { sortOrder: "asc" },
                 include: {
-                  model: { include: { _count: { select: { modelCheckItems: true } } } },
                   asset: true, bulkAsset: true,
                   units: {
                     orderBy: { ordinal: "asc" },
@@ -187,7 +215,6 @@ export async function getProjectForWarehouse(projectId: string) {
                     },
                   },
                   kit: { include: { _count: { select: { kitCheckItems: true } } } },
-                  supplier: { select: { name: true } },
                 },
               },
             },
@@ -205,9 +232,17 @@ export async function getProjectForWarehouse(projectId: string) {
     throw new Error("Cannot perform warehouse operations on a template");
   }
 
+  // Attach model (+ equipment category) + supplier from the Convex mirror, then
+  // graft model._count.modelCheckItems from Prisma (model_check_item is not
+  // dual-written) so the warehouse payload keeps its exact shape.
+  const attachMaps = await buildLineItemAttachMaps(organizationId);
+  const attachedLineItems = attachLineItemTree(project.lineItems, attachMaps);
+  const checkCounts = await getModelCheckItemCountMap(organizationId, project.lineItems);
+  const lineItems = attachModelCheckItemCounts(attachedLineItems, checkCounts);
+
   // Clients live in Convex — attach instead of a Prisma join.
   const client = project.clientId ? await getClientById(project.clientId) : null;
-  return serialize({ ...project, client });
+  return serialize({ ...project, lineItems, client });
 }
 
 export async function lookupAssetForScan(
@@ -1790,6 +1825,9 @@ export async function getAvailableAssetsForModel(modelId: string) {
 export async function getProjectPullSheet(projectId: string) {
   const { organizationId } = await getOrgContext();
 
+  // model (+ equipment category) + supplier are dual-written to Convex and
+  // attached in JS via attachLineItemTree below (Phase 6 decommission) — not
+  // joined here. `kit` stays a Prisma join (the attach helper never touches it).
   const project = await prisma.project.findUnique({
     where: { id: projectId, organizationId },
     include: {
@@ -1801,28 +1839,22 @@ export async function getProjectPullSheet(projectId: string) {
         },
         orderBy: { sortOrder: "asc" },
         include: {
-          model: { include: { category: true, _count: { select: { modelCheckItems: true } } } },
           asset: { include: { location: true } },
           bulkAsset: true,
           kit: true,
-          supplier: { select: { name: true } },
           childLineItems: {
             where: { status: { not: "CANCELLED" } },
             orderBy: { sortOrder: "asc" },
             include: {
-              model: { include: { category: true, _count: { select: { modelCheckItems: true } } } },
               asset: { include: { location: true } },
               bulkAsset: true,
               kit: true,
-              supplier: { select: { name: true } },
               childLineItems: {
                 where: { status: { not: "CANCELLED" } },
                 orderBy: { sortOrder: "asc" },
                 include: {
-                  model: { include: { category: true, _count: { select: { modelCheckItems: true } } } },
                   asset: { include: { location: true } },
                   bulkAsset: true,
-                  supplier: { select: { name: true } },
                 },
               },
             },
@@ -1836,16 +1868,25 @@ export async function getProjectPullSheet(projectId: string) {
     throw new Error("Project not found");
   }
 
+  // Attach model (+ equipment category) + supplier from the Convex mirror, then
+  // graft model._count.modelCheckItems from Prisma (model_check_item is not
+  // dual-written). Done before overbooked/enrichment so downstream sees the same
+  // shape the old Prisma include produced.
+  const attachMaps = await buildLineItemAttachMaps(organizationId);
+  const attachedTree = attachLineItemTree(project.lineItems, attachMaps);
+  const checkCounts = await getModelCheckItemCountMap(organizationId, project.lineItems);
+  const attachedLineItems = attachModelCheckItemCounts(attachedTree, checkCounts);
+
   // Compute overbooked status
   const overbookedMap = await computeOverbookedStatus(
     organizationId,
-    project.lineItems,
+    attachedLineItems,
     project.rentalStartDate,
     project.rentalEndDate,
     project.id,
   );
 
-  const enrichedLineItems = project.lineItems
+  const enrichedLineItems = attachedLineItems
     .filter((li) => {
       const isSubhireItem = li.subHireId != null;
       // Kit children render under their parent
@@ -1877,10 +1918,13 @@ export async function getProjectPullSheet(projectId: string) {
     groups[key].push(item);
   }
 
-  // Clients live in Convex — attach instead of a Prisma join.
+  // Clients live in Convex — attach instead of a Prisma join. Return the
+  // Convex-attached tree as `project.lineItems` too (not the model/supplier-less
+  // raw Prisma rows) so the payload stays byte-identical to the old include even
+  // though current consumers read `groups`, not `project.lineItems`.
   const client = project.clientId ? await getClientById(project.clientId) : null;
   return serialize({
-    project: { ...project, client },
+    project: { ...project, lineItems: attachedLineItems, client },
     groups,
   });
 }

@@ -13,11 +13,13 @@ import { describe, it, expect } from "vitest";
 import {
   attachLineItemTree,
   attachModelCheckItemCounts,
+  attachKitTree,
   collectTreeModelIds,
   type LineItemAttachMaps,
 } from "@/lib/line-item-tree-read";
 import type { ConvexModel } from "@/lib/models-read";
 import type { ConvexCategory } from "@/lib/categories-read";
+import type { ConvexKit } from "@/lib/kits-read";
 
 function makeModel(id: string, name: string, categoryId?: string): ConvexModel {
   return { _id: `convex-${id}`, _creationTime: 0, id, organizationId: "org-1", name, categoryId } as ConvexModel;
@@ -123,5 +125,76 @@ describe("attachModelCheckItemCounts", () => {
     attachModelCheckItemCounts(attached, countMap);
     // grafting clones the model node rather than mutating in place
     expect(before).not.toHaveProperty("_count");
+  });
+});
+
+describe("attachKitTree", () => {
+  function makeKit(id: string, name: string): ConvexKit {
+    return {
+      _id: `convex-${id}`,
+      _creationTime: 0,
+      id,
+      organizationId: "org-1",
+      assetTag: `TAG-${id}`,
+      name,
+      checkMode: "KIT_LEVEL",
+    } as ConvexKit;
+  }
+
+  // A 3-deep tree: a kit parent, a kit-child that is itself a (nested) kit, and a
+  // grandchild with no kitId. One kit id (k-rack) is absent from the mirror.
+  type KitNode = { id: string; kitId: string | null; childLineItems?: KitNode[] };
+  const tree: KitNode[] = [
+    {
+      id: "li-kit",
+      kitId: "k-stage",
+      childLineItems: [
+        { id: "li-member", kitId: null },
+        {
+          id: "li-nested-kit",
+          kitId: "k-sub",
+          childLineItems: [{ id: "li-grandchild", kitId: null }],
+        },
+      ],
+    },
+    { id: "li-missing-kit", kitId: "k-rack" }, // kit absent from the mirror
+    { id: "li-plain", kitId: null },
+  ];
+
+  const kitMap = new Map<string, ConvexKit>([
+    ["k-stage", makeKit("k-stage", "Stage Kit")],
+    ["k-sub", makeKit("k-sub", "Sub Kit")],
+  ]);
+  // k-stage has 4 check items, k-sub 0 (absent → 0).
+  const kitCountMap = new Map<string, number>([["k-stage", 4]]);
+
+  it("attaches the Convex kit + grafts _count.kitCheckItems matching the old include", () => {
+    const [kit] = attachKitTree(tree, kitMap, kitCountMap);
+    expect(kit.kit?.name).toBe("Stage Kit");
+    expect(kit.kit?.assetTag).toBe("TAG-k-stage");
+    expect(kit.kit?.checkMode).toBe("KIT_LEVEL");
+    expect(kit.kit?._count).toEqual({ kitCheckItems: 4 });
+  });
+
+  it("attaches + counts at every depth (nested kit)", () => {
+    const [kit] = attachKitTree(tree, kitMap, kitCountMap);
+    const children = kit.childLineItems as unknown as Array<{ kit: { _count: { kitCheckItems: number } } | null }>;
+    expect(children[0].kit).toBeNull(); // li-member has no kitId
+    expect(children[1].kit?._count.kitCheckItems).toBe(0); // k-sub absent from count map → 0
+  });
+
+  it("yields kit: null for a kitId absent from the mirror — NO Prisma fallback", () => {
+    const result = attachKitTree(tree, kitMap, kitCountMap);
+    expect(result.find((n) => n.id === "li-missing-kit")?.kit).toBeNull();
+  });
+
+  it("yields kit: null when the node has no kitId", () => {
+    const result = attachKitTree(tree, kitMap, kitCountMap);
+    expect(result.find((n) => n.id === "li-plain")?.kit).toBeNull();
+  });
+
+  it("does not mutate the input rows", () => {
+    attachKitTree(tree, kitMap, kitCountMap);
+    expect(tree[0]).not.toHaveProperty("kit");
   });
 });

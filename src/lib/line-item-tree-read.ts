@@ -1,6 +1,9 @@
 import { getModelsByOrg, type ConvexModel } from "@/lib/models-read";
 import { getSuppliersByOrg, type ConvexSupplier } from "@/lib/suppliers-read";
 import { getCategoriesByOrg, type ConvexCategory } from "@/lib/categories-read";
+import { type ConvexKit } from "@/lib/kits-read";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 
 /**
  * Recursive line-item-tree attach helper for the Prisma→Convex decommission
@@ -27,9 +30,12 @@ import { getCategoriesByOrg, type ConvexCategory } from "@/lib/categories-read";
  * drift and re-introduce the very join we're removing. See FEATUREDOCS/54
  * "Phase 6 — Decommission".
  *
- * `*_media` and `model_check_item` cross-domain joins are NOT served here — those
- * tables are not dual-written to Convex yet, so any read of them stays on Prisma
- * (e.g. warehouse's `model._count.modelCheckItems`, deferred to a later session).
+ * `*_media` cross-domain joins are NOT served here — those tables are not
+ * dual-written to Convex yet, so any read of them stays on Prisma. The check-item
+ * ASSIGNMENT tables (`model_check_item` / `kit_check_item`) ARE now dual-written,
+ * so the warehouse `model._count.modelCheckItems` / `kit._count.kitCheckItems`
+ * counts come off the Convex mirror via the count-map helpers + `attachKitTree`
+ * below (no more Prisma `groupBy`).
  */
 
 /** A Convex model doc with its equipment category resolved (replaces the Prisma
@@ -121,18 +127,41 @@ export function attachLineItemTree<T extends LineItemNode>(
 }
 
 // ---------------------------------------------------------------------------
-// model_check_item count graft (warehouse-only)
+// Check-item count graft (warehouse-only)
 // ---------------------------------------------------------------------------
 //
-// `model_check_item` is the one cross-domain join on the line-item tree that is
-// NOT served off the Convex mirror: it has Phase-2 CRUD but no mirror/backfill,
-// so the Convex copy is empty/stale. The warehouse-prep reads
-// (getProjectForWarehouse / getProjectPullSheet) gate per-line check prompts on
-// `model._count.modelCheckItems` across 8+ UI sites, so that single count keeps
-// being sourced from Prisma and grafted back onto the Convex-attached `model`
-// node — preserving the exact `model: { ..., _count: { modelCheckItems } }`
-// shape the old Prisma include produced. Everything else on the model (scalars,
-// category, supplier) comes off the mirror via attachLineItemTree above.
+// The warehouse-prep reads (getProjectForWarehouse / getProjectPullSheet) gate
+// per-line check prompts on `model._count.modelCheckItems` (8+ UI sites) and
+// `kit._count.kitCheckItems`. Both junction tables (`model_check_item` /
+// `kit_check_item`) are now dual-written to Convex, so the counts come off the
+// mirror: one org-scoped Convex `list` per table, counted in JS into a Map, then
+// grafted back onto the Convex-attached `model` / `kit` node — preserving the
+// exact `_count: { … }` shape the old Prisma include produced. Everything else on
+// the model (scalars, category, supplier) comes off the mirror via
+// attachLineItemTree above; the kit comes off the mirror via attachKitTree below.
+
+/**
+ * Count of `model_check_item` rows per `modelId` for an org, sourced from the
+ * Convex mirror (one org-scoped `list`, counted in JS). Replaces the old Prisma
+ * `groupBy`. Feeds {@link attachModelCheckItemCounts}.
+ */
+export async function getModelCheckItemCountMap(orgId: string): Promise<Map<string, number>> {
+  const rows = await (await getConvexClient()).query(api.modelCheckItems.list, { orgId });
+  const map = new Map<string, number>();
+  for (const r of rows) map.set(r.modelId, (map.get(r.modelId) ?? 0) + 1);
+  return map;
+}
+
+/**
+ * Count of `kit_check_item` rows per `kitId` for an org, sourced from the Convex
+ * mirror. Feeds the `_count.kitCheckItems` graft in {@link attachKitTree}.
+ */
+export async function getKitCheckItemCountMap(orgId: string): Promise<Map<string, number>> {
+  const rows = await (await getConvexClient()).query(api.kitCheckItems.list, { orgId });
+  const map = new Map<string, number>();
+  for (const r of rows) map.set(r.kitId, (map.get(r.kitId) ?? 0) + 1);
+  return map;
+}
 
 /** A Convex-attached model node with the Prisma-sourced check-item count grafted
  * back on, matching the old `model: { _count: { modelCheckItems } }` include. */
@@ -189,4 +218,51 @@ export function attachModelCheckItemCounts<T extends AttachedNode>(
         : {}),
     };
   }) as Array<Omit<T, "model"> & { model: ModelWithCheckCount | null }>;
+}
+
+// ---------------------------------------------------------------------------
+// kit attach (warehouse line-item-tree dimension)
+// ---------------------------------------------------------------------------
+//
+// `kit` is dual-written to Convex; the warehouse tree readers used to keep it as
+// a Prisma join solely because its `_count.kitCheckItems` could not come off the
+// mirror. Now that `kit_check_item` is dual-written too, the whole kit node moves
+// off Prisma: scalars from the Convex `kits` doc + the check-item count grafted
+// from getKitCheckItemCountMap, matching the old
+// `kit: { ..., _count: { kitCheckItems } }` include.
+
+/** A Convex kit doc with the check-item count grafted on, matching the old
+ * `kit: { ..., _count: { kitCheckItems } }` include. */
+export type KitWithCheckCount = ConvexKit & { _count: { kitCheckItems: number } };
+
+/** A line-item node carrying an optional `kitId` and a recursive subtree. */
+type KitLineItemNode = { kitId?: string | null; childLineItems?: unknown };
+
+/**
+ * Walk a line-item tree and attach `kit` (the Convex `kits` doc + a grafted
+ * `_count.kitCheckItems`) onto every node, recursing into `childLineItems`. A
+ * node with no `kitId`, or whose kit is absent from the mirror, gets `kit: null`
+ * — same as a Prisma join against a missing row, with NO Prisma fallback (a miss
+ * surfaces mirror drift rather than hiding it). Returns new nodes; input is not
+ * mutated. Run AFTER {@link attachLineItemTree} / {@link attachModelCheckItemCounts}.
+ */
+export function attachKitTree<T extends KitLineItemNode>(
+  rows: T[],
+  kitMap: Map<string, ConvexKit>,
+  kitCountMap: Map<string, number>,
+): Array<Omit<T, "kit"> & { kit: KitWithCheckCount | null }> {
+  return rows.map((row) => {
+    const children = row.childLineItems;
+    const baseKit = row.kitId ? kitMap.get(row.kitId) ?? null : null;
+    const kit: KitWithCheckCount | null = baseKit
+      ? { ...baseKit, _count: { kitCheckItems: kitCountMap.get(baseKit.id) ?? 0 } }
+      : null;
+    return {
+      ...row,
+      kit,
+      ...(Array.isArray(children)
+        ? { childLineItems: attachKitTree(children as KitLineItemNode[], kitMap, kitCountMap) }
+        : {}),
+    };
+  }) as Array<Omit<T, "kit"> & { kit: KitWithCheckCount | null }>;
 }

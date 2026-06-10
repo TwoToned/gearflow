@@ -1637,6 +1637,67 @@ invalidated only by same-view writers) but it is ~2000 lines with many writers �
 Notifications needs the `notification` table dual-written first. SSE/`use-realtime.ts` teardown stays
 BLOCKED until RQ is FULLY gone.
 
+**Done session 2026-06-10n (★ THE BUCKET-B KEYSTONE — first SSE-live reactive composite; 120 → 119
+files import RQ; kit detail fully RQ-free).** This is the reusable pattern for every remaining
+SSE-live detail composite (asset/project/warehouse). The shape decision (codex-consulted up front
+because it governs ~5 more sessions): **version-vector trigger, NOT a full reactive Convex composite.**
+
+- **Why not a full Convex composite (the rejected Option A).** The kit detail page is served by the
+  `getKit` server action, which composes data Convex CANNOT hold — `scanLogs.scannedBy` is a Better
+  Auth **USER** (stays in Prisma forever), plus maintenanceRecords/category/location. Replicating that
+  shape in a Convex query would be infeasible AND the exact data-shape-drift footgun CLAUDE.md warns
+  about. So the server action stays **byte-identical** (zero drift) and we add only a cheap reactive
+  *trigger*.
+- **The pattern (Option B).** A hand-written Convex query `convex/kitDetail.ts` `version({id})` returns
+  a "version vector": the kit doc `updatedAt` + a deterministic **content signature** over each
+  member/media sub-table (`kitSerializedItems`/`kitBulkItems`/`kitMedia` by `kitId`). The browser
+  subscribes via `useKitDetailVersion(id)` (`src/hooks/use-kits.ts`), and a NEW keystone hook
+  **`useReactiveServerQuery({ watch, queryKey, queryFn })`** (`src/hooks/use-reactive-server-query.ts`)
+  re-runs `getKit` whenever the serialized `watch` changes. Convex pushes the vector to every
+  subscriber over the WebSocket → cross-user reactivity, replacing the SSE `kit:updated` invalidation.
+  Convention established: hand-written reactive composite queries live in `convex/<table>Detail.ts`
+  (NOT `convex/<table>.ts`, which `scripts/generate-convex-crud.cjs` owns and would clobber).
+- **★ The silent-staleness contract (the whole safety property).** The vector MUST be a SUPERSET of
+  what the old SSE `kit:updated` event covered (kit + its direct contents), or a cross-user refresh is
+  silently dropped. Two subtleties:
+  - **Content signature, not count+max-timestamp** (codex caught this). `setKitPrimaryPhoto` flips
+    `kitMedia.isPrimary` only — same row count, same `createdAt` — so a count+ts vector would MISS it
+    and the header photo would go stale. The signature folds in every mutable, page-visible field
+    (`isPrimary`/`sortOrder`/`position`/`quantity`/…), so add/remove AND in-place edits both move it.
+  - **Match the OLD refresh scope, don't over-reach.** `kit:updated` fires only from `logActivity` for
+    `entityType:"Kit"`. Cross-domain history the kit page did NOT live-refresh on under the old model —
+    project line items (`line-item:changed`), scan logs, maintenance (`maintenance:changed`), the member
+    assets' own condition (`asset:updated`) — is intentionally OUT of the vector. Data-identical, not
+    over-eager.
+- **`useReactiveServerQuery` semantics** (codex-reviewed twice): fetches on first-defined `watch` (not
+  on mount — avoids a double-fetch racing the WS connect); a `watch` change at the same `queryKey` is a
+  background refresh (data stays visible, no skeleton flash); **`queryKey` is the identity** so a same-id
+  `[id]`-route navigation (App Router re-renders in place, no remount) never briefly shows the WRONG
+  entity (results are identity-tagged at fetch-start, surfaced only if `result.identity===identityKey`);
+  request-sequenced latest-wins. Same-view writes flow through the vector automatically, but each
+  mutation's `onSuccess` still calls `refetch()` — an immediate source-of-truth re-read that doesn't
+  depend on the Convex mirror write landing first (the redundant watch-driven fetch is harmless).
+- **Page rewire** (`kits/[id]/page.tsx`, fully RQ-free): kit reader → `useReactiveServerQuery`; all 6
+  mutations (status/force-return/add-item/remove-item/add-bulk/remove-bulk) → `useServerMutation` with
+  `invalidate(["kit",…])` → `refetchKit()`; the 2 dialog-gated cross-domain reads
+  (`getAvailableAssetsForKit`/`…Bulk…`, NOT in the SSE map) → `useServerQuery` + `refetch()` after add;
+  MediaUploader/NotesEditor `onChanged` → `refetchKit`.
+- **Verified:** tsc clean, **2228 tests**, 0 new lint (changed files clean + normalized base-vs-HEAD),
+  `pnpm build` exit 0, **codex review** (one Medium — the identity-staleness gap above — fixed, then
+  "Fixed, no new issues"), and a **live JWKS-sidecar round-trip** (`scripts/convex-roundtrip-kit-detail.ts`,
+  5/5): `version()` callable with a user token + org-scoped (different-org token rejected), and the
+  vector changes on member-add, media-add, AND the `isPrimary`-only flip (the silent-staleness proof).
+
+**NEXT reactive-tail (now UNBLOCKED — the keystone exists).** Reuse `useReactiveServerQuery` +
+`convex/<table>Detail.ts version()` for the rest of bucket B, one composite per session: **asset detail**
+(`assets/registry/[id]` — `["asset",orgId,id]` SSE + child asset-checks/accessories; bulk-asset variant),
+**warehouse** (`warehouse/page` + `[projectId]` + reorder/bulk-checkin/close-out), the **project cluster**
+(biggest — the equipment editor is one delicate read composition; migrate as a set), **stocktake**
+(replace the 3-5s scanner poll with Convex reactivity). Each version vector must capture exactly what its
+SSE event covered (write the content signature over the mutable, page-visible sub-table fields). Then
+**notifications** (dual-write the `notification` table first), the auth/RBAC tail (`useServerQuery`), and
+finally SSE/`use-realtime.ts` teardown (only at RQ == 0).
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort

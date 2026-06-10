@@ -1,22 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { PageMeta } from "@/components/layout/page-meta";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Pencil, Trash2, Loader2, Users } from "lucide-react";
 import { toast } from "sonner";
 
 import {
-  getCrewRoles,
   createCrewRole,
   updateCrewRole,
   deleteCrewRole,
-  getCrewSkills,
+  getCrewSkillCounts,
   createCrewSkill,
   deleteCrewSkill,
 } from "@/server/crew";
+import { useCrewRoles, useCrewSkills, useCrewMembers } from "@/hooks/use-crew";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   crewRoleSchema,
   crewSkillSchema,
@@ -60,7 +61,6 @@ import {
 export default function CrewSettingsPage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
 
   // ─── Roles ──────────────────────────────────────────────────────────────
   const [roleDialogOpen, setRoleDialogOpen] = useState(false);
@@ -68,17 +68,29 @@ export default function CrewSettingsPage() {
   const [deleteRoleTarget, setDeleteRoleTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleteSkillTarget, setDeleteSkillTarget] = useState<{ id: string; name: string } | null>(null);
 
-  const { data: roles, isLoading: rolesLoading } = useQuery({
-    queryKey: ["crew-roles-all", orgId],
-    queryFn: () => getCrewRoles(),
-  });
+  // Reactive roles (Convex), re-applying getCrewRoles's filter (active only),
+  // sort (sortOrder then name), and member count. Role member-counts come from
+  // the reactive crewMembers list (crewRoleId) — no cross-domain query needed.
+  const allRoles = useCrewRoles(orgId);
+  const crewMembers = useCrewMembers(orgId);
+  const rolesLoading = allRoles === undefined;
+  const roles = useMemo(() => {
+    const memberCount = new Map<string, number>();
+    for (const m of crewMembers ?? [])
+      if (m.crewRoleId) memberCount.set(m.crewRoleId, (memberCount.get(m.crewRoleId) ?? 0) + 1);
+    return [...(allRoles ?? [])]
+      .filter((r) => r.isActive === true)
+      .sort((a, b) => {
+        const so = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+        return so !== 0 ? so : a.name.localeCompare(b.name);
+      })
+      .map((r) => ({ ...r, _count: { crewMembers: memberCount.get(r.id) ?? 0 } }));
+  }, [allRoles, crewMembers]);
 
-  const deleteRoleMut = useMutation({
+  const deleteRoleMut = useServerMutation({
     mutationFn: (id: string) => deleteCrewRole(id),
     onSuccess: () => {
       toast.success("Role deleted");
-      queryClient.invalidateQueries({ queryKey: ["crew-roles-all", orgId] });
-      queryClient.invalidateQueries({ queryKey: ["crew-roles", orgId] });
     },
     onError: (e) => toast.error(e.message),
   });
@@ -88,30 +100,39 @@ export default function CrewSettingsPage() {
   const [newSkillName, setNewSkillName] = useState("");
   const [newSkillCategory, setNewSkillCategory] = useState("");
 
-  const { data: skills, isLoading: skillsLoading } = useQuery({
-    queryKey: ["crew-skills-all", orgId],
-    queryFn: () => getCrewSkills(),
+  // Reactive skills (Convex), sorted by name. The member↔skill m2m is NOT in
+  // Convex, so per-skill member counts come from a non-reactive server read
+  // (mirrors getCategoryCounts), merged into the reactive list.
+  const allSkills = useCrewSkills(orgId);
+  const skillsLoading = allSkills === undefined;
+  const { data: skillCounts } = useQuery({
+    queryKey: ["crew-skill-counts", orgId],
+    queryFn: () => getCrewSkillCounts(),
+    enabled: !!orgId,
   });
+  const skills = useMemo(
+    () =>
+      [...(allSkills ?? [])]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((s) => ({ ...s, _count: { crewMembers: skillCounts?.[s.id] ?? 0 } })),
+    [allSkills, skillCounts],
+  );
 
-  const createSkillMut = useMutation({
+  const createSkillMut = useServerMutation({
     mutationFn: (data: CrewSkillFormValues) => createCrewSkill(data),
     onSuccess: () => {
       toast.success("Skill created");
       setNewSkillName("");
       setNewSkillCategory("");
       setSkillDialogOpen(false);
-      queryClient.invalidateQueries({ queryKey: ["crew-skills-all", orgId] });
-      queryClient.invalidateQueries({ queryKey: ["crew-skill-options", orgId] });
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const deleteSkillMut = useMutation({
+  const deleteSkillMut = useServerMutation({
     mutationFn: (id: string) => deleteCrewSkill(id),
     onSuccess: () => {
       toast.success("Skill deleted");
-      queryClient.invalidateQueries({ queryKey: ["crew-skills-all", orgId] });
-      queryClient.invalidateQueries({ queryKey: ["crew-skill-options", orgId] });
     },
     onError: (e) => toast.error(e.message),
   });
@@ -464,9 +485,6 @@ function RoleDialog({
   onOpenChange: (open: boolean) => void;
   role: Record<string, unknown> | null;
 }) {
-  const queryClient = useQueryClient();
-  const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
   const isEditing = !!role;
 
   const form = useForm<CrewRoleFormValues>({
@@ -492,25 +510,21 @@ function RoleDialog({
         },
   });
 
-  const createMut = useMutation({
+  const createMut = useServerMutation({
     mutationFn: (data: CrewRoleFormValues) => createCrewRole(data),
     onSuccess: () => {
       toast.success("Role created");
-      queryClient.invalidateQueries({ queryKey: ["crew-roles-all", orgId] });
-      queryClient.invalidateQueries({ queryKey: ["crew-roles", orgId] });
       onOpenChange(false);
       form.reset();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const updateMut = useMutation({
+  const updateMut = useServerMutation({
     mutationFn: (data: CrewRoleFormValues) =>
       updateCrewRole(role!.id as string, data),
     onSuccess: () => {
       toast.success("Role updated");
-      queryClient.invalidateQueries({ queryKey: ["crew-roles-all", orgId] });
-      queryClient.invalidateQueries({ queryKey: ["crew-roles", orgId] });
       onOpenChange(false);
     },
     onError: (e) => toast.error(e.message),

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -44,7 +44,8 @@ import {
   convertLineItemToService,
   generateCrewMessage,
 } from "@/server/project-services";
-import { getCrewRoleOptions, createCrewRole } from "@/server/crew";
+import { createCrewRole } from "@/server/crew";
+import { useCrewRoles } from "@/hooks/use-crew";
 import { getCrewMembersForAssignment } from "@/server/crew-assignments";
 import {
   projectServiceSchema,
@@ -1109,16 +1110,20 @@ function ServiceDialog({
   const watchEndDate = form.watch("endDate") as string;
   const isCurrentlyMultiDay = canBeMultiDay && watchDate && watchEndDate && watchDate !== watchEndDate;
 
-  const { data: crewRoles = [] } = useQuery({
-    queryKey: ["crew-roles", orgId],
-    queryFn: () => getCrewRoleOptions(),
-    enabled: open,
-  });
-
-  const roleOptions = (crewRoles as { id: string; name: string }[]).map((r) => ({
-    value: r.id,
-    label: r.name,
-  }));
+  // Reactive crew roles (Convex), skipped while closed (mirrors enabled:open).
+  // Re-apply getCrewRoleOptions's active filter + sortOrder/name sort.
+  const roleDocs = useCrewRoles(open ? orgId : undefined);
+  const roleOptions = useMemo(
+    () =>
+      [...(roleDocs ?? [])]
+        .filter((r) => r.isActive === true)
+        .sort((a, b) => {
+          const so = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+          return so !== 0 ? so : a.name.localeCompare(b.name);
+        })
+        .map((r) => ({ value: r.id, label: r.name })),
+    [roleDocs],
+  );
 
   const { data: crewMembers = [] } = useQuery({
     queryKey: ["crew-members-for-assignment", orgId, projectId],
@@ -1368,7 +1373,8 @@ function ServiceDialog({
                     } else {
                       createCrewRole({ name: v })
                         .then((role) => {
-                          queryClient.invalidateQueries({ queryKey: ["crew-roles", orgId] });
+                          // Role dropdown is reactive (useCrewRoles) — the new
+                          // role appears once the dual-write commits.
                           form.setValue("crewRoleId", role.id);
                           toast.success(`Role "${role.name}" created`);
                         })

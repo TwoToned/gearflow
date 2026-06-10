@@ -3,13 +3,14 @@
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Loader2, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 import { crewMemberSchema, type CrewMemberFormValues } from "@/lib/validations/crew";
-import { createCrewMember, updateCrewMember, getCrewRoleOptions, getCrewSkillOptions, createCrewSkill, getOrgUsersForCrewLink } from "@/server/crew";
+import { createCrewMember, updateCrewMember, createCrewSkill, getOrgUsersForCrewLink } from "@/server/crew";
+import { useCrewRoles, useCrewSkills } from "@/hooks/use-crew";
 import { getOrgTags } from "@/server/tags";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -37,7 +38,6 @@ interface CrewMemberFormProps {
 
 export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const isEditing = !!initialData;
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
@@ -49,15 +49,30 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
     queryFn: () => getOrgTags(),
   });
 
-  const { data: roleOptions } = useQuery({
-    queryKey: ["crew-role-options", orgId],
-    queryFn: () => getCrewRoleOptions(),
-  });
+  // Reactive crew roles + skills (Convex). Re-apply getCrewRoleOptions's active
+  // filter + sortOrder/name sort, and getCrewSkillOptions's name sort, projecting
+  // to the {id,name,…} shapes the selects expect.
+  const roleDocs = useCrewRoles(orgId);
+  const roleOptions = useMemo(
+    () =>
+      [...(roleDocs ?? [])]
+        .filter((r) => r.isActive === true)
+        .sort((a, b) => {
+          const so = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+          return so !== 0 ? so : a.name.localeCompare(b.name);
+        })
+        .map((r) => ({ id: r.id, name: r.name, department: r.department ?? null })),
+    [roleDocs],
+  );
 
-  const { data: skillOptions } = useQuery({
-    queryKey: ["crew-skill-options", orgId],
-    queryFn: () => getCrewSkillOptions(),
-  });
+  const skillDocs = useCrewSkills(orgId);
+  const skillOptions = useMemo(
+    () =>
+      [...(skillDocs ?? [])]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((s) => ({ id: s.id, name: s.name, category: s.category ?? null })),
+    [skillDocs],
+  );
 
   const { data: linkableUsers } = useQuery({
     queryKey: ["crew-linkable-users", orgId],
@@ -335,7 +350,7 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
                       if (newSkillName.trim()) {
                         createCrewSkill({ name: newSkillName.trim() }).then((skill) => {
                           setNewSkillName("");
-                          queryClient.invalidateQueries({ queryKey: ["crew-skill-options", orgId] });
+                          // Skill list is reactive (useCrewSkills) — appears on commit.
                           const current = form.getValues("skillIds") || [];
                           form.setValue("skillIds", [...current, skill.id]);
                           toast.success(`Skill "${skill.name}" created`);
@@ -353,7 +368,7 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
                     if (newSkillName.trim()) {
                       createCrewSkill({ name: newSkillName.trim() }).then((skill) => {
                         setNewSkillName("");
-                        queryClient.invalidateQueries({ queryKey: ["crew-skill-options", orgId] });
+                        // Skill list is reactive (useCrewSkills) — appears on commit.
                         const current = form.getValues("skillIds") || [];
                         form.setValue("skillIds", [...current, skill.id]);
                         toast.success(`Skill "${skill.name}" created`);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -40,7 +40,8 @@ import {
   sendCrewOfferAll,
   sendBulkMessage,
 } from "@/server/crew-communication";
-import { getCrewRoleOptions, createCrewRole } from "@/server/crew";
+import { createCrewRole } from "@/server/crew";
+import { useCrewRoles } from "@/hooks/use-crew";
 import { getProjectServices } from "@/server/project-services";
 import {
   crewAssignmentSchema,
@@ -651,11 +652,21 @@ function AssignmentDialog({
     enabled: open && mode === "add",
   });
 
-  const { data: roles } = useQuery({
-    queryKey: ["crew-roles", orgId],
-    queryFn: () => getCrewRoleOptions(),
-    enabled: open,
-  });
+  // Reactive crew roles (Convex), skipped while the dialog is closed (mirrors the
+  // old enabled:open). Re-apply getCrewRoleOptions's active filter + sortOrder/
+  // name sort and project to the {id,name,department} shape roleOptions expects.
+  const roleDocs = useCrewRoles(open ? orgId : undefined);
+  const roles = useMemo(
+    () =>
+      [...(roleDocs ?? [])]
+        .filter((r) => r.isActive === true)
+        .sort((a, b) => {
+          const so = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+          return so !== 0 ? so : a.name.localeCompare(b.name);
+        })
+        .map((r) => ({ id: r.id, name: r.name, department: r.department ?? null })),
+    [roleDocs],
+  );
 
   const { data: projectServices = [] } = useQuery({
     queryKey: ["project-services", orgId, projectId],
@@ -943,12 +954,11 @@ function AssignmentDialog({
                 if (isExisting || !v) {
                   form.setValue("crewRoleId", v);
                 } else {
-                  // Creatable mode — typed a new role name, create it
+                  // Creatable mode — typed a new role name, create it. The role
+                  // dropdown is reactive (useCrewRoles), so the new role appears
+                  // automatically once the dual-write commits — no invalidation.
                   createCrewRole({ name: v })
                     .then((role) => {
-                      queryClient.invalidateQueries({
-                        queryKey: ["crew-roles", orgId],
-                      });
                       form.setValue("crewRoleId", role.id);
                       toast.success(`Role "${role.name}" created`);
                     })

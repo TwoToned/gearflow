@@ -428,6 +428,25 @@ export async function getCrewSkills() {
   );
 }
 
+/**
+ * Cross-domain member-count per skill for the crew-settings UI. The
+ * crew_member↔crew_skill link is an implicit Prisma m2m that is NOT mirrored to
+ * Convex, so this count can't be derived from the reactive crewSkills list (the
+ * way role counts are derived from crewMembers.crewRoleId). Mirrors the
+ * getCategoryCounts pattern — a non-reactive server read merged into the
+ * reactive list client-side.
+ */
+export async function getCrewSkillCounts(): Promise<Record<string, number>> {
+  const { organizationId } = await requirePermission("crew", "read");
+  const skills = await prisma.crewSkill.findMany({
+    where: { organizationId },
+    select: { id: true, _count: { select: { crewMembers: true } } },
+  });
+  const counts: Record<string, number> = {};
+  for (const s of skills) counts[s.id] = s._count.crewMembers;
+  return serialize(counts);
+}
+
 export async function createCrewSkill(data: CrewSkillFormValues) {
   const { organizationId } = await requirePermission("crew", "create");
   const parsed = crewSkillSchema.parse(data);

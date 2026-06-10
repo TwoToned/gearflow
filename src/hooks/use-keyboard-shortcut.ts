@@ -19,11 +19,16 @@ type KeyCombo = {
  * @param combo - Key combination to listen for
  * @param callback - Function to call when shortcut is triggered
  * @param enabled - Whether the shortcut is active (default: true)
+ * @param scope - Optional scope (e.g. "list", "editor", "detail"). When set,
+ *   the shortcut only fires if an element with a matching
+ *   `[data-shortcut-scope="<scope>"]` attribute is present in the DOM. This
+ *   keeps single-key shortcuts from firing on pages where they aren't relevant.
  */
 export function useKeyboardShortcut(
   combo: KeyCombo | string,
   callback: () => void,
   enabled = true,
+  scope?: string,
 ) {
   const parsed: KeyCombo = typeof combo === "string"
     ? { key: combo }
@@ -61,10 +66,15 @@ export function useKeyboardShortcut(
       if (parsed.shift && !e.shiftKey) return;
       if (parsed.alt && !e.altKey) return;
 
+      // Scope gate: only fire when the page declares the matching scope.
+      if (scope && !document.querySelector(`[data-shortcut-scope="${scope}"]`)) {
+        return;
+      }
+
       e.preventDefault();
       callback();
     },
-    [enabled, isModified, parsed.key, parsed.ctrl, parsed.meta, parsed.shift, parsed.alt, callback],
+    [enabled, isModified, parsed.key, parsed.ctrl, parsed.meta, parsed.shift, parsed.alt, callback, scope],
   );
 
   useEffect(() => {

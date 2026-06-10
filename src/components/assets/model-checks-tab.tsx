@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import {
   Plus,
   Trash2,
@@ -17,12 +17,12 @@ import { toast } from "sonner";
 import Link from "next/link";
 
 import {
-  getModelCheckItems,
-  getCheckItems,
   addCheckItemToModel,
   removeCheckItemFromModel,
   reorderModelCheckItems,
 } from "@/server/check-items";
+import { useModelCheckItems } from "@/hooks/use-check-item-assignments";
+import { useCheckItems } from "@/hooks/use-check-items";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useCanDo } from "@/lib/use-permissions";
 
@@ -70,40 +70,31 @@ const TYPE_COLORS: Record<CheckItemType, string> = {
 export function ModelChecksTab({ modelId }: { modelId: string }) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
   const canEdit = useCanDo("checkItem", "update");
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<{ id: string; label: string } | null>(null);
 
-  const { data: modelCheckItems = [], isLoading } = useQuery({
-    queryKey: ["model-check-items", orgId, modelId],
-    queryFn: () => getModelCheckItems(modelId),
-  });
+  // Reactive list straight from Convex — add / remove / reorder via the
+  // dual-write server actions push a live update, no manual invalidation.
+  const modelCheckItems = useModelCheckItems(orgId, modelId);
+  const isLoading = modelCheckItems === undefined;
 
   const removeMutation = useMutation({
     mutationFn: (checkItemId: string) =>
       removeCheckItemFromModel(modelId, checkItemId),
     onSuccess: () => {
       toast.success("Check item removed");
-      queryClient.invalidateQueries({
-        queryKey: ["model-check-items", orgId, modelId],
-      });
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const items = modelCheckItems as Record<string, unknown>[];
+  const items = (modelCheckItems ?? []) as Record<string, unknown>[];
 
   // Drag reorder via move up/down buttons (simpler than DnD for now)
   const reorderMutation = useMutation({
     mutationFn: (orderedIds: string[]) =>
       reorderModelCheckItems({ modelId, orderedCheckItemIds: orderedIds }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["model-check-items", orgId, modelId],
-      });
-    },
     onError: (e) => toast.error(e.message),
   });
 
@@ -282,28 +273,20 @@ function CheckItemPicker({
 }) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
 
-  const { data: allCheckItems = [], isLoading } = useQuery({
-    queryKey: ["check-items", orgId],
-    queryFn: () => getCheckItems(),
-    enabled: open,
-  });
+  const allCheckItems = useCheckItems(orgId);
+  const isLoading = allCheckItems === undefined;
 
   const addMutation = useMutation({
     mutationFn: (checkItemId: string) =>
       addCheckItemToModel(modelId, checkItemId),
     onSuccess: () => {
       toast.success("Check item added");
-      queryClient.invalidateQueries({
-        queryKey: ["model-check-items", orgId, modelId],
-      });
-      queryClient.invalidateQueries({ queryKey: ["check-items", orgId] });
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const items = allCheckItems as Record<string, unknown>[];
+  const items = (allCheckItems ?? []) as Record<string, unknown>[];
   const available = items.filter(
     (i) => !existingCheckItemIds.includes(i.id as string)
   );

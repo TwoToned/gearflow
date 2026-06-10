@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -20,12 +20,12 @@ import {
 import { toast } from "sonner";
 
 import {
-  getCheckItemCounts,
   createCheckItem,
   updateCheckItem,
   deleteCheckItem,
 } from "@/server/check-items";
 import { useCheckItems } from "@/hooks/use-check-items";
+import { useModelCheckItemUsageCounts } from "@/hooks/use-check-item-assignments";
 import {
   checkItemSchema,
   type CheckItemFormValues,
@@ -101,15 +101,11 @@ export default function CheckItemsPage() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
 
   // Reactive check-item library straight from Convex (auto-updates on any
-  // create/update/delete). Usage counts (model assignments + check records) are
-  // cross-domain (still in Prisma) so they come from a separate, non-reactive
-  // server query, merged in below.
+  // create/update/delete). The per-item model-usage count is now reactive too —
+  // derived from the dual-written `modelCheckItems` table (the old server action
+  // also fetched a check-record count that this page never rendered).
   const allCheckItems = useCheckItems(orgId);
-  const { data: checkItemCounts } = useQuery({
-    queryKey: ["check-item-counts", orgId],
-    queryFn: () => getCheckItemCounts(),
-    enabled: !!orgId,
-  });
+  const modelUsageCounts = useModelCheckItemUsageCounts(orgId);
   const isLoading = allCheckItems === undefined;
 
   const deleteMutation = useMutation({
@@ -127,8 +123,8 @@ export default function CheckItemsPage() {
       const ca = ((a.category as string) || "").localeCompare((b.category as string) || "", undefined, { sensitivity: "base" });
       return ca !== 0 ? ca : (a.label as string).localeCompare(b.label as string, undefined, { sensitivity: "base" });
     });
-    return sorted.map((i) => ({ ...i, _count: checkItemCounts?.[i.id as string] ?? { modelCheckItems: 0, checkRecords: 0 } })) as Record<string, unknown>[];
-  }, [allCheckItems, checkItemCounts]);
+    return sorted.map((i) => ({ ...i, _count: { modelCheckItems: modelUsageCounts?.get(i.id as string) ?? 0 } })) as Record<string, unknown>[];
+  }, [allCheckItems, modelUsageCounts]);
   const filtered = searchQuery
     ? items.filter(
         (i) =>
@@ -220,7 +216,7 @@ export default function CheckItemsPage() {
                   grouped[category].map((item) => {
                     const type = item.type as CheckItemType;
                     const Icon = TYPE_ICONS[type];
-                    const count = item._count as { modelCheckItems: number; checkRecords: number } | undefined;
+                    const count = item._count as { modelCheckItems: number } | undefined;
                     return (
                       <TableRow key={item.id as string}>
                         <TableCell>

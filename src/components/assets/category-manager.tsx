@@ -12,7 +12,7 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { getCategoryCounts, createCategory, updateCategory, deleteCategory } from "@/server/categories";
 import { useCategories } from "@/hooks/use-categories";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { getOrgTags } from "@/server/tags";
+import { useOrgTags } from "@/hooks/use-org-tags";
 import { TagInput } from "@/components/ui/tag-input";
 import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
@@ -68,10 +68,7 @@ export function CategoryManager() {
     }));
   }, [allCategories, categoryCounts]);
 
-  const { data: orgTags } = useQuery({
-    queryKey: ["org-tags", orgId],
-    queryFn: () => getOrgTags(),
-  });
+  const orgTags = useOrgTags(orgId);
 
   const form = useForm<CategoryFormValues>({
     resolver: zodResolver(categorySchema),

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -14,7 +14,7 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { createModel, updateModel } from "@/server/models";
 import { useTestProfiles } from "@/hooks/use-test-profiles";
 import { useCategoriesWithParent } from "@/hooks/use-categories";
-import { getOrgTags } from "@/server/tags";
+import { useOrgTags } from "@/hooks/use-org-tags";
 import { TagInput } from "@/components/ui/tag-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -68,10 +68,7 @@ export function ModelForm({ initialData }: ModelFormProps) {
   // old getCategories() order.
   const categories = useCategoriesWithParent(orgId) ?? [];
 
-  const { data: orgTags } = useQuery({
-    queryKey: ["org-tags", orgId],
-    queryFn: () => getOrgTags(),
-  });
+  const orgTags = useOrgTags(orgId);
 
   // Reactive: testProfiles subscribes to Convex (Convex list returns all; filter
   // isActive client-side to match the old getTestProfiles default).

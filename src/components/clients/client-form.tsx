@@ -3,13 +3,13 @@
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { clientSchema, type ClientFormValues } from "@/lib/validations/client";
 import { createClient, updateClient } from "@/server/clients";
-import { getOrgTags } from "@/server/tags";
+import { useOrgTags } from "@/hooks/use-org-tags";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrgCountry } from "@/lib/use-org-country";
 import { TagInput } from "@/components/ui/tag-input";
@@ -31,10 +31,7 @@ export function ClientForm({ initialData }: ClientFormProps) {
   const orgId = activeOrg?.id;
   const orgCountry = useOrgCountry();
 
-  const { data: orgTags } = useQuery({
-    queryKey: ["org-tags", orgId],
-    queryFn: () => getOrgTags(),
-  });
+  const orgTags = useOrgTags(orgId);
 
   const form = useForm<ClientFormValues>({
     resolver: zodResolver(clientSchema),

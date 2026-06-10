@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { locationSchema, type LocationFormValues } from "@/lib/validations/asset";
@@ -12,7 +11,7 @@ import { useOrgCountry } from "@/lib/use-org-country";
 import { createLocation, updateLocation } from "@/server/locations";
 import { useLocations } from "@/hooks/use-locations";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { getOrgTags } from "@/server/tags";
+import { useOrgTags } from "@/hooks/use-org-tags";
 import { TagInput } from "@/components/ui/tag-input";
 import { AddressInput } from "@/components/ui/address-input";
 import { Button } from "@/components/ui/button";
@@ -46,10 +45,7 @@ export function LocationForm({ initialData }: LocationFormProps) {
     (l) => l.id !== initialData?.id
   );
 
-  const { data: orgTags } = useQuery({
-    queryKey: ["org-tags", orgId],
-    queryFn: () => getOrgTags(),
-  });
+  const orgTags = useOrgTags(orgId);
 
   const form = useForm<LocationFormValues>({
     resolver: zodResolver(locationSchema),

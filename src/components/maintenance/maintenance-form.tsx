@@ -34,7 +34,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { getOrgTags } from "@/server/tags";
+import { useOrgTags } from "@/hooks/use-org-tags";
 import { TagInput } from "@/components/ui/tag-input";
 
 const typeLabels: Record<string, string> = {
@@ -72,10 +72,7 @@ export function MaintenanceForm({ initialData }: MaintenanceFormProps) {
     queryFn: getMembers,
   });
 
-  const { data: orgTags } = useQuery({
-    queryKey: ["org-tags", orgId],
-    queryFn: () => getOrgTags(),
-  });
+  const orgTags = useOrgTags(orgId);
 
   const [cameraOpen, setCameraOpen] = useState(false);
   const [photosUploading, setPhotosUploading] = useState(false);

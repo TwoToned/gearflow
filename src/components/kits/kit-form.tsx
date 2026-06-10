@@ -4,14 +4,14 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Controller } from "react-hook-form";
 import { kitSchema, type KitFormValues } from "@/lib/validations/kit";
 import { createKit, updateKit } from "@/server/kits";
-import { getOrgTags } from "@/server/tags";
+import { useOrgTags } from "@/hooks/use-org-tags";
 import { TagInput } from "@/components/ui/tag-input";
 import { peekNextAssetTags } from "@/server/settings";
 import { useCategoriesWithParent } from "@/hooks/use-categories";
@@ -49,10 +49,7 @@ export function KitForm({ initialData }: KitFormProps) {
     parent: l.parentId ? { name: locNameById.get(l.parentId) ?? "" } : null,
   }));
 
-  const { data: orgTags } = useQuery({
-    queryKey: ["org-tags", orgId],
-    queryFn: () => getOrgTags(),
-  });
+  const orgTags = useOrgTags(orgId);
 
   const form = useForm<KitFormValues>({
     resolver: zodResolver(kitSchema),

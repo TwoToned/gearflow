@@ -4,14 +4,14 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Controller } from "react-hook-form";
 import { bulkAssetSchema, type BulkAssetFormValues } from "@/lib/validations/asset";
 import { createBulkAsset, updateBulkAsset } from "@/server/bulk-assets";
-import { getOrgTags } from "@/server/tags";
+import { useOrgTags } from "@/hooks/use-org-tags";
 import { TagInput } from "@/components/ui/tag-input";
 import { peekNextAssetTags } from "@/server/settings";
 import { useModels } from "@/hooks/use-models";
@@ -62,10 +62,7 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
   const allSuppliers = useSuppliers(orgId);
   const suppliers = (allSuppliers ?? []).filter((s) => s.isActive ?? true);
 
-  const { data: orgTags } = useQuery({
-    queryKey: ["org-tags", orgId],
-    queryFn: () => getOrgTags(),
-  });
+  const orgTags = useOrgTags(orgId);
 
   const form = useForm<BulkAssetFormValues>({
     resolver: zodResolver(bulkAssetSchema),

@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { crewMemberSchema, type CrewMemberFormValues } from "@/lib/validations/crew";
 import { createCrewMember, updateCrewMember, createCrewSkill, getOrgUsersForCrewLink } from "@/server/crew";
 import { useCrewRoles, useCrewSkills } from "@/hooks/use-crew";
-import { getOrgTags } from "@/server/tags";
+import { useOrgTags } from "@/hooks/use-org-tags";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrgCountry } from "@/lib/use-org-country";
@@ -44,10 +44,7 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
   const orgCountry = useOrgCountry();
   const [newSkillName, setNewSkillName] = useState("");
 
-  const { data: orgTags } = useQuery({
-    queryKey: ["org-tags", orgId],
-    queryFn: () => getOrgTags(),
-  });
+  const orgTags = useOrgTags(orgId);
 
   // Reactive crew roles + skills (Convex). Re-apply getCrewRoleOptions's active
   // filter + sortOrder/name sort, and getCrewSkillOptions's name sort, projecting

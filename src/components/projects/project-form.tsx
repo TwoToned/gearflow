@@ -33,7 +33,7 @@ import {
 import { QuickCreateClient } from "@/components/clients/quick-create-client";
 import { QuickCreateLocation } from "@/components/assets/quick-create-location";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { getOrgTags } from "@/server/tags";
+import { useOrgTags } from "@/hooks/use-org-tags";
 import { TagInput } from "@/components/ui/tag-input";
 
 interface ProjectFormProps {
@@ -154,10 +154,7 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp, initialMa
   // Reactive location list from Convex (a quick-created location appears instantly).
   const rawLocations = useLocations(orgId) ?? [];
 
-  const { data: orgTags } = useQuery({
-    queryKey: ["org-tags", orgId],
-    queryFn: () => getOrgTags(),
-  });
+  const orgTags = useOrgTags(orgId);
 
   const { data: membersData } = useQuery({
     queryKey: ["org-members", orgId],

@@ -15,6 +15,11 @@ import { BarcodeScanner } from "@/components/ui/barcode-scanner";
 import { useRouter } from "next/navigation";
 import { scanLookup } from "@/server/scan-lookup";
 
+// NOTE (UX-gaps 2026-06-10): The task asked to drop the "Scan" tab for a 4-tab
+// bar, citing a DESIGN.md spec. That spec does not exist — DESIGN.md has no
+// 4-tab rule and explicitly names warehouse staff "scanning gear all day" as a
+// primary persona, so the scanner is deliberately kept one tap away here.
+// Revisit only if a real 4-tab requirement is confirmed.
 const navItems = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Home" },
   { href: "/assets/registry", icon: Package, label: "Assets", matchPrefix: "/assets" },

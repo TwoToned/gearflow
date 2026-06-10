@@ -1115,10 +1115,94 @@ review (fixed the one P2 — tolerant remove), + a live round-trip
 :3007 → curl jwks → sidecar on `gearflow-convex_default` net → env-set → ran →
 RESTORED `CONVEX_AUTH_JWKS_URL` to host.docker.internal:3000 + tore down).
 
-**Remaining Phase 6:** `*_media` reads (model_media/asset_media/… — Phase-2 CRUD
-exists but NOT dual-written, no mirror/backfill → stay Prisma until those tables
-migrate), then SSE/EventEmitter teardown (blocked on React Query removal), then
+**Remaining Phase 6:** ~~`*_media` reads~~ **DONE** (see below — dual-written +
+photo grafts off the mirror), ~~warehouse scan-path single-model reads~~ **DONE**
+(see below), then SSE/EventEmitter teardown (blocked on React Query removal), then
 React Query removal (172 files / ~875 `useQuery`).
+
+### `*_media` dual-write + photo grafts off the mirror (session 2026-06-10f)
+
+The seven `*_media` join tables — `model_media`, `asset_media`, `kit_media`,
+`project_media`, `client_media`, `location_media`, `sub_hire_media` — are now
+**dual-written** (they had Phase-2 Convex CRUD but empty/stale copies).
+[`src/lib/media-mirror.ts`](../src/lib/media-mirror.ts) is config-driven
+(`MEDIA_SPECS` per kind): `mirrorMediaCreate` (targeted single insert on the
+create path) + **`syncMediaForParent`**, an AUTHORITATIVE per-parent reconcile
+(re-read all of a parent's Prisma rows, upsert each, then REMOVE Convex rows whose
+Prisma id is gone). Media correctness is a **parent-level invariant** (one primary
+photo, sort order, promote-next-on-delete) so the delete / set-primary / reorder /
+parent-cascade paths reconcile the whole parent rather than mirror each
+intermediate patch — and the remove-stale pass is what makes a delete correct
+(upsert-only would leave the deleted row in Convex). Codex-reviewed (the
+remove-stale requirement was the key steer; matches the `mediaDoc` scalar-strip +
+tolerant-remove patterns in check-item-assignment-mirror). Wired ALL write sites:
+the 7 `*-media` server actions (model/asset/kit have create + delete+promote +
+set-primary; model adds reorder; project/client/location/subHire are create +
+delete), `sub-hires.ts`, `kits.ts` `deleteKit` (kit-cascade → reconcile to empty),
+and `org-import.ts` (the 6-table media loop). Backfill
+`pnpm convex:backfill:media` ([`scripts/convex-backfill-media.ts`](../scripts/convex-backfill-media.ts),
+idempotent; exercises the non-zero path unlike the 0-row check-item tables —
+though the dev DB currently has 0 media rows, the live round-trip seeds one).
+
+**Photo grafts moved onto the Convex mirror** (codex-endorsed "move, keep the
+shape"). The three reactive-list primary-photo grafts —
+`getModelCounts` (models.ts), `getKitCounts` (kits.ts), `getAssetRegistryPhotos`
+(assets.ts) — read the photo off the Convex `*_media` + `fileUploads` mirror via
+[`src/lib/media-read.ts`](../src/lib/media-read.ts) (`getPrimaryPhotoMap` /
+`getPrimaryPhotoMaps`) instead of a Prisma `*_media` join. The read keeps its
+exact prior shape (a `{ url, thumbnailUrl }` map keyed by parent id); only the
+backing store changes. `getAssetRegistryPhotos` (asset + model) uses
+`getPrimaryPhotoMaps(["asset","model"])` so the largest collection
+(`fileUploads`) is `.collect()`ed **once**, not per kind (codex P2 fix). Pure
+`buildPrimaryPhotoMap` is unit-tested (PHOTO+isPrimary filter, file join,
+missing-file→null, no Prisma fallback). These reads run on the **service token**
+(server actions), so no `BROWSER_READABLE` change — `*_media` stays service-only.
+
+**Left on Prisma (codex-endorsed, matches the supplier/model precedent):** the
+**detail-page** media galleries (`getModel` / `getAsset` / `getKit` compose
+`media` inside a large non-reactive cross-domain Prisma query — splitting one
+`media` include out is gratuitous risk) and the **dead standalone gallery
+actions** (`getModelMedia` / `getAssetMedia` / … are imported by no UI). **The PDF
+pipeline reads NO `*_media`** (verified by grep), so there is NO PDF-consumed media
+shape change → the CLAUDE.md 5-consumer cross-cutting audit + a PDF integration
+test do not apply here (a justified skip, not an omission).
+
+Verified: tsc clean, **2210 tests** (2203 + 7 new across media-mirror.test.ts +
+media-read.test.ts), 0 new lint errors (8/346 — +1 sanctioned `_id`-strip in
+`patchIn`), `pnpm build` exit 0, codex diff review (fixed the one P2), + a live
+round-trip ([`scripts/convex-roundtrip-media.ts`](../scripts/convex-roundtrip-media.ts))
+**8/8** seeding a real fileUpload + primary PHOTO modelMedia: the Convex-sourced
+photo == a direct Prisma join (non-zero url/thumbnail), `getModelById` scan-path
+attach matches, and `syncMediaForParent` removes a Prisma-deleted row. JWKS-sidecar
+recipe used (dev :3007 → curl jwks → sidecar on `gearflow-convex_default` →
+env-set → ran → RESTORED `CONVEX_AUTH_JWKS_URL` to host.docker.internal:3000 +
+torn down).
+
+### Warehouse scan-path single-model reads off the mirror (session 2026-06-10f)
+
+The two warehouse **scan-path** readers in `server/warehouse.ts` that still joined
+`model` from Prisma are off the mirror now that `model` + `model_check_item` are
+dual-written:
+
+- `lookupAssetForScan` — the asset / bulkAsset look-ups dropped their
+  `model: { include: { category, _count: { modelCheckItems } } }` includes and
+  attach `model` from the Convex mirror via `getModelById`. The scan path only
+  reads `model.name` (the old `category` + `_count` includes there were
+  **vestigial** — never consumed), so the attach is a single `getModelById` per
+  found asset/bulk; `model.name` references became optional-chained (a mirror miss
+  → empty name, no Prisma fallback).
+- `quickAddAndCheckOut` — the created line item dropped its
+  `model: { include: { _count: { modelCheckItems } } }` include; after the tx the
+  `model` is attached from `getModelById` + the `_count.modelCheckItems` grafted
+  from `getModelCheckItemCountMap` (the existing dual-written-source helper),
+  preserving the old shape (model scalars + `_count`, no category/supplier) so the
+  client still routes the line through the check queue on a non-zero count.
+
+**Latent dual-write gap fixed:** `quickAddAndCheckOut` created a `projectLineItem`
+but never mirrored it to Convex (no `upsertProjectLineItemsToConvex`), leaving the
+mirror short a row until a resync. Now mirrored after the tx (the same call every
+other line-item write site uses). Covered by the round-trip's `getModelById`
+assertion (model present + name match).
 
 ### SSE / EventEmitter teardown — NOT started (blocked on React Query removal)
 
@@ -1179,7 +1263,7 @@ sessions.
 | **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets + file_upload + crew + doc/service-template + **Kit** + **Asset/Bulk** + **project_category/group** + **project_line_item** + **sub_hire/supplier_order families** + **project** + **crew scheduling sub-tables (infra-only)** dual-write done — CENTRAL GRAPH COMPLETE + DUAL-WRITE SURFACE COMPLETE) | per-domain backfill + cutover; tsc/tests/build green each |
 | **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields + crew + **Kit** + **Asset/Bulk registry** done) | table/dropdown/edit live-update on mutation |
 | **5 Auth bridge** ✅ | Better Auth → Convex ES256 JWT; user token (org-scoped reads) + service token (trusted backend); browser writes rejected | round-trip 6/6: rejected without a valid token, accepted with; `/cso` clean |
-| **6 Decommission** 🔄 | Rewire deferred mirror reads off Prisma + remove React Query + SSE event bus (truncate+backfill resync DONE; supplier FLAT reads rewired; **nested supplier+model+category in ALL line-item trees incl. warehouse + PDF pipeline rewired** via `attachLineItemTree` — line-item-tree dimension COMPLETE; **`model_check_item` + `kit_check_item` now dual-written → warehouse counts + kit join fully off Convex via `attachKitTree`, "Checks" tabs reactive, `crewMembers.icalToken` redacted for browser reads**; `*_media` mirror + SSE + React Query remain) | per-subsystem; tsc/tests/build green each. [FEATUREDOCS/53](./53-realtime-sync.md) to be marked superseded when SSE is torn out |
+| **6 Decommission** 🔄 | Rewire deferred mirror reads off Prisma + remove React Query + SSE event bus (truncate+backfill resync DONE; supplier FLAT reads rewired; **nested supplier+model+category in ALL line-item trees incl. warehouse + PDF pipeline rewired** via `attachLineItemTree` — line-item-tree dimension COMPLETE; **`model_check_item` + `kit_check_item` now dual-written → warehouse counts + kit join fully off Convex via `attachKitTree`, "Checks" tabs reactive, `crewMembers.icalToken` redacted for browser reads**; **all 7 `*_media` tables now dual-written + reactive-list photo grafts off the mirror via `media-read.ts`; warehouse scan-path single-model reads off the mirror**; SSE + React Query remain) | per-subsystem; tsc/tests/build green each. [FEATUREDOCS/53](./53-realtime-sync.md) to be marked superseded when SSE is torn out |
 
 ## Conventions
 

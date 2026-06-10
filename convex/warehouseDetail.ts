@@ -63,11 +63,27 @@ export const listVersion = query({
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
       .collect();
 
-    const sig = projects
-      .filter((p) => p.isTemplate !== true && WAREHOUSE_STATUSES.has(p.status ?? ""))
+    const pipeline = projects.filter(
+      (p) => p.isTemplate !== true && WAREHOUSE_STATUSES.has(p.status ?? ""),
+    );
+
+    // The card renders `project.client.name` (a cross-domain join in getProjects),
+    // and clients are dual-written to Convex but a client rename does NOT touch the
+    // project row — so fold the referenced clients' name into the signature, or a
+    // cross-user rename would leave the card stale until a separate project change
+    // (codex review). Resolve only the distinct clientIds the pipeline references.
+    const clientIds = [...new Set(pipeline.map((p) => p.clientId).filter(Boolean) as string[])];
+    const clientDocs = await Promise.all(
+      clientIds.map((id) =>
+        ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", id)).unique(),
+      ),
+    );
+    const clientName = new Map(clientDocs.filter(Boolean).map((c) => [c!.id, c!.name ?? ""]));
+
+    const sig = pipeline
       .map(
         (p) =>
-          `${p.id}:${p.status ?? ""}:${p.rentalStartDate ?? ""}:${p.rentalEndDate ?? ""}:${p.clientId ?? ""}:${p.updatedAt ?? p._creationTime}`,
+          `${p.id}:${p.status ?? ""}:${p.rentalStartDate ?? ""}:${p.rentalEndDate ?? ""}:${p.clientId ?? ""}:${p.clientId ? (clientName.get(p.clientId) ?? "") : ""}:${p.updatedAt ?? p._creationTime}`,
       )
       .sort()
       .join("|");

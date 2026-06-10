@@ -7,10 +7,12 @@
  *   1. listVersion() is browser-readable (user token, same org) and returns a vector.
  *   2. creating a project in a warehouse-pipeline status (CONFIRMED) changes it.
  *   3. an in-place status flip within the pipeline (CONFIRMED → PREPPING) changes it.
- *   4. leaving the pipeline (PREPPING → COMPLETED) changes it (the card disappears).
- *   5. ★ a change between two NON-pipeline statuses (COMPLETED → INVOICED) does NOT
+ *   4. ★ renaming the referenced CLIENT (project row untouched) changes it — the
+ *      codex-review fix (the card renders client.name, a cross-domain join).
+ *   5. leaving the pipeline (PREPPING → COMPLETED) changes it (the card disappears).
+ *   6. ★ a change between two NON-pipeline statuses (COMPLETED → INVOICED) does NOT
  *      change it — the tight-scope proof (no over-eager refresh for off-list projects).
- *   6. a user token for a DIFFERENT org is rejected (org scoping).
+ *   7. a user token for a DIFFERENT org is rejected (org scoping).
  *
  * The synthetic project is removed in `finally` (idempotent).
  *
@@ -61,21 +63,29 @@ async function main() {
   const svc = await getConvexClient();
 
   const rtProjectId = `rt-proj-${createId()}`;
+  const rtClientId = `rt-client-${createId()}`;
 
   const ver = () =>
     userClient.query(api.warehouseDetail.listVersion, { orgId }) as Promise<Vector>;
 
   try {
+    await svc.mutation(api.clients.create, {
+      id: rtClientId,
+      organizationId: orgId,
+      name: "RT Client A",
+    });
+
     const v0 = await ver();
     check("listVersion() callable with user token, returns a vector", v0 !== null, JSON.stringify(v0)?.slice(0, 60));
 
-    // (2) create a pipeline-status project → it appears in the signature.
+    // (2) create a pipeline-status project (with a client) → it appears in the signature.
     await svc.mutation(api.projects.create, {
       id: rtProjectId,
       organizationId: orgId,
       projectNumber: `RT-${createId().slice(0, 6)}`,
       name: "Roundtrip Warehouse Project",
       status: "CONFIRMED",
+      clientId: rtClientId,
       updatedAt: Date.now(),
     });
     const v1 = await ver();
@@ -86,17 +96,23 @@ async function main() {
     const v2 = await ver();
     check("in-place CONFIRMED → PREPPING changes the vector", !!v1 && !!v2 && v2.projects !== v1.projects);
 
-    // (4) leaving the pipeline (card disappears).
+    // (4) ★ codex fix: rename the CLIENT (the project row is untouched) → the card
+    // renders client.name, so the vector must move.
+    await svc.mutation(api.clients.update, { id: rtClientId, patch: { name: "RT Client B" } });
+    const v2b = await ver();
+    check("renaming the referenced client changes the vector (codex fix)", !!v2 && !!v2b && v2b.projects !== v2.projects);
+
+    // (5) leaving the pipeline (card disappears).
     await svc.mutation(api.projects.update, { id: rtProjectId, patch: { status: "COMPLETED" } });
     const v3 = await ver();
-    check("PREPPING → COMPLETED (leaves the list) changes the vector", !!v2 && !!v3 && v3.projects !== v2.projects);
+    check("PREPPING → COMPLETED (leaves the list) changes the vector", !!v2b && !!v3 && v3.projects !== v2b.projects);
 
-    // (5) ★ tight-scope: two non-pipeline statuses → NO change.
+    // (6) ★ tight-scope: two non-pipeline statuses → NO change.
     await svc.mutation(api.projects.update, { id: rtProjectId, patch: { status: "INVOICED" } });
     const v4 = await ver();
     check("COMPLETED → INVOICED (both off-list) does NOT change the vector", !!v3 && !!v4 && v4.projects === v3.projects);
 
-    // (6) org scoping.
+    // (7) org scoping.
     const otherOrgToken = await mint({ sub: member.userId, orgId: `other-${createId()}`, role: "member" });
     const otherClient = new ConvexHttpClient(URL);
     otherClient.setAuth(otherOrgToken);
@@ -109,6 +125,7 @@ async function main() {
     check("listVersion() rejects a user token from a different org", forbidden);
   } finally {
     await svc.mutation(api.projects.remove, { id: rtProjectId }).catch(() => {});
+    await svc.mutation(api.clients.remove, { id: rtClientId }).catch(() => {});
   }
 
   const passed = results.filter(Boolean).length;

@@ -1753,11 +1753,15 @@ is feasible. Split warehouse into standalone pages (done now) vs the heavy multi
   **SCOPE NOTE:** line-item changes that DON'T change `project.status` are intentionally OUT of the list
   vector — the cards render no line-item progress; the only line-item read is the deploy/return dialog's
   warning count (point-in-time, low stakes). Line-item reactivity belongs to the `[projectId]` detail.
+  **The card also renders `project.client.name` (a cross-domain join); clients are dual-written, so the
+  vector folds the referenced clients' NAME into each row's signature (resolved by clientId) — else a
+  cross-user client rename would leave the card stale until a separate project change (codex P2, fixed).**
 - **`warehouse/reorder/page.tsx` (`["reorder-candidates",orgId]`, NOT in the SSE map)** → plain
   `useServerQuery` (data-identical, no liveness existed), mutation → `useServerMutation` + `refetch()`.
-- **Verified:** tsc clean, 2228 tests, 0 new lint, build exit 0, live round-trip
-  `scripts/convex-roundtrip-warehouse-list.ts` **6/6** (callable + org-scoped + moves on create / in-place
-  pipeline flip / pipeline-exit, and does NOT move on an off-list status change). 117 → 115 files import RQ.
+- **Verified:** tsc clean, 2228 tests, 0 new lint, build exit 0, **codex review (1 P2 — missing client
+  name in the vector — fixed)**, live round-trip `scripts/convex-roundtrip-warehouse-list.ts` **7/7**
+  (callable + org-scoped + moves on create / in-place pipeline flip / **client rename** / pipeline-exit,
+  and does NOT move on an off-list status change). 117 → 115 files import RQ.
 
 **★ HANDOFF — `warehouse/[projectId]/page.tsx` (the per-project warehouse DETAIL composite, NOT done).**
 This is the heavy one — ~1230 lines, ~8 mutations, and FIVE child tabs (`PickPrepTab`/`DeployTab`/

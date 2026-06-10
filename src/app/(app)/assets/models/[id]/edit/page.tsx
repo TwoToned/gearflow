@@ -3,7 +3,7 @@
 import { use } from "react";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { getModel } from "@/server/models";
 import { ModelForm } from "@/components/assets/model-form";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -15,7 +15,7 @@ export default function EditModelPage({ params }: { params: Promise<{ id: string
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: model, isLoading } = useQuery({
+  const { data: model, isLoading } = useServerQuery({
     queryKey: ["model", orgId, id],
     queryFn: () => getModel(id),
   });

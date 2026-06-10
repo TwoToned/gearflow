@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { toast } from "sonner";
 import { Loader2, Plus, X, Cable } from "lucide-react";
@@ -31,15 +31,16 @@ type BulkAccessory = {
 interface Props {
   modelId: string;
   bulkAccessories: BulkAccessory[];
+  /** Called after an add/remove so the parent detail page can refetch. */
+  onChanged?: () => void;
 }
 
-export function ModelAccessoriesManager({ modelId, bulkAccessories }: Props) {
-  const queryClient = useQueryClient();
+export function ModelAccessoriesManager({ modelId, bulkAccessories, onChanged }: Props) {
   const [open, setOpen] = useState(false);
   const [bulkId, setBulkId] = useState("");
   const [bulkQty, setBulkQty] = useState(1);
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["model"] });
+  const refresh = () => onChanged?.();
   const hasAny = bulkAccessories.length > 0;
 
   const { data: availableBulk = [] } = useServerQuery({
@@ -51,7 +52,7 @@ export function ModelAccessoriesManager({ modelId, bulkAccessories }: Props) {
     enabled: open,
   });
 
-  const add = useMutation({
+  const add = useServerMutation({
     mutationFn: () => addModelBulkAccessory(modelId, { bulkAssetId: bulkId, quantity: bulkQty }),
     onSuccess: () => {
       toast.success("Default accessory added");
@@ -62,7 +63,7 @@ export function ModelAccessoriesManager({ modelId, bulkAccessories }: Props) {
     },
     onError: (e) => toast.error(e.message),
   });
-  const remove = useMutation({
+  const remove = useServerMutation({
     mutationFn: (id: string) => removeModelBulkAccessory(modelId, id),
     onSuccess: () => {
       toast.success("Default accessory removed");

@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { PageMeta } from "@/components/layout/page-meta";
-import { useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Pencil, Trash2, Loader2, Users } from "lucide-react";
@@ -18,6 +17,7 @@ import {
 } from "@/server/crew";
 import { useCrewRoles, useCrewSkills, useCrewMembers } from "@/hooks/use-crew";
 import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useServerQuery } from "@/hooks/use-server-query";
 import {
   crewRoleSchema,
   crewSkillSchema,
@@ -105,7 +105,7 @@ export default function CrewSettingsPage() {
   // (mirrors getCategoryCounts), merged into the reactive list.
   const allSkills = useCrewSkills(orgId);
   const skillsLoading = allSkills === undefined;
-  const { data: skillCounts } = useQuery({
+  const { data: skillCounts } = useServerQuery({
     queryKey: ["crew-skill-counts", orgId],
     queryFn: () => getCrewSkillCounts(),
     enabled: !!orgId,

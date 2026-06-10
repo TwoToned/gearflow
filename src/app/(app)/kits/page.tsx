@@ -2,11 +2,12 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, RotateCcw, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { getKitCounts } from "@/server/kits";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { useKits } from "@/hooks/use-kits";
 import { useCategories } from "@/hooks/use-categories";
 import { useLocations } from "@/hooks/use-locations";
@@ -179,8 +180,10 @@ export default function KitsPage() {
     onSuccess: (count) => {
       toast.success(`Force returned ${count} kits to available`);
       setSelectedIds(new Set());
-      // Kit status is reactive via Convex; just refresh the cross-domain counts.
-      queryClient.invalidateQueries({ queryKey: ["kit-counts"] });
+      // Kit status + item counts are no longer React Query (kit list is reactive
+      // via Convex; kit-counts is a one-shot useServerQuery and force-return
+      // doesn't change item counts). Still refresh the React Query `assets`
+      // datum (asset status flipped to available).
       queryClient.invalidateQueries({ queryKey: ["assets"] });
     },
     onError: (e) => toast.error(e.message),
@@ -222,7 +225,7 @@ export default function KitsPage() {
   // merged in below; category/location names resolve from the lists already
   // loaded for the filter options.
   const allKits = useKits(orgId);
-  const { data: kitCounts } = useQuery({
+  const { data: kitCounts } = useServerQuery({
     queryKey: ["kit-counts", orgId],
     queryFn: () => getKitCounts(),
     enabled: !!orgId,

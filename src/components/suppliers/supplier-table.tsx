@@ -2,10 +2,10 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 
 import { getSupplierCounts } from "@/server/suppliers";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { useSuppliers } from "@/hooks/use-suppliers";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useTablePreferences } from "@/lib/use-table-preferences";
@@ -130,10 +130,11 @@ export function SupplierTable() {
   const orgId = activeOrg?.id;
 
   // Reactive supplier list straight from Convex (auto-updates on any supplier
-  // create/update/delete). Asset + order counts are cross-domain (still in
-  // Prisma) so they come from a separate, non-reactive server query.
+  // create/update/delete). Asset + order counts are a cross-domain aggregate
+  // that nothing invalidates (no liveness need) so they come from a one-shot,
+  // non-reactive server query (useServerQuery, not React Query).
   const allSuppliers = useSuppliers(orgId);
-  const { data: supplierCounts } = useQuery({
+  const { data: supplierCounts } = useServerQuery({
     queryKey: ["supplier-counts", orgId],
     queryFn: () => getSupplierCounts(),
     enabled: !!orgId,

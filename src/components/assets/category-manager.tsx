@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Pencil, Trash2, ChevronRight, FolderOpen } from "lucide-react";
@@ -12,6 +11,7 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { getCategoryCounts, createCategory, updateCategory, deleteCategory } from "@/server/categories";
 import { useCategories } from "@/hooks/use-categories";
 import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { useOrgTags } from "@/hooks/use-org-tags";
 import { TagInput } from "@/components/ui/tag-input";
 import { Button } from "@/components/ui/button";
@@ -43,7 +43,7 @@ export function CategoryManager() {
   // they come from a separate, non-reactive server query; children counts are
   // derived from the flat reactive list itself.
   const allCategories = useCategories(orgId);
-  const { data: categoryCounts } = useQuery({
+  const { data: categoryCounts } = useServerQuery({
     queryKey: ["category-counts", orgId],
     queryFn: () => getCategoryCounts(),
     enabled: !!orgId,

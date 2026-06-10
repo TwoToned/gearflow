@@ -2,10 +2,10 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 
 import { getClientProjectCounts } from "@/server/clients";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { useClients } from "@/hooks/use-clients";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useTablePreferences } from "@/lib/use-table-preferences";
@@ -131,7 +131,7 @@ export function ClientTable() {
   // create/update/archive). Project counts are cross-domain (projects still in
   // Prisma) so they come from a separate, non-reactive server query.
   const allClients = useClients(orgId);
-  const { data: projectCounts } = useQuery({
+  const { data: projectCounts } = useServerQuery({
     queryKey: ["client-project-counts", orgId],
     queryFn: () => getClientProjectCounts(),
     enabled: !!orgId,

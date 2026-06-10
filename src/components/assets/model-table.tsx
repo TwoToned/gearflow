@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import {
   Plus,
   Download,
@@ -18,6 +18,7 @@ import { toast } from "sonner";
 
 import { getModelCounts, bulkUpdateRates } from "@/server/models";
 import { useModels } from "@/hooks/use-models";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -231,7 +232,7 @@ export function ModelTable() {
   // cross-domain (assets + model media still live in Prisma) so they come from a
   // separate, non-reactive server query and are merged in below.
   const allModels = useModels(orgId);
-  const { data: modelCounts } = useQuery({
+  const { data: modelCounts } = useServerQuery({
     queryKey: ["model-counts", orgId],
     queryFn: () => getModelCounts(),
     enabled: !!orgId,

@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Pencil, Trash2, Boxes, Container, FolderOpen, Search } from "lucide-react";
@@ -12,6 +11,7 @@ import { categorySchema, type CategoryFormValues } from "@/lib/validations/categ
 import { getCategoryCounts, createCategory, updateCategory, deleteCategory } from "@/server/categories";
 import { useCategories } from "@/hooks/use-categories";
 import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Input } from "@/components/ui/input";
@@ -57,7 +57,7 @@ export default function CategoriesPage() {
   // mirrors CategoryManager.
   const allCategories = useCategories(orgId);
   const isLoading = allCategories === undefined;
-  const { data: categoryCounts } = useQuery({
+  const { data: categoryCounts } = useServerQuery({
     queryKey: ["category-counts", orgId],
     queryFn: () => getCategoryCounts(),
     enabled: !!orgId,

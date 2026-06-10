@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { Loader2, Plus } from "lucide-react";
 import { toast } from "sonner";
 
@@ -71,7 +72,7 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
     [skillDocs],
   );
 
-  const { data: linkableUsers } = useQuery({
+  const { data: linkableUsers } = useServerQuery({
     queryKey: ["crew-linkable-users", orgId],
     queryFn: () => getOrgUsersForCrewLink(),
   });

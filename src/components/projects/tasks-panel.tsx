@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { toast } from "sonner";
 import {
   Plus,
@@ -106,7 +107,7 @@ export function TasksPanel({ projectId }: { projectId: string }) {
     queryFn: () => getProjectTasks(projectId) as unknown as Promise<Task[]>,
   });
 
-  const { data: assignees } = useQuery({
+  const { data: assignees } = useServerQuery({
     queryKey: ["task-assignees", orgId],
     queryFn: () =>
       getTaskAssignees() as unknown as Promise<{

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -786,7 +787,7 @@ function CloneServicesDialog({
   const [sourceProjectId, setSourceProjectId] = useState("");
 
   // Fetch recent projects to pick from
-  const { data: projects = [] } = useQuery({
+  const { data: projects = [] } = useServerQuery({
     queryKey: ["projects-list", orgId],
     queryFn: async () => {
       const { getProjects } = await import("@/server/projects");
@@ -867,7 +868,7 @@ function CrewMessageDialog({
   crewMemberId: string;
   crewMemberName: string;
 }) {
-  const { data: messageData, isLoading } = useQuery({
+  const { data: messageData, isLoading } = useServerQuery({
     queryKey: ["crew-message", projectId, crewMemberId],
     queryFn: () => generateCrewMessage(projectId, crewMemberId),
     enabled: open && !!crewMemberId,
@@ -1125,7 +1126,7 @@ function ServiceDialog({
     [roleDocs],
   );
 
-  const { data: crewMembers = [] } = useQuery({
+  const { data: crewMembers = [] } = useServerQuery({
     queryKey: ["crew-members-for-assignment", orgId, projectId],
     queryFn: () => getCrewMembersForAssignment(projectId),
     enabled: open,

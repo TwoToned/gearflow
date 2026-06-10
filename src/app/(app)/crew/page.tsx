@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -134,7 +135,7 @@ function CrewDashboard() {
     queryFn: getPendingTimeEntries,
   });
 
-  const { data: activeAssignments } = useQuery({
+  const { data: activeAssignments } = useServerQuery({
     queryKey: ["crew-active-assignments", orgId],
     queryFn: getActiveAssignmentsSummary,
   });
@@ -144,7 +145,7 @@ function CrewDashboard() {
     queryFn: getPendingOffers,
   });
 
-  const { data: upcomingShifts } = useQuery({
+  const { data: upcomingShifts } = useServerQuery({
     queryKey: ["crew-upcoming-shifts", orgId],
     queryFn: getUpcomingShifts,
   });
@@ -632,7 +633,7 @@ function LogTimeDialog({
   const [isGeneral, setIsGeneral] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const { data: crewList } = useQuery({
+  const { data: crewList } = useServerQuery({
     queryKey: ["crew-picker-list", orgId],
     queryFn: getCrewPickerList,
     enabled: open,

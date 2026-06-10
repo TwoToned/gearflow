@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { Plus } from "lucide-react";
 
 import { getCrewMemberExtras } from "@/server/crew";
@@ -213,7 +213,7 @@ export function CrewTable() {
   // crewRole name/color is resolved from the reactive crewRoles list.
   const allMembers = useCrewMembers(orgId);
   const roles = useCrewRoles(orgId);
-  const { data: extras } = useQuery({
+  const { data: extras } = useServerQuery({
     queryKey: ["crew-member-extras", orgId],
     queryFn: () => getCrewMemberExtras(),
     enabled: !!orgId,

@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import {
   ChevronLeft,
   ChevronRight,
@@ -93,7 +93,7 @@ export default function CrewPlannerPage() {
   const startDate = days[0].toISOString().split("T")[0];
   const endDate = days[days.length - 1].toISOString().split("T")[0];
 
-  const { data: members, isLoading } = useQuery({
+  const { data: members, isLoading } = useServerQuery({
     queryKey: ["crew-planner", orgId, startDate, endDate],
     queryFn: () => getCrewPlannerData(startDate, endDate),
   });

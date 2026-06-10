@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -116,7 +117,7 @@ export default function TimesheetsPage() {
   }, []);
 
   // Fetch crew list for filter options
-  const { data: crewList } = useQuery({
+  const { data: crewList } = useServerQuery({
     queryKey: ["crew-picker-list", orgId],
     queryFn: getCrewPickerList,
   });
@@ -693,7 +694,7 @@ function LogTimeDialog({
   const [isGeneral, setIsGeneral] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const { data: crewList } = useQuery({
+  const { data: crewList } = useServerQuery({
     queryKey: ["crew-picker-list", orgId],
     queryFn: getCrewPickerList,
     enabled: open,

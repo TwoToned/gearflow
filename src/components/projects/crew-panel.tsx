@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -646,7 +647,7 @@ function AssignmentDialog({
   const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const { data: crewMembers } = useQuery({
+  const { data: crewMembers } = useServerQuery({
     queryKey: ["crew-for-assignment", orgId, projectId],
     queryFn: () => getCrewMembersForAssignment(projectId),
     enabled: open && mode === "add",

@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -26,6 +25,7 @@ import {
 } from "@/server/check-items";
 import { useCheckItems } from "@/hooks/use-check-items";
 import { useModelCheckItemUsageCounts } from "@/hooks/use-check-item-assignments";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   checkItemSchema,
   type CheckItemFormValues,
@@ -90,7 +90,6 @@ const TYPE_COLORS: Record<CheckItemType, string> = {
 export default function CheckItemsPage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
   const canCreate = useCanDo("checkItem", "create");
   const canEdit = useCanDo("checkItem", "update");
   const canDelete = useCanDo("checkItem", "delete");
@@ -108,7 +107,7 @@ export default function CheckItemsPage() {
   const modelUsageCounts = useModelCheckItemUsageCounts(orgId);
   const isLoading = allCheckItems === undefined;
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: (id: string) => deleteCheckItem(id),
     onSuccess: () => {
       toast.success("Check item deleted");
@@ -319,9 +318,6 @@ function CheckItemDialog({
   onOpenChange: (open: boolean) => void;
   editing: Record<string, unknown> | null;
 }) {
-  const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
   const isEditing = !!editing;
 
   const defaultValues: CheckItemFormValues = editing
@@ -357,22 +353,23 @@ function CheckItemDialog({
 
   const watchType = form.watch("type");
 
-  const createMutation = useMutation({
+  // No invalidation: every check-item-library reader (this page + the model-table
+  // bulk-assign dialog) subscribes to Convex, so the dual-write server action's
+  // Convex write pushes the update live.
+  const createMutation = useServerMutation({
     mutationFn: (data: CheckItemFormValues) => createCheckItem(data),
     onSuccess: () => {
       toast.success("Check item created");
-      queryClient.invalidateQueries({ queryKey: ["check-items", orgId] });
       onOpenChange(false);
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const updateMutation = useMutation({
+  const updateMutation = useServerMutation({
     mutationFn: (data: CheckItemFormValues) =>
       updateCheckItem(editing!.id as string, data),
     onSuccess: () => {
       toast.success("Check item updated");
-      queryClient.invalidateQueries({ queryKey: ["check-items", orgId] });
       onOpenChange(false);
     },
     onError: (e) => toast.error(e.message),

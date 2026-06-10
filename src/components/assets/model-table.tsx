@@ -31,7 +31,8 @@ import { DollarSign } from "lucide-react";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { getCategories } from "@/server/categories";
 import { exportModelsCSV } from "@/server/csv";
-import { getCheckItems, bulkAddCheckItemsToModels } from "@/server/check-items";
+import { bulkAddCheckItemsToModels } from "@/server/check-items";
+import { useCheckItems } from "@/hooks/use-check-items";
 import { CSVImportDialog } from "@/components/assets/csv-import-dialog";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { CanDo } from "@/components/auth/permission-gate";
@@ -467,11 +468,12 @@ function BulkAssignChecksDialog({
   const orgId = activeOrg?.id;
   const [selectedCheckIds, setSelectedCheckIds] = useState<Set<string>>(new Set());
 
-  const { data: allCheckItems = [], isLoading } = useQuery({
-    queryKey: ["check-items", orgId],
-    queryFn: () => getCheckItems(),
-    enabled: open,
-  });
+  // Reactive: subscribe to the check-item library via Convex, only while the
+  // dialog is open (mirrors the old `enabled: open`). Convex pushes any
+  // create/update/delete from the settings page live.
+  const allCheckItemsData = useCheckItems(open ? orgId : undefined);
+  const allCheckItems = allCheckItemsData ?? [];
+  const isLoading = allCheckItemsData === undefined;
 
   const mutation = useMutation({
     mutationFn: () =>

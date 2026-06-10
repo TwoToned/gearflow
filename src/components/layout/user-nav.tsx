@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { LogOut, User, ChevronsUpDown, Shield, HardHat } from "lucide-react";
 import { useSession, signOut, useActiveOrganization } from "@/lib/auth-client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { getProfile } from "@/server/user-profile";
 import { getMyCrewMemberId } from "@/server/crew";
@@ -37,10 +38,9 @@ export function UserNav() {
   const userImage = profile?.image || user?.image;
 
   // Check if user has a linked crew profile
-  const { data: myCrewId } = useQuery({
+  const { data: myCrewId } = useServerQuery({
     queryKey: ["my-crew-id", orgId],
     queryFn: () => getMyCrewMemberId(),
-    staleTime: 120_000,
     enabled: !!orgId,
   });
 

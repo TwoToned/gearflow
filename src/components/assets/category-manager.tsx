@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Pencil, Trash2, ChevronRight, FolderOpen } from "lucide-react";
@@ -11,6 +11,7 @@ import { categorySchema, type CategoryFormValues } from "@/lib/validations/categ
 import { useActiveOrganization } from "@/lib/auth-client";
 import { getCategoryCounts, createCategory, updateCategory, deleteCategory } from "@/server/categories";
 import { useCategories } from "@/hooks/use-categories";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { getOrgTags } from "@/server/tags";
 import { TagInput } from "@/components/ui/tag-input";
 import { Button } from "@/components/ui/button";
@@ -30,7 +31,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 
 export function CategoryManager() {
-  const queryClient = useQueryClient();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [parentId, setParentId] = useState<string | null>(null);
@@ -78,30 +78,27 @@ export function CategoryManager() {
     defaultValues: { name: "", description: "", icon: "", sortOrder: 0 },
   });
 
-  const createMutation = useMutation({
+  const createMutation = useServerMutation({
     mutationFn: createCategory,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["categories"] });
       toast.success("Category created");
       resetForm();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const updateMutation = useMutation({
+  const updateMutation = useServerMutation({
     mutationFn: ({ id, data }: { id: string; data: CategoryFormValues }) => updateCategory(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["categories"] });
       toast.success("Category updated");
       resetForm();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: deleteCategory,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["categories"] });
       toast.success("Category deleted");
     },
     onError: (e) => toast.error(e.message),

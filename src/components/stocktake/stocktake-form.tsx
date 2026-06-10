@@ -1,9 +1,10 @@
 "use client";
 
+import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -13,7 +14,7 @@ import {
 } from "@/lib/validations/stocktake";
 import { createStocktake, updateStocktake } from "@/server/stocktake";
 import { useLocations } from "@/hooks/use-locations";
-import { getCategories } from "@/server/categories";
+import { useCategories } from "@/hooks/use-categories";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,10 +34,16 @@ export function StocktakeForm({ initialData }: StocktakeFormProps) {
   // Reactive location list from Convex.
   const locations = useLocations(orgId) ?? [];
 
-  const { data: categoriesData } = useQuery({
-    queryKey: ["categories", orgId],
-    queryFn: () => getCategories(),
-  });
+  // Reactive categories (Convex) → sorted by sortOrder then name.
+  const categoriesDocs = useCategories(orgId);
+  const categories = useMemo(
+    () =>
+      [...(categoriesDocs ?? [])].sort((a, b) => {
+        const so = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+        return so !== 0 ? so : a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+      }),
+    [categoriesDocs],
+  );
 
   const form = useForm<CreateStocktakeValues>({
     resolver: zodResolver(createStocktakeSchema),
@@ -62,7 +69,6 @@ export function StocktakeForm({ initialData }: StocktakeFormProps) {
     onError: (e) => toast.error(e.message),
   });
 
-  const categories = categoriesData ?? [];
 
   return (
     <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))}>

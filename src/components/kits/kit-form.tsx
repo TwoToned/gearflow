@@ -14,7 +14,7 @@ import { createKit, updateKit } from "@/server/kits";
 import { getOrgTags } from "@/server/tags";
 import { TagInput } from "@/components/ui/tag-input";
 import { peekNextAssetTags } from "@/server/settings";
-import { getCategories } from "@/server/categories";
+import { useCategoriesWithParent } from "@/hooks/use-categories";
 import { useLocations } from "@/hooks/use-locations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,10 +37,9 @@ export function KitForm({ initialData }: KitFormProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: categories = [] } = useQuery({
-    queryKey: ["categories", orgId],
-    queryFn: () => getCategories(),
-  });
+  // Reactive categories (Convex) with synthetic parent name, sorted to match the
+  // old getCategories() order.
+  const categories = useCategoriesWithParent(orgId) ?? [];
 
   // Reactive location list from Convex; parent.name resolved from the flat list.
   const rawLocations = useLocations(orgId) ?? [];

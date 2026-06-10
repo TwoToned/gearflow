@@ -13,7 +13,7 @@ import { modelSchema, type ModelFormValues } from "@/lib/validations/model";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { createModel, updateModel } from "@/server/models";
 import { useTestProfiles } from "@/hooks/use-test-profiles";
-import { getCategories } from "@/server/categories";
+import { useCategoriesWithParent } from "@/hooks/use-categories";
 import { getOrgTags } from "@/server/tags";
 import { TagInput } from "@/components/ui/tag-input";
 import { Button } from "@/components/ui/button";
@@ -64,10 +64,9 @@ export function ModelForm({ initialData }: ModelFormProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: categories = [] } = useQuery({
-    queryKey: ["categories", orgId],
-    queryFn: () => getCategories(),
-  });
+  // Reactive categories (Convex) with synthetic parent name, sorted to match the
+  // old getCategories() order.
+  const categories = useCategoriesWithParent(orgId) ?? [];
 
   const { data: orgTags } = useQuery({
     queryKey: ["org-tags", orgId],

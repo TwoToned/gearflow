@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/select";
 import { DollarSign } from "lucide-react";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { getCategories } from "@/server/categories";
+import { useCategoriesWithParent } from "@/hooks/use-categories";
 import { exportModelsCSV } from "@/server/csv";
 import { bulkAddCheckItemsToModels } from "@/server/check-items";
 import { useCheckItems } from "@/hooks/use-check-items";
@@ -218,10 +218,12 @@ export function ModelTable() {
   const orgId = activeOrg?.id;
   const queryClient = useQueryClient();
 
-  const { data: categories = [] } = useQuery({
-    queryKey: ["categories", orgId],
-    queryFn: () => getCategories(),
-  });
+  // Reactive categories (Convex) with synthetic parent name, sorted to match the
+  // old getCategories() order. Used for the filter dropdown + per-row category
+  // label resolution. Memoize the empty-list fallback so the reference stays
+  // stable across renders (it feeds the models useMemo below).
+  const categoriesWithParent = useCategoriesWithParent(orgId);
+  const categories = useMemo(() => categoriesWithParent ?? [], [categoriesWithParent]);
 
   const columns = useModelColumns(categories);
 

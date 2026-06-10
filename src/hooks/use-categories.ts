@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
@@ -24,4 +25,35 @@ export function useCategories(orgId: string | undefined): CategoryDoc[] | undefi
 
 export function useCategory(id: string | undefined): CategoryDoc | null | undefined {
   return useQuery(api.categories.getById, id ? { id } : "skip");
+}
+
+export type CategoryWithParent = CategoryDoc & { parent: { name: string } | null };
+
+/**
+ * Categories with a synthetic `parent: { name }` resolved from the flat list and
+ * sorted by sortOrder then name — mirrors the old getCategories() server query
+ * (`include: { parent }`, `orderBy: [{ sortOrder }, { name }]`). Most category
+ * dropdowns/labels only read `cat.parent?.name`, so this lets them drop the React
+ * Query getCategories() read with no shape change. Returns `undefined` while the
+ * underlying reactive list is still loading.
+ */
+export function useCategoriesWithParent(
+  orgId: string | undefined
+): CategoryWithParent[] | undefined {
+  const categories = useCategories(orgId);
+  return useMemo(() => {
+    if (!categories) return undefined;
+    const nameById = new Map(categories.map((c) => [c.id, c.name]));
+    return [...categories]
+      .sort((a, b) => {
+        const so = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+        return so !== 0
+          ? so
+          : a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+      })
+      .map((c) => ({
+        ...c,
+        parent: c.parentId ? { name: nameById.get(c.parentId) ?? "" } : null,
+      }));
+  }, [categories]);
 }

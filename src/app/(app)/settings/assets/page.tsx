@@ -21,7 +21,7 @@ import {
   updateOrganization,
   type OrgSettings,
 } from "@/server/settings";
-import { getCategories } from "@/server/categories";
+import { useCategoriesWithParent } from "@/hooks/use-categories";
 import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { FadeIn } from "@/components/ui/motion";
@@ -47,17 +47,9 @@ export default function AssetsSettingsPage() {
     }
   }, [org]);
 
-  const { data: categories } = useQuery({
-    queryKey: ["categories", orgId],
-    queryFn: getCategories,
-  });
-
-  const allCategories = (categories || []) as Array<{
-    id: string;
-    name: string;
-    parentId: string | null;
-    parent: { name: string } | null;
-  }>;
+  // Reactive categories (Convex) with synthetic parent name, sorted to match the
+  // old getCategories() order.
+  const allCategories = useCategoriesWithParent(orgId) ?? [];
 
   const updateMutation = useMutation({
     mutationFn: () => updateOrganization({ name, settings }),

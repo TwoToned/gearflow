@@ -13,7 +13,7 @@ import { useModels } from "@/hooks/use-models";
 import { bulkForceReturnAssets } from "@/server/warehouse";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useLocations } from "@/hooks/use-locations";
-import { getCategories } from "@/server/categories";
+import { useCategories } from "@/hooks/use-categories";
 import { exportAssetsCSV, exportBulkAssetsCSV } from "@/server/csv";
 import { CSVImportDialog } from "@/components/assets/csv-import-dialog";
 import { CanDo } from "@/components/auth/permission-gate";
@@ -360,13 +360,18 @@ export function AssetTable() {
       }));
   }, [locationsDocs]);
 
-  const { data: categoriesData } = useQuery({
-    queryKey: ["categories", orgId],
-    queryFn: () => getCategories(),
-  });
+  // Reactive categories (Convex) → {id,name} for the filter dropdown, sorted by
+  // sortOrder then name to match the old getCategories() order.
+  const categoriesDocs = useCategories(orgId);
   const categories = useMemo(
-    () => (categoriesData || []) as Array<{ id: string; name: string }>,
-    [categoriesData],
+    () =>
+      [...(categoriesDocs ?? [])]
+        .sort((a, b) => {
+          const so = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+          return so !== 0 ? so : a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+        })
+        .map((c) => ({ id: c.id, name: c.name })),
+    [categoriesDocs],
   );
 
   const serializedColumns = useAssetColumns(locations, categories);

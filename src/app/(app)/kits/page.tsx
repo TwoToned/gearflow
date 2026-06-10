@@ -8,7 +8,7 @@ import { toast } from "sonner";
 
 import { getKitCounts } from "@/server/kits";
 import { useKits } from "@/hooks/use-kits";
-import { getCategories } from "@/server/categories";
+import { useCategories } from "@/hooks/use-categories";
 import { useLocations } from "@/hooks/use-locations";
 import { forceReturnKit } from "@/server/warehouse";
 import { useTablePreferences } from "@/lib/use-table-preferences";
@@ -200,13 +200,17 @@ export default function KitsPage() {
     [locationsDocs],
   );
 
-  const { data: categoriesData } = useQuery({
-    queryKey: ["categories", orgId],
-    queryFn: () => getCategories(),
-  });
+  // Reactive categories (Convex) → {id,name}, sorted by sortOrder then name.
+  const categoriesDocs = useCategories(orgId);
   const categories = useMemo(
-    () => (categoriesData || []) as Array<{ id: string; name: string }>,
-    [categoriesData],
+    () =>
+      [...(categoriesDocs ?? [])]
+        .sort((a, b) => {
+          const so = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+          return so !== 0 ? so : a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+        })
+        .map((c) => ({ id: c.id, name: c.name })),
+    [categoriesDocs],
   );
 
   const columns = useKitColumns(locations, categories);

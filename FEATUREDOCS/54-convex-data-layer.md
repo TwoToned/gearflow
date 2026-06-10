@@ -1739,6 +1739,50 @@ prop wired to `refetchAsset` (the MediaUploader decoupling pattern). `asset-chec
   (different-org token rejected), and the vector moves on media-add, the `isPrimary`-only flip (the
   silent-staleness proof), AND a child-asset attach.
 
+**Done same session — WAREHOUSE LIST + REORDER (the standalone warehouse pages; the `[projectId]` detail
+composite is HANDED OFF, see below).** `projects` + `projectLineItems` are both dual-written, so warehouse
+is feasible. Split warehouse into standalone pages (done now) vs the heavy multi-tab detail (next session).
+- **`warehouse/page.tsx` (the landing list, `["warehouse-projects",orgId,{search}]`)** → version vector.
+  New `convex/warehouseDetail.ts` `listVersion({orgId})` = a content signature over the org's
+  warehouse-pipeline (CONFIRMED/PREPPING/CHECKED_OUT/ON_SITE/RETURNED), non-template projects, folding in
+  `status`/`rentalStartDate`/`rentalEndDate`/`clientId`/`updatedAt`. Membership transitions move it for
+  free (QUOTE→CONFIRMED appears, RETURNED→COMPLETED disappears); two off-pipeline statuses don't move it
+  (the tight-scope proof, asserted in the round-trip). New `useWarehouseListVersion(orgId)` in
+  `src/hooks/use-warehouse.ts`; page reader → `useReactiveServerQuery` (queryFn stays `getProjects`,
+  byte-identical), 2 mutations (status/batch-close) → `useServerMutation` (invalidate → `refetch()`).
+  **SCOPE NOTE:** line-item changes that DON'T change `project.status` are intentionally OUT of the list
+  vector — the cards render no line-item progress; the only line-item read is the deploy/return dialog's
+  warning count (point-in-time, low stakes). Line-item reactivity belongs to the `[projectId]` detail.
+- **`warehouse/reorder/page.tsx` (`["reorder-candidates",orgId]`, NOT in the SSE map)** → plain
+  `useServerQuery` (data-identical, no liveness existed), mutation → `useServerMutation` + `refetch()`.
+- **Verified:** tsc clean, 2228 tests, 0 new lint, build exit 0, live round-trip
+  `scripts/convex-roundtrip-warehouse-list.ts` **6/6** (callable + org-scoped + moves on create / in-place
+  pipeline flip / pipeline-exit, and does NOT move on an off-list status change). 117 → 115 files import RQ.
+
+**★ HANDOFF — `warehouse/[projectId]/page.tsx` (the per-project warehouse DETAIL composite, NOT done).**
+This is the heavy one — ~1230 lines, ~8 mutations, and FIVE child tabs (`PickPrepTab`/`DeployTab`/
+`ReturnTab`/`CloseOutTab`/`BulkCheckInTab`) plus `OnlinePickList` + `ItemCheckForm`, all sharing the
+page's single `invalidate()` (which invalidates `["warehouse-project",orgId,projectId]` AND
+`["project-prep-kits",orgId,projectId]` and clears the selection sets). It also has a SECOND query
+`["containerAssets",orgId]` (line ~1233) and reads `["project-prep-kits",…]` (a `useServerQuery`). Reader
+is `getProjectForWarehouse(projectId)`. **To do it:** add `convex/warehouseDetail.ts` `version({projectId})`
+= the project doc `updatedAt` + a content signature over its `projectLineItems` (by `projectId`) folding in
+every mutable field the warehouse view renders/decides on — at least `status` (prep/checkout/return state),
+`assetId`/`bulkAssetId`/`kitId`, `quantity`, `prepContainer`, `checkedOutAt`/`returnedAt`, and any
+fulfillment/unit sub-state the tabs show — because check-out/check-in/prep/deprep all flip line-item rows
+in place (same count → MUST use a content signature, not count+ts). Watch the project's serialized/bulk
+**asset + kit status** too if the tabs reflect it (they show availability/condition). Add
+`useWarehouseProjectVersion(projectId)` to `use-warehouse.ts`; page reader → `useReactiveServerQuery`;
+every mutation `onSuccess`/the shared `invalidate()` → a `refetchProject()` (+ keep the `setSelectedOut/In`
+clears and the `project-prep-kits` refetch); the 5 child tabs likely already call the parent's
+`invalidate`/`onChanged` prop — rewire those to `refetchProject`. `ItemCheckForm` + `DamageReportDialog`
+write check records → refetch after. Convert the `containerAssets` + `project-prep-kits` reads to
+`useServerQuery` (neither is in the SSE map). **Same-view safety is the priority** (per-scan refresh in a
+high-traffic operational page); cross-user liveness is a bonus (SSE was dead). Scope the line-item
+signature carefully and round-trip an in-place check-out (line-item `status` flip, same row count) to prove
+no silent staleness. Estimate: 1 focused session. Then `bulk-checkin-tab`/`close-out-tab` come off RQ as
+part of it.
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort

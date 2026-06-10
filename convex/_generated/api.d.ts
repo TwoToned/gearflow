@@ -91,6 +91,7 @@ import type * as testTagRecords from "../testTagRecords.js";
 import type * as userNotificationPreferences from "../userNotificationPreferences.js";
 import type * as warehouseCloses from "../warehouseCloses.js";
 import type * as warehouseDashboardTokens from "../warehouseDashboardTokens.js";
+import type * as warehouseDetail from "../warehouseDetail.js";
 import type * as wooCommerceIntegrations from "../wooCommerceIntegrations.js";
 import type * as wooCommerceOrderLogs from "../wooCommerceOrderLogs.js";
 
@@ -184,6 +185,7 @@ declare const fullApi: ApiFromModules<{
   userNotificationPreferences: typeof userNotificationPreferences;
   warehouseCloses: typeof warehouseCloses;
   warehouseDashboardTokens: typeof warehouseDashboardTokens;
+  warehouseDetail: typeof warehouseDetail;
   wooCommerceIntegrations: typeof wooCommerceIntegrations;
   wooCommerceOrderLogs: typeof wooCommerceOrderLogs;
 }>;

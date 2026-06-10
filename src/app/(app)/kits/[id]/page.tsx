@@ -151,7 +151,6 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const forceReturnMutation = useMutation({
     mutationFn: () => forceReturnKit(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["kits"] });
       toast.success("Kit force returned to available");
       queryClient.invalidateQueries({ queryKey: ["kit", orgId, id] });
     },
@@ -823,7 +822,6 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
       open={showDeleteDialog}
       onOpenChange={setShowDeleteDialog}
       onDeleted={() => {
-        queryClient.invalidateQueries({ queryKey: ["kits"] });
         router.push("/kits");
       }}
     />

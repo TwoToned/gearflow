@@ -10,18 +10,19 @@
  * caller supplies that.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { addKitLineItem, checkKitAvailability } from "@/server/line-items";
-import { getKits } from "@/server/kits";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { useKits } from "@/hooks/use-kits";
+import { useCategories } from "@/hooks/use-categories";
 
 type KitPricingMode = "KIT_PRICE" | "ITEMIZED";
 
@@ -59,10 +60,22 @@ export function KitAddForm({
   const [kitPricingMode, setKitPricingMode] = useState<KitPricingMode>("KIT_PRICE");
   const [kitUnitPrice, setKitUnitPrice] = useState("");
 
-  const { data: kitsData } = useQuery({
-    queryKey: ["kits", orgId],
-    queryFn: () => getKits({ pageSize: 200 }),
-  });
+  // Reactive kit list (Convex). The org-scoped list returns all kits; re-apply
+  // getKits's default filter (active, non-prep) and assetTag sort client-side,
+  // and resolve the category name from the reactive categories list.
+  const kits = useKits(orgId);
+  const categories = useCategories(orgId);
+  const kitOptions = useMemo(() => {
+    const categoryNameById = new Map((categories ?? []).map((c) => [c.id, c.name]));
+    return (kits ?? [])
+      .filter((kit) => kit.isActive === true && kit.isPrep === false)
+      .sort((a, b) => a.assetTag.localeCompare(b.assetTag))
+      .map((kit) => ({
+        value: kit.id,
+        label: `${kit.assetTag} - ${kit.name}`,
+        description: kit.categoryId ? categoryNameById.get(kit.categoryId) : undefined,
+      }));
+  }, [kits, categories]);
 
   const { data: kitAvailability } = useQuery({
     queryKey: ["kit-availability", orgId, selectedKitId, projectId],
@@ -109,13 +122,7 @@ export function KitAddForm({
           <ComboboxPicker
             value={selectedKitId}
             onChange={setSelectedKitId}
-            options={(kitsData?.kits || []).map(
-              (kit: { id: string; assetTag: string; name: string; category?: { name: string } | null }) => ({
-                value: kit.id,
-                label: `${kit.assetTag} - ${kit.name}`,
-                description: kit.category?.name,
-              })
-            )}
+            options={kitOptions}
             placeholder="Select a kit..."
             searchPlaceholder="Search kits..."
             emptyMessage="No kits found."

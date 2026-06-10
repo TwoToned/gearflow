@@ -464,7 +464,11 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       entityId={id}
                       accept="image/*"
                       existingMedia={photos}
-                      queryKey={["model", orgId, id]}
+                      onChanged={() =>
+                        queryClient.invalidateQueries({
+                          queryKey: ["model", orgId, id],
+                        })
+                      }
                       onUploadComplete={async (fileUpload) => {
                         await addModelMedia({
                           modelId: id,
@@ -493,7 +497,11 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       entityId={id}
                       accept=".pdf,.doc,.docx,.xls,.xlsx,.txt"
                       existingMedia={documents}
-                      queryKey={["model", orgId, id]}
+                      onChanged={() =>
+                        queryClient.invalidateQueries({
+                          queryKey: ["model", orgId, id],
+                        })
+                      }
                       onUploadComplete={async (fileUpload) => {
                         await addModelMedia({
                           modelId: id,

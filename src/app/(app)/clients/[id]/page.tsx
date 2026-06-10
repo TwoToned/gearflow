@@ -3,7 +3,8 @@
 import { use, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   Pencil,
   Archive,
@@ -53,12 +54,12 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: client, isLoading } = useQuery({
+  const { data: client, isLoading, refetch } = useServerQuery({
     queryKey: ["client", orgId, id],
     queryFn: () => getClient(id),
   });
 
-  const archiveMutation = useMutation({
+  const archiveMutation = useServerMutation({
     mutationFn: () => archiveClient(id),
     onSuccess: () => {
       toast.success("Client archived");
@@ -217,7 +218,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                 <TabsContent value="notes" className="mt-4">
                   <NotesEditor
                     initialNotes={client.notes || ""}
-                    queryKey={["client", orgId, id]}
+                    onChanged={refetch}
                     onSave={(notes) => updateClientNotes(id, notes)}
                     placeholder="Add notes about this client..."
                   />
@@ -231,7 +232,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                       entityId={id}
                       accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,image/*"
                       existingMedia={(client.media || []).map((m: MediaItem) => m)}
-                      queryKey={["client", orgId, id]}
+                      onChanged={refetch}
                       onUploadComplete={async (fileUpload) => {
                         await addClientMedia({
                           clientId: id,

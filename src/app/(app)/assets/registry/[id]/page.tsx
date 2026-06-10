@@ -358,7 +358,11 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
               <TabsContent value="notes" className="mt-4">
                 <NotesEditor
                   initialNotes={asset.notes || ""}
-                  queryKey={["asset", orgId, id]}
+                  onChanged={() =>
+                    queryClient.invalidateQueries({
+                      queryKey: ["asset", orgId, id],
+                    })
+                  }
                   onSave={(notes) => updateAssetNotes(id, notes)}
                   placeholder="Add notes about this asset..."
                 />
@@ -384,7 +388,11 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     entityId={id}
                     accept="image/*"
                     existingMedia={assetPhotos}
-                    queryKey={["asset", orgId, id]}
+                    onChanged={() =>
+                      queryClient.invalidateQueries({
+                        queryKey: ["asset", orgId, id],
+                      })
+                    }
                     onUploadComplete={async (fileUpload) => {
                       await addAssetMedia({
                         assetId: id,

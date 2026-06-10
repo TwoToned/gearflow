@@ -1341,13 +1341,11 @@ function SubHireManageView({
                 fileId: fileUpload.id,
                 type: "DOCUMENT",
               });
-              invalidate();
             }}
             onRemove={async (mediaId) => {
               await removeSubHireMedia(mediaId);
-              invalidate();
             }}
-            queryKey={["sub-hire", subHire.id]}
+            onChanged={invalidate}
           />
         </div>
       </div>

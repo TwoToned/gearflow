@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Upload,
@@ -32,6 +31,7 @@ import { CSS } from "@dnd-kit/utilities";
 
 import { Button } from "@/components/ui/button";
 import { MediaLightbox, useLightbox } from "@/components/media/media-lightbox";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useIsViewer } from "@/lib/use-permissions";
 
 export interface MediaItem {
@@ -62,7 +62,8 @@ interface MediaUploaderProps {
   onRemove: (mediaId: string) => Promise<void>;
   onSetPrimary?: (mediaId: string) => Promise<void>;
   onReorder?: (orderedIds: string[]) => Promise<void>;
-  queryKey: unknown[];
+  /** Called after any successful media change so the parent can refresh its own view. */
+  onChanged?: () => void;
 }
 
 function formatFileSize(bytes: number): string {
@@ -186,9 +187,8 @@ export function MediaUploader({
   onRemove,
   onSetPrimary,
   onReorder,
-  queryKey,
+  onChanged,
 }: MediaUploaderProps) {
-  const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
@@ -198,7 +198,7 @@ export function MediaUploader({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  const uploadMutation = useMutation({
+  const uploadMutation = useServerMutation({
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append("file", file);
@@ -219,7 +219,7 @@ export function MediaUploader({
     },
     onSuccess: async (fileUpload) => {
       await onUploadComplete(fileUpload);
-      queryClient.invalidateQueries({ queryKey });
+      onChanged?.();
       toast.success("File uploaded");
     },
     onError: (e) => toast.error(e.message),
@@ -254,7 +254,7 @@ export function MediaUploader({
     setRemovingId(mediaId);
     try {
       await onRemove(mediaId);
-      queryClient.invalidateQueries({ queryKey });
+      onChanged?.();
       toast.success("File removed");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to remove");
@@ -267,7 +267,7 @@ export function MediaUploader({
     if (!onSetPrimary) return;
     try {
       await onSetPrimary(mediaId);
-      queryClient.invalidateQueries({ queryKey });
+      onChanged?.();
       toast.success("Primary photo updated");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to update");
@@ -283,7 +283,7 @@ export function MediaUploader({
     const newIndex = existingMedia.findIndex((m) => m.id === over.id);
     const reordered = arrayMove(existingMedia, oldIndex, newIndex);
     await onReorder(reordered.map((m) => m.id));
-    queryClient.invalidateQueries({ queryKey });
+    onChanged?.();
   };
 
   const isViewer = useIsViewer();

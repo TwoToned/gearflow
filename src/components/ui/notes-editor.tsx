@@ -1,17 +1,18 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Save } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useIsViewer } from "@/lib/use-permissions";
 
 interface NotesEditorProps {
   title?: string;
   initialNotes: string;
-  queryKey: unknown[];
+  /** Called after a successful save so the parent can refresh its own view. */
+  onChanged?: () => void;
   onSave: (notes: string) => Promise<unknown>;
   placeholder?: string;
   rows?: number;
@@ -20,24 +21,23 @@ interface NotesEditorProps {
 export function NotesEditor({
   title = "Notes",
   initialNotes,
-  queryKey,
+  onChanged,
   onSave,
   placeholder = "Add notes...",
   rows = 6,
 }: NotesEditorProps) {
   const isViewer = useIsViewer();
   const [notes, setNotes] = useState(initialNotes);
-  const queryClient = useQueryClient();
   const hasChanges = notes !== initialNotes;
 
   useEffect(() => {
     setNotes(initialNotes);
   }, [initialNotes]);
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: () => onSave(notes),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey });
+      onChanged?.();
       toast.success(`${title} saved`);
     },
     onError: (e) => toast.error(e.message),

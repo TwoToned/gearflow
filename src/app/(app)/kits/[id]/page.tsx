@@ -508,7 +508,9 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
               entityId={id}
               accept="image/*"
               existingMedia={kitPhotos}
-              queryKey={["kit", orgId, id]}
+              onChanged={() =>
+                queryClient.invalidateQueries({ queryKey: ["kit", orgId, id] })
+              }
               onUploadComplete={async (fileUpload) => {
                 await addKitMedia({
                   kitId: id,
@@ -528,7 +530,9 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
           {/* Notes */}
           <NotesEditor
             initialNotes={kit.notes || ""}
-            queryKey={["kit", orgId, id]}
+            onChanged={() =>
+              queryClient.invalidateQueries({ queryKey: ["kit", orgId, id] })
+            }
             onSave={(notes) => updateKitNotes(id, notes)}
             placeholder="Add notes about this kit..."
           />

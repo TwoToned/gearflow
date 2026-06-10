@@ -489,7 +489,11 @@ export default function ProjectDetailPage({
                     <NotesEditor
                       title="Crew Notes"
                       initialNotes={project.crewNotes || ""}
-                      queryKey={["project", orgId, id]}
+                      onChanged={() =>
+                        queryClient.invalidateQueries({
+                          queryKey: ["project", orgId, id],
+                        })
+                      }
                       onSave={(notes) => updateProjectNotes(id, "crewNotes", notes)}
                       placeholder="Notes for crew members..."
                       rows={4}
@@ -497,7 +501,11 @@ export default function ProjectDetailPage({
                     <NotesEditor
                       title="Internal Notes"
                       initialNotes={project.internalNotes || ""}
-                      queryKey={["project", orgId, id]}
+                      onChanged={() =>
+                        queryClient.invalidateQueries({
+                          queryKey: ["project", orgId, id],
+                        })
+                      }
                       onSave={(notes) => updateProjectNotes(id, "internalNotes", notes)}
                       placeholder="Internal notes (not visible to client)..."
                       rows={4}
@@ -505,7 +513,11 @@ export default function ProjectDetailPage({
                     <NotesEditor
                       title="Client Notes"
                       initialNotes={project.clientNotes || ""}
-                      queryKey={["project", orgId, id]}
+                      onChanged={() =>
+                        queryClient.invalidateQueries({
+                          queryKey: ["project", orgId, id],
+                        })
+                      }
                       onSave={(notes) => updateProjectNotes(id, "clientNotes", notes)}
                       placeholder="Notes visible to client on documents..."
                       rows={4}
@@ -521,7 +533,11 @@ export default function ProjectDetailPage({
                       entityId={id}
                       accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.dwg,.dxf,.txt"
                       existingMedia={(project.media || []) as MediaItem[]}
-                      queryKey={["project", orgId, id]}
+                      onChanged={() =>
+                        queryClient.invalidateQueries({
+                          queryKey: ["project", orgId, id],
+                        })
+                      }
                       onUploadComplete={async (fileUpload) => {
                         await addProjectMedia({
                           projectId: id,

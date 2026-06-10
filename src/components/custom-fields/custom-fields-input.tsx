@@ -12,8 +12,8 @@
  * safe to mount unconditionally.
  */
 
-import { useQuery } from "@tanstack/react-query";
-import { getActiveCustomFields } from "@/server/custom-fields";
+import { useActiveOrganization } from "@/lib/auth-client";
+import { useActiveCustomFields } from "@/hooks/use-custom-fields";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -38,10 +38,8 @@ export function CustomFieldsInput({
   onChange,
   withSection = true,
 }: CustomFieldsInputProps) {
-  const { data: defs } = useQuery({
-    queryKey: ["active-custom-fields", entityType],
-    queryFn: () => getActiveCustomFields(entityType),
-  });
+  const { data: activeOrg } = useActiveOrganization();
+  const defs = useActiveCustomFields(activeOrg?.id, entityType);
 
   const list = (defs ?? []) as Def[];
   if (list.length === 0) return null;

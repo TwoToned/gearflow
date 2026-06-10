@@ -9,7 +9,6 @@
  */
 
 import { useMemo, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Pencil, GripVertical, Loader2, X } from "lucide-react";
@@ -21,6 +20,7 @@ import {
   deleteCustomFieldDefinition,
 } from "@/server/custom-fields";
 import { useCustomFieldDefinitions } from "@/hooks/use-custom-fields";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   customFieldDefinitionSchema,
   type CustomFieldDefinitionInput,
@@ -81,7 +81,6 @@ function FieldDialog({
   onOpenChange: (o: boolean) => void;
   editing: Def | null;
 }) {
-  const queryClient = useQueryClient();
   const isEdit = !!editing;
   const [optionsText, setOptionsText] = useState(
     editing?.options?.join("\n") ?? "",
@@ -105,7 +104,7 @@ function FieldDialog({
   const fieldType = form.watch("fieldType");
   const label = form.watch("label");
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (data: CustomFieldDefinitionInput) => {
       const options = optionsText
         .split("\n")
@@ -125,9 +124,10 @@ function FieldDialog({
       return createCustomFieldDefinition({ ...data, options });
     },
     onSuccess: () => {
+      // No invalidation: the page (useCustomFieldDefinitions) and the field
+      // input/display consumers (useActiveCustomFields) subscribe to Convex, so
+      // the dual-write server action's Convex write pushes the update live.
       toast.success(isEdit ? "Custom field updated" : "Custom field added");
-      queryClient.invalidateQueries({ queryKey: ["custom-field-definitions"] });
-      queryClient.invalidateQueries({ queryKey: ["active-custom-fields"] });
       onOpenChange(false);
     },
     onError: (e) => showError(e),
@@ -236,7 +236,6 @@ function FieldDialog({
 }
 
 export default function CustomFieldsSettingsPage() {
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
@@ -250,11 +249,11 @@ export default function CustomFieldsSettingsPage() {
   const allDefs = useCustomFieldDefinitions(orgId);
   const isLoading = allDefs === undefined;
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: (id: string) => deleteCustomFieldDefinition(id),
     onSuccess: () => {
+      // Reactive: consumers subscribe to Convex (see create/update above).
       toast.success("Custom field removed");
-      queryClient.invalidateQueries({ queryKey: ["active-custom-fields"] });
       setDeleteTarget(null);
     },
     onError: (e) => showError(e),

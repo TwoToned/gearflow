@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getClientById } from "@/lib/clients-read";
+import { getModelById } from "@/lib/models-read";
 import { serialize } from "@/lib/serialize";
 import { computeOverbookedStatus } from "@/lib/availability";
 import type { Prisma } from "@/generated/prisma/client";
@@ -234,20 +235,27 @@ export async function lookupAssetForScan(
 ) {
   const { organizationId } = await getOrgContext();
 
-  // Look up the asset tag in all tables: serialized, bulk, kits
-  const [asset, bulkAsset, kit] = await Promise.all([
+  // Look up the asset tag in all tables: serialized, bulk, kits. The `model`
+  // join is attached from the Convex mirror below (model is dual-written) — the
+  // scan path only reads `model.name`; the old `category` + `_count` includes
+  // here were vestigial (never consumed). No Prisma fallback on a mirror miss.
+  const [rawAsset, rawBulkAsset, kit] = await Promise.all([
     prisma.asset.findUnique({
       where: { organizationId_assetTag: { organizationId, assetTag } },
-      include: { model: { include: { category: true, _count: { select: { modelCheckItems: true } } } } },
     }),
     prisma.bulkAsset.findUnique({
       where: { organizationId_assetTag: { organizationId, assetTag } },
-      include: { model: { include: { category: true, _count: { select: { modelCheckItems: true } } } } },
     }),
     prisma.kit.findUnique({
       where: { organizationId_assetTag: { organizationId, assetTag } },
     }),
   ]);
+  const [assetModel, bulkAssetModel] = await Promise.all([
+    rawAsset ? getModelById(rawAsset.modelId) : Promise.resolve(null),
+    rawBulkAsset ? getModelById(rawBulkAsset.modelId) : Promise.resolve(null),
+  ]);
+  const asset = rawAsset ? { ...rawAsset, model: assetModel } : null;
+  const bulkAsset = rawBulkAsset ? { ...rawBulkAsset, model: bulkAssetModel } : null;
 
   // If it's a Kit barcode
   if (kit) {
@@ -274,7 +282,7 @@ export async function lookupAssetForScan(
     const parentKit = await prisma.kit.findUnique({ where: { id: asset.kitId }, select: { id: true, assetTag: true, name: true } });
     return serialize({
       found: true as const, type: "kit_member" as const, lineItemId: null, assetId: asset.id,
-      assetName: asset.model.name, kitId: parentKit?.id || null, kitAssetTag: parentKit?.assetTag || null, reason: "asset_in_kit" as const,
+      assetName: asset.model?.name ?? "", kitId: parentKit?.id || null, kitAssetTag: parentKit?.assetTag || null, reason: "asset_in_kit" as const,
     });
   }
 
@@ -284,7 +292,7 @@ export async function lookupAssetForScan(
     const parent = await prisma.asset.findFirst({ where: { id: asset.parentAssetId, organizationId }, select: { id: true, assetTag: true } });
     return serialize({
       found: true as const, type: "asset_child" as const, lineItemId: null, assetId: asset.id,
-      assetName: asset.model.name, parentAssetId: parent?.id || null, parentAssetTag: parent?.assetTag || null, reason: "asset_is_accessory" as const,
+      assetName: asset.model?.name ?? "", parentAssetId: parent?.id || null, parentAssetTag: parent?.assetTag || null, reason: "asset_is_accessory" as const,
     });
   }
 
@@ -295,8 +303,8 @@ export async function lookupAssetForScan(
 
   const modelId = found.modelId;
   const assetName = asset
-    ? [asset.model.name, asset.customName ? `(${asset.customName})` : null].filter(Boolean).join(" ")
-    : bulkAsset!.model.name;
+    ? [asset.model?.name, asset.customName ? `(${asset.customName})` : null].filter(Boolean).join(" ")
+    : bulkAsset!.model?.name ?? "";
 
   // Block checkout of retired/in-maintenance/lost assets
   if (mode === "checkout" && asset && (asset.status === "RETIRED" || asset.status === "IN_MAINTENANCE" || asset.status === "LOST")) {
@@ -1619,8 +1627,10 @@ export async function quickAddAndCheckOut(
         prepStatus: "PENDING",
         prepContainer: data.prepContainer || null,
       },
+      // `model` is attached from the Convex mirror after the tx (dual-written);
+      // its `_count.modelCheckItems` is grafted from the dual-written
+      // model_check_item mirror. asset/bulkAsset stay Prisma joins.
       include: {
-        model: { include: { _count: { select: { modelCheckItems: true } } } },
         asset: true,
         bulkAsset: true,
       },
@@ -1642,7 +1652,25 @@ export async function quickAddAndCheckOut(
     return lineItem;
   });
 
-  return serialize(result);
+  // Mirror the newly-created line item to Convex (dual-write — this scan-add path
+  // previously missed it, leaving the Convex projectLineItems mirror short a row
+  // until a resync).
+  await upsertProjectLineItemsToConvex(projectId);
+
+  // Attach `model` + `_count.modelCheckItems` from the Convex mirror, matching
+  // the old `model: { include: { _count: { modelCheckItems } } }` include shape
+  // (model scalars + the check-item count — no category/supplier). The client
+  // routes the line through the check queue when the count is non-zero. No Prisma
+  // fallback on a mirror miss.
+  const [model, modelCheckCounts] = await Promise.all([
+    result.modelId ? getModelById(result.modelId) : Promise.resolve(null),
+    getModelCheckItemCountMap(organizationId),
+  ]);
+  const modelWithCount = model
+    ? { ...model, _count: { modelCheckItems: modelCheckCounts.get(model.id) ?? 0 } }
+    : null;
+
+  return serialize({ ...result, model: modelWithCount });
 }
 
 export async function clearPrepContainer(projectId: string, containerName: string) {

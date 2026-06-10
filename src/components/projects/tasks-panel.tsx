@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { toast } from "sonner";
 import {
@@ -97,12 +97,11 @@ function dueState(due: string | null): { label: string; overdue: boolean } | nul
 }
 
 export function TasksPanel({ projectId }: { projectId: string }) {
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const tasksKey = ["project-tasks", orgId, projectId];
 
-  const { data: tasks = [], isLoading } = useQuery({
+  const { data: tasks = [], isLoading, refetch } = useServerQuery({
     queryKey: tasksKey,
     queryFn: () => getProjectTasks(projectId) as unknown as Promise<Task[]>,
   });
@@ -119,9 +118,9 @@ export function TasksPanel({ projectId }: { projectId: string }) {
   const [newTitle, setNewTitle] = useState("");
   const [editing, setEditing] = useState<Task | null>(null);
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: tasksKey });
+  const invalidate = () => refetch();
 
-  const createMut = useMutation({
+  const createMut = useServerMutation({
     mutationFn: (title: string) => createProjectTask({ projectId, title }),
     onSuccess: () => {
       invalidate();
@@ -130,14 +129,14 @@ export function TasksPanel({ projectId }: { projectId: string }) {
     onError: (e: Error) => toast.error(e.message || "Could not add task"),
   });
 
-  const updateMut = useMutation({
+  const updateMut = useServerMutation({
     mutationFn: (vars: { id: string; data: Parameters<typeof updateProjectTask>[1] }) =>
       updateProjectTask(vars.id, vars.data),
     onSuccess: () => invalidate(),
     onError: (e: Error) => toast.error(e.message || "Could not update task"),
   });
 
-  const deleteMut = useMutation({
+  const deleteMut = useServerMutation({
     mutationFn: (id: string) => deleteProjectTask(id),
     onSuccess: () => {
       invalidate();
@@ -336,10 +335,10 @@ export function TasksPanel({ projectId }: { projectId: string }) {
           assigneeOptions={assigneeOptions}
           onClose={() => setEditing(null)}
           onSave={(data) => {
-            updateMut.mutate(
-              { id: editing.id, data },
-              { onSuccess: () => setEditing(null) },
-            );
+            void updateMut
+              .mutateAsync({ id: editing.id, data })
+              .then(() => setEditing(null))
+              .catch(() => {});
           }}
         />
       )}

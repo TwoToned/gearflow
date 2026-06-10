@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
 import { BookmarkPlus, Check, Star, Trash2, ChevronDown, Loader2 } from "lucide-react";
 
@@ -57,7 +58,6 @@ function sameConfig(a: SavedViewConfig, b: SavedViewConfig): boolean {
 }
 
 export function SavedViewsMenu({ tableId, currentConfig, applyConfig, onResetPreferences }: Props) {
-  const queryClient = useQueryClient();
   // Scope the cache key to the active org so a multi-org user who switches orgs
   // never sees/applies the previous org's views from a stale cache entry
   // (server queries are org-scoped, but the client cache must be too).
@@ -65,7 +65,7 @@ export function SavedViewsMenu({ tableId, currentConfig, applyConfig, onResetPre
   const orgId = activeOrg?.id;
   const queryKey = ["saved-views", orgId, tableId];
 
-  const { data: views = [], isLoading } = useQuery({
+  const { data: views = [], isLoading, refetch } = useServerQuery({
     queryKey,
     queryFn: () => getSavedViews(tableId) as unknown as Promise<SavedTableView[]>,
   });
@@ -93,9 +93,9 @@ export function SavedViewsMenu({ tableId, currentConfig, applyConfig, onResetPre
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, views]);
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey });
+  const invalidate = () => refetch();
 
-  const createMut = useMutation({
+  const createMut = useServerMutation({
     mutationFn: (vars: { name: string; config: SavedViewConfig; isDefault: boolean }) =>
       createSavedView({ tableId, ...vars }) as unknown as Promise<SavedTableView>,
     onSuccess: (view: SavedTableView) => {
@@ -109,7 +109,7 @@ export function SavedViewsMenu({ tableId, currentConfig, applyConfig, onResetPre
     onError: (e: Error) => toast.error(e.message || "Could not save view"),
   });
 
-  const updateMut = useMutation({
+  const updateMut = useServerMutation({
     mutationFn: (vars: { id: string; config: SavedViewConfig }) =>
       updateSavedView(vars.id, { config: vars.config }),
     onSuccess: () => {
@@ -119,7 +119,7 @@ export function SavedViewsMenu({ tableId, currentConfig, applyConfig, onResetPre
     onError: (e: Error) => toast.error(e.message || "Could not update view"),
   });
 
-  const deleteMut = useMutation({
+  const deleteMut = useServerMutation({
     mutationFn: (id: string) => deleteSavedView(id),
     onSuccess: (_d, id) => {
       invalidate();
@@ -129,7 +129,7 @@ export function SavedViewsMenu({ tableId, currentConfig, applyConfig, onResetPre
     onError: (e: Error) => toast.error(e.message || "Could not delete view"),
   });
 
-  const defaultMut = useMutation({
+  const defaultMut = useServerMutation({
     mutationFn: (id: string | null) => setDefaultSavedView(tableId, id),
     onSuccess: () => invalidate(),
     onError: (e: Error) => toast.error(e.message || "Could not set default"),

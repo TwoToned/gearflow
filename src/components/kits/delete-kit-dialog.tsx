@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { Loader2, Archive, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -34,7 +35,7 @@ export function DeleteKitDialog({
 }: DeleteKitDialogProps) {
   const [mode, setMode] = useState<DeleteMode>("archive");
 
-  const { data: info, isLoading: infoLoading } = useQuery({
+  const { data: info, isLoading: infoLoading } = useServerQuery({
     queryKey: ["kit-delete-info", kitId],
     queryFn: () => canDeleteKit(kitId),
     enabled: open,

@@ -21,7 +21,7 @@
 
 import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import {
   TrendingUp,
   TrendingDown,
@@ -112,7 +112,7 @@ function UtilizationContent() {
   const [period, setPeriod] = useState<PeriodKey>("90");
   const [showOnly, setShowOnly] = useState<"all" | "idle" | "lossy">("all");
 
-  const { data: rows, isLoading } = useQuery({
+  const { data: rows, isLoading } = useServerQuery({
     queryKey: ["utilization-summary", orgId, period],
     queryFn: () =>
       getUtilizationSummary({

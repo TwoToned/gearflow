@@ -18,6 +18,10 @@ import { mirrorLineItemRow } from "@/lib/line-item-mirror";
 import { mirrorSupplierOrderCreate, mirrorSupplierOrderItemCreate } from "@/lib/sub-hire-mirror";
 import { mirrorProjectCreate } from "@/lib/project-mirror";
 import {
+  mirrorModelCheckItemCreate,
+  mirrorKitCheckItemCreate,
+} from "@/lib/check-item-assignment-mirror";
+import {
   mirrorCrewCertificationCreate,
   mirrorCrewAssignmentCreate,
   mirrorCrewShiftCreate,
@@ -961,7 +965,7 @@ export async function importOrganization(
     const modelId = remap("model", r.modelId);
     const checkItemId = remap("checkItem", r.checkItemId);
     if (!modelId || !checkItemId) continue;
-    await prisma.modelCheckItem.create({
+    const createdMci = await prisma.modelCheckItem.create({
       data: {
         ...stripRelations(r),
         id: createId(),
@@ -971,12 +975,13 @@ export async function importOrganization(
         createdAt: safeDate(r.createdAt),
       } as any,
     });
+    await mirrorModelCheckItemCreate(createdMci);
   }
   for (const r of (manifest.kitCheckItems ?? []) as Rec[]) {
     const kitId = remap("kit", r.kitId);
     const checkItemId = remap("checkItem", r.checkItemId);
     if (!kitId || !checkItemId) continue;
-    await prisma.kitCheckItem.create({
+    const createdKci = await prisma.kitCheckItem.create({
       data: {
         ...stripRelations(r),
         id: createId(),
@@ -986,6 +991,7 @@ export async function importOrganization(
         createdAt: safeDate(r.createdAt),
       } as any,
     });
+    await mirrorKitCheckItemCreate(createdKci);
   }
   for (const r of (manifest.checkRecords ?? []) as Rec[]) {
     const checkItemId = remap("checkItem", r.checkItemId);

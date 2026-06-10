@@ -8,6 +8,14 @@ import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import {
+  mirrorModelCheckItemCreate,
+  removeModelCheckItemFromConvex,
+  syncModelCheckItemsForModels,
+  mirrorKitCheckItemCreate,
+  removeKitCheckItemFromConvex,
+  syncKitCheckItemsForKit,
+} from "@/lib/check-item-assignment-mirror";
+import {
   checkItemSchema,
   type CheckItemFormValues,
   reorderModelCheckItemsSchema,
@@ -238,6 +246,7 @@ export async function addCheckItemToModel(
     },
     include: { checkItem: true, model: { select: { name: true } } },
   });
+  await mirrorModelCheckItemCreate(result);
 
   await logActivity({
     organizationId,
@@ -274,6 +283,7 @@ export async function removeCheckItemFromModel(
   await prisma.modelCheckItem.delete({
     where: { id: record.id },
   });
+  await removeModelCheckItemFromConvex(record.id);
 
   await logActivity({
     organizationId,
@@ -303,6 +313,7 @@ export async function reorderModelCheckItems(
       })
     )
   );
+  await syncModelCheckItemsForModels([parsed.modelId]);
 
   return { success: true };
 }
@@ -360,6 +371,9 @@ export async function bulkAddCheckItemsToModels(
     data: rows,
     skipDuplicates: true,
   });
+  // createMany returns no ids, so re-read + upsert every assignment for the
+  // affected models into Convex.
+  await syncModelCheckItemsForModels(modelIds);
 
   // Fetch model names for audit log
   const models = await prisma.model.findMany({
@@ -427,6 +441,7 @@ export async function addCheckItemToKit(
     },
     include: { checkItem: true, kit: { select: { name: true } } },
   });
+  await mirrorKitCheckItemCreate(result);
 
   await logActivity({
     organizationId,
@@ -463,6 +478,7 @@ export async function removeCheckItemFromKit(
   await prisma.kitCheckItem.delete({
     where: { id: record.id },
   });
+  await removeKitCheckItemFromConvex(record.id);
 
   await logActivity({
     organizationId,
@@ -492,6 +508,7 @@ export async function reorderKitCheckItems(
       })
     )
   );
+  await syncKitCheckItemsForKit(kitId);
 
   return { success: true };
 }

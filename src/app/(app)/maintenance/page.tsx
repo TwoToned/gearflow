@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   Plus,
   Wrench,
@@ -263,7 +264,6 @@ function useMaintenanceColumns(
 }
 
 export default function MaintenancePage() {
-  const queryClient = useQueryClient();
   const {
     sortBy, sortOrder, pageSize, page,
     setPage, setPageSize, handleSort,
@@ -277,7 +277,7 @@ export default function MaintenancePage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch } = useServerQuery({
     queryKey: ["maintenance", orgId, search, filters, page, pageSize, sortBy, sortOrder],
     queryFn: () =>
       getMaintenanceRecords({
@@ -291,10 +291,13 @@ export default function MaintenancePage() {
       }),
   });
 
-  const deleteMutation = useMutation({
+  // Same-view read+write island: the delete invalidated ["maintenance"] (this
+  // reader's own key) — replaced by refetch(). Not in the SSE map, so no
+  // cross-user liveness is lost (data-identical).
+  const deleteMutation = useServerMutation({
     mutationFn: deleteMaintenanceRecord,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["maintenance"] });
+      refetch();
       toast.success("Record deleted");
     },
     onError: (e) => toast.error(e.message),

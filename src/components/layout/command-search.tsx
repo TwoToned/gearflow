@@ -779,6 +779,25 @@ export function CommandSearch() {
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         setOpen((prev) => !prev);
+        return;
+      }
+
+      // `/` opens the palette pre-filled for slash commands — but only when
+      // it wouldn't steal focus from a real input. Pages that have their own
+      // search box opt out by rendering a `[data-search-input]` element.
+      if (e.key === "/" && !(e.metaKey || e.ctrlKey)) {
+        const active = document.activeElement;
+        const tag = active?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || (active as HTMLElement)?.isContentEditable) {
+          return;
+        }
+        if (document.querySelector("[data-search-input]")) {
+          // Let the page's own search input handle the keystroke.
+          return;
+        }
+        e.preventDefault();
+        setOpen(true);
+        setQuery("/");
       }
     };
     document.addEventListener("keydown", down);
@@ -1085,7 +1104,7 @@ export function CommandSearch() {
       {/* Mobile search trigger */}
       <button
         onClick={() => setOpen(true)}
-        className="md:hidden flex items-center justify-center h-9 w-9 rounded-md text-fg-3 hover:bg-accent hover:text-accent-foreground transition-colors"
+        className="md:hidden flex items-center justify-center h-11 w-11 rounded-md text-fg-3 hover:bg-accent hover:text-accent-foreground transition-colors"
         aria-label="Search"
       >
         <Search className="h-5 w-5" />

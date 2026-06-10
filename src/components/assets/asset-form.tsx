@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -14,7 +14,7 @@ import { createAsset, createAssets, updateAsset } from "@/server/assets";
 import { getOrgTags } from "@/server/tags";
 import { TagInput } from "@/components/ui/tag-input";
 import { peekNextAssetTags } from "@/server/settings";
-import { getModels } from "@/server/models";
+import { useModels } from "@/hooks/use-models";
 import { useLocations } from "@/hooks/use-locations";
 import { useSuppliers } from "@/hooks/use-suppliers";
 import { Button } from "@/components/ui/button";
@@ -43,10 +43,16 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: modelsData } = useQuery({
-    queryKey: ["models", orgId, { isActive: true, assetType: "SERIALIZED", pageSize: 200 }],
-    queryFn: () => getModels({ assetType: "SERIALIZED", pageSize: 200 }),
-  });
+  // Reactive models (Convex). Org-scoped list returns all models; re-apply
+  // getModels's default filter (active, serialized) and name sort client-side.
+  const modelDocs = useModels(orgId);
+  const models = useMemo(
+    () =>
+      [...(modelDocs ?? [])]
+        .filter((m) => m.isActive === true && m.assetType === "SERIALIZED")
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [modelDocs],
+  );
 
   // Reactive location list from Convex; a location added via quick-create now
   // appears in the dropdown instantly. parent.name resolved from the flat list
@@ -144,7 +150,6 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
     onError: (e) => toast.error(e.message),
   });
 
-  const models = modelsData?.models || [];
   const totalCount = 1 + extraAssets.length;
 
   return (

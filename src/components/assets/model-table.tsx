@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Plus,
   Download,
@@ -216,7 +216,6 @@ export function ModelTable() {
   const [bulkRatesOpen, setBulkRatesOpen] = useState(false);
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
 
   // Reactive categories (Convex) with synthetic parent name, sorted to match the
   // old getCategories() order. Used for the filter dropdown + per-row category
@@ -435,8 +434,8 @@ export function ModelTable() {
         onOpenChange={setBulkRatesOpen}
         selectedModelIds={selectedIds}
         onSuccess={() => {
+          // model-table is reactive (useModels) — the dual-write pushes updates.
           clearSelection();
-          queryClient.invalidateQueries({ queryKey: ["models"] });
         }}
       />
 
@@ -445,8 +444,8 @@ export function ModelTable() {
         onOpenChange={setAssignChecksOpen}
         selectedModelIds={selectedIds}
         onSuccess={() => {
+          // model-table is reactive (useModels) — the dual-write pushes updates.
           clearSelection();
-          queryClient.invalidateQueries({ queryKey: ["models"] });
         }}
       />
     </div>

@@ -53,8 +53,11 @@ export function CSVImportDialog({ type, open, onOpenChange }: CSVImportDialogPro
       } else {
         toast.warning(`Import completed with ${data.errors.length} errors`);
       }
-      queryClient.invalidateQueries({ queryKey: type === "assets" ? ["assets"] : ["models"] });
+      // Model/rate imports refresh the reactive model-table (useModels) via the
+      // dual-write — no invalidation needed. Asset imports still feed React Query
+      // readers (e.g. test-and-tag), so keep those.
       if (type === "assets") {
+        queryClient.invalidateQueries({ queryKey: ["assets"] });
         queryClient.invalidateQueries({ queryKey: ["bulkAssets"] });
       }
     },

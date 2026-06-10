@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Fragment } from "react";
+import { useState, useEffect, useMemo, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Pencil, Trash2, Loader2, ArrowLeft, MoreVertical, AlertTriangle, FolderPlus, ChevronDown, MapPin } from "lucide-react";
 import { toast } from "sonner";
@@ -29,7 +29,7 @@ import {
 } from "@/server/sub-hires";
 import { getProjectCategories } from "@/server/project-categories";
 import { useSuppliers } from "@/hooks/use-suppliers";
-import { getModels } from "@/server/models";
+import { useModels } from "@/hooks/use-models";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { subHireStatusLabels, formatLabel } from "@/lib/status-labels";
 import { StatusIndicator } from "@/components/ui/status-indicator";
@@ -1717,14 +1717,19 @@ function SubHireItemForm({
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: modelsData } = useQuery({
-    queryKey: ["models", orgId],
-    queryFn: () => getModels({ pageSize: 500 }),
-    enabled: open,
-  });
-  const modelOptions = ((modelsData as Record<string, unknown>)?.models as Array<Record<string, unknown>> || []).map((m) => ({
-    value: m.id as string,
-    label: m.name as string,
+  // Reactive models (Convex), skipped while closed (mirrors enabled:open).
+  // Re-apply getModels's default active filter and name sort client-side.
+  const modelDocs = useModels(open ? orgId : undefined);
+  const activeModels = useMemo(
+    () =>
+      [...(modelDocs ?? [])]
+        .filter((m) => m.isActive === true)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [modelDocs],
+  );
+  const modelOptions = activeModels.map((m) => ({
+    value: m.id,
+    label: m.name,
   }));
 
   const { data: supplierRate } = useQuery({
@@ -1742,9 +1747,9 @@ function SubHireItemForm({
   const handleModelChange = (newModelId: string) => {
     setModelId(newModelId);
     if (newModelId) {
-      const model = ((modelsData as Record<string, unknown>)?.models as Array<Record<string, unknown>> || []).find((m) => m.id === newModelId);
+      const model = activeModels.find((m) => m.id === newModelId);
       if (model && !description) {
-        setDescription(model.name as string);
+        setDescription(model.name);
       }
     }
   };

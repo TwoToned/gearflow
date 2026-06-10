@@ -83,7 +83,6 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
     mutationFn: () => archiveModel(id),
     onSuccess: () => {
       toast.success("Model archived");
-      queryClient.invalidateQueries({ queryKey: ["models"] });
       router.push("/assets/models");
     },
   });

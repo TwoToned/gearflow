@@ -9,7 +9,7 @@
  * supplies that.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -21,7 +21,7 @@ import {
   type LineItemFormValues,
 } from "@/lib/validations/line-item";
 import { addLineItem, checkAvailability, lookupAssetByTag } from "@/server/line-items";
-import { getModels } from "@/server/models";
+import { useModels } from "@/hooks/use-models";
 import { getProjectCategories } from "@/server/project-categories";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -89,10 +89,16 @@ export function EquipmentAddForm({
     },
   });
 
-  const { data: modelsData } = useQuery({
-    queryKey: ["models", orgId, { pageSize: 200 }],
-    queryFn: () => getModels({ pageSize: 200 }),
-  });
+  // Reactive models (Convex). Org-scoped list returns all models; re-apply
+  // getModels's default active filter and name sort client-side.
+  const modelDocs = useModels(orgId);
+  const activeModels = useMemo(
+    () =>
+      [...(modelDocs ?? [])]
+        .filter((m) => m.isActive === true)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [modelDocs],
+  );
 
   // Categories for the optional category picker (only when not pre-set)
   const { data: categoriesData } = useQuery({
@@ -106,13 +112,13 @@ export function EquipmentAddForm({
     label: c.name,
   }));
 
-  const modelOptions = (modelsData?.models || []).map((m) => ({
+  const modelOptions = activeModels.map((m) => ({
     value: m.id,
     label: m.name,
     description: [m.manufacturer, m.modelNumber].filter(Boolean).join(" - ") || undefined,
   }));
 
-  const selectedModel = modelsData?.models?.find((m) => m.id === selectedModelId);
+  const selectedModel = activeModels.find((m) => m.id === selectedModelId);
 
   // Model-based availability check (works with or without dates)
   const { data: availability, isLoading: availabilityLoading } = useQuery({

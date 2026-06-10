@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -14,7 +14,7 @@ import { createBulkAsset, updateBulkAsset } from "@/server/bulk-assets";
 import { getOrgTags } from "@/server/tags";
 import { TagInput } from "@/components/ui/tag-input";
 import { peekNextAssetTags } from "@/server/settings";
-import { getModels } from "@/server/models";
+import { useModels } from "@/hooks/use-models";
 import { useLocations } from "@/hooks/use-locations";
 import { useSuppliers } from "@/hooks/use-suppliers";
 import { Button } from "@/components/ui/button";
@@ -39,10 +39,16 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: modelsData } = useQuery({
-    queryKey: ["models", orgId, { isActive: true, assetType: "BULK", pageSize: 200 }],
-    queryFn: () => getModels({ assetType: "BULK", pageSize: 200 }),
-  });
+  // Reactive models (Convex). Org-scoped list returns all models; re-apply
+  // getModels's default filter (active, bulk) and name sort client-side.
+  const modelDocs = useModels(orgId);
+  const models = useMemo(
+    () =>
+      [...(modelDocs ?? [])]
+        .filter((m) => m.isActive === true && m.assetType === "BULK")
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [modelDocs],
+  );
 
   // Reactive location list from Convex; parent.name resolved from the flat list.
   const rawLocations = useLocations(orgId) ?? [];
@@ -95,7 +101,6 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
     onError: (e) => toast.error(e.message),
   });
 
-  const models = modelsData?.models || [];
 
   return (
     <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))}>

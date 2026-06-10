@@ -1387,6 +1387,56 @@ pages) needing hand-written Convex composite queries or a careful multi-hook cli
 — slowest, ~1–3/session; **(d)** assets/bulk-assets (test-and-tag/new needs a 4-way
 client join). SSE/`use-realtime.ts` teardown stays blocked until RQ is FULLY gone.
 
+**Done session 2026-06-10j (the no-liveness read tail, GO-FAST sweep; 5 commits pushed;
+156 → 143 files import RQ; 26 → 70 datums off RQ — 44 this session).** Pure mechanical
+`useQuery` → `useServerQuery` swaps over the proven no-liveness recipe, batched by domain
+(one commit per group): **dashboard** (6: dashboard-stats/activity/upcoming/sub-hire-stats,
+my-home, my-crew-id), **crew analytics/pickers** (11: crew-planner, crew-upcoming-shifts,
+crew-active-assignments, crew-picker-list, crew-for-assignment, crew-members-for-assignment,
+crew-linkable-users, crew-member-extras, crew-message, task-assignees, projects-list),
+**admin** (2: admin-dashboard, admin-org-custom-roles), **analytics/lookups** (16:
+model-failure-analytics, bookings, ad-hoc-lookup, asset-check-history, maintenance-assets,
+project-issues, call-sheet-dates, kit-availability, containerAssets, locations-for-display,
+document-templates-dropdown, warehouse-pullsheet ×2 files, test-tag-search,
+test-tag-bulk-assets, saved-report ×2 files, template-editor), **supplier/accessory detail**
+(9: supplier ×2, supplier-orders, supplier-assets, supplier-subhires, supplier-rate,
+model-rates, accessory-assets, accessory-bulk, model-accessory-bulk). 13 files became
+fully RQ-free.
+
+**THE ONE METHODOLOGY UPGRADE that made the sweep safe: the invalidate grep MUST be
+multiline-aware.** A single-line `grep 'invalidateQueries(.*queryKey:\s*\["key"'` MISSES
+the common multi-line form
+```
+queryClient.invalidateQueries({
+  queryKey: ["key", orgId, id],
+});
+```
+The correct classifier is `grep -Pzo '(invalidateQueries|refetchQueries|setQueryData|
+cancelQueries|removeQueries)\(\s*\{?\s*queryKey:\s*\[\s*"<key>"'` (null-joined, multiline).
+This caught **crew-availability** and the **entire stocktake batch** (stocktake / -progress
+/ -recent / -search) as actually-invalidated → reactive → EXCLUDED from this sweep (they need
+reactive Convex hooks; the scanner invalidates them after each scan — genuinely live).
+A naive single-line grep would have wrongly forced `useServerQuery` onto a live multi-user
+counting workflow. Also confirmed once, globally: there are **zero** `refetchQueries` /
+`setQueryData` / `removeQueries` / `cancelQueries` and **zero** template-literal invalidation
+keys in the codebase, so the literal multiline invalidate grep is authoritative; and the
+QueryClient sets `refetchOnWindowFocus: false` globally (`query-provider.tsx`), so a
+no-liveness `useServerQuery` is genuinely data-identical (mount + manual `refetch()` only).
+
+**Other gotchas this session:** (1) `useQuery<Generic>(...)` calls hide from a `useQuery(`
+grep — the generic sits between the name and `(`. The orphan-import detector and a swap
+regex both missed three reactive readers in `sub-hire-order-dialog.tsx`; tsc caught it
+(`Cannot find name 'useQuery'`). When deciding whether to drop `useQuery` from an import,
+trust tsc, not a `useQuery(` grep. (2) The keys returned by a `queryKey:` grep include BOTH
+readers AND invalidate-call keys — e.g. `["asset"]`/`["model"]`/`["project"]` in the
+accessory-manager / kit-add-form files were invalidate targets, not readers, so those files
+had their ONLY reader converted and `useQuery` became an orphan import (correctly dropped).
+(3) Drop any `staleTime` option on conversion — `useServerQuery` rejects it (tsc error);
+key-change drives the refetch. **No codex review** (pure mechanical swaps, zero invalidation
+drops — `useServerQuery` only wraps existing server actions); **no JWKS round-trip** (no new
+Convex table/fn). Verified: tsc clean, **2228 tests** (unchanged — client-hook swaps),
+0 new lint (normalized stash-compare vs base across 34 changed files), build exit 0.
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort
@@ -1431,7 +1481,7 @@ sessions.
 | **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets + file_upload + crew + doc/service-template + **Kit** + **Asset/Bulk** + **project_category/group** + **project_line_item** + **sub_hire/supplier_order families** + **project** + **crew scheduling sub-tables (infra-only)** dual-write done — CENTRAL GRAPH COMPLETE + DUAL-WRITE SURFACE COMPLETE) | per-domain backfill + cutover; tsc/tests/build green each |
 | **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields + crew + **Kit** + **Asset/Bulk registry** done) | table/dropdown/edit live-update on mutation |
 | **5 Auth bridge** ✅ | Better Auth → Convex ES256 JWT; user token (org-scoped reads) + service token (trusted backend); browser writes rejected | round-trip 6/6: rejected without a valid token, accepted with; `/cso` clean |
-| **6 Decommission** 🔄 | Rewire deferred mirror reads off Prisma + remove React Query + SSE event bus (truncate+backfill resync DONE; supplier FLAT reads rewired; **nested supplier+model+category in ALL line-item trees incl. warehouse + PDF pipeline rewired** via `attachLineItemTree` — line-item-tree dimension COMPLETE; **`model_check_item` + `kit_check_item` now dual-written → warehouse counts + kit join fully off Convex via `attachKitTree`, "Checks" tabs reactive, `crewMembers.icalToken` redacted for browser reads**; **all 7 `*_media` tables now dual-written + reactive-list photo grafts off the mirror via `media-read.ts`; warehouse scan-path single-model reads off the mirror**; **React Query removal IN PROGRESS — `useServerMutation` (writes) + `useServerQuery` (no-liveness reads) keystones; 26 datums off RQ: the 11 reactive config domains + org-tags + 7 count badges + 7 previews/summaries via `useServerQuery`**; SSE remains) | per-subsystem; tsc/tests/build green each. [FEATUREDOCS/53](./53-realtime-sync.md) to be marked superseded when SSE is torn out |
+| **6 Decommission** 🔄 | Rewire deferred mirror reads off Prisma + remove React Query + SSE event bus (truncate+backfill resync DONE; supplier FLAT reads rewired; **nested supplier+model+category in ALL line-item trees incl. warehouse + PDF pipeline rewired** via `attachLineItemTree` — line-item-tree dimension COMPLETE; **`model_check_item` + `kit_check_item` now dual-written → warehouse counts + kit join fully off Convex via `attachKitTree`, "Checks" tabs reactive, `crewMembers.icalToken` redacted for browser reads**; **all 7 `*_media` tables now dual-written + reactive-list photo grafts off the mirror via `media-read.ts`; warehouse scan-path single-model reads off the mirror**; **React Query removal IN PROGRESS — `useServerMutation` (writes) + `useServerQuery` (no-liveness reads) keystones; 70 datums off RQ (156 → 143 files): 11 reactive config domains + org-tags + the full no-liveness read tail via `useServerQuery` (count badges, previews, dashboard, crew analytics/pickers, admin, analytics/lookups, supplier/accessory detail); classify with a MULTILINE-aware invalidate grep — stocktake + crew-availability are live, excluded**; SSE remains) | per-subsystem; tsc/tests/build green each. [FEATUREDOCS/53](./53-realtime-sync.md) to be marked superseded when SSE is torn out |
 
 ## Conventions
 

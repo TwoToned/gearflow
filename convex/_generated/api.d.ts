@@ -9,6 +9,7 @@
  */
 
 import type * as assetBulkChildren from "../assetBulkChildren.js";
+import type * as assetDetail from "../assetDetail.js";
 import type * as assetMedia from "../assetMedia.js";
 import type * as assetScanLogs from "../assetScanLogs.js";
 import type * as assets from "../assets.js";
@@ -101,6 +102,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   assetBulkChildren: typeof assetBulkChildren;
+  assetDetail: typeof assetDetail;
   assetMedia: typeof assetMedia;
   assetScanLogs: typeof assetScanLogs;
   assets: typeof assets;

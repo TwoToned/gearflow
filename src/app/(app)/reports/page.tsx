@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import Link from "next/link";
 import {
@@ -84,7 +84,6 @@ const ICON_MAP: Record<string, React.ReactNode> = {
 export default function ReportsPage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
 
   const [activeReport, setActiveReport] = useState<{
     config: ReportConfig;
@@ -96,19 +95,19 @@ export default function ReportsPage() {
     queryFn: getReportsSummary,
   });
 
-  const { data: savedReports } = useQuery({
+  const { data: savedReports, refetch: refetchSavedReports } = useServerQuery({
     queryKey: ["saved-reports", orgId],
     queryFn: getSavedReports,
   });
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: deleteSavedReport,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["saved-reports"] }),
+    onSuccess: () => refetchSavedReports(),
   });
 
-  const pinMutation = useMutation({
+  const pinMutation = useServerMutation({
     mutationFn: togglePinReport,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["saved-reports"] }),
+    onSuccess: () => refetchSavedReports(),
   });
 
   const reportsByCategory = getReportsByCategory();

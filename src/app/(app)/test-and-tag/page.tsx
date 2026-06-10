@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { getTestTagDashboardStats } from "@/server/test-tag-assets";
 import Link from "next/link";
 import { Loader2, Zap, Plus, List, AlertTriangle, Clock, CheckCircle, XCircle, HelpCircle } from "lucide-react";
@@ -56,10 +56,9 @@ export default function TestAndTagPage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: stats, isLoading } = useQuery({
+  const { data: stats, isLoading } = useServerQuery({
     queryKey: ["test-tag-dashboard-stats", orgId],
     queryFn: () => getTestTagDashboardStats(),
-    staleTime: 60_000,
   });
 
   if (isLoading || !stats) {

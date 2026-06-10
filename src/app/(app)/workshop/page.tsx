@@ -18,7 +18,12 @@
 import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+// useQueryClient retained only for the cross-domain ["maintenance-records"]
+// key (SSE-mapped, read elsewhere). The ["workshop-queue"] datum itself is on
+// useServerQuery (same-view island, not in the SSE map).
+import { useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   Wrench,
   ChevronLeft,
@@ -268,7 +273,7 @@ function WorkshopContent() {
 
   const [search, setSearch] = useState("");
 
-  const { data: records, isLoading } = useQuery({
+  const { data: records, isLoading, refetch } = useServerQuery({
     queryKey: ["workshop-queue", orgId, search, urlProjectId],
     queryFn: () =>
       getWorkshopQueue({
@@ -278,7 +283,7 @@ function WorkshopContent() {
     enabled: !!orgId,
   });
 
-  const statusMutation = useMutation({
+  const statusMutation = useServerMutation({
     mutationFn: ({
       id,
       nextStatus,
@@ -296,7 +301,7 @@ function WorkshopContent() {
             : "Marked PASS — asset released"
           : `Moved to ${vars.nextStatus.replace("_", " ")}`,
       );
-      queryClient.invalidateQueries({ queryKey: ["workshop-queue"] });
+      refetch();
       queryClient.invalidateQueries({ queryKey: ["maintenance-records"] });
     },
     onError: (e) => showError(e),

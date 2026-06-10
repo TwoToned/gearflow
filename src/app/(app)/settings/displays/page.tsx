@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { toast } from "sonner";
 import {
@@ -148,7 +148,6 @@ function LocationSelect({
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function DisplaySettingsPage() {
-  const queryClient = useQueryClient();
   const canEdit = useCanDo("orgSettings", "update");
   const [createOpen, setCreateOpen] = useState(false);
   const [newToken, setNewToken] = useState<string | null>(null);
@@ -167,7 +166,7 @@ export default function DisplaySettingsPage() {
   const [editLocationId, setEditLocationId] = useState("");
   const [editLayout, setEditLayout] = useState("standard");
 
-  const { data: tokens, isLoading } = useQuery({
+  const { data: tokens, isLoading, refetch } = useServerQuery({
     queryKey: ["display-tokens"],
     queryFn: getDisplayTokens,
   });
@@ -181,10 +180,9 @@ export default function DisplaySettingsPage() {
     (locationsData as { locations: Array<{ id: string; name: string; type: string }> })
       ?.locations ?? [];
 
-  const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: ["display-tokens"] });
+  const invalidate = () => refetch();
 
-  const createMutation = useMutation({
+  const createMutation = useServerMutation({
     mutationFn: createDisplayToken,
     onSuccess: (result) => {
       const data = result as { token: string; display: unknown };
@@ -195,7 +193,7 @@ export default function DisplaySettingsPage() {
     onError: (e) => toast.error(e.message),
   });
 
-  const revokeMutation = useMutation({
+  const revokeMutation = useServerMutation({
     mutationFn: revokeDisplayToken,
     onSuccess: () => {
       invalidate();
@@ -204,7 +202,7 @@ export default function DisplaySettingsPage() {
     onError: (e) => toast.error(e.message),
   });
 
-  const updateMutation = useMutation({
+  const updateMutation = useServerMutation({
     mutationFn: (data: { id: string; name: string; locationId: string | null; layout: string }) =>
       updateDisplayToken(data.id, {
         name: data.name,
@@ -219,7 +217,7 @@ export default function DisplaySettingsPage() {
     onError: (e) => toast.error(e.message),
   });
 
-  const regenerateMutation = useMutation({
+  const regenerateMutation = useServerMutation({
     mutationFn: regenerateDisplayToken,
     onSuccess: (result) => {
       const data = result as { token: string };

@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import {
   Copy,
@@ -74,18 +74,17 @@ const dateFormatOptions = [
 export default function WooCommerceSettingsPage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
   const [showSecret, setShowSecret] = useState(false);
   const [showSetupGuide, setShowSetupGuide] = useState(false);
   const [showMetaDetect, setShowMetaDetect] = useState(false);
 
-  const { data: integration, isLoading } = useQuery({
+  const { data: integration, isLoading, refetch: refetchIntegration } = useServerQuery({
     queryKey: ["woocommerce-integration", orgId],
     queryFn: () => getWooCommerceIntegration(),
     enabled: !!orgId,
   });
 
-  const { data: orderLogs } = useQuery({
+  const { data: orderLogs, refetch: refetchLogs } = useServerQuery({
     queryKey: ["woocommerce-logs", orgId],
     queryFn: () => getWooCommerceOrderLogs({ pageSize: 10 }),
     enabled: !!orgId,
@@ -154,29 +153,29 @@ export default function WooCommerceSettingsPage() {
       : undefined,
   });
 
-  const saveMutation = useMutation({
+  const saveMutation = useServerMutation({
     mutationFn: (data: WooCommerceIntegrationFormValues) => updateWooCommerceIntegration(data),
     onSuccess: () => {
       toast.success("WooCommerce settings saved");
-      queryClient.invalidateQueries({ queryKey: ["woocommerce-integration"] });
+      refetchIntegration();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const regenMutation = useMutation({
+  const regenMutation = useServerMutation({
     mutationFn: () => regenerateWebhookSecret(),
     onSuccess: () => {
       toast.success("Webhook secret regenerated");
-      queryClient.invalidateQueries({ queryKey: ["woocommerce-integration"] });
+      refetchIntegration();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const retryMutation = useMutation({
+  const retryMutation = useServerMutation({
     mutationFn: (logId: string) => retryFailedOrder(logId),
     onSuccess: () => {
       toast.success("Order retry initiated");
-      queryClient.invalidateQueries({ queryKey: ["woocommerce-logs"] });
+      refetchLogs();
     },
     onError: (e) => toast.error(e.message),
   });

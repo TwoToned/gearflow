@@ -10,7 +10,12 @@
 import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+// useQueryClient retained only for the cross-domain ["project-operational-costs"]
+// key (read by the project costs panel). The ["damage-events"] datum is on
+// useServerQuery (same-view list+write island, not in the SSE map).
+import { useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { format } from "date-fns";
 import {
   Camera,
@@ -80,7 +85,7 @@ function DamageListContent() {
     pageSize,
   };
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch } = useServerQuery({
     queryKey: ["damage-events", orgId, queryFilters],
     queryFn: () => listDamageEvents(queryFilters),
     enabled: !!orgId,
@@ -89,21 +94,21 @@ function DamageListContent() {
   const items = (data?.items ?? []) as AnyRow[];
   const total = data?.total ?? 0;
 
-  const chargeBackMutation = useMutation({
+  const chargeBackMutation = useServerMutation({
     mutationFn: ({ id, value }: { id: string; value: boolean }) => chargeBackDamage(id, value),
     onSuccess: (_data, variables) => {
       toast.success(variables.value ? "Marked charged back" : "Charge-back removed");
-      queryClient.invalidateQueries({ queryKey: ["damage-events"] });
+      refetch();
       queryClient.invalidateQueries({ queryKey: ["project-operational-costs"] });
     },
     onError: (e) => showError(e),
   });
 
-  const resolveMutation = useMutation({
+  const resolveMutation = useServerMutation({
     mutationFn: (id: string) => resolveDamage(id),
     onSuccess: () => {
       toast.success("Marked resolved");
-      queryClient.invalidateQueries({ queryKey: ["damage-events"] });
+      refetch();
     },
     onError: (e) => showError(e),
   });

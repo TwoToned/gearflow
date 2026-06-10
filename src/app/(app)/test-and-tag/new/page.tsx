@@ -13,7 +13,7 @@ import { testTagAssetSchema, type TestTagAssetFormValues } from "@/lib/validatio
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { createTestTagAsset, peekNextTestTagIds } from "@/server/test-tag-assets";
-import { getTestProfiles } from "@/server/test-tag-profiles";
+import { useTestProfiles } from "@/hooks/use-test-profiles";
 import { getAssets } from "@/server/assets";
 import { getBulkAssets } from "@/server/bulk-assets";
 import { Button } from "@/components/ui/button";
@@ -67,13 +67,10 @@ function NewTestTagAssetInner() {
     queryFn: () => getBulkAssets({ pageSize: 500 }),
   });
 
-  const profilesQuery = useQuery({
-    queryKey: ["testProfiles", orgId],
-    queryFn: () => getTestProfiles(),
-    enabled: !!orgId,
-  });
+  // Reactive: testProfiles subscribes to Convex (filter isActive client-side).
+  const profilesData = useTestProfiles(orgId);
 
-  const profileList = (profilesQuery.data || []) as { id: string; name: string; equipmentClass: string; applianceType: string; isActive: boolean }[];
+  const profileList = (profilesData || []) as unknown as { id: string; name: string; equipmentClass: string; applianceType: string; isActive: boolean }[];
   const activeProfiles = profileList.filter(p => p.isActive);
 
   // Auto-populate the test tag ID from peek (only when no linked asset)

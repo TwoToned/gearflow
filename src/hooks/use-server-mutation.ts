@@ -29,13 +29,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
  */
 export interface ServerMutationOptions<TData, TVariables> {
   mutationFn: (variables: TVariables) => Promise<TData>;
-  onSuccess?: (data: TData, variables: TVariables) => void | Promise<void>;
-  onError?: (error: Error, variables: TVariables) => void | Promise<void>;
+  // Callbacks return `unknown` (like React Query) so the ubiquitous
+  // `onError: (e) => toast.error(e.message)` one-liner (toast returns an id)
+  // type-checks without forcing a braced body. Any returned promise is awaited.
+  onSuccess?: (data: TData, variables: TVariables) => unknown;
+  onError?: (error: Error, variables: TVariables) => unknown;
   onSettled?: (
     data: TData | undefined,
     error: Error | null,
     variables: TVariables
-  ) => void | Promise<void>;
+  ) => unknown;
 }
 
 export interface ServerMutationResult<TData, TVariables> {
@@ -88,7 +91,7 @@ export function useServerMutation<TData = unknown, TVariables = void>(
       inFlightRef.current += 1;
       if (mountedRef.current) setIsPending(true);
 
-      const runCallback = async (cb: (() => void | Promise<void>) | undefined) => {
+      const runCallback = async (cb: (() => unknown) | undefined) => {
         // Side-effect callbacks (toasts, dialog close, router.refresh) must never
         // turn a successful mutation into a rejection — log and continue, unlike
         // merging them with the mutationFn error. Intentional, documented behavior.

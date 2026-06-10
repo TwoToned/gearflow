@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Plus,
@@ -21,6 +20,7 @@ import {
   seedDefaultProfiles,
 } from "@/server/test-tag-profiles";
 import { useTestProfiles } from "@/hooks/use-test-profiles";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { FadeIn } from "@/components/ui/motion";
@@ -97,7 +97,6 @@ type Profile = {
 };
 
 export default function TestProfilesPage() {
-  const queryClient = useQueryClient();
   const canEdit = useCanDo("testTag", "create");
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
@@ -112,28 +111,28 @@ export default function TestProfilesPage() {
   const allProfiles = useTestProfiles(orgId);
   const isLoading = allProfiles === undefined;
 
-  const seedMutation = useMutation({
+  // No invalidation: every testProfiles reader (this page, model-form,
+  // test-and-tag/new) subscribes to Convex, so the dual-write server action's
+  // Convex write pushes the update live.
+  const seedMutation = useServerMutation({
     mutationFn: seedDefaultProfiles,
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["testProfiles"] });
       toast.success(`Created ${(data as { created: number }).created} default profiles`);
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const duplicateMutation = useMutation({
+  const duplicateMutation = useServerMutation({
     mutationFn: duplicateTestProfile,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["testProfiles"] });
       toast.success("Profile duplicated");
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: deleteTestProfile,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["testProfiles"] });
       toast.success("Profile deleted");
     },
     onError: (e) => toast.error(e.message),
@@ -312,7 +311,6 @@ function ProfileEditDialog({
   profile: Profile | null;
   onClose: () => void;
 }) {
-  const queryClient = useQueryClient();
   const isNew = !profile;
 
   // Initialize from profile or seed template
@@ -333,21 +331,19 @@ function ProfileEditDialog({
   const [subTestLabel, setSubTestLabel] = useState(profile?.subTestLabel || "Outlet");
   const [isActive, setIsActive] = useState(profile?.isActive ?? true);
 
-  const createMutation = useMutation({
+  const createMutation = useServerMutation({
     mutationFn: createTestProfile,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["testProfiles"] });
       toast.success("Profile created");
       onClose();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const updateMutation = useMutation({
+  const updateMutation = useServerMutation({
     mutationFn: (data: Parameters<typeof updateTestProfile>[1]) =>
       updateTestProfile(profile!.id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["testProfiles"] });
       toast.success("Profile updated");
       onClose();
     },

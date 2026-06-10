@@ -12,7 +12,7 @@ import { Controller } from "react-hook-form";
 import { modelSchema, type ModelFormValues } from "@/lib/validations/model";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { createModel, updateModel } from "@/server/models";
-import { getTestProfiles } from "@/server/test-tag-profiles";
+import { useTestProfiles } from "@/hooks/use-test-profiles";
 import { getCategories } from "@/server/categories";
 import { getOrgTags } from "@/server/tags";
 import { TagInput } from "@/components/ui/tag-input";
@@ -74,13 +74,11 @@ export function ModelForm({ initialData }: ModelFormProps) {
     queryFn: () => getOrgTags(),
   });
 
-  const { data: testProfiles } = useQuery({
-    queryKey: ["testProfiles", orgId],
-    queryFn: () => getTestProfiles(),
-    enabled: !!orgId,
-  });
+  // Reactive: testProfiles subscribes to Convex (Convex list returns all; filter
+  // isActive client-side to match the old getTestProfiles default).
+  const testProfiles = useTestProfiles(orgId);
 
-  const activeProfiles = ((testProfiles || []) as { id: string; name: string; equipmentClass: string; applianceType: string; isActive: boolean }[]).filter(p => p.isActive);
+  const activeProfiles = ((testProfiles || []) as unknown as { id: string; name: string; equipmentClass: string; applianceType: string; isActive: boolean }[]).filter(p => p.isActive);
 
   const form = useForm<ModelFormValues>({
     resolver: zodResolver(modelSchema),

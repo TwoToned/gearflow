@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { toast } from "sonner";
 import { Loader2, Plus, X, Cable } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -73,12 +74,12 @@ export function AssetAccessoriesManager({
   const hasAny =
     childAssets.length > 0 || childBulkItems.length > 0 || visibleInherited.length > 0;
 
-  const { data: availableAssets = [] } = useQuery({
+  const { data: availableAssets = [] } = useServerQuery({
     queryKey: ["accessory-assets", assetId],
     queryFn: () => getAvailableAccessoryAssets(assetId) as Promise<SerializedChild[]>,
     enabled: open && tab === "serialized",
   });
-  const { data: availableBulk = [] } = useQuery({
+  const { data: availableBulk = [] } = useServerQuery({
     queryKey: ["accessory-bulk"],
     queryFn: () =>
       getAvailableBulkAssetsForKit() as Promise<

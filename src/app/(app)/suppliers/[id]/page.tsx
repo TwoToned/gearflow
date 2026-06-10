@@ -3,7 +3,8 @@
 import { use, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { Pencil, Mail, Phone, Globe, MapPin, Trash2, Plus, ChevronRight } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AddressDisplay } from "@/components/ui/address-display";
@@ -51,24 +52,24 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: supplier, isLoading } = useQuery({
+  const { data: supplier, isLoading } = useServerQuery({
     queryKey: ["supplier", orgId, id],
     queryFn: () => getSupplierById(id),
   });
 
-  const { data: ordersData } = useQuery({
+  const { data: ordersData } = useServerQuery({
     queryKey: ["supplier-orders", orgId, id],
     queryFn: () => getSupplierOrders({ supplierId: id, pageSize: 50 }),
     enabled: !!supplier,
   });
 
-  const { data: assetsData } = useQuery({
+  const { data: assetsData } = useServerQuery({
     queryKey: ["supplier-assets", orgId, id],
     queryFn: () => getSupplierAssets(id, { pageSize: 50 }),
     enabled: !!supplier,
   });
 
-  const { data: subhiresData } = useQuery({
+  const { data: subhiresData } = useServerQuery({
     queryKey: ["supplier-subhires", orgId, id],
     queryFn: () => getSupplierSubhires(id, { pageSize: 50 }),
     enabled: !!supplier,

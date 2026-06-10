@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { toast } from "sonner";
 import { Loader2, Plus, X, Cable } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -41,7 +42,7 @@ export function ModelAccessoriesManager({ modelId, bulkAccessories }: Props) {
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["model"] });
   const hasAny = bulkAccessories.length > 0;
 
-  const { data: availableBulk = [] } = useQuery({
+  const { data: availableBulk = [] } = useServerQuery({
     queryKey: ["model-accessory-bulk"],
     queryFn: () =>
       getAvailableBulkAssetsForKit() as Promise<

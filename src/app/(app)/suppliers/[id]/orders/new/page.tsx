@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -26,7 +27,7 @@ export default function NewSupplierOrderPage({ params }: { params: Promise<{ id:
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: supplier } = useQuery({
+  const { data: supplier } = useServerQuery({
     queryKey: ["supplier", orgId, supplierId],
     queryFn: () => getSupplierById(supplierId),
   });

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { Plus, Pencil, Trash2, Loader2, ArrowLeft, MoreVertical, AlertTriangle, FolderPlus, ChevronDown, MapPin } from "lucide-react";
 import { toast } from "sonner";
 
@@ -1732,13 +1733,13 @@ function SubHireItemForm({
     label: m.name,
   }));
 
-  const { data: supplierRate } = useQuery({
+  const { data: supplierRate } = useServerQuery({
     queryKey: ["supplier-rate", supplierId, modelId],
     queryFn: () => getSupplierModelRate(supplierId, modelId),
     enabled: !!modelId && !!supplierId && open,
   });
 
-  const { data: allRates } = useQuery({
+  const { data: allRates } = useServerQuery({
     queryKey: ["model-rates", modelId],
     queryFn: () => getSupplierRateHistory(modelId),
     enabled: !!modelId && open,

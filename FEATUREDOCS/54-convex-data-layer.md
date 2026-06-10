@@ -1698,6 +1698,47 @@ SSE event covered (write the content signature over the mutable, page-visible su
 **notifications** (dual-write the `notification` table first), the auth/RBAC tail (`useServerQuery`), and
 finally SSE/`use-realtime.ts` teardown (only at RQ == 0).
 
+**Done session 2026-06-11 (★ ASSET DETAIL — 2nd bucket-B reactive composite; 119 → 118 files import RQ;
+`assets/registry/[id]` fully RQ-free).** Reused the kit keystone verbatim: `convex/assetDetail.ts`
+`version({id})` (asset doc `updatedAt` + content signatures over `assetMedia` by_assetId and `childAssets`
+= assets by_parentAssetId), `useAssetDetailVersion(id)` in `src/hooks/use-assets.ts`, and
+`useReactiveServerQuery({ watch, queryKey:["asset",orgId,id], queryFn:()=>getAsset(id) })` on the page.
+`getAsset` stays byte-identical. Page rewire: serialized reader → `useReactiveServerQuery`; the bulk
+variant (which just redirects to the model page and is NOT in the SSE map) → plain `useServerQuery`; the 3
+mutations (archive/delete/force-return) → `useServerMutation` (force-return → `refetchAsset()`;
+archive/delete just `router.push`, dropping their old `invalidateQueries(["assets"]/["bulk-assets"])`
+which were already no-ops since the registry table is Convex-reactive); MediaUploader/NotesEditor
+`onChanged` → `refetchAsset`. **`AssetAccessoriesManager`** converted off RQ: `useMutation`→
+`useServerMutation`, dropped `useQueryClient`, and its `invalidateQueries(["asset"])` → a new `onChanged`
+prop wired to `refetchAsset` (the MediaUploader decoupling pattern). `asset-checks-tab.tsx` already used
+`useServerQuery` (read-only) — no change.
+
+- **★ KEY FINDING — the SSE realtime system currently emits NOTHING.** Every `logActivity` call passes a
+  lowercase/camelCase `entityType` (`"asset"`, `"maintenance"`, `"kit"`, `"project"`, …) but
+  `mapEntityTypeToEvent` (`src/lib/activity-log.ts`) switches on PascalCase (`"Asset"`,
+  `"MaintenanceRecord"`, …). ZERO PascalCase entityType literals exist in `src/` → no case ever matches →
+  `events.emit` is never reached. So `use-realtime.ts` invalidation has been dead, and **cross-user
+  reactivity did not exist** for any of these pages. Consequence for bucket B: every version vector is a
+  pure, SAFE ADDITION (a superset that ADDS liveness), not something that can regress a data-identical
+  contract. The only thing that must be preserved is SAME-VIEW reactivity, which the explicit `refetch()`
+  in each mutation `onSuccess` handles independent of the vector. (This casing bug is pre-existing and
+  out of scope here; worth a fix or a deliberate decision before SSE teardown — but teardown removes the
+  whole path anyway. Flagged in the handoff/memory.)
+- **Scope of the asset vector** (given the above, a superset of the page-visible mutable sub-tables that
+  are mirrored to Convex): asset row (`updatedAt`), `assetMedia` (Photos tab, dual-written — folds in
+  `isPrimary`/`sortOrder`/`type`/`fileId`/`displayName` so a `setAssetPrimaryPhoto` in-place flip moves
+  it), and `childAssets` (serialized accessories via `by_parentAssetId`). KNOWN GAPS, all acceptable
+  because same-view refetch covers them and cross-user liveness here is new: accessory DETACH clears
+  `parentAssetId` to null = a Convex no-op (the documented clear-to-null caveat in `asset-mirror.ts`), so
+  a cross-user detach doesn't move the vector; `assetBulkChildren` (bulk accessories) is in the schema but
+  NOT yet dual-written, so it is left out of the vector; maintenance/line-item/history tabs are out
+  (Prisma-only and never fired an SSE event that hit this page's key).
+- **Verified:** tsc clean, **2228 tests**, 0 new lint (changed files: 0 errors, 3 pre-existing warnings
+  carried verbatim), `pnpm build` exit 0, and a **live JWKS-sidecar round-trip**
+  (`scripts/convex-roundtrip-asset-detail.ts`, 5/5): `version()` callable with a user token + org-scoped
+  (different-org token rejected), and the vector moves on media-add, the `isPrimary`-only flip (the
+  silent-staleness proof), AND a child-asset attach.
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort

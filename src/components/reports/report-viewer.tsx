@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { FileSpreadsheet, FileText, ChevronLeft, ChevronRight } from "lucide-react";
 import type { ReportResult, ReportConfig, FieldDefinition } from "@/lib/report-types";
 import { FIELD_DEFINITIONS } from "@/lib/report-types";
-import { useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { runReport, runReportCSV } from "@/server/reports";
 
 interface ReportViewerProps {
@@ -31,7 +31,7 @@ export function ReportViewer({ config, initialResult, title, autoRun }: ReportVi
   const pageSize = config.limit || 100;
   const hasAutoRun = useRef(false);
 
-  const runMutation = useMutation({
+  const runMutation = useServerMutation({
     mutationFn: async (p: number) => {
       const res = await runReport(config, p, pageSize);
       return res as ReportResult;
@@ -39,7 +39,7 @@ export function ReportViewer({ config, initialResult, title, autoRun }: ReportVi
     onSuccess: (data) => setResult(data),
   });
 
-  const csvMutation = useMutation({
+  const csvMutation = useServerMutation({
     mutationFn: () => runReportCSV(config),
     onSuccess: (csv) => {
       const blob = new Blob([csv], { type: "text/csv" });
@@ -52,7 +52,7 @@ export function ReportViewer({ config, initialResult, title, autoRun }: ReportVi
     },
   });
 
-  const pdfMutation = useMutation({
+  const pdfMutation = useServerMutation({
     mutationFn: async () => {
       const res = await fetch("/api/reports/pdf", {
         method: "POST",
@@ -169,7 +169,7 @@ export function ReportViewer({ config, initialResult, title, autoRun }: ReportVi
       </div>
 
       {/* Error */}
-      {runMutation.isError && (
+      {runMutation.error && (
         <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
           {(runMutation.error as Error).message || "Failed to run report"}
         </div>

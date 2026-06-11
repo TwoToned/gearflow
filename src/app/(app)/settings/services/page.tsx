@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServiceTemplates, refreshServiceTemplates } from "@/hooks/use-service-templates";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -100,7 +100,7 @@ export default function ServiceTemplatesPage() {
 
   const { data: templates = [], isLoading } = useServiceTemplates(orgId);
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: (id: string) => deleteServiceTemplate(id),
     onSuccess: () => {
       toast.success("Template deleted");
@@ -310,7 +310,7 @@ function TemplateDialog({
     values: open ? defaultValues : undefined,
   });
 
-  const createMutation = useMutation({
+  const createMutation = useServerMutation({
     mutationFn: (data: ServiceTemplateFormValues) => createServiceTemplate(data),
     onSuccess: () => {
       toast.success("Template created");
@@ -320,7 +320,7 @@ function TemplateDialog({
     onError: (e) => toast.error(e.message),
   });
 
-  const updateMutation = useMutation({
+  const updateMutation = useServerMutation({
     mutationFn: (data: ServiceTemplateFormValues) =>
       updateServiceTemplate(editing!.id as string, data),
     onSuccess: () => {

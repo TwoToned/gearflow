@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   Package, Boxes, FolderOpen, Box, List, Users, MapPin,
   Wrench, ScrollText, HardHat, UserCheck, Plus, X, Save,
@@ -163,7 +163,7 @@ export function ReportBuilder({ initialConfig, savedReportId, savedReportName }:
   };
 
   // Save mutation
-  const saveMutation = useMutation({
+  const saveMutation = useServerMutation({
     mutationFn: async () => {
       const config = buildConfig();
       if (savedReportId) {
@@ -684,7 +684,7 @@ export function ReportBuilder({ initialConfig, savedReportId, savedReportName }:
                       {saveMutation.isPending ? "Saving..." : "Save"}
                     </Button>
                   </div>
-                  {saveMutation.isError && (
+                  {saveMutation.error && (
                     <p className="text-sm text-destructive">
                       {(saveMutation.error as Error).message || "Failed to save"}
                     </p>

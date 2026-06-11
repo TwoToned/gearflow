@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useState, useRef } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import {
   ScanBarcode,
@@ -53,7 +53,7 @@ export default function AdHocCheckPage({
     } | null;
   } | undefined;
 
-  const submitMutation = useMutation({
+  const submitMutation = useServerMutation({
     mutationFn: (checks: Array<{
       checkItemId: string;
       result: "PASS" | "FAIL" | "NOTES_ONLY";

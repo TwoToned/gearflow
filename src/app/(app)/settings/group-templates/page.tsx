@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useGroupTemplates, refreshGroupTemplates } from "@/hooks/use-group-templates";
 import {
@@ -77,7 +77,7 @@ export default function GroupTemplatesSettingsPage() {
     [templates],
   );
 
-  const updateMut = useMutation({
+  const updateMut = useServerMutation({
     mutationFn: ({ id, name, description }: { id: string; name: string; description?: string }) =>
       updateGroupTemplate(id, { name, description }),
     onSuccess: () => {
@@ -90,7 +90,7 @@ export default function GroupTemplatesSettingsPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const deleteMut = useMutation({
+  const deleteMut = useServerMutation({
     mutationFn: (id: string) => deleteGroupTemplate(id),
     onSuccess: () => {
       toast.success("Template deleted");

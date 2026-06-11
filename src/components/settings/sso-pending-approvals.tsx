@@ -1,6 +1,7 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -20,13 +21,12 @@ const BUILT_IN_ROLES = [
 ];
 
 export function SSOPendingApprovals() {
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const [roleOverrides, setRoleOverrides] = useState<Record<string, string>>({});
 
-  const { data: approvals, isLoading } = useQuery({
-    queryKey: ["sso-pending-approvals"],
+  const { data: approvals, isLoading, refetch: refetchApprovals } = useServerQuery({
+    queryKey: ["sso-pending-approvals", orgId],
     queryFn: () => getPendingApprovals(),
   });
 
@@ -40,19 +40,19 @@ export function SSOPendingApprovals() {
     })),
   ];
 
-  const approveMut = useMutation({
+  const approveMut = useServerMutation({
     mutationFn: ({ id, role }: { id: string; role?: string }) => approveSSOUser(id, role),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["sso-pending-approvals"] });
+      refetchApprovals();
       toast.success("User approved");
     },
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const rejectMut = useMutation({
+  const rejectMut = useServerMutation({
     mutationFn: (id: string) => rejectSSOUser(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["sso-pending-approvals"] });
+      refetchApprovals();
       toast.success("User rejected");
     },
     onError: (err: Error) => toast.error(err.message),

@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useMemo, useRef, useEffect } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { refreshSSOProviders } from "@/hooks/use-sso-providers";
+import { refreshSSOSettings } from "@/hooks/use-sso-settings";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -103,14 +105,15 @@ export function SSOProviderSection({ providers, loading, canUpdate, providerMeta
 // ─── Provider Row ─────────────────────────────────────────────────────────────
 
 function ProviderRow({ provider, meta, canUpdate }: { provider: Provider; meta?: ProviderMeta; canUpdate: boolean }) {
-  const queryClient = useQueryClient();
+  const { data: activeOrg } = useActiveOrganization();
+  const orgId = activeOrg?.id;
   const [editOpen, setEditOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: () => deleteSSOProvider(provider.providerId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["sso-providers"] });
+      refreshSSOProviders(orgId);
       toast.success("Provider deleted");
       setConfirmDelete(false);
     },
@@ -236,7 +239,8 @@ function EditProviderForm({
   meta?: ProviderMeta;
   onSuccess: () => void;
 }) {
-  const queryClient = useQueryClient();
+  const { data: activeOrg } = useActiveOrganization();
+  const orgId = activeOrg?.id;
   const [submitting, setSubmitting] = useState(false);
 
   // Display meta
@@ -315,8 +319,8 @@ function EditProviderForm({
       // 3. Update display meta (name + icon) via server action
       await updateSSOProviderMeta(provider.providerId, { displayName, icon });
 
-      queryClient.invalidateQueries({ queryKey: ["sso-providers"] });
-      queryClient.invalidateQueries({ queryKey: ["sso-settings"] });
+      refreshSSOProviders(orgId);
+      refreshSSOSettings(orgId);
       toast.success("Provider updated");
       onSuccess();
     } catch (err) {
@@ -585,7 +589,6 @@ function IconPickerDropdown({ value, onChange }: { value: string; onChange: (id:
 // ─── Add Provider Form ────────────────────────────────────────────────────────
 
 function AddProviderForm({ onSuccess }: { onSuccess: () => void }) {
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const [tab, setTab] = useState<"oidc" | "saml">("oidc");
   const [submitting, setSubmitting] = useState(false);
@@ -643,7 +646,7 @@ function AddProviderForm({ onSuccess }: { onSuccess: () => void }) {
       await saveProviderMeta(providerId);
       // Force ID token mode — userinfo endpoints are unreliable across IdPs
       await patchProviderOidcConfig(providerId, { useIdTokenOnly: true });
-      queryClient.invalidateQueries({ queryKey: ["sso-providers"] });
+      refreshSSOProviders(activeOrg?.id);
       toast.success("OIDC provider added");
       onSuccess();
     } catch (err) {
@@ -674,7 +677,7 @@ function AddProviderForm({ onSuccess }: { onSuccess: () => void }) {
         return;
       }
       await saveProviderMeta(providerId);
-      queryClient.invalidateQueries({ queryKey: ["sso-providers"] });
+      refreshSSOProviders(activeOrg?.id);
       toast.success("SAML provider added");
       onSuccess();
     } catch (err) {

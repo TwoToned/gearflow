@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,7 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Trash2, Plus, Radar } from "lucide-react";
 import { updateGroupMappings, updateSSOSettings } from "@/server/sso";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useCustomRoles } from "@/hooks/use-custom-roles";
+import { refreshSSOSettings } from "@/hooks/use-sso-settings";
 import { toast } from "sonner";
 import type { OrgSSOSettings, SSOGroupMapping } from "@/lib/sso-types";
 
@@ -56,7 +57,6 @@ export function SSOGroupMappingSection({
   groupValueType,
   canUpdate,
 }: Props) {
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const [localMappings, setLocalMappings] = useState<SSOGroupMapping[]>(mappings);
@@ -73,20 +73,20 @@ export function SSOGroupMappingSection({
     })),
   ];
 
-  const saveMappings = useMutation({
+  const saveMappings = useServerMutation({
     mutationFn: (m: SSOGroupMapping[]) => updateGroupMappings(m),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["sso-settings"] });
+      refreshSSOSettings(orgId);
       toast.success("Group mappings saved");
       setDirty(false);
     },
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const updateSettings = useMutation({
+  const updateSettings = useServerMutation({
     mutationFn: (updates: Partial<OrgSSOSettings>) => updateSSOSettings(updates),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["sso-settings"] });
+      refreshSSOSettings(orgId);
       toast.success("Settings updated");
     },
     onError: (err: Error) => toast.error(err.message),

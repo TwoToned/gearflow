@@ -8,7 +8,6 @@ import { GlobalErrorBoundary } from "@/components/error-boundary";
 import { DomPatch } from "@/components/dom-patch";
 import { OverlayLockReset } from "@/components/overlay-lock-reset";
 import { ReducedMotionProvider } from "@/components/ui/motion";
-import { RealtimeProvider } from "@/providers/realtime-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { getPlatformName } from "@/lib/platform";
 import "./globals.css";
@@ -74,9 +73,7 @@ export default function RootLayout({
             <GoogleMapsProvider>
               <ConvexClientProvider>
                 <QueryProvider>
-                  <RealtimeProvider>
-                    <ReducedMotionProvider>{children}</ReducedMotionProvider>
-                  </RealtimeProvider>
+                  <ReducedMotionProvider>{children}</ReducedMotionProvider>
                 </QueryProvider>
               </ConvexClientProvider>
             </GoogleMapsProvider>

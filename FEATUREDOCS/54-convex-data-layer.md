@@ -1947,6 +1947,56 @@ new lint (normalized base-vs-HEAD per commit), `pnpm build` exit 0. (Codex revie
 environment lacked the codex CLI; the shared-store keystone is unit-tested and the rest are mechanical
 swaps with zero invalidation drops beyond the documented data-identical cross-route ones.)
 
+**Done session 2026-06-11d (★ PROJECT CLUSTER COMPLETE — fully off React Query, reads AND writes; 11
+commits pushed; 83 → 58 files import RQ).** The biggest, most-interlocked piece — the equipment editor
+composition the docs warned was "2–3 sessions, migrate as a set." Done in one pass via the
+`createSharedResource` keystone applied at scale (extended to pass the store key to the fetcher, so
+`(projectId) => getProject(projectId)` works; backward-compatible — auth fetchers ignore the key). Each
+datum converted atomically across all readers + writers, verified (tsc / 2235 tests / 0 new lint), one
+commit each, then a final write-sweep.
+
+**★ The decision that made it tractable: shared stores, NOT version vectors.** SSE is dead (the
+lowercase/PascalCase `entityType` bug — confirmed again this session), so cross-user liveness never
+existed; a shared store keyed by projectId is therefore **data-identical** to the old behaviour (mount +
+same-view refresh), while a per-composite version vector would be an enormous data-shape-drift footgun for
+zero parity gain. Version vectors remain a deferred "add real liveness" enhancement, not needed for RQ
+removal.
+
+**The datums (one shared store each unless noted), keyed by projectId:**
+- **project spine** (`use-project-detail`, `["project",…,id]` = getProject header/status/financials/managers):
+  3 page readers, ~10 scattered writers. ★ Half the writers invalidated a 2-element `["project", projectId]`
+  key that did NOT prefix-match the 3-element reader (latent no-op) — all wired to `refreshProjectDetail`,
+  realising the intended refresh.
+- **equipment composition** (`use-project-equipment`): project-categories + uncategorized-items /
+  -subhire-groups / -project-groups + project-overbooked + project-sub-hires + the single sub-hire detail.
+  equipment-tab's one `invalidate()` chokepoint (passed to child dialogs via `onInvalidate`) now calls the
+  `refresh*` set. ★ Caught the variable-key reader trap (`const queryKey = [...]` hides from a literal grep).
+- **services** (`use-project-services`: project-services + summary) + **service-templates** /
+  **group-templates** (`use-service-templates` / `use-group-templates`, keyed by orgId — settings list+form
+  + the panel/tab dropdowns, the same cross-component-same-page shape as the SSO stores).
+- **crew** (`use-project-crew`: project-crew + project-labour-cost). ★ call-sheet-dialog read project-crew
+  under a 2-element key = a SEPARATE RQ cache from the crew panel's 3-element key; the store unifies them.
+- **conflicts** (`use-project-conflicts`; swap-candidates → useServerQuery same-component; tracked the
+  swapping id in local state since useServerMutation has no `.variables`).
+- **projects list** + **project templates** + **operational-costs**: single-reader / cross-route islands →
+  plain `useServerQuery`; the cross-route invalidations drop (the reader remounts + refetches on navigation —
+  the model/maintenance-detail data-identical pattern). project-overbooked's broad 1-element page invalidate
+  became a no-op once the equipment tab moved to the projectId-keyed store → rewired to
+  `refreshProjectOverbooked(id)`.
+- **availability / asset-lookup**: parameterized per-(model,dates,project) checks read only in the add /
+  edit-line-item dialogs (fetched on open, dialog closes on its own mutation) → `useServerQuery`; the broad
+  invalidations drop (no stay-open staleness).
+- **Final write-sweep:** all 57 remaining `useMutation` → `useServerMutation` (the cache was already gone, so
+  pure async-wrapper swaps; no `.variables` / per-call-option gotchas in the cluster). crew-panel keeps
+  `useQueryClient` ONLY for the cross-domain `["crew-member"]` key (a crew datum, read outside the cluster).
+
+**No new Convex table/fn → no JWKS round-trip / Convex deploy** (the project reads stay server actions that
+compose Better-Auth users + cross-domain joins; project / project_line_item are already dual-written).
+Verified each commit: tsc clean, **2235 tests**, 0 new lint (normalized base-vs-HEAD), `pnpm build` exit 0.
+(No codex this session — CLI unavailable in the environment; the keystone is unit-tested and each datum's
+reader/writer set was verified complete by exact-key greps, not prefix assumptions.) **NEXT:** assets/bulk
+registry tail, crew scheduling, platform-config mechanical tail, then SSE/use-realtime teardown at RQ == 0.
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort

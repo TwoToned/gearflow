@@ -17,3 +17,16 @@ import { api } from "../../convex/_generated/api";
 export function useWarehouseListVersion(orgId: string | undefined) {
   return useQuery(api.warehouseDetail.listVersion, orgId ? { orgId } : "skip");
 }
+
+/**
+ * Reactive "version vector" for the per-project WAREHOUSE DETAIL page
+ * (`warehouse/[projectId]/page.tsx`). The cheap Convex value that
+ * `useReactiveServerQuery` watches to re-run the unchanged
+ * `getProjectForWarehouse` server action whenever the project or any of its line
+ * items changes — cross-user over the WebSocket. See convex/warehouseDetail.ts
+ * `version` for the scope contract. `projectId` is always defined (route param),
+ * so this never needs the "skip" sentinel in practice, but guard anyway.
+ */
+export function useWarehouseProjectVersion(projectId: string | undefined) {
+  return useQuery(api.warehouseDetail.version, projectId ? { projectId } : "skip");
+}

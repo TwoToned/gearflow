@@ -18,6 +18,7 @@ import {
   type UtilizationSummaryRow,
 } from "@/lib/utilization";
 import { prisma } from "@/lib/prisma";
+import { getModelWithCategoryMap } from "@/lib/models-read";
 
 /** One asset's utilization — for the asset detail page tab. */
 export async function getAssetUtilization(
@@ -81,20 +82,23 @@ export async function getUtilizationSummary(options?: {
       assetTag: true,
       customName: true,
       status: true,
-      model: { select: { id: true, name: true, category: { select: { name: true } } } },
+      modelId: true,
     },
   });
   const byId = new Map(assets.map((a) => [a.id, a]));
+  // model (+ nested category) lives in Convex — resolve from the map.
+  const modelMap = await getModelWithCategoryMap(organizationId);
 
   const enriched: UtilizationSummaryRow[] = rows.map((r) => {
     const a = byId.get(r.assetId);
+    const model = a?.modelId ? modelMap.get(a.modelId) : null;
     return {
       ...r,
       assetTag: a?.assetTag ?? "—",
       customName: a?.customName ?? null,
-      modelName: a?.model?.name ?? "—",
-      modelId: a?.model?.id ?? "",
-      categoryName: a?.model?.category?.name ?? null,
+      modelName: model?.name ?? "—",
+      modelId: a?.modelId ?? "",
+      categoryName: model?.category?.name ?? null,
       status: a?.status ?? "—",
     };
   });

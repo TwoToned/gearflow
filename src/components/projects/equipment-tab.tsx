@@ -36,8 +36,7 @@ import {
 import { Plus, FolderPlus, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
-import { getProjectCategories } from "@/server/project-categories";
-import { getProjectServices } from "@/server/project-services";
+import { useProjectServices } from "@/hooks/use-project-services";
 import {
   createProjectGroup,
   updateProjectGroup,
@@ -281,11 +280,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     staleTime: 60_000,
   });
 
-  const { data: servicesData } = useQuery({
-    queryKey: ["project-services", projectId],
-    queryFn: () => getProjectServices(projectId),
-    staleTime: 60_000,
-  });
+  const { data: servicesData } = useProjectServices(projectId);
 
   const { data: overbookedMap = {} } = useProjectOverbooked(projectId);
 

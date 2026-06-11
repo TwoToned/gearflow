@@ -6,6 +6,7 @@ import { PageMeta } from "@/components/layout/page-meta";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useProjectDetail, refreshProjectDetail } from "@/hooks/use-project-detail";
+import { useProjectServicesSummary } from "@/hooks/use-project-services";
 import {
   Pencil,
   Archive,
@@ -45,7 +46,6 @@ import {
   deleteProject,
 } from "@/server/projects";
 import { getProjectLabourCost } from "@/server/crew-assignments";
-import { getProjectServicesSummary } from "@/server/project-services";
 import { DuplicateProjectDialog } from "@/components/projects/duplicate-project-dialog";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -904,10 +904,7 @@ function ProjectSummaryStrip({
     queryFn: () => getProjectLabourCost(projectId),
   });
 
-  const { data: serviceData } = useQuery({
-    queryKey: ["project-services-summary", orgId, projectId],
-    queryFn: () => getProjectServicesSummary(projectId),
-  });
+  const { data: serviceData } = useProjectServicesSummary(projectId);
 
   const metrics = [
     {

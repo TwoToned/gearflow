@@ -1,8 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
+import { useProjectServices, refreshProjectServices, useProjectServicesSummary, refreshProjectServicesSummary } from "@/hooks/use-project-services";
+import { useServiceTemplates } from "@/hooks/use-service-templates";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -33,13 +35,10 @@ import {
 import { toast } from "sonner";
 
 import {
-  getProjectServices,
   createProjectService,
   updateProjectService,
   deleteProjectService,
   updateServiceStatus,
-  getProjectServicesSummary,
-  getServiceTemplates,
   updateServiceCrewStatus,
   generateProjectServices,
   cloneServicesFromProject,
@@ -192,24 +191,15 @@ export function ServicesPanel({
   const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
   const [messageTarget, setMessageTarget] = useState<{ crewMemberId: string; name: string } | null>(null);
 
-  const { data: services = [], isLoading } = useQuery({
-    queryKey: ["project-services", orgId, projectId],
-    queryFn: () => getProjectServices(projectId),
-  });
+  const { data: services = [], isLoading } = useProjectServices(projectId);
 
-  const { data: summary } = useQuery({
-    queryKey: ["project-services-summary", orgId, projectId],
-    queryFn: () => getProjectServicesSummary(projectId),
-  });
+  const { data: summary } = useProjectServicesSummary(projectId);
 
-  const { data: templates = [] } = useQuery({
-    queryKey: ["service-templates", orgId],
-    queryFn: () => getServiceTemplates(),
-  });
+  const { data: templates = [] } = useServiceTemplates(orgId);
 
   const invalidateAll = () => {
-    queryClient.invalidateQueries({ queryKey: ["project-services", orgId, projectId] });
-    queryClient.invalidateQueries({ queryKey: ["project-services-summary", orgId, projectId] });
+    refreshProjectServices(projectId);
+    refreshProjectServicesSummary(projectId);
     refreshProjectDetail(projectId);
     queryClient.invalidateQueries({ queryKey: ["project-crew", orgId, projectId] });
   };
@@ -1151,8 +1141,8 @@ function ServiceDialog({
   const setCrewMemberIds = (ids: string[]) => { form.setValue("crewMemberIds", ids); };
 
   const invalidateAll = () => {
-    queryClient.invalidateQueries({ queryKey: ["project-services", orgId, projectId] });
-    queryClient.invalidateQueries({ queryKey: ["project-services-summary", orgId, projectId] });
+    refreshProjectServices(projectId);
+    refreshProjectServicesSummary(projectId);
     refreshProjectDetail(projectId);
     queryClient.invalidateQueries({ queryKey: ["project-crew", orgId, projectId] });
   };

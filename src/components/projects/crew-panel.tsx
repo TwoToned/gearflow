@@ -43,7 +43,7 @@ import {
 } from "@/server/crew-communication";
 import { createCrewRole } from "@/server/crew";
 import { useCrewRoles } from "@/hooks/use-crew";
-import { getProjectServices } from "@/server/project-services";
+import { useProjectServices, refreshProjectServices } from "@/hooks/use-project-services";
 import {
   crewAssignmentSchema,
   type CrewAssignmentFormValues,
@@ -669,11 +669,7 @@ function AssignmentDialog({
     [roleDocs],
   );
 
-  const { data: projectServices = [] } = useQuery({
-    queryKey: ["project-services", orgId, projectId],
-    queryFn: () => getProjectServices(projectId),
-    enabled: open,
-  });
+  const { data: projectServices = [] } = useProjectServices(open ? projectId : undefined);
 
   const serviceOptions = (projectServices as { id: string; title: string; type: string; crewCountRequired: number | null; crewAssignments: unknown[] }[])
     .filter((s) => (s as { status?: string }).status !== "CANCELLED")
@@ -784,9 +780,7 @@ function AssignmentDialog({
         queryKey: ["project-labour-cost", orgId, projectId],
       });
       queryClient.invalidateQueries({ queryKey: ["crew-member"] });
-      queryClient.invalidateQueries({
-        queryKey: ["project-services", orgId, projectId],
-      });
+      refreshProjectServices(projectId);
       onOpenChange(false);
       form.reset();
     },
@@ -805,9 +799,7 @@ function AssignmentDialog({
         queryKey: ["project-labour-cost", orgId, projectId],
       });
       queryClient.invalidateQueries({ queryKey: ["crew-member"] });
-      queryClient.invalidateQueries({
-        queryKey: ["project-services", orgId, projectId],
-      });
+      refreshProjectServices(projectId);
       onOpenChange(false);
     },
     onError: (e) => toast.error(e.message),

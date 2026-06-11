@@ -5,6 +5,8 @@
 
 import { prisma } from "@/lib/prisma";
 import { getClientMap } from "@/lib/clients-read";
+import { getModelMap } from "@/lib/models-read";
+import { getCategoryMap } from "@/lib/categories-read";
 import type {
   ReportConfig,
   ReportResult,
@@ -122,6 +124,57 @@ async function attachClientsToRows(
   }
 }
 
+/**
+ * Attach Convex models (with their nested equipment category) and the direct
+ * equipment `category` relation onto report rows — model/category no longer join
+ * via Prisma (both dual-written to Convex, Phase 6 decommission). Handles the
+ * `model` relation (data sources `assets` / `lineItems`, rows carry `modelId`)
+ * with its nested `model.category`, plus the direct `category` relation for the
+ * `models` / `kits` sources (rows carry the equipment-category `categoryId`).
+ *
+ * NB scoped to models/kits for the direct category on purpose: `lineItems` carry
+ * a `categoryId` too, but that's a *project_category* (not exposed as a report
+ * column) — attaching it from the equipment-category map would be wrong. Mutates
+ * rows in place; no-op when nothing needs it. Unlike clients (a hard cutover with
+ * a frozen Prisma table, so sorts are skipped), models/categories are dual-write
+ * with a fresh Prisma mirror — only the DISPLAY read moves to Convex; Prisma
+ * relation sorts on model/category stay correct.
+ */
+async function attachModelsToRows(
+  rows: Record<string, unknown>[],
+  dataSource: DataSource,
+  organizationId: string,
+): Promise<void> {
+  const needsModel = rows.some((r) => typeof r.modelId === "string");
+  const needsDirectCategory = dataSource === "models" || dataSource === "kits";
+  if (!needsModel && !needsDirectCategory) return;
+
+  const [modelMap, categoryMap] = await Promise.all([
+    needsModel ? getModelMap(organizationId) : Promise.resolve(null),
+    getCategoryMap(organizationId),
+  ]);
+
+  for (const row of rows) {
+    // Direct equipment category (models source = model rows; kits source = kit rows).
+    if (needsDirectCategory && typeof row.categoryId === "string") {
+      row.category = categoryMap.get(row.categoryId) ?? null;
+    }
+    // model relation + its nested equipment category (asset / line-item rows).
+    if (modelMap && typeof row.modelId === "string") {
+      const model = modelMap.get(row.modelId);
+      if (model) {
+        const catId = (model as { categoryId?: string | null }).categoryId;
+        row.model = {
+          ...model,
+          category: typeof catId === "string" ? categoryMap.get(catId) ?? null : null,
+        };
+      } else {
+        row.model = null;
+      }
+    }
+  }
+}
+
 function buildSelectAndInclude(
   columns: ColumnConfig[],
   dataSource: DataSource,
@@ -149,7 +202,11 @@ function buildSelectAndInclude(
   // now — stale Prisma rows). It's attached post-fetch by attachClientsToRows.
   for (const rel of needsRelations) {
     if (rel === "model") {
-      include.model = { include: { category: true } };
+      // model (+ nested equipment category) attached from Convex post-fetch by
+      // attachModelsToRows, not via a Prisma join.
+    } else if (rel === "category") {
+      // equipment category (models / kits sources) attached from Convex
+      // post-fetch by attachModelsToRows, not via a Prisma join.
     } else if (rel === "project") {
       include.project = { include: { location: true } };
     } else if (rel === "crewMember") {
@@ -372,6 +429,7 @@ async function executeGroupedReport(
     ...(include ? { include } : {}),
   }) as Record<string, unknown>[];
   await attachClientsToRows(allRows, organizationId);
+  await attachModelsToRows(allRows, config.dataSource, organizationId);
 
   // Flatten all rows
   const flatRows = allRows.map((row) => flattenRow(row, config.columns));
@@ -686,8 +744,9 @@ export async function executeReport(
   ]);
 
   const rows = rawRows as Record<string, unknown>[];
-  // Clients live in Convex — attach for display (see attachClientsToRows).
+  // Clients / models / categories live in Convex — attach for display.
   await attachClientsToRows(rows, organizationId);
+  await attachModelsToRows(rows, config.dataSource, organizationId);
 
   // Add computed fields
   await addComputedFields(rows, config, organizationId);

@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
+import { useActiveOrganization } from "@/lib/auth-client";
+import { useGroupTemplates, refreshGroupTemplates } from "@/hooks/use-group-templates";
 import {
   Bookmark,
   Trash2,
@@ -16,7 +18,6 @@ import {
 import { toast } from "sonner";
 
 import {
-  getGroupTemplates,
   updateGroupTemplate,
   deleteGroupTemplate,
 } from "@/server/group-templates";
@@ -56,13 +57,14 @@ type Template = {
 };
 
 export default function GroupTemplatesSettingsPage() {
-  const queryClient = useQueryClient();
+  const { data: activeOrg } = useActiveOrganization();
+  const orgId = activeOrg?.id;
   const canManage = useCanDo("project", "manage_line_items");
 
-  const { data: templates = [], isLoading } = useQuery<Template[]>({
-    queryKey: ["group-templates"],
-    queryFn: async () => (await getGroupTemplates()) as unknown as Template[],
-  });
+  const { data: templates = [], isLoading } = useGroupTemplates(orgId) as unknown as {
+    data: Template[];
+    isLoading: boolean;
+  };
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [editTemplate, setEditTemplate] = useState<Template | null>(null);
@@ -80,7 +82,7 @@ export default function GroupTemplatesSettingsPage() {
       updateGroupTemplate(id, { name, description }),
     onSuccess: () => {
       toast.success("Template updated");
-      queryClient.invalidateQueries({ queryKey: ["group-templates"] });
+      refreshGroupTemplates(orgId);
       setEditTemplate(null);
       setEditName("");
       setEditDescription("");
@@ -92,7 +94,7 @@ export default function GroupTemplatesSettingsPage() {
     mutationFn: (id: string) => deleteGroupTemplate(id),
     onSuccess: () => {
       toast.success("Template deleted");
-      queryClient.invalidateQueries({ queryKey: ["group-templates"] });
+      refreshGroupTemplates(orgId);
       setDeleteTemplate(null);
     },
     onError: (e: Error) => toast.error(e.message),

@@ -37,6 +37,7 @@ import { Plus, FolderPlus, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
 import { useProjectServices } from "@/hooks/use-project-services";
+import { useGroupTemplates, refreshGroupTemplates } from "@/hooks/use-group-templates";
 import {
   createProjectGroup,
   updateProjectGroup,
@@ -60,7 +61,7 @@ import {
   moveSubHireGroupToCategory,
   reorderMixedGroupsInCategory,
 } from "@/server/category-slots";
-import { getGroupTemplates, applyGroupTemplate, saveGroupAsTemplate } from "@/server/group-templates";
+import { applyGroupTemplate, saveGroupAsTemplate } from "@/server/group-templates";
 import { removeLineItem, updateLineItem, reorderLineItems } from "@/server/line-items";
 import { Button } from "@/components/ui/button";
 import {
@@ -274,11 +275,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
 
   const { data: uncategorizedProjectGroups = [] } = useUncategorizedProjectGroups(projectId);
 
-  const { data: templates = [] } = useQuery({
-    queryKey: ["group-templates"],
-    queryFn: () => getGroupTemplates(),
-    staleTime: 60_000,
-  });
+  const { data: templates = [] } = useGroupTemplates(orgId);
 
   const { data: servicesData } = useProjectServices(projectId);
 
@@ -380,7 +377,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     onSuccess: (t: unknown) => {
       const name = (t as { name?: string })?.name ?? "Template";
       toast.success(`Saved as template "${name}"`);
-      queryClient.invalidateQueries({ queryKey: ["group-templates"] });
+      refreshGroupTemplates(orgId);
       setSaveAsTemplateGroup(null);
     },
     onError: (e: Error) => toast.error(e.message),

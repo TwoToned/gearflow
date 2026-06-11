@@ -144,7 +144,6 @@ export function DamageReportDialog({
           : "Logged on the project's operational P&L.",
       });
       // Refresh anything that reads damage data.
-      queryClient.invalidateQueries({ queryKey: ["project-operational-costs"] });
       queryClient.invalidateQueries({ queryKey: ["damage-events"] });
       queryClient.invalidateQueries({ queryKey: ["entity-activity"] });
       onCreated?.();

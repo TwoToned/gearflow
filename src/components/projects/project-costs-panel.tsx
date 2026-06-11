@@ -14,7 +14,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { getProjectOperationalCosts } from "@/server/project-costs";
 import { formatCurrency } from "@/lib/formatters";
@@ -73,7 +73,7 @@ interface ProjectCostsPanelProps {
 
 export function ProjectCostsPanel({ projectId }: ProjectCostsPanelProps) {
   const [showDetail, setShowDetail] = useState(false);
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useServerQuery({
     queryKey: ["project-operational-costs", projectId],
     queryFn: () => getProjectOperationalCosts(projectId),
     enabled: !!projectId,

@@ -10,10 +10,6 @@
 import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-// useQueryClient retained only for the cross-domain ["project-operational-costs"]
-// key (read by the project costs panel). The ["damage-events"] datum is on
-// useServerQuery (same-view list+write island, not in the SSE map).
-import { useQueryClient } from "@tanstack/react-query";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { format } from "date-fns";
@@ -61,7 +57,6 @@ const statusConfig: Record<string, { label: string; className: string }> = {
 type AnyRow = Record<string, any>;
 
 function DamageListContent() {
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const searchParams = useSearchParams();
@@ -99,7 +94,6 @@ function DamageListContent() {
     onSuccess: (_data, variables) => {
       toast.success(variables.value ? "Marked charged back" : "Charge-back removed");
       refetch();
-      queryClient.invalidateQueries({ queryKey: ["project-operational-costs"] });
     },
     onError: (e) => showError(e),
   });

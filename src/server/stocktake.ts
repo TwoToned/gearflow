@@ -5,6 +5,7 @@ import { requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { syncAssetsToConvex, syncBulkAssetsToConvex } from "@/lib/asset-mirror";
+import { syncStocktakeToConvex } from "@/lib/stocktake-mirror";
 import {
   createStocktakeSchema,
   type CreateStocktakeValues,
@@ -85,6 +86,9 @@ export async function syncStocktakeOnLocationChange({
       });
     }
   }
+
+  if (oldStocktake) await syncStocktakeToConvex(oldStocktake.id);
+  if (newStocktake) await syncStocktakeToConvex(newStocktake.id);
 }
 
 export async function getStocktakes(params?: {
@@ -272,6 +276,7 @@ export async function createStocktake(data: CreateStocktakeValues) {
     summary: `Created stocktake "${stocktake.name}" at ${location.name} (${expectedCount} expected items)`,
   });
 
+  await syncStocktakeToConvex(stocktake.id);
   return serialize(stocktake);
 }
 
@@ -389,6 +394,7 @@ export async function updateStocktake(id: string, data: UpdateStocktakeValues) {
       summary: `Updated stocktake "${stocktake.name}" — regenerated ${expectedCount} expected items`,
     });
 
+    await syncStocktakeToConvex(stocktake.id);
     return serialize(stocktake);
   }
 
@@ -412,6 +418,7 @@ export async function updateStocktake(id: string, data: UpdateStocktakeValues) {
     summary: `Updated stocktake "${stocktake.name}"`,
   });
 
+  await syncStocktakeToConvex(stocktake.id);
   return serialize(stocktake);
 }
 
@@ -447,6 +454,8 @@ export async function startStocktake(id: string) {
     entityName: stocktake.name,
     summary: `Started stocktake "${stocktake.name}"`,
   });
+
+  await syncStocktakeToConvex(id);
 }
 
 export async function scanStocktakeItem(data: ScanItemValues) {
@@ -506,6 +515,7 @@ export async function scanStocktakeItem(data: ScanItemValues) {
           bulkAsset: { include: { model: true } },
         },
       });
+      await syncStocktakeToConvex(parsed.stocktakeId);
       return serialize({
         ...updated,
         alreadyScanned: true,
@@ -528,6 +538,7 @@ export async function scanStocktakeItem(data: ScanItemValues) {
       },
     });
 
+    await syncStocktakeToConvex(parsed.stocktakeId);
     return serialize({ ...updated, alreadyScanned: false, isExpected: true });
   }
 
@@ -565,6 +576,7 @@ export async function scanStocktakeItem(data: ScanItemValues) {
     },
   });
 
+  await syncStocktakeToConvex(parsed.stocktakeId);
   return serialize({ ...newItem, alreadyScanned: false, isExpected: false });
 }
 
@@ -596,6 +608,8 @@ export async function updateBulkCount(data: UpdateBulkCountValues) {
       result,
     },
   });
+
+  await syncStocktakeToConvex(item.stocktakeId);
 }
 
 export async function completeScanning(id: string) {
@@ -672,6 +686,8 @@ export async function completeScanning(id: string) {
     entityName: stocktake.name,
     summary: `Completed scanning for "${stocktake.name}" — ${foundCount} found, ${missingCount} missing, ${unexpectedCount} unexpected`,
   });
+
+  await syncStocktakeToConvex(id);
 }
 
 export async function resumeScanning(id: string) {
@@ -716,6 +732,8 @@ export async function resumeScanning(id: string) {
     entityName: stocktake.name,
     summary: `Resumed scanning for "${stocktake.name}"`,
   });
+
+  await syncStocktakeToConvex(id);
 }
 
 export async function resolveDiscrepancy(data: ResolveDiscrepancyValues) {
@@ -841,6 +859,7 @@ export async function resolveDiscrepancy(data: ResolveDiscrepancyValues) {
   // IGNORE; the helpers skip null ids and re-patch current values idempotently).
   await syncAssetsToConvex([item.assetId]);
   await syncBulkAssetsToConvex([item.bulkAssetId]);
+  await syncStocktakeToConvex(item.stocktakeId);
 }
 
 export async function bulkResolveDiscrepancies(data: BulkResolveValues) {
@@ -917,6 +936,8 @@ export async function bulkResolveDiscrepancies(data: BulkResolveValues) {
       data: { actionTaken: "Ignored (bulk)" },
     });
   }
+
+  await syncStocktakeToConvex(parsed.stocktakeId);
 }
 
 export async function completeStocktake(id: string) {
@@ -965,6 +986,8 @@ export async function completeStocktake(id: string) {
     entityName: stocktake.name,
     summary: `Completed stocktake "${stocktake.name}" — ${foundCount}/${stocktake.expectedCount} found, ${discrepancyCount} discrepancies`,
   });
+
+  await syncStocktakeToConvex(id);
 }
 
 export async function cancelStocktake(id: string) {
@@ -995,6 +1018,8 @@ export async function cancelStocktake(id: string) {
     entityName: stocktake.name,
     summary: `Cancelled stocktake "${stocktake.name}"`,
   });
+
+  await syncStocktakeToConvex(id);
 }
 
 export async function getRecentScans(stocktakeId: string, limit = 10) {
@@ -1115,6 +1140,7 @@ export async function markStocktakeItemFound(itemId: string) {
     },
   });
 
+  await syncStocktakeToConvex(item.stocktakeId);
   return serialize(updated);
 }
 
@@ -1146,4 +1172,6 @@ export async function unmarkStocktakeItemFound(itemId: string) {
       result: item.expectedAtLocation ? "MATCH" : item.result,
     },
   });
+
+  await syncStocktakeToConvex(item.stocktakeId);
 }

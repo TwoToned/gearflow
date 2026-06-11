@@ -5,6 +5,7 @@
  */
 import { prisma } from "@/lib/prisma";
 import { getClientById } from "@/lib/clients-read";
+import { getLocationMap } from "@/lib/locations-read";
 import {
   buildLineItemAttachMaps,
   attachLineItemTree,
@@ -42,26 +43,20 @@ const unitInclude = {
 } as const;
 
 /**
- * Asset include shape with location data attached. Used for both
- * `asset` (serialised) and `bulkAsset` (bulk) on line items so the
- * packer-sort logic in `structureLineItems` can read `locationName`.
- */
-const assetWithLocation = {
-  include: { location: { select: { name: true } } },
-} as const;
-
-/**
  * Deep include for line items — 2 levels of children for nested kits.
  *
- * `model` and `supplier` are NOT joined here — they're dual-written to Convex
- * and attached in JS via `attachLineItemTree` (Phase 6 decommission). The
- * physical-asset joins (`asset` / `bulkAsset` / `kit` / `units`) and the
- * project-grouping joins (`category` = project_category, `group` = project_group)
- * stay on Prisma. See `src/lib/line-item-tree-read.ts`.
+ * `model`, `supplier`, and `location` are NOT joined here — they're dual-written
+ * to Convex and attached in JS (Phase 6 decommission): model/supplier via
+ * `attachLineItemTree`, the asset/bulk `locationName` resolved from a Convex
+ * location map by `locationId` (see `deriveLocationName` below). `asset: true` /
+ * `bulkAsset: true` keep every asset scalar (incl. `assetTag` + `locationId`),
+ * dropping only the former `location` relation. The physical-asset joins
+ * (`kit` / `units`) and the project-grouping joins (`category` = project_category,
+ * `group` = project_group) stay on Prisma. See `src/lib/line-item-tree-read.ts`.
  */
 const lineItemInclude = {
-  asset: assetWithLocation,
-  bulkAsset: assetWithLocation,
+  asset: true,
+  bulkAsset: true,
   kit: true,
   units: unitInclude,
   category: { select: { id: true, name: true, sortOrder: true } },
@@ -69,8 +64,8 @@ const lineItemInclude = {
   childLineItems: {
     orderBy: { sortOrder: "asc" as const },
     include: {
-      asset: assetWithLocation,
-      bulkAsset: assetWithLocation,
+      asset: true,
+      bulkAsset: true,
       kit: true,
       units: unitInclude,
       category: { select: { id: true, name: true, sortOrder: true } },
@@ -78,8 +73,8 @@ const lineItemInclude = {
       childLineItems: {
         orderBy: { sortOrder: "asc" as const },
         include: {
-          asset: assetWithLocation,
-          bulkAsset: assetWithLocation,
+          asset: true,
+          bulkAsset: true,
           units: unitInclude,
         },
       },
@@ -165,7 +160,8 @@ export async function buildDocumentData(
   const projectRow = await prisma.project.findUnique({
     where: { id: projectId, organizationId },
     include: {
-      location: true,
+      // location is dual-written to Convex — attached below from the location
+      // map by `locationId`, not Prisma-joined.
       categories: {
         orderBy: { sortOrder: "asc" },
         include: {
@@ -225,12 +221,17 @@ export async function buildDocumentData(
     throw new Error(`Project ${projectId} not found`);
   }
 
-  // model / supplier / client live in Convex — attach instead of a Prisma join.
-  // One maps round-trip serves both the line-item tree and the sub-hire shells.
-  const attachMaps = await buildLineItemAttachMaps(organizationId);
+  // model / supplier / client / location live in Convex — attach instead of a
+  // Prisma join. One maps round-trip serves the line-item tree + sub-hire shells;
+  // the location map serves the project venue + the per-asset packer locationName.
+  const [attachMaps, locationMap] = await Promise.all([
+    buildLineItemAttachMaps(organizationId),
+    getLocationMap(organizationId),
+  ]);
   const project = {
     ...projectRow,
     client: projectRow.clientId ? await getClientById(projectRow.clientId) : null,
+    location: projectRow.locationId ? locationMap.get(projectRow.locationId) ?? null : null,
     lineItems: attachLineItemTree(projectRow.lineItems, attachMaps),
     subHires: projectRow.subHires.map((sh) => ({
       ...sh,
@@ -251,12 +252,15 @@ export async function buildDocumentData(
   type LineItemRow = (typeof project.lineItems)[number];
   /**
    * Pull the physical location name off a line item via its asset or
-   * bulk-asset record. Custom items and services have neither and
-   * return null, sorting to the "No Location" bucket on packer docs.
+   * bulk-asset record. The asset rows carry only `locationId` now (no Prisma
+   * `location` join) — the name is resolved from the Convex location map.
+   * Custom items and services have neither and return null, sorting to the
+   * "No Location" bucket on packer docs.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const deriveLocationName = (row: any): string | null => {
-    return row?.asset?.location?.name ?? row?.bulkAsset?.location?.name ?? null;
+    const locId = row?.asset?.locationId ?? row?.bulkAsset?.locationId ?? null;
+    return locId ? locationMap.get(locId)?.name ?? null : null;
   };
   const enrichedLineItems = project.lineItems.map((li: LineItemRow) => {
     const info = overbookedMap.get(li.id);

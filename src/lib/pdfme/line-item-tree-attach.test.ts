@@ -7,12 +7,19 @@
  * exercises the whole chain against a realistic equipment tree:
  *
  *   attachLineItemTree  →  (build-document-data enrichment)  →  structureLineItems
- *     →  getFilteredParentItems (status filter)  →  gearflowTable.pdf (render)
+ *     →  getFilteredParentItems (status filter)  →  estimateSectionHeight (height)
+ *     →  gearflowTable.pdf (render)
  *
  * The safety property under test is parity: the attached Convex model/supplier
  * docs must produce the same rendered output a Prisma `include: { model, supplier }`
  * join did — `model.name`, `model.category.name`, and the resolved `supplierName`
  * all reach the page, and no top-level item is dropped by the filter / height path.
+ *
+ * Also covers the Phase 6 location decommission: `locationName` (now resolved from
+ * the Convex location map by `locationId` in build-document-data, not a Prisma
+ * `asset.location` join) survives the pipeline as the packer-sort field; and the
+ * height-reservation consumer (`estimateSectionHeight` → `calculateItemHeight`,
+ * the v0.8.1.1 tail-drop class) reserves space for every structured item.
  */
 import { describe, it, expect } from "vitest";
 import {
@@ -20,7 +27,7 @@ import {
   type LineItemAttachMaps,
 } from "@/lib/line-item-tree-read";
 import { structureLineItems, type CategoryForStructuring, type SubHireGroupForStructuring } from "./structure-line-items";
-import { getFilteredParentItems } from "./section-renderer";
+import { getFilteredParentItems, estimateSectionHeight } from "./section-renderer";
 import { runTablePlugin } from "./plugins/test-utils";
 import type { ConvexModel } from "@/lib/models-read";
 import type { ConvexSupplier } from "@/lib/suppliers-read";
@@ -124,11 +131,21 @@ describe("attachLineItemTree — recursive Convex model/supplier attach", () => 
 
 describe("full PDF pipeline parity (attach → structure → filter → render)", () => {
   // Replicate build-document-data's enrichment: derive supplierName from the
-  // attached supplier doc, keep the attached model object as-is.
+  // attached supplier doc, keep the attached model object as-is, and resolve
+  // locationName from the Convex location map by the asset's locationId. The map
+  // lookup itself lives in build-document-data (DB/Convex-coupled, not unit-
+  // testable here) — this simulates its OUTPUT so the resolved field is exercised
+  // through every downstream consumer, exactly as a Prisma `asset.location` join
+  // value used to be.
+  const resolvedLocationName: Record<string, string> = {
+    "li-light": "Main Warehouse",
+    "li-speaker": "Van 2",
+  };
   const attached = attachLineItemTree(rawTree, maps);
   const enriched = attached.map((li) => ({
     ...li,
     supplierName: li.supplier?.name ?? null,
+    locationName: resolvedLocationName[li.id] ?? null,
   })) as unknown as DocumentLineItem[];
 
   const categories: CategoryForStructuring[] = [
@@ -165,5 +182,27 @@ describe("full PDF pipeline parity (attach → structure → filter → render)"
     // supplierName (resolved from the attached Convex supplier) reaches the
     // sub-hire section header.
     expect(text).toContain("Acme Hire");
+  });
+
+  it("preserves the Convex-sourced locationName through structuring (packer-sort field intact)", () => {
+    // locationName is the packer-sort key (structure-line-items). The location
+    // decommission changed its SOURCE (Convex map, not a Prisma join) but not its
+    // shape — every real item must still carry the resolved name post-structuring.
+    const byId = new Map(structured.map((i) => [i.id, i]));
+    expect(byId.get("li-light")?.locationName).toBe("Main Warehouse");
+    expect(byId.get("li-speaker")?.locationName).toBe("Van 2");
+  });
+
+  it("reserves height for every structured item (consumer #2 — tail-drop guard)", () => {
+    // estimateSectionHeight → calculateTableItemHeights → getFilteredParentItems +
+    // calculateItemHeight. The whole structured list must reserve strictly more
+    // height than a single-item subset — proving the height path sums per-item and
+    // never caps/drops tail items (the v0.8.1.1 silent tail-drop class). Also
+    // guards that the synthetic group-row / kit-parent shapes don't throw here.
+    const section = { id: "s", type: "table", settings: { showKitChildren: true } } as never;
+    const hAll = estimateSectionHeight(section, { line_items: structured } as DocumentData, "packing-list");
+    const hOne = estimateSectionHeight(section, { line_items: structured.slice(0, 1) } as DocumentData, "packing-list");
+    expect(Number.isFinite(hAll)).toBe(true);
+    expect(hAll).toBeGreaterThan(hOne);
   });
 });

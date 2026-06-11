@@ -27,12 +27,10 @@ import { toast } from "sonner";
 
 import { CallSheetDialog } from "@/components/projects/call-sheet-dialog";
 import {
-  getProjectCrew,
   createAssignment,
   updateAssignment,
   deleteAssignment,
   updateAssignmentStatus,
-  getProjectLabourCost,
   getCrewMembersForAssignment,
 } from "@/server/crew-assignments";
 import { checkCrewConflicts, type CrewConflict } from "@/server/crew-availability";
@@ -44,6 +42,7 @@ import {
 import { createCrewRole } from "@/server/crew";
 import { useCrewRoles } from "@/hooks/use-crew";
 import { useProjectServices, refreshProjectServices } from "@/hooks/use-project-services";
+import { useProjectCrew, refreshProjectCrew, useProjectLabourCost, refreshProjectLabourCost } from "@/hooks/use-project-crew";
 import {
   crewAssignmentSchema,
   type CrewAssignmentFormValues,
@@ -133,22 +132,16 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
   const [offerAllOpen, setOfferAllOpen] = useState(false);
   const [removeAssignmentId, setRemoveAssignmentId] = useState<string | null>(null);
 
-  const { data: assignments, isLoading } = useQuery({
-    queryKey: ["project-crew", orgId, projectId],
-    queryFn: () => getProjectCrew(projectId),
-  });
+  const { data: assignments, isLoading } = useProjectCrew(projectId);
 
-  const { data: labourCost } = useQuery({
-    queryKey: ["project-labour-cost", orgId, projectId],
-    queryFn: () => getProjectLabourCost(projectId),
-  });
+  const { data: labourCost } = useProjectLabourCost(projectId);
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteAssignment(id),
     onSuccess: () => {
       toast.success("Crew member removed");
-      queryClient.invalidateQueries({ queryKey: ["project-crew", orgId, projectId] });
-      queryClient.invalidateQueries({ queryKey: ["project-labour-cost", orgId, projectId] });
+      refreshProjectCrew(projectId);
+      refreshProjectLabourCost(projectId);
       queryClient.invalidateQueries({ queryKey: ["crew-member"] });
     },
     onError: (e) => toast.error(e.message),
@@ -159,7 +152,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
       updateAssignmentStatus(id, status),
     onSuccess: () => {
       toast.success("Status updated");
-      queryClient.invalidateQueries({ queryKey: ["project-crew", orgId, projectId] });
+      refreshProjectCrew(projectId);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -168,7 +161,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
     mutationFn: (id: string) => sendCrewOffer(id),
     onSuccess: () => {
       toast.success("Offer sent");
-      queryClient.invalidateQueries({ queryKey: ["project-crew", orgId, projectId] });
+      refreshProjectCrew(projectId);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -177,7 +170,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
     mutationFn: () => sendCrewOfferAll(projectId),
     onSuccess: (result) => {
       toast.success(`${result.sent} offer(s) sent`);
-      queryClient.invalidateQueries({ queryKey: ["project-crew", orgId, projectId] });
+      refreshProjectCrew(projectId);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -773,12 +766,8 @@ function AssignmentDialog({
       createAssignment(projectId, data),
     onSuccess: () => {
       toast.success("Crew member assigned");
-      queryClient.invalidateQueries({
-        queryKey: ["project-crew", orgId, projectId],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["project-labour-cost", orgId, projectId],
-      });
+      refreshProjectCrew(projectId);
+      refreshProjectLabourCost(projectId);
       queryClient.invalidateQueries({ queryKey: ["crew-member"] });
       refreshProjectServices(projectId);
       onOpenChange(false);
@@ -792,12 +781,8 @@ function AssignmentDialog({
       updateAssignment(assignment!.id as string, data),
     onSuccess: () => {
       toast.success("Assignment updated");
-      queryClient.invalidateQueries({
-        queryKey: ["project-crew", orgId, projectId],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["project-labour-cost", orgId, projectId],
-      });
+      refreshProjectCrew(projectId);
+      refreshProjectLabourCost(projectId);
       queryClient.invalidateQueries({ queryKey: ["crew-member"] });
       refreshProjectServices(projectId);
       onOpenChange(false);

@@ -3,10 +3,11 @@
 import { use, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useProjectDetail, refreshProjectDetail } from "@/hooks/use-project-detail";
 import { useProjectServicesSummary } from "@/hooks/use-project-services";
+import { useProjectLabourCost } from "@/hooks/use-project-crew";
 import {
   Pencil,
   Archive,
@@ -45,7 +46,6 @@ import {
   archiveProject,
   deleteProject,
 } from "@/server/projects";
-import { getProjectLabourCost } from "@/server/crew-assignments";
 import { DuplicateProjectDialog } from "@/components/projects/duplicate-project-dialog";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -876,10 +876,7 @@ export default function ProjectDetailPage({
 function LabourCostDisplay({ projectId }: { projectId: string }) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const { data } = useQuery({
-    queryKey: ["project-labour-cost", orgId, projectId],
-    queryFn: () => getProjectLabourCost(projectId),
-  });
+  const { data } = useProjectLabourCost(projectId);
   return (
     <span className="t-data font-medium">
       {data ? formatCurrency(Number(data.totalLabourCost)) : "\u2014"}
@@ -899,10 +896,7 @@ function ProjectSummaryStrip({
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: labourData } = useQuery({
-    queryKey: ["project-labour-cost", orgId, projectId],
-    queryFn: () => getProjectLabourCost(projectId),
-  });
+  const { data: labourData } = useProjectLabourCost(projectId);
 
   const { data: serviceData } = useProjectServicesSummary(projectId);
 

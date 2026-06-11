@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import { useProjectServices, refreshProjectServices, useProjectServicesSummary, refreshProjectServicesSummary } from "@/hooks/use-project-services";
 import { useServiceTemplates } from "@/hooks/use-service-templates";
+import { refreshProjectCrew } from "@/hooks/use-project-crew";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -201,7 +202,7 @@ export function ServicesPanel({
     refreshProjectServices(projectId);
     refreshProjectServicesSummary(projectId);
     refreshProjectDetail(projectId);
-    queryClient.invalidateQueries({ queryKey: ["project-crew", orgId, projectId] });
+    refreshProjectCrew(projectId);
   };
 
   const deleteMutation = useMutation({
@@ -1144,7 +1145,7 @@ function ServiceDialog({
     refreshProjectServices(projectId);
     refreshProjectServicesSummary(projectId);
     refreshProjectDetail(projectId);
-    queryClient.invalidateQueries({ queryKey: ["project-crew", orgId, projectId] });
+    refreshProjectCrew(projectId);
   };
 
   const createMutation = useMutation({

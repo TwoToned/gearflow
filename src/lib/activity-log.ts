@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
-import { events } from "@/lib/events";
 
 interface LogActivityInput {
   organizationId: string;
@@ -18,30 +17,6 @@ interface LogActivityInput {
   kitId?: string;
 }
 
-function mapEntityTypeToEvent(
-  entityType: string,
-  action: string
-): string | null {
-  switch (entityType) {
-    case "Project":
-      return action === "created" ? "project:created" : "project:updated";
-    case "ProjectLineItem":
-      return "line-item:changed";
-    case "Asset":
-      return action === "created" ? "asset:created" : "asset:updated";
-    case "Kit":
-      return action === "created" ? "kit:created" : "kit:updated";
-    case "MaintenanceRecord":
-      return "maintenance:changed";
-    case "WarehouseOperation":
-      return "warehouse:changed";
-    case "CrewMember":
-      return "crew:changed";
-    default:
-      return null;
-  }
-}
-
 export async function logActivity(input: LogActivityInput): Promise<void> {
   try {
     await prisma.activityLog.create({
@@ -51,23 +26,6 @@ export async function logActivity(input: LogActivityInput): Promise<void> {
         metadata: input.metadata as unknown as Prisma.InputJsonValue,
       },
     });
-
-    try {
-      const eventType = mapEntityTypeToEvent(input.entityType, input.action);
-      if (eventType) {
-        const payload: Record<string, string | undefined> = {
-          orgId: input.organizationId,
-          actorId: input.userId,
-        };
-        if (input.projectId) payload.projectId = input.projectId;
-        if (input.assetId) payload.assetId = input.assetId;
-        if (input.kitId) payload.kitId = input.kitId;
-
-        events.emit(eventType as never, payload as never);
-      }
-    } catch (e) {
-      console.error("Failed to emit realtime event:", e);
-    }
   } catch (error) {
     console.error("Failed to log activity:", error);
   }

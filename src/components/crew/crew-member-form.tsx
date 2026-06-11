@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMemo, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { Loader2, Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -107,7 +107,7 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
     },
   });
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (data: CrewMemberFormValues) =>
       isEditing ? updateCrewMember(initialData.id, data) : createCrewMember(data),
     onSuccess: (result) => {

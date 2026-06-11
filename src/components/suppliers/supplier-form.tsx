@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -53,7 +53,7 @@ export function SupplierForm({ initialData }: SupplierFormProps) {
     },
   });
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (data: SupplierFormValues) =>
       isEditing ? updateSupplier(initialData.id, data) : createSupplier(data),
     onSuccess: (result) => {

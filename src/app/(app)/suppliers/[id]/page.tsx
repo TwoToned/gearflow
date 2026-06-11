@@ -3,7 +3,7 @@
 import { use, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
-import { useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { Pencil, Mail, Phone, Globe, MapPin, Trash2, Plus, ChevronRight } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -75,7 +75,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
     enabled: !!supplier,
   });
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: () => deleteSupplier(id),
     onSuccess: () => {
       toast.success("Supplier deleted");

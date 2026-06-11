@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -45,7 +45,7 @@ export default function NewSupplierOrderPage({ params }: { params: Promise<{ id:
     },
   });
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (data: SupplierOrderFormValues) => createSupplierOrder(data),
     onSuccess: () => {
       toast.success("Order created");

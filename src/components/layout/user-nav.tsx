@@ -3,10 +3,10 @@
 import { useRouter } from "next/navigation";
 import { LogOut, User, ChevronsUpDown, Shield, HardHat } from "lucide-react";
 import { useSession, signOut, useActiveOrganization } from "@/lib/auth-client";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useServerQuery } from "@/hooks/use-server-query";
+import { useProfile } from "@/hooks/use-profile";
 import { UserAvatar } from "@/components/ui/user-avatar";
-import { getProfile } from "@/server/user-profile";
 import { getMyCrewMemberId } from "@/server/crew";
 import {
   DropdownMenu,
@@ -29,12 +29,9 @@ export function UserNav() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  // Fetch profile for up-to-date avatar (session cookie cache may be stale)
-  const { data: profile } = useQuery({
-    queryKey: ["profile"],
-    queryFn: getProfile,
-    staleTime: 60_000,
-  });
+  // Fetch profile for up-to-date avatar (session cookie cache may be stale).
+  // Shared store so an account-page avatar/name edit live-updates this nav.
+  const { data: profile } = useProfile(user?.id);
   const userImage = profile?.image || user?.image;
 
   // Check if user has a linked crew profile

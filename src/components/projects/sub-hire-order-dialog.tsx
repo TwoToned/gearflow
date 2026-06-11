@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { Plus, Pencil, Trash2, Loader2, ArrowLeft, MoreVertical, AlertTriangle, FolderPlus, ChevronDown, MapPin } from "lucide-react";
 import { toast } from "sonner";
@@ -275,14 +276,14 @@ export function SubHireOrderDialog({
     setManagingId(newId);
     setView("manage");
     queryClient.invalidateQueries({ queryKey: ["project-sub-hires"] });
-    queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] });
+    refreshProjectDetail(projectId);
   };
 
   const handleDeleted = () => {
     setManagingId(null);
     setView("list");
     queryClient.invalidateQueries({ queryKey: ["project-sub-hires"] });
-    queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] });
+    refreshProjectDetail(projectId);
   };
 
   const handleBack = () => {
@@ -676,7 +677,7 @@ function SubHireManageView({
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ["sub-hire", orgId, subHireId] });
     queryClient.invalidateQueries({ queryKey: ["project-sub-hires"] });
-    queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] });
+    refreshProjectDetail(projectId);
     // Refresh equipment tab data when line items are generated/modified
     queryClient.invalidateQueries({ queryKey: ["project-categories", projectId] });
     queryClient.invalidateQueries({ queryKey: ["uncategorized-items", projectId] });

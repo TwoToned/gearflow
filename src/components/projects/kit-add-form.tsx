@@ -11,7 +11,8 @@
  */
 
 import { useMemo, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
+import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { toast } from "sonner";
 
@@ -53,7 +54,6 @@ export function KitAddForm({
   onInvalidate,
   onClose,
 }: KitAddFormProps) {
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
@@ -103,7 +103,7 @@ export function KitAddForm({
       ),
     onSuccess: () => {
       onInvalidate();
-      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+      refreshProjectDetail(projectId);
       toast.success("Kit added to project");
       onClose();
     },

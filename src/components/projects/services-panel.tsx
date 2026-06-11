@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -209,7 +210,7 @@ export function ServicesPanel({
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["project-services", orgId, projectId] });
     queryClient.invalidateQueries({ queryKey: ["project-services-summary", orgId, projectId] });
-    queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] });
+    refreshProjectDetail(projectId);
     queryClient.invalidateQueries({ queryKey: ["project-crew", orgId, projectId] });
   };
 
@@ -1152,7 +1153,7 @@ function ServiceDialog({
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["project-services", orgId, projectId] });
     queryClient.invalidateQueries({ queryKey: ["project-services-summary", orgId, projectId] });
-    queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] });
+    refreshProjectDetail(projectId);
     queryClient.invalidateQueries({ queryKey: ["project-crew", orgId, projectId] });
   };
 

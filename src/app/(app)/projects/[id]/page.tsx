@@ -5,6 +5,7 @@ import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerQuery } from "@/hooks/use-server-query";
+import { useProjectDetail, refreshProjectDetail } from "@/hooks/use-project-detail";
 import {
   Pencil,
   Archive,
@@ -38,7 +39,6 @@ import { toast } from "sonner";
 import { useActiveOrganization } from "@/lib/auth-client";
 
 import {
-  getProject,
   updateProjectStatus,
   updateProjectNotes,
   archiveProject,
@@ -143,10 +143,7 @@ export default function ProjectDetailPage({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
 
-  const { data: project, isLoading } = useQuery({
-    queryKey: ["project", orgId, id],
-    queryFn: () => getProject(id),
-  });
+  const { data: project, isLoading } = useProjectDetail(id);
 
   const { data: customTemplates } = useServerQuery({
     queryKey: ["document-templates-dropdown", orgId],
@@ -161,7 +158,7 @@ export default function ProjectDetailPage({
       ),
     onSuccess: () => {
       toast.success("Status updated");
-      queryClient.invalidateQueries({ queryKey: ["project", orgId, id] });
+      refreshProjectDetail(id);
       queryClient.invalidateQueries({ queryKey: ["projects"] });
       // A status transition into CANCELLED/RETURNED/COMPLETED/INVOICED releases
       // stock; any other open project's overbook/availability caches are now stale.
@@ -176,7 +173,7 @@ export default function ProjectDetailPage({
     onSuccess: () => {
       toast.success("Project cancelled");
       queryClient.invalidateQueries({ queryKey: ["projects"] });
-      queryClient.invalidateQueries({ queryKey: ["project", orgId, id] });
+      refreshProjectDetail(id);
       queryClient.invalidateQueries({ queryKey: ["project-overbooked"] });
       queryClient.invalidateQueries({ queryKey: ["availability"] });
     },
@@ -490,9 +487,7 @@ export default function ProjectDetailPage({
                       title="Crew Notes"
                       initialNotes={project.crewNotes || ""}
                       onChanged={() =>
-                        queryClient.invalidateQueries({
-                          queryKey: ["project", orgId, id],
-                        })
+                        refreshProjectDetail(id)
                       }
                       onSave={(notes) => updateProjectNotes(id, "crewNotes", notes)}
                       placeholder="Notes for crew members..."
@@ -502,9 +497,7 @@ export default function ProjectDetailPage({
                       title="Internal Notes"
                       initialNotes={project.internalNotes || ""}
                       onChanged={() =>
-                        queryClient.invalidateQueries({
-                          queryKey: ["project", orgId, id],
-                        })
+                        refreshProjectDetail(id)
                       }
                       onSave={(notes) => updateProjectNotes(id, "internalNotes", notes)}
                       placeholder="Internal notes (not visible to client)..."
@@ -514,9 +507,7 @@ export default function ProjectDetailPage({
                       title="Client Notes"
                       initialNotes={project.clientNotes || ""}
                       onChanged={() =>
-                        queryClient.invalidateQueries({
-                          queryKey: ["project", orgId, id],
-                        })
+                        refreshProjectDetail(id)
                       }
                       onSave={(notes) => updateProjectNotes(id, "clientNotes", notes)}
                       placeholder="Notes visible to client on documents..."
@@ -534,9 +525,7 @@ export default function ProjectDetailPage({
                       accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.dwg,.dxf,.txt"
                       existingMedia={(project.media || []) as MediaItem[]}
                       onChanged={() =>
-                        queryClient.invalidateQueries({
-                          queryKey: ["project", orgId, id],
-                        })
+                        refreshProjectDetail(id)
                       }
                       onUploadComplete={async (fileUpload) => {
                         await addProjectMedia({

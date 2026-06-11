@@ -2,6 +2,7 @@
 
 import React, { useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import {
   DndContext,
   closestCenter,
@@ -313,7 +314,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     queryClient.invalidateQueries({ queryKey: ["uncategorized-items", projectId] });
     queryClient.invalidateQueries({ queryKey: ["uncategorized-subhire-groups", projectId] });
     queryClient.invalidateQueries({ queryKey: ["uncategorized-project-groups", projectId] });
-    queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+    refreshProjectDetail(projectId);
     queryClient.invalidateQueries({ queryKey: ["project-overbooked", projectId] });
     // Any mutation that changes line item quantity/presence must refresh
     // availability so the next add/edit dialog sees fresh booked counts.

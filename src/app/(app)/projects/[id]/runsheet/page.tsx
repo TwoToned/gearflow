@@ -17,7 +17,7 @@ import {
   Users,
 } from "lucide-react";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { getProject } from "@/server/projects";
+import { useProjectDetail } from "@/hooks/use-project-detail";
 import { getProjectServices } from "@/server/project-services";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { SERVICE_STATUS_LABELS } from "@/lib/constants/services";
@@ -117,10 +117,7 @@ export default function RunsheetPage({
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: project } = useQuery({
-    queryKey: ["project", orgId, id],
-    queryFn: () => getProject(id),
-  });
+  const { data: project } = useProjectDetail(id);
 
   const { data: services, isLoading } = useQuery({
     queryKey: ["project-services", orgId, id],

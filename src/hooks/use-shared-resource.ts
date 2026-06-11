@@ -40,41 +40,45 @@ interface Store<T> {
 }
 
 export interface SharedResource<T> {
-  /** Subscribe a component to the shared store for `orgId`. */
-  use: (orgId: string | undefined) => {
+  /** Subscribe a component to the shared store for `key`. */
+  use: (key: string | undefined) => {
     data: T | undefined;
     isLoading: boolean;
     /** Re-fetch and push to every subscriber (the writer's invalidate analogue). */
     refresh: () => void;
   };
   /** Module-level refresh for writers that don't read the datum themselves. */
-  refresh: (orgId: string | undefined) => void;
+  refresh: (key: string | undefined) => void;
 }
 
 /**
- * Build a shared-resource hook for a per-org read. `fetcher` is the server action
- * that reads the active org's datum (it takes no args — the active org is derived
- * server-side from the session); `orgId` is only the store key, matching the
- * `["key", orgId]` React Query key the readers used.
+ * Build a shared-resource hook for a per-key read. `fetcher` receives the store
+ * `key` and returns the datum. For per-org datums whose server action derives the
+ * org from the session (e.g. `getOrganization`), the fetcher simply ignores the
+ * key and the key is the orgId (matching the old `["key", orgId]` React Query
+ * key). For per-entity datums the fetcher uses the key directly (e.g.
+ * `(projectId) => getProject(projectId)`), matching `["project", …, projectId]`.
  */
-export function createSharedResource<T>(fetcher: () => Promise<T>): SharedResource<T> {
+export function createSharedResource<T>(
+  fetcher: (key: string) => Promise<T>
+): SharedResource<T> {
   const stores = new Map<string, Store<T>>();
 
-  function storeFor(orgId: string): Store<T> {
-    let s = stores.get(orgId);
+  function storeFor(key: string): Store<T> {
+    let s = stores.get(key);
     if (!s) {
       s = { data: undefined, subscribers: new Set(), inFlight: null };
-      stores.set(orgId, s);
+      stores.set(key, s);
     }
     return s;
   }
 
   /** Fetch once, sharing a single in-flight request across concurrent callers. */
-  function refresh(orgId: string | undefined): Promise<void> {
-    if (!orgId) return Promise.resolve();
-    const s = storeFor(orgId);
+  function refresh(key: string | undefined): Promise<void> {
+    if (!key) return Promise.resolve();
+    const s = storeFor(key);
     if (s.inFlight) return s.inFlight;
-    s.inFlight = fetcher()
+    s.inFlight = fetcher(key)
       .then((data) => {
         s.data = data;
         s.subscribers.forEach((cb) => cb());
@@ -88,28 +92,28 @@ export function createSharedResource<T>(fetcher: () => Promise<T>): SharedResour
     return s.inFlight;
   }
 
-  function use(orgId: string | undefined) {
+  function use(key: string | undefined) {
     const [, force] = useState(0);
 
     useEffect(() => {
-      if (!orgId) return;
-      const s = storeFor(orgId);
+      if (!key) return;
+      const s = storeFor(key);
       const cb = () => force((n) => n + 1);
       s.subscribers.add(cb);
 
-      void refresh(orgId); // ensure data on first subscribe (deduped)
+      void refresh(key); // ensure data on first subscribe (deduped)
 
       return () => {
         s.subscribers.delete(cb);
       };
-    }, [orgId]);
+    }, [key]);
 
-    const data = orgId ? stores.get(orgId)?.data : undefined;
+    const data = key ? stores.get(key)?.data : undefined;
     return {
       data,
-      isLoading: !!orgId && data === undefined,
+      isLoading: !!key && data === undefined,
       refresh: () => {
-        void refresh(orgId);
+        void refresh(key);
       },
     };
   }

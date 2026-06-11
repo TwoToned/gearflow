@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import { Loader2, AlertTriangle, CheckCircle2, XCircle, Search } from "lucide-react";
 import { toast } from "sonner";
 
@@ -201,7 +202,7 @@ export function EquipmentAddForm({
       } else {
         toast.success("Equipment added");
       }
-      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+      refreshProjectDetail(projectId);
       queryClient.invalidateQueries({ queryKey: ["availability"] });
       queryClient.invalidateQueries({ queryKey: ["project-categories", projectId] });
       queryClient.invalidateQueries({ queryKey: ["uncategorized-items", projectId] });

@@ -2,7 +2,7 @@
 
 import { useReducer, useEffect, useCallback, Suspense, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 
 import { toast } from "sonner";
@@ -63,7 +63,6 @@ const STEP_CONFIG: { key: WizardStep; label: string }[] = [
 // ─── Main Page ──────────────────────────────────────────────────────────────
 
 function QuickTestContent() {
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const { data: session } = useSession();
   const orgId = activeOrg?.id;
@@ -147,7 +146,7 @@ function QuickTestContent() {
     return true;
   });
 
-  const saveMutation = useMutation({
+  const saveMutation = useServerMutation({
     mutationFn: async () => {
       if (!state.asset) throw new Error("No asset loaded");
 
@@ -214,8 +213,6 @@ function QuickTestContent() {
           testDate: new Date(),
         },
       });
-      queryClient.invalidateQueries({ queryKey: ["testTagAssets"] });
-      queryClient.invalidateQueries({ queryKey: ["testTagDashboard"] });
     },
     onError: (e) => {
       if (audioEnabled) playBeep(false);
@@ -231,12 +228,15 @@ function QuickTestContent() {
 
   const handleSaveAndPrint = () => {
     dispatch({ type: "SET_SAVING", isSaving: true });
-    saveMutation.mutate(undefined, {
-      onSuccess: () => {
+    // useServerMutation has no per-call options — run the print on success via
+    // the returned promise; the mutation's onError still fires inside mutateAsync.
+    saveMutation
+      .mutateAsync()
+      .then(() => {
         // Open print dialog for label
         setTimeout(() => window.print(), 500);
-      },
-    });
+      })
+      .catch(() => {});
   };
 
   const handleNextAfterSave = () => {

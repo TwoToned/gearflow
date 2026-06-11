@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { useRouter } from "next/navigation";
 import { useState, Suspense, useCallback } from "react";
 import Link from "next/link";
@@ -194,7 +194,7 @@ function useTestTagColumns(): ColumnDef<AnyItem>[] {
   ];
 }
 
-function TestTagTableContent() {
+function TestTagTableContent({ refreshSignal = 0 }: { refreshSignal?: number }) {
   const router = useRouter();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
@@ -209,11 +209,12 @@ function TestTagTableContent() {
 
   const [search, setSearch] = useState("");
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useServerQuery({
     queryKey: [
       "test-tag-assets",
       orgId,
       { search, filters, page, pageSize, sortBy, sortOrder },
+      refreshSignal,
     ],
     queryFn: () =>
       getTestTagAssets({
@@ -224,7 +225,6 @@ function TestTagTableContent() {
         page,
         pageSize,
       }),
-    staleTime: 60_000,
   });
 
   const items = data?.items || [];
@@ -260,7 +260,7 @@ function TestTagTableContent() {
   );
 }
 
-export function TestTagTable() {
+export function TestTagTable({ refreshSignal }: { refreshSignal?: number }) {
   return (
     <Suspense
       fallback={
@@ -269,7 +269,7 @@ export function TestTagTable() {
         </div>
       }
     >
-      <TestTagTableContent />
+      <TestTagTableContent refreshSignal={refreshSignal} />
     </Suspense>
   );
 }

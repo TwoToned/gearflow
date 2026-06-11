@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { Plus, Loader2, RefreshCw } from "lucide-react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { TestTagTable } from "@/components/test-tag/test-tag-table";
@@ -11,9 +12,12 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
 
 export default function TestTagRegistryPage() {
-  const queryClient = useQueryClient();
+  // Bumped after a sync to refetch the co-mounted TestTagTable (its sole
+  // reader). The cross-route test-tag-dashboard-stats reader (the dashboard
+  // landing) is on useServerQuery and remounts on navigation — no invalidate.
+  const [refreshSignal, setRefreshSignal] = useState(0);
 
-  const backfillMutation = useMutation({
+  const backfillMutation = useServerMutation({
     mutationFn: () => backfillTestTagAssets(),
     onSuccess: (result) => {
       const parts: string[] = [];
@@ -21,8 +25,7 @@ export default function TestTagRegistryPage() {
       if (result.retired > 0) parts.push(`retired ${result.retired}`);
       if (parts.length > 0) {
         toast.success(`Sync complete: ${parts.join(", ")} item${(result.created + result.retired) === 1 ? "" : "s"}`);
-        queryClient.invalidateQueries({ queryKey: ["test-tag-assets"] });
-        queryClient.invalidateQueries({ queryKey: ["test-tag-dashboard-stats"] });
+        setRefreshSignal((n) => n + 1);
       } else {
         toast.info("Everything is in sync");
       }
@@ -61,7 +64,7 @@ export default function TestTagRegistryPage() {
           </Button>
         </div>
       </div>
-      <TestTagTable />
+      <TestTagTable refreshSignal={refreshSignal} />
     </div>
     </FadeIn>
     </RequirePermission>

@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { ScanInput } from "@/components/ui/scan-input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";

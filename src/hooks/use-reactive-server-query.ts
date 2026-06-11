@@ -7,9 +7,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * the Convex migration — React Query removal, the bucket-B reactive-composite
  * keystone).
  *
- * This is the read hook for SSE-live DETAIL composites — pages whose data must
- * update when ANOTHER user writes (the keys in `use-realtime.ts`'s
- * `getInvalidationKeys` SSE map: kit / asset / project / warehouse-…). Those pages
+ * This is the read hook for cross-user-live DETAIL composites — pages whose data
+ * must update when ANOTHER user writes (kit / asset / project / warehouse-…, the
+ * composites the now-removed SSE bus used to invalidate). Those pages
  * are served by a server action that composes data Convex can't hold (Better Auth
  * users, cross-domain joins), so a pure Convex `useQuery` subscription is
  * infeasible. Instead:

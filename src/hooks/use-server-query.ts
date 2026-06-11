@@ -17,8 +17,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * detail page, anything another user's write should reflect), subscribe to a
  * reactive Convex `useQuery` hook (`src/hooks/use-*.ts`) instead — that pushes
  * over the WebSocket. Reach for `useServerQuery` ONLY after confirming the datum
- * is never invalidated anywhere: not in any `invalidateQueries` call, and not in
- * `use-realtime.ts`'s SSE key map. The count datums (`supplier-counts`,
+ * is never invalidated anywhere in any `invalidateQueries` call. The count datums
+ * (`supplier-counts`,
  * `category-counts`, …) qualify — they were never invalidated under React Query
  * either, so a mount-time fetch is data-identical.
  *

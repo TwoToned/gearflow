@@ -1875,6 +1875,27 @@ mutation → `useServerMutation`, both data-identical (plain mechanical swaps, z
 codex/round-trip). With this, every stocktake file (the `[id]`/`[id]/edit` pages + draft/review/scanner/table/
 form) is off React Query. Verified: tsc clean, **2228 tests**, 0 new lint (normalized), build exit 0.
 
+**Done same session (2026-06-11b) — NOTIFICATION feature off RQ (poll preserved, NOT a reactive trigger).**
+★ The memory premise ("dual-write the `notification` table first") was WRONG: there is NO `notification`
+Prisma model — notifications are COMPUTED on the fly by `getNotifications`, which scans **9 domains**
+(maintenance / projects×2 / bulk stock / invitations / crew certs+assignments+timesheets / line items). A
+precise Convex trigger would be a fragile 9-table version vector, so a periodic 60s poll is the right design;
+the honest conversion keeps the poll while dropping React Query. `useServerQuery` gained an optional
+`refetchInterval` (a setInterval bumping its reload nonce). New `src/hooks/use-notifications-feed.ts` — a
+shared, deduped, visibility-aware poll for the `getNotifications` aggregate: the always-mounted bell + the
+`/notifications` page subscribe to ONE module-level poller per orgId. **★ THREE codex P2s, all fixed: (1)**
+the raw poll kept hitting the server in idle background tabs → skip ticks while `document.hidden` (RQ's
+`refetchIntervalInBackground:false` default); **(2)** per-call `useServerQuery` lost RQ's request-sharing
+across observers, so the bell + page each ran the 9-domain scan → the shared feed dedups to one scan per
+interval (+ a single in-flight promise); **(3)** a tab hidden longer than the interval stayed stale on return
+→ a `visibilitychange` listener refetches when the tab becomes visible (added to BOTH the feed and the
+useServerQuery poll). Consumers: bell (notifications→useNotificationsFeed, dismissals→useServerQuery+poll,
+dismissMutation→useServerMutation, invalidate→refetchDismissed — sole reader/writer of that key);
+notifications/page (→useNotificationsFeed); account/notifications (preferences read+write island →
+useServerQuery+useServerMutation). Whole feature off RQ; no Convex change, no dual-write, no version vector.
+Verified: tsc clean, **2228 tests**, 0 new lint (normalized + new hook clean), build exit 0, **codex review
+clean after the 3 P2 fixes** (no round-trip — no Convex change).
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort

@@ -1896,6 +1896,57 @@ useServerQuery+useServerMutation). Whole feature off RQ; no Convex change, no du
 Verified: tsc clean, **2228 tests**, 0 new lint (normalized + new hook clean), build exit 0, **codex review
 clean after the 3 P2 fixes** (no round-trip — no Convex change).
 
+**Done session 2026-06-11c (★ AUTH/RBAC TAIL COMPLETE — 6 commits pushed; 102 → 83 files import RQ; 12
+auth/platform datums off RQ).** The auth/RBAC/platform datums all stay in **Prisma forever** (Convex is
+never the authZ source), so NONE became a Convex table — every conversion wraps an existing server action.
+Two conversion shapes were used, and telling them apart was the whole job (classify each datum first:
+SSE-map? polled? multi-reader? same-view island?):
+
+1. **★ The `createSharedResource` keystone** ([`src/hooks/use-shared-resource.ts`](../src/hooks/use-shared-resource.ts),
+   7 unit tests → **2235 tests**) — a module-level, deduped, per-key store modelled on
+   `use-notifications-feed` (same subscribe/dedup shape) but with NO polling. This is the read analogue for
+   **genuinely multi-reader/multi-writer** datums where `useServerQuery` is WRONG: `useServerQuery` is
+   per-component, so one component's `refetch()` never updates another's copy — but a datum read by the
+   always-mounted layout AND written elsewhere needs the cross-component refresh React Query's shared
+   `["key"]` cache gave. Writers call a module-level `refresh*(orgId)` (their old
+   `invalidateQueries(["key"])`). **Each shared datum MUST convert ALL its readers + writers atomically** —
+   a split RQ/store drops the shared refresh. Built on it:
+   - **organization** (`use-organization.ts`) — 8 readers incl. the ALWAYS-MOUNTED `BrandingProvider` +
+     `DynamicFavicon` (a settings/branding edit live-updates the layout) + 5 settings pages; 5 writers.
+   - **custom-roles** (`use-custom-roles.ts`, RBAC) — 6 readers (role manager + invite + member-list + 3
+     SSO surfaces); writers = role manager + role editor. SSO readers gained `useActiveOrganization().id`
+     (they used the bare `["custom-roles"]` key); all readers/writers standardised on it as the store key.
+   - **profile** (`use-profile.ts`, keyed per-USER) — always-mounted `UserNav` avatar + the account page;
+     account writes → live nav update. Account page fully RQ-free (its `active-sessions` + `passkeys` are
+     same-view islands → `useServerQuery` + refetch; 12 mutations → `useServerMutation`).
+   - **org-members** (`use-org-members.ts`, getMembers shape) + **pending-invitations**
+     (`use-pending-invitations.ts`) — the invite form + roster co-mount on the members settings page, so an
+     invite/role-change/remove must live-update the list. invite-member fully RQ-free. ★ The project form
+     also read `["org-members"]` but via a DIFFERENT server action (`getOrgMembers`, paginated) — an
+     **incidental RQ key collision** (different shape, never co-mounts); that no-liveness dropdown reader →
+     plain `useServerQuery`, decoupling the collision.
+   - **sso-settings** + **sso-providers** (`use-sso-settings.ts` / `use-sso-providers.ts`) — the SSO page
+     reads them but the writes live in NESTED child editors (`SSOProviderSection → ProviderRow /
+     EditProviderForm / AddProviderForm`, group-mapping). Threading an `onChanged` callback through that
+     nesting would be heavy prop-drilling, so a shared-store `refresh*` (module-level, no drilling) was the
+     pragmatic call over the MediaUploader-style callback used elsewhere.
+
+2. **Plain `useServerQuery` (+ `useServerMutation`) for same-view islands** — non-SSE, non-polled, single-
+   page read+write. `sso-pending-approvals` (own datum), the whole **account page** islands, and all three
+   **admin pages** (`admin/users`, `admin/organizations` list + `[id]` detail). The admin detail's
+   cross-route `["admin-the-org"]` invalidation **drops** — the list page remounts + refetches on
+   navigation (the data-identical model/maintenance-detail pattern). `members` was already `useServerQuery`
+   from 2026-06-10j.
+
+**Intentional KEEP on React Query: `current-role`** (`use-permissions.ts`) — the viewer's effective
+permission set, invalidated by role-editor / member-list / admin role changes. It gates the whole UI and is
+cross-cutting; left on RQ for a deliberate later decision (those writers keep their `["current-role"]`
+invalidation via `useQueryClient`). **No new Convex table/fn → no JWKS round-trip, no Convex deploy** (the
+auth datums are Prisma-only). Verified: tsc clean, **2235 tests** (2228 + 7 shared-resource hook tests), 0
+new lint (normalized base-vs-HEAD per commit), `pnpm build` exit 0. (Codex review not run this session —
+environment lacked the codex CLI; the shared-store keystone is unit-tested and the rest are mechanical
+swaps with zero invalidation drops beyond the documented data-identical cross-route ones.)
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort

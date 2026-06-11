@@ -3,7 +3,7 @@
 import { use, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useProjectDetail, refreshProjectDetail } from "@/hooks/use-project-detail";
 import { useProjectServicesSummary } from "@/hooks/use-project-services";
@@ -135,7 +135,6 @@ export default function ProjectDetailPage({
 }) {
   const { id } = use(params);
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
@@ -163,7 +162,6 @@ export default function ProjectDetailPage({
       // A status transition into CANCELLED/RETURNED/COMPLETED/INVOICED releases
       // stock; any other open project's overbook/availability caches are now stale.
       refreshProjectOverbooked(id);
-      queryClient.invalidateQueries({ queryKey: ["availability"] });
     },
     onError: (e) => toast.error(e.message),
   });
@@ -174,7 +172,6 @@ export default function ProjectDetailPage({
       toast.success("Project cancelled");
       refreshProjectDetail(id);
       refreshProjectOverbooked(id);
-      queryClient.invalidateQueries({ queryKey: ["availability"] });
     },
     onError: (e) => toast.error(e.message),
   });

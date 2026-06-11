@@ -12,8 +12,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { useProjectCategories, refreshProjectCategories, refreshUncategorizedItems, refreshProjectOverbooked } from "@/hooks/use-project-equipment";
 import { Loader2, AlertTriangle, CheckCircle2, XCircle, Search } from "lucide-react";
 import { toast } from "sonner";
@@ -66,7 +67,6 @@ export function EquipmentAddForm({
   onClose,
   onOpenSubHire,
 }: EquipmentAddFormProps) {
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const [mode, setMode] = useState<AddMode>("model");
@@ -120,7 +120,7 @@ export function EquipmentAddForm({
   const selectedModel = activeModels.find((m) => m.id === selectedModelId);
 
   // Model-based availability check (works with or without dates)
-  const { data: availability, isLoading: availabilityLoading } = useQuery({
+  const { data: availability, isLoading: availabilityLoading } = useServerQuery({
     queryKey: [
       "availability",
       orgId,
@@ -140,7 +140,7 @@ export function EquipmentAddForm({
   });
 
   // Asset tag lookup
-  const { data: assetLookup, isLoading: lookupLoading } = useQuery({
+  const { data: assetLookup, isLoading: lookupLoading } = useServerQuery({
     queryKey: [
       "asset-lookup",
       orgId,
@@ -201,7 +201,6 @@ export function EquipmentAddForm({
         toast.success("Equipment added");
       }
       refreshProjectDetail(projectId);
-      queryClient.invalidateQueries({ queryKey: ["availability"] });
       refreshProjectCategories(projectId);
       refreshUncategorizedItems(projectId);
       refreshProjectOverbooked(projectId);

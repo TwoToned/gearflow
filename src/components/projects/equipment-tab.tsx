@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useCallback, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import {
   useProjectCategories,
@@ -120,7 +120,6 @@ interface EquipmentTabProps {
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: EquipmentTabProps) {
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
@@ -296,11 +295,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     refreshUncategorizedProjectGroups(projectId);
     refreshProjectDetail(projectId);
     refreshProjectOverbooked(projectId);
-    // Any mutation that changes line item quantity/presence must refresh
-    // availability so the next add/edit dialog sees fresh booked counts.
-    queryClient.invalidateQueries({ queryKey: ["availability"] });
-    queryClient.invalidateQueries({ queryKey: ["asset-lookup"] });
-  }, [queryClient, projectId]);
+  }, [projectId]);
 
   // ─── Mutations ───────────────────────────────────────────────────────────
 

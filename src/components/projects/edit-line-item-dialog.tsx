@@ -13,7 +13,7 @@
  */
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { AlertTriangle, Loader2 } from "lucide-react";
 
 import {
@@ -100,7 +100,7 @@ function EditLineItemDialogBody({
   // Availability query — only runs for model-backed items. Same query
   // key shape as the equipment add form's check so React Query
   // deduplicates the request.
-  const { data: availability } = useQuery({
+  const { data: availability } = useServerQuery({
     queryKey: [
       "availability",
       orgId,

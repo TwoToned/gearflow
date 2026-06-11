@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import {
@@ -26,6 +25,7 @@ import { createCustomRole, updateCustomRole } from "@/server/custom-roles";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { refreshCustomRoles } from "@/hooks/use-custom-roles";
+import { refreshCurrentRole } from "@/hooks/use-current-role";
 import {
   rolePermissions,
   ASSIGNABLE_BUILT_IN_ROLES,
@@ -71,7 +71,6 @@ export function RoleEditorDialog({
   onOpenChange,
   editingRole,
 }: RoleEditorDialogProps) {
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const isEditing = !!editingRole;
@@ -117,9 +116,10 @@ export function RoleEditorDialog({
       updateCustomRole(editingRole!.id, { name, description, color, ssoGroupClaim: ssoGroupClaim || undefined, permissions }),
     onSuccess: () => {
       refreshCustomRoles(orgId);
-      // current-role (the viewer's effective permissions) is still a React Query
-      // datum read by use-permissions.ts — keep its invalidation.
-      queryClient.invalidateQueries({ queryKey: ["current-role"] });
+      // Editing a role's permissions can change the viewer's own effective
+      // permissions (use-permissions.ts) — refresh that shared store, the
+      // analogue of the old invalidateQueries(["current-role"]).
+      refreshCurrentRole(orgId);
       toast.success("Role updated");
       onOpenChange(false);
     },

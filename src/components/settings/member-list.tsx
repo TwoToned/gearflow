@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
@@ -26,6 +25,7 @@ import { changeMemberRole, removeOrgMember } from "@/server/org-members";
 import { useCustomRoles } from "@/hooks/use-custom-roles";
 import { useOrgMembers, refreshOrgMembers } from "@/hooks/use-org-members";
 import { usePendingInvitations, refreshPendingInvitations } from "@/hooks/use-pending-invitations";
+import { refreshCurrentRole } from "@/hooks/use-current-role";
 import { ROLE_COLORS } from "./role-editor-dialog";
 import type { PermissionMap } from "@/lib/permissions";
 import type { ColorIntent } from "@/lib/status-colors";
@@ -78,7 +78,6 @@ function getRoleDisplay(role: string, customRolesMap: Map<string, CustomRoleData
 }
 
 export function MemberList() {
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
@@ -105,9 +104,10 @@ export function MemberList() {
       changeMemberRole(memberId, role),
     onSuccess: () => {
       refreshOrgMembers(orgId);
-      // current-role (the viewer's effective permissions) is still a React Query
-      // datum read by use-permissions.ts — keep its invalidation.
-      queryClient.invalidateQueries({ queryKey: ["current-role"] });
+      // Refresh the viewer's effective permissions (use-permissions.ts) in case
+      // the change touched their own role — the shared-store analogue of the old
+      // invalidateQueries(["current-role"]).
+      refreshCurrentRole(orgId);
       toast.success("Role updated");
     },
     onError: (e) => toast.error(e.message),

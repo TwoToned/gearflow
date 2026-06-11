@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   Plus,
   Trash2,
@@ -80,7 +80,7 @@ export function ModelChecksTab({ modelId }: { modelId: string }) {
   const modelCheckItems = useModelCheckItems(orgId, modelId);
   const isLoading = modelCheckItems === undefined;
 
-  const removeMutation = useMutation({
+  const removeMutation = useServerMutation({
     mutationFn: (checkItemId: string) =>
       removeCheckItemFromModel(modelId, checkItemId),
     onSuccess: () => {
@@ -92,7 +92,7 @@ export function ModelChecksTab({ modelId }: { modelId: string }) {
   const items = (modelCheckItems ?? []) as Record<string, unknown>[];
 
   // Drag reorder via move up/down buttons (simpler than DnD for now)
-  const reorderMutation = useMutation({
+  const reorderMutation = useServerMutation({
     mutationFn: (orderedIds: string[]) =>
       reorderModelCheckItems({ modelId, orderedCheckItemIds: orderedIds }),
     onError: (e) => toast.error(e.message),
@@ -277,7 +277,7 @@ function CheckItemPicker({
   const allCheckItems = useCheckItems(orgId);
   const isLoading = allCheckItems === undefined;
 
-  const addMutation = useMutation({
+  const addMutation = useServerMutation({
     mutationFn: (checkItemId: string) =>
       addCheckItemToModel(modelId, checkItemId),
     onSuccess: () => {

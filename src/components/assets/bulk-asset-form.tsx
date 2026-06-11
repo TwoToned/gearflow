@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -88,7 +88,7 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (data: BulkAssetFormValues) =>
       isEditing ? updateBulkAsset(initialData.id, data) : createBulkAsset(data),
     onSuccess: (result) => {

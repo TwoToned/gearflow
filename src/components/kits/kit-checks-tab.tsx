@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   Plus,
   Trash2,
@@ -87,7 +87,7 @@ export function KitChecksTab({ kitId, checkMode }: KitChecksTabProps) {
   const kitCheckItems = useKitCheckItems(orgId, kitId);
   const isLoading = kitCheckItems === undefined;
 
-  const removeMutation = useMutation({
+  const removeMutation = useServerMutation({
     mutationFn: (checkItemId: string) =>
       removeCheckItemFromKit(kitId, checkItemId),
     onSuccess: () => {
@@ -98,7 +98,7 @@ export function KitChecksTab({ kitId, checkMode }: KitChecksTabProps) {
 
   const items = (kitCheckItems ?? []) as Record<string, unknown>[];
 
-  const reorderMutation = useMutation({
+  const reorderMutation = useServerMutation({
     mutationFn: (orderedIds: string[]) =>
       reorderKitCheckItems(kitId, orderedIds),
     onError: (e) => toast.error(e.message),
@@ -310,7 +310,7 @@ function KitCheckItemPicker({
   const allCheckItems = useCheckItems(orgId);
   const isLoading = allCheckItems === undefined;
 
-  const addMutation = useMutation({
+  const addMutation = useServerMutation({
     mutationFn: (checkItemId: string) =>
       addCheckItemToKit(kitId, checkItemId),
     onSuccess: () => {

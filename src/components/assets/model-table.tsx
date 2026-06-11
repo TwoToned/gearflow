@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   Plus,
   Download,
@@ -477,7 +477,7 @@ function BulkAssignChecksDialog({
   const allCheckItems = allCheckItemsData ?? [];
   const isLoading = allCheckItemsData === undefined;
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: () =>
       bulkAddCheckItemsToModels(
         Array.from(selectedModelIds),
@@ -659,7 +659,7 @@ function BulkRateUpdateDialog({
     increase_percent: "Increase by %",
   };
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: () =>
       bulkUpdateRates(
         Array.from(selectedModelIds),

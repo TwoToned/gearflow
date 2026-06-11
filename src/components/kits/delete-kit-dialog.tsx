@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { Loader2, Archive, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -41,7 +41,7 @@ export function DeleteKitDialog({
     enabled: open,
   });
 
-  const archiveMutation = useMutation({
+  const archiveMutation = useServerMutation({
     mutationFn: () => archiveKit(kitId),
     onSuccess: () => {
       toast.success(`Archived ${kitLabel}`);
@@ -51,7 +51,7 @@ export function DeleteKitDialog({
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: () => deleteKit(kitId),
     onSuccess: () => {
       toast.success(`Deleted ${kitLabel} permanently`);

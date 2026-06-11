@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -85,7 +85,7 @@ export function KitForm({ initialData }: KitFormProps) {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (data: KitFormValues) =>
       isEditing ? updateKit(initialData.id, data) : createKit(data),
     onSuccess: (result) => {

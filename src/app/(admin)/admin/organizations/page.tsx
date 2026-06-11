@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { toast } from "sonner";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { Button } from "@/components/ui/button";
@@ -24,18 +24,17 @@ import {
 } from "@/server/site-admin";
 
 export default function AdminOrganizationsPage() {
-  const queryClient = useQueryClient();
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
 
-  const { data: theOrg, isLoading: orgLoading } = useQuery({
+  const { data: theOrg, isLoading: orgLoading, refetch: refetchTheOrg } = useServerQuery({
     queryKey: ["admin-the-org"],
     queryFn: adminGetTheOrg,
   });
 
-  const { data: orgDetails } = useQuery({
+  const { data: orgDetails, refetch: refetchOrgDetails } = useServerQuery({
     queryKey: ["admin-org-detail", theOrg?.id],
     queryFn: () => adminGetOrganizationDetails(theOrg!.id),
     enabled: !!theOrg?.id,
@@ -76,8 +75,8 @@ export default function AdminOrganizationsPage() {
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "Import failed");
 
-      queryClient.invalidateQueries({ queryKey: ["admin-the-org"] });
-      queryClient.invalidateQueries({ queryKey: ["admin-org-detail"] });
+      refetchTheOrg();
+      refetchOrgDetails();
       toast.success(`Imported "${body.name}" successfully`);
       setImportOpen(false);
       setImportFile(null);

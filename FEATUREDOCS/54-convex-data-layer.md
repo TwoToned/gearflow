@@ -10,8 +10,8 @@ reactive data layer, replacing the current stack incrementally:
 
 - **Database**: Prisma + PostgreSQL → Convex (over the same Postgres instance)
 - **Real-time**: SSE + in-memory EventEmitter + React Query invalidation
-  ([FEATUREDOCS/53](./53-realtime-sync.md)) → Convex's reactive engine (WebSocket
-  query subscriptions)
+  ([FEATUREDOCS/53](./53-realtime-sync.md), now **removed** — the bus was a dead
+  no-op) → Convex's reactive engine (WebSocket query subscriptions)
 - **Client data fetching**: React Query (`@tanstack/react-query`) → `useQuery`
   from `convex/react`
 
@@ -1204,13 +1204,48 @@ mirror short a row until a resync. Now mirrored after the tx (the same call ever
 other line-item write site uses). Covered by the round-trip's `getModelById`
 assertion (model present + name match).
 
-### SSE / EventEmitter teardown — NOT started (blocked on React Query removal)
+### SSE / EventEmitter teardown — ✅ DONE (2026-06-11f)
 
-`src/hooks/use-realtime.ts` exists only to call React Query's
-`queryClient.invalidateQueries`. 172 files still use `@tanstack/react-query`;
-Convex reactive replaces SSE only for already-converted domains. Removing SSE now
-would strip cross-user live updates from every non-converted page with no
-replacement, so this MUST follow the React Query removal, not precede it.
+The dead realtime-sync system ([FEATUREDOCS/53](./53-realtime-sync.md)) is fully
+removed. It was **safe to delete outright** (not fix-then-keep) because it had zero
+working consumers:
+
+- **Emit side was a no-op.** `logActivity` always passed a lowercase/camelCase
+  `entityType` (`"asset"`, `"project"`, …) but `mapEntityTypeToEvent` switched on
+  PascalCase (`"Asset"`, `"Project"`, …) → no case ever matched → `events.emit`
+  was never reached. Confirmed: zero PascalCase `entityType:` literals in `src/`.
+- **Read side had no readers left.** `use-realtime.ts` only called React Query's
+  `invalidateQueries` on SSE-mapped keys (project / asset / kit / warehouse-project /
+  maintenance-records / dashboard / crew-members / …), and **every** one of those
+  keys' readers is now a reactive Convex hook or `useServerQuery` — none are React
+  Query readers anymore. So removal is data-identical: no cross-user liveness is
+  lost (it never existed), and same-view refresh is already handled by explicit
+  `refetch`/`onChanged` calls in the converted pages.
+
+Removed across four commits (each tsc/tests/build green):
+1. `src/lib/activity-log.ts` — dropped `mapEntityTypeToEvent` + the `events.emit`
+   side-effect + the `@/lib/events` import; `logActivity` still writes the
+   activity-log row to Prisma (its real job).
+2. `src/app/layout.tsx` — removed `<RealtimeProvider>` + its import.
+3. Deleted `src/lib/events.ts`, `src/app/api/realtime/route.ts`,
+   `src/hooks/use-realtime.ts`, `src/providers/realtime-provider.tsx` (and reworded
+   the two doc-comments in `use-server-query.ts` / `use-reactive-server-query.ts`
+   that pointed at the deleted hook).
+4. Docs (this entry + the [FEATUREDOCS/53](./53-realtime-sync.md) superseded header).
+
+`src/server/damage.int.test.ts` never touched the event bus (its only "events"
+reference is a comment about activity-log rows), so it needed no change; the suite
+stays green at 2235 tests.
+
+**If cross-user liveness is wanted later**, that's the version-vector pattern
+(`useReactiveServerQuery` + `convex/<table>Detail.ts`) already used for
+kit / asset / warehouse / stocktake detail — a separate feature, not this teardown.
+
+**Endgame after this:** only the RQ infra (`query-provider` + `user-nav`'s
+`queryClient.clear()` logout hygiene) and the `current-role` auth datum
+(`use-permissions` + `member-list` + `role-editor-dialog`) remain on React Query —
+the deliberate terminus, a separate decision (getting `current-role` onto
+`createSharedResource` would take RQ to zero).
 
 ### React Query removal — IN PROGRESS (foundation 2026-06-10g + 11 datums by 2026-06-10h)
 
@@ -2095,7 +2130,7 @@ sessions.
 | **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets + file_upload + crew + doc/service-template + **Kit** + **Asset/Bulk** + **project_category/group** + **project_line_item** + **sub_hire/supplier_order families** + **project** + **crew scheduling sub-tables (infra-only)** dual-write done — CENTRAL GRAPH COMPLETE + DUAL-WRITE SURFACE COMPLETE) | per-domain backfill + cutover; tsc/tests/build green each |
 | **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields + crew + **Kit** + **Asset/Bulk registry** done) | table/dropdown/edit live-update on mutation |
 | **5 Auth bridge** ✅ | Better Auth → Convex ES256 JWT; user token (org-scoped reads) + service token (trusted backend); browser writes rejected | round-trip 6/6: rejected without a valid token, accepted with; `/cso` clean |
-| **6 Decommission** 🔄 | Rewire deferred mirror reads off Prisma + remove React Query + SSE event bus (truncate+backfill resync DONE; supplier FLAT reads rewired; **nested supplier+model+category in ALL line-item trees incl. warehouse + PDF pipeline rewired** via `attachLineItemTree` — line-item-tree dimension COMPLETE; **`model_check_item` + `kit_check_item` now dual-written → warehouse counts + kit join fully off Convex via `attachKitTree`, "Checks" tabs reactive, `crewMembers.icalToken` redacted for browser reads**; **all 7 `*_media` tables now dual-written + reactive-list photo grafts off the mirror via `media-read.ts`; warehouse scan-path single-model reads off the mirror**; **React Query removal IN PROGRESS — `useServerMutation` (writes) + `useServerQuery` (no-liveness reads) keystones; **76 datums off RQ — the no-liveness read tail is now EXHAUSTED** (was 143 files; all 124 remaining `useQuery` calls genuinely reactive): 11 reactive config domains + org-tags + the entire no-liveness tail via `useServerQuery` (count badges, previews, dashboard, crew analytics/pickers, admin, analytics/lookups, supplier/accessory detail, activity/category/calendar/auditor/check-items/members) + 2 read+write islands (saved-views, project-tasks) via `useServerQuery`+`useServerMutation`; classify with a MULTILINE-aware invalidate grep + anchored key attribution. **Reactive tail STARTED: shared write-components `MediaUploader`+`NotesEditor` decoupled from RQ (`queryKey` prop → `onChanged` callback + `useServerMutation`), unblocking all detail-page conversions; clients/[id]+locations/[id] (non-SSE islands) taken fully off RQ via `useServerQuery`+`onChanged={refetch}`; **model + maintenance + crew detail non-SSE pages + same-view island batch off RQ (2026-06-10m); **project cluster fully off RQ (2026-06-11d) via the `createSharedResource` keystone**; **★ RQ removal ALL BUT COMPLETE (2026-06-11e): platform-config tail + assets/kit/crew/test-tag write paths + the last reader composites → 57 → 7 files, and those 7 are the intentional terminus (the `current-role` auth KEEP, the RQ infra `query-provider`/`user-nav`-clear/`use-realtime`-SSE removed at RQ==0, + one test)**; SSE confirmed dead (lowercase entityType vs PascalCase map) so all conversions data-identical) | per-subsystem; tsc/tests/build green each. [FEATUREDOCS/53](./53-realtime-sync.md) to be marked superseded when SSE is torn out |
+| **6 Decommission** 🔄 | Rewire deferred mirror reads off Prisma + remove React Query + SSE event bus (truncate+backfill resync DONE; supplier FLAT reads rewired; **nested supplier+model+category in ALL line-item trees incl. warehouse + PDF pipeline rewired** via `attachLineItemTree` — line-item-tree dimension COMPLETE; **`model_check_item` + `kit_check_item` now dual-written → warehouse counts + kit join fully off Convex via `attachKitTree`, "Checks" tabs reactive, `crewMembers.icalToken` redacted for browser reads**; **all 7 `*_media` tables now dual-written + reactive-list photo grafts off the mirror via `media-read.ts`; warehouse scan-path single-model reads off the mirror**; **React Query removal IN PROGRESS — `useServerMutation` (writes) + `useServerQuery` (no-liveness reads) keystones; **76 datums off RQ — the no-liveness read tail is now EXHAUSTED** (was 143 files; all 124 remaining `useQuery` calls genuinely reactive): 11 reactive config domains + org-tags + the entire no-liveness tail via `useServerQuery` (count badges, previews, dashboard, crew analytics/pickers, admin, analytics/lookups, supplier/accessory detail, activity/category/calendar/auditor/check-items/members) + 2 read+write islands (saved-views, project-tasks) via `useServerQuery`+`useServerMutation`; classify with a MULTILINE-aware invalidate grep + anchored key attribution. **Reactive tail STARTED: shared write-components `MediaUploader`+`NotesEditor` decoupled from RQ (`queryKey` prop → `onChanged` callback + `useServerMutation`), unblocking all detail-page conversions; clients/[id]+locations/[id] (non-SSE islands) taken fully off RQ via `useServerQuery`+`onChanged={refetch}`; **model + maintenance + crew detail non-SSE pages + same-view island batch off RQ (2026-06-10m); **project cluster fully off RQ (2026-06-11d) via the `createSharedResource` keystone**; **★ RQ removal ALL BUT COMPLETE (2026-06-11e): platform-config tail + assets/kit/crew/test-tag write paths + the last reader composites → 57 → 7 files, and those 7 are the intentional terminus (the `current-role` auth KEEP, the RQ infra `query-provider`/`user-nav`-clear/`use-realtime`-SSE removed at RQ==0, + one test)**; SSE confirmed dead (lowercase entityType vs PascalCase map) so all conversions data-identical; **★ SSE / EventEmitter bus TORN OUT (2026-06-11f): all four files (`events.ts`, `api/realtime/route.ts`, `use-realtime.ts`, `realtime-provider.tsx`) + the `logActivity` emit hook deleted, `<RealtimeProvider>` removed from layout — data-identical since the bus never delivered an update**) | per-subsystem; tsc/tests/build green each. [FEATUREDOCS/53](./53-realtime-sync.md) is now **superseded** (teardown done); only the RQ infra (`query-provider` + `user-nav` clear) and the `current-role` auth KEEP remain |
 
 ## Conventions
 

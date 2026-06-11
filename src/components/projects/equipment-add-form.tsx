@@ -14,6 +14,7 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
+import { useProjectCategories, refreshProjectCategories, refreshUncategorizedItems, refreshProjectOverbooked } from "@/hooks/use-project-equipment";
 import { Loader2, AlertTriangle, CheckCircle2, XCircle, Search } from "lucide-react";
 import { toast } from "sonner";
 
@@ -23,7 +24,6 @@ import {
 } from "@/lib/validations/line-item";
 import { addLineItem, checkAvailability, lookupAssetByTag } from "@/server/line-items";
 import { useModels } from "@/hooks/use-models";
-import { getProjectCategories } from "@/server/project-categories";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -101,12 +101,10 @@ export function EquipmentAddForm({
     [modelDocs],
   );
 
-  // Categories for the optional category picker (only when not pre-set)
-  const { data: categoriesData } = useQuery({
-    queryKey: ["project-categories", projectId],
-    queryFn: () => getProjectCategories(projectId),
-    enabled: !categoryId,
-  });
+  // Categories for the optional category picker (only when not pre-set).
+  // Passing an undefined key when a category is pre-set preserves the old
+  // `enabled: !categoryId` (no fetch).
+  const { data: categoriesData } = useProjectCategories(categoryId ? undefined : projectId);
 
   const categoryOptions = (categoriesData ?? []).map((c: { id: string; name: string }) => ({
     value: c.id,
@@ -204,9 +202,9 @@ export function EquipmentAddForm({
       }
       refreshProjectDetail(projectId);
       queryClient.invalidateQueries({ queryKey: ["availability"] });
-      queryClient.invalidateQueries({ queryKey: ["project-categories", projectId] });
-      queryClient.invalidateQueries({ queryKey: ["uncategorized-items", projectId] });
-      queryClient.invalidateQueries({ queryKey: ["project-overbooked", projectId] });
+      refreshProjectCategories(projectId);
+      refreshUncategorizedItems(projectId);
+      refreshProjectOverbooked(projectId);
       onInvalidate?.();
       onClose();
     },

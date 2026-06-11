@@ -4,6 +4,19 @@ import React, { useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import {
+  useProjectCategories,
+  refreshProjectCategories,
+  useUncategorizedItems,
+  refreshUncategorizedItems,
+  useUncategorizedSubHireGroups,
+  refreshUncategorizedSubHireGroups,
+  useUncategorizedProjectGroups,
+  refreshUncategorizedProjectGroups,
+  useProjectOverbooked,
+  refreshProjectOverbooked,
+  useProjectSubHires,
+} from "@/hooks/use-project-equipment";
+import {
   DndContext,
   closestCenter,
   KeyboardSensor,
@@ -254,31 +267,13 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  const queryKey = ["project-categories", projectId];
+  const { data: categories = [], isLoading } = useProjectCategories(projectId);
 
-  const { data: categories = [], isLoading } = useQuery({
-    queryKey,
-    queryFn: () => getProjectCategories(projectId),
-    staleTime: 60_000,
-  });
+  const { data: uncategorizedItems = [] } = useUncategorizedItems(projectId);
 
-  const { data: uncategorizedItems = [] } = useQuery({
-    queryKey: ["uncategorized-items", projectId],
-    queryFn: () => getUncategorizedLineItems(projectId),
-    staleTime: 60_000,
-  });
+  const { data: uncategorizedSubHireGroups = [] } = useUncategorizedSubHireGroups(projectId);
 
-  const { data: uncategorizedSubHireGroups = [] } = useQuery({
-    queryKey: ["uncategorized-subhire-groups", projectId],
-    queryFn: () => getUncategorizedSubHireGroups(projectId),
-    staleTime: 60_000,
-  });
-
-  const { data: uncategorizedProjectGroups = [] } = useQuery({
-    queryKey: ["uncategorized-project-groups", projectId],
-    queryFn: () => getUncategorizedProjectGroups(projectId),
-    staleTime: 60_000,
-  });
+  const { data: uncategorizedProjectGroups = [] } = useUncategorizedProjectGroups(projectId);
 
   const { data: templates = [] } = useQuery({
     queryKey: ["group-templates"],
@@ -292,35 +287,28 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     staleTime: 60_000,
   });
 
-  const { data: overbookedMap = {} } = useQuery({
-    queryKey: ["project-overbooked", projectId],
-    queryFn: () => getProjectOverbookedStatus(projectId),
-    staleTime: 30_000,
-  });
+  const { data: overbookedMap = {} } = useProjectOverbooked(projectId);
 
   // Availability check for the currently-edited line item (equipment w/ modelId only)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: projectSubHires = [] } = useQuery<any[]>({
-    queryKey: ["project-sub-hires", orgId, projectId],
-    queryFn: () => getSubHires({ projectId }),
-  });
+  const { data: projectSubHires = [] } = useProjectSubHires(projectId) as { data: any[] };
 
   const templateOptions = (templates as { id: string; name: string; description: string | null; items: unknown[] }[]).map(
     (t) => ({ id: t.id, name: t.name, description: t.description, itemCount: t.items.length })
   );
 
   const invalidate = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey });
-    queryClient.invalidateQueries({ queryKey: ["uncategorized-items", projectId] });
-    queryClient.invalidateQueries({ queryKey: ["uncategorized-subhire-groups", projectId] });
-    queryClient.invalidateQueries({ queryKey: ["uncategorized-project-groups", projectId] });
+    refreshProjectCategories(projectId);
+    refreshUncategorizedItems(projectId);
+    refreshUncategorizedSubHireGroups(projectId);
+    refreshUncategorizedProjectGroups(projectId);
     refreshProjectDetail(projectId);
-    queryClient.invalidateQueries({ queryKey: ["project-overbooked", projectId] });
+    refreshProjectOverbooked(projectId);
     // Any mutation that changes line item quantity/presence must refresh
     // availability so the next add/edit dialog sees fresh booked counts.
     queryClient.invalidateQueries({ queryKey: ["availability"] });
     queryClient.invalidateQueries({ queryKey: ["asset-lookup"] });
-  }, [queryClient, queryKey, projectId]);
+  }, [queryClient, projectId]);
 
   // ─── Mutations ───────────────────────────────────────────────────────────
 
@@ -1095,8 +1083,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                   } else {
                                     toast.success(`Prices updated for ${count} item${count !== 1 ? "s" : ""}`);
                                   }
-                                  queryClient.invalidateQueries({ queryKey: ["project-categories"] });
-                                  queryClient.invalidateQueries({ queryKey: ["project-line-items"] });
+                                  refreshProjectCategories(projectId);
                                 } catch (e) {
                                   toast.error(e instanceof Error ? e.message : "Failed to recalculate");
                                 }

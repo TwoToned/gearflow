@@ -13,7 +13,7 @@
  */
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -76,13 +76,10 @@ function MoveSubHireGroupDialogBody({
   categories,
   onInvalidate,
 }: MoveSubHireGroupDialogProps) {
-  const queryClient = useQueryClient();
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>(UNCATEGORISED_VALUE);
 
   function refreshCaches() {
     onInvalidate();
-    queryClient.invalidateQueries({ queryKey: ["project-categories"] });
-    queryClient.invalidateQueries({ queryKey: ["uncategorized-subhire-groups"] });
   }
 
   const moveMut = useMutation({

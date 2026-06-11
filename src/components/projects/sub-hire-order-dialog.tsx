@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
+import { useProjectCategories, refreshProjectCategories, useProjectSubHires, refreshProjectSubHires, refreshUncategorizedItems } from "@/hooks/use-project-equipment";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { Plus, Pencil, Trash2, Loader2, ArrowLeft, MoreVertical, AlertTriangle, FolderPlus, ChevronDown, MapPin } from "lucide-react";
 import { toast } from "sonner";
@@ -16,7 +17,6 @@ import {
   addSubHireItem,
   updateSubHireItem,
   removeSubHireItem,
-  getSubHires,
   getSupplierModelRate,
   getSupplierRateHistory,
   createSubHireGroup,
@@ -29,7 +29,6 @@ import {
   addSubHireMedia,
   removeSubHireMedia,
 } from "@/server/sub-hires";
-import { getProjectCategories } from "@/server/project-categories";
 import { useSuppliers } from "@/hooks/use-suppliers";
 import { useModels } from "@/hooks/use-models";
 import { formatCurrency, formatDate } from "@/lib/formatters";
@@ -153,11 +152,7 @@ function PlacementPicker({
 }) {
   const { data: activeOrg } = useActiveOrganization();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: categories } = useQuery<any[]>({
-    queryKey: ["project-categories", activeOrg?.id, projectId],
-    queryFn: () => getProjectCategories(projectId),
-    enabled: !!activeOrg?.id && !!projectId,
-  });
+  const { data: categories } = useProjectCategories(projectId) as { data: any[] | undefined };
 
   // Build a flat encoded value: "uncategorized", "cat:ID", or "grp:ID"
   const encoded = value.groupId
@@ -275,14 +270,14 @@ export function SubHireOrderDialog({
   const handleCreated = (newId: string) => {
     setManagingId(newId);
     setView("manage");
-    queryClient.invalidateQueries({ queryKey: ["project-sub-hires"] });
+    refreshProjectSubHires(projectId);
     refreshProjectDetail(projectId);
   };
 
   const handleDeleted = () => {
     setManagingId(null);
     setView("list");
-    queryClient.invalidateQueries({ queryKey: ["project-sub-hires"] });
+    refreshProjectSubHires(projectId);
     refreshProjectDetail(projectId);
   };
 
@@ -341,10 +336,10 @@ function SubHireListView({
   onClose: () => void;
 }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: subHires = [], isLoading } = useQuery<any[]>({
-    queryKey: ["project-sub-hires", orgId, projectId],
-    queryFn: () => getSubHires({ projectId }),
-  });
+  const { data: subHires = [], isLoading } = useProjectSubHires(projectId) as {
+    data: any[];
+    isLoading: boolean;
+  };
 
   return (
     <>
@@ -676,11 +671,11 @@ function SubHireManageView({
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ["sub-hire", orgId, subHireId] });
-    queryClient.invalidateQueries({ queryKey: ["project-sub-hires"] });
+    refreshProjectSubHires(projectId);
     refreshProjectDetail(projectId);
     // Refresh equipment tab data when line items are generated/modified
-    queryClient.invalidateQueries({ queryKey: ["project-categories", projectId] });
-    queryClient.invalidateQueries({ queryKey: ["uncategorized-items", projectId] });
+    refreshProjectCategories(projectId);
+    refreshUncategorizedItems(projectId);
     queryClient.invalidateQueries({ queryKey: ["project-line-items"] });
   }
 

@@ -17,7 +17,7 @@
  */
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -82,7 +82,6 @@ function PriceEditDialogBody({
   onClose: () => void;
   onInvalidate: () => void;
 }) {
-  const queryClient = useQueryClient();
 
   // Project-mode state
   const [priceInput, setPriceInput] = useState<string>(
@@ -102,7 +101,6 @@ function PriceEditDialogBody({
       updateGroupPrice(groupId, price),
     onSuccess: () => {
       onInvalidate();
-      queryClient.invalidateQueries({ queryKey: ["project-categories"] });
       toast.success("Group price updated");
       onClose();
     },
@@ -123,7 +121,6 @@ function PriceEditDialogBody({
     },
     onSuccess: () => {
       onInvalidate();
-      queryClient.invalidateQueries({ queryKey: ["project-categories"] });
       toast.success("Sub-hire group pricing updated");
       onClose();
     },

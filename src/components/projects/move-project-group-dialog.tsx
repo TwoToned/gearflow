@@ -17,7 +17,7 @@
  */
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -80,7 +80,6 @@ function MoveProjectGroupDialogBody({
   categories,
   onInvalidate,
 }: MoveProjectGroupDialogProps) {
-  const queryClient = useQueryClient();
   // Seed with Uncategorised — a meaningful default that doesn't
   // require the user to remember which category they picked last.
   // Picking a category from the dropdown still lets them move into
@@ -89,7 +88,6 @@ function MoveProjectGroupDialogBody({
 
   function refreshCaches() {
     onInvalidate();
-    queryClient.invalidateQueries({ queryKey: ["project-categories"] });
   }
 
   const moveMut = useMutation({

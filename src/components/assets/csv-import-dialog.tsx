@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Upload, Loader2, CheckCircle2, AlertTriangle, FileText } from "lucide-react";
 import { toast } from "sonner";
 
@@ -23,7 +23,6 @@ interface CSVImportDialogProps {
 }
 
 export function CSVImportDialog({ type, open, onOpenChange }: CSVImportDialogProps) {
-  const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<{
@@ -32,7 +31,7 @@ export function CSVImportDialog({ type, open, onOpenChange }: CSVImportDialogPro
     errors: { row: number; message: string }[];
   } | null>(null);
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: async (csvContent: string) => {
       if (type === "models") {
         return importModelsCSV(csvContent);
@@ -53,13 +52,8 @@ export function CSVImportDialog({ type, open, onOpenChange }: CSVImportDialogPro
       } else {
         toast.warning(`Import completed with ${data.errors.length} errors`);
       }
-      // Model/rate imports refresh the reactive model-table (useModels) via the
-      // dual-write — no invalidation needed. Asset imports still feed React Query
-      // readers (e.g. test-and-tag), so keep those.
-      if (type === "assets") {
-        queryClient.invalidateQueries({ queryKey: ["assets"] });
-        queryClient.invalidateQueries({ queryKey: ["bulkAssets"] });
-      }
+      // All imports refresh their reactive tables (useModels / useAssets /
+      // useBulkAssets) via the server action's dual-write — no cache to invalidate.
     },
     onError: (e) => toast.error(e.message),
   });

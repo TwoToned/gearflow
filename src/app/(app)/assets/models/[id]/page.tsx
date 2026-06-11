@@ -3,10 +3,6 @@
 import { use, useMemo, Suspense, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
-// `useQueryClient` is retained only to invalidate the cross-domain ["assets"] /
-// ["bulk-assets"] keys, which are still read by React Query in test-and-tag/new.
-// The ["model"] datum itself is on useServerQuery (not in the SSE map → same-view).
-import { useQueryClient } from "@tanstack/react-query";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Pencil, Archive, Plus, Trash2, RotateCcw, ChevronRight } from "lucide-react";
@@ -65,7 +61,6 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const queryClient = useQueryClient();
 
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
@@ -97,7 +92,6 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
     onSuccess: () => {
       toast.success("Bulk asset archived");
       refetch();
-      queryClient.invalidateQueries({ queryKey: ["bulk-assets"] });
     },
     onError: (e) => toast.error(e.message),
   });
@@ -107,7 +101,6 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
     onSuccess: () => {
       toast.success("Bulk asset deleted");
       refetch();
-      queryClient.invalidateQueries({ queryKey: ["bulk-assets"] });
     },
     onError: (e) => toast.error(e.message),
   });
@@ -117,7 +110,6 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
     onSuccess: () => {
       toast.success("Asset force returned to available");
       refetch();
-      queryClient.invalidateQueries({ queryKey: ["assets"] });
     },
     onError: (e) => toast.error(e.message),
   });

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 
 import { Plus, Pencil, Loader2, Download, Upload, RotateCcw } from "lucide-react";
@@ -337,7 +337,6 @@ export function AssetTable() {
   const [importOpen, setImportOpen] = useState(false);
   const [bulkForceReturnOpen, setBulkForceReturnOpen] = useState(false);
 
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
@@ -508,12 +507,13 @@ export function AssetTable() {
     setBulkEditOpen(false);
   };
 
-  const forceReturnMutation = useMutation({
+  const forceReturnMutation = useServerMutation({
     mutationFn: () => bulkForceReturnAssets(Array.from(selectedIds)),
     onSuccess: (result) => {
       toast.success(`Force returned ${result.count} assets to available`);
       clearSelection();
-      queryClient.invalidateQueries({ queryKey: ["assets"] });
+      // The registry list is Convex-reactive (useAssets/useBulkAssets); the
+      // server action dual-writes, so the push refreshes it. No cache to invalidate.
     },
     onError: (e) => toast.error(e.message),
   });
@@ -687,7 +687,6 @@ export function AssetTable() {
         locations={locations}
         onSuccess={() => {
           clearSelection();
-          queryClient.invalidateQueries({ queryKey: ["assets"] });
         }}
       />
 
@@ -726,7 +725,7 @@ function BulkEditDialog({
   const [bulkCondition, setBulkCondition] = useState("");
   const [bulkLocationId, setBulkLocationId] = useState<string | undefined>(undefined);
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: () =>
       bulkUpdateAssets(Array.from(selectedIds), {
         status: bulkStatus || undefined,

@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery, useMutation } from "@tanstack/react-query";
 import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
 import { ChevronRight, Loader2 } from "lucide-react";
 
@@ -58,12 +58,12 @@ function NewTestTagAssetInner() {
     queryFn: () => peekNextTestTagIds(1),
   });
 
-  const assetsQuery = useQuery({
+  const assetsQuery = useServerQuery({
     queryKey: ["assets", orgId, { pageSize: 500 }],
     queryFn: () => getAssets({ pageSize: 500 }),
   });
 
-  const bulkAssetsQuery = useQuery({
+  const bulkAssetsQuery = useServerQuery({
     queryKey: ["bulk-assets", orgId, { pageSize: 500 }],
     queryFn: () => getBulkAssets({ pageSize: 500 }),
   });
@@ -153,7 +153,7 @@ function NewTestTagAssetInner() {
   const watchAssetId = form.watch("assetId");
   const watchProfileId = form.watch("testProfileId");
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (data: TestTagAssetFormValues) =>
       createTestTagAsset({
         testTagId: data.testTagId,

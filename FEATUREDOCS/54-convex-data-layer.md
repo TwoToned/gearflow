@@ -1768,29 +1768,45 @@ is feasible. Split warehouse into standalone pages (done now) vs the heavy multi
   pipeline flip / **client rename** / **location rename** / pipeline-exit, and does NOT move on an off-list
   status change). 117 → 115 files import RQ.
 
-**★ HANDOFF — `warehouse/[projectId]/page.tsx` (the per-project warehouse DETAIL composite, NOT done).**
-This is the heavy one — ~1230 lines, ~8 mutations, and FIVE child tabs (`PickPrepTab`/`DeployTab`/
-`ReturnTab`/`CloseOutTab`/`BulkCheckInTab`) plus `OnlinePickList` + `ItemCheckForm`, all sharing the
-page's single `invalidate()` (which invalidates `["warehouse-project",orgId,projectId]` AND
-`["project-prep-kits",orgId,projectId]` and clears the selection sets). It also has a SECOND query
-`["containerAssets",orgId]` (line ~1233) and reads `["project-prep-kits",…]` (a `useServerQuery`). Reader
-is `getProjectForWarehouse(projectId)`. **To do it:** add `convex/warehouseDetail.ts` `version({projectId})`
-= the project doc `updatedAt` + a content signature over its `projectLineItems` (by `projectId`) folding in
-every mutable field the warehouse view renders/decides on — at least `status` (prep/checkout/return state),
-`assetId`/`bulkAssetId`/`kitId`, `quantity`, `prepContainer`, `checkedOutAt`/`returnedAt`, and any
-fulfillment/unit sub-state the tabs show — because check-out/check-in/prep/deprep all flip line-item rows
-in place (same count → MUST use a content signature, not count+ts). Watch the project's serialized/bulk
-**asset + kit status** too if the tabs reflect it (they show availability/condition). Add
-`useWarehouseProjectVersion(projectId)` to `use-warehouse.ts`; page reader → `useReactiveServerQuery`;
-every mutation `onSuccess`/the shared `invalidate()` → a `refetchProject()` (+ keep the `setSelectedOut/In`
-clears and the `project-prep-kits` refetch); the 5 child tabs likely already call the parent's
-`invalidate`/`onChanged` prop — rewire those to `refetchProject`. `ItemCheckForm` + `DamageReportDialog`
-write check records → refetch after. Convert the `containerAssets` + `project-prep-kits` reads to
-`useServerQuery` (neither is in the SSE map). **Same-view safety is the priority** (per-scan refresh in a
-high-traffic operational page); cross-user liveness is a bonus (SSE was dead). Scope the line-item
-signature carefully and round-trip an in-place check-out (line-item `status` flip, same row count) to prove
-no silent staleness. Estimate: 1 focused session. Then `bulk-checkin-tab`/`close-out-tab` come off RQ as
-part of it.
+**Done (session 2026-06-11b) — `warehouse/[projectId]/page.tsx` DETAIL composite + `close-out-tab` +
+`bulk-checkin-tab` off React Query** (the handoff above, completed; 3 files newly fully RQ-free).
+- New `convex/warehouseDetail.ts` `version({projectId})` = project doc `updatedAt` + `status` + the resolved
+  **client name** (header renders `project.client.name`, a cross-domain join) + a content signature over the
+  project's `projectLineItems` (by `projectId`) rollups: `status`/`prepStatus`/`prepContainer`/`quantity`/
+  `checkedOutQuantity`/`returnedQuantity`/`assigned`/`packed`/`damaged`/`lost`/`assetId`/`bulkAssetId`/
+  `kitId`/`returnCondition`/`returnStatus`/`checkedOutAt`/`returnedAt`/`updatedAt`. `useWarehouseProjectVersion`
+  in `use-warehouse.ts`; page reader → `useReactiveServerQuery`.
+- **★ Per-unit `project_line_item_unit` is in the Convex schema + has generated CRUD but is NEVER
+  dual-written** (`line-item-mirror.ts` STRIPS `units`; zero `api.projectLineItemUnits` write sites). So the
+  vector watches the line-item **rollups** instead — which ARE mirrored: every warehouse/check/fulfillment/
+  bulk-checkin `$transaction` calls `upsertProjectLineItemsToConvex(projectId)` post-commit (re-reads ALL
+  line items → captures status flips AND scan-time row expansions), and the fulfillment logic updates those
+  rollups in the same tx as the unit rows. A rollup signature therefore tracks the unit flips it summarises;
+  the round-trip proves an in-place check-out (status + `checkedOutQuantity` flip, same row count) moves it.
+- Page: 10 `useMutation` → `useServerMutation`; **9** `.mutate(vars,{onSuccess})` per-call-option sites →
+  `mutateAsync(vars).then(body).catch(()=>{})` (one was easy to miss in `handleReturnSelected` — tsc caught
+  it). `invalidate()` → `refetchProject()` + the selection clears, and **dropped the dead
+  `["project-prep-kits"]` invalidation** (grep-confirmed ZERO readers anywhere — data-identical). The
+  `containerAssets`/`OnlinePickList`/`ItemCheckForm` reads were ALREADY `useServerQuery` (the handoff's
+  `project-prep-kits` `useServerQuery` does not exist — it was only ever an invalidate target).
+- `close-out-tab` + `bulk-checkin-tab`: each a same-view island that ALSO cross-invalidated the parent
+  `["warehouse-project"]` key → added an `onChanged?:()=>void` prop (page wires `onChanged={refetchProject}`),
+  reader → `useServerQuery`, mutation → `useServerMutation`, own-key invalidate → `refetch()`, cross-key
+  invalidate → `onChanged?.()`. No tests touch them.
+- Same-view safety preserved by the explicit per-mutation refetch (SSE map emits nothing — the vector is a
+  pure additive cross-user improvement).
+- **Verified:** tsc clean, **2228 tests**, 0 new lint (normalized base-vs-HEAD — both 8 warnings/0 errors;
+  the only diff is the pre-existing `lineItems` exhaustive-deps warning's *embedded* line number shifting),
+  build exit 0, **codex review clean** ("no discrete regressions in the modified reactive query, mutation
+  conversion, or warehouse tab refresh paths"), live JWKS round-trip
+  `scripts/convex-roundtrip-warehouse-detail.ts` **7/7** (user-token callable + org-scoped + vector moves on
+  line-item add, **in-place check-out AND in-place return at same row count** [silent-staleness proofs],
+  client rename, project status flip). 115 → 112 files import RQ.
+- **JWKS round-trip is simpler than the sidecar dance**: the steady-state
+  `CONVEX_AUTH_JWKS_URL=http://host.docker.internal:3000/api/auth/jwks` is already set, so just run the prod
+  build on host :3000 (`corepack pnpm start`), the docker backend reaches it via `host.docker.internal`, run
+  the script, kill the server. No `convex env set`, no sidecar, no restore. (`corepack pnpm` because pnpm
+  isn't on PATH in this worktree; node via mise.)
 
 ## Remaining work & session sizing (post-central-graph)
 

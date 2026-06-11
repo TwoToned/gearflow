@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   Camera,
   Check,
@@ -20,7 +20,6 @@ import {
   completeStocktake,
   resumeScanning,
 } from "@/server/stocktake";
-import { useActiveOrganization } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -59,37 +58,29 @@ interface StocktakeReviewProps {
 
 export function StocktakeReview({ stocktake, onUpdate }: StocktakeReviewProps) {
   const [filter, setFilter] = useState<FilterType>("ALL");
-  const queryClient = useQueryClient();
-  const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
 
-  const invalidate = () => {
-    queryClient.invalidateQueries({
-      queryKey: ["stocktake", orgId, stocktake.id],
-    });
-  };
-
-  const resolveMutation = useMutation({
+  // onUpdate (the page's refetch) is the sole refresh path now — the old
+  // queryClient.invalidateQueries(["stocktake",…]) is a no-op once both detail
+  // readers are on useServerQuery, so it's dropped (data-identical).
+  const resolveMutation = useServerMutation({
     mutationFn: resolveDiscrepancy,
     onSuccess: () => {
       toast.success("Discrepancy resolved");
-      invalidate();
       onUpdate();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const bulkResolveMutation = useMutation({
+  const bulkResolveMutation = useServerMutation({
     mutationFn: bulkResolveDiscrepancies,
     onSuccess: () => {
       toast.success("Bulk action applied");
-      invalidate();
       onUpdate();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const completeMutation = useMutation({
+  const completeMutation = useServerMutation({
     mutationFn: () => completeStocktake(stocktake.id),
     onSuccess: () => {
       toast.success("Stocktake completed");
@@ -98,7 +89,7 @@ export function StocktakeReview({ stocktake, onUpdate }: StocktakeReviewProps) {
     onError: (e) => toast.error(e.message),
   });
 
-  const resumeMutation = useMutation({
+  const resumeMutation = useServerMutation({
     mutationFn: () => resumeScanning(stocktake.id),
     onSuccess: () => {
       toast.success("Resumed scanning");

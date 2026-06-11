@@ -9,6 +9,8 @@
  *      Convex — the replace-not-patch guard against silent staleness.
  *   4. an item DELETED from Prisma is removed from Convex (authoritative reconcile).
  *   5. `api.stocktakeMirror.sync` rejects a USER token (service-only write).
+ *   6. `api.stocktakeDetail.version` is user-callable (org-scoped) and its vector
+ *      MOVES on an in-place scan — the reactive-scanner trigger.
  *
  * Cleans up the synthetic stocktake/items in `finally` (Prisma + Convex).
  *
@@ -23,6 +25,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getConvexClient } from "@/lib/convex-client";
 import { syncStocktakeToConvex, removeStocktakeFromConvex } from "@/lib/stocktake-mirror";
+import { syncAssetsToConvex } from "@/lib/asset-mirror";
 
 const URL = process.env.CONVEX_SELF_HOSTED_URL ?? process.env.NEXT_PUBLIC_CONVEX_URL;
 
@@ -55,12 +58,17 @@ async function main() {
   if (!member) throw new Error("No member to test against");
 
   const svc = await getConvexClient();
+  const userToken = await mint({ sub: member.userId, orgId, role: member.role });
+  const userClient = new ConvexHttpClient(URL);
+  userClient.setAuth(userToken);
+
   const stId = `rt-st-${createId()}`;
   const item1Id = `rt-sti-${createId()}`;
   const item2Id = `rt-sti-${createId()}`;
 
   const getParent = () => svc.query(api.stocktakes.getById, { id: stId }) as Promise<Record<string, unknown> | null>;
   const getItems = () => svc.query(api.stocktakeItems.list, { stocktakeId: stId }) as Promise<Array<Record<string, unknown>>>;
+  const ver = () => userClient.query(api.stocktakeDetail.version, { stocktakeId: stId }) as Promise<{ items: string } | null>;
 
   try {
     // (1) create a Prisma stocktake + 2 items, mirror it.
@@ -88,6 +96,9 @@ async function main() {
     check("stocktake parent mirrors to Convex", !!p1 && p1.status === "IN_PROGRESS" && p1.expectedCount === 2, JSON.stringify(p1)?.slice(0, 50));
     check("both items mirror to Convex", i1.length === 2);
 
+    const v0 = await ver();
+    check("version() user-callable + org-scoped, returns a vector", v0 !== null, JSON.stringify(v0)?.slice(0, 40));
+
     // (2) update an item (scan it: found + scannedAt), mirror.
     await prisma.stocktakeItem.update({
       where: { id: item1Id },
@@ -97,6 +108,9 @@ async function main() {
     const i2 = await getItems();
     const scanned = i2.find((x) => x.id === item1Id);
     check("scanned item shows scannedAt in Convex", typeof scanned?.scannedAt === "number" && scanned?.found === true);
+
+    const v1 = await ver();
+    check("★ version vector MOVES on an in-place scan (reactive trigger)", !!v0 && !!v1 && v1.items !== v0.items);
 
     // (3) ★ reset scannedAt → null (unmark-found), mirror — Convex must CLEAR it.
     await prisma.stocktakeItem.update({
@@ -115,9 +129,6 @@ async function main() {
     check("deleted Prisma item is removed from Convex", i4.length === 1 && i4[0].id === item1Id);
 
     // (5) service-only: a USER token cannot call the mirror sync.
-    const userToken = await mint({ sub: member.userId, orgId, role: member.role });
-    const userClient = new ConvexHttpClient(URL);
-    userClient.setAuth(userToken);
     let rejected = false;
     try {
       await userClient.mutation(api.stocktakeMirror.sync, {
@@ -128,6 +139,27 @@ async function main() {
       rejected = true;
     }
     check("stocktakeMirror.sync rejects a user token (service-only)", rejected);
+
+    // (6) ★ a JOINED asset rename moves the vector even though no stocktake_item
+    // row changes — the cross-domain-join freshness the version now folds in.
+    const asset = await prisma.asset.findFirst({ where: { organizationId: orgId }, select: { id: true, customName: true } });
+    if (asset) {
+      const origName = asset.customName;
+      await prisma.stocktakeItem.update({ where: { id: item1Id }, data: { assetId: asset.id } });
+      await syncStocktakeToConvex(stId);
+      const va = await ver();
+      try {
+        await prisma.asset.update({ where: { id: asset.id }, data: { customName: `RT-${createId().slice(0, 6)}` } });
+        await syncAssetsToConvex([asset.id]); // mirror ONLY the asset, not the stocktake
+        const vb = await ver();
+        check("★ joined asset rename moves the vector (no stocktake row changed)", !!va && !!vb && vb.items !== va.items);
+      } finally {
+        await prisma.asset.update({ where: { id: asset.id }, data: { customName: origName } }).catch(() => {});
+        await syncAssetsToConvex([asset.id]).catch(() => {});
+      }
+    } else {
+      console.log("⏭️  no asset in org — skipping joined-rename check");
+    }
   } finally {
     await prisma.stocktakeItem.deleteMany({ where: { stocktakeId: stId } }).catch(() => {});
     await prisma.stocktake.delete({ where: { id: stId } }).catch(() => {});

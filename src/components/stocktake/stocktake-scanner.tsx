@@ -2,7 +2,9 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useReactiveServerQuery } from "@/hooks/use-reactive-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useStocktakeVersion } from "@/hooks/use-stocktake";
 import {
   Camera,
   CheckCircle2,
@@ -54,7 +56,6 @@ export function StocktakeScanner({
   const [bulkQuantity, setBulkQuantity] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
@@ -64,44 +65,50 @@ export function StocktakeScanner({
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
+  // Reactive trigger: a cheap Convex "version vector" that changes whenever any
+  // item of this stocktake changes (dual-written). It drives re-runs of the three
+  // unchanged server actions below — replacing the old 3–5s polling with a Convex
+  // push, and making the scanner cross-user live. See convex/stocktakeDetail.ts.
+  const version = useStocktakeVersion(stocktake.id);
+
   // Progress tally
-  const { data: progress } = useQuery({
+  const { data: progress, refetch: refetchProgress } = useReactiveServerQuery({
+    watch: version,
     queryKey: ["stocktake-progress", orgId, stocktake.id],
     queryFn: () => getStocktakeProgress(stocktake.id),
-    refetchInterval: 5000,
   });
 
   // Recent scans
-  const { data: recentScans } = useQuery({
+  const { data: recentScans, refetch: refetchRecent } = useReactiveServerQuery({
+    watch: version,
     queryKey: ["stocktake-recent", orgId, stocktake.id],
     queryFn: () => getRecentScans(stocktake.id),
-    refetchInterval: 3000,
   });
 
-  // Search results
-  const { data: searchResults, isLoading: isSearching } = useQuery({
+  // Search results — also keyed by the debounced query, gated until 2+ chars.
+  // Watching the version re-runs the search after a scan (preserving the old
+  // post-scan search invalidation) while an open popover stays fresh.
+  const { data: searchResults, isLoading: isSearching, refetch: refetchSearch } = useReactiveServerQuery({
+    watch: version,
     queryKey: ["stocktake-search", orgId, stocktake.id, debouncedQuery],
     queryFn: () => searchStocktakeAssets(stocktake.id, debouncedQuery),
     enabled: debouncedQuery.length >= 2,
   });
 
-  const invalidate = useCallback(() => {
-    queryClient.invalidateQueries({
-      queryKey: ["stocktake-progress", orgId, stocktake.id],
-    });
-    queryClient.invalidateQueries({
-      queryKey: ["stocktake-recent", orgId, stocktake.id],
-    });
-    queryClient.invalidateQueries({
-      queryKey: ["stocktake-search", orgId, stocktake.id],
-    });
-  }, [queryClient, orgId, stocktake.id]);
+  // Same-view immediacy after a write: re-read the server actions now rather than
+  // waiting for the mirror write + version push to land. The version push that
+  // follows is a harmless no-op refresh.
+  const refreshLive = useCallback(() => {
+    refetchProgress();
+    refetchRecent();
+    refetchSearch();
+  }, [refetchProgress, refetchRecent, refetchSearch]);
 
-  const scanMutation = useMutation({
+  const scanMutation = useServerMutation({
     mutationFn: (assetTag: string) =>
       scanStocktakeItem({ stocktakeId: stocktake.id, assetTag }),
     onSuccess: (result) => {
-      invalidate();
+      refreshLive();
       if (result.alreadyScanned) {
         toast.info("Already scanned");
         return;
@@ -131,10 +138,10 @@ export function StocktakeScanner({
     onError: (e) => toast.error(e.message),
   });
 
-  const markFoundMutation = useMutation({
+  const markFoundMutation = useServerMutation({
     mutationFn: markStocktakeItemFound,
     onSuccess: (result) => {
-      invalidate();
+      refreshLive();
       toast.success("Marked as found");
       // If bulk asset, prompt for quantity
       if (result.bulkAssetId) {
@@ -152,28 +159,28 @@ export function StocktakeScanner({
     onError: (e) => toast.error(e.message),
   });
 
-  const unmarkFoundMutation = useMutation({
+  const unmarkFoundMutation = useServerMutation({
     mutationFn: unmarkStocktakeItemFound,
     onSuccess: () => {
-      invalidate();
+      refreshLive();
       toast.success("Unmarked");
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const bulkCountMutation = useMutation({
+  const bulkCountMutation = useServerMutation({
     mutationFn: (data: { itemId: string; quantity: number }) =>
       updateBulkCount(data),
     onSuccess: () => {
       toast.success("Quantity updated");
       setBulkEntry(null);
       setBulkQuantity("");
-      invalidate();
+      refreshLive();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const completeMutation = useMutation({
+  const completeMutation = useServerMutation({
     mutationFn: () => completeScanning(stocktake.id),
     onSuccess: () => {
       toast.success("Scanning complete — ready for review");

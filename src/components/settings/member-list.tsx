@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { UserAvatar } from "@/components/ui/user-avatar";
@@ -20,9 +21,11 @@ import { Trash2, Mail, X } from "lucide-react";
 import { NotViewer } from "@/components/auth/permission-gate";
 import { toast } from "sonner";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { getMembers, getPendingInvitations, revokeInvitation } from "@/server/settings";
+import { revokeInvitation } from "@/server/settings";
 import { changeMemberRole, removeOrgMember } from "@/server/org-members";
 import { useCustomRoles } from "@/hooks/use-custom-roles";
+import { useOrgMembers, refreshOrgMembers } from "@/hooks/use-org-members";
+import { usePendingInvitations, refreshPendingInvitations } from "@/hooks/use-pending-invitations";
 import { ROLE_COLORS } from "./role-editor-dialog";
 import type { PermissionMap } from "@/lib/permissions";
 import type { ColorIntent } from "@/lib/status-colors";
@@ -82,42 +85,38 @@ export function MemberList() {
   const [revokeTarget, setRevokeTarget] = useState<{ id: string; email: string } | null>(null);
   const [removeTarget, setRemoveTarget] = useState<{ id: string; label: string } | null>(null);
 
-  const { data: members, isLoading } = useQuery({
-    queryKey: ["org-members", orgId],
-    queryFn: getMembers,
-  });
+  const { data: members, isLoading } = useOrgMembers(orgId);
 
   const { data: customRoles } = useCustomRoles(orgId);
 
-  const { data: pendingInvitations } = useQuery({
-    queryKey: ["pending-invitations", orgId],
-    queryFn: getPendingInvitations,
-  });
+  const { data: pendingInvitations } = usePendingInvitations(orgId);
 
-  const revokeMut = useMutation({
+  const revokeMut = useServerMutation({
     mutationFn: revokeInvitation,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["pending-invitations"] });
+      refreshPendingInvitations(orgId);
       toast.success("Invitation revoked");
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const changeRoleMut = useMutation({
+  const changeRoleMut = useServerMutation({
     mutationFn: ({ memberId, role }: { memberId: string; role: string }) =>
       changeMemberRole(memberId, role),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["org-members"] });
+      refreshOrgMembers(orgId);
+      // current-role (the viewer's effective permissions) is still a React Query
+      // datum read by use-permissions.ts — keep its invalidation.
       queryClient.invalidateQueries({ queryKey: ["current-role"] });
       toast.success("Role updated");
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const removeMut = useMutation({
+  const removeMut = useServerMutation({
     mutationFn: removeOrgMember,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["org-members"] });
+      refreshOrgMembers(orgId);
       toast.success("Member removed");
     },
     onError: (e) => toast.error(e.message),

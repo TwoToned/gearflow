@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { Loader2, X, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
@@ -156,7 +156,7 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp, initialMa
 
   const orgTags = useOrgTags(orgId);
 
-  const { data: membersData } = useQuery({
+  const { data: membersData } = useServerQuery({
     queryKey: ["org-members", orgId],
     queryFn: () => getOrgMembers({ pageSize: 200 }),
   });

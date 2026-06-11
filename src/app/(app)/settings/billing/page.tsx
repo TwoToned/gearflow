@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -9,24 +8,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FormSection } from "@/components/layout/page-layouts";
 import {
-  getOrganization,
   updateOrganization,
   type OrgSettings,
 } from "@/server/settings";
 import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useOrganization, refreshOrganization } from "@/hooks/use-organization";
 import { FadeIn } from "@/components/ui/motion";
 
 export default function BillingSettingsPage() {
-  const queryClient = useQueryClient();
   const canEdit = useCanDo("orgSettings", "update");
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: org } = useQuery({
-    queryKey: ["organization", orgId],
-    queryFn: getOrganization,
-  });
+  const { data: org } = useOrganization(orgId);
 
   const [name, setName] = useState("");
   const [settings, setSettings] = useState<OrgSettings>({});
@@ -38,10 +34,10 @@ export default function BillingSettingsPage() {
     }
   }, [org]);
 
-  const updateMutation = useMutation({
+  const updateMutation = useServerMutation({
     mutationFn: () => updateOrganization({ name, settings }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["organization"] });
+      refreshOrganization(orgId);
       toast.success("Settings saved");
     },
     onError: (e) => toast.error(e.message),

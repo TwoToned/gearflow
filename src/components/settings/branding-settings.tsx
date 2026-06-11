@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { RotateCcw, Upload, X, Image as ImageIcon } from "lucide-react";
 
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { refreshOrganization } from "@/hooks/use-organization";
+import { useActiveOrganization } from "@/lib/auth-client";
 import { updateOrganization, type OrgSettings, type OrgBranding } from "@/server/settings";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -20,7 +22,8 @@ const DEFAULT_ACCENT = "#10b981";
 const DEFAULT_DOCUMENT = "#0d4f4f";
 
 export function BrandingSettings({ orgName, settings, onBrandingChange }: BrandingSettingsProps) {
-  const queryClient = useQueryClient();
+  const { data: activeOrg } = useActiveOrganization();
+  const orgId = activeOrg?.id;
   const branding = settings.branding || {};
 
   const [primaryColor, setPrimaryColor] = useState(branding.primaryColor || DEFAULT_PRIMARY);
@@ -106,7 +109,7 @@ export function BrandingSettings({ orgName, settings, onBrandingChange }: Brandi
     input.click();
   }
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: () => {
       return updateOrganization({
         name: orgName,
@@ -118,7 +121,7 @@ export function BrandingSettings({ orgName, settings, onBrandingChange }: Brandi
     },
     onSuccess: () => {
       onBrandingChange?.(buildBranding());
-      queryClient.invalidateQueries({ queryKey: ["organization"] });
+      refreshOrganization(orgId);
       toast.success("Branding saved");
     },
     onError: (e) => toast.error(e.message),

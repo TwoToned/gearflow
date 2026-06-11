@@ -35,6 +35,15 @@ export interface ServerQueryOptions<T> {
   queryKey: ReadonlyArray<unknown>;
   queryFn: () => Promise<T>;
   enabled?: boolean;
+  /**
+   * Re-run `queryFn` every N ms while mounted (and `enabled`), mirroring React
+   * Query's `refetchInterval`. For datums whose freshness is a periodic POLL, not
+   * a reactive push — e.g. the notification bell's cross-domain aggregate
+   * (`getNotifications` scans 9 domains; a precise Convex trigger would be a
+   * fragile multi-table version vector, so a 60s poll is the right design). Omit
+   * for a one-shot read.
+   */
+  refetchInterval?: number;
 }
 
 export interface ServerQueryResult<T> {
@@ -52,6 +61,7 @@ export function useServerQuery<T>({
   queryKey,
   queryFn,
   enabled = true,
+  refetchInterval,
 }: ServerQueryOptions<T>): ServerQueryResult<T> {
   // The serialized key is the cache identity — sidesteps a spread-in-deps lint
   // warning and mirrors React Query's structural queryKey comparison.
@@ -97,6 +107,33 @@ export function useServerQuery<T>({
       cancelled = true;
     };
   }, [keyStr, enabled, reloadNonce]);
+
+  // Optional polling: bump the reload nonce every `refetchInterval` ms while
+  // mounted + enabled (mirrors React Query's refetchInterval). The fetch effect
+  // above re-runs off the nonce. Skip the tick while the tab is hidden — matching
+  // React Query's `refetchIntervalInBackground: false` default, so an idle
+  // background tab doesn't keep hitting the server — but refetch once when the tab
+  // becomes visible again so it isn't stale for up to a full interval (codex review).
+  useEffect(() => {
+    if (!enabled || !refetchInterval) return;
+    const bump = () => setReloadNonce((n) => n + 1);
+    const timer = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      bump();
+    }, refetchInterval);
+    const onVisible = () => {
+      if (typeof document !== "undefined" && !document.hidden) bump();
+    };
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", onVisible);
+    }
+    return () => {
+      clearInterval(timer);
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", onVisible);
+      }
+    };
+  }, [enabled, refetchInterval]);
 
   // Derive during render: a result fetched under a different key is stale.
   const isCurrent = result.fetchedKey === keyStr;

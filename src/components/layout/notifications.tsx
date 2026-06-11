@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useMemo, useEffect } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useNotificationsFeed } from "@/hooks/use-notifications-feed";
 import { useRouter } from "next/navigation";
 import {
   Bell,
@@ -24,7 +26,6 @@ import {
 import {
   dismissNotification,
   getDismissedKeys,
-  getNotifications,
   pruneStaleDismissals,
 } from "@/server/notifications";
 import { getStatusColor } from "@/lib/status-colors";
@@ -65,17 +66,14 @@ const typeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
 
 export function Notifications() {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: notifications } = useQuery({
-    queryKey: ["notifications", orgId],
-    queryFn: getNotifications,
-    refetchInterval: 60_000,
-  });
+  // Shared, deduped, visibility-aware poll (one scan per interval across the bell
+  // + the /notifications page; pauses in background tabs). See use-notifications-feed.
+  const { data: notifications } = useNotificationsFeed(orgId);
 
-  const { data: serverDismissed } = useQuery({
+  const { data: serverDismissed, refetch: refetchDismissed } = useServerQuery({
     queryKey: ["notification-dismissals", orgId],
     queryFn: getDismissedKeys,
     refetchInterval: 60_000,
@@ -109,10 +107,10 @@ export function Notifications() {
     if (changed) writeLocalDismissed(stored);
   }, [notifications]);
 
-  const dismissMutation = useMutation({
+  const dismissMutation = useServerMutation({
     mutationFn: (id: string) => dismissNotification(id),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["notification-dismissals", orgId] });
+      refetchDismissed();
     },
   });
 

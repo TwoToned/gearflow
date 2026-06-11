@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Pencil, Trash2, Copy, Shield, ChevronDown, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 
@@ -18,8 +17,10 @@ import { ConfirmActionMenuItem } from "@/components/ui/confirm-action-menu-item"
 import { NotViewer } from "@/components/auth/permission-gate";
 import { RoleEditorDialog, ROLE_COLORS } from "./role-editor-dialog";
 import { PermissionMatrix } from "./permission-matrix";
-import { getCustomRoles, deleteCustomRole, duplicateCustomRole } from "@/server/custom-roles";
+import { deleteCustomRole, duplicateCustomRole } from "@/server/custom-roles";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useCustomRoles, refreshCustomRoles } from "@/hooks/use-custom-roles";
 import {
   rolePermissions,
   roleLabels,
@@ -79,31 +80,27 @@ function BuiltInRoleCard({ role }: { role: string }) {
 }
 
 export function RoleManager() {
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRole, setEditingRole] = useState<CustomRoleData | null>(null);
 
-  const { data: customRoles, isLoading } = useQuery({
-    queryKey: ["custom-roles", orgId],
-    queryFn: getCustomRoles,
-  });
+  const { data: customRoles, isLoading } = useCustomRoles(orgId);
 
-  const deleteMut = useMutation({
+  const deleteMut = useServerMutation({
     mutationFn: deleteCustomRole,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["custom-roles"] });
+      refreshCustomRoles(orgId);
       toast.success("Role deleted");
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const dupMut = useMutation({
+  const dupMut = useServerMutation({
     mutationFn: ({ id, name }: { id: string; name: string }) =>
       duplicateCustomRole(id, name),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["custom-roles"] });
+      refreshCustomRoles(orgId);
       toast.success("Role duplicated");
     },
     onError: (e) => toast.error(e.message),

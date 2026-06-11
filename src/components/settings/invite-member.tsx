@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,8 +16,8 @@ import {
 import { UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { addMemberByEmail } from "@/server/settings";
-import { getCustomRoles } from "@/server/custom-roles";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { useCustomRoles } from "@/hooks/use-custom-roles";
 import type { PermissionMap } from "@/lib/permissions";
 
 const builtInRoles = [
@@ -40,10 +40,7 @@ export function InviteMember() {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("member");
 
-  const { data: customRoles } = useQuery({
-    queryKey: ["custom-roles", orgId],
-    queryFn: getCustomRoles,
-  });
+  const { data: customRoles } = useCustomRoles(orgId);
 
   const addMutation = useMutation({
     mutationFn: () => addMemberByEmail(email, role),

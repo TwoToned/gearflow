@@ -22,7 +22,7 @@ import { toast } from "sonner";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { getMembers, getPendingInvitations, revokeInvitation } from "@/server/settings";
 import { changeMemberRole, removeOrgMember } from "@/server/org-members";
-import { getCustomRoles } from "@/server/custom-roles";
+import { useCustomRoles } from "@/hooks/use-custom-roles";
 import { ROLE_COLORS } from "./role-editor-dialog";
 import type { PermissionMap } from "@/lib/permissions";
 import type { ColorIntent } from "@/lib/status-colors";
@@ -87,10 +87,7 @@ export function MemberList() {
     queryFn: getMembers,
   });
 
-  const { data: customRoles } = useQuery({
-    queryKey: ["custom-roles", orgId],
-    queryFn: getCustomRoles,
-  });
+  const { data: customRoles } = useCustomRoles(orgId);
 
   const { data: pendingInvitations } = useQuery({
     queryKey: ["pending-invitations", orgId],

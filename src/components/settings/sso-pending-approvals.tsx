@@ -6,7 +6,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Check, X, Clock } from "lucide-react";
 import { getPendingApprovals, approveSSOUser, rejectSSOUser } from "@/server/sso";
-import { getCustomRoles } from "@/server/custom-roles";
+import { useActiveOrganization } from "@/lib/auth-client";
+import { useCustomRoles } from "@/hooks/use-custom-roles";
 import { toast } from "sonner";
 import { useState } from "react";
 
@@ -20,6 +21,8 @@ const BUILT_IN_ROLES = [
 
 export function SSOPendingApprovals() {
   const queryClient = useQueryClient();
+  const { data: activeOrg } = useActiveOrganization();
+  const orgId = activeOrg?.id;
   const [roleOverrides, setRoleOverrides] = useState<Record<string, string>>({});
 
   const { data: approvals, isLoading } = useQuery({
@@ -27,10 +30,7 @@ export function SSOPendingApprovals() {
     queryFn: () => getPendingApprovals(),
   });
 
-  const { data: customRoles } = useQuery({
-    queryKey: ["custom-roles"],
-    queryFn: () => getCustomRoles(),
-  });
+  const { data: customRoles } = useCustomRoles(orgId);
 
   const allRoles = [
     ...BUILT_IN_ROLES,

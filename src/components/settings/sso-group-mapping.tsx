@@ -1,14 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Trash2, Plus, Radar } from "lucide-react";
 import { updateGroupMappings, updateSSOSettings } from "@/server/sso";
-import { getCustomRoles } from "@/server/custom-roles";
+import { useActiveOrganization } from "@/lib/auth-client";
+import { useCustomRoles } from "@/hooks/use-custom-roles";
 import { toast } from "sonner";
 import type { OrgSSOSettings, SSOGroupMapping } from "@/lib/sso-types";
 
@@ -56,13 +57,12 @@ export function SSOGroupMappingSection({
   canUpdate,
 }: Props) {
   const queryClient = useQueryClient();
+  const { data: activeOrg } = useActiveOrganization();
+  const orgId = activeOrg?.id;
   const [localMappings, setLocalMappings] = useState<SSOGroupMapping[]>(mappings);
   const [dirty, setDirty] = useState(false);
 
-  const { data: customRoles } = useQuery({
-    queryKey: ["custom-roles"],
-    queryFn: () => getCustomRoles(),
-  });
+  const { data: customRoles } = useCustomRoles(orgId);
 
   const allRoles = [
     ...BUILT_IN_ROLES,

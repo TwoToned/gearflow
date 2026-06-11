@@ -2,10 +2,6 @@
 
 import { use, Fragment, Suspense, useState } from "react";
 import Link from "next/link";
-// useQueryClient retained only for the cross-domain ["test-tag-assets"] list key
-// (read in the test-and-tag registry). The ["test-tag-asset"] detail datum is on
-// useServerQuery (same-view, not in the SSE map).
-import { useQueryClient } from "@tanstack/react-query";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useRouter } from "next/navigation";
@@ -125,7 +121,6 @@ export default function TestTagDetailPage({ params }: { params: Promise<{ id: st
 function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
@@ -139,7 +134,6 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
     onSuccess: () => {
       toast.success("Test tag asset retired");
       refetch();
-      queryClient.invalidateQueries({ queryKey: ["test-tag-assets"] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -148,7 +142,6 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
     mutationFn: () => deleteTestTagAsset(id),
     onSuccess: () => {
       toast.success("Test tag asset deleted");
-      queryClient.invalidateQueries({ queryKey: ["test-tag-assets"] });
       router.push("/test-and-tag/registry");
     },
     onError: (e: Error) => toast.error(e.message),

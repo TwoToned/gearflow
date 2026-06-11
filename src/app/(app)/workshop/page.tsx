@@ -18,10 +18,6 @@
 import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-// useQueryClient retained only for the cross-domain ["maintenance-records"]
-// key (SSE-mapped, read elsewhere). The ["workshop-queue"] datum itself is on
-// useServerQuery (same-view island, not in the SSE map).
-import { useQueryClient } from "@tanstack/react-query";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
@@ -265,7 +261,6 @@ function CardRow({
 }
 
 function WorkshopContent() {
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const searchParams = useSearchParams();
@@ -302,7 +297,6 @@ function WorkshopContent() {
           : `Moved to ${vars.nextStatus.replace("_", " ")}`,
       );
       refetch();
-      queryClient.invalidateQueries({ queryKey: ["maintenance-records"] });
     },
     onError: (e) => showError(e),
   });

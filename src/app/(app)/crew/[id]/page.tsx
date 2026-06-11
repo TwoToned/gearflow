@@ -3,10 +3,6 @@
 import { use, useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
-// useQueryClient retained only for the cross-domain ["crew-members"] list key
-// (SSE-mapped) in deleteMutation. The per-id crew-member/availability/ical/
-// time-entries datums are non-SSE same-view islands on useServerQuery.
-import { useQueryClient } from "@tanstack/react-query";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useForm } from "react-hook-form";
@@ -171,7 +167,6 @@ export default function CrewMemberDetailPage({
 }) {
   const { id } = use(params);
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const { data: session } = useSession();
@@ -219,7 +214,8 @@ export default function CrewMemberDetailPage({
     mutationFn: () => deleteCrewMember(id),
     onSuccess: () => {
       toast.success("Crew member deleted");
-      queryClient.invalidateQueries({ queryKey: ["crew-members"] });
+      // The crew roster (/crew) is Convex-reactive (useCrewMembers); the old
+      // ["crew-members"] invalidation had no React Query reader left. Navigate.
       router.push("/crew");
     },
     onError: (e) => toast.error(e.message),

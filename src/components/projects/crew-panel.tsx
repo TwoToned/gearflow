@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useQueryClient } from "@tanstack/react-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useForm } from "react-hook-form";
@@ -122,7 +121,6 @@ function formatDate(date: string | null | undefined): string {
 }
 
 export function CrewPanel({ projectId }: CrewPanelProps) {
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
@@ -143,7 +141,6 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
       toast.success("Crew member removed");
       refreshProjectCrew(projectId);
       refreshProjectLabourCost(projectId);
-      queryClient.invalidateQueries({ queryKey: ["crew-member"] });
     },
     onError: (e) => toast.error(e.message),
   });
@@ -638,7 +635,6 @@ function AssignmentDialog({
   mode,
   assignment,
 }: AssignmentDialogProps) {
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const { data: crewMembers } = useServerQuery({
@@ -769,7 +765,6 @@ function AssignmentDialog({
       toast.success("Crew member assigned");
       refreshProjectCrew(projectId);
       refreshProjectLabourCost(projectId);
-      queryClient.invalidateQueries({ queryKey: ["crew-member"] });
       refreshProjectServices(projectId);
       onOpenChange(false);
       form.reset();
@@ -784,7 +779,6 @@ function AssignmentDialog({
       toast.success("Assignment updated");
       refreshProjectCrew(projectId);
       refreshProjectLabourCost(projectId);
-      queryClient.invalidateQueries({ queryKey: ["crew-member"] });
       refreshProjectServices(projectId);
       onOpenChange(false);
     },

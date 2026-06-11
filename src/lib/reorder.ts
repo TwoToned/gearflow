@@ -15,6 +15,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { syncBulkAssetsToConvex } from "@/lib/asset-mirror";
 import { syncSupplierOrderToConvex } from "@/lib/sub-hire-mirror";
 import { getSupplierById } from "@/lib/suppliers-read";
+import { getModelMap, getModelWithCategoryMap } from "@/lib/models-read";
 
 export interface ReorderCandidate {
   bulkAssetId: string;
@@ -41,6 +42,8 @@ export interface ReorderCandidate {
 export async function getReorderCandidatesCore(
   organizationId: string,
 ): Promise<ReorderCandidate[]> {
+  // model (+ nested category) lives in Convex — attached from the map below.
+  // (preferredSupplier + location stay on the fresh Prisma mirror for now.)
   const rows = await prisma.bulkAsset.findMany({
     where: {
       organizationId,
@@ -48,7 +51,6 @@ export async function getReorderCandidatesCore(
       reorderThreshold: { not: null, gt: 0 },
     },
     include: {
-      model: { include: { category: { select: { name: true } } } },
       preferredSupplier: { select: { id: true, name: true } },
       location: { select: { name: true } },
     },
@@ -61,8 +63,11 @@ export async function getReorderCandidatesCore(
       b.availableQuantity <= b.reorderThreshold,
   );
 
+  const modelMap = await getModelWithCategoryMap(organizationId);
+
   return candidates.map((b) => {
     const threshold = b.reorderThreshold!;
+    const model = modelMap.get(b.modelId);
     // Target stock = threshold × 1.5 (rounded up). Order the gap.
     const target = Math.ceil(threshold * 1.5);
     const suggested = Math.max(1, target - b.availableQuantity);
@@ -70,8 +75,8 @@ export async function getReorderCandidatesCore(
       bulkAssetId: b.id,
       assetTag: b.assetTag,
       modelId: b.modelId,
-      modelName: b.model.name,
-      categoryName: b.model.category?.name ?? null,
+      modelName: model?.name ?? "",
+      categoryName: model?.category?.name ?? null,
       totalQuantity: b.totalQuantity,
       availableQuantity: b.availableQuantity,
       reorderThreshold: threshold,
@@ -122,11 +127,13 @@ export async function createReorderDraftCore(
       id: { in: lines.map((l) => l.bulkAssetId) },
       organizationId,
     },
-    include: { model: { select: { name: true } } },
   });
   if (bulks.length !== lines.length) {
     throw new Error("One or more items could not be found in this organization");
   }
+  // model name (for the order-line description) lives in Convex — resolve from
+  // the map, not a Prisma join.
+  const modelMap = await getModelMap(organizationId);
 
   // Order number: REORDER-{YYYYMMDD}-{short id}. cuid2 (8 chars) instead of
   // Math.random's 4 base-36 chars — the latter has only ~1.7M values per
@@ -153,7 +160,7 @@ export async function createReorderDraftCore(
             const quantity = l.quantity;
             const lineTotal = unitPrice != null ? unitPrice * quantity : null;
             return {
-              description: `${bulk.model.name} — restock (${bulk.assetTag})`,
+              description: `${modelMap.get(bulk.modelId)?.name ?? "Item"} — restock (${bulk.assetTag})`,
               modelId: bulk.modelId,
               quantity,
               unitPrice: unitPrice ?? undefined,

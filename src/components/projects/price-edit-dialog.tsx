@@ -17,7 +17,7 @@
  */
 
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -96,7 +96,7 @@ function PriceEditDialogBody({
     target.kind === "subHire" && target.cost != null ? String(target.cost) : "",
   );
 
-  const projectMut = useMutation({
+  const projectMut = useServerMutation({
     mutationFn: ({ groupId, price }: { groupId: string; price: number }) =>
       updateGroupPrice(groupId, price),
     onSuccess: () => {
@@ -107,7 +107,7 @@ function PriceEditDialogBody({
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const subHireMut = useMutation({
+  const subHireMut = useServerMutation({
     mutationFn: () => {
       if (target.kind !== "subHire") throw new Error("Invalid target");
       // updateSubHireGroup requires the full schema, so re-send title +

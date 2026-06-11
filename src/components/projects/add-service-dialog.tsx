@@ -1,8 +1,8 @@
 "use client";
 
 import { useForm, Controller } from "react-hook-form";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -53,7 +53,7 @@ export function AddServiceDialog({
     },
   });
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (data: LineItemFormValues) => addLineItem(projectId, data),
     onSuccess: (_result, variables) => {
       if (variables.groupName && onGroupCreated) {

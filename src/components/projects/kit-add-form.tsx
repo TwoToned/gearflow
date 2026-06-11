@@ -11,7 +11,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { toast } from "sonner";
@@ -90,7 +90,7 @@ export function KitAddForm({
     enabled: !!selectedKitId,
   });
 
-  const addKitMut = useMutation({
+  const addKitMut = useServerMutation({
     mutationFn: () =>
       addKitLineItem(
         projectId,

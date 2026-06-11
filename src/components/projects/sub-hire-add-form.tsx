@@ -13,7 +13,7 @@
  */
 
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -70,7 +70,7 @@ export function SubHireAddForm({
     .filter((s) => s.isActive ?? true)
     .map((s) => ({ value: s.id, label: s.name }));
 
-  const createMut = useMutation({
+  const createMut = useServerMutation({
     mutationFn: () =>
       createSubHire({
         supplierId,

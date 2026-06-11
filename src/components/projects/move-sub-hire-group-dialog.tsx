@@ -13,7 +13,7 @@
  */
 
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -82,7 +82,7 @@ function MoveSubHireGroupDialogBody({
     onInvalidate();
   }
 
-  const moveMut = useMutation({
+  const moveMut = useServerMutation({
     mutationFn: async () => {
       if (!groupId) throw new Error("No sub-hire group selected");
       const categoryId =
@@ -101,7 +101,7 @@ function MoveSubHireGroupDialogBody({
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const createMut = useMutation({
+  const createMut = useServerMutation({
     mutationFn: async (name: string) => {
       if (!groupId) throw new Error("No sub-hire group selected");
       return createCategoryAndPlaceGroup({

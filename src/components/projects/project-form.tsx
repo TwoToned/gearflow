@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { Loader2, X, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
@@ -174,7 +174,7 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp, initialMa
     description: l.address || undefined,
   }));
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: async (data: ProjectFormValues) => {
       const result = isEditing
         ? await updateProject(initialData.id, data)

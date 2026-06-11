@@ -10,9 +10,9 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useProjectCategories, refreshProjectCategories, refreshUncategorizedItems, refreshProjectOverbooked } from "@/hooks/use-project-equipment";
@@ -177,7 +177,7 @@ export function EquipmentAddForm({
     }
   }, [assetLookup, form]);
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (data: LineItemFormValues) => {
       let disc = data.discount;
       if (discountMode === "%" && disc && data.unitPrice) {

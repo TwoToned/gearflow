@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import { useServerQuery } from "@/hooks/use-server-query";
 
@@ -61,7 +61,7 @@ export function ProjectManagersPanel({
       })
     );
 
-  const addMutation = useMutation({
+  const addMutation = useServerMutation({
     mutationFn: (userId: string) => addProjectManager(projectId, userId),
     onSuccess: () => {
       refreshProjectDetail(projectId);
@@ -70,7 +70,7 @@ export function ProjectManagersPanel({
     onError: (e) => toast.error(e.message),
   });
 
-  const removeMutation = useMutation({
+  const removeMutation = useServerMutation({
     mutationFn: (userId: string) => removeProjectManager(projectId, userId),
     onSuccess: () => {
       refreshProjectDetail(projectId);

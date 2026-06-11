@@ -10,7 +10,7 @@
  */
 
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -57,7 +57,7 @@ export function CustomItemAddForm({
   const [categoryId, setCategoryId] = useState(defaultCategoryId ?? "");
   const [groupId, setGroupId] = useState(defaultGroupId ?? "");
 
-  const addMut = useMutation({
+  const addMut = useServerMutation({
     mutationFn: (data: Parameters<typeof addCustomLineItem>[1]) => addCustomLineItem(projectId, data),
     onSuccess: () => {
       onInvalidate();

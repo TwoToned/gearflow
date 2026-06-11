@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import { useProjectServices, refreshProjectServices, useProjectServicesSummary, refreshProjectServicesSummary } from "@/hooks/use-project-services";
 import { useServiceTemplates } from "@/hooks/use-service-templates";
@@ -183,7 +183,6 @@ export function ServicesPanel({
 }: ServicesPanelProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingService, setEditingService] = useState<Record<string, unknown> | null>(null);
@@ -205,7 +204,7 @@ export function ServicesPanel({
     refreshProjectCrew(projectId);
   };
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: (id: string) => deleteProjectService(id),
     onSuccess: () => {
       toast.success("Service deleted");
@@ -215,7 +214,7 @@ export function ServicesPanel({
     onError: (e) => toast.error(e.message),
   });
 
-  const statusMutation = useMutation({
+  const statusMutation = useServerMutation({
     mutationFn: ({ id, status }: { id: string; status: ServiceStatus }) =>
       updateServiceStatus(id, status),
     onSuccess: () => {
@@ -225,7 +224,7 @@ export function ServicesPanel({
     onError: (e) => toast.error(e.message),
   });
 
-  const generateMutation = useMutation({
+  const generateMutation = useServerMutation({
     mutationFn: () => generateProjectServices(projectId),
     onSuccess: (result) => {
       const r = result as { created: number; lineItemsCreated: number };
@@ -795,7 +794,7 @@ function CloneServicesDialog({
       label: `${p.projectNumber} — ${p.name}`,
     }));
 
-  const cloneMutation = useMutation({
+  const cloneMutation = useServerMutation({
     mutationFn: () => cloneServicesFromProject(targetProjectId, sourceProjectId),
     onSuccess: (result) => {
       const r = result as { cloned: number };
@@ -1005,7 +1004,6 @@ function ServiceDialog({
 }) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
   const isEditing = !!editingService;
 
   const matchingTemplate = preselectedType
@@ -1148,7 +1146,7 @@ function ServiceDialog({
     refreshProjectCrew(projectId);
   };
 
-  const createMutation = useMutation({
+  const createMutation = useServerMutation({
     mutationFn: (data: ProjectServiceFormValues) =>
       createProjectService(projectId, data),
     onSuccess: () => {
@@ -1159,7 +1157,7 @@ function ServiceDialog({
     onError: (e) => toast.error(e.message),
   });
 
-  const updateMutation = useMutation({
+  const updateMutation = useServerMutation({
     mutationFn: (data: ProjectServiceFormValues) =>
       updateProjectService(editingService!.id as string, data),
     onSuccess: () => {
@@ -1170,7 +1168,7 @@ function ServiceDialog({
     onError: (e) => toast.error(e.message),
   });
 
-  const crewStatusMutation = useMutation({
+  const crewStatusMutation = useServerMutation({
     mutationFn: ({ status }: { status: "OFFERED" | "CONFIRMED" | "CANCELLED" }) =>
       updateServiceCrewStatus(editingService!.id as string, status),
     onSuccess: (result, { status }) => {

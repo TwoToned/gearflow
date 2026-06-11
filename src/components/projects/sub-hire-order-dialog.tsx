@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, Fragment } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import { useProjectCategories, refreshProjectCategories, useProjectSubHires, refreshProjectSubHires, refreshUncategorizedItems, useSubHire, refreshSubHire } from "@/hooks/use-project-equipment";
 import { useServerQuery } from "@/hooks/use-server-query";
@@ -444,7 +444,7 @@ function SubHireCreateView({
     .filter((s) => s.isActive ?? true)
     .map((s) => ({ value: s.id, label: s.name }));
 
-  const createMutation = useMutation({
+  const createMutation = useServerMutation({
     mutationFn: () =>
       createSubHire({
         supplierId,
@@ -557,7 +557,7 @@ function SubHireManageView({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: subHire, isLoading } = useSubHire(subHireId) as { data: any; isLoading: boolean };
 
-  const statusMutation = useMutation({
+  const statusMutation = useServerMutation({
     mutationFn: (newStatus: SubHireStatus) => updateSubHireStatus(subHireId, newStatus),
     onSuccess: () => {
       toast.success("Status updated");
@@ -566,7 +566,7 @@ function SubHireManageView({
     onError: (e) => toast.error(e.message),
   });
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: () => deleteSubHire(subHireId),
     onSuccess: () => {
       toast.success("Sub-hire deleted");
@@ -575,13 +575,13 @@ function SubHireManageView({
     onError: (e) => toast.error(e.message),
   });
 
-  const updateMutation = useMutation({
+  const updateMutation = useServerMutation({
     mutationFn: (data: Record<string, unknown>) => updateSubHire(subHireId, data),
     onSuccess: () => invalidate(),
     onError: (e) => toast.error(e.message),
   });
 
-  const paymentStatusMutation = useMutation({
+  const paymentStatusMutation = useServerMutation({
     mutationFn: (status: SubHirePaymentStatus) => updateSubHirePaymentStatus(subHireId, status),
     onSuccess: () => {
       toast.success("Payment status updated");
@@ -590,7 +590,7 @@ function SubHireManageView({
     onError: (e) => toast.error(e.message),
   });
 
-  const removeItemMutation = useMutation({
+  const removeItemMutation = useServerMutation({
     mutationFn: (itemId: string) => removeSubHireItem(itemId),
     onSuccess: () => {
       toast.success("Item removed");
@@ -599,7 +599,7 @@ function SubHireManageView({
     onError: (e) => toast.error(e.message),
   });
 
-  const createGroupMutation = useMutation({
+  const createGroupMutation = useServerMutation({
     mutationFn: (title: string) => createSubHireGroup(subHireId, { title }),
     onSuccess: (result: Record<string, unknown>) => {
       toast.success("Group created");
@@ -611,7 +611,7 @@ function SubHireManageView({
     onError: (e) => toast.error(e.message),
   });
 
-  const deleteGroupMutation = useMutation({
+  const deleteGroupMutation = useServerMutation({
     mutationFn: (groupId: string) => deleteSubHireGroup(groupId),
     onSuccess: () => {
       toast.success("Group deleted");
@@ -620,7 +620,7 @@ function SubHireManageView({
     onError: (e) => toast.error(e.message),
   });
 
-  const updateGroupMutation = useMutation({
+  const updateGroupMutation = useServerMutation({
     mutationFn: ({ groupId, data }: { groupId: string; data: Record<string, unknown> }) =>
       updateSubHireGroup(groupId, data),
     onSuccess: () => {
@@ -631,14 +631,14 @@ function SubHireManageView({
     onError: (e) => toast.error(e.message),
   });
 
-  const moveItemMutation = useMutation({
+  const moveItemMutation = useServerMutation({
     mutationFn: ({ itemId, groupId }: { itemId: string; groupId: string | null }) =>
       setItemGroup(itemId, groupId),
     onSuccess: () => invalidate(),
     onError: (e) => toast.error(e.message),
   });
 
-  const placementMutation = useMutation({
+  const placementMutation = useServerMutation({
     mutationFn: (args: { entityType: "order" | "group" | "item"; entityId: string; targetGroupId: string | null; targetCategoryId: string | null }) =>
       updateSubHirePlacement(args.entityType, args.entityId, {
         targetGroupId: args.targetGroupId,
@@ -648,7 +648,7 @@ function SubHireManageView({
     onError: (e) => toast.error(e.message),
   });
 
-  const pricingMutation = useMutation({
+  const pricingMutation = useServerMutation({
     mutationFn: (data: { pricingMode: string; orderTotalCost?: number | null; orderTotalCharge?: number | null }) =>
       updateSubHireOrderPricing(subHireId, data),
     onSuccess: () => {
@@ -1772,7 +1772,7 @@ function SubHireItemForm({
     }
   }, [open, editingItem]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const addMutation = useMutation({
+  const addMutation = useServerMutation({
     mutationFn: () =>
       editingItem
         ? updateSubHireItem(editingItem.id, { modelId: modelId || undefined, description, quantity, unitCost, unitCharge, pricingType, duration, discount, showOnQuote, showOnDocs, groupId: editingItem.groupId || groupId || undefined })

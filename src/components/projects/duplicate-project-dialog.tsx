@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useRouter } from "next/navigation";
-import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -45,7 +45,7 @@ export function DuplicateProjectDialog({
     isTemplate ? `${sourceProject.name} (Template)` : `${sourceProject.name} (Copy)`
   );
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: () =>
       isTemplate
         ? saveAsTemplate(sourceProject.id, name)

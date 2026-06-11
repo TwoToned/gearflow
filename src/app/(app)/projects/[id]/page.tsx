@@ -1,9 +1,9 @@
 "use client";
 
 import { use, useState } from "react";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
-import { useMutation } from "@tanstack/react-query";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useProjectDetail, refreshProjectDetail } from "@/hooks/use-project-detail";
 import { useProjectServicesSummary } from "@/hooks/use-project-services";
@@ -150,7 +150,7 @@ export default function ProjectDetailPage({
     queryFn: () => getPublishedTemplatesForDropdown(),
   });
 
-  const statusMutation = useMutation({
+  const statusMutation = useServerMutation({
     mutationFn: (nextStatus: string) =>
       updateProjectStatus(
         id,
@@ -166,7 +166,7 @@ export default function ProjectDetailPage({
     onError: (e) => toast.error(e.message),
   });
 
-  const archiveMutation = useMutation({
+  const archiveMutation = useServerMutation({
     mutationFn: () => archiveProject(id),
     onSuccess: () => {
       toast.success("Project cancelled");
@@ -176,7 +176,7 @@ export default function ProjectDetailPage({
     onError: (e) => toast.error(e.message),
   });
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: () => deleteProject(id),
     onSuccess: () => {
       toast.success("Project deleted");

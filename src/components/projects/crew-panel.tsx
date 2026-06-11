@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -136,7 +137,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
 
   const { data: labourCost } = useProjectLabourCost(projectId);
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: (id: string) => deleteAssignment(id),
     onSuccess: () => {
       toast.success("Crew member removed");
@@ -147,7 +148,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
     onError: (e) => toast.error(e.message),
   });
 
-  const statusMutation = useMutation({
+  const statusMutation = useServerMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
       updateAssignmentStatus(id, status),
     onSuccess: () => {
@@ -157,7 +158,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
     onError: (e) => toast.error(e.message),
   });
 
-  const offerMutation = useMutation({
+  const offerMutation = useServerMutation({
     mutationFn: (id: string) => sendCrewOffer(id),
     onSuccess: () => {
       toast.success("Offer sent");
@@ -166,7 +167,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
     onError: (e) => toast.error(e.message),
   });
 
-  const offerAllMutation = useMutation({
+  const offerAllMutation = useServerMutation({
     mutationFn: () => sendCrewOfferAll(projectId),
     onSuccess: (result) => {
       toast.success(`${result.sent} offer(s) sent`);
@@ -761,7 +762,7 @@ function AssignmentDialog({
     (c: CrewConflict) => c.severity === "soft"
   );
 
-  const createMut = useMutation({
+  const createMut = useServerMutation({
     mutationFn: (data: CrewAssignmentFormValues) =>
       createAssignment(projectId, data),
     onSuccess: () => {
@@ -776,7 +777,7 @@ function AssignmentDialog({
     onError: (e) => toast.error(e.message),
   });
 
-  const updateMut = useMutation({
+  const updateMut = useServerMutation({
     mutationFn: (data: CrewAssignmentFormValues) =>
       updateAssignment(assignment!.id as string, data),
     onSuccess: () => {
@@ -1210,7 +1211,7 @@ function BulkMessageDialog({
 }) {
   const [message, setMessage] = useState("");
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: () => sendBulkMessage(projectId, message),
     onSuccess: (result) => {
       toast.success(`Message sent to ${result.sent} crew member(s)`);

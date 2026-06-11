@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useCallback, useEffect } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import {
   useProjectCategories,
@@ -299,7 +299,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
 
   // ─── Mutations ───────────────────────────────────────────────────────────
 
-  const createCategoryMut = useMutation({
+  const createCategoryMut = useServerMutation({
     mutationFn: (name: string) => createProjectCategory(projectId, { name }),
     onSuccess: () => {
       invalidate();
@@ -309,7 +309,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const renameCategoryMut = useMutation({
+  const renameCategoryMut = useServerMutation({
     mutationFn: ({ id, name }: { id: string; name: string }) => updateProjectCategory(id, { name }),
     onSuccess: () => {
       invalidate();
@@ -319,7 +319,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const deleteCategoryMut = useMutation({
+  const deleteCategoryMut = useServerMutation({
     mutationFn: (id: string) => deleteProjectCategory(id),
     onSuccess: () => {
       invalidate();
@@ -328,7 +328,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const moveLineItemMut = useMutation({
+  const moveLineItemMut = useServerMutation({
     mutationFn: ({ lineItemId, targetGroupId, targetCategoryId }: {
       lineItemId: string;
       targetGroupId: string | null;
@@ -345,7 +345,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const updateLineItemMut = useMutation({
+  const updateLineItemMut = useServerMutation({
     mutationFn: ({ id, data, allowOverbook }: { id: string; data: Record<string, unknown>; allowOverbook?: boolean }) =>
       updateLineItem(id, data as Parameters<typeof updateLineItem>[1], allowOverbook ?? false),
     onSuccess: () => {
@@ -356,7 +356,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const removeMut = useMutation({
+  const removeMut = useServerMutation({
     mutationFn: (id: string) => removeLineItem(id),
     onSuccess: () => {
       invalidate();
@@ -366,7 +366,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   });
 
 
-  const saveAsTemplateMut = useMutation({
+  const saveAsTemplateMut = useServerMutation({
     mutationFn: ({ groupId, name, description }: { groupId: string; name: string; description?: string }) =>
       saveGroupAsTemplate(groupId, name, description),
     onSuccess: (t: unknown) => {
@@ -378,7 +378,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const createGroupMut = useMutation({
+  const createGroupMut = useServerMutation({
     mutationFn: ({ categoryId, title, templateId }: { categoryId: string | null; title: string; templateId?: string }) => {
       if (templateId) {
         // Templates are category-scoped concepts — fall back to no-template
@@ -400,7 +400,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   });
 
 
-  const deleteGroupMut = useMutation({
+  const deleteGroupMut = useServerMutation({
     mutationFn: (groupId: string) => deleteProjectGroup(groupId),
     onSuccess: () => {
       invalidate();
@@ -411,7 +411,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const updateGroupMut = useMutation({
+  const updateGroupMut = useServerMutation({
     mutationFn: ({ groupId, data }: { groupId: string; data: Partial<{ title: string; description: string; quantity: number; billingMonths: number; billingWeeks: number; billingDays: number }> }) =>
       updateProjectGroup(groupId, data),
     onSuccess: () => {

@@ -1,16 +1,15 @@
 "use client";
 
 import { useState, useEffect, useMemo, Fragment } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
-import { useProjectCategories, refreshProjectCategories, useProjectSubHires, refreshProjectSubHires, refreshUncategorizedItems } from "@/hooks/use-project-equipment";
+import { useProjectCategories, refreshProjectCategories, useProjectSubHires, refreshProjectSubHires, refreshUncategorizedItems, useSubHire, refreshSubHire } from "@/hooks/use-project-equipment";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { Plus, Pencil, Trash2, Loader2, ArrowLeft, MoreVertical, AlertTriangle, FolderPlus, ChevronDown, MapPin } from "lucide-react";
 import { toast } from "sonner";
 
 import {
   createSubHire,
-  getSubHire,
   updateSubHire,
   deleteSubHire,
   updateSubHireStatus,
@@ -246,7 +245,6 @@ export function SubHireOrderDialog({
 }: SubHireOrderDialogProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
 
   // Track which sub-hire we're managing (null = list/create mode)
   const [managingId, setManagingId] = useState<string | null>(initialSubHireId || null);
@@ -324,7 +322,6 @@ export function SubHireOrderDialog({
 
 function SubHireListView({
   projectId,
-  orgId,
   onCreateNew,
   onManage,
   onClose,
@@ -336,10 +333,7 @@ function SubHireListView({
   onClose: () => void;
 }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: subHires = [], isLoading } = useProjectSubHires(projectId) as {
-    data: any[];
-    isLoading: boolean;
-  };
+  const { data: subHires = [], isLoading } = useProjectSubHires(projectId) as { data: any[]; isLoading: boolean };
 
   return (
     <>
@@ -539,7 +533,6 @@ function SubHireCreateView({
 
 function SubHireManageView({
   subHireId,
-  orgId,
   projectId,
   onBack,
   onDeleted,
@@ -550,7 +543,6 @@ function SubHireManageView({
   onBack: () => void;
   onDeleted: () => void;
 }) {
-  const queryClient = useQueryClient();
   const [showItemForm, setShowItemForm] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [editingItem, setEditingItem] = useState<any>(null);
@@ -563,10 +555,7 @@ function SubHireManageView({
   const [editingGroup, setEditingGroup] = useState<Record<string, any> | null>(null);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: subHire, isLoading } = useQuery<any>({
-    queryKey: ["sub-hire", orgId, subHireId],
-    queryFn: () => getSubHire(subHireId),
-  });
+  const { data: subHire, isLoading } = useSubHire(subHireId) as { data: any; isLoading: boolean };
 
   const statusMutation = useMutation({
     mutationFn: (newStatus: SubHireStatus) => updateSubHireStatus(subHireId, newStatus),
@@ -670,13 +659,12 @@ function SubHireManageView({
   });
 
   function invalidate() {
-    queryClient.invalidateQueries({ queryKey: ["sub-hire", orgId, subHireId] });
+    refreshSubHire(subHireId);
     refreshProjectSubHires(projectId);
     refreshProjectDetail(projectId);
     // Refresh equipment tab data when line items are generated/modified
     refreshProjectCategories(projectId);
     refreshUncategorizedItems(projectId);
-    queryClient.invalidateQueries({ queryKey: ["project-line-items"] });
   }
 
   if (isLoading) {

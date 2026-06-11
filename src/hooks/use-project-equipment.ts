@@ -10,7 +10,7 @@ import {
   getUncategorizedSubHireGroups,
   getUncategorizedProjectGroups,
 } from "@/server/category-slots";
-import { getSubHires } from "@/server/sub-hires";
+import { getSubHires, getSubHire } from "@/server/sub-hires";
 
 /**
  * Shared stores for the project equipment-tab composition (Phase 6 — React Query
@@ -49,3 +49,8 @@ const subHires = createSharedResource((projectId: string) => getSubHires({ proje
 /** Subscribe to the project's sub-hires. Key = projectId. */
 export const useProjectSubHires = subHires.use;
 export const refreshProjectSubHires = subHires.refresh;
+
+const subHire = createSharedResource((subHireId: string) => getSubHire(subHireId));
+/** Subscribe to a single sub-hire's detail. Key = subHireId. */
+export const useSubHire = subHire.use;
+export const refreshSubHire = subHire.refresh;

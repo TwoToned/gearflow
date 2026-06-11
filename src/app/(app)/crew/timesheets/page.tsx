@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -77,7 +77,6 @@ import { FadeIn } from "@/components/ui/motion";
 export default function TimesheetsPage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
 
   const {
     sortBy,
@@ -128,7 +127,7 @@ export default function TimesheetsPage() {
       label: `${c.firstName} ${c.lastName}`,
     })) || [];
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch: refetchEntries } = useServerQuery({
     queryKey: [
       "all-time-entries",
       orgId,
@@ -148,38 +147,38 @@ export default function TimesheetsPage() {
   const entries = data?.entries || [];
   const total = data?.total || 0;
 
-  const submitMutation = useMutation({
+  const submitMutation = useServerMutation({
     mutationFn: (ids: string[]) => submitTimeEntries(ids),
     onSuccess: (result) => {
       toast.success(`${result.count} entries submitted`);
-      queryClient.invalidateQueries({ queryKey: ["all-time-entries"] });
+      refetchEntries();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const approveMutation = useMutation({
+  const approveMutation = useServerMutation({
     mutationFn: (ids: string[]) => approveTimeEntries(ids),
     onSuccess: (result) => {
       toast.success(`${result.count} entries approved`);
-      queryClient.invalidateQueries({ queryKey: ["all-time-entries"] });
+      refetchEntries();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const disputeMutation = useMutation({
+  const disputeMutation = useServerMutation({
     mutationFn: (id: string) => disputeTimeEntry(id),
     onSuccess: () => {
       toast.success("Entry disputed");
-      queryClient.invalidateQueries({ queryKey: ["all-time-entries"] });
+      refetchEntries();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: (id: string) => deleteTimeEntry(id),
     onSuccess: () => {
       toast.success("Entry deleted");
-      queryClient.invalidateQueries({ queryKey: ["all-time-entries"] });
+      refetchEntries();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -455,10 +454,11 @@ export default function TimesheetsPage() {
           setEditOpen(open);
           if (!open) setEditingEntry(null);
         }}
+        onSaved={refetchEntries}
       />
 
       {/* Log Time Dialog */}
-      <LogTimeDialog open={logTimeOpen} onOpenChange={setLogTimeOpen} />
+      <LogTimeDialog open={logTimeOpen} onOpenChange={setLogTimeOpen} onSaved={refetchEntries} />
 
       {/* Export Dialog */}
       <ExportDialog open={exportOpen} onOpenChange={setExportOpen} />
@@ -472,12 +472,14 @@ function EditTimeEntryDialog({
   entry,
   open,
   onOpenChange,
+  onSaved,
 }: {
   entry: any;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Refresh the parent timesheet table after an edit. */
+  onSaved?: () => void;
 }) {
-  const queryClient = useQueryClient();
   const [isGeneral, setIsGeneral] = useState(false);
 
   const form = useForm<CrewTimeEntryFormValues>({
@@ -517,14 +519,14 @@ function EditTimeEntryDialog({
     }
   }
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (data: CrewTimeEntryFormValues) =>
       updateTimeEntry(entry?.id, data),
     onSuccess: () => {
       toast.success("Time entry updated");
-      queryClient.invalidateQueries({ queryKey: ["all-time-entries"] });
-      queryClient.invalidateQueries({ queryKey: ["crew-time-entries"] });
-      queryClient.invalidateQueries({ queryKey: ["crew-pending-time"] });
+      // Refresh the parent table; crew-time-entries (crew/[id]) + crew-pending-time
+      // (crew dashboard) are cross-route readers that remount on navigation.
+      onSaved?.();
       onOpenChange(false);
     },
     onError: (e) => toast.error(e.message),
@@ -681,13 +683,15 @@ function EditTimeEntryDialog({
 function LogTimeDialog({
   open,
   onOpenChange,
+  onSaved,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Refresh the parent timesheet table after logging time. */
+  onSaved?: () => void;
 }) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
 
   const [selectedCrewIds, setSelectedCrewIds] = useState<string[]>([]);
   const [step, setStep] = useState<"pick" | "form">("pick");
@@ -761,9 +765,9 @@ function LogTimeDialog({
         toast.success(
           `${successCount} time ${successCount === 1 ? "entry" : "entries"} added`
         );
-        queryClient.invalidateQueries({ queryKey: ["all-time-entries"] });
-        queryClient.invalidateQueries({ queryKey: ["crew-pending-time"] });
-        queryClient.invalidateQueries({ queryKey: ["crew-dashboard-stats"] });
+        // Refresh the parent table; crew-pending-time + crew-dashboard-stats
+        // (crew dashboard) are cross-route readers that remount on navigation.
+        onSaved?.();
       }
       if (errors.length > 0) {
         toast.error(`${errors.length} failed: ${errors[0]}`);

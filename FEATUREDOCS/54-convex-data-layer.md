@@ -1808,6 +1808,21 @@ is feasible. Split warehouse into standalone pages (done now) vs the heavy multi
   the script, kill the server. No `convex env set`, no sidecar, no restore. (`corepack pnpm` because pnpm
   isn't on PATH in this worktree; node via mise.)
 
+**Done same session (2026-06-11b) — STOCKTAKE detail datum off RQ (the polling scanner DEFERRED).** The
+`["stocktake",orgId,id]` detail datum has NO liveness — not in the SSE `getInvalidationKeys` map, never
+polled — so it's a plain non-reactive read (NOT a version vector; stocktake tables aren't dual-written
+anyway). Both readers (`stocktake/[id]` + `[id]/edit` pages) → `useServerQuery`; `stocktake-draft` (2
+mutations) + `stocktake-review` (4 mutations) → `useServerMutation`. Review's
+`queryClient.invalidateQueries(["stocktake",…])` is dropped — a no-op once both readers are off RQ, and
+`onUpdate()` (the page's refetch) already provides the post-write refresh (data-identical). 4 files newly
+fully RQ-free. **DEFERRED to a dual-write-first session: `stocktake-scanner` polls (`refetchInterval` 3s/5s)
+for live progress/recent-scans = genuine cross-user liveness, and `stocktakes`/`stocktakeItems` are NOT
+dual-written; the separate `["stocktakes"]` list datum (`stocktake-table`/`stocktake-form`) rides with it.
+The split is clean: the scanner only ever invalidates its OWN progress/recent/search keys (never the detail
+key) and calls `onUpdate` on complete.** Verified: tsc clean, **2228 tests**, 0 new lint (normalized
+base-vs-HEAD), build exit 0, **codex review clean**; no JWKS round-trip (no new Convex table/fn — both hooks
+wrap existing server actions).
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort

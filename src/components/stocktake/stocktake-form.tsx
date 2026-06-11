@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -58,7 +58,7 @@ export function StocktakeForm({ initialData }: StocktakeFormProps) {
 
   const scope = form.watch("scope");
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (data: CreateStocktakeValues) =>
       isEditing ? updateStocktake(initialData!.id, data) : createStocktake(data),
     onSuccess: (result) => {

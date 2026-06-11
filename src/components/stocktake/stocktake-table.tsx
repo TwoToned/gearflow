@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { Plus } from "lucide-react";
 
 import { getStocktakes } from "@/server/stocktake";
@@ -149,7 +149,9 @@ export function StocktakeTable() {
 
   const statusFilter = filters.status as string | undefined;
 
-  const { data, isLoading } = useQuery({
+  // No liveness: not in the SSE map, never polled, never invalidated (create
+  // navigates to the detail page) → a plain one-shot read, data-identical to RQ.
+  const { data, isLoading } = useServerQuery({
     queryKey: [
       "stocktakes",
       orgId,

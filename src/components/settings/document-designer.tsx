@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   ArrowLeft,
   Check,
@@ -52,7 +52,6 @@ const PLUGIN_LABELS: Record<string, string> = {
 
 export function DocumentDesigner({ template }: { template: TemplateData }) {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const containerRef = useRef<HTMLDivElement>(null);
   const designerRef = useRef<InstanceType<
     typeof import("@pdfme/ui").Designer
@@ -66,7 +65,7 @@ export function DocumentDesigner({ template }: { template: TemplateData }) {
 
   const isReadOnly = template.isSystemDefault;
 
-  const saveMutation = useMutation({
+  const saveMutation = useServerMutation({
     mutationFn: async () => {
       if (!designerRef.current) return;
       setSaveState("saving");
@@ -79,10 +78,8 @@ export function DocumentDesigner({ template }: { template: TemplateData }) {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["document-templates"] });
-      queryClient.invalidateQueries({
-        queryKey: ["document-template", template.id],
-      });
+      // The documents list (sole reader of document-templates) is cross-route —
+      // it remounts + refetches on navigation back. No cache to invalidate.
       setHasChanges(false);
       setSaveState("saved");
       toast.success("Template saved");
@@ -94,7 +91,7 @@ export function DocumentDesigner({ template }: { template: TemplateData }) {
     },
   });
 
-  const publishMutation = useMutation({
+  const publishMutation = useServerMutation({
     mutationFn: async () => {
       if (designerRef.current) {
         const currentTemplate = designerRef.current.getTemplate();
@@ -108,10 +105,6 @@ export function DocumentDesigner({ template }: { template: TemplateData }) {
       return publishDocumentTemplate(template.id);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["document-templates"] });
-      queryClient.invalidateQueries({
-        queryKey: ["document-template", template.id],
-      });
       setHasChanges(false);
       toast.success("Template published — it's now live");
     },

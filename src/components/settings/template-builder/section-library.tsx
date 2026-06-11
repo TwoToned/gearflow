@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { Plus, BookmarkPlus, Trash2, Loader2 } from "lucide-react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,18 +46,16 @@ export function SectionLibrary({
   const [presetName, setPresetName] = useState("");
   const [presetDescription, setPresetDescription] = useState("");
 
-  const queryClient = useQueryClient();
-
-  const presetsQuery = useQuery({
+  const presetsQuery = useServerQuery({
     queryKey: ["section-presets"],
     queryFn: () => getSectionPresets(),
     enabled: open,
   });
 
-  const createMutation = useMutation({
+  const createMutation = useServerMutation({
     mutationFn: createSectionPreset,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["section-presets"] });
+      presetsQuery.refetch();
       toast.success("Section preset saved");
       setSaveMode(false);
       setPresetName("");
@@ -65,10 +64,10 @@ export function SectionLibrary({
     onError: () => toast.error("Failed to save preset"),
   });
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: deleteSectionPreset,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["section-presets"] });
+      presetsQuery.refetch();
       toast.success("Preset deleted");
     },
     onError: () => toast.error("Failed to delete preset"),

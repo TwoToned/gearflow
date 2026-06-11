@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
 import type { TemplateSettings } from "@/lib/pdfme/template-settings";
 import type { DocumentType } from "@/lib/pdfme/types";
@@ -43,7 +43,6 @@ export function TemplateEditor({
   initialSettings,
 }: TemplateEditorProps) {
   const router = useRouter();
-  const queryClient = useQueryClient();
 
   const [settings, setSettings] = useState<TemplateSettings>(initialSettings);
   const [name, setName] = useState(templateName);
@@ -110,12 +109,15 @@ export function TemplateEditor({
   );
 
   // Save mutation
-  const saveMutation = useMutation({
-    mutationFn: () => saveTemplateSettings(templateId, settingsRef.current, name),
-    onMutate: () => setSaveState("saving"),
+  const saveMutation = useServerMutation({
+    mutationFn: () => {
+      setSaveState("saving");
+      return saveTemplateSettings(templateId, settingsRef.current, name);
+    },
     onSuccess: () => {
       setSaveState("saved");
-      queryClient.invalidateQueries({ queryKey: ["document-templates"] });
+      // The documents list (sole reader of document-templates) is cross-route —
+      // it remounts + refetches on navigation back. No cache to invalidate.
       setTimeout(() => setSaveState("idle"), 2000);
     },
     onError: () => {
@@ -125,13 +127,12 @@ export function TemplateEditor({
   });
 
   // Publish mutation
-  const publishMutation = useMutation({
+  const publishMutation = useServerMutation({
     mutationFn: async () => {
       await saveTemplateSettings(templateId, settingsRef.current, name);
       return publishDocumentTemplate(templateId);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["document-templates"] });
       toast.success("Template published");
     },
     onError: () => toast.error("Failed to publish template"),

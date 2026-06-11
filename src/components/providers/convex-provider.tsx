@@ -17,8 +17,7 @@ import { authClient } from "@/lib/auth-client";
  * (service token); the browser cannot call Convex mutations directly. See
  * docs/designs/convex-phase5-auth-bridge.md.
  *
- * During the migration this coexists with QueryProvider (React Query); removed in
- * Phase 6. Inert if NEXT_PUBLIC_CONVEX_URL is unset (a deploy without the backend).
+ * Inert if NEXT_PUBLIC_CONVEX_URL is unset (a deploy without the backend).
  */
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
 

@@ -1865,9 +1865,15 @@ elsewhere would stay stale. FIXED: the version folds the joined fields too (asse
 dual-written), resolved deduped-by-id to bound the reads.** Verified: tsc clean, **2228 tests**, 0 new lint
 (normalized scanner + new files clean), build exit 0, **codex review clean after the join-fold fix**, live
 round-trip extended to **9/9** (adds: version user-callable + org-scoped, vector moves on an in-place scan,
-and ★ a joined asset rename moves the vector with NO stocktake row changed). **STILL ON RQ in stocktake: the
-`["stocktakes"]` LIST datum (`stocktake-table` + `stocktake-form`) — a separate list-version-vector job
-(like warehouseDetail.listVersion).**
+and ★ a joined asset rename moves the vector with NO stocktake row changed).
+
+**Done same session (2026-06-11b) — STOCKTAKE LIST + FORM off RQ → the ENTIRE stocktake feature is RQ-free.**
+The `["stocktakes"]` list datum turned out to need NO version vector: it's not in the SSE map, never polled,
+and never invalidated (the form navigates to the detail page after create, so there was no same-view list
+refresh to preserve). So `stocktake-table`'s reader → `useServerQuery` and `stocktake-form`'s create/update
+mutation → `useServerMutation`, both data-identical (plain mechanical swaps, zero invalidation drops → no
+codex/round-trip). With this, every stocktake file (the `[id]`/`[id]/edit` pages + draft/review/scanner/table/
+form) is off React Query. Verified: tsc clean, **2228 tests**, 0 new lint (normalized), build exit 0.
 
 ## Remaining work & session sizing (post-central-graph)
 

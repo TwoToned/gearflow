@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useOrganization, refreshOrganization } from "@/hooks/use-organization";
@@ -251,11 +250,10 @@ type ScopeOptionsData = {
 };
 
 function AuditorLinksSection({ canEdit }: { canEdit: boolean }) {
-  const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const { data: tokens } = useQuery({
+  const { data: tokens, refetch: refetchTokens } = useServerQuery({
     queryKey: ["auditorTokens"],
     queryFn: getAuditorTokens,
   });
@@ -266,19 +264,19 @@ function AuditorLinksSection({ canEdit }: { canEdit: boolean }) {
     enabled: showCreate || editingId !== null,
   });
 
-  const revokeMutation = useMutation({
+  const revokeMutation = useServerMutation({
     mutationFn: revokeAuditorToken,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["auditorTokens"] });
+      refetchTokens();
       toast.success("Link revoked");
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: deleteAuditorToken,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["auditorTokens"] });
+      refetchTokens();
       toast.success("Link deleted");
     },
     onError: (e) => toast.error(e.message),
@@ -294,7 +292,7 @@ function AuditorLinksSection({ canEdit }: { canEdit: boolean }) {
   const opts = scopeOptions as unknown as ScopeOptionsData | undefined;
 
   const onSaved = () => {
-    queryClient.invalidateQueries({ queryKey: ["auditorTokens"] });
+    refetchTokens();
     setShowCreate(false);
     setEditingId(null);
   };
@@ -459,7 +457,7 @@ function AuditorTokenForm({
     });
   };
 
-  const createMutation = useMutation({
+  const createMutation = useServerMutation({
     mutationFn: () => createAuditorToken({
       name,
       expiresAt: expiry || null,
@@ -469,7 +467,7 @@ function AuditorTokenForm({
     onError: (e) => toast.error(e.message),
   });
 
-  const editMutation = useMutation({
+  const editMutation = useServerMutation({
     mutationFn: () => updateAuditorToken(tokenId!, {
       name,
       expiresAt: expiry || null,

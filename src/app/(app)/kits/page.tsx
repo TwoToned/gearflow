@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Plus, RotateCcw, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -159,11 +159,10 @@ export default function KitsPage() {
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkForceReturnOpen, setBulkForceReturnOpen] = useState(false);
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const forceReturnMutation = useMutation({
+  const forceReturnMutation = useServerMutation({
     mutationFn: async () => {
       const ids = Array.from(selectedIds);
       let count = 0;
@@ -180,11 +179,8 @@ export default function KitsPage() {
     onSuccess: (count) => {
       toast.success(`Force returned ${count} kits to available`);
       setSelectedIds(new Set());
-      // Kit status + item counts are no longer React Query (kit list is reactive
-      // via Convex; kit-counts is a one-shot useServerQuery and force-return
-      // doesn't change item counts). Still refresh the React Query `assets`
-      // datum (asset status flipped to available).
-      queryClient.invalidateQueries({ queryKey: ["assets"] });
+      // Kit list + asset registry are both Convex-reactive (useKits / useAssets);
+      // the server action dual-writes, so the WS push refreshes them. No cache.
     },
     onError: (e) => toast.error(e.message),
   });

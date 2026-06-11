@@ -1823,6 +1823,31 @@ key) and calls `onUpdate` on complete.** Verified: tsc clean, **2228 tests**, 0 
 base-vs-HEAD), build exit 0, **codex review clean**; no JWKS round-trip (no new Convex table/fn — both hooks
 wrap existing server actions).
 
+**Done same session (2026-06-11b) — STOCKTAKE DUAL-WRITE (infra; unblocks the reactive scanner).**
+`stocktake` + `stocktake_item` are now dual-written so the warehouse scanner can later drop its 3–5s polling
+for a Convex subscription. All writes live in ONE file (`src/server/stocktake.ts`), but span
+createMany/updateMany/deleteMany + single-row scan writes, so rather than mirror each site the design uses a
+single workhorse `syncStocktakeToConvex(id)` (`src/lib/stocktake-mirror.ts`) called after every commit (18
+sites): it re-reads the parent + ALL items from Prisma (authoritative) and pushes them to a custom
+service-only Convex mutation `api.stocktakeMirror.sync({stocktake, items})` in **ONE round-trip**, which
+reconciles in a single tx. **★ Two correctness keys:** (1) the sync uses **`ctx.db.replace` not `patch`** so
+a field reset to null on the Prisma side (`scannedAt`/`scannedById` on unmark-found) actually CLEARS in
+Convex — a patch would leave it stale (the silent-staleness guard the reactive scanner will depend on); items
+absent from the incoming set are deleted (authoritative). (2) **concurrency** (codex P2): two users scanning
+the same stocktake each send a full-snapshot reconcile, so an older snapshot landing after a newer one would
+revert Convex to stale state. The app is a single pm2 process, so `syncStocktakeToConvex` **serializes per
+`stocktakeId` via a promise chain** — each sync reads its snapshot only after the prior send completes, so the
+last write always applies last (horizontal scaling would instead need a server-stamped monotonic guard in the
+mutation). Arg validators reuse the schema enum validators (`enums.Stocktake*`) so the payload type-checks
+against `db.insert/replace` (a loose `v.string()` fails the typed insert). Backfill
+`scripts/convex-backfill-stocktake.ts` (`pnpm convex:backfill:stocktake`) reuses the same sync path so it
+can't diverge. **INFRA-ONLY for now** — no reactive consumer yet; the scanner conversion (replace the poll +
+`stocktake-progress`/`-recent` RQ keys with a Convex `useQuery` over the mirrored `stocktakeItems`, plus the
+`["stocktakes"]` list datum) is the follow-on. Verified: tsc clean, **2228 tests**, 0 new lint (normalized +
+new files 0 problems), build exit 0, **codex review clean after the P2 fix**, backfill 1/1, live round-trip
+`scripts/convex-roundtrip-stocktake.ts` **6/6** (parent+item mirror, in-place update, ★ reset-to-null CLEAR,
+reconcile-delete, service-only rejection).
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort

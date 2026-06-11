@@ -8,6 +8,7 @@ import { useServerQuery } from "@/hooks/use-server-query";
 import { useProjectDetail, refreshProjectDetail } from "@/hooks/use-project-detail";
 import { useProjectServicesSummary } from "@/hooks/use-project-services";
 import { useProjectLabourCost } from "@/hooks/use-project-crew";
+import { refreshProjectOverbooked } from "@/hooks/use-project-equipment";
 import {
   Pencil,
   Archive,
@@ -159,10 +160,9 @@ export default function ProjectDetailPage({
     onSuccess: () => {
       toast.success("Status updated");
       refreshProjectDetail(id);
-      queryClient.invalidateQueries({ queryKey: ["projects"] });
       // A status transition into CANCELLED/RETURNED/COMPLETED/INVOICED releases
       // stock; any other open project's overbook/availability caches are now stale.
-      queryClient.invalidateQueries({ queryKey: ["project-overbooked"] });
+      refreshProjectOverbooked(id);
       queryClient.invalidateQueries({ queryKey: ["availability"] });
     },
     onError: (e) => toast.error(e.message),
@@ -172,9 +172,8 @@ export default function ProjectDetailPage({
     mutationFn: () => archiveProject(id),
     onSuccess: () => {
       toast.success("Project cancelled");
-      queryClient.invalidateQueries({ queryKey: ["projects"] });
       refreshProjectDetail(id);
-      queryClient.invalidateQueries({ queryKey: ["project-overbooked"] });
+      refreshProjectOverbooked(id);
       queryClient.invalidateQueries({ queryKey: ["availability"] });
     },
     onError: (e) => toast.error(e.message),
@@ -184,7 +183,6 @@ export default function ProjectDetailPage({
     mutationFn: () => deleteProject(id),
     onSuccess: () => {
       toast.success("Project deleted");
-      queryClient.invalidateQueries({ queryKey: ["projects"] });
       router.push("/projects");
     },
     onError: (e) => toast.error(e.message),

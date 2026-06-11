@@ -77,7 +77,6 @@ export default function TemplatesPage() {
     mutationFn: () =>
       duplicateProject(createFrom.id, projectNumber, projectName),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["projects"] });
       toast.success("Project created from template");
       setCreateFrom(null);
       router.push(`/projects/${result.id}`);

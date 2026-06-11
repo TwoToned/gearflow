@@ -52,7 +52,6 @@ export function DuplicateProjectDialog({
         ? saveAsTemplate(sourceProject.id, name)
         : duplicateProject(sourceProject.id, projectNumber, name),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["projects"] });
       queryClient.invalidateQueries({ queryKey: ["templates"] });
       toast.success(isTemplate ? "Template created" : "Project duplicated");
       onOpenChange(false);

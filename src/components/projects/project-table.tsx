@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { Plus, AlertTriangle } from "lucide-react";
 
@@ -249,7 +248,7 @@ export function ProjectTable() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useServerQuery({
     queryKey: ["projects", orgId, { search, filters, page, pageSize, sortBy, sortOrder }],
     queryFn: () =>
       getProjects({

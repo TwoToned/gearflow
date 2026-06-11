@@ -1,6 +1,5 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   CalendarSync,
@@ -20,6 +19,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FormSection } from "@/components/layout/page-layouts";
 import { useCanDo } from "@/lib/use-permissions";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { FadeIn } from "@/components/ui/motion";
 import {
   getOrgIcalSettings,
@@ -78,36 +79,35 @@ function FeedUrl({ token, feedKey }: { token: string; feedKey: string }) {
 }
 
 export default function CalendarSettingsPage() {
-  const queryClient = useQueryClient();
   const canEdit = useCanDo("orgSettings", "update");
 
-  const { data: icalSettings, isLoading } = useQuery({
+  const { data: icalSettings, isLoading, refetch } = useServerQuery({
     queryKey: ["org-ical-settings"],
     queryFn: getOrgIcalSettings,
   });
 
-  const enableMutation = useMutation({
+  const enableMutation = useServerMutation({
     mutationFn: enableOrgIcalFeed,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["org-ical-settings"] });
+      refetch();
       toast.success("Calendar feeds enabled");
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const disableMutation = useMutation({
+  const disableMutation = useServerMutation({
     mutationFn: disableOrgIcalFeed,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["org-ical-settings"] });
+      refetch();
       toast.success("Calendar feeds disabled");
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const regenerateMutation = useMutation({
+  const regenerateMutation = useServerMutation({
     mutationFn: regenerateOrgIcalToken,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["org-ical-settings"] });
+      refetch();
       toast.success("Calendar feed URLs regenerated");
     },
     onError: (e) => toast.error(e.message),

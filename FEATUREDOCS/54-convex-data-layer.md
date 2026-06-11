@@ -1848,6 +1848,27 @@ new files 0 problems), build exit 0, **codex review clean after the P2 fix**, ba
 `scripts/convex-roundtrip-stocktake.ts` **6/6** (parent+item mirror, in-place update, ★ reset-to-null CLEAR,
 reconcile-delete, service-only rejection).
 
+**Done same session (2026-06-11b) — REACTIVE STOCKTAKE SCANNER (the payoff: polling → Convex push).** With
+the dual-write in place, `stocktake-scanner.tsx` drops its `refetchInterval` polling (progress 5s, recent 3s)
+for the keystone version-vector pattern: new `convex/stocktakeDetail.ts` `version({stocktakeId})` (content
+signature over the stocktake's items + parent counts) drives re-runs of the three UNCHANGED server actions
+(`getStocktakeProgress` / `getRecentScans` / `searchStocktakeAssets`) via `useReactiveServerQuery`. The server
+actions stay byte-identical — they join asset/bulkAsset → model for display, which would be a data-shape-drift
+risk to rebuild in Convex. New `useStocktakeVersion` hook in `src/hooks/use-stocktake.ts`. The scanner is now
+fully RQ-free: 5 mutations → `useServerMutation`, the three readers → `useReactiveServerQuery` watching the
+version, the per-write `invalidate()` → an explicit `refreshLive()` (same-view immediacy; the version push
+that follows is a harmless no-op). Now cross-user live (two pickers see each other's scans). **★ CODEX P2
+(same cross-domain-join-freshness class as the warehouse-list vector): `getRecentScans` /
+`searchStocktakeAssets` display + search on the JOINED `assetTag` / `customName` / `serialNumber` /
+`model.name`, which the item row's `assetId`/`bulkAssetId` don't cover — with the poll gone, a rename
+elsewhere would stay stale. FIXED: the version folds the joined fields too (assets/bulkAssets/models are
+dual-written), resolved deduped-by-id to bound the reads.** Verified: tsc clean, **2228 tests**, 0 new lint
+(normalized scanner + new files clean), build exit 0, **codex review clean after the join-fold fix**, live
+round-trip extended to **9/9** (adds: version user-callable + org-scoped, vector moves on an in-place scan,
+and ★ a joined asset rename moves the vector with NO stocktake row changed). **STILL ON RQ in stocktake: the
+`["stocktakes"]` LIST datum (`stocktake-table` + `stocktake-form`) — a separate list-version-vector job
+(like warehouseDetail.listVersion).**
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort

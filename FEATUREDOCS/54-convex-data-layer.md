@@ -2125,6 +2125,50 @@ commit: `tsc` clean, **2235 tests**, 0 new lint (normalized base-vs-HEAD, `LC_AL
 unavailable in the environment; the keystone is unit-tested and the conversion is a mechanical port onto the
 proven shared-store pattern with zero invalidation-semantics change.)
 
+### PDF / document / report mirror-read decommission — ✅ DONE (2026-06-12, Tier 1 + 2)
+
+Plan: [`docs/designs/convex-pdf-decommission-session.md`](../docs/designs/convex-pdf-decommission-session.md).
+The scoping pass found the **true PDF pipeline was already off the mirror** (model/supplier/category via
+`attachLineItemTree`, client via `clients-read`, zero `*_media` reads, and the 5 `DocumentLineItem` consumers
+are pure shape-consumers). So this session closed the *remaining* document/report/export cross-domain reads —
+**model + category + (PDF) location** — onto the Convex attach helpers. 6 commits pushed; each tsc clean,
+**2237 tests** (2235 + 2 new integration assertions), 0 new lint, `next build` exit 0.
+
+- **Tier 1 — true PDF document path** (`build-document-data.ts`): the last mirror read was **location**.
+  Dropped the `asset.location`/`bulkAsset.location` join (`asset: true`/`bulkAsset: true` keep `locationId` +
+  `assetTag`); `deriveLocationName` now resolves from `getLocationMap` by `locationId`. Project venue attaches
+  the Convex location doc by `projectRow.locationId` (name + address). **Shape byte-identical** (`locationName`
+  already existed) → all 5 consumers untouched. Deleted dead `server/documents.ts` (`getProjectForDocument`,
+  zero callers). Extended the full-pipeline integration test (`line-item-tree-attach.test`) with a
+  `locationName`-survives assertion + the previously-uncovered **consumer-#2 height-reservation guard**
+  (`estimateSectionHeight`, the v0.8.1.1 tail-drop class).
+- **Tier 2 — report / export generators** (model + category off the mirror via the new shared
+  `getModelWithCategoryMap` helper in `models-read`, which nests the equipment category like a Prisma
+  `model: { include: { category } }` join): `report-engine` (new `attachModelsToRows` mirroring
+  `attachClientsToRows`; direct category scoped to models/kits since `lineItems.categoryId` is a
+  *project_category*), `csv` (3 exports), `reorder` (candidates + draft), `utilization`, `warehouse-close`.
+
+★ **Key distinction baked into report-engine:** clients were a **hard cutover** (frozen Prisma table → relation
+sorts skipped), but model/category/location are **dual-write** with a **fresh** Prisma mirror — so only the
+*display read* moves to Convex; Prisma relation **sorts** on model/category stay correct (no `buildOrderBy`
+change). Model reads were made null-safe (mirror miss → blank/"Unknown") since the joins are no longer
+guaranteed.
+
+**Verification caveat:** `report-engine` has no unit test (needs a DB) and `reorder.int.test` is excluded from
+the default suite — both want the **live round-trip** (run a report with model/category columns; render a docket
++ quote; confirm Convex count == Prisma count). `reorder.int.test`'s `getReorderCandidatesCore` now reads model
+names from Convex — the same dependency `createReorderDraftCore` already had via `getSupplierById`, so the int
+harness already needs a Convex-aware setup (pre-existing migration debt, not new). No codex this session (CLI
+unavailable). No new Convex table/fn → no JWKS round-trip.
+
+**Explicitly left for a follow-up** (the agreed Tier-1+2 scope was model+category+PDF-location only):
+- **Tier 3** — `warehouse.ts` hot-path model joins (packing/docket/scan/container, lines ~846/892/1101/1561/
+  1699/1725): operational, higher-frequency, separable.
+- **supplier + location relations in reports/CSV/reorder** (`report-engine` supplier/location, `csv`/`reorder`
+  asset `location`): same dual-write-fresh mirror; quick mechanical follow-up via `suppliers-read`/`locations-read`.
+- Other non-document cross-domain `model.*`/`category` reads (asset/kit detail pages, check-records, stocktake,
+  etc.) — out of the document/report/export scope.
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort
@@ -2145,22 +2189,29 @@ mechanical dual-write, much slower for design/security/teardown work):
    round-trip + `/cso`.
 4. **Phase 6 — decommission** — the tail of the ~3-month effort, explicitly
    **multi-session**. ✅ **SSE/EventEmitter teardown DONE** (2026-06-11f). ✅ **React
-   Query removal DONE** (2026-06-11g — RQ at zero, dependency removed). **Still
-   remaining:** rewire the deferred cross-domain Prisma joins off the mirror
-   (supplier/model/`*_media` reads + the whole PDF pipeline — 5 independent
-   `DocumentLineItem` consumers, flagged "gratuitous risk" in CLAUDE.md), flip the
-   infra-only domains to reactive, and run a clean **truncate + backfill** across
-   all dual-written tables to clear the regenerate-orphaned sub-hire line-item rows.
-   **Size: a sequence of scoped, independently-shippable sessions (one per
-   subsystem).** Do NOT attempt in one pass.
+   Query removal DONE** (2026-06-11g — RQ at zero, dependency removed). ✅ **PDF /
+   document / report model+category+location reads DONE** (2026-06-12, Tier 1+2 —
+   the PDF pipeline itself was already off the mirror; see the section above). The
+   "gratuitous risk" 5-`DocumentLineItem`-consumer audit is satisfied (shape-
+   identical swap + a new height-reservation integration guard). **Still
+   remaining:** Tier 3 `warehouse.ts` hot-path model joins; the supplier/location
+   relations still on the mirror in reports/CSV/reorder; the non-document
+   cross-domain `model.*`/`category` reads (asset/kit detail, check-records,
+   stocktake, …); flip the infra-only domains to reactive; and a clean **truncate +
+   backfill** across all dual-written tables to clear the regenerate-orphaned
+   sub-hire line-item rows. **Size: a sequence of scoped, independently-shippable
+   sessions (one per subsystem).** Do NOT attempt in one pass.
 
-**What remains for the migration overall (with SSE + React Query now both gone):**
-the Prisma-decommission reads — the ~40 `supplier.name` / ~200 `model.*` /
-`*_media` cross-domain joins and the PDF pipeline (`build-document-data`) still read
-the dual-write-fresh Prisma mirror (never stale, but Prisma); the infra-only
-dual-write domains (brand/section/group/document/service templates, project
-grouping, file_upload) have no reactive reader yet; and a final truncate+backfill to
-clear the regenerate-orphaned sub-hire line-item rows before any FK/mirror drop.
+**What remains for the migration overall (with SSE + React Query gone, and the PDF
+/ document / report model+category+location reads now off the mirror):** the
+Prisma-decommission reads that are still deferred — the remaining `supplier.name` /
+`location` joins in reports/CSV/reorder, the non-document `model.*`/`category` reads
+(asset/kit detail, check-records, stocktake, `warehouse.ts` hot path), and the
+`*_media` cross-domain joins — all on the dual-write-fresh Prisma mirror (never
+stale, but Prisma); the infra-only dual-write domains (brand/section/group/document/
+service templates, project grouping, file_upload) have no reactive reader yet; and a
+final truncate+backfill to clear the regenerate-orphaned sub-hire line-item rows
+before any FK/mirror drop.
 Convex stays the reactive read layer; RBAC/`custom_role`/`activityLog` stay Prisma
 forever (Convex is never the authZ source of truth). **The client data-fetching
 stack is now Convex `useQuery` + the `useServerQuery`/`useServerMutation`/
@@ -2176,7 +2227,7 @@ stack is now Convex `useQuery` + the `useServerQuery`/`useServerMutation`/
 | **3 Server actions** 🔄 | 86 `"use server"` files call Convex (Clients hard-cutover; Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Brand/Group-templates + Custom-fields + Section-presets + file_upload + crew + doc/service-template + **Kit** + **Asset/Bulk** + **project_category/group** + **project_line_item** + **sub_hire/supplier_order families** + **project** + **crew scheduling sub-tables (infra-only)** dual-write done — CENTRAL GRAPH COMPLETE + DUAL-WRITE SURFACE COMPLETE) | per-domain backfill + cutover; tsc/tests/build green each |
 | **4 Frontend** 🔄 | React Query sites → Convex `useQuery` (Clients + Suppliers + Locations + Models + Categories + Check-items + Test-profiles + Custom-fields + crew + **Kit** + **Asset/Bulk registry** done) | table/dropdown/edit live-update on mutation |
 | **5 Auth bridge** ✅ | Better Auth → Convex ES256 JWT; user token (org-scoped reads) + service token (trusted backend); browser writes rejected | round-trip 6/6: rejected without a valid token, accepted with; `/cso` clean |
-| **6 Decommission** 🔄 | Rewire deferred mirror reads off Prisma + remove React Query + SSE event bus (truncate+backfill resync DONE; supplier FLAT reads rewired; **nested supplier+model+category in ALL line-item trees incl. warehouse + PDF pipeline rewired** via `attachLineItemTree` — line-item-tree dimension COMPLETE; **`model_check_item` + `kit_check_item` now dual-written → warehouse counts + kit join fully off Convex via `attachKitTree`, "Checks" tabs reactive, `crewMembers.icalToken` redacted for browser reads**; **all 7 `*_media` tables now dual-written + reactive-list photo grafts off the mirror via `media-read.ts`; warehouse scan-path single-model reads off the mirror**; **React Query removal IN PROGRESS — `useServerMutation` (writes) + `useServerQuery` (no-liveness reads) keystones; **76 datums off RQ — the no-liveness read tail is now EXHAUSTED** (was 143 files; all 124 remaining `useQuery` calls genuinely reactive): 11 reactive config domains + org-tags + the entire no-liveness tail via `useServerQuery` (count badges, previews, dashboard, crew analytics/pickers, admin, analytics/lookups, supplier/accessory detail, activity/category/calendar/auditor/check-items/members) + 2 read+write islands (saved-views, project-tasks) via `useServerQuery`+`useServerMutation`; classify with a MULTILINE-aware invalidate grep + anchored key attribution. **Reactive tail STARTED: shared write-components `MediaUploader`+`NotesEditor` decoupled from RQ (`queryKey` prop → `onChanged` callback + `useServerMutation`), unblocking all detail-page conversions; clients/[id]+locations/[id] (non-SSE islands) taken fully off RQ via `useServerQuery`+`onChanged={refetch}`; **model + maintenance + crew detail non-SSE pages + same-view island batch off RQ (2026-06-10m); **project cluster fully off RQ (2026-06-11d) via the `createSharedResource` keystone**; **★ RQ removal ALL BUT COMPLETE (2026-06-11e): platform-config tail + assets/kit/crew/test-tag write paths + the last reader composites → 57 → 7 files, and those 7 are the intentional terminus (the `current-role` auth KEEP, the RQ infra `query-provider`/`user-nav`-clear/`use-realtime`-SSE removed at RQ==0, + one test)**; SSE confirmed dead (lowercase entityType vs PascalCase map) so all conversions data-identical; **★ SSE / EventEmitter bus TORN OUT (2026-06-11f): all four files (`events.ts`, `api/realtime/route.ts`, `use-realtime.ts`, `realtime-provider.tsx`) + the `logActivity` emit hook deleted, `<RealtimeProvider>` removed from layout — data-identical since the bus never delivered an update**; **★ REACT QUERY REMOVAL COMPLETE (2026-06-11g): the last holdout — the `current-role` auth datum — converted onto the `createSharedResource` keystone (data-identical; SSE is dead), then `query-provider` deleted, `<QueryProvider>` removed from root + auditor layouts, `user-nav`'s `clear()` dropped, and `@tanstack/react-query` removed from package.json → 6 → 0 files import React Query, dependency gone**) | per-subsystem; tsc/tests/build green each. [FEATUREDOCS/53](./53-realtime-sync.md) is now **superseded** (teardown done). **SSE + React Query both fully removed.** |
+| **6 Decommission** 🔄 | Rewire deferred mirror reads off Prisma + remove React Query + SSE event bus (truncate+backfill resync DONE; supplier FLAT reads rewired; **nested supplier+model+category in ALL line-item trees incl. warehouse + PDF pipeline rewired** via `attachLineItemTree` — line-item-tree dimension COMPLETE; **`model_check_item` + `kit_check_item` now dual-written → warehouse counts + kit join fully off Convex via `attachKitTree`, "Checks" tabs reactive, `crewMembers.icalToken` redacted for browser reads**; **all 7 `*_media` tables now dual-written + reactive-list photo grafts off the mirror via `media-read.ts`; warehouse scan-path single-model reads off the mirror**; **React Query removal IN PROGRESS — `useServerMutation` (writes) + `useServerQuery` (no-liveness reads) keystones; **76 datums off RQ — the no-liveness read tail is now EXHAUSTED** (was 143 files; all 124 remaining `useQuery` calls genuinely reactive): 11 reactive config domains + org-tags + the entire no-liveness tail via `useServerQuery` (count badges, previews, dashboard, crew analytics/pickers, admin, analytics/lookups, supplier/accessory detail, activity/category/calendar/auditor/check-items/members) + 2 read+write islands (saved-views, project-tasks) via `useServerQuery`+`useServerMutation`; classify with a MULTILINE-aware invalidate grep + anchored key attribution. **Reactive tail STARTED: shared write-components `MediaUploader`+`NotesEditor` decoupled from RQ (`queryKey` prop → `onChanged` callback + `useServerMutation`), unblocking all detail-page conversions; clients/[id]+locations/[id] (non-SSE islands) taken fully off RQ via `useServerQuery`+`onChanged={refetch}`; **model + maintenance + crew detail non-SSE pages + same-view island batch off RQ (2026-06-10m); **project cluster fully off RQ (2026-06-11d) via the `createSharedResource` keystone**; **★ RQ removal ALL BUT COMPLETE (2026-06-11e): platform-config tail + assets/kit/crew/test-tag write paths + the last reader composites → 57 → 7 files, and those 7 are the intentional terminus (the `current-role` auth KEEP, the RQ infra `query-provider`/`user-nav`-clear/`use-realtime`-SSE removed at RQ==0, + one test)**; SSE confirmed dead (lowercase entityType vs PascalCase map) so all conversions data-identical; **★ SSE / EventEmitter bus TORN OUT (2026-06-11f): all four files (`events.ts`, `api/realtime/route.ts`, `use-realtime.ts`, `realtime-provider.tsx`) + the `logActivity` emit hook deleted, `<RealtimeProvider>` removed from layout — data-identical since the bus never delivered an update**; **★ REACT QUERY REMOVAL COMPLETE (2026-06-11g): the last holdout — the `current-role` auth datum — converted onto the `createSharedResource` keystone (data-identical; SSE is dead), then `query-provider` deleted, `<QueryProvider>` removed from root + auditor layouts, `user-nav`'s `clear()` dropped, and `@tanstack/react-query` removed from package.json → 6 → 0 files import React Query, dependency gone**); **★ PDF / document / report mirror-read decommission (2026-06-12, Tier 1+2): the true PDF pipeline was already off the mirror, so this closed the remaining document/report/export model+category+location reads — `build-document-data` location → `locations-read` (shape-identical, all 5 DocumentLineItem consumers untouched) + dead `server/documents.ts` deleted + integration test gained a height-reservation guard; `report-engine`/`csv`/`reorder`/`utilization`/`warehouse-close` model+category → new `getModelWithCategoryMap` (display read only — dual-write mirror is fresh so Prisma sorts stay valid). Tier 3 warehouse hot-path joins + supplier/location report relations = follow-up**) | per-subsystem; tsc/tests/build green each. [FEATUREDOCS/53](./53-realtime-sync.md) is now **superseded** (teardown done). **SSE + React Query both fully removed; PDF/document/report model+category+location reads off the mirror.** |
 
 ## Conventions
 

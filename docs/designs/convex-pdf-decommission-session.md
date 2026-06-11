@@ -1,5 +1,14 @@
 # Session brief: PDF / document-generation Prisma decommission
 
+> **STATUS: ✅ DONE (2026-06-12, Tier 1 + 2).** Executed on `feat/convex-migration`
+> (commits `42264b1b` → `47e4821e`). See the "PDF / document / report mirror-read
+> decommission" section in `FEATUREDOCS/54` for the as-built record. The remaining
+> follow-ups (Tier 3 warehouse hot-path joins; supplier/location report relations)
+> are noted there and at the bottom of this brief. Everything below is the original
+> plan, kept for reference. Verification still needs the **live round-trip**
+> (report with model/category columns; docket + quote render; Convex count == Prisma
+> count) — code/tsc/tests/lint/build were all green in the headless container.
+
 **Phase 6 of the Convex hybrid migration.** Self-contained, one-session scope.
 Rewire the remaining cross-domain Prisma "mirror" reads in the document / report /
 export *file-generation* surface onto the Convex `attach*` helpers. After this,

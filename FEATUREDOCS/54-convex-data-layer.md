@@ -2246,13 +2246,25 @@ was NOT NULL in Prisma; none feed the PDF pipeline). **Done + pushed:**
   `getAssetsForMaintenanceSelect` (`asset.model` via `attachAssetModels` + `getModelMap`).
 - `damage.ts` — `listDamageEvents` / `getDamageEvent` (`asset.model` + `bulkAsset.model` via
   `attachDamageModels`). Live-verified (damage list renders "L-Acoustics K2").
+- `stocktake.ts` — `getStocktakes` / `getStocktakeById` / `scanStocktakeItem` / `getRecentScans` /
+  `searchStocktakeAssets` / `markStocktakeItemFound` (`asset.model` + `bulkAsset.model` via typed
+  `attachStocktakeModels`; stocktake `location` via `getLocationMap`; vestigial scan-lookup model includes
+  removed). Model-name search + category filters stay on the mirror.
 
 **Still left** (out of the document/report/export scope):
-- **`assets.ts:getAsset` (detail)** + **`kits.ts`** detail/list — ⚠️ entangled with the `*_media` thread: both
-  read a full **model.media / kit media** document list inside the model join, so the model join can't be fully
-  dropped without sourcing media from the mirror (or a standalone `*Media` table read). Best done in tandem with
-  the media decommission. Also have nested accessory-model joins (`childAssets.model`, `childBulkItems.bulkAsset.model`).
-- **`stocktake.ts`** (~24 join sites) and **`check-records.ts` / test-tag** (~14) — larger, not yet started.
+- **`check-records.ts`** (~14 sites, NOT yet done) — the last non-entangled file but the riskiest (12 critical
+  prep/check **write** functions). Precise map for a clean finish: (a) the uniform pattern — drop `model: true`
+  from the line-item `include`s (171/181/220/268/343/392/444/643/653/787/932), graft model onto the returned
+  line item via a `getModelMap` helper, and feed the grafted `model?.name` into each `logActivity` entityName
+  (already null-safe); (b) **special case** `createMaintenanceForRepeatedFailure` (~line 105/132) reads a
+  *non*-null-safe `asset.model.name` in the description — change the select to `{ assetTag, modelId }` and
+  resolve the name via `getModelById`; (c) **special case** `lookupAssetForAdHocCheck` (~1031/1052/1053) reads
+  `model.name` **and** `model._count.modelCheckItems` — resolve name from `getModelMap` and the count from
+  `getModelCheckItemCountMap` (already used by warehouse). `getCheckHistory`/`getModelFailureAnalytics` have no
+  equipment cross-domain join (checkItem.category is a check-item field, not the equipment category).
+- **`assets.ts:getAsset` (detail)** + **`kits.ts`** detail/list — ⚠️ entangled with the `*_media` thread (full
+  model.media / kit-media document list inside the model join) + nested accessory-model joins. Best done in
+  tandem with the media decommission.
 - The `*_media` joins themselves.
 
 ## Remaining work & session sizing (post-central-graph)

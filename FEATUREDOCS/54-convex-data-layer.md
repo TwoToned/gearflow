@@ -2256,12 +2256,22 @@ was NOT NULL in Prisma; none feed the PDF pipeline). **Done + pushed:**
   auto-maintenance description → `getModelById`; `lookupAssetForAdHocCheck` model.name → `getModelById` and the
   `model._count.modelCheckItems` → `getModelCheckItemCountMap` (verified old-vs-new parity). Kit joins
   (`parentLi.kit`) left for the kit-domain decommission.
+- `kits.ts` — **dead `getKits` list deleted** (zero callers; the kit list page + kit-add-form both read the
+  Convex-reactive `useKits` list), dropping its category/location/media joins + orphaned helpers.
 
-**Still left** (out of the document/report/export scope):
-- **`assets.ts:getAsset` (detail)** + **`kits.ts`** detail/list — ⚠️ entangled with the `*_media` thread (full
-  model.media / kit-media document list inside the model join) + nested accessory-model joins. Best done in
-  tandem with the media decommission.
-- The `*_media` joins themselves.
+**Detail-page reads — INTENTIONAL Prisma terminus (do NOT decommission).** `assets.ts:getAsset` and `kits.ts`
+`getKit` (+ their type-coupled `getAvailable*ForKit` pickers and `add*ToKit` writes) **stay on Prisma by
+design** — this is the documented decision in `media-read.ts` ("splitting a `media` include out of a
+non-reactive cross-domain query is gratuitous risk"). Independently re-confirmed by the type system this session:
+attempting the split forces the detail-page **media galleries** out of the cohesive query (they have no full-list
+Convex read — only `getPrimaryPhotoMaps`) AND breaks the consumers' **non-null `model` contract** + `MediaItem` /
+`AvailableAsset` types (the detail pages read `asset.model.name` unguarded and type their pickers against the
+Prisma model shape). Both attempts were reverted. These read-only detail pages keep their cohesive Prisma query;
+the model/category/location/media tables remain in Prisma as the FK anchors regardless, so this costs nothing.
+
+**Still left** (genuinely out of scope):
+- The `*_media` joins themselves (detail galleries deliberately on Prisma — see above).
+- Kit-domain joins (`parentLi.kit`, getKit member items) — a separate domain cutover, coupled to the getKit terminus.
 
 ## Remaining work & session sizing (post-central-graph)
 

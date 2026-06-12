@@ -6,6 +6,8 @@ import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { syncAssetsToConvex } from "@/lib/asset-mirror";
 import { upsertProjectLineItemsToConvex } from "@/lib/line-item-mirror";
+import { getModelMap, getModelById, type ConvexModel } from "@/lib/models-read";
+import { getModelCheckItemCountMap } from "@/lib/line-item-tree-read";
 import {
   prepUnit,
   syncLineItemRollup,
@@ -26,6 +28,17 @@ import {
 } from "@/lib/validations/check-item";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+// model lives in Convex (dual-written) — graft it onto line-item rows from the
+// model map, replacing the `include: { model }` joins. Shape-identical flat doc;
+// null-safe (the modelId FK is NOT NULL in Prisma, but a mirror miss → null).
+async function attachLineItemModels<T extends { modelId: string | null }>(
+  organizationId: string,
+  rows: T[],
+): Promise<Array<T & { model: ConvexModel | null }>> {
+  const modelMap = await getModelMap(organizationId);
+  return rows.map((r) => ({ ...r, model: r.modelId ? modelMap.get(r.modelId) ?? null : null }));
+}
 
 async function saveCheckRecords(
   tx: Prisma.TransactionClient,
@@ -102,7 +115,7 @@ async function checkPredictiveMaintenance(
       const [asset, checkItem] = await Promise.all([
         prisma.asset.findUnique({
           where: { id: assetId },
-          select: { assetTag: true, modelId: true, model: { select: { name: true } } },
+          select: { assetTag: true, modelId: true },
         }),
         prisma.checkItem.findUnique({
           where: { id: checkItemId },
@@ -111,6 +124,9 @@ async function checkPredictiveMaintenance(
       ]);
 
       if (!asset || !checkItem) continue;
+
+      // model name lives in Convex — resolve for the maintenance description.
+      const modelName = asset.modelId ? (await getModelById(asset.modelId))?.name ?? "" : "";
 
       // Check if a maintenance record already exists for this pattern (avoid duplicates)
       const existingMaintenance = await prisma.maintenanceRecord.findFirst({
@@ -129,7 +145,7 @@ async function checkPredictiveMaintenance(
             type: "PREVENTATIVE",
             status: "SCHEDULED",
             title: `[Auto] ${checkItem.label} — ${asset.assetTag}`,
-            description: `Automatically created: "${checkItem.label}" failed ${failCount} of last ${recentRecords.length} checks on ${asset.model.name} (${asset.assetTag}).`,
+            description: `Automatically created: "${checkItem.label}" failed ${failCount} of last ${recentRecords.length} checks on ${modelName} (${asset.assetTag}).`,
             reportedById: userId,
             scheduledDate: new Date(),
           },
@@ -168,7 +184,6 @@ export async function pullItem(projectId: string, lineItemId: string) {
 
   const lineItem = await prisma.projectLineItem.findFirst({
     where: { id: lineItemId, projectId, organizationId },
-    include: { model: true },
   });
 
   if (!lineItem) {
@@ -178,8 +193,9 @@ export async function pullItem(projectId: string, lineItemId: string) {
   const result = await prisma.projectLineItem.update({
     where: { id: lineItemId },
     data: { prepStatus: "PULLED" },
-    include: { model: true, asset: true, bulkAsset: true },
+    include: { asset: true, bulkAsset: true },
   });
+  const [grafted] = await attachLineItemModels(organizationId, [result]);
 
   await logActivity({
     organizationId,
@@ -188,14 +204,14 @@ export async function pullItem(projectId: string, lineItemId: string) {
     action: "UPDATE",
     entityType: "asset",
     entityId: lineItemId,
-    entityName: lineItem.model?.name || `Line item`,
+    entityName: grafted.model?.name || `Line item`,
     summary: `Pulled item for prep check`,
     projectId,
     assetId: lineItem.assetId || undefined,
   });
 
   await upsertProjectLineItemsToConvex(projectId);
-  return serialize(result);
+  return serialize(grafted);
 }
 
 // ─── Prep item directly (no checks needed) ──────────────────────────────────
@@ -217,7 +233,6 @@ export async function prepItemDirect(
   const result = await prisma.$transaction(async (tx) => {
     const lineItem = await tx.projectLineItem.findFirst({
       where: { id: lineItemId, projectId, organizationId },
-      include: { model: true },
     });
 
     if (!lineItem) {
@@ -265,7 +280,7 @@ export async function deprepItem(
   const result = await prisma.$transaction(async (tx) => {
     const lineItem = await tx.projectLineItem.findFirst({
       where: { id: lineItemId, projectId, organizationId },
-      include: { model: true, asset: true, bulkAsset: true },
+      include: { asset: true, bulkAsset: true },
     });
 
     if (!lineItem) {
@@ -340,9 +355,10 @@ export async function deprepItem(
 
     return tx.projectLineItem.findUniqueOrThrow({
       where: { id: lineItemId },
-      include: { model: true, asset: true, bulkAsset: true },
+      include: { asset: true, bulkAsset: true },
     });
   });
+  const [grafted] = await attachLineItemModels(organizationId, [result]);
 
   await logActivity({
     organizationId,
@@ -351,14 +367,14 @@ export async function deprepItem(
     action: "UPDATE",
     entityType: "asset",
     entityId: lineItemId,
-    entityName: result.model?.name || "Line item",
+    entityName: grafted.model?.name || "Line item",
     summary: "Removed item from prep",
     projectId,
     assetId: result.assetId || undefined,
   });
 
   await upsertProjectLineItemsToConvex(projectId);
-  return serialize(result);
+  return serialize(grafted);
 }
 
 /**
@@ -389,7 +405,7 @@ export async function completeCheckAndDeprep(data: {
   const result = await prisma.$transaction(async (tx) => {
     const lineItem = await tx.projectLineItem.findFirst({
       where: { id: data.lineItemId, projectId: data.projectId, organizationId },
-      include: { model: true, asset: true, bulkAsset: true },
+      include: { asset: true, bulkAsset: true },
     });
 
     if (!lineItem) {
@@ -441,7 +457,7 @@ export async function completeCheckAndDeprep(data: {
           ? { asset: { disconnect: true } }
           : {}),
       },
-      include: { model: true, asset: true, bulkAsset: true },
+      include: { asset: true, bulkAsset: true },
     });
 
     // Permanent accessories de-prep with their parent so they don't linger in
@@ -462,6 +478,7 @@ export async function completeCheckAndDeprep(data: {
 
     return updated;
   });
+  const [grafted] = await attachLineItemModels(organizationId, [result]);
 
   await logActivity({
     organizationId,
@@ -470,14 +487,14 @@ export async function completeCheckAndDeprep(data: {
     action: "UPDATE",
     entityType: "asset",
     entityId: data.lineItemId,
-    entityName: result.model?.name || "Line item",
+    entityName: grafted.model?.name || "Line item",
     summary: "Deprep return check complete — item returned to inventory",
     projectId: data.projectId,
     assetId: result.assetId || undefined,
   });
 
   await upsertProjectLineItemsToConvex(data.projectId);
-  return serialize(result);
+  return serialize(grafted);
 }
 
 /**
@@ -640,7 +657,6 @@ export async function unpackItem(projectId: string, lineItemId: string) {
 
   const lineItem = await prisma.projectLineItem.findFirst({
     where: { id: lineItemId, projectId, organizationId },
-    include: { model: true },
   });
 
   if (!lineItem) {
@@ -650,8 +666,9 @@ export async function unpackItem(projectId: string, lineItemId: string) {
   const result = await prisma.projectLineItem.update({
     where: { id: lineItemId },
     data: { returnStatus: "UNPACKED" },
-    include: { model: true, asset: true, bulkAsset: true },
+    include: { asset: true, bulkAsset: true },
   });
+  const [grafted] = await attachLineItemModels(organizationId, [result]);
 
   await logActivity({
     organizationId,
@@ -660,14 +677,14 @@ export async function unpackItem(projectId: string, lineItemId: string) {
     action: "UPDATE",
     entityType: "asset",
     entityId: lineItemId,
-    entityName: lineItem.model?.name || `Line item`,
+    entityName: grafted.model?.name || `Line item`,
     summary: `Unpacked item for return check`,
     projectId,
     assetId: lineItem.assetId || undefined,
   });
 
   await upsertProjectLineItemsToConvex(projectId);
-  return serialize(result);
+  return serialize(grafted);
 }
 
 // ─── Composite: Check + Prep (prep flow — saves checks + sets PACKED, no deploy) ─
@@ -784,7 +801,7 @@ export async function completeCheckAndFlag(data: CompleteCheckAndFlagValues) {
       data: {
         prepStatus: parsed.flagType,
       },
-      include: { model: true, asset: true, bulkAsset: true },
+      include: { asset: true, bulkAsset: true },
     });
 
     return { updatedItem, resolvedAssetId };
@@ -929,7 +946,7 @@ export async function completeCheckAndStore(
 
     const updatedItem = await tx.projectLineItem.findUnique({
       where: { id: parsed.lineItemId },
-      include: { model: true, asset: true, bulkAsset: true },
+      include: { asset: true, bulkAsset: true },
     });
 
     return { updatedItem, resolvedAssetId, touchedAssets };
@@ -1027,20 +1044,18 @@ export async function lookupAssetForAdHocCheck(assetTag: string) {
 
   const asset = await prisma.asset.findUnique({
     where: { organizationId_assetTag: { organizationId, assetTag } },
-    include: {
-      model: {
-        select: {
-          id: true,
-          name: true,
-          _count: { select: { modelCheckItems: true } },
-        },
-      },
-    },
   });
 
   if (!asset) {
     return serialize({ found: false as const, asset: null });
   }
+
+  // model name + check-item count live in Convex (dual-written) — resolve from
+  // the model map + the model-check-item count map, not a Prisma join/_count.
+  const [model, checkCounts] = await Promise.all([
+    getModelById(asset.modelId),
+    getModelCheckItemCountMap(organizationId),
+  ]);
 
   return serialize({
     found: true as const,
@@ -1048,9 +1063,9 @@ export async function lookupAssetForAdHocCheck(assetTag: string) {
       id: asset.id,
       assetTag: asset.assetTag,
       serialNumber: asset.serialNumber,
-      modelId: asset.model.id,
-      modelName: asset.model.name,
-      checkItemCount: asset.model._count.modelCheckItems,
+      modelId: asset.modelId,
+      modelName: model?.name ?? "",
+      checkItemCount: checkCounts.get(asset.modelId) ?? 0,
     },
   });
 }

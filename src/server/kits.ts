@@ -10,12 +10,9 @@ import {
   type KitSerializedItemFormValues,
   type KitBulkItemFormValues,
 } from "@/lib/validations/kit";
-import type { Prisma } from "@/generated/prisma/client";
 import { serialize } from "@/lib/serialize";
 import { reserveAssetTags } from "@/server/settings";
 import { logActivity } from "@/lib/activity-log";
-import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
-import { getCaseCategoryIds } from "@/server/categories";
 import {
   mirrorKitCreate,
   patchKitInConvex,
@@ -29,99 +26,6 @@ import { syncAssetsToConvex, syncBulkAssetsToConvex } from "@/lib/asset-mirror";
 import { removeKitCheckItemFromConvex } from "@/lib/check-item-assignment-mirror";
 import { syncMediaForParent } from "@/lib/media-mirror";
 import { getPrimaryPhotoMap } from "@/lib/media-read";
-
-const kitFilterColumns: FilterColumnDef[] = [
-  { id: "status", filterType: "enum" },
-  { id: "condition", filterType: "enum" },
-  { id: "locationId", filterType: "enum" },
-  { id: "categoryId", filterType: "enum" },
-  { id: "tags", filterType: "enum" },
-];
-
-// Paginated list with optional filters.
-export async function getKits(params?: {
-  search?: string;
-  status?: string;
-  categoryId?: string;
-  locationId?: string;
-  isActive?: boolean;
-  page?: number;
-  pageSize?: number;
-  sortBy?: string;
-  sortOrder?: "asc" | "desc";
-  filters?: Record<string, FilterValue>;
-}) {
-  const { organizationId } = await getOrgContext();
-  const {
-    search,
-    status,
-    categoryId,
-    locationId,
-    isActive = true,
-    page = 1,
-    pageSize = 25,
-    sortBy = "assetTag",
-    sortOrder = "asc",
-    filters,
-  } = params || {};
-
-  const filterWhere = buildFilterWhere(filters, kitFilterColumns);
-
-  // Handle tags filter specially (hasSome)
-  let tagsFilter: Prisma.KitWhereInput | undefined;
-  if (filters?.tags && Array.isArray(filters.tags) && filters.tags.length > 0) {
-    tagsFilter = { tags: { hasSome: filters.tags as string[] } };
-    delete (filterWhere as Record<string, unknown>).tags;
-  }
-
-  const where: Prisma.KitWhereInput = {
-    organizationId,
-    isActive,
-    isPrep: false, // Exclude prep-kits from the kits list
-    ...(status && { status: status as Prisma.EnumKitStatusFilter }),
-    ...(categoryId && { categoryId }),
-    ...(locationId && { locationId }),
-    ...filterWhere,
-    ...tagsFilter,
-    ...(search && {
-      OR: [
-        { assetTag: { contains: search, mode: "insensitive" } },
-        { name: { contains: search, mode: "insensitive" } },
-        { description: { contains: search, mode: "insensitive" } },
-      ],
-    }),
-  };
-
-  const [kits, total] = await Promise.all([
-    prisma.kit.findMany({
-      where,
-      include: {
-        category: { select: { name: true } },
-        location: { select: { name: true } },
-        _count: { select: { serializedItems: true, bulkItems: true } },
-        media: {
-          where: { type: "PHOTO", isPrimary: true },
-          include: { file: true },
-          take: 1,
-        },
-      },
-      orderBy: sortBy === "category" ? { category: { name: sortOrder } }
-        : sortBy === "location" ? { location: { name: sortOrder } }
-        : { [sortBy]: sortOrder },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    prisma.kit.count({ where }),
-  ]);
-
-  return serialize({
-    kits,
-    total,
-    page,
-    pageSize,
-    totalPages: Math.ceil(total / pageSize),
-  });
-}
 
 /**
  * Per-kit member-item counts + primary photo (kitId -> meta).

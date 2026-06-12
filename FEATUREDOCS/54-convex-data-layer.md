@@ -2170,6 +2170,46 @@ its nested location include to a plain join); `csv` asset/bulk exports attach `l
 the 6 scoped files (`build-document-data`, `report-engine`, `csv`, `reorder`, `utilization`, `warehouse-close`)
 have **zero** cross-domain model/category/supplier/location Prisma joins left.
 
+**Live round-trip verification — ✅ DONE (2026-06-12, tip `727a15f1`).** Ran the full
+[verification protocol](../docs/designs/convex-pdf-decommission-verification.md) against a live Convex backend +
+Postgres. Org **Test Org** (`ncmdpyj8712sfcmm89g1dxvl`); rich projects **Summer Nights Festival 2026** (client +
+venue + 11 model lines + 1 sub-hire) and **TechCorp Annual Gala** (ON_SITE, 6 checked-out models).
+
+- **Phase 0 — mirror current:** all 5 backfills idempotent, **0 created** (models 37/37, categories 23/23,
+  suppliers 3/3, locations 8/8, clients 6/6 already present).
+- **Phase 1 — count parity:** Convex list length == Prisma count for **all 4 domains** (37/23/3/8). ✅
+- **Phase 2 — before/after value parity:** `verify-decommission.ts` dumped every cross-domain field
+  (`buildDocumentData` venue/client/per-line model+cat+supplier+loc across all 5 projects; `executeReport`
+  assets/models/kits/lineItems incl. 126 asset rows; `getReorderCandidatesCore`) on the new tip vs. baseline
+  `30a2a547` → **`diff` empty**. Hardened beyond the protocol: (a) a direct **map value-parity** check
+  (Convex map vs Prisma row, **field-by-field**, all 5 domains — 37+23+3+8+6 rows, zero mismatches), and (b) a
+  **forced reorder candidate** (temporarily made `CBL-SOCAPEX` low-stock with a `preferredSupplierId`, reverted
+  after) so the reorder cross-domain path ran with **non-null** values on both commits → diff still empty,
+  confirming the `preferredSupplierId` key (not `supplierId`) resolves the supplier correctly. The seed has no
+  natural reorder candidates and 0 line-item suppliers, so without (a)+(b) those paths were only *vacuously*
+  equal.
+- **Phase 3 — auth-gated UI** (`/browse`, real session, single-org owner): **Reports** assets report rendered
+  Model Name / Category / Location / Supplier with values present and the **model.name sort correct** (Postgres
+  collation — JS `localeCompare` gives false breaks; codepoint-ordered ✅). **Registry / Utilization** render
+  model + category + location from Convex. **Reorder** dashboard (forced candidate) showed model / category /
+  supplier / location populated; a real `createReorderDraftCore` line read exactly **`"Socapex 6-way Loom 20m —
+  restock (CBL-SOCAPEX)"`**. **Documents:** delivery-docket + quote + packing-list all 200 / valid PDF — venue
+  name+address, client name+contact, equipment **model names**, and the packing-list **Category** column all
+  render. `getCloseOutSummary` model resolution = **6/6 real names, 0 "Unknown"**.
+- **Phase 4 — excluded `reorder.int.test`:** fails **10/11** on `InvalidAuthHeader` (the `gearflow_test` DB's
+  Better Auth JWKS keypair isn't trusted by the Convex backend, which is pinned to the main DB's key — every
+  Convex call fails on auth *before* fixture lookup). Baseline `30a2a547` passes **8/11** (only the 3
+  `createReorderDraftCore` tests, already Convex-dependent via `getSupplierById`, fail); the **+7** new failures
+  are exactly the `getReorderCandidatesCore` read tests now Convex-dependent — same auth root cause. This is the
+  documented Convex-fixture/harness gap (generalized), **not** a logic regression; the reorder path is proven
+  correct by Phase 2.
+- **Findings:** (1) sub-hire **"via &lt;Supplier&gt;"** does not appear on the generated docs because this seed's
+  sub-hire has `showOnDocs = false` (gate at `gearflow-table.ts:1209`) — correct product behaviour, and the empty
+  Phase-2 diff confirms baseline behaves identically. (2) The warehouse `[projectId]` **page** crashes on an
+  unrelated **browser-reactive** Convex `useQuery(api.warehouseDetail.version)` under the synthetic injected
+  session (browser user-token not attached) — a different subsystem (realtime), not one of the 6 server-action
+  files under test. No new Convex table/fn was needed (no JWKS round-trip). **Verdict: data-identical confirmed.**
+
 **Still left for a later session** (out of the document/report/export scope):
 - **Tier 3** — `warehouse.ts` hot-path model joins (packing/docket/scan/container, lines ~846/892/1101/1561/
   1699/1725): operational, higher-frequency, separable.

@@ -152,7 +152,7 @@ export async function getProjectForWarehouse(projectId: string) {
   const project = await prisma.project.findUnique({
     where: { id: projectId, organizationId },
     include: {
-      location: true,
+      // location lives in Convex — attached below, not joined.
       lineItems: {
         where: { type: "EQUIPMENT" },
         orderBy: { sortOrder: "asc" },
@@ -224,9 +224,12 @@ export async function getProjectForWarehouse(projectId: string) {
   const withModelCount = attachModelCheckItemCounts(withModelSupplier, modelCheckCounts);
   const lineItems = attachKitTree(withModelCount, kitMap, kitCheckCounts);
 
-  // Clients live in Convex — attach instead of a Prisma join.
+  // Clients + location live in Convex — attach instead of a Prisma join.
   const client = project.clientId ? await getClientById(project.clientId) : null;
-  return serialize({ ...project, lineItems, client });
+  const location = project.locationId
+    ? (await getLocationMap(organizationId)).get(project.locationId) ?? null
+    : null;
+  return serialize({ ...project, lineItems, client, location });
 }
 
 export async function lookupAssetForScan(
@@ -1879,7 +1882,7 @@ export async function getProjectPullSheet(projectId: string) {
   const project = await prisma.project.findUnique({
     where: { id: projectId, organizationId },
     include: {
-      location: true,
+      // project location + asset.location live in Convex — attached below.
       lineItems: {
         where: {
           type: "EQUIPMENT",
@@ -1887,19 +1890,19 @@ export async function getProjectPullSheet(projectId: string) {
         },
         orderBy: { sortOrder: "asc" },
         include: {
-          asset: { include: { location: true } },
+          asset: true,
           bulkAsset: true,
           childLineItems: {
             where: { status: { not: "CANCELLED" } },
             orderBy: { sortOrder: "asc" },
             include: {
-              asset: { include: { location: true } },
+              asset: true,
               bulkAsset: true,
               childLineItems: {
                 where: { status: { not: "CANCELLED" } },
                 orderBy: { sortOrder: "asc" },
                 include: {
-                  asset: { include: { location: true } },
+                  asset: true,
                   bulkAsset: true,
                 },
               },
@@ -1926,7 +1929,22 @@ export async function getProjectPullSheet(projectId: string) {
   ]);
   const attachedTree = attachLineItemTree(project.lineItems, attachMaps);
   const withModelCount = attachModelCheckItemCounts(attachedTree, modelCheckCounts);
-  const attachedLineItems = attachKitTree(withModelCount, kitMap, kitCheckCounts);
+  const attachedKitTree = attachKitTree(withModelCount, kitMap, kitCheckCounts);
+
+  // asset.location lives in Convex — graft it onto every line item's asset across
+  // the tree (replaces the nested `asset: { include: { location } }` join). Flat
+  // location doc, shape-identical to the old include.
+  const locationMap = await getLocationMap(organizationId);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const graftAssetLocation = (items: any[]): any[] =>
+    items.map((li) => ({
+      ...li,
+      asset: li.asset
+        ? { ...li.asset, location: li.asset.locationId ? locationMap.get(li.asset.locationId) ?? null : null }
+        : li.asset,
+      childLineItems: li.childLineItems ? graftAssetLocation(li.childLineItems) : li.childLineItems,
+    }));
+  const attachedLineItems = graftAssetLocation(attachedKitTree);
 
   // Compute overbooked status
   const overbookedMap = await computeOverbookedStatus(
@@ -1952,7 +1970,8 @@ export async function getProjectPullSheet(projectId: string) {
         ...li,
         isOverbooked: !!info,
         overbookedInfo: info ?? null,
-        childLineItems: li.childLineItems?.map((child) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        childLineItems: li.childLineItems?.map((child: any) => {
           const childInfo = overbookedMap.get(child.id);
           return { ...child, isOverbooked: !!childInfo, overbookedInfo: childInfo ?? null };
         }),
@@ -1974,8 +1993,9 @@ export async function getProjectPullSheet(projectId: string) {
   // raw Prisma rows) so the payload stays byte-identical to the old include even
   // though current consumers read `groups`, not `project.lineItems`.
   const client = project.clientId ? await getClientById(project.clientId) : null;
+  const location = project.locationId ? locationMap.get(project.locationId) ?? null : null;
   return serialize({
-    project: { ...project, lineItems: attachedLineItems, client },
+    project: { ...project, lineItems: attachedLineItems, client, location },
     groups,
   });
 }

@@ -214,9 +214,9 @@ function NewTestTagAssetInner() {
                       populateFromBulkAsset(v);
                     }
                   }}
-                  options={(bulkAssetsQuery.data?.bulkAssets || []).map((a: { id: string; assetTag: string; model: { name: string } }) => ({
+                  options={(bulkAssetsQuery.data?.bulkAssets || []).map((a: { id: string; assetTag: string; model: { name: string } | null }) => ({
                     value: a.id,
-                    label: `${a.assetTag} - ${a.model.name}`,
+                    label: `${a.assetTag} - ${a.model?.name ?? ""}`,
                   }))}
                   placeholder="None"
                   searchPlaceholder="Search bulk assets..."

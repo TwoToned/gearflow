@@ -7,18 +7,21 @@ import type { Prisma } from "@/generated/prisma/client";
 import { serialize } from "@/lib/serialize";
 import { reserveAssetTags } from "@/server/settings";
 import { logActivity } from "@/lib/activity-log";
+import { getModelWithCategoryMap, type ModelWithCategory } from "@/lib/models-read";
+import { getLocationMap, type ConvexLocation } from "@/lib/locations-read";
 import {
   mirrorBulkAssetCreate,
   patchBulkAssetInConvex,
   removeBulkAssetFromConvex,
 } from "@/lib/asset-mirror";
 
-export type BulkAssetWithRelations = Prisma.BulkAssetGetPayload<{
-  include: {
-    model: { include: { category: true } };
-    location: true;
-  };
-}>;
+// model (+ nested equipment category) + location live in Convex (dual-written) —
+// attached from the maps below, not Prisma joins. Sorts/filters on model.name /
+// location.name / model.categoryId stay on the always-fresh Prisma mirror.
+export type BulkAssetWithRelations = Prisma.BulkAssetGetPayload<{ include: Record<string, never> }> & {
+  model: ModelWithCategory | null;
+  location: ConvexLocation | null;
+};
 
 export async function getBulkAssets(params?: {
   search?: string;
@@ -57,10 +60,7 @@ export async function getBulkAssets(params?: {
   const [bulkAssets, total] = await Promise.all([
     prisma.bulkAsset.findMany({
       where,
-      include: {
-        model: { include: { category: true } },
-        location: true,
-      },
+      // model + location attached from Convex below; sort stays on the Prisma mirror.
       orderBy: sortBy === "model" ? { model: { name: sortOrder } }
         : sortBy === "location" ? { location: { name: sortOrder } }
         : { [sortBy]: sortOrder },
@@ -70,16 +70,25 @@ export async function getBulkAssets(params?: {
     prisma.bulkAsset.count({ where }),
   ]);
 
-  return serialize({ bulkAssets, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
+  const [modelMap, locationMap] = await Promise.all([
+    getModelWithCategoryMap(organizationId),
+    getLocationMap(organizationId),
+  ]);
+  const withRelations = bulkAssets.map((b) => ({
+    ...b,
+    model: b.modelId ? modelMap.get(b.modelId) ?? null : null,
+    location: b.locationId ? locationMap.get(b.locationId) ?? null : null,
+  }));
+
+  return serialize({ bulkAssets: withRelations, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
 }
 
 export async function getBulkAsset(id: string) {
   const { organizationId } = await getOrgContext();
-  return serialize(await prisma.bulkAsset.findUnique({
+  const bulkAsset = await prisma.bulkAsset.findUnique({
     where: { id, organizationId },
     include: {
-      model: { include: { category: true } },
-      location: true,
+      // model + location live in Convex — attached below, not joined.
       scanLogs: {
         orderBy: { scannedAt: "desc" },
         take: 20,
@@ -101,7 +110,18 @@ export async function getBulkAsset(id: string) {
         orderBy: { testTagId: "asc" },
       },
     },
-  }));
+  });
+  if (!bulkAsset) return serialize(null);
+
+  const [modelMap, locationMap] = await Promise.all([
+    getModelWithCategoryMap(organizationId),
+    getLocationMap(organizationId),
+  ]);
+  return serialize({
+    ...bulkAsset,
+    model: bulkAsset.modelId ? modelMap.get(bulkAsset.modelId) ?? null : null,
+    location: bulkAsset.locationId ? locationMap.get(bulkAsset.locationId) ?? null : null,
+  });
 }
 
 export async function createBulkAsset(data: BulkAssetFormValues) {

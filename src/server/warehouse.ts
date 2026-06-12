@@ -3,7 +3,8 @@
 import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getClientById } from "@/lib/clients-read";
-import { getModelById } from "@/lib/models-read";
+import { getModelById, getModelMap } from "@/lib/models-read";
+import { getLocationMap } from "@/lib/locations-read";
 import { serialize } from "@/lib/serialize";
 import { computeOverbookedStatus } from "@/lib/availability";
 import type { Prisma } from "@/generated/prisma/client";
@@ -843,7 +844,8 @@ async function checkOutDeployWholeLine(
   updated.push(
     await tx.projectLineItem.findUnique({
       where: { id: lineItemId },
-      include: { model: true, asset: true, bulkAsset: true },
+      // model lives in Convex — attached after the tx (see attachModelToResults).
+      include: { asset: true, bulkAsset: true },
     }),
   );
 }
@@ -889,10 +891,30 @@ async function finalizeCheckoutItem(
   updated.push(
     await tx.projectLineItem.findUnique({
       where: { id: lineItemId },
-      include: { model: true, asset: true, bulkAsset: true },
+      // model lives in Convex — attached after the tx (see attachModelToResults).
+      include: { asset: true, bulkAsset: true },
     }),
   );
   return { assetsTouched };
+}
+
+/**
+ * Graft the Convex `model` doc onto post-transaction line-item result rows.
+ * The check-out/check-in tx includes dropped `model: true` (model lives in
+ * Convex now); this re-attaches it from the org model map. Shape-identical to
+ * the old flat `model: true` Prisma join, and null-safe over the `unknown[]`
+ * results array (each entry is a line-item row carrying `modelId`).
+ */
+async function attachModelToResults(
+  organizationId: string,
+  results: unknown[],
+): Promise<unknown[]> {
+  const modelMap = await getModelMap(organizationId);
+  return results.map((r) => {
+    if (!r || typeof r !== "object") return r;
+    const row = r as { modelId?: string | null };
+    return { ...row, model: row.modelId ? modelMap.get(row.modelId) ?? null : null };
+  });
 }
 
 // ── checkOutItems (refactored) ──────────────────────────────────────────
@@ -1015,7 +1037,8 @@ export async function checkOutItems(
     });
   }
 
-  return serialize(results);
+  // model lives in Convex — graft it onto the result rows (the tx dropped the join).
+  return serialize(await attachModelToResults(organizationId, results));
 }
 
 // ── checkInItems helper ─────────────────────────────────────────────────
@@ -1098,7 +1121,8 @@ async function processItemCheckIn(
   updated.push(
     await tx.projectLineItem.findUnique({
       where: { id: item.lineItemId },
-      include: { model: true, asset: true, bulkAsset: true },
+      // model lives in Convex — attached after the tx (see attachModelToResults).
+      include: { asset: true, bulkAsset: true },
     }),
   );
   return { assetsTouched: touched };
@@ -1162,7 +1186,8 @@ export async function checkInItems(
     });
   }
 
-  return serialize(results);
+  // model lives in Convex — graft it onto the result rows (the tx dropped the join).
+  return serialize(await attachModelToResults(organizationId, results));
 }
 
 export async function checkOutKit(projectId: string, kitId: string) {

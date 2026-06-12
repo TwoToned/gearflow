@@ -1583,7 +1583,8 @@ export async function getScanLog(params?: {
     prisma.assetScanLog.findMany({
       where,
       include: {
-        asset: { include: { model: true } },
+        // asset.model lives in Convex — attached after the query, not joined.
+        asset: true,
         bulkAsset: true,
         project: true,
         scannedBy: true,
@@ -1595,8 +1596,16 @@ export async function getScanLog(params?: {
     prisma.assetScanLog.count({ where }),
   ]);
 
+  // Graft the Convex model doc onto each log's asset (replaces asset.model join).
+  const modelMap = await getModelMap(organizationId);
+  const logsWithModel = logs.map((log) =>
+    log.asset
+      ? { ...log, asset: { ...log.asset, model: log.asset.modelId ? modelMap.get(log.asset.modelId) ?? null : null } }
+      : log,
+  );
+
   return serialize({
-    logs,
+    logs: logsWithModel,
     total,
     page,
     pageSize,

@@ -1730,7 +1730,8 @@ export async function ensureContainerOnProject(
   const lineItem = await prisma.$transaction(async (tx) => {
     const existing = await tx.projectLineItem.findFirst({
       where: { projectId, organizationId, assetId, isContainerLineItem: true },
-      include: { model: true, asset: true },
+      // model lives in Convex — attached after the tx, not joined.
+      include: { asset: true },
     });
     if (existing) return existing;
 
@@ -1756,11 +1757,15 @@ export async function ensureContainerOnProject(
         prepContainer: containerName,
         isContainerLineItem: true,
       },
-      include: { model: true, asset: true },
+      // model lives in Convex — attached after the tx, not joined.
+      include: { asset: true },
     });
   });
 
-  return serialize(lineItem);
+  // Graft the Convex model doc onto the line item (replaces the `model: true` join).
+  const modelMap = await getModelMap(organizationId);
+  const model = lineItem.modelId ? modelMap.get(lineItem.modelId) ?? null : null;
+  return serialize({ ...lineItem, model });
 }
 
 export async function syncContainerStatus(projectId: string, containerName: string) {

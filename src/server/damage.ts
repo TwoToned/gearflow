@@ -34,7 +34,18 @@ import {
   updateDamageEventCore,
 } from "@/lib/damage-core";
 import { UserFacingError } from "@/lib/errors";
+import { getModelMap } from "@/lib/models-read";
 import type { Prisma } from "@/generated/prisma/client";
+
+/** Graft the Convex model doc onto a damage event's asset + bulkAsset. */
+async function attachDamageModels<T>(organizationId: string, events: T[]): Promise<T[]> {
+  const modelMap = await getModelMap(organizationId);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const graft = (a: any) =>
+    a ? { ...a, model: a.modelId ? modelMap.get(a.modelId) ?? null : null } : a;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return events.map((e: any) => ({ ...e, asset: graft(e.asset), bulkAsset: graft(e.bulkAsset) }));
+}
 
 /** Create a damage event. Optionally creates a linked MaintenanceRecord
  *  so the asset hold/release state machine fires automatically. */
@@ -153,8 +164,8 @@ export async function listDamageEvents(filters: DamageListFilters = {}) {
     prisma.damageEvent.findMany({
       where,
       include: {
-        asset: { select: { id: true, assetTag: true, customName: true, model: { select: { name: true } } } },
-        bulkAsset: { select: { id: true, assetTag: true, model: { select: { name: true } } } },
+        asset: { select: { id: true, assetTag: true, customName: true, modelId: true } },
+        bulkAsset: { select: { id: true, assetTag: true, modelId: true } },
         project: { select: { id: true, projectNumber: true, name: true } },
         createdBy: { select: { id: true, name: true } },
       },
@@ -166,7 +177,7 @@ export async function listDamageEvents(filters: DamageListFilters = {}) {
   ]);
 
   return serialize({
-    items,
+    items: await attachDamageModels(organizationId, items),
     total,
     page: parsed.page,
     pageSize: parsed.pageSize,
@@ -179,8 +190,8 @@ export async function getDamageEvent(id: string) {
   const item = await prisma.damageEvent.findUnique({
     where: { id, organizationId },
     include: {
-      asset: { select: { id: true, assetTag: true, customName: true, model: { select: { name: true } } } },
-      bulkAsset: { select: { id: true, assetTag: true, model: { select: { name: true } } } },
+      asset: { select: { id: true, assetTag: true, customName: true, modelId: true } },
+      bulkAsset: { select: { id: true, assetTag: true, modelId: true } },
       lineItem: { select: { id: true, description: true } },
       project: { select: { id: true, projectNumber: true, name: true } },
       maintenanceRecord: { select: { id: true, status: true, title: true } },
@@ -194,7 +205,8 @@ export async function getDamageEvent(id: string) {
       message: "This record was deleted or moved.",
     });
   }
-  return serialize(item);
+  const [grafted] = await attachDamageModels(organizationId, [item]);
+  return serialize(grafted);
 }
 
 export async function chargeBackDamage(id: string, chargedBack: boolean) {

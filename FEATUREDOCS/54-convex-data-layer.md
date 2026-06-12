@@ -2195,7 +2195,12 @@ venue + 11 model lines + 1 sub-hire) and **TechCorp Annual Gala** (ON_SITE, 6 ch
   supplier / location populated; a real `createReorderDraftCore` line read exactly **`"Socapex 6-way Loom 20m —
   restock (CBL-SOCAPEX)"`**. **Documents:** delivery-docket + quote + packing-list all 200 / valid PDF — venue
   name+address, client name+contact, equipment **model names**, and the packing-list **Category** column all
-  render. `getCloseOutSummary` model resolution = **6/6 real names, 0 "Unknown"**.
+  render. **CSV exports** (captured actual download bytes): Assets (`modelName`/`category`/`locationName`/
+  `supplierName`), Models (`category`), Bulk (`modelName`/`category`/`locationName`) — all populated from Convex.
+  **Warehouse Close-Out tab** (`getCloseOutSummary`) renders **6/6 real model names, 0 "Unknown"** in the live UI
+  (the page's unrelated browser-reactive `useQuery(api.warehouseDetail.version)` authenticates once the session's
+  `activeOrganizationId` is set — the client RBAC/Convex path needs it even though server-side scoping is
+  single-org). All 6 server-side files confirmed in the actual UI.
 - **Phase 4 — excluded `reorder.int.test`:** fails **10/11** on `InvalidAuthHeader` (the `gearflow_test` DB's
   Better Auth JWKS keypair isn't trusted by the Convex backend, which is pinned to the main DB's key — every
   Convex call fails on auth *before* fixture lookup). Baseline `30a2a547` passes **8/11** (only the 3
@@ -2205,10 +2210,12 @@ venue + 11 model lines + 1 sub-hire) and **TechCorp Annual Gala** (ON_SITE, 6 ch
   correct by Phase 2.
 - **Findings:** (1) sub-hire **"via &lt;Supplier&gt;"** does not appear on the generated docs because this seed's
   sub-hire has `showOnDocs = false` (gate at `gearflow-table.ts:1209`) — correct product behaviour, and the empty
-  Phase-2 diff confirms baseline behaves identically. (2) The warehouse `[projectId]` **page** crashes on an
-  unrelated **browser-reactive** Convex `useQuery(api.warehouseDetail.version)` under the synthetic injected
-  session (browser user-token not attached) — a different subsystem (realtime), not one of the 6 server-action
-  files under test. No new Convex table/fn was needed (no JWKS round-trip). **Verdict: data-identical confirmed.**
+  Phase-2 diff confirms baseline behaves identically. (2) The warehouse `[projectId]` **page** initially failed on
+  an unrelated **browser-reactive** Convex `useQuery(api.warehouseDetail.version)` — *not* one of the 6
+  server-action files under test, and only because the synthetic session was minted with a null
+  `activeOrganizationId` (so `authClient.useSession()` → `ConvexProviderWithAuth` saw no identity). Pre-setting the
+  session's `activeOrganizationId` fixes it; the page and Close-Out tab then render normally. No new Convex
+  table/fn was needed (no JWKS round-trip). **Verdict: data-identical confirmed.**
 
 **Still left for a later session** (out of the document/report/export scope):
 - **Tier 3** — `warehouse.ts` hot-path model joins (packing/docket/scan/container, lines ~846/892/1101/1561/

@@ -1,13 +1,16 @@
 # Session brief: PDF / document-generation Prisma decommission
 
-> **STATUS: ✅ DONE (2026-06-12, Tier 1 + 2).** Executed on `feat/convex-migration`
-> (commits `42264b1b` → `47e4821e`). See the "PDF / document / report mirror-read
-> decommission" section in `FEATUREDOCS/54` for the as-built record. The remaining
-> follow-ups (Tier 3 warehouse hot-path joins; supplier/location report relations)
-> are noted there and at the bottom of this brief. Everything below is the original
-> plan, kept for reference. Verification still needs the **live round-trip**
-> (report with model/category columns; docket + quote render; Convex count == Prisma
-> count) — code/tsc/tests/lint/build were all green in the headless container.
+> **STATUS: ✅ DONE (2026-06-12, Tier 1 + 2 + supplier/location follow-up).**
+> Executed on `feat/convex-migration` (commits `42264b1b` → `988b0ba1`). See the
+> "PDF / document / report mirror-read decommission" section in `FEATUREDOCS/54`
+> for the as-built record. The whole document/report/export surface (6 files) now
+> reads model/category/supplier/location/client off Convex — **zero** cross-domain
+> Prisma joins of those relations left. Only **Tier 3** (`warehouse.ts` hot-path
+> model joins) remains, plus the non-document reads — both out of this scope.
+> Everything below is the original plan, kept for reference. Verification still
+> needs the **live round-trip** (report with model/category/supplier/location
+> columns; docket + quote render; Convex count == Prisma count) — code / tsc /
+> 2237 tests / lint / build were all green in the headless container.
 
 **Phase 6 of the Convex hybrid migration.** Self-contained, one-session scope.
 Rewire the remaining cross-domain Prisma "mirror" reads in the document / report /

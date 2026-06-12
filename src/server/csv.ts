@@ -8,6 +8,7 @@ import { mirrorAssetCreate, patchAssetInConvex } from "@/lib/asset-mirror";
 import { attachSupplier, getSuppliersByOrg } from "@/lib/suppliers-read";
 import { getModelWithCategoryMap } from "@/lib/models-read";
 import { getCategoryMap } from "@/lib/categories-read";
+import { getLocationMap } from "@/lib/locations-read";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
@@ -107,18 +108,19 @@ export async function exportAssetsCSV() {
 
   const assetRows = await prisma.asset.findMany({
     where: { organizationId, isActive: true },
-    include: {
-      location: true,
-    },
     orderBy: { assetTag: "asc" },
   });
-  // Supplier + model (with nested category) live in Convex — attach instead of a
-  // Prisma join. (location stays on the fresh Prisma mirror for now.)
+  // Supplier + model (with nested category) + location all live in Convex —
+  // attach instead of Prisma joins.
   const assetsWithSupplier = await attachSupplier(organizationId, assetRows);
-  const modelMap = await getModelWithCategoryMap(organizationId);
+  const [modelMap, locationMap] = await Promise.all([
+    getModelWithCategoryMap(organizationId),
+    getLocationMap(organizationId),
+  ]);
   const assets = assetsWithSupplier.map((a) => ({
     ...a,
     model: a.modelId ? modelMap.get(a.modelId) ?? null : null,
+    location: a.locationId ? locationMap.get(a.locationId) ?? null : null,
   }));
 
   const headers = [
@@ -165,17 +167,18 @@ export async function exportBulkAssetsCSV() {
 
   const bulkAssetRows = await prisma.bulkAsset.findMany({
     where: { organizationId, isActive: true },
-    include: {
-      location: true,
-    },
     orderBy: { assetTag: "asc" },
   });
-  // model (with nested category) lives in Convex — attach instead of a Prisma
-  // join. (location stays on the fresh Prisma mirror for now.)
-  const modelMap = await getModelWithCategoryMap(organizationId);
+  // model (with nested category) + location live in Convex — attach instead of
+  // Prisma joins.
+  const [modelMap, locationMap] = await Promise.all([
+    getModelWithCategoryMap(organizationId),
+    getLocationMap(organizationId),
+  ]);
   const bulkAssets = bulkAssetRows.map((ba) => ({
     ...ba,
     model: ba.modelId ? modelMap.get(ba.modelId) ?? null : null,
+    location: ba.locationId ? locationMap.get(ba.locationId) ?? null : null,
   }));
 
   const headers = [

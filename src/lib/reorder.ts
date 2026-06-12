@@ -14,8 +14,9 @@ import { prisma } from "@/lib/prisma";
 import { createId } from "@paralleldrive/cuid2";
 import { syncBulkAssetsToConvex } from "@/lib/asset-mirror";
 import { syncSupplierOrderToConvex } from "@/lib/sub-hire-mirror";
-import { getSupplierById } from "@/lib/suppliers-read";
+import { getSupplierById, getSupplierMap } from "@/lib/suppliers-read";
 import { getModelMap, getModelWithCategoryMap } from "@/lib/models-read";
+import { getLocationMap } from "@/lib/locations-read";
 
 export interface ReorderCandidate {
   bulkAssetId: string;
@@ -42,17 +43,13 @@ export interface ReorderCandidate {
 export async function getReorderCandidatesCore(
   organizationId: string,
 ): Promise<ReorderCandidate[]> {
-  // model (+ nested category) lives in Convex — attached from the map below.
-  // (preferredSupplier + location stay on the fresh Prisma mirror for now.)
+  // model (+ nested category), preferredSupplier, and location all live in
+  // Convex — attached from the maps below, not Prisma joins.
   const rows = await prisma.bulkAsset.findMany({
     where: {
       organizationId,
       isActive: true,
       reorderThreshold: { not: null, gt: 0 },
-    },
-    include: {
-      preferredSupplier: { select: { id: true, name: true } },
-      location: { select: { name: true } },
     },
     orderBy: { availableQuantity: "asc" },
   });
@@ -63,11 +60,16 @@ export async function getReorderCandidatesCore(
       b.availableQuantity <= b.reorderThreshold,
   );
 
-  const modelMap = await getModelWithCategoryMap(organizationId);
+  const [modelMap, supplierMap, locationMap] = await Promise.all([
+    getModelWithCategoryMap(organizationId),
+    getSupplierMap(organizationId),
+    getLocationMap(organizationId),
+  ]);
 
   return candidates.map((b) => {
     const threshold = b.reorderThreshold!;
     const model = modelMap.get(b.modelId);
+    const supplier = b.preferredSupplierId ? supplierMap.get(b.preferredSupplierId) : null;
     // Target stock = threshold × 1.5 (rounded up). Order the gap.
     const target = Math.ceil(threshold * 1.5);
     const suggested = Math.max(1, target - b.availableQuantity);
@@ -81,12 +83,12 @@ export async function getReorderCandidatesCore(
       availableQuantity: b.availableQuantity,
       reorderThreshold: threshold,
       suggestedOrderQuantity: suggested,
-      preferredSupplier: b.preferredSupplier,
+      preferredSupplier: supplier ? { id: supplier.id, name: supplier.name } : null,
       purchasePricePerUnit: b.purchasePricePerUnit != null
         ? Number(b.purchasePricePerUnit)
         : null,
       lastReorderedAt: b.lastReorderedAt,
-      locationName: b.location?.name ?? null,
+      locationName: (b.locationId ? locationMap.get(b.locationId)?.name : null) ?? null,
     };
   });
 }

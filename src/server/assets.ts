@@ -15,6 +15,8 @@ import {
   syncAssetsToConvex,
 } from "@/lib/asset-mirror";
 import { getSupplierById } from "@/lib/suppliers-read";
+import { getModelWithCategoryMap, type ModelWithCategory } from "@/lib/models-read";
+import { getLocationMap, type ConvexLocation } from "@/lib/locations-read";
 import { getPrimaryPhotoMaps } from "@/lib/media-read";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
@@ -53,12 +55,13 @@ const assetFilterColumns: FilterColumnDef[] = [
   { id: "tags", filterType: "enum" },
 ];
 
-export type AssetWithRelations = Prisma.AssetGetPayload<{
-  include: {
-    model: { include: { category: true } };
-    location: true;
-  };
-}>;
+// model (+ nested equipment category) + location live in Convex (dual-written) —
+// attached from the maps, not Prisma joins. Sorts/filters on model.name /
+// location.name / model.categoryId stay on the always-fresh Prisma mirror.
+export type AssetWithRelations = Prisma.AssetGetPayload<{ include: Record<string, never> }> & {
+  model: ModelWithCategory | null;
+  location: ConvexLocation | null;
+};
 
 export async function getAssets(params?: {
   search?: string;
@@ -115,24 +118,10 @@ export async function getAssets(params?: {
   const [assets, total] = await Promise.all([
     prisma.asset.findMany({
       where,
-      include: {
-        model: {
-          include: {
-            category: true,
-            media: {
-              where: { type: "PHOTO", isPrimary: true },
-              include: { file: true },
-              take: 1,
-            },
-          },
-        },
-        location: true,
-        media: {
-          where: { type: "PHOTO", isPrimary: true },
-          include: { file: true },
-          take: 1,
-        },
-      },
+      // model (+ category) + location attached from Convex below. The sole
+      // consumer (test-tag form) reads model scalars only, so the old primary-photo
+      // media joins are dropped (the reactive registry table gets photos from
+      // getAssetRegistryPhotos, not this query). Sort stays on the Prisma mirror.
       orderBy: sortBy === "model" ? { model: { name: sortOrder } }
         : sortBy === "location" ? { location: { name: sortOrder } }
         : { [sortBy]: sortOrder },
@@ -142,7 +131,17 @@ export async function getAssets(params?: {
     prisma.asset.count({ where }),
   ]);
 
-  return serialize({ assets, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
+  const [modelMap, locationMap] = await Promise.all([
+    getModelWithCategoryMap(organizationId),
+    getLocationMap(organizationId),
+  ]);
+  const withRelations = assets.map((a) => ({
+    ...a,
+    model: a.modelId ? modelMap.get(a.modelId) ?? null : null,
+    location: a.locationId ? locationMap.get(a.locationId) ?? null : null,
+  }));
+
+  return serialize({ assets: withRelations, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
 }
 
 export async function getAsset(id: string) {

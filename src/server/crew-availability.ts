@@ -69,7 +69,9 @@ export async function addAvailability(data: CrewAvailabilityFormValues) {
     },
   });
 
-  await mirrorCrewAvailabilityCreate(record as unknown as Record<string, unknown>);
+  // Denormalize organizationId onto the Convex row (not a Prisma column) so the
+  // crew planner can subscribe org-wide for reactive availability reads.
+  await mirrorCrewAvailabilityCreate({ ...record, organizationId } as unknown as Record<string, unknown>);
 
   await logActivity({
     organizationId,

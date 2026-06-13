@@ -25,6 +25,7 @@ export type ProjectManagerDoc = Doc<"projectManagers">;
 export type ProjectServiceDoc = Doc<"projectServices">;
 export type ProjectTaskDoc = Doc<"projectTasks">;
 export type ProjectLineItemDoc = Doc<"projectLineItems">;
+export type SubHireDoc = Doc<"subHires">;
 
 /** All projects for an org (includes templates — filter isTemplate in consumer). */
 export function useProjects(orgId: string | undefined): ProjectDoc[] | undefined {
@@ -98,6 +99,17 @@ export function useProjectLineItems(
 ): ProjectLineItemDoc[] | undefined {
   return useQuery(
     api.projectLineItems.listByProject,
+    projectId && orgId ? { projectId, orgId } : "skip",
+  );
+}
+
+/** All sub-hires for a project (3rd-party rental orders). */
+export function useProjectSubHireDocs(
+  projectId: string | undefined,
+  orgId: string | undefined,
+): SubHireDoc[] | undefined {
+  return useQuery(
+    api.subHires.listByProject,
     projectId && orgId ? { projectId, orgId } : "skip",
   );
 }

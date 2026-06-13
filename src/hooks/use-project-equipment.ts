@@ -6,6 +6,7 @@ import {
   useProjectLineItems,
   useProjectGroups,
   useProjectCategories as useConvexProjectCategories,
+  useProjectSubHireDocs,
 } from "./use-projects";
 import {
   getProjectCategories,
@@ -98,7 +99,7 @@ function fingerprintGrouping(
     .join("|");
 }
 
-/** Subscribe to Convex line-item/group/category tables and refresh the equipment composites on any cross-tab change. */
+/** Subscribe to Convex line-item/group/category/sub-hire tables and refresh the equipment composites on any cross-tab change. */
 export function useProjectEquipmentLiveSync(
   projectId: string | undefined,
   orgId: string | undefined,
@@ -106,6 +107,7 @@ export function useProjectEquipmentLiveSync(
   const lineItems = useProjectLineItems(projectId, orgId);
   const groups = useProjectGroups(projectId, orgId);
   const cats = useConvexProjectCategories(projectId, orgId);
+  const subHires = useProjectSubHireDocs(projectId, orgId);
 
   const liFp = fingerprintLineItems(lineItems);
   const grpFp = fingerprintGrouping(
@@ -113,24 +115,40 @@ export function useProjectEquipmentLiveSync(
     (r) => `${(r as { title?: string; price?: number; quantity?: number; categoryId?: string }).title ?? ""}:${(r as { price?: number }).price ?? ""}:${(r as { quantity?: number }).quantity ?? ""}:${(r as { categoryId?: string }).categoryId ?? ""}`,
   );
   const catFp = fingerprintGrouping(cats, (r) => (r as { name?: string }).name ?? "");
+  // Sub-hire fingerprint covers order-level edits (status, cost, supplier, target
+  // category/group). Item/group line edits inside a sub-hire bump the parent's
+  // updatedAt via the recalc sweep, so the parent row is a sufficient signal.
+  const shFp = fingerprintGrouping(
+    subHires as { id: string; updatedAt?: number }[] | undefined,
+    (r) => {
+      const s = r as { status?: string; totalCost?: number; supplierId?: string; defaultTargetCategoryId?: string; defaultTargetGroupId?: string };
+      return `${s.status ?? ""}:${s.totalCost ?? ""}:${s.supplierId ?? ""}:${s.defaultTargetCategoryId ?? ""}:${s.defaultTargetGroupId ?? ""}`;
+    },
+  );
 
-  const prev = useRef<{ li?: string; grp?: string; cat?: string }>({});
+  const prev = useRef<{ li?: string; grp?: string; cat?: string; sh?: string }>({});
 
   useEffect(() => {
     if (!projectId) return;
     const p = prev.current;
-    const changed =
+    const equipChanged =
       (liFp !== undefined && p.li !== undefined && liFp !== p.li) ||
       (grpFp !== undefined && p.grp !== undefined && grpFp !== p.grp) ||
       (catFp !== undefined && p.cat !== undefined && catFp !== p.cat);
-    if (changed) {
+    const subHireChanged = shFp !== undefined && p.sh !== undefined && shFp !== p.sh;
+    if (equipChanged || subHireChanged) {
       refreshProjectCategories(projectId);
       refreshUncategorizedItems(projectId);
       refreshUncategorizedProjectGroups(projectId);
       refreshProjectOverbooked(projectId);
     }
+    if (subHireChanged) {
+      refreshProjectSubHires(projectId);
+      refreshUncategorizedSubHireGroups(projectId);
+    }
     if (liFp !== undefined) p.li = liFp;
     if (grpFp !== undefined) p.grp = grpFp;
     if (catFp !== undefined) p.cat = catFp;
-  }, [projectId, liFp, grpFp, catFp]);
+    if (shFp !== undefined) p.sh = shFp;
+  }, [projectId, liFp, grpFp, catFp, shFp]);
 }

@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
+import { useProjectTasks as useConvexProjectTasks } from "@/hooks/use-projects";
 import { toast } from "sonner";
 import {
   Plus,
@@ -119,6 +120,29 @@ export function TasksPanel({ projectId }: { projectId: string }) {
   const [editing, setEditing] = useState<Task | null>(null);
 
   const invalidate = () => refetch();
+
+  // Cross-tab live sync: subscribe to the dual-written Convex projectTasks table.
+  // When another tab creates/edits/deletes a task, the mirror pushes the change;
+  // the fingerprint flips and we refetch the server-action read (which carries
+  // assignee join data Convex doesn't hold).
+  const taskDocs = useConvexProjectTasks(projectId, orgId);
+  const taskFp =
+    taskDocs === undefined
+      ? undefined
+      : taskDocs
+          .map((t) => {
+            const r = t as { id: string; updatedAt?: number; status?: string; title?: string; priority?: string; dueDate?: number; assigneeUserId?: string; assigneeCrewId?: string; sortOrder?: number; completedAt?: number };
+            return `${r.id}:${r.updatedAt ?? 0}:${r.status ?? ""}:${r.title ?? ""}:${r.priority ?? ""}:${r.dueDate ?? ""}:${r.assigneeUserId ?? ""}:${r.assigneeCrewId ?? ""}:${r.sortOrder ?? ""}:${r.completedAt ?? ""}`;
+          })
+          .sort()
+          .join("|");
+  const prevTaskFp = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (taskFp !== undefined && prevTaskFp.current !== undefined && taskFp !== prevTaskFp.current) {
+      refetch();
+    }
+    if (taskFp !== undefined) prevTaskFp.current = taskFp;
+  }, [taskFp, refetch]);
 
   const createMut = useServerMutation({
     mutationFn: (title: string) => createProjectTask({ projectId, title }),

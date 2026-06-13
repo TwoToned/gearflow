@@ -1,6 +1,9 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { createSharedResource } from "./use-shared-resource";
+import { useProjectServices as useConvexProjectServices } from "./use-projects";
+import { refreshProjectDetail } from "./use-project-detail";
 import {
   getProjectServices,
   getProjectServicesSummary,
@@ -25,3 +28,42 @@ export const refreshProjectServices = services.refresh;
 const summary = createSharedResource((projectId: string) => getProjectServicesSummary(projectId));
 export const useProjectServicesSummary = summary.use;
 export const refreshProjectServicesSummary = summary.refresh;
+
+/**
+ * Cross-tab live sync for project services. Subscribes to the dual-written
+ * Convex `projectServices` table; when another tab adds/edits/deletes a service,
+ * the mirror pushes the change and we re-fetch the server-action composites
+ * (the list + the crew-count summary) plus the project detail (totals). Mount
+ * once in the services panel.
+ */
+export function useProjectServicesLiveSync(
+  projectId: string | undefined,
+  orgId: string | undefined,
+) {
+  const svcDocs = useConvexProjectServices(projectId, orgId);
+  const fp =
+    svcDocs === undefined
+      ? undefined
+      : svcDocs
+          .map((s) => {
+            const r = s as {
+              id: string; updatedAt?: number; status?: string; lineTotal?: number;
+              costTotal?: number; quantity?: number; unitPrice?: number; date?: number;
+              crewRoleId?: string; crewCountRequired?: number; sortOrder?: number;
+            };
+            return `${r.id}:${r.updatedAt ?? 0}:${r.status ?? ""}:${r.lineTotal ?? ""}:${r.costTotal ?? ""}:${r.quantity ?? ""}:${r.unitPrice ?? ""}:${r.date ?? ""}:${r.crewRoleId ?? ""}:${r.crewCountRequired ?? ""}:${r.sortOrder ?? ""}`;
+          })
+          .sort()
+          .join("|");
+
+  const prev = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!projectId) return;
+    if (fp !== undefined && prev.current !== undefined && fp !== prev.current) {
+      services.refresh(projectId);
+      summary.refresh(projectId);
+      refreshProjectDetail(projectId);
+    }
+    if (fp !== undefined) prev.current = fp;
+  }, [projectId, fp]);
+}

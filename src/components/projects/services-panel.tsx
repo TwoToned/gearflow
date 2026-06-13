@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
-import { useProjectServices, refreshProjectServices, useProjectServicesSummary, refreshProjectServicesSummary } from "@/hooks/use-project-services";
+import { useProjectServices, refreshProjectServices, useProjectServicesSummary, refreshProjectServicesSummary, useProjectServicesLiveSync } from "@/hooks/use-project-services";
 import { useServiceTemplates } from "@/hooks/use-service-templates";
 import { refreshProjectCrew } from "@/hooks/use-project-crew";
 import { useServerQuery } from "@/hooks/use-server-query";
@@ -183,6 +183,9 @@ export function ServicesPanel({
 }: ServicesPanelProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+
+  // Cross-tab live sync: re-fetch the services composites when another tab edits.
+  useProjectServicesLiveSync(projectId, orgId);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingService, setEditingService] = useState<Record<string, unknown> | null>(null);

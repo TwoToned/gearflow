@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import { syncProjectManagersToConvex } from "@/lib/project-subtable-mirror";
 
 export async function getProjectManagers(projectId: string) {
   const { organizationId } = await requirePermission("project", "read");
@@ -48,6 +49,8 @@ export async function addProjectManager(projectId: string, userId: string) {
     },
   });
 
+  await syncProjectManagersToConvex(organizationId, projectId);
+
   await logActivity({
     organizationId,
     userId: actorId,
@@ -84,6 +87,8 @@ export async function removeProjectManager(projectId: string, userId: string) {
   await prisma.projectManager.delete({
     where: { id: manager.id },
   });
+
+  await syncProjectManagersToConvex(organizationId, projectId);
 
   await logActivity({
     organizationId,

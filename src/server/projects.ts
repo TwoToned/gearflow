@@ -21,6 +21,11 @@ import { syncAssetsToConvex } from "@/lib/asset-mirror";
 import { mirrorProjectCategoryCreate, mirrorProjectGroupCreate } from "@/lib/project-grouping-mirror";
 import { upsertProjectLineItemsToConvex, removeLineItemFromConvex } from "@/lib/line-item-mirror";
 import { mirrorProjectCreate, patchProjectInConvex, removeProjectFromConvex } from "@/lib/project-mirror";
+import {
+  syncProjectManagersToConvex,
+  syncProjectServicesToConvex,
+  syncProjectTasksToConvex,
+} from "@/lib/project-subtable-mirror";
 import { snapshotProjectCrew, removeCrewAssignmentCascadeFromConvex } from "@/lib/crew-scheduling-mirror";
 import { emitIfDiscordEnabled } from "@/lib/services/outbox-service";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
@@ -963,6 +968,8 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
     for (const c of createdCategories) await mirrorProjectCategoryCreate(c);
     for (const g of createdGroups) await mirrorProjectGroupCreate(g);
     await upsertProjectLineItemsToConvex(result.id);
+    // The duplicate copied project managers — mirror them too.
+    await syncProjectManagersToConvex(organizationId, result.id);
 
     // Recalculate totals after transaction commits
     await recalculateProjectTotals(result.id);
@@ -1137,6 +1144,10 @@ export async function deleteTemplate(id: string) {
 
   await prisma.project.delete({ where: { id, organizationId } });
   await removeProjectFromConvex(id);
+  // Reconcile the cascade-deleted sub-tables (now 0 rows ⇒ remove Convex orphans).
+  await syncProjectManagersToConvex(organizationId, id);
+  await syncProjectServicesToConvex(organizationId, id);
+  await syncProjectTasksToConvex(organizationId, id);
   return { success: true };
 }
 
@@ -1249,6 +1260,10 @@ export async function deleteProject(id: string) {
   for (const li of project.lineItems) await removeLineItemFromConvex(li.id);
   await removeCrewAssignmentCascadeFromConvex(crewCascade);
   await removeProjectFromConvex(id);
+  // Reconcile the cascade-deleted sub-tables (now 0 rows ⇒ remove Convex orphans).
+  await syncProjectManagersToConvex(organizationId, id);
+  await syncProjectServicesToConvex(organizationId, id);
+  await syncProjectTasksToConvex(organizationId, id);
 
   await logActivity({
     organizationId,

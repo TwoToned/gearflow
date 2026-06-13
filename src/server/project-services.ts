@@ -25,6 +25,7 @@ import {
   snapshotServiceCrew,
   removeCrewAssignmentCascadeFromConvex,
 } from "@/lib/crew-scheduling-mirror";
+import { syncProjectServicesToConvex } from "@/lib/project-subtable-mirror";
 import { SERVICE_TYPE_LABELS } from "@/lib/constants/services";
 import type { ServiceType, PricingType, ProjectPhase } from "@/generated/prisma/client";
 
@@ -239,6 +240,7 @@ export async function createProjectService(
 
   // Always recalculate project totals — service charge/cost affects financials
   await recalculateProjectTotals(projectId);
+  await syncProjectServicesToConvex(organizationId, projectId);
 
   await logActivity({
     organizationId,
@@ -365,6 +367,7 @@ export async function updateProjectService(
 
   // Always recalculate project totals — service charge/cost affects financials
   await recalculateProjectTotals(existing.projectId);
+  await syncProjectServicesToConvex(organizationId, existing.projectId);
 
   await logActivity({
     organizationId,
@@ -420,6 +423,7 @@ export async function deleteProjectService(id: string) {
   await removeCrewAssignmentCascadeFromConvex(crewCascade);
 
   await recalculateProjectTotals(service.projectId);
+  await syncProjectServicesToConvex(organizationId, service.projectId);
 
   await logActivity({
     organizationId,
@@ -454,6 +458,7 @@ export async function updateServiceStatus(
   });
 
   await recalculateProjectTotals(service.projectId);
+  await syncProjectServicesToConvex(organizationId, service.projectId);
 
   await logActivity({
     organizationId,
@@ -491,6 +496,7 @@ export async function bulkUpdateServiceStatus(
 
   if (firstService) {
     await recalculateProjectTotals(firstService.projectId);
+    await syncProjectServicesToConvex(organizationId, firstService.projectId);
   }
 
   await logActivity({
@@ -833,6 +839,7 @@ async function _createServicesFromTemplateData(
 
   // Sync line items for services that show on documents
   await recalculateProjectTotals(projectId);
+  await syncProjectServicesToConvex(organizationId, projectId);
 
   await logActivity({
     organizationId,
@@ -990,6 +997,7 @@ export async function cloneServicesFromProject(
   await syncCrewAssignmentsForProjectToConvex(targetProjectId);
 
   await recalculateProjectTotals(targetProjectId);
+  await syncProjectServicesToConvex(organizationId, targetProjectId);
 
   await logActivity({
     organizationId,
@@ -1064,6 +1072,8 @@ export async function convertLineItemToService(lineItemId: string) {
     });
     return svc;
   });
+
+  await syncProjectServicesToConvex(organizationId, lineItem.projectId);
 
   await logActivity({
     organizationId,

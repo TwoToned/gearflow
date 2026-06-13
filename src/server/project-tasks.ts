@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import { syncProjectTasksToConvex } from "@/lib/project-subtable-mirror";
 import type { Prisma } from "@/generated/prisma/client";
 import type { ChecklistItem, ProjectTaskStatus, ProjectTaskPriority } from "@/lib/project-tasks";
 
@@ -138,6 +139,8 @@ export async function createProjectTask(data: {
     include: taskInclude,
   });
 
+  await syncProjectTasksToConvex(organizationId, data.projectId);
+
   await logActivity({
     organizationId,
     userId,
@@ -199,6 +202,8 @@ export async function updateProjectTask(
     include: taskInclude,
   });
 
+  await syncProjectTasksToConvex(organizationId, existing.projectId);
+
   await logActivity({
     organizationId,
     userId,
@@ -224,6 +229,8 @@ export async function deleteProjectTask(id: string) {
   if (!existing) throw new Error("Task not found");
 
   await prisma.projectTask.delete({ where: { id } });
+
+  await syncProjectTasksToConvex(organizationId, existing.projectId);
 
   await logActivity({
     organizationId,
@@ -254,6 +261,8 @@ export async function reorderProjectTasks(projectId: string, orderedIds: string[
       }),
     ),
   );
+
+  await syncProjectTasksToConvex(organizationId, projectId);
 }
 
 /**

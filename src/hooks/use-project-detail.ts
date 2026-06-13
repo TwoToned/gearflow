@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { createSharedResource } from "./use-shared-resource";
 import { getProject } from "@/server/projects";
+import { useProject } from "./use-projects";
 
 /**
  * Shared store for a project's detail composite (Phase 6 — React Query removal).
@@ -17,22 +19,35 @@ import { getProject } from "@/server/projects";
  * services components — reproducing React Query's shared `["project", …]` cache
  * refresh.
  *
- * ★ Data-identical note: many writers invalidated a 2-element `["project",
- * projectId]` key that did NOT prefix-match the 3-element reader key (a latent
- * no-op — same class as the sub-hire-order-dialog no-op in 2026-06-10l). Those
- * are now wired to `refreshProjectDetail(projectId)`, realising the clearly-
- * intended refresh (only ever an extra, beneficial getProject — never a regression).
- *
- * SSE is dead (the lowercase/PascalCase entityType bug), so no cross-user
- * liveness is lost vs the old `project:updated` invalidation; a version vector
- * (real cross-user liveness) is a deferred enhancement, not needed for parity.
- * project / project_line_item are dual-written; this read stays a server action
- * (getProject composes Better-Auth users + cross-domain joins).
+ * Cross-tab reactivity: also subscribes to the Convex `projects` table via
+ * `useProject`. When another browser tab (or collaborator) mutates the project,
+ * the Convex mirror fires a websocket push to ALL subscribed tabs; the updatedAt
+ * change detected here triggers refreshProjectDetail, re-fetching the full Prisma
+ * composite so the UI syncs without a manual refresh.
  */
 const resource = createSharedResource((projectId: string) => getProject(projectId));
 
 /** Subscribe to a project's detail composite. `projectId` is the store key. */
-export const useProjectDetail = resource.use;
+export function useProjectDetail(projectId: string) {
+  const result = resource.use(projectId);
+
+  // Convex subscription for cross-tab change detection.
+  const convexProject = useProject(projectId);
+  const prevUpdatedAt = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    const next = convexProject?.updatedAt;
+    if (next !== undefined && prevUpdatedAt.current !== undefined && next !== prevUpdatedAt.current) {
+      resource.refresh(projectId);
+    }
+    if (next !== undefined) {
+      prevUpdatedAt.current = next;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [convexProject?.updatedAt, projectId]);
+
+  return result;
+}
 
 /** Re-fetch the project and push to every subscriber (the writer's invalidate analogue). */
 export const refreshProjectDetail = resource.refresh;

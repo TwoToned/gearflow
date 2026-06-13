@@ -2361,6 +2361,16 @@ bumps whenever asset links change (sufficient signal). `convex/maintenanceRecord
 `requireOrgRead`. Backfill + `use-maintenance.ts` hook + watcher on BOTH the list and the
 workshop kanban (the kanban — cards moving columns live — is the highest-value surface).
 
+**Crew scheduling (reactive):** the scheduling cluster (`crewAssignments`, `crewShifts`,
+`crewTimeEntries`, `crewAvailabilities`, `crewCertifications`) was already dual-written
+via `crew-scheduling-mirror.ts`, so this added only the read layer. `crewAssignments` +
+`crewTimeEntries` → `requireOrgRead` + `crewAssignments.listByProject`; `use-crew-
+scheduling.ts` hooks; `useProjectCrewLiveSync` on the project crew panel (refreshes crew +
+labour cost), org-assignment watcher on the workshop planner, org-time-entry watcher on
+the timesheets page. KNOWN GAP: `crewAvailabilities` has no `organizationId` field/index,
+so availability-block edits aren't in the org-wide signal — they refresh on navigation
+(the assignment signal covers the core "who's booked" collaboration case).
+
 **Stocktake** was already reactive (prior session — `stocktakeDetail.version` vector).
 
 **Self-hosted Convex push gotcha:** no `convex dev` watcher runs; edits to `convex/*.ts`
@@ -2368,8 +2378,8 @@ are NOT live until `npx convex dev --once --env-file .env.local`, which also res
 `NEXT_PUBLIC_CONVEX_URL`/`SITE_URL` away from the Tailscale `roger:3210/3211` host —
 restore them after every push, then restart `next dev`.
 
-**Still NOT cross-tab reactive:** crew scheduling/availability (roster is reactive,
-scheduling isn't), and the `*RecordAssets`/join leaf tables (refreshed via parent signal).
+**Still NOT cross-tab reactive:** crew availability blocks (no org index — see gap above),
+and the `*RecordAssets`/join leaf tables (refreshed via parent signal).
 
 ## Migration phases (roadmap)
 

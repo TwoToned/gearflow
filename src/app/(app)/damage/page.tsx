@@ -7,11 +7,12 @@
  * Inline quick-actions: charge-back toggle and resolve.
  */
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useDamageEvents, fingerprintDamageEvents } from "@/hooks/use-damage";
 import { format } from "date-fns";
 import {
   Camera,
@@ -85,6 +86,18 @@ function DamageListContent() {
     queryFn: () => listDamageEvents(queryFilters),
     enabled: !!orgId,
   });
+
+  // Cross-tab live sync: subscribe to the dual-written Convex damageEvents table
+  // and re-fetch the server-action composite when another tab reports/edits damage.
+  const damageDocs = useDamageEvents(orgId);
+  const damageFp = fingerprintDamageEvents(damageDocs);
+  const prevDamageFp = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (damageFp !== undefined && prevDamageFp.current !== undefined && damageFp !== prevDamageFp.current) {
+      refetch();
+    }
+    if (damageFp !== undefined) prevDamageFp.current = damageFp;
+  }, [damageFp, refetch]);
 
   const items = (data?.items ?? []) as AnyRow[];
   const total = data?.total ?? 0;

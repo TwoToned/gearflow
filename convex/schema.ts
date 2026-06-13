@@ -1559,6 +1559,10 @@ export default defineSchema({
   crewAvailabilities: defineTable({
     id: v.string(),
     crewMemberId: v.string(),
+    // DENORMALIZED (not in Prisma CrewAvailability — resolved from crewMember at
+    // mirror time). Lets the crew planner subscribe org-wide for reactive reads.
+    // Hand-added; the schema generator will NOT reproduce it — keep on regen.
+    organizationId: v.optional(v.string()),
     startDate: v.number(),
     endDate: v.number(),
     type: v.optional(enums.AvailabilityType),
@@ -1570,6 +1574,7 @@ export default defineSchema({
     updatedAt: v.optional(v.number()),
   })
     .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
     .index("by_crewMemberId", ["crewMemberId"])
     .index("by_crewMemberId_startDate_endDate", ["crewMemberId", "startDate", "endDate"]),
 

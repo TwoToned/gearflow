@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService } from "./lib/auth";
+import { requireOrgRead, requireService } from "./lib/auth";
 import * as enums from "./lib/validators";
 
 /**
@@ -32,10 +32,27 @@ export const getById = query({
   },
 });
 
+/**
+ * Org-wide availability for the crew planner's reactive subscription.
+ * organizationId is denormalized onto the row at mirror time (the Prisma model
+ * is scoped only via crewMember). Browser-readable (requireOrgRead).
+ */
+export const listByOrg = query({
+  args: { orgId: v.string() },
+  handler: async (ctx, { orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    return await ctx.db
+      .query("crewAvailabilities")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .collect();
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),
     crewMemberId: v.string(),
+    organizationId: v.optional(v.string()),
     startDate: v.number(),
     endDate: v.number(),
     type: v.optional(enums.AvailabilityType),
@@ -57,6 +74,7 @@ export const update = mutation({
     id: v.string(),
     patch: v.object({
       crewMemberId: v.optional(v.string()),
+      organizationId: v.optional(v.string()),
       startDate: v.optional(v.number()),
       endDate: v.optional(v.number()),
       type: v.optional(enums.AvailabilityType),

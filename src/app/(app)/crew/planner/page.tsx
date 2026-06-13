@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useServerQuery } from "@/hooks/use-server-query";
 import {
@@ -11,6 +11,7 @@ import {
 
 import { getCrewPlannerData } from "@/server/crew-availability";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { useOrgCrewAssignments, fingerprintCrewAssignments } from "@/hooks/use-crew-scheduling";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { PageMeta } from "@/components/layout/page-meta";
 import { FadeIn } from "@/components/ui/motion";
@@ -93,10 +94,24 @@ export default function CrewPlannerPage() {
   const startDate = days[0].toISOString().split("T")[0];
   const endDate = days[days.length - 1].toISOString().split("T")[0];
 
-  const { data: members, isLoading } = useServerQuery({
+  const { data: members, isLoading, refetch } = useServerQuery({
     queryKey: ["crew-planner", orgId, startDate, endDate],
     queryFn: () => getCrewPlannerData(startDate, endDate),
   });
+
+  // Cross-tab live sync: subscribe to the dual-written Convex crewAssignments
+  // table; a fingerprint change (crew booked/moved/confirmed in another tab)
+  // re-fetches the planner. NOTE: availability-block edits aren't in this signal
+  // (crewAvailabilities has no org index) — those refresh on navigation.
+  const assignmentDocs = useOrgCrewAssignments(orgId);
+  const assignmentFp = fingerprintCrewAssignments(assignmentDocs);
+  const prevAssignmentFp = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (assignmentFp !== undefined && prevAssignmentFp.current !== undefined && assignmentFp !== prevAssignmentFp.current) {
+      refetch();
+    }
+    if (assignmentFp !== undefined) prevAssignmentFp.current = assignmentFp;
+  }, [assignmentFp, refetch]);
 
   const goBack = () => setWeekStart((d) => addDays(d, -7));
   const goForward = () => setWeekStart((d) => addDays(d, 7));

@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useOrgTimeEntries, fingerprintTimeEntries } from "@/hooks/use-crew-scheduling";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -143,6 +144,19 @@ export default function TimesheetsPage() {
         sortOrder,
       }),
   });
+
+  // Cross-tab live sync: subscribe to the dual-written Convex crewTimeEntries
+  // table; a fingerprint change (logged/edited/submitted/approved/disputed in
+  // another tab) triggers the existing refetch.
+  const timeEntryDocs = useOrgTimeEntries(orgId);
+  const timeEntryFp = fingerprintTimeEntries(timeEntryDocs);
+  const prevTimeEntryFp = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (timeEntryFp !== undefined && prevTimeEntryFp.current !== undefined && timeEntryFp !== prevTimeEntryFp.current) {
+      refetchEntries();
+    }
+    if (timeEntryFp !== undefined) prevTimeEntryFp.current = timeEntryFp;
+  }, [timeEntryFp, refetchEntries]);
 
   const entries = data?.entries || [];
   const total = data?.total || 0;

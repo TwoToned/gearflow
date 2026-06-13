@@ -42,7 +42,7 @@ import {
 import { createCrewRole } from "@/server/crew";
 import { useCrewRoles } from "@/hooks/use-crew";
 import { useProjectServices, refreshProjectServices } from "@/hooks/use-project-services";
-import { useProjectCrew, refreshProjectCrew, useProjectLabourCost, refreshProjectLabourCost } from "@/hooks/use-project-crew";
+import { useProjectCrew, refreshProjectCrew, useProjectLabourCost, refreshProjectLabourCost, useProjectCrewLiveSync } from "@/hooks/use-project-crew";
 import {
   crewAssignmentSchema,
   type CrewAssignmentFormValues,
@@ -123,6 +123,10 @@ function formatDate(date: string | null | undefined): string {
 export function CrewPanel({ projectId }: CrewPanelProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+
+  // Cross-tab live sync: re-fetch crew + labour cost when another tab changes
+  // a crew booking on this project.
+  useProjectCrewLiveSync(projectId, orgId);
 
   const [addOpen, setAddOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);

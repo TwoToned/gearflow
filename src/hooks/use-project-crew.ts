@@ -1,7 +1,12 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { createSharedResource } from "./use-shared-resource";
 import { getProjectCrew, getProjectLabourCost } from "@/server/crew-assignments";
+import {
+  useProjectCrewAssignments,
+  fingerprintCrewAssignments,
+} from "./use-crew-scheduling";
 
 /**
  * Shared stores for a project's crew (Phase 6 — React Query removal).
@@ -21,3 +26,26 @@ export const refreshProjectCrew = crew.refresh;
 const labour = createSharedResource((projectId: string) => getProjectLabourCost(projectId));
 export const useProjectLabourCost = labour.use;
 export const refreshProjectLabourCost = labour.refresh;
+
+/**
+ * Cross-tab live sync for a project's crew. Subscribes to the dual-written
+ * Convex crewAssignments table (by project); when another tab assigns/removes
+ * crew, confirms an offer, or changes a booking, the mirror pushes the change
+ * and we re-fetch the crew + labour-cost composites. Mount once in the crew panel.
+ */
+export function useProjectCrewLiveSync(
+  projectId: string | undefined,
+  orgId: string | undefined,
+) {
+  const assignments = useProjectCrewAssignments(projectId, orgId);
+  const fp = fingerprintCrewAssignments(assignments);
+  const prev = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!projectId) return;
+    if (fp !== undefined && prev.current !== undefined && fp !== prev.current) {
+      crew.refresh(projectId);
+      labour.refresh(projectId);
+    }
+    if (fp !== undefined) prev.current = fp;
+  }, [projectId, fp]);
+}

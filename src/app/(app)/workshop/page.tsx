@@ -15,11 +15,12 @@
  * touches Asset.status directly.
  */
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useMaintenanceRecords, fingerprintMaintenanceRecords } from "@/hooks/use-maintenance";
 import {
   Wrench,
   ChevronLeft,
@@ -277,6 +278,19 @@ function WorkshopContent() {
       }),
     enabled: !!orgId,
   });
+
+  // Cross-tab live sync: subscribe to the dual-written Convex maintenanceRecords
+  // table so a kanban status move (or any maintenance edit) in another tab
+  // re-fetches this board automatically.
+  const maintenanceDocs = useMaintenanceRecords(orgId);
+  const maintenanceFp = fingerprintMaintenanceRecords(maintenanceDocs);
+  const prevMaintenanceFp = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (maintenanceFp !== undefined && prevMaintenanceFp.current !== undefined && maintenanceFp !== prevMaintenanceFp.current) {
+      refetch();
+    }
+    if (maintenanceFp !== undefined) prevMaintenanceFp.current = maintenanceFp;
+  }, [maintenanceFp, refetch]);
 
   const statusMutation = useServerMutation({
     mutationFn: ({

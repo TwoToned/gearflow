@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useMaintenanceRecords, fingerprintMaintenanceRecords } from "@/hooks/use-maintenance";
 import {
   Plus,
   Wrench,
@@ -290,6 +291,19 @@ export default function MaintenancePage() {
         sortOrder: sortBy ? sortOrder : undefined,
       }),
   });
+
+  // Cross-tab live sync: subscribe to the dual-written Convex maintenanceRecords
+  // table; a fingerprint change (new repair, kanban move, field edit, deletion in
+  // another tab) triggers the existing server-action refetch.
+  const maintenanceDocs = useMaintenanceRecords(orgId);
+  const maintenanceFp = fingerprintMaintenanceRecords(maintenanceDocs);
+  const prevMaintenanceFp = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (maintenanceFp !== undefined && prevMaintenanceFp.current !== undefined && maintenanceFp !== prevMaintenanceFp.current) {
+      refetch();
+    }
+    if (maintenanceFp !== undefined) prevMaintenanceFp.current = maintenanceFp;
+  }, [maintenanceFp, refetch]);
 
   // Same-view read+write island: the delete invalidated ["maintenance"] (this
   // reader's own key) — replaced by refetch(). Not in the SSE map, so no

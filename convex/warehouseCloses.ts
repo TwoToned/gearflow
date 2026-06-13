@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService } from "./lib/auth";
+import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
 
 /**
  * Thin CRUD for WarehouseClose (Convex table "warehouseCloses"). GENERATED — Phase 2/5.
@@ -15,7 +15,7 @@ import { requireService } from "./lib/auth";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireService(ctx);
+    await requireOrgRead(ctx, orgId);
     return await ctx.db
       .query("warehouseCloses")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
@@ -26,8 +26,9 @@ export const list = query({
 export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
-    await requireService(ctx);
-    return await ctx.db.query("warehouseCloses").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    const doc = await ctx.db.query("warehouseCloses").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    await requireOrgReadDoc(ctx, doc);
+    return doc;
   },
 });
 

@@ -13,6 +13,12 @@ vi.mock("@/server/saved-views", () => ({
   deleteSavedView: vi.fn(async () => {}),
   setDefaultSavedView: vi.fn(async () => {}),
 }));
+// The component subscribes to Convex for cross-tab sync; stub the hook so the
+// smoke test doesn't need a ConvexProvider in the tree.
+vi.mock("@/hooks/use-back-office", () => ({
+  useSavedTableViews: () => undefined,
+  fingerprintSavedTableViews: () => undefined,
+}));
 
 import { SavedViewsMenu } from "@/components/ui/saved-views-menu";
 

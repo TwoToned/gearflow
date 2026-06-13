@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useSavedTableViews, fingerprintSavedTableViews } from "@/hooks/use-back-office";
 import { toast } from "sonner";
 import { BookmarkPlus, Check, Star, Trash2, ChevronDown, Loader2 } from "lucide-react";
 
@@ -69,6 +70,19 @@ export function SavedViewsMenu({ tableId, currentConfig, applyConfig, onResetPre
     queryKey,
     queryFn: () => getSavedViews(tableId) as unknown as Promise<SavedTableView[]>,
   });
+
+  // Cross-tab live sync: subscribe to the dual-written Convex savedTableViews
+  // table (filtered to this tableId); a fingerprint change (view added/renamed/
+  // default-changed/deleted in another tab) re-fetches this table's views.
+  const savedViewDocs = useSavedTableViews(orgId);
+  const savedViewFp = fingerprintSavedTableViews(savedViewDocs, tableId);
+  const prevSavedViewFp = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (savedViewFp !== undefined && prevSavedViewFp.current !== undefined && savedViewFp !== prevSavedViewFp.current) {
+      refetch();
+    }
+    if (savedViewFp !== undefined) prevSavedViewFp.current = savedViewFp;
+  }, [savedViewFp, refetch]);
 
   // Which saved view is currently "active" (last applied). Null = no view / custom.
   const [activeViewId, setActiveViewId] = useState<string | null>(null);

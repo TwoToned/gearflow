@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useWarehouseCloses, fingerprintWarehouseCloses } from "@/hooks/use-back-office";
 import {
   Loader2,
   PackageCheck,
@@ -47,6 +48,19 @@ export function CloseOutTab({
     queryKey: ["close-out-summary", orgId, projectId],
     queryFn: () => getCloseOutSummary(projectId),
   });
+
+  // Cross-tab live sync: subscribe to the dual-written Convex warehouseCloses
+  // table; if another staffer closes this project, the fingerprint changes and
+  // we re-fetch (so the "already closed" banner appears live).
+  const closeDocs = useWarehouseCloses(orgId);
+  const closeFp = fingerprintWarehouseCloses(closeDocs);
+  const prevCloseFp = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (closeFp !== undefined && prevCloseFp.current !== undefined && closeFp !== prevCloseFp.current) {
+      refetch();
+    }
+    if (closeFp !== undefined) prevCloseFp.current = closeFp;
+  }, [closeFp, refetch]);
 
   const closeMutation = useServerMutation({
     mutationFn: () => closeOutProject({ projectId }),

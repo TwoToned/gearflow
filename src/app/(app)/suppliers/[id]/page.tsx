@@ -1,10 +1,11 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
+import { useSupplierOrders, fingerprintSupplierOrders } from "@/hooks/use-back-office";
 import { Pencil, Mail, Phone, Globe, MapPin, Trash2, Plus, ChevronRight } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AddressDisplay } from "@/components/ui/address-display";
@@ -57,11 +58,24 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
     queryFn: () => getSupplierById(id),
   });
 
-  const { data: ordersData } = useServerQuery({
+  const { data: ordersData, refetch: refetchOrders } = useServerQuery({
     queryKey: ["supplier-orders", orgId, id],
     queryFn: () => getSupplierOrders({ supplierId: id, pageSize: 50 }),
     enabled: !!supplier,
   });
+
+  // Cross-tab live sync: subscribe to the dual-written Convex supplierOrders
+  // table; a fingerprint change (order placed/edited/received in another tab)
+  // re-fetches this supplier's orders.
+  const supplierOrderDocs = useSupplierOrders(orgId);
+  const supplierOrderFp = fingerprintSupplierOrders(supplierOrderDocs);
+  const prevSupplierOrderFp = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (supplierOrderFp !== undefined && prevSupplierOrderFp.current !== undefined && supplierOrderFp !== prevSupplierOrderFp.current) {
+      refetchOrders();
+    }
+    if (supplierOrderFp !== undefined) prevSupplierOrderFp.current = supplierOrderFp;
+  }, [supplierOrderFp, refetchOrders]);
 
   const { data: assetsData } = useServerQuery({
     queryKey: ["supplier-assets", orgId, id],

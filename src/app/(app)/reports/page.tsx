@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useSavedReports, fingerprintSavedReports } from "@/hooks/use-back-office";
 import { useServerQuery } from "@/hooks/use-server-query";
 import Link from "next/link";
 import {
@@ -99,6 +100,19 @@ export default function ReportsPage() {
     queryKey: ["saved-reports", orgId],
     queryFn: getSavedReports,
   });
+
+  // Cross-tab live sync: subscribe to the dual-written Convex savedReports table;
+  // a fingerprint change (shared report created/edited/pinned/deleted in another
+  // tab) re-fetches the list.
+  const savedReportDocs = useSavedReports(orgId);
+  const savedReportFp = fingerprintSavedReports(savedReportDocs);
+  const prevSavedReportFp = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (savedReportFp !== undefined && prevSavedReportFp.current !== undefined && savedReportFp !== prevSavedReportFp.current) {
+      refetchSavedReports();
+    }
+    if (savedReportFp !== undefined) prevSavedReportFp.current = savedReportFp;
+  }, [savedReportFp, refetchSavedReports]);
 
   const deleteMutation = useServerMutation({
     mutationFn: deleteSavedReport,

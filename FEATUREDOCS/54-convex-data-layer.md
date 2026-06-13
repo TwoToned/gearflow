@@ -2381,11 +2381,24 @@ are NOT live until `npx convex dev --once --env-file .env.local`, which also res
 `NEXT_PUBLIC_CONVEX_URL`/`SITE_URL` away from the Tailscale `roger:3210/3211` host —
 restore them after every push, then restart `next dev`.
 
-**Reactive coverage is now complete across every operational surface** (projects, pricing,
-services, tasks, sub-hires, damage, maintenance, workshop, crew panel/planner/timesheets,
-availability, stocktake). The only tables without a *direct* subscription are the
-`*RecordAssets`/join leaves, which refresh via their parent's signal (the parent row's
-`updatedAt` bumps on any nested child write) — no separate watcher needed.
+**Back-office tail (reactive, 2026-06-13):** supplier orders (already dual-written via
+`sub-hire-mirror`), plus NEW dual-write mirrors for warehouse closes (`warehouse-close-
+mirror`), saved reports (`saved-reports-mirror`), and saved table views (`saved-views-
+mirror`). Each flipped to `requireOrgRead`, got a backfill, and a fingerprint watcher in
+`use-back-office.ts` wired to: supplier detail page, close-out tab (the "already closed"
+banner appears live), reports page (shared reports sync org-wide), and the saved-views
+menu. Saved-views create/setDefault re-sync ALL of the user's views for the table because
+the txn unsets a prior default — a single-row mirror would leave a stale 2nd default.
+
+**Deliberately NOT made reactive:** WooCommerce + Discord integration config (single-admin
+settings; the Discord bot is out-of-process and reads Prisma directly — cross-tab sync is
+meaningless) and the notification feed (computed on-read from app state, no stored
+`Notification` table — making the bell live is a separate feature, not a migration).
+
+**Reactive coverage now spans every operational + back-office surface.** The only tables
+without a *direct* subscription are the `*RecordAssets`/join leaves, which refresh via
+their parent's signal (the parent row's `updatedAt` bumps on any nested child write).
+Still Prisma-only forever by design: Better Auth, `custom_role`/RBAC, `activityLog`.
 
 ## Migration phases (roadmap)
 

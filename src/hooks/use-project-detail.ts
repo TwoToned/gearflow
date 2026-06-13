@@ -43,7 +43,6 @@ export function useProjectDetail(projectId: string) {
     if (next !== undefined) {
       prevUpdatedAt.current = next;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [convexProject?.updatedAt, projectId]);
 
   return result;

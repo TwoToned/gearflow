@@ -24,6 +24,7 @@ export type ProjectGroupDoc = Doc<"projectGroups">;
 export type ProjectManagerDoc = Doc<"projectManagers">;
 export type ProjectServiceDoc = Doc<"projectServices">;
 export type ProjectTaskDoc = Doc<"projectTasks">;
+export type ProjectLineItemDoc = Doc<"projectLineItems">;
 
 /** All projects for an org (includes templates — filter isTemplate in consumer). */
 export function useProjects(orgId: string | undefined): ProjectDoc[] | undefined {
@@ -86,6 +87,17 @@ export function useProjectTasks(
 ): ProjectTaskDoc[] | undefined {
   return useQuery(
     api.projectTasks.listByProject,
+    projectId && orgId ? { projectId, orgId } : "skip",
+  );
+}
+
+/** All line items for a project (flat — parent + child rows; pricing spine). */
+export function useProjectLineItems(
+  projectId: string | undefined,
+  orgId: string | undefined,
+): ProjectLineItemDoc[] | undefined {
+  return useQuery(
+    api.projectLineItems.listByProject,
     projectId && orgId ? { projectId, orgId } : "skip",
   );
 }

@@ -15,6 +15,7 @@ import {
   useProjectOverbooked,
   refreshProjectOverbooked,
   useProjectSubHires,
+  useProjectEquipmentLiveSync,
 } from "@/hooks/use-project-equipment";
 import {
   DndContext,
@@ -122,6 +123,11 @@ interface EquipmentTabProps {
 export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: EquipmentTabProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+
+  // Cross-tab live sync: subscribe to the dual-written line-item / group /
+  // category Convex tables and re-fetch the equipment composites whenever
+  // another tab (or collaborator) edits pricing, moves items, or changes groups.
+  useProjectEquipmentLiveSync(projectId, orgId);
 
   // The sortable ID currently being hovered with a disallowed drop (Drop
   // Matrix 8C). Cleared on drag end / leave. Row components read this to

@@ -33,6 +33,7 @@ import {
   createDamageEventCore,
   updateDamageEventCore,
 } from "@/lib/damage-core";
+import { mirrorDamageCreate, patchDamageInConvex } from "@/lib/damage-mirror";
 import { UserFacingError } from "@/lib/errors";
 import { getModelMap } from "@/lib/models-read";
 import type { Prisma } from "@/generated/prisma/client";
@@ -79,6 +80,8 @@ export async function createDamageEvent(input: DamageEventCreateInput) {
     userId,
   });
 
+  await mirrorDamageCreate(result as unknown as Record<string, unknown>);
+
   await logActivity({
     organizationId,
     userId,
@@ -116,6 +119,8 @@ export async function updateDamageEvent(id: string, input: DamageEventUpdateInpu
   }
 
   const updated = await updateDamageEventCore(id, organizationId, parsed);
+
+  await patchDamageInConvex(id, updated as unknown as Record<string, unknown>);
 
   const changes: string[] = [];
   if (parsed.status && parsed.status !== existing.status) {

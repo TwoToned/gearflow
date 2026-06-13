@@ -2367,9 +2367,12 @@ via `crew-scheduling-mirror.ts`, so this added only the read layer. `crewAssignm
 `crewTimeEntries` → `requireOrgRead` + `crewAssignments.listByProject`; `use-crew-
 scheduling.ts` hooks; `useProjectCrewLiveSync` on the project crew panel (refreshes crew +
 labour cost), org-assignment watcher on the workshop planner, org-time-entry watcher on
-the timesheets page. KNOWN GAP: `crewAvailabilities` has no `organizationId` field/index,
-so availability-block edits aren't in the org-wide signal — they refresh on navigation
-(the assignment signal covers the core "who's booked" collaboration case).
+the timesheets page. **Availability blocks now sync too:** the Prisma CrewAvailability
+model has no `organizationId`, so a DENORMALIZED `organizationId` was hand-added to the
+Convex `crewAvailabilities` read model (resolved from crewMember at mirror time) +
+`by_organizationId` index + `listByOrg`; the planner watcher fingerprints assignments +
+availabilities together. (Hand-added schema field — the generator won't reproduce it;
+backfill `convex-backfill-crew-availability-org.ts` stamps existing rows.)
 
 **Stocktake** was already reactive (prior session — `stocktakeDetail.version` vector).
 
@@ -2378,8 +2381,11 @@ are NOT live until `npx convex dev --once --env-file .env.local`, which also res
 `NEXT_PUBLIC_CONVEX_URL`/`SITE_URL` away from the Tailscale `roger:3210/3211` host —
 restore them after every push, then restart `next dev`.
 
-**Still NOT cross-tab reactive:** crew availability blocks (no org index — see gap above),
-and the `*RecordAssets`/join leaf tables (refreshed via parent signal).
+**Reactive coverage is now complete across every operational surface** (projects, pricing,
+services, tasks, sub-hires, damage, maintenance, workshop, crew panel/planner/timesheets,
+availability, stocktake). The only tables without a *direct* subscription are the
+`*RecordAssets`/join leaves, which refresh via their parent's signal (the parent row's
+`updatedAt` bumps on any nested child write) — no separate watcher needed.
 
 ## Migration phases (roadmap)
 

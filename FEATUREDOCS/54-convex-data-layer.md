@@ -2400,6 +2400,45 @@ without a *direct* subscription are the `*RecordAssets`/join leaves, which refre
 their parent's signal (the parent row's `updatedAt` bumps on any nested child write).
 Still Prisma-only forever by design: Better Auth, `custom_role`/RBAC, `activityLog`.
 
+## Prod data migration to Convex Cloud (runbook, 2026-06-13)
+
+Prod will use **Convex Cloud** (managed), not the self-hosted Docker backend dev runs.
+The hybrid model means "migrate the data" = populate a parity copy of prod Prisma into
+the prod Cloud deployment, then keep it in sync via the dual-write (which ships in the app
+code). Prisma stays the write source of truth.
+
+**CI change (done):** `.github/workflows/main.yml` replaces the standalone build with
+`pnpm exec convex deploy --cmd 'pnpm run build'` + a `CONVEX_DEPLOY_KEY` secret. That
+deploys schema+functions to the prod Cloud deployment AND runs the build with the prod
+`NEXT_PUBLIC_CONVEX_URL` injected; build only runs if the Convex deploy succeeds.
+
+**Cloud-specific gotcha:** Convex Cloud deployments have their OWN env vars (dashboard /
+`npx convex env set`), separate from the app's `.env`. The Phase-5 auth bridge
+(`convex/auth.config.ts`) validates Better Auth ES256 JWTs against a trusted issuer/JWKS —
+those must be set as **Convex deployment env vars** pointing at prod Better Auth, or every
+browser reactive read returns `Unauthorized`.
+
+**Sequence:** (1) create Cloud project + prod deployment, grab `CONVEX_DEPLOY_KEY`; (2) set
+the deployment's auth-bridge env vars; (3) merge the Convex branch → `main` (pipeline
+deploys the app with dual-write live + functions on Cloud in one shot); (4) run the
+backfills **after** the app is deployed so the dual-write is already capturing new writes,
+then re-run to heal the deploy-window gap; (5) parity-gate.
+
+**Tooling (new):**
+- `pnpm convex:backfill:all` (`scripts/convex-backfill-all.ts`) — runs every backfill in
+  order; idempotent, re-runnable.
+- `pnpm convex:parity` (`scripts/convex-parity-check.ts` + `convex/parity.ts`) — counts
+  every dual-written table Prisma-vs-Convex (Convex side paginated for the per-query read
+  limit). Go/no-go gate. Exit 1 on any mismatch.
+
+**★ The parity gate immediately earned its keep:** on first run it caught that
+`projectManager` / `projectService` / `projectTask` were NEVER dual-written — so the
+services + tasks cross-tab reactivity shipped earlier read an always-empty Convex table.
+Fixed with `project-subtable-mirror.ts` (authoritative per-project reconcile, wired into
+every mutating action + duplicate/delete). Lesson: **a reactive read is only as good as the
+dual-write behind it — always parity-check after wiring a subscription.** Backfills with no
+dedicated script (project sub-tables, line-item units) are exactly what the gate surfaces.
+
 ## Migration phases (roadmap)
 
 | Phase | Scope | Verification |

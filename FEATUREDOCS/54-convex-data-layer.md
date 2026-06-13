@@ -2324,6 +2324,53 @@ forever (Convex is never the authZ source of truth). **The client data-fetching
 stack is now Convex `useQuery` + the `useServerQuery`/`useServerMutation`/
 `createSharedResource` keystones end to end — no React Query, no SSE bus.**
 
+## Phase 4 reactive cutover — project page + damage + maintenance (2026-06-13)
+
+Cross-tab collaboration push: "edit in one tab, see it in another with no refresh." The
+pattern is consistent and does NOT rewrite the deep composite reads (Prisma still owns
+asset/unit/kit/Better-Auth-user joins) — each surface keeps its server-action composite
+read and adds a **Convex subscription as the cross-tab change signal** that triggers a
+re-fetch when a fingerprint flips.
+
+**Project domain (fully reactive):**
+- `convex/projects.ts` + 5 sub-tables (`projectCategories/Groups/Managers/Services/
+  Tasks`) + `projectLineItems` + `subHires`: `list`/`getById` switched `requireService`
+  → `requireOrgRead`, plus new `listByProject` browser queries.
+- `src/hooks/use-projects.ts` — reactive `useProjects`/`useProject` + per-project
+  `useProjectCategories/Groups/Managers/Services/Tasks/LineItems/SubHireDocs`.
+- Project **list** (`ProjectTable`) is now a PURE Convex read (`useProjects` +
+  `useClients` + `useLocations`, client-side filter/sort/paginate).
+- Project **detail** (`use-project-detail.ts`) keeps the `getProject` composite + adds a
+  `useProject` subscription; an `updatedAt` change triggers `refreshProjectDetail`.
+  Financial totals ride this (recalc bumps the project row).
+- **Equipment/pricing** (`useProjectEquipmentLiveSync`) fingerprints line-items + groups
+  + categories + sub-hires. **Services** (`useProjectServicesLiveSync`), **Tasks**
+  (inline TasksPanel watcher), **Sub-hires** (folded into the equipment sync).
+
+**Damage (NEW dual-write + reactive):** was unmirrored. `src/lib/damage-mirror.ts` wired
+into the two write actions (`createDamageEvent`, `updateDamageEvent`; chargeBack/resolve
+delegate) — NOT into `damage-core.ts` (integration tests drive it, must stay
+Convex-free). `convex/damageEvents.ts` → `requireOrgRead`. `scripts/convex-backfill-
+damage.ts`. `use-damage.ts` hook + fingerprint watcher on the list.
+
+**Maintenance (NEW dual-write + reactive):** also unmirrored. `src/lib/maintenance-
+mirror.ts` wired into all four write sites (create/update/setMaintenanceStatus/delete) +
+the damage create path's linked repair record. SCOPE: only the `maintenanceRecord` row
+is mirrored — `maintenanceRecordAssets` stays Prisma because the record's `updatedAt`
+bumps whenever asset links change (sufficient signal). `convex/maintenanceRecords.ts` →
+`requireOrgRead`. Backfill + `use-maintenance.ts` hook + watcher on BOTH the list and the
+workshop kanban (the kanban — cards moving columns live — is the highest-value surface).
+
+**Stocktake** was already reactive (prior session — `stocktakeDetail.version` vector).
+
+**Self-hosted Convex push gotcha:** no `convex dev` watcher runs; edits to `convex/*.ts`
+are NOT live until `npx convex dev --once --env-file .env.local`, which also resets
+`NEXT_PUBLIC_CONVEX_URL`/`SITE_URL` away from the Tailscale `roger:3210/3211` host —
+restore them after every push, then restart `next dev`.
+
+**Still NOT cross-tab reactive:** crew scheduling/availability (roster is reactive,
+scheduling isn't), and the `*RecordAssets`/join leaf tables (refreshed via parent signal).
+
 ## Migration phases (roadmap)
 
 | Phase | Scope | Verification |

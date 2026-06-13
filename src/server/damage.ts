@@ -34,6 +34,7 @@ import {
   updateDamageEventCore,
 } from "@/lib/damage-core";
 import { mirrorDamageCreate, patchDamageInConvex } from "@/lib/damage-mirror";
+import { syncMaintenanceToConvex } from "@/lib/maintenance-mirror";
 import { UserFacingError } from "@/lib/errors";
 import { getModelMap } from "@/lib/models-read";
 import type { Prisma } from "@/generated/prisma/client";
@@ -81,6 +82,10 @@ export async function createDamageEvent(input: DamageEventCreateInput) {
   });
 
   await mirrorDamageCreate(result as unknown as Record<string, unknown>);
+  // createDamageEventCore may spawn a linked repair MaintenanceRecord — mirror it too.
+  if ((result as { maintenanceRecordId?: string | null }).maintenanceRecordId) {
+    await syncMaintenanceToConvex((result as { maintenanceRecordId?: string | null }).maintenanceRecordId);
+  }
 
   await logActivity({
     organizationId,

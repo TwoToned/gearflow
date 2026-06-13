@@ -10,6 +10,11 @@ import type { Prisma, MaintenanceStatus } from "@/generated/prisma/client";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { syncAssetsToConvex } from "@/lib/asset-mirror";
+import {
+  mirrorMaintenanceCreate,
+  patchMaintenanceInConvex,
+  removeMaintenanceFromConvex,
+} from "@/lib/maintenance-mirror";
 import { UserFacingError } from "@/lib/errors";
 import { getModelMap } from "@/lib/models-read";
 
@@ -275,6 +280,7 @@ export async function createMaintenanceRecord(data: MaintenanceFormValues) {
   });
   // Mirror any asset status flips (hold/release) to Convex.
   await syncAssetsToConvex(assetIds);
+  await mirrorMaintenanceCreate(record as unknown as Record<string, unknown>);
 
   await logActivity({
     organizationId,
@@ -392,6 +398,7 @@ export async function updateMaintenanceRecord(
   });
   // Mirror any asset status flips (removed-asset release + remaining hold/release).
   await syncAssetsToConvex([...toRemove, ...newAssetIds]);
+  await patchMaintenanceInConvex(record.id, record as unknown as Record<string, unknown>);
 
   await logActivity({
     organizationId,
@@ -468,6 +475,7 @@ export async function setMaintenanceStatus(
   });
   // Mirror any asset status flips (hold/release) to Convex.
   await syncAssetsToConvex(assetIds);
+  await patchMaintenanceInConvex(id, updated as unknown as Record<string, unknown>);
 
   await logActivity({
     organizationId,
@@ -514,6 +522,7 @@ export async function deleteMaintenanceRecord(id: string) {
   });
   // Mirror any released asset status flips to Convex.
   await syncAssetsToConvex(record.assets.map((a) => a.assetId));
+  await removeMaintenanceFromConvex(id);
 
   await logActivity({
     organizationId,

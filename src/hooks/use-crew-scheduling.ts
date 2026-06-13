@@ -22,6 +22,7 @@ import type { Doc } from "../../convex/_generated/dataModel";
  */
 export type CrewAssignmentDoc = Doc<"crewAssignments">;
 export type CrewTimeEntryDoc = Doc<"crewTimeEntries">;
+export type CrewAvailabilityDoc = Doc<"crewAvailabilities">;
 
 /** All crew assignments for a project (the project crew panel signal). */
 export function useProjectCrewAssignments(
@@ -42,6 +43,11 @@ export function useOrgCrewAssignments(orgId: string | undefined): CrewAssignment
 /** All time entries for an org (the timesheets signal). */
 export function useOrgTimeEntries(orgId: string | undefined): CrewTimeEntryDoc[] | undefined {
   return useQuery(api.crewTimeEntries.list, orgId ? { orgId } : "skip");
+}
+
+/** All availability blocks for an org (the planner availability signal). */
+export function useOrgAvailabilities(orgId: string | undefined): CrewAvailabilityDoc[] | undefined {
+  return useQuery(api.crewAvailabilities.listByOrg, orgId ? { orgId } : "skip");
 }
 
 /**
@@ -73,6 +79,22 @@ export function fingerprintTimeEntries(
   return rows
     .map((t) =>
       `${t.id}:${t.updatedAt ?? 0}:${t.status ?? ""}:${t.crewMemberId ?? ""}:${t.assignmentId ?? ""}:${t.date ?? ""}:${t.totalHours ?? ""}:${t.approvedById ?? ""}`,
+    )
+    .sort()
+    .join("|");
+}
+
+/**
+ * Fingerprint of availability blocks — changes on add/remove or any
+ * date/type/reason edit (someone marking themselves off, etc.).
+ */
+export function fingerprintAvailabilities(
+  rows: CrewAvailabilityDoc[] | undefined,
+): string | undefined {
+  if (!rows) return undefined;
+  return rows
+    .map((a) =>
+      `${a.id}:${a.updatedAt ?? 0}:${a.crewMemberId ?? ""}:${a.type ?? ""}:${a.startDate ?? ""}:${a.endDate ?? ""}:${a.isAllDay ?? ""}:${a.startTime ?? ""}:${a.endTime ?? ""}`,
     )
     .sort()
     .join("|");

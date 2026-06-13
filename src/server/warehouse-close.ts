@@ -5,6 +5,7 @@ import { requirePermission } from "@/lib/org-context";
 import { getModelMap } from "@/lib/models-read";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import { mirrorWarehouseCloseCreate } from "@/lib/warehouse-close-mirror";
 import {
   warehouseCloseSchema,
   type WarehouseCloseFormValues,
@@ -255,6 +256,8 @@ export async function closeOutProject(data: WarehouseCloseFormValues) {
     }
     throw err;
   }
+
+  await mirrorWarehouseCloseCreate(result as unknown as Record<string, unknown>);
 
   await logActivity({
     organizationId,

@@ -1,4 +1,4 @@
-import { getConvexClient } from "@/lib/convex-client";
+import { getConvexClient, withConvexReadRetry } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 
@@ -29,7 +29,9 @@ export async function getSupplierById(id: string): Promise<ConvexSupplier | null
 }
 
 export async function getSuppliersByOrg(orgId: string): Promise<ConvexSupplier[]> {
-  return await (await getConvexClient()).query(api.suppliers.list, { orgId });
+  return await withConvexReadRetry(async () =>
+    (await getConvexClient()).query(api.suppliers.list, { orgId }),
+  );
 }
 
 /** All of an org's suppliers keyed by cuid `id`, for attaching to joined rows. */

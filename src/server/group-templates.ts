@@ -12,6 +12,7 @@ import {
 } from "@/lib/validations/group-template";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import { writeCollabActivityEvent } from "@/lib/collaboration-activity";
 import { mirrorProjectGroupCreate, syncProjectGroupsToConvex } from "@/lib/project-grouping-mirror";
 import { calculateSuggestedPrice } from "./project-groups";
 import { addKitLineItem, recalculateProjectTotals } from "./line-items";
@@ -311,6 +312,7 @@ export async function applyGroupTemplate(
           undefined,
           parsed.categoryId,
           group.id,
+          false, // grouped template event below covers these — no per-kit spam
         );
       }
     } catch (e) {
@@ -347,6 +349,19 @@ export async function applyGroupTemplate(
     entityName: parsed.title,
     summary,
   });
+
+  // One grouped activity-feed event for the whole import — not one per line.
+  await writeCollabActivityEvent(
+    { organizationId, userId, userName },
+    {
+      entityType: "project",
+      entityId: projectId,
+      action: "template_applied",
+      summary: `imported ${template.items.length} item${template.items.length === 1 ? "" : "s"} from template "${template.name}" into "${parsed.title}"`,
+      targetType: "group",
+      targetId: group.id,
+    },
+  );
 
   return serialize({ ...group, warnings: kitWarnings });
 }

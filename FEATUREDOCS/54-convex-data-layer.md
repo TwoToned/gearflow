@@ -2480,6 +2480,39 @@ blip no longer de-auths the whole Convex client. Regression test:
 `src/lib/convex-token-fetch.test.ts`. **Rule: never collapse a transient auth-token
 fetch to null; null means "logged out" to Convex and de-auths every subscription.**
 
+### Follow-up — auth-ready gating closes the connect-time race (`useAuthedQuery`)
+
+The token-fetch resilience above treats one trigger (a transient `null` token
+mid-session). It does **not** close the *other* path to the same crash, the one this
+section already named: the version vectors are "gated only on `projectId`, NOT on
+auth-ready." `ConvexProviderWithAuth` only calls `client.setAuth()` — which is what
+**pauses the socket** while the first token is fetched — once `isAuthenticated`
+(`!!session` from Better Auth's `useSession()`) flips true. On a hard navigation /
+refresh straight onto a detail page (`warehouse/[projectId]`, asset, kit,
+stocktake), the route-param-keyed `useQuery(api.<x>Detail.version, { id })` subscribes
+on the **first render**, before the session has loaded — so the socket is live but
+unauthenticated, `getUserIdentity()` is null, and `requireOrgReadDoc` throws an
+**uncaught** `ConvexError` that crashes the page. The `list`/`getById` hooks dodged
+this only by accident: their arg is `orgId` (from `useActiveOrganization()`), which
+is `undefined` → `"skip"` until the session resolves.
+
+**Fix: `src/hooks/use-authed-query.ts` — `useAuthedQuery`, a drop-in for Convex's
+`useQuery` that holds the subscription (`"skip"`) until `useConvexAuth().isAuthenticated`
+is true, then runs.** Convex automatically re-runs all subscriptions when auth state
+changes, so the query fires the instant the token attaches — no manual refetch. This
+also re-skips if auth is later lost (a spent-retry / genuine-401 de-auth), so a
+mid-session token loss can no longer throw either. **Every browser Convex read now
+goes through `useAuthedQuery`** (all ~70 call sites across `src/hooks/use-*.ts` and the
+collaboration/project components), so the whole bug class is closed deterministically
+rather than per-query-by-accident — and any new browser query inherits the gate.
+The SERVER guards stay strict (`requireOrgRead*` still rejects a genuine anonymous
+direct call — the Phase-5 invariant in `convex-phase5-auth-bridge.md`); this only
+stops the browser from ever *sending* a read before it holds a token. Regression test:
+`src/hooks/use-authed-query.test.tsx`. **Rule: browser Convex reads use
+`useAuthedQuery`, never `useQuery` directly — a query keyed off anything available
+before the session (route params, SSR props) will otherwise run unauthenticated and
+crash.**
+
 Plus two supporting properties of the SERVER-side Convex read path:
 
 **1. Convex masks plain `Error` in prod — throw `ConvexError`.** A function that

@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 
@@ -26,17 +26,17 @@ export type CrewRoleDoc = Doc<"crewRoles">;
 export type CrewSkillDoc = Doc<"crewSkills">;
 
 export function useCrewMembers(orgId: string | undefined): CrewMemberDoc[] | undefined {
-  return useQuery(api.crewMembers.list, orgId ? { orgId } : "skip");
+  return useAuthedQuery(api.crewMembers.list, orgId ? { orgId } : "skip");
 }
 
 export function useCrewMember(id: string | undefined): CrewMemberDoc | null | undefined {
-  return useQuery(api.crewMembers.getById, id ? { id } : "skip");
+  return useAuthedQuery(api.crewMembers.getById, id ? { id } : "skip");
 }
 
 export function useCrewRoles(orgId: string | undefined): CrewRoleDoc[] | undefined {
-  return useQuery(api.crewRoles.list, orgId ? { orgId } : "skip");
+  return useAuthedQuery(api.crewRoles.list, orgId ? { orgId } : "skip");
 }
 
 export function useCrewSkills(orgId: string | undefined): CrewSkillDoc[] | undefined {
-  return useQuery(api.crewSkills.list, orgId ? { orgId } : "skip");
+  return useAuthedQuery(api.crewSkills.list, orgId ? { orgId } : "skip");
 }

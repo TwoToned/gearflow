@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 
@@ -20,19 +20,19 @@ export type AssetDoc = Doc<"assets">;
 export type BulkAssetDoc = Doc<"bulkAssets">;
 
 export function useAssets(orgId: string | undefined): AssetDoc[] | undefined {
-  return useQuery(api.assets.list, orgId ? { orgId } : "skip");
+  return useAuthedQuery(api.assets.list, orgId ? { orgId } : "skip");
 }
 
 export function useAsset(id: string | undefined): AssetDoc | null | undefined {
-  return useQuery(api.assets.getById, id ? { id } : "skip");
+  return useAuthedQuery(api.assets.getById, id ? { id } : "skip");
 }
 
 export function useBulkAssets(orgId: string | undefined): BulkAssetDoc[] | undefined {
-  return useQuery(api.bulkAssets.list, orgId ? { orgId } : "skip");
+  return useAuthedQuery(api.bulkAssets.list, orgId ? { orgId } : "skip");
 }
 
 export function useBulkAsset(id: string | undefined): BulkAssetDoc | null | undefined {
-  return useQuery(api.bulkAssets.getById, id ? { id } : "skip");
+  return useAuthedQuery(api.bulkAssets.getById, id ? { id } : "skip");
 }
 
 /**
@@ -44,5 +44,5 @@ export function useBulkAsset(id: string | undefined): BulkAssetDoc | null | unde
  * renders this composite).
  */
 export function useAssetDetailVersion(id: string | undefined) {
-  return useQuery(api.assetDetail.version, id ? { id } : "skip");
+  return useAuthedQuery(api.assetDetail.version, id ? { id } : "skip");
 }

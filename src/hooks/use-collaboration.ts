@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback, useMemo } from "react";
-import { useQuery } from "convex/react";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../convex/_generated/api";
 import { useActiveOrganization, useSession } from "@/lib/auth-client";
 import { getUserColor, getUserInitials } from "@/lib/collaboration-colors";
@@ -83,7 +83,7 @@ export function usePresence(options: UsePresenceOptions) {
     clearFnRef.current = () => clearMut.mutate();
   });
 
-  const presence = useQuery(
+  const presence = useAuthedQuery(
     api.collaboration.listPresence,
     orgId && enabled
       ? { orgId, entityType, entityId }
@@ -202,7 +202,7 @@ export function useEditLock(options: UseEditLockOptions) {
   });
 
   // Reactive lock view for all subscribers via Convex subscription
-  const liveLock = useQuery(
+  const liveLock = useAuthedQuery(
     api.collaboration.getLock,
     orgId && enabled ? { orgId, entityType, entityId, targetType, targetId } : "skip"
   );

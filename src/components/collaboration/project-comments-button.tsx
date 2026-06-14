@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../../convex/_generated/api";
 import { MessageCircle, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,7 @@ export function ProjectCommentsButton({
   orgId: string;
   projectId: string;
 }) {
-  const summary = useQuery(api.collaboration.getProjectBlockingSummary, {
+  const summary = useAuthedQuery(api.collaboration.getProjectBlockingSummary, {
     orgId,
     projectId,
   }) as { count: number } | undefined;

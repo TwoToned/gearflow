@@ -4,6 +4,18 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.19.5.0] - 2026-06-14
+
+### Fixed
+- **The last of the random "couldn't complete your request" crashes on detail
+  pages are gone.** Opening or refreshing a warehouse project, asset, kit, or
+  stocktake page directly could crash it: the live-data connection sent its first
+  request before your login token had finished loading, so the server rejected it
+  as unauthenticated. Every live page now waits for the token before it asks for
+  data, and automatically reconnects the moment the token lands — so a cold load
+  or refresh no longer races into an error. This completes the fix started in
+  0.19.3.0 (which only covered a token dropping mid-session).
+
 ## [0.19.4.0] - 2026-06-14
 
 ### Added

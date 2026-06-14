@@ -10,7 +10,7 @@
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useQuery } from "convex/react";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../../convex/_generated/api";
 import {
   GripVertical,
@@ -847,17 +847,17 @@ export function LineItemRow({
     useSortable({ id: `li-${item.id}` });
 
   // Collaboration: reactive lock and review marker for this row
-  const liveLock = useQuery(
+  const liveLock = useAuthedQuery(
     api.collaboration.getLock,
     orgId && projectId ? { orgId, entityType: "project", entityId: projectId, targetType: "lineItem", targetId: item.id } : "skip"
   );
-  const liveMarker = useQuery(
+  const liveMarker = useAuthedQuery(
     api.collaboration.getReviewMarker,
     orgId && projectId ? { orgId, entityId: projectId, targetId: item.id } : "skip"
   );
   // Comment counts for all line items on the project — Convex dedupes this
   // identical subscription across every row, so it's a single live query.
-  const commentCounts = useQuery(
+  const commentCounts = useAuthedQuery(
     api.collaboration.listThreadCommentCounts,
     orgId && projectId ? { orgId, entityType: "project", entityId: projectId } : "skip"
   ) as Record<string, { open: number; total: number; blockingOpen: number }> | undefined;

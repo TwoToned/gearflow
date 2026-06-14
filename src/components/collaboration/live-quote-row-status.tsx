@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useQuery } from "convex/react";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../../convex/_generated/api";
 import { MessageCircle, Pencil } from "lucide-react";
 import { ReviewMarkerBadge, type MarkerStatus } from "./review-marker-badge";
@@ -42,7 +42,7 @@ export function LiveQuoteRowStatus({
   updatedAt,
   className,
 }: LiveQuoteRowStatusProps) {
-  const lock = useQuery(
+  const lock = useAuthedQuery(
     api.collaboration.getLock,
     orgId ? { orgId, entityType: "project", entityId, targetType: "lineItem", targetId } : "skip"
   );
@@ -113,7 +113,7 @@ export function EditingRowHighlight({
   targetId: string;
   myUserId?: string;
 }) {
-  const lock = useQuery(
+  const lock = useAuthedQuery(
     api.collaboration.getLock,
     orgId ? { orgId, entityType: "project", entityId, targetType: "lineItem", targetId } : "skip"
   );

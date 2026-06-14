@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 
@@ -22,11 +22,11 @@ import type { Doc } from "../../convex/_generated/dataModel";
 export type MaintenanceRecordDoc = Doc<"maintenanceRecords">;
 
 export function useMaintenanceRecords(orgId: string | undefined): MaintenanceRecordDoc[] | undefined {
-  return useQuery(api.maintenanceRecords.list, orgId ? { orgId } : "skip");
+  return useAuthedQuery(api.maintenanceRecords.list, orgId ? { orgId } : "skip");
 }
 
 export function useMaintenanceRecord(id: string | undefined): MaintenanceRecordDoc | null | undefined {
-  return useQuery(api.maintenanceRecords.getById, id ? { id } : "skip");
+  return useAuthedQuery(api.maintenanceRecords.getById, id ? { id } : "skip");
 }
 
 /**

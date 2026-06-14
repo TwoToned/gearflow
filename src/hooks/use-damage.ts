@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 
@@ -19,11 +19,11 @@ import type { Doc } from "../../convex/_generated/dataModel";
 export type DamageEventDoc = Doc<"damageEvents">;
 
 export function useDamageEvents(orgId: string | undefined): DamageEventDoc[] | undefined {
-  return useQuery(api.damageEvents.list, orgId ? { orgId } : "skip");
+  return useAuthedQuery(api.damageEvents.list, orgId ? { orgId } : "skip");
 }
 
 export function useDamageEvent(id: string | undefined): DamageEventDoc | null | undefined {
-  return useQuery(api.damageEvents.getById, id ? { id } : "skip");
+  return useAuthedQuery(api.damageEvents.getById, id ? { id } : "skip");
 }
 
 /**

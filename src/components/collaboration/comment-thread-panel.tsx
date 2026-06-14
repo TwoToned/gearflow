@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery } from "convex/react";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../../convex/_generated/api";
 import {
   MessageCircle,
@@ -169,7 +169,7 @@ interface ThreadViewProps {
 function ThreadView({ orgId, thread, members }: ThreadViewProps) {
   const [reply, setReply] = useState("");
   const [mentions, setMentions] = useState<string[]>([]);
-  const comments = useQuery(api.collaboration.listComments, {
+  const comments = useAuthedQuery(api.collaboration.listComments, {
     orgId,
     threadId: thread._id,
   }) as Comment[] | undefined;
@@ -336,7 +336,7 @@ export function CommentThreadPanel({
   const [blocking, setBlocking] = useState(false);
   const [mentions, setMentions] = useState<string[]>([]);
 
-  const threads = useQuery(
+  const threads = useAuthedQuery(
     api.collaboration.listThreads,
     open ? { orgId, entityType, entityId, targetType, targetId } : "skip"
   ) as Thread[] | undefined;

@@ -2,8 +2,10 @@
 
 > Status: IN PROGRESS — v1 tabs implemented (PR #184). Stage model
 > (`src/lib/warehouse-stage.ts` + tests), deprep-preserves-returned-units fix,
-> and the Returned/Depreped tabs + leak removal are landed. Visual QA + the
-> partial-return presentation pass still pending; Kanban board is the fast-follow.
+> the Returned/Depreped tabs + leak removal, and partial-return split context
+> (`describeStageSplit` → "6 deployed · 4 returned" on the Returned/Depreped
+> rows) are landed. Pending: **visual QA**; the Deployed-tab "of N" hint
+> (optional symmetry polish); Kanban board (fast-follow).
 > (Originally: APPROVED via /autoplan — ready to implement.)
 > Branch: worktree-bridge-cse_013eDwEAQ9UkG61zX5gBcp98
 > Owner: Jayden

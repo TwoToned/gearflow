@@ -43,6 +43,21 @@ export const create = mutation({
   },
 });
 
+export const createIfMissing = mutation({
+  args: {
+    id: v.string(),
+    maintenanceRecordId: v.string(),
+    assetId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const existing = await ctx.db.query("maintenanceRecordAssets").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+    if (existing) return { _id: existing._id, created: false };
+    const _id = await ctx.db.insert("maintenanceRecordAssets", args);
+    return { _id, created: true };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),

@@ -57,6 +57,35 @@ export const create = mutation({
   },
 });
 
+export const createIfMissing = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    name: v.string(),
+    type: v.string(),
+    basePdf: v.optional(v.string()),
+    schemas: v.optional(v.string()),
+    settings: v.optional(v.string()),
+    sections: v.optional(v.string()),
+    brandTemplateId: v.optional(v.string()),
+    thumbnailData: v.optional(v.string()),
+    isDefault: v.optional(v.boolean()),
+    isDraft: v.optional(v.boolean()),
+    version: v.optional(v.number()),
+    thumbnailUrl: v.optional(v.string()),
+    publishedAt: v.optional(v.number()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const existing = await ctx.db.query("documentTemplates").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+    if (existing) return { _id: existing._id, created: false };
+    const _id = await ctx.db.insert("documentTemplates", args);
+    return { _id, created: true };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),
@@ -83,7 +112,9 @@ export const update = mutation({
     await requireService(ctx);
     const doc = await ctx.db.query("documentTemplates").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new Error("documentTemplates not found: " + id);
-    await ctx.db.patch(doc._id, patch);
+    const safePatch = { ...patch };
+    delete safePatch.organizationId;
+    await ctx.db.patch(doc._id, safePatch);
     return doc._id;
   },
 });

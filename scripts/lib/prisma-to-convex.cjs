@@ -42,6 +42,37 @@ const SCALAR = {
   Json: "v.any()", BigInt: "v.int64()", Bytes: "v.bytes()",
 };
 
+// Security review P1-2/P1-3: NEVER mirror these secret columns into Convex. The
+// Convex copy is a read model; signing keys + integration secrets stay canonical
+// in Prisma/Better Auth. Stripping them here means BOTH generators omit the
+// column, AND any future mirror that tries to write it is rejected by the strict
+// Convex schema (a failsafe, not just a convention).
+const STRIP_FIELDS = {
+  jwkses: ["privateKey"],                                  // JWT signing private key
+  wooCommerceIntegrations: ["webhookSecret"],
+  discordIntegrations: ["signingSecret", "discordBotToken"],
+};
+
+// DENORMALIZED fields not present in the Prisma model, added to the Convex read
+// model only. `crewAvailability` is scoped via crewMember in Prisma (no
+// organizationId column); the Convex copy carries a denormalized organizationId
+// (stamped at mirror time) so the crew planner can subscribe org-wide. See
+// src/lib/saved-views... no — src/server/crew-availability.ts + FEATUREDOCS/54.
+const EXTRA_FIELDS = {
+  crewAvailabilities: [
+    { name: "organizationId", validator: "v.string()", optional: true },
+  ],
+};
+// Extra indexes for the denormalized fields above (the parser only auto-indexes
+// real Prisma relation FKs / @unique / @@index, so denormalized cols need this).
+const EXTRA_INDEXES = {
+  crewAvailabilities: [["organizationId"]],
+  // P2-1: the warehouse landing list (convex/warehouseDetail.ts listVersion)
+  // needs only the 5 pipeline statuses, not every org project. Composite index
+  // lets it query per-status instead of collecting the whole org + filtering.
+  projects: [["organizationId", "status"]],
+};
+
 function parse(root) {
   const raw = fs.readFileSync(path.join(root, "prisma/schema.prisma"), "utf8");
   const lines = raw.split("\n");
@@ -135,6 +166,19 @@ function parse(root) {
     }
   }
 
+  // Apply security strips + denormalized additions BEFORE deriving flags/indexes
+  // so orgScoped detection + index generation see the final field set.
+  for (const mdl of models) {
+    const strip = STRIP_FIELDS[mdl.key];
+    if (strip) mdl.fields = mdl.fields.filter(f => !strip.includes(f.name));
+    const extra = EXTRA_FIELDS[mdl.key];
+    if (extra) for (const e of extra) {
+      if (!mdl.fields.some(f => f.name === e.name)) {
+        mdl.fields.push({ name: e.name, validator: e.validator, optional: !!e.optional });
+      }
+    }
+  }
+
   // Indexes + derived flags
   for (const mdl of models) {
     const fieldNames = new Set(mdl.fields.map(f => f.name));
@@ -155,6 +199,7 @@ function parse(root) {
     for (const fk of mdl.fkFields) add([fk]);
     for (const u of mdl.uniques) add([u]);
     for (const c of mdl.compounds) add(c);
+    for (const e of (EXTRA_INDEXES[mdl.key] || [])) add(e);
     mdl.indexes = idx;
     mdl.orgScoped = fieldNames.has("organizationId");
     // first foreign key that is actually a stored field (for non-org list scoping)

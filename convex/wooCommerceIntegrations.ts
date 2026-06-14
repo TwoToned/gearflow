@@ -36,7 +36,6 @@ export const create = mutation({
     id: v.string(),
     organizationId: v.string(),
     isEnabled: v.optional(v.boolean()),
-    webhookSecret: v.string(),
     storeUrl: v.optional(v.string()),
     productMatchField: v.optional(v.string()),
     customFieldKey: v.optional(v.string()),
@@ -61,13 +60,44 @@ export const create = mutation({
   },
 });
 
+export const createIfMissing = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    isEnabled: v.optional(v.boolean()),
+    storeUrl: v.optional(v.string()),
+    productMatchField: v.optional(v.string()),
+    customFieldKey: v.optional(v.string()),
+    rentalStartKey: v.optional(v.string()),
+    rentalEndKey: v.optional(v.string()),
+    eventStartKey: v.optional(v.string()),
+    deliveryAddressKey: v.optional(v.string()),
+    notesKey: v.optional(v.string()),
+    dateFormat: v.optional(v.string()),
+    locationMetaKey: v.optional(v.string()),
+    defaultLocationId: v.optional(v.string()),
+    defaultProjectType: v.optional(v.string()),
+    autoConfirmEnquiry: v.optional(v.boolean()),
+    notifyUserIds: v.optional(v.array(v.string())),
+    lastPayload: v.optional(v.any()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const existing = await ctx.db.query("wooCommerceIntegrations").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+    if (existing) return { _id: existing._id, created: false };
+    const _id = await ctx.db.insert("wooCommerceIntegrations", args);
+    return { _id, created: true };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),
     patch: v.object({
       organizationId: v.optional(v.string()),
       isEnabled: v.optional(v.boolean()),
-      webhookSecret: v.optional(v.string()),
       storeUrl: v.optional(v.string()),
       productMatchField: v.optional(v.string()),
       customFieldKey: v.optional(v.string()),
@@ -91,7 +121,9 @@ export const update = mutation({
     await requireService(ctx);
     const doc = await ctx.db.query("wooCommerceIntegrations").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new Error("wooCommerceIntegrations not found: " + id);
-    await ctx.db.patch(doc._id, patch);
+    const safePatch = { ...patch };
+    delete safePatch.organizationId;
+    await ctx.db.patch(doc._id, safePatch);
     return doc._id;
   },
 });

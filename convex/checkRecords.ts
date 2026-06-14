@@ -58,6 +58,35 @@ export const create = mutation({
   },
 });
 
+export const createIfMissing = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    context: enums.CheckContext,
+    lineItemId: v.optional(v.string()),
+    lineItemUnitId: v.optional(v.string()),
+    assetId: v.optional(v.string()),
+    bulkAssetId: v.optional(v.string()),
+    kitId: v.optional(v.string()),
+    checkItemId: v.string(),
+    checkItemLabelSnapshot: v.string(),
+    checkItemTypeSnapshot: enums.CheckItemType,
+    result: enums.CheckResult,
+    value: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    photos: v.optional(v.array(v.string())),
+    performedById: v.string(),
+    performedAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const existing = await ctx.db.query("checkRecords").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+    if (existing) return { _id: existing._id, created: false };
+    const _id = await ctx.db.insert("checkRecords", args);
+    return { _id, created: true };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),
@@ -84,7 +113,9 @@ export const update = mutation({
     await requireService(ctx);
     const doc = await ctx.db.query("checkRecords").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new Error("checkRecords not found: " + id);
-    await ctx.db.patch(doc._id, patch);
+    const safePatch = { ...patch };
+    delete safePatch.organizationId;
+    await ctx.db.patch(doc._id, safePatch);
     return doc._id;
   },
 });

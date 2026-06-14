@@ -32,6 +32,17 @@ export const getById = query({
   },
 });
 
+export const listByParent = query({
+  args: { parentId: v.string() },
+  handler: async (ctx, { parentId }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("locationMedia")
+      .withIndex("by_locationId", (q) => q.eq("locationId", parentId))
+      .collect();
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),
@@ -46,6 +57,26 @@ export const create = mutation({
   handler: async (ctx, args) => {
     await requireService(ctx);
     return await ctx.db.insert("locationMedia", args);
+  },
+});
+
+export const createIfMissing = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    locationId: v.string(),
+    fileId: v.string(),
+    type: v.optional(enums.MediaType),
+    displayName: v.optional(v.string()),
+    sortOrder: v.optional(v.number()),
+    createdAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const existing = await ctx.db.query("locationMedia").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+    if (existing) return { _id: existing._id, created: false };
+    const _id = await ctx.db.insert("locationMedia", args);
+    return { _id, created: true };
   },
 });
 
@@ -66,7 +97,9 @@ export const update = mutation({
     await requireService(ctx);
     const doc = await ctx.db.query("locationMedia").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new Error("locationMedia not found: " + id);
-    await ctx.db.patch(doc._id, patch);
+    const safePatch = { ...patch };
+    delete safePatch.organizationId;
+    await ctx.db.patch(doc._id, safePatch);
     return doc._id;
   },
 });

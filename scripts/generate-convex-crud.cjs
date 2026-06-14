@@ -55,7 +55,34 @@ const BROWSER_READABLE = new Set([
   // Check-item assignment join tables (model/kit "Checks" tabs go reactive). No
   // secrets — just modelId/kitId + checkItemId + sortOrder.
   "modelCheckItems", "kitCheckItems",
+  // Phase 4 reactive cutover (2026-06): project graph + crew scheduling + the
+  // damage/maintenance/back-office surfaces all went cross-tab reactive. None
+  // hold secrets. See FEATUREDOCS/54 "Phase 4 reactive cutover".
+  "projects", "projectCategories", "projectGroups", "projectManagers",
+  "projectServices", "projectTasks", "projectLineItems", "subHires",
+  "crewAssignments", "crewTimeEntries", "crewAvailabilities",
+  "damageEvents", "maintenanceRecords",
+  "supplierOrders", "warehouseCloses", "savedReports", "savedTableViews",
 ]);
+
+// Browser-readable tables that also get a per-project list (they carry a
+// projectId and the UI subscribes by project, not whole-org). Emits
+// `listByProject({ projectId, orgId })` guarded by requireOrgRead.
+const LIST_BY_PROJECT = new Set([
+  "projectCategories", "projectGroups", "projectManagers", "projectServices",
+  "projectTasks", "projectLineItems", "subHires", "crewAssignments",
+]);
+
+// Service-only tables that get a PARENT-scoped list (security review P1-4): the
+// per-parent media reconcile must query only the parent's rows, never the whole
+// org. Maps table -> parent FK field (each already has a by_<fk> index). Emits
+// `listByParent({ parentId })` guarded by requireService (media isn't browser-
+// readable). See src/lib/media-mirror.ts.
+const LIST_BY_PARENT = {
+  modelMedia: "modelId", assetMedia: "assetId", kitMedia: "kitId",
+  projectMedia: "projectId", clientMedia: "clientId", locationMedia: "locationId",
+  subHireMedia: "subHireId",
+};
 
 // Per-table fields stripped from BROWSER reads (the user token never sees them;
 // the trusted service token still does). For browser-readable tables that hold a
@@ -142,9 +169,31 @@ for (const mdl of models) {
     out += `export const getById = query({\n  args: { id: ${idValidator} },\n  handler: async (ctx, { id }) => {\n    await requireService(ctx);\n    return await ${lookup};\n  },\n});\n\n`;
   }
 
+  // Per-project reactive read (browser-readable tables that carry a projectId).
+  if (browserReadable && LIST_BY_PROJECT.has(key)) {
+    out += `export const listByProject = query({\n  args: { projectId: v.string(), orgId: v.string() },\n  handler: async (ctx, { projectId, orgId }) => {\n    await requireOrgRead(ctx, orgId);\n    return await ctx.db\n      .query("${key}")\n      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))\n      .collect();\n  },\n});\n\n`;
+  }
+
+  // Parent-scoped service read (media reconcile — P1-4).
+  if (LIST_BY_PARENT[key]) {
+    const pfk = LIST_BY_PARENT[key];
+    out += `export const listByParent = query({\n  args: { parentId: v.string() },\n  handler: async (ctx, { parentId }) => {\n    await requireService(ctx);\n    return await ctx.db\n      .query("${key}")\n      .withIndex("by_${pfk}", (q) => q.eq("${pfk}", parentId))\n      .collect();\n  },\n});\n\n`;
+  }
+
   out += `export const create = mutation({\n  args: {\n${createArgs}\n  },\n  handler: async (ctx, args) => {\n    await requireService(ctx);\n    return await ctx.db.insert("${key}", args);\n  },\n});\n\n`;
 
-  out += `export const update = mutation({\n  args: {\n    id: ${idValidator},\n    patch: v.object({\n${patchArgs}\n    }),\n  },\n  handler: async (ctx, { id, patch }) => {\n    await requireService(ctx);\n    const doc = await ${lookup};\n    if (!doc) throw new Error("${key} not found: " + id);\n    await ctx.db.patch(doc._id, patch);\n    return doc._id;\n  },\n});\n\n`;
+  // Atomic, idempotent create for backfills (security review P0-2): the check +
+  // insert happen inside ONE serializable Convex mutation, so a concurrent
+  // dual-write can't race a query-then-create into duplicate \`id\` rows.
+  out += `export const createIfMissing = mutation({\n  args: {\n${createArgs}\n  },\n  handler: async (ctx, args) => {\n    await requireService(ctx);\n    const existing = await ctx.db.query("${key}").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();\n    if (existing) return { _id: existing._id, created: false };\n    const _id = await ctx.db.insert("${key}", args);\n    return { _id, created: true };\n  },\n});\n\n`;
+
+  // organizationId is set on create and IMMUTABLE thereafter (security review
+  // P1-1): strip it from the patch so no write can move a row across tenants,
+  // even if a future server bug spreads user input into the patch.
+  const patchExpr = mdl.orgScoped
+    ? `const safePatch = { ...patch };\n    delete safePatch.organizationId;\n    await ctx.db.patch(doc._id, safePatch);`
+    : `await ctx.db.patch(doc._id, patch);`;
+  out += `export const update = mutation({\n  args: {\n    id: ${idValidator},\n    patch: v.object({\n${patchArgs}\n    }),\n  },\n  handler: async (ctx, { id, patch }) => {\n    await requireService(ctx);\n    const doc = await ${lookup};\n    if (!doc) throw new Error("${key} not found: " + id);\n    ${patchExpr}\n    return doc._id;\n  },\n});\n\n`;
 
   out += `export const remove = mutation({\n  args: { id: ${idValidator} },\n  handler: async (ctx, { id }) => {\n    await requireService(ctx);\n    const doc = await ${lookup};\n    if (!doc) throw new Error("${key} not found: " + id);\n    await ctx.db.delete(doc._id);\n  },\n});\n`;
 

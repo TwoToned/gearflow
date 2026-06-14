@@ -68,6 +68,44 @@ export const create = mutation({
   },
 });
 
+export const createIfMissing = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    assetTag: v.string(),
+    name: v.string(),
+    description: v.optional(v.string()),
+    categoryId: v.optional(v.string()),
+    status: v.optional(enums.KitStatus),
+    condition: v.optional(enums.AssetCondition),
+    locationId: v.optional(v.string()),
+    weight: v.optional(v.number()),
+    caseType: v.optional(v.string()),
+    caseDimensions: v.optional(v.string()),
+    image: v.optional(v.string()),
+    images: v.optional(v.array(v.string())),
+    barcode: v.optional(v.string()),
+    qrCode: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    purchaseDate: v.optional(v.number()),
+    purchasePrice: v.optional(v.number()),
+    customFieldValues: v.optional(v.any()),
+    tags: v.optional(v.array(v.string())),
+    checkMode: v.optional(enums.KitCheckMode),
+    isPrep: v.optional(v.boolean()),
+    isActive: v.optional(v.boolean()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const existing = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+    if (existing) return { _id: existing._id, created: false };
+    const _id = await ctx.db.insert("kits", args);
+    return { _id, created: true };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),
@@ -103,7 +141,9 @@ export const update = mutation({
     await requireService(ctx);
     const doc = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new Error("kits not found: " + id);
-    await ctx.db.patch(doc._id, patch);
+    const safePatch = { ...patch };
+    delete safePatch.organizationId;
+    await ctx.db.patch(doc._id, safePatch);
     return doc._id;
   },
 });

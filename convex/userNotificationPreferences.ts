@@ -52,6 +52,30 @@ export const create = mutation({
   },
 });
 
+export const createIfMissing = mutation({
+  args: {
+    id: v.string(),
+    userId: v.string(),
+    overdueMaintenance: v.optional(v.boolean()),
+    overdueReturn: v.optional(v.boolean()),
+    upcomingProject: v.optional(v.boolean()),
+    lowStock: v.optional(v.boolean()),
+    pendingInvitation: v.optional(v.boolean()),
+    expiringCert: v.optional(v.boolean()),
+    pendingOffers: v.optional(v.boolean()),
+    pendingTimesheets: v.optional(v.boolean()),
+    flaggedAsset: v.optional(v.boolean()),
+    updatedAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const existing = await ctx.db.query("userNotificationPreferences").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+    if (existing) return { _id: existing._id, created: false };
+    const _id = await ctx.db.insert("userNotificationPreferences", args);
+    return { _id, created: true };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),

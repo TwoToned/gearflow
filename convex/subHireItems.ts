@@ -57,6 +57,34 @@ export const create = mutation({
   },
 });
 
+export const createIfMissing = mutation({
+  args: {
+    id: v.string(),
+    subHireId: v.string(),
+    groupId: v.optional(v.string()),
+    modelId: v.optional(v.string()),
+    description: v.string(),
+    quantity: v.optional(v.number()),
+    unitCost: v.optional(v.number()),
+    unitCharge: v.optional(v.number()),
+    pricingType: v.optional(enums.PricingType),
+    duration: v.optional(v.number()),
+    discount: v.optional(v.number()),
+    showOnQuote: v.optional(v.boolean()),
+    showOnDocs: v.optional(v.boolean()),
+    sortOrder: v.optional(v.number()),
+    targetCategoryId: v.optional(v.string()),
+    targetGroupId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const existing = await ctx.db.query("subHireItems").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+    if (existing) return { _id: existing._id, created: false };
+    const _id = await ctx.db.insert("subHireItems", args);
+    return { _id, created: true };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),

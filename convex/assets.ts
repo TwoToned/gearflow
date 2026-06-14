@@ -71,6 +71,47 @@ export const create = mutation({
   },
 });
 
+export const createIfMissing = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    modelId: v.string(),
+    assetTag: v.string(),
+    serialNumber: v.optional(v.string()),
+    customName: v.optional(v.string()),
+    status: v.optional(enums.AssetStatus),
+    condition: v.optional(enums.AssetCondition),
+    purchaseDate: v.optional(v.number()),
+    purchasePrice: v.optional(v.number()),
+    purchaseSupplier: v.optional(v.string()),
+    supplierId: v.optional(v.string()),
+    purchaseOrderNumber: v.optional(v.string()),
+    supplierOrderId: v.optional(v.string()),
+    warrantyExpiry: v.optional(v.number()),
+    notes: v.optional(v.string()),
+    locationId: v.optional(v.string()),
+    customFieldValues: v.optional(v.any()),
+    lastTestAndTagDate: v.optional(v.number()),
+    nextTestAndTagDate: v.optional(v.number()),
+    barcode: v.optional(v.string()),
+    qrCode: v.optional(v.string()),
+    images: v.optional(v.array(v.string())),
+    tags: v.optional(v.array(v.string())),
+    isActive: v.optional(v.boolean()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+    kitId: v.optional(v.string()),
+    parentAssetId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const existing = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+    if (existing) return { _id: existing._id, created: false };
+    const _id = await ctx.db.insert("assets", args);
+    return { _id, created: true };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),
@@ -109,7 +150,9 @@ export const update = mutation({
     await requireService(ctx);
     const doc = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new Error("assets not found: " + id);
-    await ctx.db.patch(doc._id, patch);
+    const safePatch = { ...patch };
+    delete safePatch.organizationId;
+    await ctx.db.patch(doc._id, safePatch);
     return doc._id;
   },
 });

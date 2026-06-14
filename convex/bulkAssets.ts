@@ -59,6 +59,35 @@ export const create = mutation({
   },
 });
 
+export const createIfMissing = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    modelId: v.string(),
+    assetTag: v.string(),
+    totalQuantity: v.optional(v.number()),
+    availableQuantity: v.optional(v.number()),
+    purchasePricePerUnit: v.optional(v.number()),
+    locationId: v.optional(v.string()),
+    status: v.optional(enums.BulkAssetStatus),
+    reorderThreshold: v.optional(v.number()),
+    preferredSupplierId: v.optional(v.string()),
+    lastReorderedAt: v.optional(v.number()),
+    notes: v.optional(v.string()),
+    tags: v.optional(v.array(v.string())),
+    isActive: v.optional(v.boolean()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const existing = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+    if (existing) return { _id: existing._id, created: false };
+    const _id = await ctx.db.insert("bulkAssets", args);
+    return { _id, created: true };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),
@@ -85,7 +114,9 @@ export const update = mutation({
     await requireService(ctx);
     const doc = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new Error("bulkAssets not found: " + id);
-    await ctx.db.patch(doc._id, patch);
+    const safePatch = { ...patch };
+    delete safePatch.organizationId;
+    await ctx.db.patch(doc._id, safePatch);
     return doc._id;
   },
 });

@@ -8,8 +8,8 @@ import * as enums from "./lib/validators";
  *
  * AUTH (Phase 5, convex/lib/auth.ts): mutations require the trusted backend
  * SERVICE token (browser writes rejected — RBAC stays in the Next.js server
- * actions, which still own permission/validation/audit). Reads are
- * service-only (not on the browser-readable allowlist). Lookups use the
+ * actions, which still own permission/validation/audit). Org-scoped reads
+ * accept the service token OR a user token scoped to the same org. Lookups use the
  * cuid (`id`) via by_cuid. See FEATUREDOCS/54 and docs/designs/convex-phase5-auth-bridge.md.
  */
 
@@ -60,6 +60,36 @@ export const create = mutation({
   },
 });
 
+export const createIfMissing = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    name: v.string(),
+    description: v.optional(v.string()),
+    dataSource: v.string(),
+    config: v.any(),
+    createdById: v.optional(v.string()),
+    isShared: v.optional(v.boolean()),
+    isPinned: v.optional(v.boolean()),
+    scheduleFrequency: v.optional(enums.ScheduleFrequency),
+    scheduleHour: v.optional(v.number()),
+    scheduleDayOfWeek: v.optional(v.number()),
+    scheduleDayOfMonth: v.optional(v.number()),
+    scheduleRecipients: v.optional(v.array(v.string())),
+    scheduleLastRunAt: v.optional(v.number()),
+    lastRunAt: v.optional(v.number()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const existing = await ctx.db.query("savedReports").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+    if (existing) return { _id: existing._id, created: false };
+    const _id = await ctx.db.insert("savedReports", args);
+    return { _id, created: true };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),
@@ -87,7 +117,9 @@ export const update = mutation({
     await requireService(ctx);
     const doc = await ctx.db.query("savedReports").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new Error("savedReports not found: " + id);
-    await ctx.db.patch(doc._id, patch);
+    const safePatch = { ...patch };
+    delete safePatch.organizationId;
+    await ctx.db.patch(doc._id, safePatch);
     return doc._id;
   },
 });

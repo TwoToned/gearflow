@@ -79,6 +79,56 @@ export const create = mutation({
   },
 });
 
+export const createIfMissing = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    testTagAssetId: v.string(),
+    testProfileId: v.optional(v.string()),
+    testDate: v.number(),
+    testedById: v.string(),
+    testerName: v.string(),
+    result: v.optional(enums.TestResult),
+    visualInspectionResult: v.optional(enums.TestResult),
+    visualCordCondition: v.optional(v.boolean()),
+    visualPlugCondition: v.optional(v.boolean()),
+    visualHousingCondition: v.optional(v.boolean()),
+    visualSwitchCondition: v.optional(v.boolean()),
+    visualVentsUnobstructed: v.optional(v.boolean()),
+    visualCordGrip: v.optional(v.boolean()),
+    visualEarthPin: v.optional(v.boolean()),
+    visualMarkingsLegible: v.optional(v.boolean()),
+    visualNoModifications: v.optional(v.boolean()),
+    visualNotes: v.optional(v.string()),
+    equipmentClassTested: v.optional(enums.EquipmentClass),
+    testMethod: v.optional(enums.TestMethod),
+    earthContinuityResult: v.optional(enums.TestResult),
+    earthContinuityReading: v.optional(v.number()),
+    insulationResult: v.optional(enums.TestResult),
+    insulationReading: v.optional(v.number()),
+    insulationTestVoltage: v.optional(v.number()),
+    leakageCurrentResult: v.optional(enums.TestResult),
+    leakageCurrentReading: v.optional(v.number()),
+    polarityResult: v.optional(enums.TestResult),
+    rcdTripTimeResult: v.optional(enums.TestResult),
+    rcdTripTimeReading: v.optional(v.number()),
+    functionalTestResult: v.optional(enums.TestResult),
+    functionalTestNotes: v.optional(v.string()),
+    failureAction: v.optional(enums.FailureAction),
+    failureNotes: v.optional(v.string()),
+    nextDueDate: v.number(),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const existing = await ctx.db.query("testTagRecords").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+    if (existing) return { _id: existing._id, created: false };
+    const _id = await ctx.db.insert("testTagRecords", args);
+    return { _id, created: true };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),
@@ -126,7 +176,9 @@ export const update = mutation({
     await requireService(ctx);
     const doc = await ctx.db.query("testTagRecords").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new Error("testTagRecords not found: " + id);
-    await ctx.db.patch(doc._id, patch);
+    const safePatch = { ...patch };
+    delete safePatch.organizationId;
+    await ctx.db.patch(doc._id, safePatch);
     return doc._id;
   },
 });

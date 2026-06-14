@@ -51,6 +51,28 @@ export const create = mutation({
   },
 });
 
+export const createIfMissing = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    parentAssetId: v.string(),
+    bulkAssetId: v.string(),
+    quantity: v.number(),
+    allocationMode: v.optional(enums.AccessoryAllocationMode),
+    sortOrder: v.optional(v.number()),
+    notes: v.optional(v.string()),
+    addedAt: v.optional(v.number()),
+    addedById: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const existing = await ctx.db.query("assetBulkChildren").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+    if (existing) return { _id: existing._id, created: false };
+    const _id = await ctx.db.insert("assetBulkChildren", args);
+    return { _id, created: true };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),
@@ -70,7 +92,9 @@ export const update = mutation({
     await requireService(ctx);
     const doc = await ctx.db.query("assetBulkChildren").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new Error("assetBulkChildren not found: " + id);
-    await ctx.db.patch(doc._id, patch);
+    const safePatch = { ...patch };
+    delete safePatch.organizationId;
+    await ctx.db.patch(doc._id, safePatch);
     return doc._id;
   },
 });

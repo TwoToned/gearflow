@@ -60,6 +60,37 @@ export const create = mutation({
   },
 });
 
+export const createIfMissing = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    name: v.string(),
+    locationId: v.string(),
+    scope: enums.StocktakeScope,
+    categoryId: v.optional(v.string()),
+    status: v.optional(enums.StocktakeStatus),
+    startedAt: v.optional(v.number()),
+    startedById: v.optional(v.string()),
+    completedAt: v.optional(v.number()),
+    reviewedById: v.optional(v.string()),
+    expectedCount: v.optional(v.number()),
+    foundCount: v.optional(v.number()),
+    missingCount: v.optional(v.number()),
+    unexpectedCount: v.optional(v.number()),
+    discrepancyCount: v.optional(v.number()),
+    notes: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const existing = await ctx.db.query("stocktakes").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+    if (existing) return { _id: existing._id, created: false };
+    const _id = await ctx.db.insert("stocktakes", args);
+    return { _id, created: true };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),
@@ -88,7 +119,9 @@ export const update = mutation({
     await requireService(ctx);
     const doc = await ctx.db.query("stocktakes").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new Error("stocktakes not found: " + id);
-    await ctx.db.patch(doc._id, patch);
+    const safePatch = { ...patch };
+    delete safePatch.organizationId;
+    await ctx.db.patch(doc._id, safePatch);
     return doc._id;
   },
 });

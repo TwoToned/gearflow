@@ -94,7 +94,6 @@ export default defineSchema({
   jwkses: defineTable({
     id: v.string(),
     publicKey: v.string(),
-    privateKey: v.string(),
     createdAt: v.optional(v.number()),
     expiresAt: v.optional(v.number()),
   })
@@ -808,7 +807,8 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_clientId", ["clientId"])
     .index("by_rentalStartDate_rentalEndDate", ["rentalStartDate", "rentalEndDate"])
-    .index("by_isTemplate", ["isTemplate"]),
+    .index("by_isTemplate", ["isTemplate"])
+    .index("by_organizationId_status", ["organizationId", "status"]),
 
   // ProjectLineItem
   projectLineItems: defineTable({
@@ -1559,10 +1559,6 @@ export default defineSchema({
   crewAvailabilities: defineTable({
     id: v.string(),
     crewMemberId: v.string(),
-    // DENORMALIZED (not in Prisma CrewAvailability — resolved from crewMember at
-    // mirror time). Lets the crew planner subscribe org-wide for reactive reads.
-    // Hand-added; the schema generator will NOT reproduce it — keep on regen.
-    organizationId: v.optional(v.string()),
     startDate: v.number(),
     endDate: v.number(),
     type: v.optional(enums.AvailabilityType),
@@ -1572,11 +1568,12 @@ export default defineSchema({
     endTime: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
+    organizationId: v.optional(v.string()),
   })
     .index("by_cuid", ["id"])
-    .index("by_organizationId", ["organizationId"])
     .index("by_crewMemberId", ["crewMemberId"])
-    .index("by_crewMemberId_startDate_endDate", ["crewMemberId", "startDate", "endDate"]),
+    .index("by_crewMemberId_startDate_endDate", ["crewMemberId", "startDate", "endDate"])
+    .index("by_organizationId", ["organizationId"]),
 
   // CrewTimeEntry
   crewTimeEntries: defineTable({
@@ -1768,7 +1765,6 @@ export default defineSchema({
     id: v.string(),
     organizationId: v.string(),
     isEnabled: v.optional(v.boolean()),
-    webhookSecret: v.string(),
     storeUrl: v.optional(v.string()),
     productMatchField: v.optional(v.string()),
     customFieldKey: v.optional(v.string()),
@@ -1815,8 +1811,6 @@ export default defineSchema({
     id: v.string(),
     organizationId: v.string(),
     isEnabled: v.optional(v.boolean()),
-    signingSecret: v.string(),
-    discordBotToken: v.optional(v.string()),
     discordApplicationId: v.optional(v.string()),
     guildId: v.optional(v.string()),
     projectCategoryId: v.optional(v.string()),

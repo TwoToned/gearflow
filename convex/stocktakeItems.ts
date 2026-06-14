@@ -54,6 +54,31 @@ export const create = mutation({
   },
 });
 
+export const createIfMissing = mutation({
+  args: {
+    id: v.string(),
+    stocktakeId: v.string(),
+    assetId: v.optional(v.string()),
+    bulkAssetId: v.optional(v.string()),
+    expectedAtLocation: v.optional(v.boolean()),
+    expectedQuantity: v.optional(v.number()),
+    found: v.optional(v.boolean()),
+    foundQuantity: v.optional(v.number()),
+    scannedAt: v.optional(v.number()),
+    scannedById: v.optional(v.string()),
+    result: v.optional(enums.StocktakeItemResult),
+    conditionNote: v.optional(v.string()),
+    actionTaken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const existing = await ctx.db.query("stocktakeItems").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+    if (existing) return { _id: existing._id, created: false };
+    const _id = await ctx.db.insert("stocktakeItems", args);
+    return { _id, created: true };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),

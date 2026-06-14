@@ -50,6 +50,27 @@ export const create = mutation({
   },
 });
 
+export const createIfMissing = mutation({
+  args: {
+    id: v.string(),
+    assignmentId: v.string(),
+    date: v.number(),
+    callTime: v.optional(v.string()),
+    endTime: v.optional(v.string()),
+    breakMinutes: v.optional(v.number()),
+    location: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    status: v.optional(enums.ShiftStatus),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const existing = await ctx.db.query("crewShifts").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+    if (existing) return { _id: existing._id, created: false };
+    const _id = await ctx.db.insert("crewShifts", args);
+    return { _id, created: true };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),

@@ -49,6 +49,26 @@ export const create = mutation({
   },
 });
 
+export const createIfMissing = mutation({
+  args: {
+    id: v.string(),
+    crewMemberId: v.string(),
+    name: v.string(),
+    issuedBy: v.optional(v.string()),
+    certificateNumber: v.optional(v.string()),
+    issuedDate: v.optional(v.number()),
+    expiryDate: v.optional(v.number()),
+    status: v.optional(enums.CrewCertStatus),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const existing = await ctx.db.query("crewCertifications").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+    if (existing) return { _id: existing._id, created: false };
+    const _id = await ctx.db.insert("crewCertifications", args);
+    return { _id, created: true };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),

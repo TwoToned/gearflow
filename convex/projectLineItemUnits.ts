@@ -61,6 +61,38 @@ export const create = mutation({
   },
 });
 
+export const createIfMissing = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    lineItemId: v.string(),
+    ordinal: v.number(),
+    assetId: v.optional(v.string()),
+    bulkAssetId: v.optional(v.string()),
+    quantity: v.optional(v.number()),
+    returnedQuantity: v.optional(v.number()),
+    status: v.optional(enums.LineItemStatus),
+    prepStatus: v.optional(enums.PrepStatus),
+    prepContainer: v.optional(v.string()),
+    checkedOutAt: v.optional(v.number()),
+    checkedOutById: v.optional(v.string()),
+    returnedAt: v.optional(v.number()),
+    returnedById: v.optional(v.string()),
+    returnCondition: v.optional(enums.ReturnCondition),
+    returnStatus: v.optional(enums.ReturnStatus),
+    returnNotes: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const existing = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+    if (existing) return { _id: existing._id, created: false };
+    const _id = await ctx.db.insert("projectLineItemUnits", args);
+    return { _id, created: true };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),
@@ -90,7 +122,9 @@ export const update = mutation({
     await requireService(ctx);
     const doc = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new Error("projectLineItemUnits not found: " + id);
-    await ctx.db.patch(doc._id, patch);
+    const safePatch = { ...patch };
+    delete safePatch.organizationId;
+    await ctx.db.patch(doc._id, safePatch);
     return doc._id;
   },
 });

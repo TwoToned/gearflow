@@ -8,8 +8,8 @@ import * as enums from "./lib/validators";
  *
  * AUTH (Phase 5, convex/lib/auth.ts): mutations require the trusted backend
  * SERVICE token (browser writes rejected — RBAC stays in the Next.js server
- * actions, which still own permission/validation/audit). Reads are
- * service-only (not on the browser-readable allowlist). Lookups use the
+ * actions, which still own permission/validation/audit). Org-scoped reads
+ * accept the service token OR a user token scoped to the same org. Lookups use the
  * cuid (`id`) via by_cuid. See FEATUREDOCS/54 and docs/designs/convex-phase5-auth-bridge.md.
  */
 
@@ -75,6 +75,40 @@ export const create = mutation({
   },
 });
 
+export const createIfMissing = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    supplierId: v.string(),
+    projectId: v.optional(v.string()),
+    createdById: v.string(),
+    orderNumber: v.string(),
+    supplierReference: v.optional(v.string()),
+    status: v.optional(enums.SubHireStatus),
+    hireStart: v.optional(v.number()),
+    hireEnd: v.optional(v.number()),
+    totalCost: v.optional(v.number()),
+    totalCharge: v.optional(v.number()),
+    pricingMode: v.optional(enums.SubHirePricingMode),
+    orderTotalCost: v.optional(v.number()),
+    orderTotalCharge: v.optional(v.number()),
+    showOnDocs: v.optional(v.boolean()),
+    paymentStatus: v.optional(enums.SubHirePaymentStatus),
+    notes: v.optional(v.string()),
+    defaultTargetCategoryId: v.optional(v.string()),
+    defaultTargetGroupId: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const existing = await ctx.db.query("subHires").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+    if (existing) return { _id: existing._id, created: false };
+    const _id = await ctx.db.insert("subHires", args);
+    return { _id, created: true };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),
@@ -106,7 +140,9 @@ export const update = mutation({
     await requireService(ctx);
     const doc = await ctx.db.query("subHires").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new Error("subHires not found: " + id);
-    await ctx.db.patch(doc._id, patch);
+    const safePatch = { ...patch };
+    delete safePatch.organizationId;
+    await ctx.db.patch(doc._id, safePatch);
     return doc._id;
   },
 });

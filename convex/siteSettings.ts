@@ -50,6 +50,31 @@ export const create = mutation({
   },
 });
 
+export const createIfMissing = mutation({
+  args: {
+    id: v.string(),
+    platformName: v.optional(v.string()),
+    platformIcon: v.optional(v.string()),
+    platformLogo: v.optional(v.string()),
+    registrationPolicy: v.optional(v.string()),
+    twoFactorGlobalPolicy: v.optional(v.string()),
+    defaultCurrency: v.optional(v.string()),
+    defaultTaxRate: v.optional(v.number()),
+    allowOrgCreation: v.optional(v.boolean()),
+    socialLoginGoogle: v.optional(v.boolean()),
+    socialLoginMicrosoft: v.optional(v.boolean()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const existing = await ctx.db.query("siteSettings").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+    if (existing) return { _id: existing._id, created: false };
+    const _id = await ctx.db.insert("siteSettings", args);
+    return { _id, created: true };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),

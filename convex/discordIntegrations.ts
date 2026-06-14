@@ -37,8 +37,6 @@ export const create = mutation({
     id: v.string(),
     organizationId: v.string(),
     isEnabled: v.optional(v.boolean()),
-    signingSecret: v.string(),
-    discordBotToken: v.optional(v.string()),
     discordApplicationId: v.optional(v.string()),
     guildId: v.optional(v.string()),
     projectCategoryId: v.optional(v.string()),
@@ -66,14 +64,47 @@ export const create = mutation({
   },
 });
 
+export const createIfMissing = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    isEnabled: v.optional(v.boolean()),
+    discordApplicationId: v.optional(v.string()),
+    guildId: v.optional(v.string()),
+    projectCategoryId: v.optional(v.string()),
+    archiveCategoryId: v.optional(v.string()),
+    alertChannelId: v.optional(v.string()),
+    auditChannelId: v.optional(v.string()),
+    channelCreateOnStatuses: v.optional(v.array(enums.ProjectStatus)),
+    channelArchiveOnStatuses: v.optional(v.array(enums.ProjectStatus)),
+    postWelcomeOnCreate: v.optional(v.boolean()),
+    postFaultsToProjectChannel: v.optional(v.boolean()),
+    linkTokenTtlMinutes: v.optional(v.number()),
+    enrollmentOpen: v.optional(v.boolean()),
+    lastHeartbeatAt: v.optional(v.number()),
+    botUserId: v.optional(v.string()),
+    botDesiredState: v.optional(enums.DiscordBotDesiredState),
+    botRestartRequestedAt: v.optional(v.number()),
+    botStartError: v.optional(v.string()),
+    botPid: v.optional(v.number()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const existing = await ctx.db.query("discordIntegrations").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+    if (existing) return { _id: existing._id, created: false };
+    const _id = await ctx.db.insert("discordIntegrations", args);
+    return { _id, created: true };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),
     patch: v.object({
       organizationId: v.optional(v.string()),
       isEnabled: v.optional(v.boolean()),
-      signingSecret: v.optional(v.string()),
-      discordBotToken: v.optional(v.string()),
       discordApplicationId: v.optional(v.string()),
       guildId: v.optional(v.string()),
       projectCategoryId: v.optional(v.string()),
@@ -100,7 +131,9 @@ export const update = mutation({
     await requireService(ctx);
     const doc = await ctx.db.query("discordIntegrations").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new Error("discordIntegrations not found: " + id);
-    await ctx.db.patch(doc._id, patch);
+    const safePatch = { ...patch };
+    delete safePatch.organizationId;
+    await ctx.db.patch(doc._id, safePatch);
     return doc._id;
   },
 });

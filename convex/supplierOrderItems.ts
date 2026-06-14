@@ -50,6 +50,28 @@ export const create = mutation({
   },
 });
 
+export const createIfMissing = mutation({
+  args: {
+    id: v.string(),
+    orderId: v.string(),
+    description: v.string(),
+    quantity: v.optional(v.number()),
+    unitPrice: v.optional(v.number()),
+    lineTotal: v.optional(v.number()),
+    modelId: v.optional(v.string()),
+    assetId: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    sortOrder: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const existing = await ctx.db.query("supplierOrderItems").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+    if (existing) return { _id: existing._id, created: false };
+    const _id = await ctx.db.insert("supplierOrderItems", args);
+    return { _id, created: true };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),

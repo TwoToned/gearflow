@@ -55,6 +55,32 @@ export const create = mutation({
   },
 });
 
+export const createIfMissing = mutation({
+  args: {
+    id: v.string(),
+    testTagRecordId: v.string(),
+    label: v.string(),
+    sortOrder: v.optional(v.number()),
+    result: v.optional(enums.TestResult),
+    earthContinuityResult: v.optional(enums.TestResult),
+    earthContinuityReading: v.optional(v.number()),
+    insulationResult: v.optional(enums.TestResult),
+    insulationReading: v.optional(v.number()),
+    leakageCurrentResult: v.optional(enums.TestResult),
+    leakageCurrentReading: v.optional(v.number()),
+    polarityResult: v.optional(enums.TestResult),
+    notes: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const existing = await ctx.db.query("subTestRecords").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+    if (existing) return { _id: existing._id, created: false };
+    const _id = await ctx.db.insert("subTestRecords", args);
+    return { _id, created: true };
+  },
+});
+
 export const update = mutation({
   args: {
     id: v.string(),

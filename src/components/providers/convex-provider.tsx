@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { ConvexReactClient, ConvexProviderWithAuth } from "convex/react";
 import { authClient } from "@/lib/auth-client";
+import { fetchConvexAccessToken } from "@/lib/convex-token-fetch";
 
 /**
  * Convex client provider — the reactive data layer (Phase 5: now authenticated).
@@ -31,22 +32,12 @@ function useBetterAuthForConvex() {
   const { data: session, isPending } = authClient.useSession();
 
   const fetchAccessToken = useCallback(
-    async (): Promise<string | null> => {
-      // forceRefreshToken is ignored — /api/auth/token always mints a fresh token
-      // from the live session, so there is nothing stale to bust.
-      try {
-        const res = await fetch("/api/auth/token", {
-          method: "GET",
-          credentials: "include",
-          headers: { "cache-control": "no-store" },
-        });
-        if (!res.ok) return null;
-        const data = (await res.json()) as { token?: string };
-        return data.token ?? null;
-      } catch {
-        return null;
-      }
-    },
+    // forceRefreshToken is ignored — /api/auth/token always mints a fresh token
+    // from the live session, so there is nothing stale to bust. The fetch is
+    // resilient: a TRANSIENT /api/auth/token failure is retried rather than
+    // collapsed to null (null de-auths Convex and makes every live subscription
+    // throw "Unauthorized" — the "random client crash"). See convex-token-fetch.ts.
+    async (): Promise<string | null> => fetchConvexAccessToken(),
     [],
   );
 

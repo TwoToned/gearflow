@@ -1,4 +1,4 @@
-import { getConvexClient } from "@/lib/convex-client";
+import { getConvexClient, withConvexReadRetry } from "@/lib/convex-client";
 import { getCategoryMap, type ConvexCategory } from "@/lib/categories-read";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
@@ -26,7 +26,9 @@ export async function getModelById(id: string): Promise<ConvexModel | null> {
 }
 
 export async function getModelsByOrg(orgId: string): Promise<ConvexModel[]> {
-  return await (await getConvexClient()).query(api.models.list, { orgId });
+  return await withConvexReadRetry(async () =>
+    (await getConvexClient()).query(api.models.list, { orgId }),
+  );
 }
 
 /** All of an org's models keyed by cuid `id`, for attaching to joined rows. */

@@ -42,75 +42,14 @@ async function attachStocktakeModels<T extends { asset?: unknown; bulkAsset?: un
   })) as any;
 }
 
-// Update active stocktakes when an asset moves location.
-export async function syncStocktakeOnLocationChange({
-  assetId,
-  bulkAssetId,
-  oldLocationId,
-  newLocationId,
-  organizationId,
-}: {
-  assetId?: string;
-  bulkAssetId?: string;
-  oldLocationId: string | null;
-  newLocationId: string | null;
-  organizationId: string;
-}) {
-  if (oldLocationId === newLocationId) return;
-
-  // Find active stocktakes at old/new locations
-  const [oldStocktake, newStocktake] = await Promise.all([
-    oldLocationId
-      ? prisma.stocktake.findFirst({
-          where: { organizationId, locationId: oldLocationId, status: "IN_PROGRESS" },
-        })
-      : null,
-    newLocationId
-      ? prisma.stocktake.findFirst({
-          where: { organizationId, locationId: newLocationId, status: "IN_PROGRESS" },
-        })
-      : null,
-  ]);
-
-  // Asset moved AWAY from a stocktake location
-  if (oldStocktake) {
-    const itemWhere = {
-      stocktakeId: oldStocktake.id,
-      ...(assetId ? { assetId } : { bulkAssetId }),
-    };
-    const existingItem = await prisma.stocktakeItem.findFirst({ where: itemWhere });
-    if (existingItem && existingItem.expectedAtLocation) {
-      await prisma.stocktakeItem.update({
-        where: { id: existingItem.id },
-        data: { result: "WRONG_LOCATION", found: false },
-      });
-    }
-  }
-
-  // Asset moved INTO a stocktake location
-  if (newStocktake) {
-    const itemWhere = {
-      stocktakeId: newStocktake.id,
-      ...(assetId ? { assetId } : { bulkAssetId }),
-    };
-    const existingItem = await prisma.stocktakeItem.findFirst({ where: itemWhere });
-    if (!existingItem) {
-      await prisma.stocktakeItem.create({
-        data: {
-          stocktakeId: newStocktake.id,
-          ...(assetId ? { assetId } : { bulkAssetId }),
-          expectedAtLocation: false,
-          expectedQuantity: 1,
-          found: false,
-          result: "UNEXPECTED",
-        },
-      });
-    }
-  }
-
-  if (oldStocktake) await syncStocktakeToConvex(oldStocktake.id);
-  if (newStocktake) await syncStocktakeToConvex(newStocktake.id);
-}
+// NOTE (security review P0-1): a `syncStocktakeOnLocationChange` server action
+// used to live here. It was exported from this `"use server"` module, accepted
+// `organizationId` directly from the caller, performed stocktake writes WITHOUT
+// any permission/org-context check, and had ZERO in-repo callers — i.e. a dead,
+// unauthenticated cross-tenant write endpoint. Removed. If location-change →
+// active-stocktake reconciliation is wanted, rebuild it as a NON-exported helper
+// (or a lib module) invoked from an already-authenticated server action that
+// derives organizationId from the session, never from caller input.
 
 export async function getStocktakes(params?: {
   page?: number;

@@ -35,6 +35,15 @@ const eslintConfig = [
     ],
   },
   {
+    // CommonJS build/generator scripts (the Convex schema/CRUD generators and
+    // their shared parser) legitimately use require() — they run under Node as
+    // .cjs, not through the bundler. Allow require() there only.
+    files: ["scripts/**/*.cjs"],
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+    },
+  },
+  {
     // Next 16 bundles the React Compiler-aware eslint-plugin-react-hooks,
     // which promoted several heuristic rules to "error". These flag patterns
     // that are intentional in this codebase (effects that sync external state,

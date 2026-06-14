@@ -379,12 +379,19 @@ export function GroupRow({
   onSaveAsTemplate,
   orgId,
   projectId,
+  lockedBy,
+  commentBadge,
 }: {
   group: GroupData;
   isExpanded: boolean;
   indented?: boolean;
   orgId?: string;
   projectId?: string;
+  /** Passive "X is editing" badge — fed from a single entity-level lock
+   *  subscription in the parent so we don't mount a hook per row. */
+  lockedBy?: { name: string; color: string } | null;
+  /** Open / blocking comment counts for this group's thread target. */
+  commentBadge?: { open: number; blocking: number };
   /** Drop Matrix 8C — render the disallowed-drop rejection bar when a
    *  drag of an incompatible source is currently hovering this row. */
   isRejectedDropTarget?: boolean;
@@ -481,11 +488,34 @@ export function GroupRow({
               targetId={group.id}
               triggerLabel=""
             >
-              <Button variant="ghost" size="icon-sm" title="Comments">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                title={commentBadge?.blocking ? `${commentBadge.blocking} blocking group comment${commentBadge.blocking === 1 ? "" : "s"}` : "Comments"}
+                className={cn("relative", commentBadge?.blocking && "text-red-600")}
+              >
                 <MessageCircle className="h-3.5 w-3.5" />
+                {commentBadge?.blocking ? (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-600 px-0.5 text-[8px] font-medium text-white">
+                    {commentBadge.blocking}
+                  </span>
+                ) : commentBadge?.open ? (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-bg-inset px-0.5 text-[8px] font-medium text-fg-2 ring-1 ring-border">
+                    {commentBadge.open}
+                  </span>
+                ) : null}
               </Button>
             </CommentThreadPanel>
           )}
+          {lockedBy ? (
+            <Badge variant="secondary" className="gap-1 text-[10px]">
+              <span
+                className="h-1.5 w-1.5 rounded-full"
+                style={{ backgroundColor: lockedBy.color }}
+              />
+              Editing: {lockedBy.name}
+            </Badge>
+          ) : null}
           <Button variant="ghost" size="icon-sm" onClick={onEdit}>
             <Pencil className="h-3.5 w-3.5" />
           </Button>
@@ -706,6 +736,7 @@ export function SubHireGroupRow({
 
 export function CategoryRow({
   cat,
+  lockedBy,
   onRename,
   onDelete,
   onAddEquipment,
@@ -713,6 +744,9 @@ export function CategoryRow({
   onAddCustom,
 }: {
   cat: CategoryData;
+  /** Passive "X is editing" badge — fed from the parent's single
+   *  entity-level lock subscription, looked up by category target key. */
+  lockedBy?: { name: string; color: string } | null;
   onRename: () => void;
   onDelete: () => void;
   /** Open the unified add dialog scoped to this category (no group).
@@ -748,6 +782,15 @@ export function CategoryRow({
             <GripVertical className="h-4 w-4" />
           </button>
           <h3 className="text-sm font-semibold text-fg-3">{cat.name}</h3>
+          {lockedBy ? (
+            <Badge variant="secondary" className="gap-1 text-[10px]">
+              <span
+                className="h-1.5 w-1.5 rounded-full"
+                style={{ backgroundColor: lockedBy.color }}
+              />
+              Editing: {lockedBy.name}
+            </Badge>
+          ) : null}
           <DropdownMenu>
             <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="opacity-0 group-hover/cat:opacity-100 transition-opacity" />}>
               <MoreHorizontal className="h-3.5 w-3.5" />

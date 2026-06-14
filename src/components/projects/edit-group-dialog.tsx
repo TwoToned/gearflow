@@ -26,6 +26,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency } from "@/lib/formatters";
+import { useEditLock } from "@/hooks/use-collaboration";
+import { LockedEditorOverlay } from "@/components/collaboration/locked-editor-overlay";
+import { COLLAB_TARGET_TYPES } from "@/lib/collaboration-targets";
 import type { GroupData } from "./equipment-rows";
 
 export interface EditGroupFormValues {
@@ -40,6 +43,9 @@ export interface EditGroupFormValues {
 interface EditGroupDialogProps {
   group: GroupData | null;
   isPending: boolean;
+  /** Project + org for the collaboration edit lock. Lock is skipped if absent. */
+  projectId?: string;
+  orgId?: string;
   onClose: () => void;
   /** Called when the user clicks Save. The parent decides which
    *  mutation(s) to fire and whether to apply the optional price
@@ -64,9 +70,22 @@ export function EditGroupDialog(props: EditGroupDialogProps) {
 function EditGroupDialogBody({
   group,
   isPending,
+  projectId,
+  orgId,
   onClose,
   onSubmit,
 }: EditGroupDialogProps & { group: GroupData }) {
+  // Edit lock — held while this group editor is open. Released on unmount.
+  const { lockState, isLocked, isStale, takeover } = useEditLock({
+    entityType: "project",
+    entityId: projectId ?? "",
+    targetType: COLLAB_TARGET_TYPES.group,
+    targetId: group.id,
+    active: true,
+    enabled: !!orgId && !!projectId,
+  });
+  const formDisabled = isLocked;
+
   const priceVal = group.price != null ? Number(group.price) : null;
 
   const [title, setTitle] = useState(group.title);
@@ -84,7 +103,7 @@ function EditGroupDialogBody({
   );
 
   function handleSave() {
-    if (!title.trim()) return;
+    if (!title.trim() || formDisabled) return;
     onSubmit(
       group.id,
       {
@@ -107,7 +126,11 @@ function EditGroupDialogBody({
           Update the group&apos;s title, description, and quantity.
         </DialogDescription>
       </DialogHeader>
-      <div className="space-y-4">
+      <LockedEditorOverlay
+        lockState={lockState}
+        onTakeover={isStale ? () => void takeover() : undefined}
+      />
+      <div className={`space-y-4 ${formDisabled ? "pointer-events-none opacity-60" : ""}`}>
         <div className="space-y-2">
           <Label>Title</Label>
           <Input
@@ -197,7 +220,7 @@ function EditGroupDialogBody({
         <Button variant="outline" onClick={onClose}>
           Cancel
         </Button>
-        <Button onClick={handleSave} disabled={!title.trim() || isPending}>
+        <Button onClick={handleSave} disabled={!title.trim() || isPending || formDisabled}>
           Save
         </Button>
       </DialogFooter>

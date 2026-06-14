@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { query, mutation } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
 import { requireOrgRead, requireService } from "./lib/auth";
 
 /**
@@ -271,6 +272,44 @@ export const listLocksForEntity = query({
   },
 });
 
+// ─── Activity logging helper (internal) ───────────────────────────────────────
+
+/**
+ * Insert a collaboration activity event. Called inline from the comment / marker
+ * mutations so the realtime feed write is atomic with the state change. Best
+ * practice elsewhere logs from the trusted server-action layer; here the actor
+ * identity is already on the mutation args, so logging in-band avoids an extra
+ * round trip and a second thread read.
+ */
+/** Human-readable " on a <thing>" suffix for activity summaries. */
+function targetLabel(targetType?: string): string {
+  if (targetType === "group") return " on a group";
+  if (targetType === "lineItem") return " on a line item";
+  if (targetType === "category") return " on a category";
+  return "";
+}
+
+type ActivityEventInput = {
+  orgId: string;
+  actorUserId: string;
+  actorName: string;
+  actorColor: string;
+  entityType: string;
+  entityId: string;
+  targetType?: string;
+  targetId?: string;
+  action: string;
+  summary: string;
+  metadata?: unknown;
+};
+
+async function recordActivity(
+  ctx: MutationCtx,
+  args: ActivityEventInput,
+) {
+  await ctx.db.insert("activityEvents", { ...args, createdAt: Date.now() });
+}
+
 // ─── Comment Threads ─────────────────────────────────────────────────────────
 
 export const listThreads = query({
@@ -352,6 +391,23 @@ export const createThread = mutation({
       mentionUserIds: mentions,
       createdAt: now,
     });
+
+    const where = targetLabel(args.targetType);
+    await recordActivity(ctx, {
+      orgId: args.orgId,
+      actorUserId: args.createdBy,
+      actorName: args.createdByName,
+      actorColor: args.authorColor,
+      entityType: args.entityType,
+      entityId: args.entityId,
+      targetType: args.targetType,
+      targetId: args.targetId,
+      action: args.isBlocking ? "comment_blocking_created" : "comment_created",
+      summary: args.isBlocking
+        ? `added a blocking comment${where}`
+        : `started a discussion${where}`,
+      metadata: { threadId: threadId as string },
+    });
     return threadId as string;
   },
 });
@@ -373,6 +429,15 @@ export const addComment = mutation({
     const thread = await ctx.db.get(args.threadId as unknown as Id<"commentThreads">);
     if (!thread || thread.orgId !== args.orgId) throw new Error("Thread not found");
 
+    // Resolved threads are closed for replies: the reviewer must explicitly
+    // reopen first (which requires project manage_line_items). This keeps the
+    // resolved state authoritative instead of silently reopening on any reply.
+    if (thread.status === "resolved") {
+      throw new Error(
+        "This discussion is resolved. Reopen it before replying.",
+      );
+    }
+
     // Union any new mentions onto the thread so dashboard mention detection
     // covers replies, not just the opening comment.
     const newMentions = args.mentionUserIds?.length ? args.mentionUserIds : [];
@@ -380,22 +445,12 @@ export const addComment = mutation({
       new Set([...(thread.mentionUserIds ?? []), ...newMentions]),
     );
 
-    if (thread.status === "resolved") {
-      await ctx.db.patch(thread._id, {
-        status: "open",
-        resolvedBy: undefined,
-        resolvedAt: undefined,
-        updatedAt: now,
-        mentionUserIds: mergedMentions.length ? mergedMentions : undefined,
-      });
-    } else {
-      await ctx.db.patch(thread._id, {
-        updatedAt: now,
-        mentionUserIds: mergedMentions.length ? mergedMentions : undefined,
-      });
-    }
+    await ctx.db.patch(thread._id, {
+      updatedAt: now,
+      mentionUserIds: mergedMentions.length ? mergedMentions : undefined,
+    });
 
-    return await ctx.db.insert("comments", {
+    const commentId = await ctx.db.insert("comments", {
       orgId: args.orgId,
       threadId: args.threadId,
       body: args.body,
@@ -405,22 +460,68 @@ export const addComment = mutation({
       mentionUserIds: newMentions.length ? newMentions : undefined,
       createdAt: now,
     });
+
+    await recordActivity(ctx, {
+      orgId: args.orgId,
+      actorUserId: args.authorId,
+      actorName: args.authorName,
+      actorColor: args.authorColor,
+      entityType: thread.entityType,
+      entityId: thread.entityId,
+      targetType: thread.targetType,
+      targetId: thread.targetId,
+      action: "comment_added",
+      summary: `replied to a discussion${targetLabel(thread.targetType)}`,
+      metadata: { threadId: args.threadId },
+    });
+
+    return commentId;
   },
 });
 
 export const setThreadBlocking = mutation({
-  args: { orgId: v.string(), threadId: v.string(), isBlocking: v.boolean() },
-  handler: async (ctx, { orgId, threadId, isBlocking }) => {
+  args: {
+    orgId: v.string(),
+    threadId: v.string(),
+    isBlocking: v.boolean(),
+    actorUserId: v.optional(v.string()),
+    actorName: v.optional(v.string()),
+    actorColor: v.optional(v.string()),
+  },
+  handler: async (ctx, { orgId, threadId, isBlocking, actorUserId, actorName, actorColor }) => {
     await requireService(ctx);
     const thread = await ctx.db.get(threadId as unknown as Id<"commentThreads">);
     if (!thread || thread.orgId !== orgId) throw new Error("Thread not found");
     await ctx.db.patch(thread._id, { isBlocking, updatedAt: Date.now() });
+    if (actorUserId && actorName && actorColor) {
+      await recordActivity(ctx, {
+        orgId,
+        actorUserId,
+        actorName,
+        actorColor,
+        entityType: thread.entityType,
+        entityId: thread.entityId,
+        targetType: thread.targetType,
+        targetId: thread.targetId,
+        action: isBlocking ? "thread_blocked" : "thread_unblocked",
+        summary: isBlocking
+          ? `marked a comment as blocking${targetLabel(thread.targetType)}`
+          : `cleared the blocking flag${targetLabel(thread.targetType)}`,
+        metadata: { threadId },
+      });
+    }
   },
 });
 
 export const resolveThread = mutation({
-  args: { orgId: v.string(), threadId: v.string(), resolvedBy: v.string() },
-  handler: async (ctx, { orgId, threadId, resolvedBy }) => {
+  args: {
+    orgId: v.string(),
+    threadId: v.string(),
+    resolvedBy: v.string(),
+    actorName: v.optional(v.string()),
+    actorColor: v.optional(v.string()),
+  },
+  handler: async (ctx, { orgId, threadId, resolvedBy, actorName, actorColor }) => {
     await requireService(ctx);
     const thread = await ctx.db.get(threadId as unknown as Id<"commentThreads">);
     if (!thread || thread.orgId !== orgId) throw new Error("Thread not found");
@@ -431,12 +532,33 @@ export const resolveThread = mutation({
       resolvedAt: now,
       updatedAt: now,
     });
+    if (actorName && actorColor) {
+      await recordActivity(ctx, {
+        orgId,
+        actorUserId: resolvedBy,
+        actorName,
+        actorColor,
+        entityType: thread.entityType,
+        entityId: thread.entityId,
+        targetType: thread.targetType,
+        targetId: thread.targetId,
+        action: "thread_resolved",
+        summary: `resolved a discussion${targetLabel(thread.targetType)}`,
+        metadata: { threadId },
+      });
+    }
   },
 });
 
 export const reopenThread = mutation({
-  args: { orgId: v.string(), threadId: v.string() },
-  handler: async (ctx, { orgId, threadId }) => {
+  args: {
+    orgId: v.string(),
+    threadId: v.string(),
+    actorUserId: v.optional(v.string()),
+    actorName: v.optional(v.string()),
+    actorColor: v.optional(v.string()),
+  },
+  handler: async (ctx, { orgId, threadId, actorUserId, actorName, actorColor }) => {
     await requireService(ctx);
     const thread = await ctx.db.get(threadId as unknown as Id<"commentThreads">);
     if (!thread || thread.orgId !== orgId) throw new Error("Thread not found");
@@ -446,6 +568,21 @@ export const reopenThread = mutation({
       resolvedAt: undefined,
       updatedAt: Date.now(),
     });
+    if (actorUserId && actorName && actorColor) {
+      await recordActivity(ctx, {
+        orgId,
+        actorUserId,
+        actorName,
+        actorColor,
+        entityType: thread.entityType,
+        entityId: thread.entityId,
+        targetType: thread.targetType,
+        targetId: thread.targetId,
+        action: "thread_reopened",
+        summary: `reopened a discussion${targetLabel(thread.targetType)}`,
+        metadata: { threadId },
+      });
+    }
   },
 });
 
@@ -501,6 +638,7 @@ export const setReviewMarker = mutation({
     note: v.optional(v.string()),
     createdBy: v.string(),
     createdByName: v.string(),
+    actorColor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await requireService(ctx);
@@ -514,6 +652,23 @@ export const setReviewMarker = mutation({
       .filter((q) => q.eq(q.field("entityId"), args.entityId))
       .first();
 
+    const logMarker = async () => {
+      if (!args.actorColor) return;
+      await recordActivity(ctx, {
+        orgId: args.orgId,
+        actorUserId: args.createdBy,
+        actorName: args.createdByName,
+        actorColor: args.actorColor,
+        entityType: args.entityType,
+        entityId: args.entityId,
+        targetType: args.targetType,
+        targetId: args.targetId,
+        action: `review_${args.status}`,
+        summary: reviewMarkerSummary(args.status, args.targetType),
+        metadata: { reason: args.reason },
+      });
+    };
+
     if (existing) {
       await ctx.db.patch(existing._id, {
         status: args.status,
@@ -523,10 +678,11 @@ export const setReviewMarker = mutation({
         resolvedBy: args.status === "resolved" ? args.createdBy : undefined,
         resolvedAt: args.status === "resolved" ? now : undefined,
       });
+      await logMarker();
       return existing._id as string;
     }
 
-    return (await ctx.db.insert("reviewMarkers", {
+    const id = (await ctx.db.insert("reviewMarkers", {
       orgId: args.orgId,
       entityType: args.entityType,
       entityId: args.entityId,
@@ -540,8 +696,21 @@ export const setReviewMarker = mutation({
       createdAt: now,
       updatedAt: now,
     })) as string;
+    await logMarker();
+    return id;
   },
 });
+
+/** Activity summary for a review-marker change. */
+function reviewMarkerSummary(
+  status: "needs_review" | "follow_up" | "resolved",
+  targetType?: string,
+): string {
+  const where = targetLabel(targetType);
+  if (status === "needs_review") return `flagged for review${where}`;
+  if (status === "follow_up") return `flagged a follow-up${where}`;
+  return `marked review resolved${where}`;
+}
 
 // ─── Activity Events ──────────────────────────────────────────────────────────
 
@@ -636,14 +805,17 @@ export const getProjectBlockingSummary = query({
       .collect();
     const open = threads.filter((t) => t.status === "open" && t.isBlocking);
     const lineItemTargetIds: string[] = [];
+    const groupTargetIds: string[] = [];
     let hasProjectLevel = false;
     for (const t of open) {
       if (t.targetType === "lineItem" && t.targetId) lineItemTargetIds.push(t.targetId);
+      else if (t.targetType === "group" && t.targetId) groupTargetIds.push(t.targetId);
       else if (!t.targetId) hasProjectLevel = true;
     }
     return {
       count: open.length,
       lineItemTargetIds,
+      groupTargetIds,
       hasProjectLevel,
       targetIds: open.map((t) => t.targetId ?? null),
     };

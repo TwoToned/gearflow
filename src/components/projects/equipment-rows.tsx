@@ -8,6 +8,7 @@
  * change. The 3-axis RowDescriptor refactor lands in the next commit.
  */
 
+import { useState, useEffect, useRef, type CSSProperties } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useQuery } from "convex/react";
@@ -908,6 +909,21 @@ export function LineItemRow({
   const openComments = myCounts?.open ?? 0;
   const blockingComments = myCounts?.blockingOpen ?? 0;
   const hasActiveLock = liveLock && !liveLock.isStale && liveLock.status === "active";
+
+  // Phase 4 live-build feedback: briefly highlight the row whenever its data
+  // changes — on the editor's own save and on a realtime update pushed by
+  // another collaborator. Compares the serialised `updatedAt` baseline; the
+  // ref is seeded at mount so there's no flash on first render.
+  const [justChanged, setJustChanged] = useState(false);
+  const prevUpdatedAt = useRef(item.updatedAt);
+  useEffect(() => {
+    if (item.updatedAt === prevUpdatedAt.current) return;
+    prevUpdatedAt.current = item.updatedAt;
+    setJustChanged(true);
+    const t = setTimeout(() => setJustChanged(false), 1600);
+    return () => clearTimeout(t);
+  }, [item.updatedAt]);
+
   const handleMarker = async (status: MarkerStatus) => {
     if (!projectId) return;
     try {
@@ -922,7 +938,8 @@ export function LineItemRow({
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
-  };
+    ...(hasActiveLock ? { ["--collab-color"]: liveLock.ownerColor } : {}),
+  } as CSSProperties;
 
   // Map content indent to grip indent (margin-based to avoid affecting column width)
   const gripIndent = indent === "ml-12" ? "ml-8" : indent === "ml-3" ? "ml-1" : "";
@@ -941,7 +958,12 @@ export function LineItemRow({
     <TableRow
       ref={setNodeRef}
       style={style}
-      className={`${isDragging ? "opacity-30" : ""} ${isSelected ? "bg-accent/20" : ""}`}
+      className={cn(
+        isDragging && "opacity-30",
+        isSelected && "bg-accent/20",
+        hasActiveLock && "collab-editing",
+        justChanged && "collab-changed",
+      )}
       onClick={onClick}
       {...shortcuts}
     >

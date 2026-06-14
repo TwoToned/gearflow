@@ -377,6 +377,40 @@
   }
 }
 
+/* ═══════════════════════════════════════════════════════
+   Live collaboration row feedback (Phase 4 — live quote build)
+   `--collab-color` is set inline from the editor's user colour.
+   Animations are gated behind prefers-reduced-motion: a static
+   left-edge marker / no flash is shown instead of motion.
+   ═══════════════════════════════════════════════════════ */
+@keyframes collab-edit-pulse {
+  0%, 100% { box-shadow: inset 3px 0 0 0 var(--collab-color, transparent); }
+  50%      { box-shadow: inset 3px 0 0 0 color-mix(in srgb, var(--collab-color, transparent) 25%, transparent); }
+}
+
+/* A row another user is currently editing. */
+.collab-editing {
+  box-shadow: inset 3px 0 0 0 var(--collab-color, transparent);
+}
+
+@keyframes collab-changed-flash {
+  from { background-color: color-mix(in srgb, var(--collab-color, var(--color-primary)) 16%, transparent); }
+  to   { background-color: transparent; }
+}
+
+/* A row that just changed (own save or a realtime update from someone else). */
+.collab-changed {
+  animation: collab-changed-flash 1.6s ease-out;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .collab-editing { animation: collab-edit-pulse 2.2s ease-in-out infinite; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .collab-changed { animation: none; }
+}
+
 /* Touch device optimizations */
 @media (hover: none) and (pointer: coarse) {
   /* Larger checkboxes on touch devices */

@@ -352,8 +352,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   });
 
   const updateLineItemMut = useServerMutation({
-    mutationFn: ({ id, data, allowOverbook }: { id: string; data: Record<string, unknown>; allowOverbook?: boolean }) =>
-      updateLineItem(id, data as Parameters<typeof updateLineItem>[1], allowOverbook ?? false),
+    mutationFn: ({ id, data, allowOverbook, baseUpdatedAt }: { id: string; data: Record<string, unknown>; allowOverbook?: boolean; baseUpdatedAt?: string | number | null }) =>
+      updateLineItem(id, data as Parameters<typeof updateLineItem>[1], allowOverbook ?? false, baseUpdatedAt),
     onSuccess: () => {
       invalidate();
       setEditLineItem(null);
@@ -1097,6 +1097,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                 key={item.id}
                                 item={item}
                                 indent="ml-12"
+                                orgId={orgId}
+                                projectId={projectId}
                                 overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                                 isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
                                 showCostColumn={showCostColumn}
@@ -1126,6 +1128,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                           key={item.id}
                           item={item}
                           indent="ml-3"
+                          orgId={orgId}
+                          projectId={projectId}
                           overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                           isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
                           showCostColumn={showCostColumn}
@@ -1164,6 +1168,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                     key={item.id}
                     item={item}
                     indent=""
+                    orgId={orgId}
+                    projectId={projectId}
                     overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                     isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
                     showCostColumn={showCostColumn}
@@ -1237,6 +1243,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                           key={item.id}
                           item={item}
                           indent="ml-12"
+                          orgId={orgId}
+                          projectId={projectId}
                           overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                           isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
                           showCostColumn={showCostColumn}
@@ -1519,11 +1527,12 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
         orgId={orgId}
         isPending={updateLineItemMut.isPending}
         onClose={() => setEditLineItem(null)}
-        onSubmit={(id, data, allowOverbook) =>
+        onSubmit={(id, data, allowOverbook, baseUpdatedAt) =>
           updateLineItemMut.mutate({
             id,
             data: data as unknown as Record<string, unknown>,
             allowOverbook,
+            baseUpdatedAt,
           })
         }
       />

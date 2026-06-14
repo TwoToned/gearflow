@@ -14,6 +14,8 @@
 
 import { useState } from "react";
 import { useServerQuery } from "@/hooks/use-server-query";
+import { useEditLock } from "@/hooks/use-collaboration";
+import { LockedEditorOverlay } from "@/components/collaboration/locked-editor-overlay";
 import { AlertTriangle, Loader2 } from "lucide-react";
 
 import {
@@ -52,7 +54,12 @@ interface EditLineItemDialogProps {
   orgId?: string;
   isPending: boolean;
   onClose: () => void;
-  onSubmit: (id: string, data: EditLineItemPayload, allowOverbook: boolean) => void;
+  onSubmit: (
+    id: string,
+    data: EditLineItemPayload,
+    allowOverbook: boolean,
+    baseUpdatedAt?: string | number | null,
+  ) => void;
 }
 
 export function EditLineItemDialog(props: EditLineItemDialogProps) {
@@ -77,6 +84,19 @@ function EditLineItemDialogBody({
   onClose,
   onSubmit,
 }: EditLineItemDialogProps & { item: LineItemData }) {
+  // Edit lock — acquire while this dialog body is mounted. Released on unmount.
+  const { lockState, isLocked, isStale, takeover } = useEditLock({
+    entityType: "project",
+    entityId: projectId,
+    targetType: "lineItem",
+    targetId: item.id,
+    active: true,
+    enabled: !!orgId,
+  });
+
+  // Disable the whole form when another user holds an active lock
+  const formDisabled = isLocked;
+
   // Form state — seeded from item via useState initializers. Each fresh
   // open remounts the body (keyed by item.id) so these always reflect
   // the row that was clicked.
@@ -96,6 +116,14 @@ function EditLineItemDialogBody({
   );
   const [notes, setNotes] = useState(item.notes ?? "");
   const [overbookConfirmed, setOverbookConfirmed] = useState(false);
+
+  // Optimistic-concurrency baseline — captured once when the editor opens
+  // (the body remounts per item.id, so the initializer runs fresh each open).
+  const [baseUpdatedAt] = useState<string | number | null>(() => {
+    const u = item.updatedAt;
+    if (u == null) return null;
+    return u instanceof Date ? u.toISOString() : u;
+  });
 
   // Availability query — only runs for model-backed items. Same query
   // key shape as the equipment add form's check so React Query
@@ -168,6 +196,7 @@ function EditLineItemDialogBody({
         notes: notes || undefined,
       },
       overbookConfirmed,
+      baseUpdatedAt,
     );
   }
 
@@ -176,13 +205,24 @@ function EditLineItemDialogBody({
       <DialogHeader>
         <DialogTitle>Edit Item</DialogTitle>
       </DialogHeader>
-      <div className="space-y-4 py-2">
+
+      {/* Collaboration lock overlay — shown when another user holds the lock */}
+      {(isLocked || isStale) && (
+        <LockedEditorOverlay
+          lockState={lockState}
+          onTakeover={isStale ? () => void takeover() : undefined}
+          className="mb-2"
+        />
+      )}
+
+      <div className={`space-y-4 py-2 ${formDisabled ? "pointer-events-none opacity-60" : ""}`}>
         <div className="space-y-2">
           <Label htmlFor="edit-description">Description</Label>
           <Input
             id="edit-description"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
+            disabled={formDisabled}
           />
         </div>
 
@@ -194,6 +234,7 @@ function EditLineItemDialogBody({
             min={1}
             value={quantity}
             onChange={(e) => setQuantity(e.target.value)}
+            disabled={formDisabled}
           />
           {availability && item.modelId && (
             <div className="space-y-1 pt-1">
@@ -223,8 +264,8 @@ function EditLineItemDialogBody({
                   <div>
                     <p className="text-xs font-medium">Conflicts:</p>
                     <ul className="list-disc pl-4 text-xs">
-                      {availability.conflicts.map((c: string) => (
-                        <li key={c}>{c}</li>
+                      {availability.conflicts.map((c) => (
+                        <li key={String(c)}>{String(c)}</li>
                       ))}
                     </ul>
                   </div>
@@ -311,7 +352,7 @@ function EditLineItemDialogBody({
           />
         </div>
 
-        {isOverbooked && (
+        {!formDisabled && isOverbooked && (
           <div className="rounded-md border border-red-500/50 bg-red-500/10 p-3 space-y-2">
             <p className="text-sm font-medium text-red-600 dark:text-red-400">
               <AlertTriangle className="inline-block mr-1.5 h-3.5 w-3.5" />
@@ -347,7 +388,7 @@ function EditLineItemDialogBody({
         </Button>
         <Button
           onClick={handleSave}
-          disabled={isPending || (isOverbooked && !overbookConfirmed)}
+          disabled={formDisabled || isPending || (isOverbooked && !overbookConfirmed)}
         >
           {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Save

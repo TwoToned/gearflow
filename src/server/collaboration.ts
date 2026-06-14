@@ -200,6 +200,7 @@ export async function setThreadBlocking(threadId: string, isBlocking: boolean) {
 
 export async function resolveThread(threadId: string) {
   const ctx = await getOrgContext();
+  await requirePermission("project", "manage_line_items");
   const convex = await getConvexClient();
   await convex.mutation(api.collaboration.resolveThread, {
     orgId: ctx.organizationId,
@@ -211,6 +212,7 @@ export async function resolveThread(threadId: string) {
 
 export async function reopenThread(threadId: string) {
   const ctx = await getOrgContext();
+  await requirePermission("project", "manage_line_items");
   const convex = await getConvexClient();
   await convex.mutation(api.collaboration.reopenThread, {
     orgId: ctx.organizationId,

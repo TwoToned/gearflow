@@ -2451,6 +2451,63 @@ dedicated script (project sub-tables, line-item units) are exactly what the gate
 | **5 Auth bridge** ✅ | Better Auth → Convex ES256 JWT; user token (org-scoped reads) + service token (trusted backend); browser writes rejected | round-trip 6/6: rejected without a valid token, accepted with; `/cso` clean |
 | **6 Decommission** 🔄 | Rewire deferred mirror reads off Prisma + remove React Query + SSE event bus (truncate+backfill resync DONE; supplier FLAT reads rewired; **nested supplier+model+category in ALL line-item trees incl. warehouse + PDF pipeline rewired** via `attachLineItemTree` — line-item-tree dimension COMPLETE; **`model_check_item` + `kit_check_item` now dual-written → warehouse counts + kit join fully off Convex via `attachKitTree`, "Checks" tabs reactive, `crewMembers.icalToken` redacted for browser reads**; **all 7 `*_media` tables now dual-written + reactive-list photo grafts off the mirror via `media-read.ts`; warehouse scan-path single-model reads off the mirror**; **React Query removal IN PROGRESS — `useServerMutation` (writes) + `useServerQuery` (no-liveness reads) keystones; **76 datums off RQ — the no-liveness read tail is now EXHAUSTED** (was 143 files; all 124 remaining `useQuery` calls genuinely reactive): 11 reactive config domains + org-tags + the entire no-liveness tail via `useServerQuery` (count badges, previews, dashboard, crew analytics/pickers, admin, analytics/lookups, supplier/accessory detail, activity/category/calendar/auditor/check-items/members) + 2 read+write islands (saved-views, project-tasks) via `useServerQuery`+`useServerMutation`; classify with a MULTILINE-aware invalidate grep + anchored key attribution. **Reactive tail STARTED: shared write-components `MediaUploader`+`NotesEditor` decoupled from RQ (`queryKey` prop → `onChanged` callback + `useServerMutation`), unblocking all detail-page conversions; clients/[id]+locations/[id] (non-SSE islands) taken fully off RQ via `useServerQuery`+`onChanged={refetch}`; **model + maintenance + crew detail non-SSE pages + same-view island batch off RQ (2026-06-10m); **project cluster fully off RQ (2026-06-11d) via the `createSharedResource` keystone**; **★ RQ removal ALL BUT COMPLETE (2026-06-11e): platform-config tail + assets/kit/crew/test-tag write paths + the last reader composites → 57 → 7 files, and those 7 are the intentional terminus (the `current-role` auth KEEP, the RQ infra `query-provider`/`user-nav`-clear/`use-realtime`-SSE removed at RQ==0, + one test)**; SSE confirmed dead (lowercase entityType vs PascalCase map) so all conversions data-identical; **★ SSE / EventEmitter bus TORN OUT (2026-06-11f): all four files (`events.ts`, `api/realtime/route.ts`, `use-realtime.ts`, `realtime-provider.tsx`) + the `logActivity` emit hook deleted, `<RealtimeProvider>` removed from layout — data-identical since the bus never delivered an update**; **★ REACT QUERY REMOVAL COMPLETE (2026-06-11g): the last holdout — the `current-role` auth datum — converted onto the `createSharedResource` keystone (data-identical; SSE is dead), then `query-provider` deleted, `<QueryProvider>` removed from root + auditor layouts, `user-nav`'s `clear()` dropped, and `@tanstack/react-query` removed from package.json → 6 → 0 files import React Query, dependency gone**); **★ PDF / document / report mirror-read decommission (2026-06-12, Tier 1+2): the true PDF pipeline was already off the mirror, so this closed the remaining document/report/export model+category+location reads — `build-document-data` location → `locations-read` (shape-identical, all 5 DocumentLineItem consumers untouched) + dead `server/documents.ts` deleted + integration test gained a height-reservation guard; `report-engine`/`csv`/`reorder`/`utilization`/`warehouse-close` model+category → new `getModelWithCategoryMap` (display read only — dual-write mirror is fresh so Prisma sorts stay valid); **supplier+location follow-up also done same session — `attachSuppliersToRows`/`attachLocationsToRows` in report-engine + csv/reorder location/preferredSupplier → the 6 scoped document/report/export files have ZERO cross-domain model/category/supplier/location Prisma joins left**. ★ Tier 3 warehouse.ts hot-path model + location joins DONE (2026-06-12): checkout/checkin/scan-log/container model + project/asset-tree location off the mirror via `attachModelToResults`/`graftAssetLocation`, 2237 tests green, live-verified — warehouse.ts has zero cross-domain Prisma relation joins**) | per-subsystem; tsc/tests/build green each. [FEATUREDOCS/53](./53-realtime-sync.md) is now **superseded** (teardown done). **SSE + React Query both fully removed; the whole PDF/document/report/export surface reads model/category/supplier/location/client off Convex.** |
 
+## Error masking & read-path resilience (2026-06-14)
+
+Confirmed root cause of a "random client crash": a browser reactive subscription
+ran with **no identity** during a transient window and the Convex guard threw.
+The masked pm2 error was `InternalServerError`; the real message (found in the
+Convex logs once the guards threw `ConvexError` — see below) was:
+
+```
+Uncaught Error: Unauthorized: authentication required.
+    at requireOrgReadDoc (convex/lib/auth.ts:103)
+    at handler (convex/warehouseDetail.ts:172)   ← warehouseDetail:version (Query)
+```
+
+`warehouseDetail.version` is a browser-readable reactive "version vector"
+(`useQuery`, gated only on `projectId`, NOT on auth-ready). It throws the instant
+`getUserIdentity()` is null. That happens when the browser's `fetchAccessToken`
+(`convex-provider.tsx`) returns `null` — which it did on **any** non-ok / thrown
+`GET /api/auth/token`. Returning `null` tells Convex "logged out" → it de-auths the
+client → every live subscription re-runs with no identity → throws. And
+`/api/auth/token` does a DB read on every mint (`definePayload` → org + membership),
+so a brief 5xx / cold start / pool stall flips a logged-in user to null for a moment.
+
+**Fix (the actual root cause): `fetchConvexAccessToken` (`src/lib/convex-token-fetch.ts`).**
+The token fetch now retries transient failures (5xx / network) and surrenders the
+token (returns `null`) ONLY on a genuine 401/403 or after retries are spent — so a
+blip no longer de-auths the whole Convex client. Regression test:
+`src/lib/convex-token-fetch.test.ts`. **Rule: never collapse a transient auth-token
+fetch to null; null means "logged out" to Convex and de-auths every subscription.**
+
+Plus two supporting properties of the SERVER-side Convex read path:
+
+**1. Convex masks plain `Error` in prod — throw `ConvexError`.** A function that
+throws a plain `throw new Error(...)` in a **production** deployment returns the
+caller the generic `{"code":"InternalServerError","message":"Your request couldn't
+be completed. Try again later."}`. The real message lands ONLY in the Convex
+backend logs (`npx convex logs`), never in the Next.js log or Sentry. The
+read-path auth guards in `convex/lib/auth.ts` (`requireOrgRead` /
+`requireOrgReadDoc` / `requireService`) therefore throw **`ConvexError`** — its
+payload survives the prod boundary, so an auth failure on a server-action read
+surfaces its actual reason ("Unauthorized…" / "Forbidden…") instead of the
+unactionable mask. **Rule for any new Convex function whose throw should be
+diagnosable from the app side: use `ConvexError`, not `Error`.**
+
+**2. Cross-domain reads retry once on a transient blip.** The projects list/detail
+hard-depend on Convex round-trips that used to be pure Prisma (`getClientsByOrg`
+for the list; `getModelsByOrg`/`getSuppliersByOrg`/`getCategoriesByOrg` via
+`buildLineItemAttachMaps` for the detail). With no fallback, a single transient
+Convex error (self-hosted cold start, momentary JWKS/network hiccup,
+token-refresh boundary) took the whole page down. Those four `*ByOrg` list helpers
+now wrap their query in `withConvexReadRetry` (`src/lib/convex-client.ts`) — one
+retry after a 150ms backoff, **reads only** (idempotent; never wrap a mutation).
+A *persistent* error still throws on the second attempt, so a real outage is never
+hidden — this only smooths the "random" single-shot failures. This does NOT
+re-introduce a Prisma fallback: a *map miss* still yields `null` (mirror-freshness
+invariant preserved); only a *thrown* transient error is retried. Regression tests:
+`src/lib/convex-client.test.ts`, `src/lib/convex-auth-guards.test.ts`.
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

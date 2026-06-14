@@ -145,6 +145,11 @@ export async function createThread(
 ) {
   const ctx = await getOrgContext();
   if (options?.isBlocking) {
+    // Blocking comments only gate project prep / send-out — they're meaningless
+    // on other records, so reject them server-side (the UI hides the toggle too).
+    if (entityType !== "project") {
+      throw new Error("Blocking comments are only supported on projects.");
+    }
     await requirePermission("project", "manage_line_items");
   }
   const userColor = getUserColor(ctx.userId);

@@ -914,15 +914,19 @@ export function LineItemRow({
   // changes — on the editor's own save and on a realtime update pushed by
   // another collaborator. Compares the serialised `updatedAt` baseline; the
   // ref is seeded at mount so there's no flash on first render.
+  // Normalise to a stable primitive so two equal-value Date instances (if a
+  // non-serialised row ever reaches here) don't false-flash on every render.
+  const updatedAtKey =
+    item.updatedAt instanceof Date ? item.updatedAt.getTime() : item.updatedAt ?? null;
   const [justChanged, setJustChanged] = useState(false);
-  const prevUpdatedAt = useRef(item.updatedAt);
+  const prevUpdatedAt = useRef(updatedAtKey);
   useEffect(() => {
-    if (item.updatedAt === prevUpdatedAt.current) return;
-    prevUpdatedAt.current = item.updatedAt;
+    if (updatedAtKey === prevUpdatedAt.current) return;
+    prevUpdatedAt.current = updatedAtKey;
     setJustChanged(true);
     const t = setTimeout(() => setJustChanged(false), 1600);
     return () => clearTimeout(t);
-  }, [item.updatedAt]);
+  }, [updatedAtKey]);
 
   const handleMarker = async (status: MarkerStatus) => {
     if (!projectId) return;

@@ -143,8 +143,30 @@ export async function peekNextProjectNumber(override?: {
     where: { organizationId_scopeKey: { organizationId, scopeKey } },
     select: { value: true },
   });
-  const nextSeq = (seqRow?.value ?? 0) + 1;
-  return renderProjectNumber(config.format, { parts, sequence: nextSeq, padding: config.padding });
+  const startSeq = (seqRow?.value ?? 0) + 1;
+
+  // Skip past any rendered code that's already taken so the preview matches what
+  // `generateProjectNumber` will actually allocate. The counter can lag behind
+  // the real projects (codes entered manually, imported, or created before
+  // auto-numbering was switched on), in which case `startSeq` would render an
+  // already-used number — e.g. counter 0 → "260601" when 260601-260603 exist.
+  // Probe forward only; never persist (this is a preview, must not consume a number).
+  // Keep this skip loop in sync with `generateProjectNumber` above.
+  for (let i = 0; i < 50; i++) {
+    const number = renderProjectNumber(config.format, {
+      parts,
+      sequence: startSeq + i,
+      padding: config.padding,
+    });
+    const clash = await prisma.project.findFirst({
+      where: { organizationId, projectNumber: number },
+      select: { id: true },
+    });
+    if (!clash) return number;
+  }
+  // Pathological: 50 consecutive codes taken. Fall back to the unskipped render
+  // rather than hard-erroring the preview query.
+  return renderProjectNumber(config.format, { parts, sequence: startSeq, padding: config.padding });
 }
 
 const projectFilterColumns: FilterColumnDef[] = [

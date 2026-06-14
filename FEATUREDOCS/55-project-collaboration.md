@@ -75,6 +75,39 @@ server-only `assertNoBlockingComments` wrapper:
   blocked**. Callers in `src/server/check-records.ts` resolve the line item's
   `groupId` and pass it so a group-level blocker gates its members.
 
+Blocking comments only gate **project** prep / send-out, so the Block toggle in
+`CommentThreadPanel` (both the per-thread button and the new-comment switch) is
+hidden unless `entityType === "project"`. Other records get plain discussion
+threads.
+
+## Live build feedback (Phase 4)
+
+The equipment rows give subtle realtime feedback while collaborators work
+(`equipment-rows.tsx` + keyframes in `globals.css`):
+
+- **Editing pulse** — a row another user currently holds an edit lock on shows a
+  softly pulsing left edge tinted with the editor's colour (`.collab-editing`,
+  `--collab-color` set inline).
+- **Changed flash** — whenever a row's `updatedAt` changes (own save or a
+  realtime push from another user) it briefly flashes (`.collab-changed`).
+- Both animations are gated behind `prefers-reduced-motion`: a static edge / no
+  flash when motion is reduced. Per-user attribution ("who changed it") lives in
+  the activity feed rather than per-row text.
+
+## Other records — presence, comments, edit locks (Phase 6)
+
+The substrate is generic over `entityType` (a free string), so the same
+primitives extend to non-project records with **no schema changes**. Client,
+supplier, and asset-registry detail pages now carry:
+
+- a `PresenceAvatarStack` (who else is viewing),
+- an `EntityCommentsButton` (`entity-comments-button.tsx`) — wraps
+  `CommentThreadPanel` with a live open-thread count for any record,
+- an `EditLockGate` (`edit-lock-gate.tsx`) wrapping their edit forms — a
+  record-level edit lock (`targetType`/`targetId` mirror the entity) that shows
+  the form read-only behind a `LockedEditorOverlay` while another user edits,
+  with stale takeover. The server-side revision check stays authoritative.
+
 ## Resolved-thread reply behavior — point 5
 
 `addComment` **rejects** replies to a `resolved` thread (throws). Replying no longer
@@ -103,7 +136,14 @@ Events are written two ways:
    log feed events via the plain library helper
    `src/lib/collaboration-activity.ts` (`writeCollabActivityEvent`), called from
    already-authorized actions:
-   - `updateLineItem` → `line_item_updated`
+   - `addLineItem` → `line_item_added`, `updateLineItem` → `line_item_updated`,
+     `removeLineItem` → `line_item_removed`
+   - `addKitLineItem` → `kit_added` (one grouped event with member count; an
+     `emitActivity` flag lets bulk callers suppress it)
+   - `addCustomLineItem` → `custom_item_added`
+   - `applyGroupTemplate` → `template_applied` (one grouped "imported N items"
+     event; passes `emitActivity: false` to the per-kit adds so a bulk import
+     never spams the feed with one event per row)
    - `updateProjectGroup` → `group_updated` (skips pure drag-reorders)
    - `updateProjectCategory` → `category_updated` (rename only)
 
@@ -130,6 +170,10 @@ not replace those mirrors.
 - `src/lib/blocking-comments-read.ts` — server-only summary fetch + `assertNoBlockingComments`.
 - `src/lib/collaboration-activity.ts` — `writeCollabActivityEvent` helper.
 - `src/lib/collaboration-colors.ts` — deterministic per-user colours.
+- `src/components/collaboration/entity-comments-button.tsx` — generic record comments button.
+- `src/components/collaboration/edit-lock-gate.tsx` — record edit-lock wrapper (Phase 6).
+- `src/server/group-templates.ts` — grouped `template_applied` import event.
+- `src/app/(app)/{clients,suppliers,assets/registry}/[id]/{page,edit/page}.tsx` — record collaboration wiring.
 - `src/server/collaboration.ts` — server actions (presence, locks, threads, markers).
 - `src/server/check-records.ts` — prep/pull gates pass `groupId`.
 - `src/server/line-items.ts`, `src/server/project-groups.ts`, `src/server/project-categories.ts` — feed writes on edits.

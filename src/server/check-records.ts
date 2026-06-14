@@ -796,6 +796,7 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
       assetId: parsed.assetId ?? null,
       bulkAssetId: parsed.assetId ? null : lineItem.bulkAssetId,
       prepContainer: parsed.prepContainer,
+      includeAccessoryIds: parsed.includeAccessoryIds ? new Set(parsed.includeAccessoryIds) : null,
     });
 
     return { updatedItem, resolvedAssetId };

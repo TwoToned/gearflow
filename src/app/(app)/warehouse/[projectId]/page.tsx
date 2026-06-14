@@ -380,6 +380,8 @@ function WarehouseProjectPage({
     lineItemId: string;
     assetId: string;
     bulkAssetId?: string;
+    /** Accessory identities to pack with this unit (prep picker selection). */
+    includeAccessoryIds?: string[];
     /** When true, this is a kit queue — on complete, deploy/return the kit atomically */
     kitQueueKitId?: string;
     kitQueueReturnCondition?: "GOOD" | "DAMAGED" | "MISSING";
@@ -398,6 +400,8 @@ function WarehouseProjectPage({
     lineItemId: string;
     assetId: string;
     bulkAssetId?: string;
+    /** Accessory identities to pack with this unit (prep picker selection). */
+    includeAccessoryIds?: string[];
     /** When set, this queue item is part of a kit PER_ITEM flow */
     kitQueueKitId?: string;
     kitQueueReturnCondition?: "GOOD" | "DAMAGED" | "MISSING";
@@ -1823,6 +1827,9 @@ function WarehouseProjectPage({
           lineItemId: i.lineItemId,
           assetId: i.assetId || "",
           bulkAssetId: i.li?.bulkAssetId || undefined,
+          includeAccessoryIds: i.accessories
+            ? i.accessories.filter((a) => a.checked).map((a) => a.id)
+            : undefined,
         };
       }),
       ...bulkCheckQueue,
@@ -2676,6 +2683,7 @@ function WarehouseProjectPage({
                     bulkAssetId: item.bulkAssetId,
                     prepContainer: selectedContainer || null,
                     checks,
+                    includeAccessoryIds: item.includeAccessoryIds,
                   });
                 } else if (item.fromDeprep) {
                   await completeCheckAndDeprep({
@@ -2747,6 +2755,7 @@ function WarehouseProjectPage({
                     bulkAssetId: checkFormData.bulkAssetId,
                     prepContainer: selectedContainer || null,
                     checks,
+                    includeAccessoryIds: checkFormData.includeAccessoryIds,
                   });
                   toast.success("Item checked and packed");
                 }

@@ -194,6 +194,9 @@ export async function setThreadBlocking(threadId: string, isBlocking: boolean) {
     orgId: ctx.organizationId,
     threadId,
     isBlocking,
+    actorUserId: ctx.userId,
+    actorName: ctx.userName,
+    actorColor: getUserColor(ctx.userId),
   });
   return serialize({ ok: true });
 }
@@ -206,6 +209,8 @@ export async function resolveThread(threadId: string) {
     orgId: ctx.organizationId,
     threadId,
     resolvedBy: ctx.userId,
+    actorName: ctx.userName,
+    actorColor: getUserColor(ctx.userId),
   });
   return serialize({ ok: true });
 }
@@ -217,6 +222,9 @@ export async function reopenThread(threadId: string) {
   await convex.mutation(api.collaboration.reopenThread, {
     orgId: ctx.organizationId,
     threadId,
+    actorUserId: ctx.userId,
+    actorName: ctx.userName,
+    actorColor: getUserColor(ctx.userId),
   });
   return serialize({ ok: true });
 }
@@ -245,36 +253,16 @@ export async function setReviewMarker(
     note,
     createdBy: ctx.userId,
     createdByName: ctx.userName,
+    actorColor: getUserColor(ctx.userId),
   });
   return serialize({ ok: true });
 }
 
 // ─── Activity ─────────────────────────────────────────────────────────────────
-
-export async function logCollabActivity(
-  entityType: string,
-  entityId: string,
-  action: string,
-  summary: string,
-  targetType?: string,
-  targetId?: string,
-  metadata?: Record<string, unknown>
-) {
-  const ctx = await getOrgContext();
-  const userColor = getUserColor(ctx.userId);
-  const convex = await getConvexClient();
-  await convex.mutation(api.collaboration.logActivityEvent, {
-    orgId: ctx.organizationId,
-    actorUserId: ctx.userId,
-    actorName: ctx.userName,
-    actorColor: userColor,
-    entityType,
-    entityId,
-    targetType,
-    targetId,
-    action,
-    summary,
-    metadata,
-  });
-  return serialize({ ok: true });
-}
+//
+// Activity events that originate from other server mutations (e.g. quote /
+// line-item edits) are written via the plain library helper
+// `writeCollabActivityEvent` in "@/lib/collaboration-activity" — NOT a server
+// action, so it is not exposed as a public endpoint. The collaboration
+// lifecycle events (comments, blocking, resolve/reopen, review markers) are
+// logged atomically inside their Convex mutations in convex/collaboration.ts.

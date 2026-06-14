@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   belongsInStage,
+  describeStageSplit,
   stageQuantity,
   stagesForItem,
   type StageLineLike,
@@ -109,6 +110,40 @@ describe("stagesForItem — bulk partial returns (multi-membership)", () => {
     })
     expect(stageQuantity(it_, "RETURNED")).toBe(10)
     expect(belongsInStage(it_, "DEPLOYED")).toBe(false)
+  })
+})
+
+describe("describeStageSplit — partial-return context", () => {
+  it("returns empty for a line wholly in one stage", () => {
+    expect(describeStageSplit(line({ status: "CONFIRMED", prepStatus: "PACKED" }))).toBe("")
+  })
+
+  it("describes a bulk line split across Deployed and Returned, in flow order", () => {
+    const it_ = line({
+      status: "CHECKED_OUT",
+      prepStatus: "PACKED",
+      quantity: 10,
+      checkedOutQuantity: 10,
+      returnedQuantity: 4,
+    })
+    expect(describeStageSplit(it_)).toBe("6 deployed · 4 returned")
+  })
+
+  it("describes a kit straddling stages via its children", () => {
+    const kit: StageLineLike = {
+      status: "CHECKED_OUT",
+      prepStatus: "PACKED",
+      quantity: 1,
+      checkedOutQuantity: 0,
+      returnedQuantity: 0,
+      kitId: "kit1",
+      isKitChild: false,
+      childLineItems: [
+        line({ status: "CHECKED_OUT", checkedOutQuantity: 1, isKitChild: true }),
+        line({ status: "RETURNED", prepStatus: "PACKED", returnedQuantity: 1, isKitChild: true }),
+      ],
+    }
+    expect(describeStageSplit(kit)).toBe("1 deployed · 1 returned")
   })
 })
 

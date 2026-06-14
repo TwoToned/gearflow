@@ -20,7 +20,11 @@ import {
   modelDisplayName,
   isKitParent,
 } from "@/components/warehouse/warehouse-types";
-import { stageQuantity, type WarehouseStage } from "@/lib/warehouse-stage";
+import {
+  describeStageSplit,
+  stageQuantity,
+  type WarehouseStage,
+} from "@/lib/warehouse-stage";
 
 /**
  * Read-first list view for a warehouse lifecycle stage (Returned, Depreped).
@@ -124,6 +128,9 @@ export function StageItemsTab({
               <TableBody>
                 {items.map((item) => {
                   const qty = stageQuantity(item, stage);
+                  // Non-empty only when the line straddles stages (partial
+                  // return): "6 deployed · 4 returned" links the two fragments.
+                  const split = describeStageSplit(item);
                   return (
                     <TableRow key={item.id}>
                       {action && (
@@ -144,6 +151,11 @@ export function StageItemsTab({
                             </Badge>
                           )}
                         </span>
+                        {split && (
+                          <span className="block text-xs font-normal text-fg-3 mt-0.5">
+                            {split}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell className="font-mono text-sm text-fg-3">
                         {assetTag(item)}

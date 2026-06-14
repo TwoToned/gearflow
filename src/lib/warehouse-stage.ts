@@ -167,3 +167,29 @@ export function belongsInStage(item: StageLineLike, stage: WarehouseStage): bool
 export function stageQuantity(item: StageLineLike, stage: WarehouseStage): number {
   return stagesForItem(item).get(stage) ?? 0;
 }
+
+/** Short, operator-facing label for each stage (used in split breakdowns). */
+export const WAREHOUSE_STAGE_LABELS: Record<WarehouseStage, string> = {
+  PICK_PREP: "to prep",
+  PREPPED: "prepped",
+  DEPLOYED: "deployed",
+  RETURNED: "returned",
+  DEPREPED: "depreped",
+};
+
+/**
+ * One-line breakdown of a line that straddles multiple stages, e.g.
+ * "6 deployed · 4 returned". Returns "" for a line wholly in one stage (the
+ * common case), so callers can render it only when there's a genuine split.
+ *
+ * This is the partial-return fix: a bulk/multi-unit line returned in part shows
+ * in both Deployed and Returned, and without this context an operator can't tell
+ * the two rows are the same line. See docs/designs/warehouse-linear-flow.md.
+ */
+export function describeStageSplit(item: StageLineLike): string {
+  const stages = stagesForItem(item);
+  if (stages.size <= 1) return "";
+  return WAREHOUSE_STAGE_ORDER.filter((s) => (stages.get(s) ?? 0) > 0)
+    .map((s) => `${stages.get(s)} ${WAREHOUSE_STAGE_LABELS[s]}`)
+    .join(" · ");
+}

@@ -358,10 +358,33 @@ export async function deprepItem(
       // first (preserves the lower ordinals for staff who already
       // pulled them physically; also natural LIFO).
       const removeCount = Math.min(quantity, preppedUnits.length);
+      const removedParentAssetIds: string[] = [];
       for (let i = 0; i < removeCount; i++) {
+        if (preppedUnits[i].assetId) removedParentAssetIds.push(preppedUnits[i].assetId as string);
         await tx.projectLineItemUnit.delete({
           where: { id: preppedUnits[i].id },
         });
+      }
+      // Cascade: the accessory units that rode with each removed handheld
+      // (parentUnitAssetId) come off too — else a battery/clip unit lingers on
+      // the deploy board with no parent. Mirrors how prep materialised them.
+      if (removedParentAssetIds.length > 0) {
+        const accChildren = await tx.projectLineItem.findMany({
+          where: { parentLineItemId: lineItemId, organizationId, childKind: "ACCESSORY" },
+          select: { id: true },
+        });
+        if (accChildren.length > 0) {
+          const accChildIds = accChildren.map((c) => c.id);
+          await tx.projectLineItemUnit.deleteMany({
+            where: {
+              lineItemId: { in: accChildIds },
+              organizationId,
+              parentUnitAssetId: { in: removedParentAssetIds },
+              status: { not: "CHECKED_OUT" },
+            },
+          });
+          for (const id of accChildIds) await syncLineItemRollup(tx, id);
+        }
       }
     }
 
@@ -502,6 +525,17 @@ export async function completeCheckAndDeprep(data: {
         ...(resolvedAssetId
           ? { OR: [{ asset: { parentAssetId: resolvedAssetId } }, { assetId: null }] }
           : {}),
+      },
+      data: { prepStatus: "PENDING" },
+    });
+    // Clear the per-parent-unit accessory units' stale PACKED prepStatus too
+    // (scoped to the returned handheld), so the line's derived prep state and
+    // the deploy-staging board don't show them as still packed.
+    await tx.projectLineItemUnit.updateMany({
+      where: {
+        organizationId,
+        lineItem: { parentLineItemId: data.lineItemId, childKind: "ACCESSORY" },
+        ...(resolvedAssetId ? { parentUnitAssetId: resolvedAssetId } : {}),
       },
       data: { prepStatus: "PENDING" },
     });

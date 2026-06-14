@@ -133,6 +133,26 @@ describe("auto project numbers", () => {
     expect(peek3).toBe(`${yymm()}02`);
   });
 
+  it("preview skips past already-used numbers when the counter lags behind", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id);
+    act(org.id, user.id);
+    await setFormat(org.id, { format: "%YY%MM%INC", reset: "MONTHLY", padding: 2 });
+
+    // Codes 01-03 exist but were entered manually, so the auto counter is still
+    // at 0. The preview must not suggest an already-taken code (regression: it
+    // used to render counter+1 = "<yymm>01" even though it existed).
+    await createProject({ name: "A", projectNumber: `${yymm()}01` });
+    await createProject({ name: "B", projectNumber: `${yymm()}02` });
+    await createProject({ name: "C", projectNumber: `${yymm()}03` });
+
+    // Preview skips the taken slots...
+    expect(await peekNextProjectNumber()).toBe(`${yymm()}04`);
+    // ...and matches what an auto (blank) create actually allocates.
+    const auto = (await createProject({ name: "D" })) as { projectNumber: string };
+    expect(auto.projectNumber).toBe(`${yymm()}04`);
+  });
+
   it("preview honours an unsaved format override", async () => {
     const org = await createOrgFixture();
     const user = await createUserFixture(org.id);

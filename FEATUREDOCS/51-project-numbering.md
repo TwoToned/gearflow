@@ -49,8 +49,13 @@ the counter again (capped at 50 attempts).
   is configured and the code is blank → the existing `MISSING_PROJECT_CODE` error still fires.
   Manually-entered codes always win. Templates keep their own `generateTemplateCode` path.
 - `peekNextProjectNumber(override?)` — previews the next code WITHOUT incrementing (reads the
-  current counter, renders counter+1). Accepts an override of unsaved `{format, reset, padding}`
-  so the settings form previews live as the user types.
+  current counter, then probes counter+1, +2, … skipping any rendered code that's already a
+  project, so the preview matches what `generateProjectNumber` will actually allocate). The skip
+  matters when the counter lags the real projects (codes entered manually, imported, or created
+  before auto-numbering was switched on) — without it the preview would suggest an already-taken
+  code (e.g. counter 0 → `260601` when `260601`-`260603` exist). Probe-only, never persists.
+  Accepts an override of unsaved `{format, reset, padding}` so the settings form previews live as
+  the user types.
 - Settings UI: `ProjectNumberingSettings` in Settings → Project Defaults — format input, reset
   select, padding input, token legend, and a live "Next project number" preview.
 - Project create form: when auto-numbering is on, the Project Code field is optional with an
@@ -58,5 +63,6 @@ the counter again (capped at 50 attempts).
 
 ## Tests
 - `project-number.test.ts` — 12 pure-engine tests (render, scopeKey, validation, tz).
-- `project-numbering.int.test.ts` — 6 integration tests (sequential allocation, padding/literal,
-  manual override wins, blank rejected when off, preview doesn't consume, override preview).
+- `project-numbering.int.test.ts` — 7 integration tests (sequential allocation, padding/literal,
+  manual override wins, blank rejected when off, preview doesn't consume, preview skips taken
+  numbers when the counter lags, override preview).

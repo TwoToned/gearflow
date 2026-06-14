@@ -164,9 +164,12 @@ interface ThreadViewProps {
   orgId: string;
   thread: Thread;
   members: Member[];
+  /** Whether the "Block prep / send-out" toggle applies. Only projects gate
+   *  transitions on blocking comments, so it's hidden on other entities. */
+  allowBlocking: boolean;
 }
 
-function ThreadView({ orgId, thread, members }: ThreadViewProps) {
+function ThreadView({ orgId, thread, members, allowBlocking }: ThreadViewProps) {
   const [reply, setReply] = useState("");
   const [mentions, setMentions] = useState<string[]>([]);
   const comments = useQuery(api.collaboration.listComments, {
@@ -221,7 +224,7 @@ function ThreadView({ orgId, thread, members }: ThreadViewProps) {
           )}
         </div>
         <div className="flex items-center gap-1">
-          {!isResolved && (
+          {!isResolved && allowBlocking && (
             <Button
               size="sm"
               variant="ghost"
@@ -336,6 +339,10 @@ export function CommentThreadPanel({
   const [blocking, setBlocking] = useState(false);
   const [mentions, setMentions] = useState<string[]>([]);
 
+  // Blocking comments gate project prep / send-out. They are meaningless on
+  // other entities (assets, clients, …), so the toggle is project-only.
+  const allowBlocking = entityType === "project";
+
   const threads = useQuery(
     api.collaboration.listThreads,
     open ? { orgId, entityType, entityId, targetType, targetId } : "skip"
@@ -420,7 +427,7 @@ export function CommentThreadPanel({
             </p>
           )}
           {(visibleThreads ?? []).map((t) => (
-            <ThreadView key={t._id} orgId={orgId} thread={t} members={memberList} />
+            <ThreadView key={t._id} orgId={orgId} thread={t} members={memberList} allowBlocking={allowBlocking} />
           ))}
         </div>
 
@@ -439,14 +446,16 @@ export function CommentThreadPanel({
           />
           <div className="flex items-center justify-between gap-2">
             <MentionPicker members={memberList} selected={mentions} onChange={setMentions} />
-            <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
-              <ShieldAlert className={cn("h-3.5 w-3.5", blocking && "text-red-600")} />
-              Blocking
-              <Switch checked={blocking} onCheckedChange={setBlocking} />
-            </label>
+            {allowBlocking && (
+              <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
+                <ShieldAlert className={cn("h-3.5 w-3.5", blocking && "text-red-600")} />
+                Blocking
+                <Switch checked={blocking} onCheckedChange={setBlocking} />
+              </label>
+            )}
           </div>
           <MentionChips ids={mentions} members={memberList} />
-          {blocking && (
+          {allowBlocking && blocking && (
             <p className="text-[10px] text-red-600">
               Blocks prepping &amp; sending out until resolved.
             </p>

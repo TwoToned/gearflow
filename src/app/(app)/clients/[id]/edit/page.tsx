@@ -15,6 +15,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import type { ClientFormValues } from "@/lib/validations/client";
+import { EditLockGate } from "@/components/collaboration/edit-lock-gate";
 
 export default function EditClientPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -68,7 +69,9 @@ export default function EditClientPage({ params }: { params: Promise<{ id: strin
           <h1 className="t-title text-fg">Edit Client</h1>
           <p className="t-body text-fg-3">{client.name}</p>
         </div>
-        <ClientForm initialData={initialData} />
+        <EditLockGate entityType="client" entityId={id}>
+          <ClientForm initialData={initialData} />
+        </EditLockGate>
       </div>
     </FadeIn>
   );

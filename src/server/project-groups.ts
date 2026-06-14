@@ -10,6 +10,7 @@ import {
 } from "@/lib/validations/project-group";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import { writeCollabActivityEvent } from "@/lib/collaboration-activity";
 import {
   mirrorProjectGroupCreate,
   removeProjectGroupFromConvex,
@@ -310,6 +311,21 @@ export async function updateProjectGroup(
   });
 
   await recalculateProjectTotals(group.projectId);
+
+  // Realtime collaboration feed — skip pure drag-reorders (sortOrder only).
+  if (Object.keys(data).some((k) => k !== "sortOrder")) {
+    await writeCollabActivityEvent(
+      { organizationId, userId, userName },
+      {
+        entityType: "project",
+        entityId: group.projectId,
+        action: "group_updated",
+        summary: `updated group "${group.title}"`,
+        targetType: "group",
+        targetId: group.id,
+      },
+    );
+  }
 
   return serialize(group);
 }

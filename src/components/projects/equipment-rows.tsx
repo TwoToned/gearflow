@@ -8,6 +8,7 @@
  * change. The 3-axis RowDescriptor refactor lands in the next commit.
  */
 
+import { useState, useEffect, useRef, type CSSProperties } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
@@ -379,12 +380,19 @@ export function GroupRow({
   onSaveAsTemplate,
   orgId,
   projectId,
+  lockedBy,
+  commentBadge,
 }: {
   group: GroupData;
   isExpanded: boolean;
   indented?: boolean;
   orgId?: string;
   projectId?: string;
+  /** Passive "X is editing" badge — fed from a single entity-level lock
+   *  subscription in the parent so we don't mount a hook per row. */
+  lockedBy?: { name: string; color: string } | null;
+  /** Open / blocking comment counts for this group's thread target. */
+  commentBadge?: { open: number; blocking: number };
   /** Drop Matrix 8C — render the disallowed-drop rejection bar when a
    *  drag of an incompatible source is currently hovering this row. */
   isRejectedDropTarget?: boolean;
@@ -481,11 +489,34 @@ export function GroupRow({
               targetId={group.id}
               triggerLabel=""
             >
-              <Button variant="ghost" size="icon-sm" title="Comments">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                title={commentBadge?.blocking ? `${commentBadge.blocking} blocking group comment${commentBadge.blocking === 1 ? "" : "s"}` : "Comments"}
+                className={cn("relative", commentBadge?.blocking && "text-red-600")}
+              >
                 <MessageCircle className="h-3.5 w-3.5" />
+                {commentBadge?.blocking ? (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-600 px-0.5 text-[8px] font-medium text-white">
+                    {commentBadge.blocking}
+                  </span>
+                ) : commentBadge?.open ? (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-bg-inset px-0.5 text-[8px] font-medium text-fg-2 ring-1 ring-border">
+                    {commentBadge.open}
+                  </span>
+                ) : null}
               </Button>
             </CommentThreadPanel>
           )}
+          {lockedBy ? (
+            <Badge variant="secondary" className="gap-1 text-[10px]">
+              <span
+                className="h-1.5 w-1.5 rounded-full"
+                style={{ backgroundColor: lockedBy.color }}
+              />
+              Editing: {lockedBy.name}
+            </Badge>
+          ) : null}
           <Button variant="ghost" size="icon-sm" onClick={onEdit}>
             <Pencil className="h-3.5 w-3.5" />
           </Button>
@@ -706,6 +737,7 @@ export function SubHireGroupRow({
 
 export function CategoryRow({
   cat,
+  lockedBy,
   onRename,
   onDelete,
   onAddEquipment,
@@ -713,6 +745,9 @@ export function CategoryRow({
   onAddCustom,
 }: {
   cat: CategoryData;
+  /** Passive "X is editing" badge — fed from the parent's single
+   *  entity-level lock subscription, looked up by category target key. */
+  lockedBy?: { name: string; color: string } | null;
   onRename: () => void;
   onDelete: () => void;
   /** Open the unified add dialog scoped to this category (no group).
@@ -748,6 +783,15 @@ export function CategoryRow({
             <GripVertical className="h-4 w-4" />
           </button>
           <h3 className="text-sm font-semibold text-fg-3">{cat.name}</h3>
+          {lockedBy ? (
+            <Badge variant="secondary" className="gap-1 text-[10px]">
+              <span
+                className="h-1.5 w-1.5 rounded-full"
+                style={{ backgroundColor: lockedBy.color }}
+              />
+              Editing: {lockedBy.name}
+            </Badge>
+          ) : null}
           <DropdownMenu>
             <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="opacity-0 group-hover/cat:opacity-100 transition-opacity" />}>
               <MoreHorizontal className="h-3.5 w-3.5" />
@@ -865,6 +909,25 @@ export function LineItemRow({
   const openComments = myCounts?.open ?? 0;
   const blockingComments = myCounts?.blockingOpen ?? 0;
   const hasActiveLock = liveLock && !liveLock.isStale && liveLock.status === "active";
+
+  // Phase 4 live-build feedback: briefly highlight the row whenever its data
+  // changes — on the editor's own save and on a realtime update pushed by
+  // another collaborator. Compares the serialised `updatedAt` baseline; the
+  // ref is seeded at mount so there's no flash on first render.
+  // Normalise to a stable primitive so two equal-value Date instances (if a
+  // non-serialised row ever reaches here) don't false-flash on every render.
+  const updatedAtKey =
+    item.updatedAt instanceof Date ? item.updatedAt.getTime() : item.updatedAt ?? null;
+  const [justChanged, setJustChanged] = useState(false);
+  const prevUpdatedAt = useRef(updatedAtKey);
+  useEffect(() => {
+    if (updatedAtKey === prevUpdatedAt.current) return;
+    prevUpdatedAt.current = updatedAtKey;
+    setJustChanged(true);
+    const t = setTimeout(() => setJustChanged(false), 1600);
+    return () => clearTimeout(t);
+  }, [updatedAtKey]);
+
   const handleMarker = async (status: MarkerStatus) => {
     if (!projectId) return;
     try {
@@ -879,7 +942,8 @@ export function LineItemRow({
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
-  };
+    ...(hasActiveLock ? { ["--collab-color"]: liveLock.ownerColor } : {}),
+  } as CSSProperties;
 
   // Map content indent to grip indent (margin-based to avoid affecting column width)
   const gripIndent = indent === "ml-12" ? "ml-8" : indent === "ml-3" ? "ml-1" : "";
@@ -898,7 +962,12 @@ export function LineItemRow({
     <TableRow
       ref={setNodeRef}
       style={style}
-      className={`${isDragging ? "opacity-30" : ""} ${isSelected ? "bg-accent/20" : ""}`}
+      className={cn(
+        isDragging && "opacity-30",
+        isSelected && "bg-accent/20",
+        hasActiveLock && "collab-editing",
+        justChanged && "collab-changed",
+      )}
       onClick={onClick}
       {...shortcuts}
     >

@@ -194,6 +194,7 @@ export async function pullItem(projectId: string, lineItemId: string) {
 
   await assertNoBlockingComments(organizationId, projectId, {
     lineItemId,
+    groupId: lineItem.groupId,
     actionLabel: "pull this item",
   });
 
@@ -265,8 +266,15 @@ export async function prepItemDirect(
     "check_out"
   );
 
+  // Resolve the line item's group before the tx so a group-level blocker gates
+  // prep too (Convex read kept outside the Prisma transaction).
+  const liForGate = await prisma.projectLineItem.findFirst({
+    where: { id: lineItemId, projectId, organizationId },
+    select: { groupId: true },
+  });
   await assertNoBlockingComments(organizationId, projectId, {
     lineItemId,
+    groupId: liForGate?.groupId,
     actionLabel: "prep this item",
   });
 
@@ -681,6 +689,7 @@ export async function prepKitChildren(
 
   await assertNoBlockingComments(organizationId, projectId, {
     lineItemId: parentLineItemId,
+    groupId: parentLi.groupId,
     actionLabel: "prep this kit",
   });
 
@@ -776,8 +785,15 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
   );
   const parsed = completeCheckAndPackSchema.parse(data);
 
+  // Resolve the line item's group before the tx so a group-level blocker gates
+  // this prep too (Convex read kept outside the Prisma transaction).
+  const liForGate = await prisma.projectLineItem.findFirst({
+    where: { id: parsed.lineItemId, projectId: parsed.projectId, organizationId },
+    select: { groupId: true },
+  });
   await assertNoBlockingComments(organizationId, parsed.projectId, {
     lineItemId: parsed.lineItemId,
+    groupId: liForGate?.groupId,
     actionLabel: "complete the check & pack",
   });
 

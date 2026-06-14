@@ -22,6 +22,7 @@ import { getOrgDaysPerMonth } from "@/lib/org-pricing";
 import { UserFacingError } from "@/lib/errors";
 import { computeStockBreakdown } from "@/lib/availability";
 import { isStaleRevision } from "@/lib/collaboration-conflict";
+import { writeCollabActivityEvent } from "@/lib/collaboration-activity";
 
 /**
  * Expand a serialised asset's permanent accessories into child line items.
@@ -553,6 +554,18 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
     projectId,
   });
 
+  await writeCollabActivityEvent(
+    { organizationId, userId, userName },
+    {
+      entityType: "project",
+      entityId: projectId,
+      action: "line_item_added",
+      summary: `added ${result.description || "a line item"}`,
+      targetType: "lineItem",
+      targetId: result.id,
+    },
+  );
+
   await upsertProjectLineItemsToConvex(projectId);
 
   // Supplier lives in Convex — attach instead of a Prisma join.
@@ -738,6 +751,22 @@ export async function updateLineItem(
     projectId: result.projectId,
   });
 
+  await writeCollabActivityEvent(
+    { organizationId, userId, userName },
+    {
+      entityType: "project",
+      entityId: result.projectId,
+      action: "line_item_updated",
+      summary: `updated ${result.description || "a line item"}`,
+      targetType: "lineItem",
+      targetId: result.id,
+      metadata: {
+        quantity: result.quantity,
+        lineTotal: result.lineTotal?.toString?.() ?? null,
+      },
+    },
+  );
+
   await upsertProjectLineItemsToConvex(result.projectId);
   // Supplier lives in Convex — attach instead of a Prisma join.
   const supplier = result.supplierId ? await getSupplierById(result.supplierId) : null;
@@ -752,8 +781,11 @@ export async function addKitLineItem(
   groupName?: string,
   categoryId?: string,
   groupId?: string,
+  /** Emit a collaboration activity-feed event for this kit add. Bulk callers
+   *  (e.g. applyGroupTemplate) pass false and log one grouped event instead. */
+  emitActivity = true,
 ) {
-  const { organizationId } = await requirePermission("project", "manage_line_items");
+  const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
 
   const kit = await prisma.kit.findUnique({
     where: { id: kitId, organizationId },
@@ -860,6 +892,22 @@ export async function addKitLineItem(
 
   await recalculateProjectTotals(projectId);
   await upsertProjectLineItemsToConvex(projectId);
+
+  if (emitActivity) {
+    const memberCount = kit.serializedItems.length + kit.bulkItems.length;
+    await writeCollabActivityEvent(
+      { organizationId, userId, userName },
+      {
+        entityType: "project",
+        entityId: projectId,
+        action: "kit_added",
+        summary: `added kit "${result.parentItem.description ?? kit.assetTag}" (${memberCount} item${memberCount === 1 ? "" : "s"})`,
+        targetType: "lineItem",
+        targetId: result.parentItem.id,
+      },
+    );
+  }
+
   return serialize(result.parentItem);
 }
 
@@ -928,6 +976,18 @@ export async function addCustomLineItem(projectId: string, data: CustomLineItemF
     projectId,
   });
 
+  await writeCollabActivityEvent(
+    { organizationId, userId, userName },
+    {
+      entityType: "project",
+      entityId: projectId,
+      action: "custom_item_added",
+      summary: `added custom item "${parsed.description}"`,
+      targetType: "lineItem",
+      targetId: result.id,
+    },
+  );
+
   await upsertProjectLineItemsToConvex(projectId);
   return serialize(result);
 }
@@ -991,6 +1051,18 @@ export async function removeLineItem(id: string) {
     summary: `Removed line item from project`,
     projectId: item.projectId,
   });
+
+  await writeCollabActivityEvent(
+    { organizationId, userId, userName },
+    {
+      entityType: "project",
+      entityId: item.projectId,
+      action: "line_item_removed",
+      summary: `removed ${item.description || "a line item"}`,
+      targetType: "lineItem",
+      targetId: id,
+    },
+  );
 
   return serialize({ success: true });
 }

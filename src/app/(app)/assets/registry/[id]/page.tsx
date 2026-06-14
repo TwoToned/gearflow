@@ -42,6 +42,8 @@ import { MediaThumbnail } from "@/components/media/media-thumbnail";
 import { NotesEditor } from "@/components/ui/notes-editor";
 import { resolveAssetPhotoUrl, isAssetPhotoCustom } from "@/lib/media-utils";
 import { CanDo } from "@/components/auth/permission-gate";
+import { PresenceAvatarStack } from "@/components/collaboration/presence-avatar-stack";
+import { EntityCommentsButton } from "@/components/collaboration/entity-comments-button";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { BookingCalendar } from "@/components/bookings/booking-calendar";
 import { StatusIndicator } from "@/components/ui/status-indicator";
@@ -203,47 +205,55 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 </p>
               </div>
             </div>
-            <CanDo resource="asset" action="update">
-              <div className="flex flex-wrap gap-2">
-                {asset.status === "CHECKED_OUT" && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-amber-600"
-                    onClick={() => setForceReturnOpen(true)}
-                    disabled={forceReturnMutation.isPending}
-                  >
-                    <RotateCcw className="mr-2 h-4 w-4" />
-                    Force Return
+            <div className="flex flex-wrap items-center gap-2">
+              {orgId && (
+                <PresenceAvatarStack entityType="asset" entityId={id} size="sm" />
+              )}
+              {orgId && (
+                <EntityCommentsButton orgId={orgId} entityType="asset" entityId={id} />
+              )}
+              <CanDo resource="asset" action="update">
+                <div className="flex flex-wrap gap-2">
+                  {asset.status === "CHECKED_OUT" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-amber-600"
+                      onClick={() => setForceReturnOpen(true)}
+                      disabled={forceReturnMutation.isPending}
+                    >
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                      Force Return
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" render={<Link href={`/assets/registry/${id}/edit`} />}>
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Edit
                   </Button>
-                )}
-                <Button variant="outline" size="sm" render={<Link href={`/assets/registry/${id}/edit`} />}>
-                  <Pencil className="mr-2 h-4 w-4" />
-                  Edit
-                </Button>
-                {asset.isActive && (
+                  {asset.isActive && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive"
+                      onClick={() => setArchiveOpen(true)}
+                    >
+                      <Archive className="mr-2 h-4 w-4" />
+                      Archive
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
                     className="text-destructive"
-                    onClick={() => setArchiveOpen(true)}
+                    onClick={() => setDeleteOpen(true)}
+                    disabled={deleteMutation.isPending}
                   >
-                    <Archive className="mr-2 h-4 w-4" />
-                    Archive
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete
                   </Button>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-destructive"
-                  onClick={() => setDeleteOpen(true)}
-                  disabled={deleteMutation.isPending}
-                >
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete
-                </Button>
-              </div>
-            </CanDo>
+                </div>
+              </CanDo>
+            </div>
           </div>
         </div>
 

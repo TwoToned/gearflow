@@ -17,6 +17,8 @@ import { assetStatusLabels, supplierOrderStatusLabels, projectStatusLabels, form
 import { getSupplierOrders } from "@/server/supplier-orders";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
+import { PresenceAvatarStack } from "@/components/collaboration/presence-avatar-stack";
+import { EntityCommentsButton } from "@/components/collaboration/entity-comments-button";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -134,24 +136,32 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                   {supplier.accountNumber && <> &middot; Acct: {supplier.accountNumber}</>}
                 </p>
               </div>
-              <CanDo resource="supplier" action="update">
-                <div className="flex gap-2">
-                  <Button variant="outline" render={<Link href={`/suppliers/${id}/edit`} />}>
-                    <Pencil className="mr-2 h-4 w-4" />
-                    Edit
-                  </Button>
-                  <CanDo resource="supplier" action="delete">
-                    <Button
-                      variant="outline"
-                      className="text-destructive"
-                      onClick={() => setDeleteOpen(true)}
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Delete
+              <div className="flex items-center gap-2">
+                {orgId && (
+                  <PresenceAvatarStack entityType="supplier" entityId={id} size="sm" />
+                )}
+                {orgId && (
+                  <EntityCommentsButton orgId={orgId} entityType="supplier" entityId={id} />
+                )}
+                <CanDo resource="supplier" action="update">
+                  <div className="flex gap-2">
+                    <Button variant="outline" render={<Link href={`/suppliers/${id}/edit`} />}>
+                      <Pencil className="mr-2 h-4 w-4" />
+                      Edit
                     </Button>
-                  </CanDo>
-                </div>
-              </CanDo>
+                    <CanDo resource="supplier" action="delete">
+                      <Button
+                        variant="outline"
+                        className="text-destructive"
+                        onClick={() => setDeleteOpen(true)}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete
+                      </Button>
+                    </CanDo>
+                  </div>
+                </CanDo>
+              </div>
             </div>
           </div>
 

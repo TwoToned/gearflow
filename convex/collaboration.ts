@@ -314,10 +314,18 @@ export const createThread = mutation({
     createdBy: v.string(),
     createdByName: v.string(),
     authorColor: v.string(),
+    isBlocking: v.optional(v.boolean()),
+    projectId: v.optional(v.string()),
+    mentionUserIds: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     await requireService(ctx);
     const now = Date.now();
+    // For "project" entities the entityId already IS the project id; fall back to
+    // it so blocking summaries always have a project to group by.
+    const projectId =
+      args.projectId ?? (args.entityType === "project" ? args.entityId : undefined);
+    const mentions = args.mentionUserIds?.length ? args.mentionUserIds : undefined;
     const threadId = await ctx.db.insert("commentThreads", {
       orgId: args.orgId,
       entityType: args.entityType,
@@ -325,6 +333,9 @@ export const createThread = mutation({
       targetType: args.targetType,
       targetId: args.targetId,
       status: "open",
+      isBlocking: args.isBlocking ?? false,
+      projectId,
+      mentionUserIds: mentions,
       createdBy: args.createdBy,
       createdByName: args.createdByName,
       createdAt: now,
@@ -338,6 +349,7 @@ export const createThread = mutation({
       authorId: args.createdBy,
       authorName: args.createdByName,
       authorColor: args.authorColor,
+      mentionUserIds: mentions,
       createdAt: now,
     });
     return threadId as string;
@@ -352,6 +364,7 @@ export const addComment = mutation({
     authorId: v.string(),
     authorName: v.string(),
     authorColor: v.string(),
+    mentionUserIds: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     await requireService(ctx);
@@ -360,15 +373,26 @@ export const addComment = mutation({
     const thread = await ctx.db.get(args.threadId as unknown as Id<"commentThreads">);
     if (!thread || thread.orgId !== args.orgId) throw new Error("Thread not found");
 
+    // Union any new mentions onto the thread so dashboard mention detection
+    // covers replies, not just the opening comment.
+    const newMentions = args.mentionUserIds?.length ? args.mentionUserIds : [];
+    const mergedMentions = Array.from(
+      new Set([...(thread.mentionUserIds ?? []), ...newMentions]),
+    );
+
     if (thread.status === "resolved") {
       await ctx.db.patch(thread._id, {
         status: "open",
         resolvedBy: undefined,
         resolvedAt: undefined,
         updatedAt: now,
+        mentionUserIds: mergedMentions.length ? mergedMentions : undefined,
       });
     } else {
-      await ctx.db.patch(thread._id, { updatedAt: now });
+      await ctx.db.patch(thread._id, {
+        updatedAt: now,
+        mentionUserIds: mergedMentions.length ? mergedMentions : undefined,
+      });
     }
 
     return await ctx.db.insert("comments", {
@@ -378,8 +402,19 @@ export const addComment = mutation({
       authorId: args.authorId,
       authorName: args.authorName,
       authorColor: args.authorColor,
+      mentionUserIds: newMentions.length ? newMentions : undefined,
       createdAt: now,
     });
+  },
+});
+
+export const setThreadBlocking = mutation({
+  args: { orgId: v.string(), threadId: v.string(), isBlocking: v.boolean() },
+  handler: async (ctx, { orgId, threadId, isBlocking }) => {
+    await requireService(ctx);
+    const thread = await ctx.db.get(threadId as unknown as Id<"commentThreads">);
+    if (!thread || thread.orgId !== orgId) throw new Error("Thread not found");
+    await ctx.db.patch(thread._id, { isBlocking, updatedAt: Date.now() });
   },
 });
 
@@ -568,13 +603,114 @@ export const listThreadCommentCounts = query({
       .filter((q) => q.eq(q.field("entityType"), entityType))
       .collect();
 
-    const counts: Record<string, { open: number; total: number }> = {};
+    const counts: Record<string, { open: number; total: number; blockingOpen: number }> = {};
     for (const t of threads) {
       const key = t.targetId ?? "__entity__";
-      if (!counts[key]) counts[key] = { open: 0, total: 0 };
+      if (!counts[key]) counts[key] = { open: 0, total: 0, blockingOpen: 0 };
       counts[key].total++;
-      if (t.status === "open") counts[key].open++;
+      if (t.status === "open") {
+        counts[key].open++;
+        if (t.isBlocking) counts[key].blockingOpen++;
+      }
     }
     return counts;
+  },
+});
+
+// ─── Blocking Comment Summaries ────────────────────────────────────────────────
+
+/**
+ * Open blocking threads for a single project, summarised. Drives the project
+ * header badge, line-item indicators, and the server-side prep/send-out gate.
+ * `lineItemTargetIds` is the set of line items with an open blocking thread;
+ * `hasProjectLevel` is true when a project-level (no specific target) blocker is
+ * open, which gates everything.
+ */
+export const getProjectBlockingSummary = query({
+  args: { orgId: v.string(), projectId: v.string() },
+  handler: async (ctx, { orgId, projectId }) => {
+    await requireOrgRead(ctx, orgId);
+    const threads = await ctx.db
+      .query("commentThreads")
+      .withIndex("by_orgId_projectId", (q) => q.eq("orgId", orgId).eq("projectId", projectId))
+      .collect();
+    const open = threads.filter((t) => t.status === "open" && t.isBlocking);
+    const lineItemTargetIds: string[] = [];
+    let hasProjectLevel = false;
+    for (const t of open) {
+      if (t.targetType === "lineItem" && t.targetId) lineItemTargetIds.push(t.targetId);
+      else if (!t.targetId) hasProjectLevel = true;
+    }
+    return {
+      count: open.length,
+      lineItemTargetIds,
+      hasProjectLevel,
+      targetIds: open.map((t) => t.targetId ?? null),
+    };
+  },
+});
+
+/**
+ * Blocking counts for many projects at once (project list / dashboard cards).
+ * Scans the org's blocking threads once via the by_orgId_isBlocking index and
+ * buckets the open ones by project.
+ */
+export const listBlockingForProjects = query({
+  args: { orgId: v.string(), projectIds: v.array(v.string()) },
+  handler: async (ctx, { orgId, projectIds }) => {
+    await requireOrgRead(ctx, orgId);
+    const wanted = new Set(projectIds);
+    const blocking = await ctx.db
+      .query("commentThreads")
+      .withIndex("by_orgId_isBlocking_status", (q) =>
+        q.eq("orgId", orgId).eq("isBlocking", true).eq("status", "open"),
+      )
+      .collect();
+    const counts: Record<string, number> = {};
+    for (const t of blocking) {
+      const pid = t.projectId ?? t.entityId;
+      if (!wanted.has(pid)) continue;
+      counts[pid] = (counts[pid] ?? 0) + 1;
+    }
+    return counts;
+  },
+});
+
+/**
+ * All open blocking threads in the org, with their opening comment snippet.
+ * The trusted Next.js layer joins these to project name + PM for the dashboard
+ * (PM-of / mentioned-in surfaces). Kept org-wide because blocking threads are
+ * rare; the by_orgId_isBlocking index keeps the scan tight.
+ */
+export const listOpenBlockingThreads = query({
+  args: { orgId: v.string() },
+  handler: async (ctx, { orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    const blocking = await ctx.db
+      .query("commentThreads")
+      .withIndex("by_orgId_isBlocking_status", (q) =>
+        q.eq("orgId", orgId).eq("isBlocking", true).eq("status", "open"),
+      )
+      .collect();
+    const out = [];
+    for (const t of blocking) {
+      const first = await ctx.db
+        .query("comments")
+        .withIndex("by_orgId_threadId", (q) => q.eq("orgId", orgId).eq("threadId", t._id as unknown as string))
+        .first();
+      out.push({
+        threadId: t._id as string,
+        projectId: t.projectId ?? t.entityId,
+        entityType: t.entityType,
+        entityId: t.entityId,
+        targetType: t.targetType ?? null,
+        targetId: t.targetId ?? null,
+        createdByName: t.createdByName,
+        createdAt: t.createdAt,
+        mentionUserIds: t.mentionUserIds ?? [],
+        snippet: first?.body ?? "",
+      });
+    }
+    return out;
   },
 });

@@ -1,4 +1,5 @@
 import type { Auth } from "convex/server";
+import { ConvexError } from "convex/values";
 
 /**
  * Convex-side auth enforcement for the Phase 5 auth bridge.
@@ -16,6 +17,14 @@ import type { Auth } from "convex/server";
  * Both are ES256 JWTs validated by the same customJwt provider (convex/auth.config.ts).
  *
  * The literals below MIRROR src/lib/convex-auth-constants.ts — keep in sync.
+ *
+ * These guards throw `ConvexError`, NOT a plain `Error`. A plain `Error` thrown
+ * from a Convex function in a PRODUCTION deployment is masked to the client as the
+ * generic `{"code":"InternalServerError","message":"Your request couldn't be
+ * completed. Try again later."}` — the real reason only ever lands in the Convex
+ * backend logs. `ConvexError`'s payload IS delivered to the caller, so an
+ * auth failure on a server-action read surfaces its actual message ("Unauthorized…"
+ * / "Forbidden…") in the Next.js log + Sentry instead of the unactionable mask.
  */
 
 const SERVICE_SUBJECT = "gearflow-service";
@@ -70,7 +79,7 @@ export function redactFields<T extends Record<string, unknown>>(
 export async function requireService(ctx: AuthCtx): Promise<void> {
   const auth = await getAuthContext(ctx);
   if (!auth || auth.kind !== "service") {
-    throw new Error("Unauthorized: this operation requires the GearFlow server.");
+    throw new ConvexError("Unauthorized: this operation requires the GearFlow server.");
   }
 }
 
@@ -83,10 +92,10 @@ export async function requireOrgRead(
   orgId: string,
 ): Promise<void> {
   const auth = await getAuthContext(ctx);
-  if (!auth) throw new Error("Unauthorized: authentication required.");
+  if (!auth) throw new ConvexError("Unauthorized: authentication required.");
   if (auth.kind === "service") return;
   if (!auth.orgId || auth.orgId !== orgId) {
-    throw new Error("Forbidden: organization mismatch.");
+    throw new ConvexError("Forbidden: organization mismatch.");
   }
 }
 
@@ -100,10 +109,10 @@ export async function requireOrgReadDoc(
   doc: { organizationId?: string | null } | null,
 ): Promise<void> {
   const auth = await getAuthContext(ctx);
-  if (!auth) throw new Error("Unauthorized: authentication required.");
+  if (!auth) throw new ConvexError("Unauthorized: authentication required.");
   if (auth.kind === "service") return;
   if (!doc) return;
   if (!auth.orgId || doc.organizationId !== auth.orgId) {
-    throw new Error("Forbidden: organization mismatch.");
+    throw new ConvexError("Forbidden: organization mismatch.");
   }
 }

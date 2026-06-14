@@ -41,6 +41,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/formatters";
+import { cn } from "@/lib/utils";
 import { useRowShortcuts } from "./use-row-shortcuts";
 import { ReviewMarkerBadge } from "@/components/collaboration/review-marker-badge";
 import type { MarkerStatus } from "@/components/collaboration/review-marker-badge";
@@ -376,10 +377,14 @@ export function GroupRow({
   onMove,
   onRecalculate,
   onSaveAsTemplate,
+  orgId,
+  projectId,
 }: {
   group: GroupData;
   isExpanded: boolean;
   indented?: boolean;
+  orgId?: string;
+  projectId?: string;
   /** Drop Matrix 8C — render the disallowed-drop rejection bar when a
    *  drag of an incompatible source is currently hovering this row. */
   isRejectedDropTarget?: boolean;
@@ -467,6 +472,20 @@ export function GroupRow({
       </TableCell>
       <TableCell>
         <div className="flex items-center gap-1">
+          {orgId && projectId && (
+            <CommentThreadPanel
+              orgId={orgId}
+              entityType="project"
+              entityId={projectId}
+              targetType="group"
+              targetId={group.id}
+              triggerLabel=""
+            >
+              <Button variant="ghost" size="icon-sm" title="Comments">
+                <MessageCircle className="h-3.5 w-3.5" />
+              </Button>
+            </CommentThreadPanel>
+          )}
           <Button variant="ghost" size="icon-sm" onClick={onEdit}>
             <Pencil className="h-3.5 w-3.5" />
           </Button>
@@ -836,6 +855,15 @@ export function LineItemRow({
     api.collaboration.getReviewMarker,
     orgId && projectId ? { orgId, entityId: projectId, targetId: item.id } : "skip"
   );
+  // Comment counts for all line items on the project — Convex dedupes this
+  // identical subscription across every row, so it's a single live query.
+  const commentCounts = useQuery(
+    api.collaboration.listThreadCommentCounts,
+    orgId && projectId ? { orgId, entityType: "project", entityId: projectId } : "skip"
+  ) as Record<string, { open: number; total: number; blockingOpen: number }> | undefined;
+  const myCounts = commentCounts?.[item.id];
+  const openComments = myCounts?.open ?? 0;
+  const blockingComments = myCounts?.blockingOpen ?? 0;
   const hasActiveLock = liveLock && !liveLock.isStale && liveLock.status === "active";
   const handleMarker = async (status: MarkerStatus) => {
     if (!projectId) return;
@@ -1042,8 +1070,28 @@ export function LineItemRow({
               targetId={item.id}
               triggerLabel=""
             >
-              <Button variant="ghost" size="icon-sm" title="Comments">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                title={
+                  blockingComments > 0
+                    ? `${blockingComments} blocking comment${blockingComments === 1 ? "" : "s"}`
+                    : openComments > 0
+                      ? `${openComments} open comment${openComments === 1 ? "" : "s"}`
+                      : "Comments"
+                }
+                className={cn("relative", blockingComments > 0 && "text-red-600")}
+              >
                 <MessageCircle className="h-3.5 w-3.5" />
+                {blockingComments > 0 ? (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-600 px-0.5 text-[8px] font-medium text-white">
+                    {blockingComments}
+                  </span>
+                ) : openComments > 0 ? (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[8px] font-medium text-primary-foreground">
+                    {openComments}
+                  </span>
+                ) : null}
               </Button>
             </CommentThreadPanel>
           )}

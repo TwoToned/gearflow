@@ -27,6 +27,7 @@ import { TestTagBlockError } from "@/lib/errors/test-tag-block-error";
 import { syncKitsToConvex } from "@/lib/kit-mirror";
 import { syncAssetsToConvex, syncBulkAssetsToConvex } from "@/lib/asset-mirror";
 import { upsertProjectLineItemsToConvex, syncLineItemsToConvex } from "@/lib/line-item-mirror";
+import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
 import {
   buildLineItemAttachMaps,
   attachLineItemTree,
@@ -932,6 +933,13 @@ export async function checkOutItems(
 ) {
   const { organizationId, userId, userName } = await requirePermission("warehouse", "check_out");
 
+  // Block send-out while any blocking comment on the project is unresolved.
+  // Do this before opening the Prisma transaction so a Convex read never holds
+  // a database connection hostage.
+  await assertNoBlockingComments(organizationId, projectId, {
+    actionLabel: "check out items",
+  });
+
   const touchedAssetIds = new Set<string>();
   const results = await prisma.$transaction(async (tx) => {
     const updated: unknown[] = [];
@@ -1193,6 +1201,11 @@ export async function checkInItems(
 
 export async function checkOutKit(projectId: string, kitId: string) {
   const { organizationId, userId, userName } = await requirePermission("warehouse", "check_out");
+
+  // Block send-out while any blocking comment on the project is unresolved.
+  await assertNoBlockingComments(organizationId, projectId, {
+    actionLabel: "check out this kit",
+  });
 
   const result = await prisma.$transaction(async (tx) => {
     // Find the kit parent line item on this project
@@ -1625,6 +1638,11 @@ export async function quickAddAndCheckOut(
   }
 ) {
   const { organizationId, userId } = await requirePermission("warehouse", "check_out");
+
+  // Block send-out while any blocking comment on the project is unresolved.
+  await assertNoBlockingComments(organizationId, projectId, {
+    actionLabel: "check out items",
+  });
 
   const result = await prisma.$transaction(async (tx) => {
     // T&T compliance block — refuse to add an asset to a project if its

@@ -2249,6 +2249,16 @@ export default defineSchema({
     targetType: v.optional(v.string()),
     targetId: v.optional(v.string()),
     status: v.union(v.literal("open"), v.literal("resolved")),
+    // Blocking threads gate the project's prep / send-out / forward workflow
+    // until resolved. Optional so pre-existing threads default to non-blocking.
+    isBlocking: v.optional(v.boolean()),
+    // Denormalised project id for cross-project blocking summaries (dashboard /
+    // project list). For project comments this equals entityId; carried
+    // explicitly so the value is stable even for non-"project" entityTypes.
+    projectId: v.optional(v.string()),
+    // User ids mentioned anywhere in the thread (union across comments). Drives
+    // the dashboard "mentioned in a blocking comment" surface.
+    mentionUserIds: v.optional(v.array(v.string())),
     createdBy: v.string(),
     createdByName: v.string(),
     createdAt: v.number(),
@@ -2258,6 +2268,9 @@ export default defineSchema({
   })
     .index("by_orgId_entityId", ["orgId", "entityId"])
     .index("by_orgId_targetId", ["orgId", "targetId"])
+    .index("by_orgId_isBlocking", ["orgId", "isBlocking"])
+    .index("by_orgId_isBlocking_status", ["orgId", "isBlocking", "status"])
+    .index("by_orgId_projectId", ["orgId", "projectId"])
     .index("by_createdBy", ["createdBy"]),
 
   // Individual comments within a thread.
@@ -2268,6 +2281,7 @@ export default defineSchema({
     authorId: v.string(),
     authorName: v.string(),
     authorColor: v.string(),
+    mentionUserIds: v.optional(v.array(v.string())),
     createdAt: v.number(),
     editedAt: v.optional(v.number()),
     deletedAt: v.optional(v.number()),

@@ -47,6 +47,28 @@ export async function getOrgMembers(params?: {
   });
 }
 
+/**
+ * Lightweight member directory for @mention pickers. Available to any org member
+ * (no orgMembers:read gate) since it only exposes id/name/image already visible
+ * across the app. Returns the current user first is NOT done here — callers can
+ * filter themselves out if desired.
+ */
+export async function getMentionableMembers() {
+  const { organizationId } = await getOrgContext();
+  const members = await prisma.member.findMany({
+    where: { organizationId },
+    include: { user: { select: { id: true, name: true, email: true, image: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+  return serialize(
+    members.map((m) => ({
+      userId: m.user.id,
+      name: m.user.name || m.user.email || "Unknown",
+      image: m.user.image ?? null,
+    })),
+  );
+}
+
 export async function changeMemberRole(memberId: string, newRole: string) {
   await requirePermission("orgMembers", "update_role");
   const { organizationId, userId, userName } = await getOrgContext();

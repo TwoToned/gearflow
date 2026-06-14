@@ -6,6 +6,7 @@ import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { syncAssetsToConvex } from "@/lib/asset-mirror";
 import { upsertProjectLineItemsToConvex } from "@/lib/line-item-mirror";
+import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
 import { getModelMap, getModelById, type ConvexModel } from "@/lib/models-read";
 import { getModelCheckItemCountMap } from "@/lib/line-item-tree-read";
 import {
@@ -191,6 +192,11 @@ export async function pullItem(projectId: string, lineItemId: string) {
     throw new Error("Line item not found in project");
   }
 
+  await assertNoBlockingComments(organizationId, projectId, {
+    lineItemId,
+    actionLabel: "pull this item",
+  });
+
   const result = await prisma.projectLineItem.update({
     where: { id: lineItemId },
     data: { prepStatus: "PULLED" },
@@ -258,6 +264,11 @@ export async function prepItemDirect(
     "warehouse",
     "check_out"
   );
+
+  await assertNoBlockingComments(organizationId, projectId, {
+    lineItemId,
+    actionLabel: "prep this item",
+  });
 
   const result = await prisma.$transaction(async (tx) => {
     const lineItem = await tx.projectLineItem.findFirst({
@@ -668,6 +679,11 @@ export async function prepKitChildren(
 
   if (!parentLi) throw new Error("Kit line item not found");
 
+  await assertNoBlockingComments(organizationId, projectId, {
+    lineItemId: parentLineItemId,
+    actionLabel: "prep this kit",
+  });
+
   await prisma.$transaction(async (tx) => {
     const children = parentLi.childLineItems || [];
     for (const child of children) {
@@ -759,6 +775,11 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
     "check_out"
   );
   const parsed = completeCheckAndPackSchema.parse(data);
+
+  await assertNoBlockingComments(organizationId, parsed.projectId, {
+    lineItemId: parsed.lineItemId,
+    actionLabel: "complete the check & pack",
+  });
 
   const result = await prisma.$transaction(async (tx) => {
     // 1. Verify line item

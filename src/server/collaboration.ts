@@ -2,7 +2,7 @@
 
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
-import { getOrgContext } from "@/lib/org-context";
+import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getUserColor } from "@/lib/collaboration-colors";
 import { serialize } from "@/lib/serialize";
 
@@ -140,9 +140,13 @@ export async function createThread(
   entityId: string,
   firstComment: string,
   targetType?: string,
-  targetId?: string
+  targetId?: string,
+  options?: { isBlocking?: boolean; mentionUserIds?: string[]; projectId?: string }
 ) {
   const ctx = await getOrgContext();
+  if (options?.isBlocking) {
+    await requirePermission("project", "manage_line_items");
+  }
   const userColor = getUserColor(ctx.userId);
   const convex = await getConvexClient();
   const threadId = await convex.mutation(api.collaboration.createThread, {
@@ -155,11 +159,18 @@ export async function createThread(
     createdBy: ctx.userId,
     createdByName: ctx.userName,
     authorColor: userColor,
+    isBlocking: options?.isBlocking ?? false,
+    projectId: options?.projectId,
+    mentionUserIds: options?.mentionUserIds,
   });
   return serialize({ threadId: threadId as unknown as string });
 }
 
-export async function addComment(threadId: string, body: string) {
+export async function addComment(
+  threadId: string,
+  body: string,
+  options?: { mentionUserIds?: string[] }
+) {
   const ctx = await getOrgContext();
   const userColor = getUserColor(ctx.userId);
   const convex = await getConvexClient();
@@ -170,12 +181,26 @@ export async function addComment(threadId: string, body: string) {
     authorId: ctx.userId,
     authorName: ctx.userName,
     authorColor: userColor,
+    mentionUserIds: options?.mentionUserIds,
+  });
+  return serialize({ ok: true });
+}
+
+export async function setThreadBlocking(threadId: string, isBlocking: boolean) {
+  const ctx = await getOrgContext();
+  await requirePermission("project", "manage_line_items");
+  const convex = await getConvexClient();
+  await convex.mutation(api.collaboration.setThreadBlocking, {
+    orgId: ctx.organizationId,
+    threadId,
+    isBlocking,
   });
   return serialize({ ok: true });
 }
 
 export async function resolveThread(threadId: string) {
   const ctx = await getOrgContext();
+  await requirePermission("project", "manage_line_items");
   const convex = await getConvexClient();
   await convex.mutation(api.collaboration.resolveThread, {
     orgId: ctx.organizationId,
@@ -187,6 +212,7 @@ export async function resolveThread(threadId: string) {
 
 export async function reopenThread(threadId: string) {
   const ctx = await getOrgContext();
+  await requirePermission("project", "manage_line_items");
   const convex = await getConvexClient();
   await convex.mutation(api.collaboration.reopenThread, {
     orgId: ctx.organizationId,

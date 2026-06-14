@@ -1505,11 +1505,18 @@ function WarehouseProjectPage({
       }
 
       // Check if any "bulk" items are actually multi-qty serialized (no bulkAssetId, SERIALIZED model)
-      // These need asset assignment via the picker, not the bulk prep flow
+      // These need asset assignment via the picker, not the bulk prep flow.
+      // Discriminate on `!== "BULK"` rather than `=== "SERIALIZED"`: the Convex
+      // model mirror stores assetType as OPTIONAL, so a model dual-written
+      // without it reads back `undefined` here. Treating undefined as bulk sent
+      // serialised lines down the generic prep path, where prepUnit flips the
+      // WHOLE line to PACKED (ignoring the ticked quantity) — "prep one, all
+      // four move". Prisma defaults assetType to SERIALIZED, so "not BULK" is
+      // the correct, mirror-gap-proof reading for a non-bulk-asset line.
       const actualBulkItems: typeof bulkItems = [];
       for (const bi of bulkItems) {
         const li = lineItems.find((l) => l.id === bi.lineItemId);
-        if (li && !li.bulkAssetId && li.model?.assetType === "SERIALIZED" && li.modelId && !li.subHireId != null) {
+        if (li && !li.bulkAssetId && li.model?.assetType !== "BULK" && li.modelId && !li.subHireId != null) {
           // Multi-qty serialized item — needs asset picker
           items.push({ lineItemId: bi.lineItemId, quantity: bi.quantity });
         } else {
@@ -1525,7 +1532,9 @@ function WarehouseProjectPage({
       const readyItems: typeof items = [];
       for (const item of items) {
         const li = lineItems.find((l) => l.id === item.lineItemId);
-        if (li && !li.assetId && !li.bulkAssetId && li.model?.assetType === "SERIALIZED" && li.modelId && !li.subHireId != null) {
+        // `!== "BULK"` (not `=== "SERIALIZED"`) so a mirror-omitted assetType
+        // still routes to the picker rather than the whole-line prep path.
+        if (li && !li.assetId && !li.bulkAssetId && li.model?.assetType !== "BULK" && li.modelId && !li.subHireId != null) {
           needsAssetPicker.push(item);
         } else {
           readyItems.push(item);

@@ -37,6 +37,7 @@ const unitInclude = {
   select: {
     id: true,
     status: true,
+    parentUnitAssetId: true,
     asset: { select: { assetTag: true } },
     bulkAsset: { select: { assetTag: true } },
   },

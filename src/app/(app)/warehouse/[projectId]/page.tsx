@@ -95,6 +95,7 @@ import {
 import {
   pullItem,
   prepItemDirect,
+  getAssetAccessories,
   deprepItem,
   deprepKit,
   prepKitChildren,
@@ -347,6 +348,10 @@ function WarehouseProjectPage({
     availableAssets: AvailableAsset[];
     selectedAssetId: string;
     checkItemCount: number;
+    // Per-accessory pack toggles, loaded once an asset is picked. `loadedFor`
+    // tracks which asset they were fetched for so re-picking refreshes them.
+    accessories?: Array<{ id: string; name: string | null; checked: boolean }>;
+    accessoriesLoadedFor?: string;
   }>>([]);
   const [assetPickerBulkItems, setAssetPickerBulkItems] = useState<Array<{
     lineItemId: string;
@@ -375,6 +380,8 @@ function WarehouseProjectPage({
     lineItemId: string;
     assetId: string;
     bulkAssetId?: string;
+    /** Accessory identities to pack with this unit (prep picker selection). */
+    includeAccessoryIds?: string[];
     /** When true, this is a kit queue — on complete, deploy/return the kit atomically */
     kitQueueKitId?: string;
     kitQueueReturnCondition?: "GOOD" | "DAMAGED" | "MISSING";
@@ -393,6 +400,8 @@ function WarehouseProjectPage({
     lineItemId: string;
     assetId: string;
     bulkAssetId?: string;
+    /** Accessory identities to pack with this unit (prep picker selection). */
+    includeAccessoryIds?: string[];
     /** When set, this queue item is part of a kit PER_ITEM flow */
     kitQueueKitId?: string;
     kitQueueReturnCondition?: "GOOD" | "DAMAGED" | "MISSING";
@@ -405,11 +414,11 @@ function WarehouseProjectPage({
   const [checkQueueIndex, setCheckQueueIndex] = useState(0);
   // Items that don't need checks — processed after queue completes
   const [checkQueueDirectItems, setCheckQueueDirectItems] = useState<
-    Array<{ lineItemId: string; assetId?: string; quantity?: number; returnCondition?: string; notes?: string }>
+    Array<{ lineItemId: string; assetId?: string; quantity?: number; returnCondition?: string; notes?: string; includeAccessoryIds?: string[] }>
   >([]);
 
   // Start processing a check queue — opens the form for the first item
-  function startCheckQueue(queue: CheckQueueItem[], directItems: Array<{ lineItemId: string; assetId?: string; quantity?: number; returnCondition?: string; notes?: string }> = []) {
+  function startCheckQueue(queue: CheckQueueItem[], directItems: Array<{ lineItemId: string; assetId?: string; quantity?: number; returnCondition?: string; notes?: string; includeAccessoryIds?: string[] }> = []) {
     if (queue.length === 0) return false;
     setCheckQueue(queue);
     setCheckQueueIndex(0);
@@ -518,7 +527,7 @@ function WarehouseProjectPage({
         // Sequential to avoid race conditions when items share the same lineItemId
         (async () => {
           for (const i of checkQueueDirectItems) {
-            await prepItemDirect(projectId, i.lineItemId, i.assetId, i.quantity, selectedContainer || null);
+            await prepItemDirect(projectId, i.lineItemId, i.assetId, i.quantity, selectedContainer || null, i.includeAccessoryIds);
           }
           toast.success("Items prepped — ready to deploy");
           invalidate();
@@ -1505,11 +1514,18 @@ function WarehouseProjectPage({
       }
 
       // Check if any "bulk" items are actually multi-qty serialized (no bulkAssetId, SERIALIZED model)
-      // These need asset assignment via the picker, not the bulk prep flow
+      // These need asset assignment via the picker, not the bulk prep flow.
+      // Discriminate on `!== "BULK"` rather than `=== "SERIALIZED"`: the Convex
+      // model mirror stores assetType as OPTIONAL, so a model dual-written
+      // without it reads back `undefined` here. Treating undefined as bulk sent
+      // serialised lines down the generic prep path, where prepUnit flips the
+      // WHOLE line to PACKED (ignoring the ticked quantity) — "prep one, all
+      // four move". Prisma defaults assetType to SERIALIZED, so "not BULK" is
+      // the correct, mirror-gap-proof reading for a non-bulk-asset line.
       const actualBulkItems: typeof bulkItems = [];
       for (const bi of bulkItems) {
         const li = lineItems.find((l) => l.id === bi.lineItemId);
-        if (li && !li.bulkAssetId && li.model?.assetType === "SERIALIZED" && li.modelId && !li.subHireId != null) {
+        if (li && !li.bulkAssetId && li.model?.assetType !== "BULK" && li.modelId && !li.subHireId != null) {
           // Multi-qty serialized item — needs asset picker
           items.push({ lineItemId: bi.lineItemId, quantity: bi.quantity });
         } else {
@@ -1525,7 +1541,9 @@ function WarehouseProjectPage({
       const readyItems: typeof items = [];
       for (const item of items) {
         const li = lineItems.find((l) => l.id === item.lineItemId);
-        if (li && !li.assetId && !li.bulkAssetId && li.model?.assetType === "SERIALIZED" && li.modelId && !li.subHireId != null) {
+        // `!== "BULK"` (not `=== "SERIALIZED"`) so a mirror-omitted assetType
+        // still routes to the picker rather than the whole-line prep path.
+        if (li && !li.assetId && !li.bulkAssetId && li.model?.assetType !== "BULK" && li.modelId && !li.subHireId != null) {
           needsAssetPicker.push(item);
         } else {
           readyItems.push(item);
@@ -1777,11 +1795,24 @@ function WarehouseProjectPage({
       }
     }
 
-    // Items without checks go through prepItemDirect
-    const withoutChecks = [
+    // Items without checks go through prepItemDirect. Carry the ticked accessory
+    // set: undefined = include all (accessories never loaded), [] = exclude all,
+    // a list = pack exactly those. Only serialised picked items have toggles.
+    const withoutChecks: Array<{
+      lineItemId: string;
+      assetId?: string;
+      quantity?: number;
+      includeAccessoryIds?: string[];
+    }> = [
       ...allPickedItems.filter(
         (i) => !i.checkItemCount || i.checkItemCount === 0 || !i.modelId
-      ).map((i) => ({ lineItemId: i.lineItemId, assetId: i.assetId })),
+      ).map((i) => ({
+        lineItemId: i.lineItemId,
+        assetId: i.assetId,
+        includeAccessoryIds: i.accessories
+          ? i.accessories.filter((a) => a.checked).map((a) => a.id)
+          : undefined,
+      })),
       ...bulkNoChecks.map((bi) => ({ lineItemId: bi.lineItemId, quantity: bi.quantity })),
     ];
 
@@ -1796,6 +1827,9 @@ function WarehouseProjectPage({
           lineItemId: i.lineItemId,
           assetId: i.assetId || "",
           bulkAssetId: i.li?.bulkAssetId || undefined,
+          includeAccessoryIds: i.accessories
+            ? i.accessories.filter((a) => a.checked).map((a) => a.id)
+            : undefined,
         };
       }),
       ...bulkCheckQueue,
@@ -1811,7 +1845,14 @@ function WarehouseProjectPage({
     // same lineItemId and each call splits/decrements the original's quantity.
     (async () => {
       for (const i of withoutChecks) {
-        await prepItemDirect(projectId, i.lineItemId, "assetId" in i ? i.assetId : undefined, "quantity" in i ? i.quantity as number : undefined, selectedContainer || null);
+        await prepItemDirect(
+          projectId,
+          i.lineItemId,
+          i.assetId,
+          i.quantity,
+          selectedContainer || null,
+          i.includeAccessoryIds,
+        );
       }
       toast.success("Items prepped — ready to deploy");
       invalidate();
@@ -2432,11 +2473,32 @@ function WarehouseProjectPage({
                   <Select
                     value={pickerItem.selectedAssetId}
                     onValueChange={(val) => {
+                      const assetId = val ?? "";
                       setAssetPickerItems((prev) =>
                         prev.map((item, i) =>
-                          i === idx ? { ...item, selectedAssetId: val ?? "" } : item
+                          i === idx ? { ...item, selectedAssetId: assetId } : item
                         )
                       );
+                      // Load this asset's accessories so they can be toggled.
+                      if (assetId) {
+                        getAssetAccessories(assetId)
+                          .then((acc) => {
+                            const list = [
+                              ...acc.serialised.map((s) => ({ id: s.id, name: s.name, checked: true })),
+                              ...acc.bulk.map((b) => ({
+                                id: b.id,
+                                name: b.quantity > 1 && b.name ? `${b.quantity}× ${b.name}` : b.name,
+                                checked: true,
+                              })),
+                            ];
+                            setAssetPickerItems((prev) =>
+                              prev.map((item, i) =>
+                                i === idx ? { ...item, accessories: list, accessoriesLoadedFor: assetId } : item
+                              )
+                            );
+                          })
+                          .catch(() => {});
+                      }
                     }}
                   >
                     <SelectTrigger>
@@ -2467,6 +2529,33 @@ function WarehouseProjectPage({
                         ))}
                     </SelectContent>
                   </Select>
+                )}
+                {pickerItem.accessories && pickerItem.accessories.length > 0 && (
+                  <div className="pl-3 pt-1 space-y-1 border-l border-border/60 ml-1">
+                    <p className="text-xs text-fg-4">Include accessories:</p>
+                    {pickerItem.accessories.map((acc) => (
+                      <label key={acc.id} className="flex items-center gap-2 text-sm text-fg-3 cursor-pointer">
+                        <Checkbox
+                          checked={acc.checked}
+                          onCheckedChange={() => {
+                            setAssetPickerItems((prev) =>
+                              prev.map((item, i) =>
+                                i === idx
+                                  ? {
+                                      ...item,
+                                      accessories: item.accessories?.map((a) =>
+                                        a.id === acc.id ? { ...a, checked: !a.checked } : a
+                                      ),
+                                    }
+                                  : item
+                              )
+                            );
+                          }}
+                        />
+                        <span>{acc.name || "Accessory"}</span>
+                      </label>
+                    ))}
+                  </div>
                 )}
               </div>
             ))}
@@ -2594,6 +2683,7 @@ function WarehouseProjectPage({
                     bulkAssetId: item.bulkAssetId,
                     prepContainer: selectedContainer || null,
                     checks,
+                    includeAccessoryIds: item.includeAccessoryIds,
                   });
                 } else if (item.fromDeprep) {
                   await completeCheckAndDeprep({
@@ -2665,6 +2755,7 @@ function WarehouseProjectPage({
                     bulkAssetId: checkFormData.bulkAssetId,
                     prepContainer: selectedContainer || null,
                     checks,
+                    includeAccessoryIds: checkFormData.includeAccessoryIds,
                   });
                   toast.success("Item checked and packed");
                 }

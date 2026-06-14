@@ -1618,6 +1618,12 @@ model ProjectLineItemUnit {
   asset            Asset?           @relation(fields: [assetId], references: [id], onDelete: SetNull)
   bulkAssetId      String?
   bulkAsset        BulkAsset?       @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
+  // For an ACCESSORY-line unit: the parent unit's asset this accessory travels
+  // with (the specific handheld a battery kit is packed under). Null on normal
+  // (non-accessory) units. Denormalised link to the parent asset id, mirroring
+  // how serialised accessory children use Asset.parentAssetId — lets prep/return
+  // and the per-unit docket render scope an accessory to one parent unit.
+  parentUnitAssetId String?
   quantity         Int              @default(1)
   returnedQuantity Int              @default(0)
   status           LineItemStatus   @default(CONFIRMED)
@@ -1640,6 +1646,7 @@ model ProjectLineItemUnit {
   @@index([organizationId, assetId, status])
   @@index([organizationId, bulkAssetId, status])
   @@index([lineItemId, status])
+  @@index([lineItemId, parentUnitAssetId])
   @@map("project_line_item_unit")
 }
 

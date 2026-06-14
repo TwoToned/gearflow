@@ -138,6 +138,60 @@ export async function ensureBulkUnit(
 }
 
 /**
+ * Ensure a per-parent-unit ACCESSORY unit on an accessory child line.
+ *
+ * Unlike ensureBulkUnit (one row per bulkAssetId for a whole line), accessory
+ * units are keyed by the PARENT unit they travel with (`parentUnitAssetId`) —
+ * the specific handheld a battery kit is packed under. So a qty-3 handheld line
+ * with a battery accessory ends up with three battery units, one per handheld,
+ * each independently prepped / deployed / returned / excluded. Dedups on
+ * (lineItemId, parentUnitAssetId, accessory identity). Serialised accessory
+ * assets also satisfy the (lineItemId, assetId) unique index.
+ */
+export async function ensureAccessoryUnit(
+  tx: Prisma.TransactionClient,
+  args: {
+    organizationId: string;
+    lineItemId: string;
+    parentUnitAssetId: string;
+    assetId?: string | null;
+    bulkAssetId?: string | null;
+    quantity: number;
+  },
+): Promise<{ id: string; created: boolean }> {
+  const existing = await tx.projectLineItemUnit.findFirst({
+    where: {
+      lineItemId: args.lineItemId,
+      parentUnitAssetId: args.parentUnitAssetId,
+      ...(args.assetId
+        ? { assetId: args.assetId }
+        : { bulkAssetId: args.bulkAssetId ?? undefined }),
+    },
+    select: { id: true },
+  });
+  if (existing) return { id: existing.id, created: false };
+
+  const siblings = await tx.projectLineItemUnit.findMany({
+    where: { lineItemId: args.lineItemId },
+    select: { ordinal: true },
+  });
+  const unit = await tx.projectLineItemUnit.create({
+    data: {
+      organizationId: args.organizationId,
+      lineItemId: args.lineItemId,
+      ordinal: nextOrdinal(siblings),
+      assetId: args.assetId ?? null,
+      bulkAssetId: args.assetId ? null : args.bulkAssetId ?? null,
+      parentUnitAssetId: args.parentUnitAssetId,
+      quantity: args.quantity,
+      status: "CONFIRMED",
+    },
+    select: { id: true },
+  });
+  return { id: unit.id, created: true };
+}
+
+/**
  * Map a return condition to the canonical asset status to set on
  * checkin. Centralised so checkInItems, completeCheckAndStore, and
  * any future caller stay in sync.
@@ -158,9 +212,12 @@ export function assetStatusFromReturnCondition(
  * Three modes:
  *   - `assetId` given → return exactly that asset's unit (scan flow).
  *   - `bulkAssetId` given → accumulate quantity onto the bulk unit row.
- *   - Neither → "return whole line": find every still-out unit and
- *     flip each. Falls back to flipping the order line directly if no
- *     units exist (kit children + legacy lines).
+ *   - Neither → return still-out units on the line. When `quantity` is
+ *     given (the warehouse UI when the user ticks N of M identical
+ *     units) flip exactly that many, lowest ordinal first; without a
+ *     quantity flip every still-out unit ("return whole line"). Falls
+ *     back to flipping the order line directly if no units exist (kit
+ *     children + legacy lines).
  *
  * Caller is responsible for the `requirePermission` check and the
  * surrounding $transaction. This function MUST run inside one. Caller
@@ -277,12 +334,16 @@ export async function returnLineUnits(
     return { unitsFlipped: unit ? 1 : 0, assetsTouched: [] };
   }
 
-  // ── 3. Return-whole-line ───────────────────────────────────────
-  // No specific asset and no line-level bulk: find every still-out
-  // unit on this line and flip each. If there are none, the line is
-  // a kit child / generic — flip the line itself.
+  // ── 3. Partial or whole-line return ────────────────────────────
+  // No specific asset and no line-level bulk: flip still-out units on
+  // this line. A caller that passes `quantity` (the warehouse UI when
+  // the user ticks N of M identical units) flips exactly that many,
+  // lowest ordinal first; without a quantity every still-out unit is
+  // flipped ("return whole line"). If there are no units the line is a
+  // kit child / generic — flip the line itself.
   const outUnits = await tx.projectLineItemUnit.findMany({
     where: { lineItemId: lineItem.id, status: "CHECKED_OUT" },
+    orderBy: { ordinal: "asc" },
   });
   if (outUnits.length === 0) {
     await tx.projectLineItem.update({
@@ -298,8 +359,12 @@ export async function returnLineUnits(
     });
     return { unitsFlipped: 0, assetsTouched: [] };
   }
+  const unitsToFlip =
+    args.quantity != null
+      ? outUnits.slice(0, Math.max(0, Math.min(args.quantity, outUnits.length)))
+      : outUnits;
   const assetsTouched: string[] = [];
-  for (const u of outUnits) {
+  for (const u of unitsToFlip) {
     await tx.projectLineItemUnit.update({
       where: { id: u.id },
       data: {
@@ -319,7 +384,7 @@ export async function returnLineUnits(
       assetsTouched.push(u.assetId);
     }
   }
-  return { unitsFlipped: outUnits.length, assetsTouched };
+  return { unitsFlipped: unitsToFlip.length, assetsTouched };
 }
 
 /**
@@ -327,12 +392,12 @@ export async function returnLineUnits(
  * checkoutAccessoryChildren on the return side: accessories are inseparable from
  * their parent, so any code path that returns the parent must cascade here.
  *
- * Scope (the multi-quantity fix): when `returnedAssetId` is given (a single
- * parent unit was scanned back), only that unit's accessories return — serialised
- * children whose accessory asset has `parentAssetId === returnedAssetId`, plus the
- * returned unit's per-unit share of each bulk accessory (a partial return, so the
- * bulk child only flips to RETURNED once every parent unit is back). Without
- * `returnedAssetId` (whole-line return) every child returns in full.
+ * Scope: each accessory unit carries `parentUnitAssetId` — the handheld it was
+ * packed under. When `returnedAssetId` is given (one parent unit scanned back),
+ * only that handheld's accessory units flip to RETURNED; siblings stay out. A
+ * whole-line return (no `returnedAssetId`) flips every still-out accessory unit.
+ * Serialised accessory assets are released to inventory; bulk accessory units
+ * mark their full quantity returned.
  *
  * Without this scoping, returning Light A would also return Light B's
  * still-deployed cable and mis-route a DAMAGED accessory to maintenance.
@@ -353,40 +418,52 @@ export async function checkinAccessoryChildren(
     returnedAssetId?: string | null;
   },
 ) {
-  const { organizationId, projectId, parentLineItemId, returnCondition, userId, defaultLocationId } = args;
+  const { organizationId, parentLineItemId, returnCondition, userId, defaultLocationId } = args;
   const returnedAssetId = args.returnedAssetId ?? null;
+  const assetStatus = assetStatusFromReturnCondition(returnCondition);
 
   const children = await tx.projectLineItem.findMany({
     where: { parentLineItemId, organizationId, childKind: "ACCESSORY" },
-    select: { id: true, assetId: true, bulkAssetId: true, quantity: true, asset: { select: { parentAssetId: true } } },
+    select: { id: true },
   });
+  if (children.length === 0) return { assetsTouched: [] as string[] };
+  const childIds = children.map((c) => c.id);
 
-  // Per-unit return: how much of each bulk accessory the returned unit carries.
-  let perUnitBulk: Map<string, number> | null = null;
-  if (returnedAssetId) {
-    const { bulks } = await resolveAssetAccessories(tx, organizationId, returnedAssetId);
-    perUnitBulk = new Map(bulks.map((b) => [b.bulkAssetId, b.quantity]));
-  }
+  // The accessory units to return: those tied to the returned parent unit
+  // (parentUnitAssetId), or every still-out accessory unit on a whole-line return.
+  const units = await tx.projectLineItemUnit.findMany({
+    where: {
+      lineItemId: { in: childIds },
+      organizationId,
+      status: "CHECKED_OUT",
+      ...(returnedAssetId ? { parentUnitAssetId: returnedAssetId } : {}),
+    },
+    select: { id: true, assetId: true, bulkAssetId: true, quantity: true },
+  });
 
   // Collect every serialised accessory asset whose status flips, so the caller
   // can mirror them to Convex (asset is dual-written) after the transaction.
   const assetsTouched: string[] = [];
-  for (const child of children) {
-    if (child.assetId) {
-      // Serialised accessory — belongs to exactly one parent unit.
-      if (returnedAssetId && child.asset?.parentAssetId !== returnedAssetId) continue;
-      const r = await returnLineUnits(tx, { organizationId, projectId, lineItemId: child.id, returnCondition, userId, defaultLocationId });
-      assetsTouched.push(...r.assetsTouched);
-    } else if (child.bulkAssetId) {
-      // Bulk accessory — return the returned unit's share (or the whole lot).
-      const quantity = returnedAssetId ? (perUnitBulk?.get(child.bulkAssetId) ?? 0) : child.quantity;
-      if (quantity <= 0) continue;
-      await returnLineUnits(tx, { organizationId, projectId, lineItemId: child.id, returnCondition, quantity, userId, defaultLocationId });
-    } else {
-      continue;
+  for (const u of units) {
+    await tx.projectLineItemUnit.updateMany({
+      where: { id: u.id, status: "CHECKED_OUT" },
+      data: {
+        status: "RETURNED",
+        returnedAt: new Date(),
+        returnedById: userId,
+        returnCondition,
+        ...(u.bulkAssetId ? { returnedQuantity: u.quantity } : {}),
+      },
+    });
+    if (u.assetId) {
+      await tx.asset.update({
+        where: { id: u.assetId },
+        data: { status: assetStatus, locationId: defaultLocationId },
+      });
+      assetsTouched.push(u.assetId);
     }
-    await syncLineItemRollup(tx, child.id);
   }
+  for (const id of childIds) await syncLineItemRollup(tx, id);
   return { assetsTouched };
 }
 
@@ -399,7 +476,7 @@ type AccessoryProfile = {
   bulks: Array<{ bulkAssetId: string; quantity: number; modelId: string | null; modelName: string | null }>;
 };
 
-async function resolveAssetAccessories(
+export async function resolveAssetAccessories(
   tx: Prisma.TransactionClient,
   organizationId: string,
   assetId: string,
@@ -490,9 +567,22 @@ export async function createAccessoryChildIfAbsent(
  */
 export async function expandAccessoriesForAsset(
   tx: Prisma.TransactionClient,
-  args: { organizationId: string; lineItemId: string; assetId: string },
+  args: {
+    organizationId: string;
+    lineItemId: string;
+    assetId: string;
+    /**
+     * Which of THIS parent unit's accessories to pack, by accessory identity
+     * (serialised accessory assetId, or bulk accessory bulkAssetId). Undefined =
+     * include all (default). The warehouse prep picker passes the ticked set so
+     * an operator can leave a battery/clip off a specific handheld — excluded
+     * accessories get no unit for this parent unit, so they never prep/deploy.
+     */
+    includeAccessoryIds?: Set<string> | null;
+  },
 ): Promise<string[]> {
   const { organizationId, lineItemId, assetId } = args;
+  const includeAccessoryIds = args.includeAccessoryIds ?? null;
   const line = await tx.projectLineItem.findFirst({
     where: { id: lineItemId, organizationId },
     select: {
@@ -514,7 +604,15 @@ export async function expandAccessoriesForAsset(
   // Single-resource lock (one row per line) → no deadlock across lines.
   await tx.$executeRaw`SELECT id FROM "project_line_item" WHERE id = ${lineItemId} FOR UPDATE`;
 
-  const profile = await resolveAssetAccessories(tx, organizationId, assetId);
+  const fullProfile = await resolveAssetAccessories(tx, organizationId, assetId);
+  // Apply the picker's include set (if any): drop accessories the operator
+  // unticked for THIS parent unit so no unit is materialised for them.
+  const profile: AccessoryProfile = includeAccessoryIds
+    ? {
+        serialised: fullProfile.serialised.filter((s) => includeAccessoryIds.has(s.assetId)),
+        bulks: fullProfile.bulks.filter((b) => includeAccessoryIds.has(b.bulkAssetId)),
+      }
+    : fullProfile;
   if (profile.serialised.length === 0 && profile.bulks.length === 0) return [];
 
   // Resolve every ACTIVE parent-unit asset (plus the one being expanded, in case
@@ -542,6 +640,7 @@ export async function expandAccessoriesForAsset(
     select: { id: true, assetId: true, bulkAssetId: true },
   });
   const haveAsset = new Set(existing.map((e) => e.assetId).filter(Boolean));
+  const existingByAsset = new Map(existing.filter((e) => e.assetId).map((e) => [e.assetId as string, e.id]));
   const existingBulk = new Map(existing.filter((e) => e.bulkAssetId).map((e) => [e.bulkAssetId as string, e.id]));
 
   const created: string[] = [];
@@ -561,46 +660,81 @@ export async function expandAccessoriesForAsset(
     duration: line.duration,
   };
 
-  // Serialised: one child per accessory asset, deduped (unique index backstop).
+  // Serialised: one child line per accessory asset, deduped (unique index
+  // backstop). Each carries ONE per-parent-unit unit tying it to this handheld.
   for (const child of profile.serialised) {
-    if (haveAsset.has(child.assetId)) continue;
-    const id = await createAccessoryChildIfAbsent(tx, {
-      ...baseChild,
-      modelId: child.modelId,
-      assetId: child.assetId,
-      quantity: 1,
-      description: child.modelName,
-      sortOrder: sort++,
-    });
-    if (id) created.push(id);
+    let childLineId = existingByAsset.get(child.assetId) ?? null;
+    if (!childLineId && !haveAsset.has(child.assetId)) {
+      childLineId = await createAccessoryChildIfAbsent(tx, {
+        ...baseChild,
+        modelId: child.modelId,
+        assetId: child.assetId,
+        quantity: 1,
+        description: child.modelName,
+        sortOrder: sort++,
+      });
+      if (childLineId) created.push(childLineId);
+    }
+    // Resolve the id if the line already existed (or another scan created it).
+    if (!childLineId) {
+      const row = await tx.projectLineItem.findFirst({
+        where: { parentLineItemId: lineItemId, assetId: child.assetId, childKind: "ACCESSORY", organizationId },
+        select: { id: true },
+      });
+      childLineId = row?.id ?? null;
+    }
+    if (childLineId) {
+      await ensureAccessoryUnit(tx, {
+        organizationId,
+        lineItemId: childLineId,
+        parentUnitAssetId: assetId,
+        assetId: child.assetId,
+        quantity: 1,
+      });
+    }
   }
 
-  // Bulk: one child per bulkAssetId, quantity = total demand across parent units.
+  // Bulk: one child line per bulkAssetId, line quantity = total demand across
+  // parent units. Each parent unit that ships this accessory gets its OWN unit
+  // row (parentUnitAssetId) so it preps / deploys / returns independently — the
+  // per-handheld battery kit. The line quantity stays the booked total; the
+  // sum of per-parent units catches up as each parent is prepped/deployed.
   for (const bulk of profile.bulks) {
     const demand = bulkDemand.get(bulk.bulkAssetId) ?? bulk.quantity;
     const description = bulk.modelName ? `${demand}x ${bulk.modelName}` : null;
-    const existingId = existingBulk.get(bulk.bulkAssetId);
-    if (existingId) {
-      await tx.projectLineItem.update({ where: { id: existingId }, data: { quantity: demand, description } });
-      continue;
-    }
-    const id = await createAccessoryChildIfAbsent(tx, {
-      ...baseChild,
-      modelId: bulk.modelId,
-      bulkAssetId: bulk.bulkAssetId,
-      quantity: demand,
-      description,
-      sortOrder: sort++,
-    });
-    if (id) {
-      created.push(id);
+    let childLineId = existingBulk.get(bulk.bulkAssetId) ?? null;
+    if (childLineId) {
+      await tx.projectLineItem.update({ where: { id: childLineId }, data: { quantity: demand, description } });
     } else {
-      // Lost the create race — sync the quantity onto the row the winner created.
-      const row = await tx.projectLineItem.findFirst({
-        where: { parentLineItemId: lineItemId, bulkAssetId: bulk.bulkAssetId, childKind: "ACCESSORY", organizationId },
-        select: { id: true },
+      childLineId = await createAccessoryChildIfAbsent(tx, {
+        ...baseChild,
+        modelId: bulk.modelId,
+        bulkAssetId: bulk.bulkAssetId,
+        quantity: demand,
+        description,
+        sortOrder: sort++,
       });
-      if (row) await tx.projectLineItem.update({ where: { id: row.id }, data: { quantity: demand, description } });
+      if (childLineId) {
+        created.push(childLineId);
+      } else {
+        // Lost the create race — sync the quantity onto the row the winner created.
+        const row = await tx.projectLineItem.findFirst({
+          where: { parentLineItemId: lineItemId, bulkAssetId: bulk.bulkAssetId, childKind: "ACCESSORY", organizationId },
+          select: { id: true },
+        });
+        childLineId = row?.id ?? null;
+        if (childLineId) await tx.projectLineItem.update({ where: { id: childLineId }, data: { quantity: demand, description } });
+      }
+      if (childLineId) existingBulk.set(bulk.bulkAssetId, childLineId);
+    }
+    if (childLineId) {
+      await ensureAccessoryUnit(tx, {
+        organizationId,
+        lineItemId: childLineId,
+        parentUnitAssetId: assetId,
+        bulkAssetId: bulk.bulkAssetId,
+        quantity: bulk.quantity,
+      });
     }
   }
   return created;
@@ -621,6 +755,9 @@ export async function prepUnit(
     bulkAssetId?: string | null;
     quantity?: number;
     prepContainer?: string | null;
+    /** Accessories to pack with this unit (by serialised assetId / bulk
+     *  bulkAssetId). Undefined = all. Unticked ones are left off this unit. */
+    includeAccessoryIds?: Set<string> | null;
   },
 ) {
   if (args.assetId) {
@@ -640,11 +777,27 @@ export async function prepUnit(
       },
     });
     // Accessories of this specific asset join the line so they show on the
-    // pull sheet and get packed/deployed with it.
+    // pull sheet and get packed/deployed with it. Each accessory gets a unit
+    // tied to THIS parent unit (parentUnitAssetId), which we then mark PACKED —
+    // so prepping handheld 2 packs handheld 2's battery, not just the first.
     await expandAccessoriesForAsset(tx, {
       organizationId: args.organizationId,
       lineItemId: args.lineItemId,
       assetId: args.assetId,
+      includeAccessoryIds: args.includeAccessoryIds ?? null,
+    });
+    await tx.projectLineItemUnit.updateMany({
+      where: {
+        organizationId: args.organizationId,
+        parentUnitAssetId: args.assetId,
+        lineItem: { parentLineItemId: args.lineItemId, childKind: "ACCESSORY" },
+        status: { not: "CHECKED_OUT" },
+      },
+      data: {
+        status: "CONFIRMED",
+        prepStatus: "PACKED",
+        ...(args.prepContainer !== undefined ? { prepContainer: args.prepContainer } : {}),
+      },
     });
   } else if (args.bulkAssetId) {
     const { id } = await ensureBulkUnit(tx, {

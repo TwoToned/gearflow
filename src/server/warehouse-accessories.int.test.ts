@@ -6,6 +6,16 @@
  * (serialised child asset → CHECKED_OUT; bulk child → a CHECKED_OUT unit).
  * On check-in they return with the parent. Scanning an accessory directly
  * resolves to "scan the parent".
+ *
+ * PER-UNIT MODEL (FEATUREDOCS/48, Stage 2): accessories are no longer one
+ * aggregate unit per line — each parent unit (handheld) carries its OWN
+ * accessory unit, tied via parentUnitAssetId. The bulk-shape assertions here
+ * were updated to match (one unit per parent, each quantity = per-unit demand,
+ * returned/excluded independently). Asset-status + line-level assertions are
+ * unchanged. NOTE: this whole file drives checkOutItems/checkInItems, which
+ * mirror to Convex — it must be run in a Convex-enabled env (the per-unit
+ * primitives are covered Convex-free in accessory-per-unit.int.test.ts +
+ * accessory-deprep.int.test.ts).
  */
 
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
@@ -385,25 +395,34 @@ describe("multi-quantity parent accessory isolation", () => {
       { lineItemId: parentLineId, assetId: lightB.id },
     ]);
 
-    // Demand scaled to 2 (one clamp per light), not deduped to 1.
+    // Per-parent-unit model: the bulk child line's demand is still 2, but it is
+    // now backed by ONE unit per light (each quantity 1, tied via
+    // parentUnitAssetId), not a single aggregate unit of quantity 2.
     const bulkChild = await testPrisma.projectLineItem.findFirst({
       where: { parentLineItemId: parentLineId, childKind: "ACCESSORY", bulkAssetId: clamps.id },
       include: { units: true },
     });
     expect(bulkChild?.quantity).toBe(2);
-    expect(bulkChild?.units[0]?.quantity).toBe(2);
+    expect(bulkChild?.units).toHaveLength(2);
+    expect(bulkChild?.units.every((u) => u.quantity === 1)).toBe(true);
+    expect(new Set(bulkChild?.units.map((u) => u.parentUnitAssetId))).toEqual(
+      new Set([lightA.id, lightB.id]),
+    );
 
-    // Return light A → only its share (1) of the bulk comes back.
+    const unitFor = async (parentAssetId: string) =>
+      testPrisma.projectLineItemUnit.findFirstOrThrow({
+        where: { lineItemId: bulkChild!.id, parentUnitAssetId: parentAssetId },
+      });
+
+    // Return light A → only ITS clamp unit comes back; light B's stays out.
     await checkInItems(project.id, [{ lineItemId: parentLineId, assetId: lightA.id, returnCondition: "GOOD" }]);
-    let unit = await testPrisma.projectLineItemUnit.findFirst({ where: { lineItemId: bulkChild!.id } });
-    expect(unit?.returnedQuantity).toBe(1);
-    expect(unit?.status).toBe("CHECKED_OUT");
+    expect((await unitFor(lightA.id)).status).toBe("RETURNED");
+    expect((await unitFor(lightA.id)).returnedQuantity).toBe(1);
+    expect((await unitFor(lightB.id)).status).toBe("CHECKED_OUT");
 
-    // Return light B → bulk fully returned.
+    // Return light B → both clamp units returned.
     await checkInItems(project.id, [{ lineItemId: parentLineId, assetId: lightB.id, returnCondition: "GOOD" }]);
-    unit = await testPrisma.projectLineItemUnit.findFirst({ where: { lineItemId: bulkChild!.id } });
-    expect(unit?.returnedQuantity).toBe(2);
-    expect(unit?.status).toBe("RETURNED");
+    expect((await unitFor(lightB.id)).status).toBe("RETURNED");
   });
 
   it("a double check-in of the same unit does not over-return the bulk accessory", async () => {
@@ -420,21 +439,24 @@ describe("multi-quantity parent accessory isolation", () => {
       { lineItemId: parentLineId, assetId: lightA.id },
       { lineItemId: parentLineId, assetId: lightB.id },
     ]);
-    const bulkChild = await testPrisma.projectLineItem.findFirst({
+    const bulkChild = await testPrisma.projectLineItem.findFirstOrThrow({
       where: { parentLineItemId: parentLineId, childKind: "ACCESSORY", bulkAssetId: clamps.id },
     });
+    const unitFor = async (parentAssetId: string) =>
+      testPrisma.projectLineItemUnit.findFirstOrThrow({
+        where: { lineItemId: bulkChild.id, parentUnitAssetId: parentAssetId },
+      });
 
-    // First return of light A: its share (1) comes back.
+    // First return of light A: its clamp unit comes back.
     await checkInItems(project.id, [{ lineItemId: parentLineId, assetId: lightA.id, returnCondition: "GOOD" }]);
-    let unit = await testPrisma.projectLineItemUnit.findFirst({ where: { lineItemId: bulkChild!.id } });
-    expect(unit?.returnedQuantity).toBe(1);
+    expect((await unitFor(lightA.id)).status).toBe("RETURNED");
+    expect((await unitFor(lightA.id)).returnedQuantity).toBe(1);
 
-    // Retry / double-scan light A — the parent flips 0 units, so the bulk must
-    // NOT be returned again while light B is still out.
+    // Retry / double-scan light A — its unit is already RETURNED (guarded flip),
+    // so nothing changes and light B's clamp stays out.
     await checkInItems(project.id, [{ lineItemId: parentLineId, assetId: lightA.id, returnCondition: "GOOD" }]);
-    unit = await testPrisma.projectLineItemUnit.findFirst({ where: { lineItemId: bulkChild!.id } });
-    expect(unit?.returnedQuantity).toBe(1); // still 1, not 2
-    expect(unit?.status).toBe("CHECKED_OUT");
+    expect((await unitFor(lightA.id)).returnedQuantity).toBe(1); // still 1, not doubled
+    expect((await unitFor(lightB.id)).status).toBe("CHECKED_OUT");
   });
 
   it("expansion is idempotent under a re-scan (no duplicate child rows)", async () => {

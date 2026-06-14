@@ -512,77 +512,72 @@ async function checkoutAccessoryChildren(
     organizationId: string;
     projectId: string;
     parentLineItemId: string;
+    /** The specific parent unit being deployed. Null = whole-line checkout
+     *  (flip every still-out accessory unit). */
+    parentUnitAssetId?: string | null;
     userId: string;
     projectLocationId: string | null;
   },
 ) {
   const { organizationId, projectId, parentLineItemId, userId, projectLocationId } = args;
+  const parentUnitAssetId = args.parentUnitAssetId ?? null;
   const children = await tx.projectLineItem.findMany({
     where: { parentLineItemId, organizationId, childKind: "ACCESSORY" },
+    select: { id: true },
+  });
+  if (children.length === 0) return { assetsTouched: [] as string[] };
+  const childIds = children.map((c) => c.id);
+
+  // The accessory UNITS to deploy now: the per-parent-unit rows tied to the
+  // handheld being deployed (parentUnitAssetId), or every still-out unit on a
+  // whole-line checkout. Units are materialised at prep / scan-expansion, so by
+  // here they exist; we flip the matching ones, never an aggregate row.
+  const units = await tx.projectLineItemUnit.findMany({
+    where: {
+      lineItemId: { in: childIds },
+      organizationId,
+      status: { not: "CHECKED_OUT" },
+      ...(parentUnitAssetId ? { parentUnitAssetId } : {}),
+    },
+    select: { id: true, assetId: true, bulkAssetId: true },
   });
 
-  // SECURITY/COMPLIANCE: accessory children are SEPARATE line items with their
-  // own ids and units. The top-level checkout preflight only gathers ids from
-  // the scanned parent lines + their units, so accessory children never reach
-  // it — whether they were materialised at prep time (own line ids the
-  // preflight can't see) or at scan time (expanded AFTER the preflight ran).
-  // Without this gate a failed/overdue accessory ships ungated. Assert here;
-  // a block throws TestTagBlockError and rolls back the whole checkout batch,
-  // matching the top-level preflight's all-or-nothing semantics.
-  //
-  // Scope the gate to children that will ACTUALLY be flipped now — i.e. not
-  // already CHECKED_OUT. The cascade below skips already-out units (guarded
-  // updates), so gating an already-deployed sibling accessory would wrongly
-  // block a later partial deploy of the same multi-quantity parent line if
-  // that sibling's T&T lapsed after it shipped. (Note: a not-yet-deployed
-  // sibling accessory IS still gated, because the line-scoped cascade would
-  // flip it; tightening that to true per-unit scope is the deferred "snapshot
-  // per-unit accessory contributions" follow-up — see FEATUREDOCS/48.)
-  const gateChildren = children.filter((c) => c.status !== "CHECKED_OUT");
+  // SECURITY/COMPLIANCE (unchanged intent, now unit-scoped): accessory children
+  // are SEPARATE line items the top-level preflight can't see, so gate them here.
+  // Scope to the units ACTUALLY flipping now (the deployed parent unit's share),
+  // so an already-shipped sibling whose T&T lapsed can't block a later partial
+  // deploy of the same multi-quantity parent line.
   await assertTestTagAllowsCheckout(tx, organizationId, {
-    assetIds: gateChildren.map((c) => c.assetId).filter((x): x is string => !!x),
-    bulkAssetIds: gateChildren.map((c) => c.bulkAssetId).filter((x): x is string => !!x),
+    assetIds: units.map((u) => u.assetId).filter((x): x is string => !!x),
+    bulkAssetIds: units.map((u) => u.bulkAssetId).filter((x): x is string => !!x),
     projectId,
     scannedById: userId,
   });
 
-  // Collect every serialised accessory asset whose status flips, for the Convex
-  // mirror (asset is dual-written). Returned to the caller to sync post-commit.
   const assetsTouched: string[] = [];
-  for (const child of children) {
-    if (child.assetId) {
-      const asset = await tx.asset.findUnique({ where: { id: child.assetId }, select: { status: true } });
-      // Skip if already deployed (idempotent on repeated parent scans).
-      const { id: unitId } = await ensureSerialisedUnit(tx, { organizationId, lineItemId: child.id, assetId: child.assetId });
-      await tx.projectLineItemUnit.updateMany({
-        where: { id: unitId, status: { not: "CHECKED_OUT" } },
-        data: { status: "CHECKED_OUT", checkedOutAt: new Date(), checkedOutById: userId },
+  for (const u of units) {
+    await tx.projectLineItemUnit.updateMany({
+      where: { id: u.id, status: { not: "CHECKED_OUT" } },
+      data: { status: "CHECKED_OUT", checkedOutAt: new Date(), checkedOutById: userId },
+    });
+    if (u.assetId) {
+      await tx.asset.updateMany({
+        where: { id: u.assetId, organizationId },
+        data: { status: "CHECKED_OUT", ...(projectLocationId && { locationId: projectLocationId }) },
       });
-      if (asset?.status !== "CHECKED_OUT") {
-        await tx.asset.updateMany({
-          where: { id: child.assetId, organizationId },
-          data: { status: "CHECKED_OUT", ...(projectLocationId && { locationId: projectLocationId }) },
-        });
-        assetsTouched.push(child.assetId);
-      }
+      assetsTouched.push(u.assetId);
       await tx.assetScanLog.create({
-        data: { organizationId, assetId: child.assetId, projectId, action: "CHECK_OUT", scannedById: userId, notes: "Accessory — moved with parent" },
+        data: { organizationId, assetId: u.assetId, projectId, action: "CHECK_OUT", scannedById: userId, notes: "Accessory — moved with parent" },
       });
-    } else if (child.bulkAssetId) {
-      const { id: unitId } = await ensureBulkUnit(tx, { organizationId, lineItemId: child.id, bulkAssetId: child.bulkAssetId, quantity: child.quantity });
-      await tx.projectLineItemUnit.update({
-        where: { id: unitId },
-        data: { status: "CHECKED_OUT", quantity: child.quantity, checkedOutAt: new Date(), checkedOutById: userId },
-      });
+    } else if (u.bulkAssetId) {
       await tx.assetScanLog.create({
-        data: { organizationId, bulkAssetId: child.bulkAssetId, projectId, action: "CHECK_OUT", scannedById: userId, notes: "Accessory — moved with parent" },
+        data: { organizationId, bulkAssetId: u.bulkAssetId, projectId, action: "CHECK_OUT", scannedById: userId, notes: "Accessory — moved with parent" },
       });
     }
-    await syncLineItemRollup(tx, child.id);
   }
+  for (const id of childIds) await syncLineItemRollup(tx, id);
   return { assetsTouched };
 }
-
 
 // ── checkOutItems helpers ─────────────────────────────────────────────────
 
@@ -884,6 +879,9 @@ async function finalizeCheckoutItem(
       organizationId,
       projectId,
       parentLineItemId: lineItemId,
+      // Deploy only THIS parent unit's accessories (the handheld being checked
+      // out). Null for a whole-line/bulk checkout → flips every still-out unit.
+      parentUnitAssetId: targetAssetId,
       userId,
       projectLocationId,
     });

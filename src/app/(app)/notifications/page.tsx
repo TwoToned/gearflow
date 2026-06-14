@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState, useEffect, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useNotificationsFeed } from "@/hooks/use-notifications-feed";
 import { useRouter } from "next/navigation";
 import {
   Bell,
@@ -21,7 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/layout/page-header";
 import { SectionHeader } from "@/components/layout/page-layouts";
 import { FadeIn, StaggerList, StaggerItem } from "@/components/ui/motion";
-import { getNotifications, type AppNotification } from "@/server/notifications";
+import { type AppNotification } from "@/server/notifications";
 import { getStatusColor } from "@/lib/status-colors";
 import { formatDistanceToNow, isToday, isYesterday, isThisWeek } from "date-fns";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -119,11 +119,9 @@ export default function NotificationsPage() {
     setDismissed(getDismissedIds());
   }, []);
 
-  const { data: notifications, isLoading } = useQuery({
-    queryKey: ["notifications", orgId],
-    queryFn: getNotifications,
-    refetchInterval: 60_000,
-  });
+  // Shared, deduped, visibility-aware poll (one scan per interval across this page
+  // + the app-shell bell). See use-notifications-feed.
+  const { data: notifications, isLoading } = useNotificationsFeed(orgId);
 
   // Prune dismissed IDs that no longer exist
   useEffect(() => {

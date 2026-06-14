@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -40,11 +40,10 @@ export function ProjectNumberingSettings({ format, reset, padding, disabled, onC
   const formatError = enabled ? validateProjectNumberFormat(format) : null;
 
   // Live preview from the server (knows the current counter for this period).
-  const { data: preview } = useQuery({
+  const { data: preview } = useServerQuery({
     queryKey: ["project-number-preview", orgId, format, reset, padding],
     queryFn: () => peekNextProjectNumber({ format, reset, padding }),
     enabled: enabled && !formatError,
-    staleTime: 10_000,
   });
 
   return (

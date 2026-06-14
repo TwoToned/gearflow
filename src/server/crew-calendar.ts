@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import { patchCrewMemberInConvex } from "@/lib/crew-mirror";
 
 // ─── Token Management ────────────────────────────────────────────────────────
 
@@ -31,6 +32,7 @@ export async function enableIcalFeed(crewMemberId: string) {
     data: { icalEnabled: true, icalToken: token },
     select: { icalEnabled: true, icalToken: true },
   });
+  await patchCrewMemberInConvex(crewMemberId, updated);
 
   await logActivity({
     organizationId,
@@ -62,6 +64,7 @@ export async function disableIcalFeed(crewMemberId: string) {
     where: { id: crewMemberId },
     data: { icalEnabled: false },
   });
+  await patchCrewMemberInConvex(crewMemberId, { icalEnabled: false });
 
   await logActivity({
     organizationId,
@@ -96,6 +99,7 @@ export async function regenerateIcalToken(crewMemberId: string) {
     data: { icalToken: token, icalEnabled: true },
     select: { icalEnabled: true, icalToken: true },
   });
+  await patchCrewMemberInConvex(crewMemberId, updated);
 
   await logActivity({
     organizationId,

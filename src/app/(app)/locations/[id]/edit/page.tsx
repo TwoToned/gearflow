@@ -3,25 +3,20 @@
 import { use } from "react";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { getLocation } from "@/server/locations";
+import { useLocation } from "@/hooks/use-locations";
 import { LocationForm } from "@/components/locations/location-form";
-import { useActiveOrganization } from "@/lib/auth-client";
 import { FadeIn } from "@/components/ui/motion";
 import { FormSkeleton } from "@/components/ui/skeleton";
 import type { LocationFormValues } from "@/lib/validations/asset";
 
 export default function EditLocationPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
 
-  const { data: location, isLoading } = useQuery({
-    queryKey: ["location", orgId, id],
-    queryFn: () => getLocation(id),
-  });
+  // Reactive location (Convex) — the form only needs location fields.
+  // undefined = loading, null = not found.
+  const location = useLocation(id);
 
-  if (isLoading) return <FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>;
+  if (location === undefined) return <FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>;
   if (!location) return <div className="text-fg-3">Location not found.</div>;
 
   const initialData: LocationFormValues & { id: string } = {
@@ -30,8 +25,8 @@ export default function EditLocationPage({ params }: { params: Promise<{ id: str
     address: location.address || "",
     latitude: location.latitude ?? null,
     longitude: location.longitude ?? null,
-    type: location.type as LocationFormValues["type"],
-    isDefault: location.isDefault,
+    type: (location.type ?? "WAREHOUSE") as LocationFormValues["type"],
+    isDefault: location.isDefault ?? false,
     notes: location.notes || "",
     parentId: location.parentId || null,
     tags: location.tags ?? [],

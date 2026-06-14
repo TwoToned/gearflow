@@ -5,23 +5,33 @@ import { requirePermission } from "@/lib/org-context";
 import { projectCategorySchema, type ProjectCategoryFormValues } from "@/lib/validations/project-category";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import {
+  mirrorProjectCategoryCreate,
+  patchProjectCategoryInConvex,
+  removeProjectCategoryFromConvex,
+  removeProjectGroupFromConvex,
+  syncProjectCategoriesToConvex,
+} from "@/lib/project-grouping-mirror";
 import { computeOverbookedStatus } from "@/lib/availability";
+import {
+  buildLineItemAttachMaps,
+  attachLineItemTree,
+  resolveAttachedSupplier,
+} from "@/lib/line-item-tree-read";
 
 export async function getProjectCategories(projectId: string) {
   const { organizationId } = await requirePermission("project", "read");
+  // model + supplier are dual-written to Convex — attached in JS via
+  // attachLineItemTree below, not joined here (Phase 6 decommission).
   const lineItemInclude = {
-    model: true,
     asset: true,
     bulkAsset: true,
     kit: true,
-    supplier: { select: { name: true } },
     childLineItems: {
       include: {
-        model: true,
         asset: true,
         bulkAsset: true,
         kit: true,
-        supplier: { select: { name: true } },
       },
       orderBy: { sortOrder: "asc" as const },
     },
@@ -53,7 +63,7 @@ export async function getProjectCategories(projectId: string) {
               id: true,
               orderNumber: true,
               status: true,
-              supplier: { select: { id: true, name: true } },
+              supplierId: true,
             },
           },
           items: true,
@@ -73,6 +83,11 @@ export async function getProjectCategories(projectId: string) {
     },
     orderBy: { sortOrder: "asc" },
   });
+
+  // model + supplier live in Convex — attach across every line-item tree in the
+  // category composition (grouped, sub-hire-group, and ungrouped) plus the
+  // sub-hire shell's supplier. One maps round-trip serves the whole read.
+  const attachMaps = await buildLineItemAttachMaps(organizationId);
 
   // Build the canonical mixed-ordered group list per category. Cross-type
   // sortOrder lives on CategorySlot; legacy groups without a slot row fall
@@ -95,7 +110,23 @@ export async function getProjectCategories(projectId: string) {
       })),
     ].sort((a, b) => a.sortOrder - b.sortOrder);
 
-    return { ...cat, mixedGroups };
+    return {
+      ...cat,
+      groups: cat.groups.map((g) => ({
+        ...g,
+        lineItems: attachLineItemTree(g.lineItems, attachMaps),
+      })),
+      subHireGroupTargets: cat.subHireGroupTargets.map((sg) => ({
+        ...sg,
+        subHire: {
+          ...sg.subHire,
+          supplier: resolveAttachedSupplier(sg.subHire.supplierId, attachMaps),
+        },
+        lineItems: attachLineItemTree(sg.lineItems, attachMaps),
+      })),
+      lineItems: attachLineItemTree(cat.lineItems, attachMaps),
+      mixedGroups,
+    };
   });
 
   return serialize(withMixed);
@@ -122,6 +153,7 @@ export async function createProjectCategory(
       sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
     },
   });
+  await mirrorProjectCategoryCreate(category);
 
   await logActivity({
     organizationId,
@@ -150,6 +182,7 @@ export async function updateProjectCategory(
       ...(data.sortOrder !== undefined && { sortOrder: Number(data.sortOrder) }),
     },
   });
+  await patchProjectCategoryInConvex(category.id, category);
 
   await logActivity({
     organizationId,
@@ -202,6 +235,13 @@ export async function deleteProjectCategory(categoryId: string) {
     }),
   ]);
 
+  // Mirror the cascade to Convex: groups removed first, then the category. (The
+  // line-item categoryId/groupId clears live in the line_item domain — migrated
+  // in step 4. project_group.categoryId clear-to-null on orphaned groups would be
+  // a no-op anyway; here they're hard-deleted.)
+  for (const g of category.groups) await removeProjectGroupFromConvex(g.id);
+  await removeProjectCategoryFromConvex(categoryId);
+
   await logActivity({
     organizationId,
     userId,
@@ -218,6 +258,7 @@ export async function deleteProjectCategory(categoryId: string) {
 
 export async function getUncategorizedLineItems(projectId: string) {
   const { organizationId } = await requirePermission("project", "read");
+  // model + supplier are dual-written to Convex — attached in JS below.
   const items = await prisma.projectLineItem.findMany({
     where: {
       projectId,
@@ -226,25 +267,22 @@ export async function getUncategorizedLineItems(projectId: string) {
       groupId: null,
     },
     include: {
-      model: true,
       asset: true,
       bulkAsset: true,
       kit: true,
-      supplier: { select: { name: true } },
       childLineItems: {
         include: {
-          model: true,
           asset: true,
           bulkAsset: true,
           kit: true,
-          supplier: { select: { name: true } },
         },
         orderBy: { sortOrder: "asc" },
       },
     },
     orderBy: { sortOrder: "asc" },
   });
-  return serialize(items);
+  const attachMaps = await buildLineItemAttachMaps(organizationId);
+  return serialize(attachLineItemTree(items, attachMaps));
 }
 
 export async function reorderProjectCategories(
@@ -261,6 +299,7 @@ export async function reorderProjectCategories(
       })
     )
   );
+  await syncProjectCategoriesToConvex(orderedIds);
 
   return serialize({ success: true });
 }

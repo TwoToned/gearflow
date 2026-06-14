@@ -1,7 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { Loader2 } from "lucide-react";
 
 import { getStocktakeById } from "@/server/stocktake";
@@ -21,7 +21,9 @@ export default function StocktakeDetailPage({
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: stocktake, isLoading, refetch } = useQuery({
+  // Not in the SSE map and never polled → a non-reactive one-shot read. Children
+  // call onUpdate (= refetch) after their writes; that's the only refresh path.
+  const { data: stocktake, isLoading, refetch } = useServerQuery({
     queryKey: ["stocktake", orgId, id],
     queryFn: () => getStocktakeById(id),
   });

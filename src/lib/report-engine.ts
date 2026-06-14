@@ -4,6 +4,11 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { getClientMap } from "@/lib/clients-read";
+import { getModelMap } from "@/lib/models-read";
+import { getCategoryMap } from "@/lib/categories-read";
+import { getSupplierMap } from "@/lib/suppliers-read";
+import { getLocationMap } from "@/lib/locations-read";
 import type {
   ReportConfig,
   ReportResult,
@@ -94,6 +99,135 @@ function buildFilterCondition(filter: FilterConfig): Record<string, unknown> {
 
 // ─── Select/Include builder ──────────────────────────────────────────────────
 
+/**
+ * Attach Convex clients onto report rows (clients no longer join via Prisma).
+ * Handles a direct `client` relation (data source = projects) and a nested
+ * `project.client` relation. Mutates rows in place; no-op when nothing needs it.
+ */
+async function attachClientsToRows(
+  rows: Record<string, unknown>[],
+  organizationId: string,
+): Promise<void> {
+  const needsDirect = rows.some((r) => typeof r.clientId === "string");
+  const needsNested = rows.some(
+    (r) => r.project && typeof (r.project as Record<string, unknown>).clientId === "string",
+  );
+  if (!needsDirect && !needsNested) return;
+
+  const clientMap = await getClientMap(organizationId);
+  for (const row of rows) {
+    if (typeof row.clientId === "string") {
+      row.client = clientMap.get(row.clientId) ?? null;
+    }
+    const proj = row.project as Record<string, unknown> | undefined;
+    if (proj && typeof proj.clientId === "string") {
+      proj.client = clientMap.get(proj.clientId) ?? null;
+    }
+  }
+}
+
+/**
+ * Attach Convex models (with their nested equipment category) and the direct
+ * equipment `category` relation onto report rows — model/category no longer join
+ * via Prisma (both dual-written to Convex, Phase 6 decommission). Handles the
+ * `model` relation (data sources `assets` / `lineItems`, rows carry `modelId`)
+ * with its nested `model.category`, plus the direct `category` relation for the
+ * `models` / `kits` sources (rows carry the equipment-category `categoryId`).
+ *
+ * NB scoped to models/kits for the direct category on purpose: `lineItems` carry
+ * a `categoryId` too, but that's a *project_category* (not exposed as a report
+ * column) — attaching it from the equipment-category map would be wrong. Mutates
+ * rows in place; no-op when nothing needs it. Unlike clients (a hard cutover with
+ * a frozen Prisma table, so sorts are skipped), models/categories are dual-write
+ * with a fresh Prisma mirror — only the DISPLAY read moves to Convex; Prisma
+ * relation sorts on model/category stay correct.
+ */
+async function attachModelsToRows(
+  rows: Record<string, unknown>[],
+  dataSource: DataSource,
+  organizationId: string,
+): Promise<void> {
+  const needsModel = rows.some((r) => typeof r.modelId === "string");
+  const needsDirectCategory = dataSource === "models" || dataSource === "kits";
+  if (!needsModel && !needsDirectCategory) return;
+
+  const [modelMap, categoryMap] = await Promise.all([
+    needsModel ? getModelMap(organizationId) : Promise.resolve(null),
+    getCategoryMap(organizationId),
+  ]);
+
+  for (const row of rows) {
+    // Direct equipment category (models source = model rows; kits source = kit rows).
+    if (needsDirectCategory && typeof row.categoryId === "string") {
+      row.category = categoryMap.get(row.categoryId) ?? null;
+    }
+    // model relation + its nested equipment category (asset / line-item rows).
+    if (modelMap && typeof row.modelId === "string") {
+      const model = modelMap.get(row.modelId);
+      if (model) {
+        const catId = (model as { categoryId?: string | null }).categoryId;
+        row.model = {
+          ...model,
+          category: typeof catId === "string" ? categoryMap.get(catId) ?? null : null,
+        };
+      } else {
+        row.model = null;
+      }
+    }
+  }
+}
+
+/**
+ * Attach Convex suppliers onto report rows (suppliers no longer join via Prisma;
+ * dual-written, Phase 6 decommission). Handles the direct `supplier` relation
+ * (data sources `assets` / `lineItems`, rows carry `supplierId`). Mutates rows in
+ * place; no-op when nothing needs it. Like models/categories (and unlike the
+ * hard-cutover client table), suppliers are dual-write with a fresh Prisma mirror,
+ * so only the DISPLAY read moves to Convex — Prisma relation sorts stay correct.
+ */
+async function attachSuppliersToRows(
+  rows: Record<string, unknown>[],
+  organizationId: string,
+): Promise<void> {
+  if (!rows.some((r) => typeof r.supplierId === "string")) return;
+  const supplierMap = await getSupplierMap(organizationId);
+  for (const row of rows) {
+    if (typeof row.supplierId === "string") {
+      row.supplier = supplierMap.get(row.supplierId) ?? null;
+    }
+  }
+}
+
+/**
+ * Attach Convex locations onto report rows (locations no longer join via Prisma;
+ * dual-written, Phase 6 decommission). Handles a direct `location` relation (data
+ * sources `assets` / `kits` / `projects`, rows carry `locationId`) and a nested
+ * `project.location` relation (data sources whose `project` relation column shows
+ * `project.location.name`). Mutates rows in place; no-op when nothing needs it.
+ * Dual-write with a fresh Prisma mirror → display read only; Prisma sorts stay.
+ */
+async function attachLocationsToRows(
+  rows: Record<string, unknown>[],
+  organizationId: string,
+): Promise<void> {
+  const needsDirect = rows.some((r) => typeof r.locationId === "string");
+  const needsNested = rows.some(
+    (r) => r.project && typeof (r.project as Record<string, unknown>).locationId === "string",
+  );
+  if (!needsDirect && !needsNested) return;
+
+  const locationMap = await getLocationMap(organizationId);
+  for (const row of rows) {
+    if (typeof row.locationId === "string") {
+      row.location = locationMap.get(row.locationId) ?? null;
+    }
+    const proj = row.project as Record<string, unknown> | undefined;
+    if (proj && typeof proj.locationId === "string") {
+      proj.location = locationMap.get(proj.locationId) ?? null;
+    }
+  }
+}
+
 function buildSelectAndInclude(
   columns: ColumnConfig[],
   dataSource: DataSource,
@@ -116,16 +250,30 @@ function buildSelectAndInclude(
     }
   }
 
-  // Build include for data sources that need computed fields or relations
+  // Build include for data sources that need computed fields or relations.
+  // The `client` relation is NOT included from Prisma (clients live in Convex
+  // now — stale Prisma rows). It's attached post-fetch by attachClientsToRows.
   for (const rel of needsRelations) {
     if (rel === "model") {
-      include.model = { include: { category: true } };
+      // model (+ nested equipment category) attached from Convex post-fetch by
+      // attachModelsToRows, not via a Prisma join.
+    } else if (rel === "category") {
+      // equipment category (models / kits sources) attached from Convex
+      // post-fetch by attachModelsToRows, not via a Prisma join.
     } else if (rel === "project") {
-      include.project = { include: { client: true, location: true } };
+      // project stays a Prisma join (fresh mirror), but its nested `location` is
+      // attached from Convex post-fetch by attachLocationsToRows.
+      include.project = true;
     } else if (rel === "crewMember") {
       include.crewMember = true;
     } else if (rel === "crewRole") {
       include.crewRole = true;
+    } else if (rel === "client") {
+      // attached from Convex post-fetch, not via a Prisma join
+    } else if (rel === "supplier") {
+      // attached from Convex post-fetch by attachSuppliersToRows, not a Prisma join
+    } else if (rel === "location") {
+      // attached from Convex post-fetch by attachLocationsToRows, not a Prisma join
     } else {
       include[rel] = true;
     }
@@ -218,9 +366,12 @@ function buildOrderBy(config: ReportConfig): Record<string, unknown>[] {
     }
     return obj;
   }).filter((o) => {
-    // Skip computed field sorts - handle in post-processing
+    // Skip computed field sorts - handle in post-processing.
+    // Skip `client` sorts too: clients live in Convex, so a Prisma relation sort
+    // would order by the stale `client` table. Client column VALUES are still
+    // correct (attached from Convex post-fetch); only ordering by them is a no-op.
     const key = Object.keys(o)[0];
-    return !key.startsWith("_");
+    return !key.startsWith("_") && key !== "client";
   });
 }
 
@@ -336,6 +487,10 @@ async function executeGroupedReport(
     where,
     ...(include ? { include } : {}),
   }) as Record<string, unknown>[];
+  await attachClientsToRows(allRows, organizationId);
+  await attachModelsToRows(allRows, config.dataSource, organizationId);
+  await attachSuppliersToRows(allRows, organizationId);
+  await attachLocationsToRows(allRows, organizationId);
 
   // Flatten all rows
   const flatRows = allRows.map((row) => flattenRow(row, config.columns));
@@ -650,6 +805,12 @@ export async function executeReport(
   ]);
 
   const rows = rawRows as Record<string, unknown>[];
+  // Clients / models / categories / suppliers / locations live in Convex —
+  // attach for display.
+  await attachClientsToRows(rows, organizationId);
+  await attachModelsToRows(rows, config.dataSource, organizationId);
+  await attachSuppliersToRows(rows, organizationId);
+  await attachLocationsToRows(rows, organizationId);
 
   // Add computed fields
   await addComputedFields(rows, config, organizationId);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, Suspense } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ChevronLeft,
@@ -128,7 +128,7 @@ function AvailabilityPage() {
   const gridStart = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 });
   const gridEnd = endOfWeek(endOfMonth(currentMonth), { weekStartsOn: 1 });
 
-  const { data: projects = [], isLoading } = useQuery({
+  const { data: projects = [], isLoading } = useServerQuery({
     queryKey: [
       "calendar",
       orgId,

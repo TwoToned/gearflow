@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useServerQuery } from "@/hooks/use-server-query";
 import {
   Copy,
   Eye,
@@ -33,7 +34,7 @@ import {
   getLastPayloadMetaKeys,
   retryFailedOrder,
 } from "@/server/woocommerce";
-import { getLocations } from "@/server/locations";
+import { useLocations } from "@/hooks/use-locations";
 import { useActiveOrganization } from "@/lib/auth-client";
 
 import { Button } from "@/components/ui/button";
@@ -73,35 +74,44 @@ const dateFormatOptions = [
 export default function WooCommerceSettingsPage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
   const [showSecret, setShowSecret] = useState(false);
   const [showSetupGuide, setShowSetupGuide] = useState(false);
   const [showMetaDetect, setShowMetaDetect] = useState(false);
 
-  const { data: integration, isLoading } = useQuery({
+  const { data: integration, isLoading, refetch: refetchIntegration } = useServerQuery({
     queryKey: ["woocommerce-integration", orgId],
     queryFn: () => getWooCommerceIntegration(),
     enabled: !!orgId,
   });
 
-  const { data: orderLogs } = useQuery({
+  const { data: orderLogs, refetch: refetchLogs } = useServerQuery({
     queryKey: ["woocommerce-logs", orgId],
     queryFn: () => getWooCommerceOrderLogs({ pageSize: 10 }),
     enabled: !!orgId,
   });
 
-  const { data: metaKeys } = useQuery({
+  const { data: metaKeys } = useServerQuery({
     queryKey: ["woocommerce-meta-keys", orgId],
     queryFn: () => getLastPayloadMetaKeys(),
     enabled: !!orgId && showMetaDetect,
   });
 
-  const { data: locationsData } = useQuery({
-    queryKey: ["locations", orgId],
-    queryFn: () => getLocations({ pageSize: 200 }),
-    enabled: !!orgId,
-  });
-  const locationsList = locationsData?.locations as { id: string; name: string }[] | undefined;
+  // Reactive locations (Convex). The org-scoped list returns all rows; map to the
+  // {id,name} shape the select needs, default-location-first then alphabetical.
+  const locationsDocs = useLocations(orgId);
+  const locationsList = useMemo<{ id: string; name: string }[] | undefined>(
+    () =>
+      locationsDocs
+        ? [...locationsDocs]
+            .sort(
+              (a, b) =>
+                Number(b.isDefault ?? false) - Number(a.isDefault ?? false) ||
+                a.name.localeCompare(b.name),
+            )
+            .map((l) => ({ id: l.id, name: l.name }))
+        : undefined,
+    [locationsDocs],
+  );
 
   const form = useForm<WooCommerceIntegrationFormValues>({
     resolver: zodResolver(wooCommerceIntegrationSchema),
@@ -143,29 +153,29 @@ export default function WooCommerceSettingsPage() {
       : undefined,
   });
 
-  const saveMutation = useMutation({
+  const saveMutation = useServerMutation({
     mutationFn: (data: WooCommerceIntegrationFormValues) => updateWooCommerceIntegration(data),
     onSuccess: () => {
       toast.success("WooCommerce settings saved");
-      queryClient.invalidateQueries({ queryKey: ["woocommerce-integration"] });
+      refetchIntegration();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const regenMutation = useMutation({
+  const regenMutation = useServerMutation({
     mutationFn: () => regenerateWebhookSecret(),
     onSuccess: () => {
       toast.success("Webhook secret regenerated");
-      queryClient.invalidateQueries({ queryKey: ["woocommerce-integration"] });
+      refetchIntegration();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const retryMutation = useMutation({
+  const retryMutation = useServerMutation({
     mutationFn: (logId: string) => retryFailedOrder(logId),
     onSuccess: () => {
       toast.success("Order retry initiated");
-      queryClient.invalidateQueries({ queryKey: ["woocommerce-logs"] });
+      refetchLogs();
     },
     onError: (e) => toast.error(e.message),
   });

@@ -1,10 +1,38 @@
 "use server";
 
+import { type FunctionArgs } from "convex/server";
 import { prisma } from "@/lib/prisma";
+import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { SEED_PROFILES } from "@/lib/test-profiles/seed-data";
+
+// Test profiles are DUAL-WRITTEN: every create/update/duplicate/seed/delete writes
+// the Prisma `test_profile` row (the durable FK anchor — model.defaultTestProfileId,
+// test_tag_asset.testProfileId, test_tag_record.testProfileId carry a live nullable
+// FK to it) AND the Convex `testProfiles` doc (the reactive read source). Prisma is
+// written first; the Convex payload is derived from the written row via toConvexDoc
+// so they can't drift. The visualChecks/electricalTests/thresholds Json fields pass
+// straight through to Convex `v.any()`. See FEATUREDOCS/54.
+
+/** Mirror a freshly written Prisma test-profile row into Convex (create). */
+async function mirrorTestProfileToConvex(row: Record<string, unknown>) {
+  await (await getConvexClient()).mutation(
+    api.testProfiles.create,
+    toConvexDoc(row) as FunctionArgs<typeof api.testProfiles.create>,
+  );
+}
+
+/** Mirror an updated Prisma test-profile row into Convex (patch, id stripped). */
+async function patchTestProfileInConvex(id: string, row: Record<string, unknown>) {
+  const { id: _id, ...patch } = toConvexDoc(row);
+  await (await getConvexClient()).mutation(api.testProfiles.update, {
+    id,
+    patch: patch as FunctionArgs<typeof api.testProfiles.update>["patch"],
+  });
+}
 
 export async function getTestProfiles(params?: {
   isActive?: boolean;
@@ -129,6 +157,7 @@ export async function createTestProfile(data: {
       subTestLabel: data.subTestLabel ?? "Outlet",
     },
   });
+  await mirrorTestProfileToConvex(profile);
 
   await logActivity({
     organizationId,
@@ -186,6 +215,7 @@ export async function updateTestProfile(id: string, data: {
       ...(data.isActive !== undefined && { isActive: data.isActive }),
     },
   });
+  await patchTestProfileInConvex(id, profile);
 
   await logActivity({
     organizationId,
@@ -232,6 +262,7 @@ export async function duplicateTestProfile(id: string) {
       isDefault: false,
     },
   });
+  await mirrorTestProfileToConvex(profile);
 
   await logActivity({
     organizationId,
@@ -286,6 +317,7 @@ export async function seedDefaultProfiles() {
       })
     )
   );
+  for (const p of created) await mirrorTestProfileToConvex(p);
 
   await logActivity({
     organizationId,
@@ -319,6 +351,7 @@ export async function deleteTestProfile(id: string) {
       where: { id },
       data: { isActive: false },
     });
+    await patchTestProfileInConvex(id, profile);
 
     await logActivity({
       organizationId,
@@ -335,6 +368,7 @@ export async function deleteTestProfile(id: string) {
   }
 
   await prisma.testProfile.delete({ where: { id } });
+  await (await getConvexClient()).mutation(api.testProfiles.remove, { id });
 
   await logActivity({
     organizationId,

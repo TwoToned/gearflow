@@ -15,12 +15,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ArrowLeftRight, Loader2, ChevronDown, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useProjectConflicts, refreshProjectConflicts } from "@/hooks/use-project-conflicts";
 import {
-  getProjectConflicts,
   getSwapCandidates,
   swapLineItemAsset,
 } from "@/server/reservation-conflicts";
@@ -38,27 +39,29 @@ interface ProjectConflictsBannerProps {
 
 function SwapPicker({
   conflict,
+  projectId,
   onSwapped,
 }: {
   conflict: ReservationConflict;
+  projectId: string;
   onSwapped: () => void;
 }) {
-  const queryClient = useQueryClient();
-  const { data: candidates, isLoading } = useQuery({
+  const [swappingId, setSwappingId] = useState<string | null>(null);
+  const { data: candidates, isLoading } = useServerQuery({
     queryKey: ["swap-candidates", conflict.lineItemId],
     queryFn: () => getSwapCandidates(conflict.lineItemId),
   });
 
-  const swapMutation = useMutation({
+  const swapMutation = useServerMutation({
     mutationFn: (newAssetId: string) =>
       swapLineItemAsset(conflict.lineItemId, newAssetId),
     onSuccess: () => {
       toast.success("Asset swapped", {
         description: "The conflicting line item is now on a free asset.",
       });
-      queryClient.invalidateQueries({ queryKey: ["project-conflicts"] });
-      queryClient.invalidateQueries({ queryKey: ["project", conflict.modelId] });
-      queryClient.invalidateQueries({ queryKey: ["swap-candidates"] });
+      // Refresh the parent's conflict list (the resolved row drops out); the
+      // row then collapses + unmounts, so its own swap-candidates needn't refresh.
+      refreshProjectConflicts(projectId);
       onSwapped();
     },
     onError: (e) => showError(e),
@@ -89,9 +92,12 @@ function SwapPicker({
             size="sm"
             className="h-7"
             disabled={swapMutation.isPending}
-            onClick={() => swapMutation.mutate(c.assetId)}
+            onClick={() => {
+              setSwappingId(c.assetId);
+              swapMutation.mutate(c.assetId);
+            }}
           >
-            {swapMutation.isPending && swapMutation.variables === c.assetId ? (
+            {swapMutation.isPending && swappingId === c.assetId ? (
               <Loader2 className="mr-1 size-3 animate-spin" />
             ) : (
               <ArrowLeftRight className="mr-1 size-3" />
@@ -105,7 +111,7 @@ function SwapPicker({
   );
 }
 
-function ConflictRow({ conflict }: { conflict: ReservationConflict }) {
+function ConflictRow({ conflict, projectId }: { conflict: ReservationConflict; projectId: string }) {
   const [expanded, setExpanded] = useState(false);
   return (
     <div className="rounded-md border border-amber-500/30 bg-bg-surface">
@@ -132,17 +138,13 @@ function ConflictRow({ conflict }: { conflict: ReservationConflict }) {
           </Link>
         </span>
       </button>
-      {expanded && <SwapPicker conflict={conflict} onSwapped={() => setExpanded(false)} />}
+      {expanded && <SwapPicker conflict={conflict} projectId={projectId} onSwapped={() => setExpanded(false)} />}
     </div>
   );
 }
 
 export function ProjectConflictsBanner({ projectId }: ProjectConflictsBannerProps) {
-  const { data: conflicts } = useQuery({
-    queryKey: ["project-conflicts", projectId],
-    queryFn: () => getProjectConflicts(projectId),
-    enabled: !!projectId,
-  });
+  const { data: conflicts } = useProjectConflicts(projectId);
 
   const list = (conflicts ?? []) as ReservationConflict[];
   if (list.length === 0) return null;
@@ -165,7 +167,7 @@ export function ProjectConflictsBanner({ projectId }: ProjectConflictsBannerProp
       </div>
       <div className="space-y-1.5">
         {list.map((c) => (
-          <ConflictRow key={c.lineItemId} conflict={c} />
+          <ConflictRow key={c.lineItemId} conflict={c} projectId={projectId} />
         ))}
       </div>
     </div>

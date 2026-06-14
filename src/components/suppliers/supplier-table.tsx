@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 
-import { getSuppliersPaginated } from "@/server/suppliers";
+import { getSupplierCounts } from "@/server/suppliers";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useSuppliers } from "@/hooks/use-suppliers";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
@@ -128,20 +129,64 @@ export function SupplierTable() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["suppliers", orgId, { search, filters, page, pageSize, sortBy, sortOrder }],
-    queryFn: () => getSuppliersPaginated({
-      search: search || undefined,
-      filters,
-      page,
-      pageSize,
-      sortBy,
-      sortOrder,
-    }),
+  // Reactive supplier list straight from Convex (auto-updates on any supplier
+  // create/update/delete). Asset + order counts are a cross-domain aggregate
+  // that nothing invalidates (no liveness need) so they come from a one-shot,
+  // non-reactive server query (useServerQuery, not React Query).
+  const allSuppliers = useSuppliers(orgId);
+  const { data: supplierCounts } = useServerQuery({
+    queryKey: ["supplier-counts", orgId],
+    queryFn: () => getSupplierCounts(),
+    enabled: !!orgId,
   });
 
-  const suppliers = data?.suppliers || [];
-  const total = data?.total || 0;
+  // Filter / sort / paginate in the browser over the reactive list (mirrors the
+  // old getSuppliersPaginated where: isActive enum filter + name/contact/email/
+  // account#/tags search).
+  const { suppliers, total } = useMemo(() => {
+    const source = allSuppliers ?? [];
+    const q = search.trim().toLowerCase();
+    const activeFilter = filters?.isActive as string | undefined;
+
+    const filtered = source.filter((s) => {
+      if (activeFilter === "true" && (s.isActive ?? true) !== true) return false;
+      if (activeFilter === "false" && (s.isActive ?? true) !== false) return false;
+      if (q) {
+        const hit =
+          s.name.toLowerCase().includes(q) ||
+          (s.contactName?.toLowerCase().includes(q) ?? false) ||
+          (s.email?.toLowerCase().includes(q) ?? false) ||
+          (s.accountNumber?.toLowerCase().includes(q) ?? false) ||
+          (s.tags?.some((t) => t.includes(q)) ?? false);
+        if (!hit) return false;
+      }
+      return true;
+    });
+
+    const dir = sortOrder === "desc" ? -1 : 1;
+    filtered.sort((a, b) => {
+      const av = (a as Record<string, unknown>)[sortBy];
+      const bv = (b as Record<string, unknown>)[sortBy];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      if (typeof av === "boolean" && typeof bv === "boolean") return (Number(av) - Number(bv)) * dir;
+      return String(av).localeCompare(String(bv), undefined, { sensitivity: "base" }) * dir;
+    });
+
+    const start = (page - 1) * pageSize;
+    const pageItems = filtered.slice(start, start + pageSize).map((s) => ({
+      ...s,
+      _count: {
+        assets: supplierCounts?.[s.id]?.assets ?? 0,
+        orders: supplierCounts?.[s.id]?.orders ?? 0,
+      },
+    }));
+    return { suppliers: pageItems, total: filtered.length };
+  }, [allSuppliers, supplierCounts, search, filters, sortBy, sortOrder, page, pageSize]);
+
+  const isLoading = allSuppliers === undefined;
 
   const toolbarActions = (
     <CanDo resource="supplier" action="create">

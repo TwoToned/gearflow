@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -12,9 +12,9 @@ import { Controller } from "react-hook-form";
 import { modelSchema, type ModelFormValues } from "@/lib/validations/model";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { createModel, updateModel } from "@/server/models";
-import { getTestProfiles } from "@/server/test-tag-profiles";
-import { getCategories } from "@/server/categories";
-import { getOrgTags } from "@/server/tags";
+import { useTestProfiles } from "@/hooks/use-test-profiles";
+import { useCategoriesWithParent } from "@/hooks/use-categories";
+import { useOrgTags } from "@/hooks/use-org-tags";
 import { TagInput } from "@/components/ui/tag-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,23 +64,17 @@ export function ModelForm({ initialData }: ModelFormProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: categories = [] } = useQuery({
-    queryKey: ["categories", orgId],
-    queryFn: () => getCategories(),
-  });
+  // Reactive categories (Convex) with synthetic parent name, sorted to match the
+  // old getCategories() order.
+  const categories = useCategoriesWithParent(orgId) ?? [];
 
-  const { data: orgTags } = useQuery({
-    queryKey: ["org-tags", orgId],
-    queryFn: () => getOrgTags(),
-  });
+  const orgTags = useOrgTags(orgId);
 
-  const { data: testProfiles } = useQuery({
-    queryKey: ["testProfiles", orgId],
-    queryFn: () => getTestProfiles(),
-    enabled: !!orgId,
-  });
+  // Reactive: testProfiles subscribes to Convex (Convex list returns all; filter
+  // isActive client-side to match the old getTestProfiles default).
+  const testProfiles = useTestProfiles(orgId);
 
-  const activeProfiles = ((testProfiles || []) as { id: string; name: string; equipmentClass: string; applianceType: string; isActive: boolean }[]).filter(p => p.isActive);
+  const activeProfiles = ((testProfiles || []) as unknown as { id: string; name: string; equipmentClass: string; applianceType: string; isActive: boolean }[]).filter(p => p.isActive);
 
   const form = useForm<ModelFormValues>({
     resolver: zodResolver(modelSchema),
@@ -99,7 +93,7 @@ export function ModelForm({ initialData }: ModelFormProps) {
     },
   });
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (data: ModelFormValues) =>
       isEditing ? updateModel(initialData.id, data) : createModel(data),
     onSuccess: (result) => {

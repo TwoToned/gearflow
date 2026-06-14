@@ -17,7 +17,7 @@
  */
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -82,7 +82,6 @@ function PriceEditDialogBody({
   onClose: () => void;
   onInvalidate: () => void;
 }) {
-  const queryClient = useQueryClient();
 
   // Project-mode state
   const [priceInput, setPriceInput] = useState<string>(
@@ -97,19 +96,18 @@ function PriceEditDialogBody({
     target.kind === "subHire" && target.cost != null ? String(target.cost) : "",
   );
 
-  const projectMut = useMutation({
+  const projectMut = useServerMutation({
     mutationFn: ({ groupId, price }: { groupId: string; price: number }) =>
       updateGroupPrice(groupId, price),
     onSuccess: () => {
       onInvalidate();
-      queryClient.invalidateQueries({ queryKey: ["project-categories"] });
       toast.success("Group price updated");
       onClose();
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const subHireMut = useMutation({
+  const subHireMut = useServerMutation({
     mutationFn: () => {
       if (target.kind !== "subHire") throw new Error("Invalid target");
       // updateSubHireGroup requires the full schema, so re-send title +
@@ -123,7 +121,6 @@ function PriceEditDialogBody({
     },
     onSuccess: () => {
       onInvalidate();
-      queryClient.invalidateQueries({ queryKey: ["project-categories"] });
       toast.success("Sub-hire group pricing updated");
       onClose();
     },

@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
 
 // ─── Mocks ──────────────────────────────────────────────────────────────────
 
@@ -69,9 +68,14 @@ const mockItems = [
   },
 ];
 
+// Mutable so each await renderForm() can inject a different result set (e.g. the
+// zero-items suite). Must be `mock`-prefixed to satisfy vitest's vi.mock hoist
+// rule (the factory may only close over mock-prefixed outer bindings).
+let mockCurrentItems: typeof mockItems = mockItems;
+
 vi.mock("@/server/check-items", () => ({
-  getModelCheckItems: vi.fn(async () => mockItems),
-  getKitCheckItems: vi.fn(async () => mockItems),
+  getModelCheckItems: vi.fn(async () => mockCurrentItems),
+  getKitCheckItems: vi.fn(async () => mockCurrentItems),
 }));
 
 vi.mock("@/lib/auth-client", () => ({
@@ -113,7 +117,7 @@ import type { CheckRecordFormValues } from "@/lib/validations/check-item";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function renderForm(
+async function renderForm(
   overrides: Partial<React.ComponentProps<typeof ItemCheckForm>> = {},
   seedData: typeof mockItems = mockItems
 ) {
@@ -122,34 +126,30 @@ function renderForm(
   const onOpenChange = vi.fn();
   const onPassAllRemaining = vi.fn();
 
-  const client = new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,
-        // Seed cache synchronously so useQuery resolves on first render
-        staleTime: Infinity,
-      },
-    },
-  });
-  // Pre-seed the cache so the async query resolves immediately
-  client.setQueryData(["model-check-items", "org-1", "model-1"], seedData);
+  // The component reads check items through `useServerQuery`, which fetches via
+  // the mocked server action in a mount effect. Point the mock at this test's
+  // data set, then flush the resolving microtask so the rows are present.
+  mockCurrentItems = seedData;
 
   const utils = render(
-    <QueryClientProvider client={client}>
-      <ItemCheckForm
-        open
-        onOpenChange={onOpenChange}
-        modelId="model-1"
-        assetTag="AST-1"
-        assetName="Test asset"
-        context="PREP"
-        onSubmit={onSubmit}
-        onCancel={onCancel}
-        onPassAllRemaining={onPassAllRemaining}
-        {...overrides}
-      />
-    </QueryClientProvider>
+    <ItemCheckForm
+      open
+      onOpenChange={onOpenChange}
+      modelId="model-1"
+      assetTag="AST-1"
+      assetName="Test asset"
+      context="PREP"
+      onSubmit={onSubmit}
+      onCancel={onCancel}
+      onPassAllRemaining={onPassAllRemaining}
+      {...overrides}
+    />
   );
+
+  // Flush the useServerQuery effect (server action resolves → setState).
+  await act(async () => {
+    await Promise.resolve();
+  });
 
   return { ...utils, onSubmit, onCancel, onOpenChange, onPassAllRemaining };
 }
@@ -166,14 +166,14 @@ describe("ItemCheckForm keyboard shortcuts", () => {
     vi.clearAllMocks();
   });
 
-  it("renders check item labels", () => {
-    renderForm();
+  it("renders check item labels", async () => {
+    await renderForm();
     expect(screen.getByText("Power on")).toBeTruthy();
     expect(screen.getByText("No visible damage")).toBeTruthy();
   });
 
-  it("P passes the focused PASS_FAIL row and auto-advances", () => {
-    const { onSubmit } = renderForm();
+  it("P passes the focused PASS_FAIL row and auto-advances", async () => {
+    const { onSubmit } = await renderForm();
 
     // Initial focus is on the first PASS_FAIL (index 0 — "Power on")
     key("p");
@@ -195,8 +195,8 @@ describe("ItemCheckForm keyboard shortcuts", () => {
     expect(byId["ci-5"]).toBe("PASS");
   });
 
-  it("F fails the focused PASS_FAIL row", () => {
-    const { onSubmit } = renderForm();
+  it("F fails the focused PASS_FAIL row", async () => {
+    const { onSubmit } = await renderForm();
 
     key("f"); // fail ci-1, auto-advance to ci-4
     key("p"); // pass ci-4, auto-advance to ci-5
@@ -213,8 +213,8 @@ describe("ItemCheckForm keyboard shortcuts", () => {
     expect(byId["ci-5"]).toBe("PASS");
   });
 
-  it("A passes all remaining PASS_FAIL rows", () => {
-    const { onSubmit } = renderForm();
+  it("A passes all remaining PASS_FAIL rows", async () => {
+    const { onSubmit } = await renderForm();
 
     key("a");
     key("Enter");
@@ -227,8 +227,8 @@ describe("ItemCheckForm keyboard shortcuts", () => {
     expect(results.every((r) => r.result === "PASS")).toBe(true);
   });
 
-  it("ArrowDown moves cursor to next PASS_FAIL, skipping NOTES", () => {
-    const { onSubmit } = renderForm();
+  it("ArrowDown moves cursor to next PASS_FAIL, skipping NOTES", async () => {
+    const { onSubmit } = await renderForm();
 
     // Rows: [ci-1 PASS_FAIL, ci-2 NOTES, ci-4 PASS_FAIL, ci-5 PASS_FAIL]
     // Cursor starts at index 0 (ci-1). ArrowDown should skip ci-2 (NOTES)
@@ -255,14 +255,14 @@ describe("ItemCheckForm keyboard shortcuts", () => {
     expect(byId["ci-5"]).toBe("PASS");
   });
 
-  it("Enter is a no-op when items are incomplete", () => {
-    const { onSubmit } = renderForm();
+  it("Enter is a no-op when items are incomplete", async () => {
+    const { onSubmit } = await renderForm();
     key("Enter");
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("keyboard handler is inert when focus is inside a text input", () => {
-    const { onSubmit, container } = renderForm();
+  it("keyboard handler is inert when focus is inside a text input", async () => {
+    const { onSubmit, container } = await renderForm();
     // NOTES row renders a textarea (ci-2)
     const textarea = container.querySelector("textarea");
     expect(textarea).toBeTruthy();
@@ -273,8 +273,8 @@ describe("ItemCheckForm keyboard shortcuts", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("modifier keys let the browser handle the event", () => {
-    const { onSubmit } = renderForm();
+  it("modifier keys let the browser handle the event", async () => {
+    const { onSubmit } = await renderForm();
     fireEvent.keyDown(document, { key: "p", metaKey: true });
     fireEvent.keyDown(document, { key: "p", ctrlKey: true });
     // Row still unanswered → Enter no-op
@@ -282,38 +282,34 @@ describe("ItemCheckForm keyboard shortcuts", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("isSubmitting disables keyboard shortcuts", () => {
-    const { onSubmit } = renderForm({ isSubmitting: true });
+  it("isSubmitting disables keyboard shortcuts", async () => {
+    const { onSubmit } = await renderForm({ isSubmitting: true });
     key("a");
     key("Enter");
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("embedded mode disables keyboard shortcuts", () => {
-    const { onSubmit } = renderForm({ embedded: true });
+  it("embedded mode disables keyboard shortcuts", async () => {
+    const { onSubmit } = await renderForm({ embedded: true });
     key("a");
     key("Enter");
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("keyboard shortcuts detach when open goes false", () => {
-    const { onSubmit, rerender } = renderForm();
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    client.setQueryData(["model-check-items", "org-1", "model-1"], mockItems);
+  it("keyboard shortcuts detach when open goes false", async () => {
+    const { onSubmit, rerender } = await renderForm();
 
     rerender(
-      <QueryClientProvider client={client}>
-        <ItemCheckForm
-          open={false}
-          onOpenChange={() => {}}
-          modelId="model-1"
-          assetTag="AST-1"
-          assetName="Test asset"
-          context="PREP"
-          onSubmit={onSubmit}
-          onCancel={() => {}}
-        />
-      </QueryClientProvider>
+      <ItemCheckForm
+        open={false}
+        onOpenChange={() => {}}
+        modelId="model-1"
+        assetTag="AST-1"
+        assetName="Test asset"
+        context="PREP"
+        onSubmit={onSubmit}
+        onCancel={() => {}}
+      />
     );
 
     key("a");
@@ -334,29 +330,29 @@ describe("ItemCheckForm with zero check items", () => {
     vi.clearAllMocks();
   });
 
-  it("renders an empty-state message instead of check rows", () => {
-    renderForm({}, []);
+  it("renders an empty-state message instead of check rows", async () => {
+    await renderForm({}, []);
     expect(screen.getByText(/No check items are configured/i)).toBeTruthy();
     // None of the mockItems labels should render.
     expect(screen.queryByText("Power on")).toBeNull();
   });
 
-  it("disables the submit button when no checks are configured", () => {
-    renderForm({}, []);
+  it("disables the submit button when no checks are configured", async () => {
+    await renderForm({}, []);
     // PREP context with failCount === 0 → "Pack Item"
     const submit = screen.getByRole("button", { name: /Pack Item/i }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
   });
 
-  it("does not call onSubmit when clicking submit with zero checks", () => {
-    const { onSubmit } = renderForm({}, []);
+  it("does not call onSubmit when clicking submit with zero checks", async () => {
+    const { onSubmit } = await renderForm({}, []);
     const submit = screen.getByRole("button", { name: /Pack Item/i });
     fireEvent.click(submit);
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("does not call onSubmit on keyboard Enter with zero checks", () => {
-    const { onSubmit } = renderForm({}, []);
+  it("does not call onSubmit on keyboard Enter with zero checks", async () => {
+    const { onSubmit } = await renderForm({}, []);
     key("Enter");
     expect(onSubmit).not.toHaveBeenCalled();
   });

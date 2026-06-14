@@ -8,6 +8,16 @@ import { serialize } from "@/lib/serialize";
 import { reserveAssetTags, getOrgTestTagSettings } from "@/server/settings";
 import { backfillTestTagAssets } from "@/server/test-tag-assets";
 import { logActivity } from "@/lib/activity-log";
+import {
+  mirrorAssetCreate,
+  patchAssetInConvex,
+  removeAssetFromConvex,
+  syncAssetsToConvex,
+} from "@/lib/asset-mirror";
+import { getSupplierById } from "@/lib/suppliers-read";
+import { getModelWithCategoryMap, type ModelWithCategory } from "@/lib/models-read";
+import { getLocationMap, type ConvexLocation } from "@/lib/locations-read";
+import { getPrimaryPhotoMaps } from "@/lib/media-read";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
 import { validateCustomFieldValues } from "@/lib/validations/custom-field";
@@ -45,12 +55,13 @@ const assetFilterColumns: FilterColumnDef[] = [
   { id: "tags", filterType: "enum" },
 ];
 
-export type AssetWithRelations = Prisma.AssetGetPayload<{
-  include: {
-    model: { include: { category: true } };
-    location: true;
-  };
-}>;
+// model (+ nested equipment category) + location live in Convex (dual-written) —
+// attached from the maps, not Prisma joins. Sorts/filters on model.name /
+// location.name / model.categoryId stay on the always-fresh Prisma mirror.
+export type AssetWithRelations = Prisma.AssetGetPayload<{ include: Record<string, never> }> & {
+  model: ModelWithCategory | null;
+  location: ConvexLocation | null;
+};
 
 export async function getAssets(params?: {
   search?: string;
@@ -107,24 +118,10 @@ export async function getAssets(params?: {
   const [assets, total] = await Promise.all([
     prisma.asset.findMany({
       where,
-      include: {
-        model: {
-          include: {
-            category: true,
-            media: {
-              where: { type: "PHOTO", isPrimary: true },
-              include: { file: true },
-              take: 1,
-            },
-          },
-        },
-        location: true,
-        media: {
-          where: { type: "PHOTO", isPrimary: true },
-          include: { file: true },
-          take: 1,
-        },
-      },
+      // model (+ category) + location attached from Convex below. The sole
+      // consumer (test-tag form) reads model scalars only, so the old primary-photo
+      // media joins are dropped (the reactive registry table gets photos from
+      // getAssetRegistryPhotos, not this query). Sort stays on the Prisma mirror.
       orderBy: sortBy === "model" ? { model: { name: sortOrder } }
         : sortBy === "location" ? { location: { name: sortOrder } }
         : { [sortBy]: sortOrder },
@@ -134,12 +131,22 @@ export async function getAssets(params?: {
     prisma.asset.count({ where }),
   ]);
 
-  return serialize({ assets, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
+  const [modelMap, locationMap] = await Promise.all([
+    getModelWithCategoryMap(organizationId),
+    getLocationMap(organizationId),
+  ]);
+  const withRelations = assets.map((a) => ({
+    ...a,
+    model: a.modelId ? modelMap.get(a.modelId) ?? null : null,
+    location: a.locationId ? locationMap.get(a.locationId) ?? null : null,
+  }));
+
+  return serialize({ assets: withRelations, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
 }
 
 export async function getAsset(id: string) {
   const { organizationId } = await getOrgContext();
-  return serialize(await prisma.asset.findUnique({
+  const asset = await prisma.asset.findUnique({
     where: { id, organizationId },
     include: {
       model: {
@@ -156,7 +163,6 @@ export async function getAsset(id: string) {
         },
       },
       location: true,
-      supplier: true,
       media: {
         include: { file: true },
         orderBy: { sortOrder: "asc" },
@@ -197,7 +203,31 @@ export async function getAsset(id: string) {
         orderBy: { sortOrder: "asc" },
       },
     },
-  }));
+  });
+  // Supplier lives in Convex — attach instead of a Prisma join.
+  const supplier = asset?.supplierId ? await getSupplierById(asset.supplierId) : null;
+  return serialize(asset ? { ...asset, supplier } : asset);
+}
+
+/**
+ * Primary photos for the reactive registry table. Both maps now come off the
+ * Convex `assetMedia` / `modelMedia` + `fileUploads` mirror via getPrimaryPhotoMap
+ * (Phase 6 decommission — those tables are now dual-written). Returns two maps:
+ * per-assetId (the asset's own primary photo) and per-modelId (the model's
+ * primary photo, used as a fallback). The reactive table subscribes to
+ * assets/bulkAssets via Convex and merges these (non-reactive) photos in:
+ * photo = assetPhotos[a.id] ?? modelPhotos[a.modelId]. Model name / category /
+ * location resolve from the Convex models/categories/locations the table already
+ * loads.
+ */
+export async function getAssetRegistryPhotos(): Promise<{
+  assetPhotos: Record<string, { url: string | null; thumbnailUrl: string | null }>;
+  modelPhotos: Record<string, { url: string | null; thumbnailUrl: string | null }>;
+}> {
+  const { organizationId } = await getOrgContext();
+  // One shared fileUploads collect for both maps (asset + model).
+  const maps = await getPrimaryPhotoMaps(["asset", "model"], organizationId);
+  return serialize({ assetPhotos: maps.asset, modelPhotos: maps.model });
 }
 
 export async function createAsset(data: AssetFormValues) {
@@ -241,6 +271,7 @@ export async function createAsset(data: AssetFormValues) {
     });
     // Advance the counter now that the asset is actually created
     await reserveAssetTags(1);
+    await mirrorAssetCreate(result);
 
     // Auto-register in T&T registry if model requires it
     if (model?.requiresTestAndTag) {
@@ -339,6 +370,7 @@ export async function createAssets(
 
   // Advance the counter now that assets are actually created
   await reserveAssetTags(assets.length);
+  for (const result of results) await mirrorAssetCreate(result);
 
   // Auto-register in T&T registry if model requires it
   if (model?.requiresTestAndTag) {
@@ -426,6 +458,7 @@ export async function updateAsset(id: string, data: AssetFormValues) {
     if (translated) throw translated;
     throw e;
   }
+  await patchAssetInConvex(updated.id, updated);
 
   await logActivity({
     organizationId,
@@ -482,6 +515,7 @@ export async function bulkUpdateAssets(
     where: { id: { in: ids }, organizationId },
     data: updateData,
   });
+  await syncAssetsToConvex(ids);
 
   return { count: result.count };
 }
@@ -543,6 +577,7 @@ export async function deleteAsset(id: string) {
   }
 
   await prisma.asset.delete({ where: { id, organizationId } });
+  await removeAssetFromConvex(id);
 
   await logActivity({
     organizationId,
@@ -561,10 +596,12 @@ export async function deleteAsset(id: string) {
 
 export async function updateAssetNotes(id: string, notes: string) {
   const { organizationId } = await requirePermission("asset", "update");
-  return serialize(await prisma.asset.update({
+  const updated = await prisma.asset.update({
     where: { id, organizationId },
     data: { notes: notes || null },
-  }));
+  });
+  await patchAssetInConvex(updated.id, updated);
+  return serialize(updated);
 }
 
 export async function archiveAsset(id: string) {
@@ -576,8 +613,10 @@ export async function archiveAsset(id: string) {
     data: { status: "RETIRED", isActive: false },
   });
 
-  return serialize(await prisma.asset.update({
+  const updated = await prisma.asset.update({
     where: { id, organizationId },
     data: { isActive: false, status: "RETIRED" },
-  }));
+  });
+  await patchAssetInConvex(updated.id, updated);
+  return serialize(updated);
 }

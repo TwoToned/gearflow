@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -26,13 +27,14 @@ const PREF_KEYS = Object.keys(
 ) as (keyof NotificationPreferenceValues)[];
 
 export default function NotificationPreferencesPage() {
-  const queryClient = useQueryClient();
   const [values, setValues] = useState<NotificationPreferenceValues>({
     ...NOTIFICATION_PREFERENCE_DEFAULTS,
   });
   const [hydrated, setHydrated] = useState(false);
 
-  const query = useQuery({
+  // Settings read+write island: single reader, single writer, no other consumer
+  // or SSE key → useServerQuery + refetch on save is data-identical.
+  const query = useServerQuery({
     queryKey: ["notification-preferences"],
     queryFn: getNotificationPreferences,
   });
@@ -44,12 +46,12 @@ export default function NotificationPreferencesPage() {
     }
   }, [query.data, hydrated]);
 
-  const saveMutation = useMutation({
+  const saveMutation = useServerMutation({
     mutationFn: (next: NotificationPreferenceValues) =>
       updateNotificationPreferences(next),
     onSuccess: (saved) => {
       setValues(saved);
-      queryClient.invalidateQueries({ queryKey: ["notification-preferences"] });
+      query.refetch();
       toast.success("Notification preferences saved");
     },
     onError: (e: Error) => toast.error(e.message),

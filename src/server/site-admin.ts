@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { removeKitSerializedItemFromConvex, removeKitBulkItemFromConvex } from "@/lib/kit-mirror";
 import { requireSession } from "@/lib/auth-server";
 import { serialize } from "@/lib/serialize";
 import { invalidatePlatformNameCache } from "@/lib/platform";
@@ -498,6 +499,13 @@ export async function adminDeleteUser(userId: string) {
     select: { name: true, email: true },
   });
 
+  // Capture the dual-written kit items this user added, so we can mirror their
+  // deletion to Convex after the transaction commits.
+  const [serializedItemsToRemove, bulkItemsToRemove] = await Promise.all([
+    prisma.kitSerializedItem.findMany({ where: { addedById: userId }, select: { id: true } }),
+    prisma.kitBulkItem.findMany({ where: { addedById: userId }, select: { id: true } }),
+  ]);
+
   await prisma.$transaction(async (tx) => {
     // Null out nullable User FK references
     await tx.maintenanceRecord.updateMany({ where: { reportedById: userId }, data: { reportedById: null } });
@@ -515,6 +523,10 @@ export async function adminDeleteUser(userId: string) {
 
     await tx.user.delete({ where: { id: userId } });
   });
+
+  // Mirror the kit-item deletions to Convex (kit members are dual-written).
+  for (const item of serializedItemsToRemove) await removeKitSerializedItemFromConvex(item.id);
+  for (const item of bulkItemsToRemove) await removeKitBulkItemFromConvex(item.id);
 
   const theOrg = await getTheOrg();
   if (theOrg) {

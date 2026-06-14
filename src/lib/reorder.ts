@@ -12,6 +12,11 @@
 
 import { prisma } from "@/lib/prisma";
 import { createId } from "@paralleldrive/cuid2";
+import { syncBulkAssetsToConvex } from "@/lib/asset-mirror";
+import { syncSupplierOrderToConvex } from "@/lib/sub-hire-mirror";
+import { getSupplierById, getSupplierMap } from "@/lib/suppliers-read";
+import { getModelMap, getModelWithCategoryMap } from "@/lib/models-read";
+import { getLocationMap } from "@/lib/locations-read";
 
 export interface ReorderCandidate {
   bulkAssetId: string;
@@ -38,16 +43,13 @@ export interface ReorderCandidate {
 export async function getReorderCandidatesCore(
   organizationId: string,
 ): Promise<ReorderCandidate[]> {
+  // model (+ nested category), preferredSupplier, and location all live in
+  // Convex — attached from the maps below, not Prisma joins.
   const rows = await prisma.bulkAsset.findMany({
     where: {
       organizationId,
       isActive: true,
       reorderThreshold: { not: null, gt: 0 },
-    },
-    include: {
-      model: { include: { category: { select: { name: true } } } },
-      preferredSupplier: { select: { id: true, name: true } },
-      location: { select: { name: true } },
     },
     orderBy: { availableQuantity: "asc" },
   });
@@ -58,8 +60,16 @@ export async function getReorderCandidatesCore(
       b.availableQuantity <= b.reorderThreshold,
   );
 
+  const [modelMap, supplierMap, locationMap] = await Promise.all([
+    getModelWithCategoryMap(organizationId),
+    getSupplierMap(organizationId),
+    getLocationMap(organizationId),
+  ]);
+
   return candidates.map((b) => {
     const threshold = b.reorderThreshold!;
+    const model = modelMap.get(b.modelId);
+    const supplier = b.preferredSupplierId ? supplierMap.get(b.preferredSupplierId) : null;
     // Target stock = threshold × 1.5 (rounded up). Order the gap.
     const target = Math.ceil(threshold * 1.5);
     const suggested = Math.max(1, target - b.availableQuantity);
@@ -67,18 +77,18 @@ export async function getReorderCandidatesCore(
       bulkAssetId: b.id,
       assetTag: b.assetTag,
       modelId: b.modelId,
-      modelName: b.model.name,
-      categoryName: b.model.category?.name ?? null,
+      modelName: model?.name ?? "",
+      categoryName: model?.category?.name ?? null,
       totalQuantity: b.totalQuantity,
       availableQuantity: b.availableQuantity,
       reorderThreshold: threshold,
       suggestedOrderQuantity: suggested,
-      preferredSupplier: b.preferredSupplier,
+      preferredSupplier: supplier ? { id: supplier.id, name: supplier.name } : null,
       purchasePricePerUnit: b.purchasePricePerUnit != null
         ? Number(b.purchasePricePerUnit)
         : null,
       lastReorderedAt: b.lastReorderedAt,
-      locationName: b.location?.name ?? null,
+      locationName: (b.locationId ? locationMap.get(b.locationId)?.name : null) ?? null,
     };
   });
 }
@@ -106,12 +116,9 @@ export async function createReorderDraftCore(
     throw new Error("At least one line item is required");
   }
 
-  // Verify supplier belongs to org
-  const supplier = await prisma.supplier.findFirst({
-    where: { id: supplierId, organizationId },
-    select: { id: true },
-  });
-  if (!supplier) {
+  // Verify supplier belongs to org (suppliers live in Convex now).
+  const supplier = await getSupplierById(supplierId);
+  if (!supplier || supplier.organizationId !== organizationId) {
     throw new Error("Supplier not found");
   }
 
@@ -122,11 +129,13 @@ export async function createReorderDraftCore(
       id: { in: lines.map((l) => l.bulkAssetId) },
       organizationId,
     },
-    include: { model: { select: { name: true } } },
   });
   if (bulks.length !== lines.length) {
     throw new Error("One or more items could not be found in this organization");
   }
+  // model name (for the order-line description) lives in Convex — resolve from
+  // the map, not a Prisma join.
+  const modelMap = await getModelMap(organizationId);
 
   // Order number: REORDER-{YYYYMMDD}-{short id}. cuid2 (8 chars) instead of
   // Math.random's 4 base-36 chars — the latter has only ~1.7M values per
@@ -153,7 +162,7 @@ export async function createReorderDraftCore(
             const quantity = l.quantity;
             const lineTotal = unitPrice != null ? unitPrice * quantity : null;
             return {
-              description: `${bulk.model.name} — restock (${bulk.assetTag})`,
+              description: `${modelMap.get(bulk.modelId)?.name ?? "Item"} — restock (${bulk.assetTag})`,
               modelId: bulk.modelId,
               quantity,
               unitPrice: unitPrice ?? undefined,
@@ -175,6 +184,11 @@ export async function createReorderDraftCore(
 
     return { id: order.id, orderNumber: order.orderNumber, lineCount: order.items.length };
   });
+
+  // Mirror the lastReorderedAt stamp on each bulk asset + the draft supplier
+  // order (head + items) to Convex.
+  await syncBulkAssetsToConvex(lines.map((l) => l.bulkAssetId));
+  await syncSupplierOrderToConvex(result.id);
 
   return result;
 }

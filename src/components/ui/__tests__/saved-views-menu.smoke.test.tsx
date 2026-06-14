@@ -2,7 +2,6 @@
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 vi.mock("@/lib/auth-client", () => ({
   useActiveOrganization: () => ({ data: { id: "org1" } }),
@@ -14,17 +13,20 @@ vi.mock("@/server/saved-views", () => ({
   deleteSavedView: vi.fn(async () => {}),
   setDefaultSavedView: vi.fn(async () => {}),
 }));
+// The component subscribes to Convex for cross-tab sync; stub the hook so the
+// smoke test doesn't need a ConvexProvider in the tree.
+vi.mock("@/hooks/use-back-office", () => ({
+  useSavedTableViews: () => undefined,
+  fingerprintSavedTableViews: () => undefined,
+}));
 
 import { SavedViewsMenu } from "@/components/ui/saved-views-menu";
 
 describe("SavedViewsMenu smoke", () => {
   it("renders the trigger without throwing", () => {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     expect(() =>
       render(
-        <QueryClientProvider client={qc}>
-          <SavedViewsMenu tableId="assets" currentConfig={{}} applyConfig={() => {}} />
-        </QueryClientProvider>,
+        <SavedViewsMenu tableId="assets" currentConfig={{}} applyConfig={() => {}} />,
       ),
     ).not.toThrow();
   });
@@ -33,11 +35,8 @@ describe("SavedViewsMenu smoke", () => {
   // DropdownMenuLabel. Base UI's GroupLabel throws if not inside a Group — that
   // crashed every list page. The trigger-only smoke test above missed it.
   it("opens the menu without throwing (DropdownMenuLabel must be in a Group)", async () => {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
-      <QueryClientProvider client={qc}>
-        <SavedViewsMenu tableId="assets" currentConfig={{}} applyConfig={() => {}} />
-      </QueryClientProvider>,
+      <SavedViewsMenu tableId="assets" currentConfig={{}} applyConfig={() => {}} />,
     );
     fireEvent.click(screen.getByRole("button"));
     await waitFor(() => expect(screen.getByText("Saved views")).toBeTruthy());
@@ -47,11 +46,8 @@ describe("SavedViewsMenu smoke", () => {
   // onSelect made every menu action a dead button. Clicking "Save current view…"
   // must open the save dialog.
   it("'Save current view' opens the save dialog (items use onClick)", async () => {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
-      <QueryClientProvider client={qc}>
-        <SavedViewsMenu tableId="assets" currentConfig={{ filters: { a: ["x"] } }} applyConfig={() => {}} />
-      </QueryClientProvider>,
+      <SavedViewsMenu tableId="assets" currentConfig={{ filters: { a: ["x"] } }} applyConfig={() => {}} />,
     );
     fireEvent.click(screen.getByRole("button"));
     const item = await waitFor(() => screen.getByText("Save current view…"));

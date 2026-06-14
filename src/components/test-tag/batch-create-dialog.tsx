@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
@@ -51,6 +51,8 @@ interface BatchCreateDialogProps {
   bulkAssetName: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Called after a successful batch create so the host can refresh its list. */
+  onCreated?: () => void;
 }
 
 export function BatchCreateDialog({
@@ -58,8 +60,8 @@ export function BatchCreateDialog({
   bulkAssetName,
   open,
   onOpenChange,
+  onCreated,
 }: BatchCreateDialogProps) {
-  const queryClient = useQueryClient();
 
   const form = useForm<BatchCreateTestTagFormValues>({
     resolver: zodResolver(batchCreateTestTagSchema),
@@ -93,7 +95,7 @@ export function BatchCreateDialog({
     }
   }, [open, bulkAssetId, bulkAssetName, form]);
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (data: BatchCreateTestTagFormValues) =>
       createTestTagAssetsFromBulk({
         bulkAssetId: data.bulkAssetId,
@@ -108,8 +110,7 @@ export function BatchCreateDialog({
       }),
     onSuccess: (result) => {
       toast.success(`Created ${result.count} test tag items`);
-      queryClient.invalidateQueries({ queryKey: ["test-tag-assets"] });
-      queryClient.invalidateQueries({ queryKey: ["test-tag-dashboard"] });
+      onCreated?.();
       onOpenChange(false);
     },
     onError: (e: Error) => toast.error(e.message),

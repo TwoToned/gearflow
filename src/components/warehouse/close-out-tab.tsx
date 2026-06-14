@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useWarehouseCloses, fingerprintWarehouseCloses } from "@/hooks/use-back-office";
 import {
   Loader2,
   PackageCheck,
@@ -27,25 +29,45 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-export function CloseOutTab({ projectId }: { projectId: string }) {
+export function CloseOutTab({
+  projectId,
+  onChanged,
+}: {
+  projectId: string;
+  /** Notify the parent warehouse page to refresh its project composite after a
+   *  close-out (replaces the old cross-key ["warehouse-project"] invalidation). */
+  onChanged?: () => void;
+}) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
   const canClose = useCanDo("warehouse", "close");
 
   const [confirmStep, setConfirmStep] = useState(0); // 0 = none, 1 = first click, 2 = confirmed
 
-  const { data: summary, isLoading } = useQuery({
+  const { data: summary, isLoading, refetch } = useServerQuery({
     queryKey: ["close-out-summary", orgId, projectId],
     queryFn: () => getCloseOutSummary(projectId),
   });
 
-  const closeMutation = useMutation({
+  // Cross-tab live sync: subscribe to the dual-written Convex warehouseCloses
+  // table; if another staffer closes this project, the fingerprint changes and
+  // we re-fetch (so the "already closed" banner appears live).
+  const closeDocs = useWarehouseCloses(orgId);
+  const closeFp = fingerprintWarehouseCloses(closeDocs);
+  const prevCloseFp = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (closeFp !== undefined && prevCloseFp.current !== undefined && closeFp !== prevCloseFp.current) {
+      refetch();
+    }
+    if (closeFp !== undefined) prevCloseFp.current = closeFp;
+  }, [closeFp, refetch]);
+
+  const closeMutation = useServerMutation({
     mutationFn: () => closeOutProject({ projectId }),
     onSuccess: () => {
       toast.success("Project closed out successfully");
-      queryClient.invalidateQueries({ queryKey: ["close-out-summary", orgId, projectId] });
-      queryClient.invalidateQueries({ queryKey: ["warehouse-project", orgId, projectId] });
+      refetch();
+      onChanged?.();
       setConfirmStep(0);
     },
     onError: (e) => {

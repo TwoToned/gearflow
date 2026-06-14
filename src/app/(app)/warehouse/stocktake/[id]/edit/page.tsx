@@ -1,7 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { Loader2 } from "lucide-react";
 
 import { getStocktakeById } from "@/server/stocktake";
@@ -19,7 +19,7 @@ export default function EditStocktakePage({
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: stocktake, isLoading } = useQuery({
+  const { data: stocktake, isLoading } = useServerQuery({
     queryKey: ["stocktake", orgId, id],
     queryFn: () => getStocktakeById(id),
   });

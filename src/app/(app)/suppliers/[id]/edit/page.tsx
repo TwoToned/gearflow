@@ -3,24 +3,19 @@
 import { use } from "react";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { useActiveOrganization } from "@/lib/auth-client";
-import { getSupplierById } from "@/server/suppliers";
+import { useSupplier } from "@/hooks/use-suppliers";
 import { SupplierForm } from "@/components/suppliers/supplier-form";
 import { FadeIn } from "@/components/ui/motion";
 import { FormSkeleton } from "@/components/ui/skeleton";
 
 export default function EditSupplierPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
 
-  const { data: supplier, isLoading } = useQuery({
-    queryKey: ["supplier", orgId, id],
-    queryFn: () => getSupplierById(id),
-  });
+  // Reactive supplier (Convex) — the form only needs supplier fields, so a pure
+  // useQuery against Convex is sufficient. undefined = loading, null = not found.
+  const supplier = useSupplier(id);
 
-  if (isLoading) return <FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>;
+  if (supplier === undefined) return <FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>;
   if (!supplier) return <div className="text-fg-3">Supplier not found.</div>;
 
   return (
@@ -54,7 +49,7 @@ export default function EditSupplierPage({ params }: { params: Promise<{ id: str
           paymentTerms: supplier.paymentTerms || "",
           defaultLeadTime: supplier.defaultLeadTime || "",
           tags: supplier.tags || [],
-          isActive: supplier.isActive,
+          isActive: supplier.isActive ?? true,
         }} />
       </div>
     </FadeIn>

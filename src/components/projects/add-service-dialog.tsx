@@ -1,8 +1,9 @@
 "use client";
 
 import { useForm, Controller } from "react-hook-form";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -40,7 +41,6 @@ export function AddServiceDialog({
   open,
   onOpenChange,
 }: AddServiceDialogProps) {
-  const queryClient = useQueryClient();
 
   const form = useForm<LineItemFormValues>({
     resolver: zodResolver(lineItemSchema),
@@ -53,14 +53,14 @@ export function AddServiceDialog({
     },
   });
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (data: LineItemFormValues) => addLineItem(projectId, data),
     onSuccess: (_result, variables) => {
       if (variables.groupName && onGroupCreated) {
         onGroupCreated(variables.groupName);
       }
       toast.success("Item added");
-      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+      refreshProjectDetail(projectId);
       onOpenChange(false);
       form.reset();
     },

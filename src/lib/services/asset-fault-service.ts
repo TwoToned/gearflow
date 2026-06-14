@@ -20,6 +20,7 @@
 import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/activity-log";
+import { syncAssetsToConvex } from "@/lib/asset-mirror";
 import { DiscordApiError } from "@/lib/discord/api-errors";
 import { ACTIVE_PROJECT_STATUS_FILTER } from "@/lib/discord/project-statuses";
 import { requireActorPermission, type ServiceActor } from "./discord-actor";
@@ -189,6 +190,9 @@ export async function reportAssetFault(
     }
     throw err;
   }
+
+  // Mirror the asset status flip (hold-for-repair → IN_MAINTENANCE) to Convex.
+  if (result.statusChanged) await syncAssetsToConvex([asset.id]);
 
   await logActivity({
     organizationId: actor.organizationId,

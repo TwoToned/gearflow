@@ -1,15 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Pencil, Trash2, Boxes, Container, FolderOpen, Search } from "lucide-react";
 import { toast } from "sonner";
 
 import { categorySchema, type CategoryFormValues } from "@/lib/validations/category";
-import { getCategories, createCategory, updateCategory, deleteCategory } from "@/server/categories";
+import { getCategoryCounts, createCategory, updateCategory, deleteCategory } from "@/server/categories";
+import { useCategories } from "@/hooks/use-categories";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Input } from "@/components/ui/input";
@@ -38,7 +40,6 @@ import { PageHeader } from "@/components/layout/page-header";
 import { FadeIn } from "@/components/ui/motion";
 
 export default function CategoriesPage() {
-  const queryClient = useQueryClient();
   const canCreate = useCanDo("model", "create");
   const canUpdate = useCanDo("model", "update");
   const canDelete = useCanDo("model", "delete");
@@ -50,40 +51,61 @@ export default function CategoriesPage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: categories = [], isLoading } = useQuery({
-    queryKey: ["categories", orgId],
-    queryFn: () => getCategories(),
+  // Reactive category list straight from Convex (auto-updates on create/update/
+  // delete). Model/kit counts stay cross-domain (Prisma) via a separate, non-
+  // reactive query; children counts derive from the flat reactive list itself —
+  // mirrors CategoryManager.
+  const allCategories = useCategories(orgId);
+  const isLoading = allCategories === undefined;
+  const { data: categoryCounts } = useServerQuery({
+    queryKey: ["category-counts", orgId],
+    queryFn: () => getCategoryCounts(),
+    enabled: !!orgId,
   });
+  const categories = useMemo(() => {
+    const source = allCategories ?? [];
+    const childCount = new Map<string, number>();
+    for (const c of source) if (c.parentId) childCount.set(c.parentId, (childCount.get(c.parentId) ?? 0) + 1);
+    const sorted = [...source].sort((a, b) => {
+      const so = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+      return so !== 0 ? so : a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    });
+    return sorted.map((c) => ({
+      ...c,
+      _count: {
+        models: categoryCounts?.[c.id]?.models ?? 0,
+        kits: categoryCounts?.[c.id]?.kits ?? 0,
+        children: childCount.get(c.id) ?? 0,
+      },
+    }));
+  }, [allCategories, categoryCounts]);
 
   const form = useForm<CategoryFormValues>({
     resolver: zodResolver(categorySchema),
     defaultValues: { name: "", description: "", icon: "", sortOrder: 0 },
   });
 
-  const createMutation = useMutation({
+  const createMutation = useServerMutation({
     mutationFn: createCategory,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["categories"] });
       toast.success("Category created");
       resetForm();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const updateMutation = useMutation({
+  const updateMutation = useServerMutation({
     mutationFn: ({ id, data }: { id: string; data: CategoryFormValues }) => updateCategory(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["categories"] });
       toast.success("Category updated");
       resetForm();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: deleteCategory,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["categories"] });
       toast.success("Category deleted");
     },
     onError: (e) => toast.error(e.message),

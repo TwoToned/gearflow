@@ -1,6 +1,20 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { mirrorFileUploadDelete } from "@/lib/file-upload-mirror";
+import { mirrorMediaCreate, syncMediaForParent } from "@/lib/media-mirror";
+import {
+  syncSubHireToConvex,
+  removeSubHireFromConvex,
+  removeSubHireItemFromConvex,
+  removeSubHireGroupFromConvex,
+} from "@/lib/sub-hire-mirror";
+import { upsertProjectLineItemsToConvex, removeLineItemFromConvex } from "@/lib/line-item-mirror";
+import {
+  attachSupplier,
+  getMatchingSupplierIds,
+  getSupplierById,
+} from "@/lib/suppliers-read";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
@@ -86,9 +100,13 @@ export async function getSubHires(filters?: {
   }
   if (filters?.search) {
     const term = filters.search;
+    // Supplier lives in Convex — resolve matching supplier ids and fold them in
+    // as a supplierId predicate (omit on no match). Results sort by createdAt,
+    // never the supplier name, so id-resolution is order-safe.
+    const matchingSupplierIds = await getMatchingSupplierIds(organizationId, term);
     where.OR = [
       { orderNumber: { contains: term, mode: "insensitive" } },
-      { supplier: { name: { contains: term, mode: "insensitive" } } },
+      ...(matchingSupplierIds.length > 0 ? [{ supplierId: { in: matchingSupplierIds } }] : []),
       { items: { some: { description: { contains: term, mode: "insensitive" } } } },
     ];
   }
@@ -121,7 +139,6 @@ export async function getSubHires(filters?: {
   const subHires = await prisma.subHire.findMany({
     where,
     include: {
-      supplier: { select: { id: true, name: true } },
       project: { select: { id: true, name: true, projectNumber: true } },
       _count: { select: { items: true } },
       ...itemsInclude,
@@ -129,7 +146,9 @@ export async function getSubHires(filters?: {
     orderBy: { createdAt: "desc" },
   });
 
-  return serialize(subHires);
+  // Supplier lives in Convex — attach instead of a Prisma join.
+  const subHiresWithSupplier = await attachSupplier(organizationId, subHires);
+  return serialize(subHiresWithSupplier);
 }
 
 export async function getSubHire(id: string) {
@@ -138,7 +157,6 @@ export async function getSubHire(id: string) {
   const subHire = await prisma.subHire.findUnique({
     where: { id, organizationId },
     include: {
-      supplier: { select: { id: true, name: true, email: true, phone: true } },
       project: { select: { id: true, name: true, projectNumber: true } },
       createdBy: { select: { id: true, name: true } },
       defaultTargetCategory: { select: { id: true, name: true } },
@@ -170,7 +188,9 @@ export async function getSubHire(id: string) {
   });
 
   if (!subHire) throw new Error("Sub-hire not found");
-  return serialize(subHire);
+  // Supplier lives in Convex — attach instead of a Prisma join.
+  const supplier = await getSupplierById(subHire.supplierId);
+  return serialize({ ...subHire, supplier });
 }
 
 export async function createSubHire(input: unknown) {
@@ -196,13 +216,14 @@ export async function createSubHire(input: unknown) {
         defaultTargetCategoryId: data.defaultTargetCategoryId || null,
         defaultTargetGroupId: data.defaultTargetGroupId || null,
       },
-      include: {
-        supplier: { select: { name: true } },
-      },
     });
 
     return subHire;
   });
+  await syncSubHireToConvex(result.id);
+
+  // Supplier lives in Convex — fetch for the log label / return shape.
+  const supplier = await getSupplierById(result.supplierId);
 
   await logActivity({
     organizationId,
@@ -211,11 +232,11 @@ export async function createSubHire(input: unknown) {
     action: "CREATE",
     entityType: "subHire",
     entityId: result.id,
-    entityName: `${result.orderNumber} (${result.supplier.name})`,
+    entityName: `${result.orderNumber} (${supplier?.name ?? ""})`,
     summary: `Created sub-hire ${result.orderNumber}`,
   });
 
-  return serialize(result);
+  return serialize({ ...result, supplier });
 }
 
 export async function updateSubHire(id: string, input: unknown) {
@@ -241,10 +262,11 @@ export async function updateSubHire(id: string, input: unknown) {
       defaultTargetCategoryId: data.defaultTargetCategoryId !== undefined ? (data.defaultTargetCategoryId || null) : undefined,
       defaultTargetGroupId: data.defaultTargetGroupId !== undefined ? (data.defaultTargetGroupId || null) : undefined,
     },
-    include: {
-      supplier: { select: { name: true } },
-    },
   });
+  await syncSubHireToConvex(id);
+
+  // Supplier lives in Convex — fetch for the log label / return shape.
+  const supplier = await getSupplierById(subHire.supplierId);
 
   await logActivity({
     organizationId,
@@ -253,11 +275,11 @@ export async function updateSubHire(id: string, input: unknown) {
     action: "UPDATE",
     entityType: "subHire",
     entityId: id,
-    entityName: `${subHire.orderNumber} (${subHire.supplier.name})`,
+    entityName: `${subHire.orderNumber} (${supplier?.name ?? ""})`,
     summary: `Updated sub-hire ${subHire.orderNumber}`,
   });
 
-  return serialize(subHire);
+  return serialize({ ...subHire, supplier });
 }
 
 export async function deleteSubHire(id: string) {
@@ -266,11 +288,14 @@ export async function deleteSubHire(id: string) {
   const subHire = await prisma.subHire.findUnique({
     where: { id, organizationId },
     include: {
-      supplier: { select: { name: true } },
       lineItems: { select: { id: true, status: true } },
+      items: { select: { id: true } },
+      groups: { select: { id: true } },
     },
   });
   if (!subHire) throw new Error("Sub-hire not found");
+  // Supplier lives in Convex — fetch for the log label.
+  const supplierName = (await getSupplierById(subHire.supplierId))?.name ?? "";
 
   // Reject if any linked line items are checked out
   const checkedOut = subHire.lineItems.filter((li) => li.status === "CHECKED_OUT");
@@ -295,6 +320,13 @@ export async function deleteSubHire(id: string) {
     });
   });
 
+  // Mirror the cascade delete to Convex (line items + sub-hire items + groups +
+  // the head). sub_hire_media stays Prisma-only.
+  for (const li of subHire.lineItems) await removeLineItemFromConvex(li.id);
+  for (const it of subHire.items) await removeSubHireItemFromConvex(it.id);
+  for (const g of subHire.groups) await removeSubHireGroupFromConvex(g.id);
+  await removeSubHireFromConvex(id);
+
   // Recalculate project totals if linked to a project
   if (projectId) {
     const { recalculateProjectTotals } = await import("@/server/line-items");
@@ -308,7 +340,7 @@ export async function deleteSubHire(id: string) {
     action: "DELETE",
     entityType: "subHire",
     entityId: id,
-    entityName: `${subHire.orderNumber} (${subHire.supplier.name})`,
+    entityName: `${subHire.orderNumber} (${supplierName})`,
     summary: `Deleted sub-hire ${subHire.orderNumber}`,
   });
 }
@@ -319,11 +351,12 @@ export async function updateSubHireStatus(id: string, newStatus: SubHireStatus) 
   const subHire = await prisma.subHire.findUnique({
     where: { id, organizationId },
     include: {
-      supplier: { select: { name: true } },
       items: true,
     },
   });
   if (!subHire) throw new Error("Sub-hire not found");
+  // Supplier lives in Convex — fetch for the log label.
+  const supplierName = (await getSupplierById(subHire.supplierId))?.name ?? "";
 
   // Validate transition
   const validTargets = VALID_TRANSITIONS[subHire.status];
@@ -363,6 +396,10 @@ export async function updateSubHireStatus(id: string, newStatus: SubHireStatus) 
     }
   }
 
+  // Mirror the status change + any generated line items to Convex.
+  await syncSubHireToConvex(id);
+  await upsertProjectLineItemsToConvex(subHire.projectId);
+
   await logActivity({
     organizationId,
     userId,
@@ -370,24 +407,24 @@ export async function updateSubHireStatus(id: string, newStatus: SubHireStatus) 
     action: "UPDATE",
     entityType: "subHire",
     entityId: id,
-    entityName: `${subHire.orderNumber} (${subHire.supplier.name})`,
+    entityName: `${subHire.orderNumber} (${supplierName})`,
     summary: `Changed sub-hire ${subHire.orderNumber} status to ${newStatus}`,
     details: { previousStatus: subHire.status, newStatus },
   });
 
-  return serialize(
-    await prisma.subHire.findUnique({
-      where: { id, organizationId },
-      include: {
-        supplier: { select: { id: true, name: true } },
-        project: { select: { id: true, name: true, projectNumber: true } },
-        items: {
-          include: { model: { select: { id: true, name: true } } },
-          orderBy: { sortOrder: "asc" },
-        },
+  const updatedSubHire = await prisma.subHire.findUnique({
+    where: { id, organizationId },
+    include: {
+      project: { select: { id: true, name: true, projectNumber: true } },
+      items: {
+        include: { model: { select: { id: true, name: true } } },
+        orderBy: { sortOrder: "asc" },
       },
-    }),
-  );
+    },
+  });
+  // Supplier lives in Convex — attach instead of a Prisma join.
+  const supplier = updatedSubHire ? await getSupplierById(updatedSubHire.supplierId) : null;
+  return serialize(updatedSubHire ? { ...updatedSubHire, supplier } : updatedSubHire);
 }
 
 // ─── Item CRUD ───────────────────────────────────────────────────────────────
@@ -439,6 +476,8 @@ export async function addSubHireItem(subHireId: string, input: unknown) {
 
   // Sync line items to project (works for any status including DRAFT)
   await syncSubHireToProject(subHireId, organizationId, subHire.projectId);
+  await syncSubHireToConvex(subHireId);
+  await upsertProjectLineItemsToConvex(subHire.projectId);
 
   await logActivity({
     organizationId,
@@ -499,6 +538,8 @@ export async function updateSubHireItem(itemId: string, input: unknown) {
 
   // Sync line items to project
   await syncSubHireToProject(existing.subHire.id, organizationId, existing.subHire.projectId);
+  await syncSubHireToConvex(existing.subHire.id);
+  await upsertProjectLineItemsToConvex(existing.subHire.projectId);
 
   await logActivity({
     organizationId,
@@ -543,6 +584,9 @@ export async function removeSubHireItem(itemId: string) {
 
   // Regenerate project line items (removes orphaned items, recalculates totals)
   await syncSubHireToProject(existing.subHire.id, organizationId, existing.subHire.projectId);
+  await removeSubHireItemFromConvex(itemId);
+  await syncSubHireToConvex(existing.subHire.id);
+  await upsertProjectLineItemsToConvex(existing.subHire.projectId);
 
   await logActivity({
     organizationId,
@@ -573,6 +617,7 @@ export async function reorderSubHireItems(subHireId: string, itemIds: string[]) 
       }),
     ),
   );
+  await syncSubHireToConvex(subHireId);
 }
 
 // ─── Totals ──────────────────────────────────────────────────────────────────
@@ -1023,11 +1068,12 @@ export async function changeSubHireProject(subHireId: string, newProjectId: stri
   const subHire = await prisma.subHire.findUnique({
     where: { id: subHireId, organizationId },
     include: {
-      supplier: { select: { name: true } },
       items: { orderBy: { sortOrder: "asc" } },
     },
   });
   if (!subHire) throw new Error("Sub-hire not found");
+  // Supplier lives in Convex — fetch for the log label.
+  const supplierName = (await getSupplierById(subHire.supplierId))?.name ?? "";
 
   const oldProjectId = subHire.projectId;
 
@@ -1066,6 +1112,13 @@ export async function changeSubHireProject(subHireId: string, newProjectId: stri
   }
   await recalculateProjectTotals(newProjectId);
 
+  // Mirror the project move: sub-hire head + line items on both projects. (The
+  // old project's regenerated line items orphan their pre-move rows in Convex —
+  // the documented regenerate limitation; decommission re-sync clears them.)
+  await syncSubHireToConvex(subHireId);
+  await upsertProjectLineItemsToConvex(oldProjectId);
+  await upsertProjectLineItemsToConvex(newProjectId);
+
   await logActivity({
     organizationId,
     userId,
@@ -1073,19 +1126,19 @@ export async function changeSubHireProject(subHireId: string, newProjectId: stri
     action: "UPDATE",
     entityType: "subHire",
     entityId: subHireId,
-    entityName: `${subHire.orderNumber} (${subHire.supplier.name})`,
+    entityName: `${subHire.orderNumber} (${supplierName})`,
     summary: `Moved sub-hire ${subHire.orderNumber} to project ${newProject.projectNumber}`,
   });
 
-  return serialize(
-    await prisma.subHire.findUnique({
-      where: { id: subHireId },
-      include: {
-        supplier: { select: { id: true, name: true } },
-        project: { select: { id: true, name: true, projectNumber: true } },
-      },
-    }),
-  );
+  const movedSubHire = await prisma.subHire.findUnique({
+    where: { id: subHireId },
+    include: {
+      project: { select: { id: true, name: true, projectNumber: true } },
+    },
+  });
+  // Supplier lives in Convex — attach instead of a Prisma join.
+  const supplier = movedSubHire ? await getSupplierById(movedSubHire.supplierId) : null;
+  return serialize(movedSubHire ? { ...movedSubHire, supplier } : movedSubHire);
 }
 
 // ─── Group CRUD ─────────────────────────────────────────────────────────────
@@ -1128,6 +1181,8 @@ export async function createSubHireGroup(subHireId: string, input: unknown) {
 
   // Sync line items to project (group structure may have changed)
   await syncSubHireToProject(subHireId, organizationId, subHire.projectId);
+  await syncSubHireToConvex(subHireId);
+  await upsertProjectLineItemsToConvex(subHire.projectId);
 
   await logActivity({
     organizationId,
@@ -1183,6 +1238,8 @@ export async function updateSubHireGroup(groupId: string, input: unknown) {
 
   // Sync line items to project (title, placement, pricing may have changed)
   await syncSubHireToProject(existing.subHire.id, organizationId, existing.subHire.projectId);
+  await syncSubHireToConvex(existing.subHire.id);
+  await upsertProjectLineItemsToConvex(existing.subHire.projectId);
 
   await logActivity({
     organizationId,
@@ -1224,6 +1281,9 @@ export async function deleteSubHireGroup(groupId: string) {
 
   // Regenerate line items (handles parent cleanup + ungrouped restructure)
   await syncSubHireToProject(existing.subHire.id, organizationId, existing.subHire.projectId);
+  await removeSubHireGroupFromConvex(groupId);
+  await syncSubHireToConvex(existing.subHire.id);
+  await upsertProjectLineItemsToConvex(existing.subHire.projectId);
 
   await logActivity({
     organizationId,
@@ -1258,6 +1318,8 @@ export async function setItemGroup(itemId: string, groupId: string | null) {
 
   // Regenerate line items (handles parent-child restructuring)
   await syncSubHireToProject(existing.subHire.id, organizationId, existing.subHire.projectId);
+  await syncSubHireToConvex(existing.subHire.id);
+  await upsertProjectLineItemsToConvex(existing.subHire.projectId);
 
   return serialize({ success: true });
 }
@@ -1288,6 +1350,7 @@ export async function updateSubHireOrderPricing(subHireId: string, input: unknow
     const { recalculateProjectTotals } = await import("@/server/line-items");
     await recalculateProjectTotals(subHire.projectId);
   }
+  await syncSubHireToConvex(subHireId);
 
   await logActivity({
     organizationId,
@@ -1372,6 +1435,8 @@ export async function updateSubHirePlacement(
 
   // Regenerate line items with new placements
   await syncSubHireToProject(subHireId, organizationId, projectId);
+  await syncSubHireToConvex(subHireId);
+  await upsertProjectLineItemsToConvex(projectId);
 
   return serialize({ success: true });
 }
@@ -1449,13 +1514,12 @@ export async function getSupplierRateHistory(modelId: string) {
 
   const rates = await prisma.supplierModelRate.findMany({
     where: { organizationId, modelId },
-    include: {
-      supplier: { select: { id: true, name: true } },
-    },
     orderBy: { lastUnitCost: "asc" },
   });
 
-  return serialize(rates);
+  // Supplier lives in Convex — attach instead of a Prisma join.
+  const ratesWithSupplier = await attachSupplier(organizationId, rates);
+  return serialize(ratesWithSupplier);
 }
 
 // ─── Quick Duplicate ─────────────────────────────────────────────────────────
@@ -1466,7 +1530,6 @@ export async function duplicateSubHire(sourceId: string) {
   const source = await prisma.subHire.findUnique({
     where: { id: sourceId, organizationId },
     include: {
-      supplier: { select: { name: true } },
       groups: { orderBy: { sortOrder: "asc" } },
       items: { orderBy: { sortOrder: "asc" } },
     },
@@ -1539,6 +1602,8 @@ export async function duplicateSubHire(sourceId: string) {
 
     return newSubHire;
   });
+  // Mirror the duplicated sub-hire (head + copied groups + items) to Convex.
+  await syncSubHireToConvex(result.id);
 
   await logActivity({
     organizationId,
@@ -1638,14 +1703,16 @@ export async function updateSubHirePaymentStatus(id: string, paymentStatus: SubH
 
   const subHire = await prisma.subHire.findUnique({
     where: { id, organizationId },
-    include: { supplier: { select: { name: true } } },
   });
   if (!subHire) throw new Error("Sub-hire not found");
+  // Supplier lives in Convex — fetch for the log label.
+  const supplierName = (await getSupplierById(subHire.supplierId))?.name ?? "";
 
   await prisma.subHire.update({
     where: { id, organizationId },
     data: { paymentStatus },
   });
+  await syncSubHireToConvex(id);
 
   await logActivity({
     organizationId,
@@ -1654,7 +1721,7 @@ export async function updateSubHirePaymentStatus(id: string, paymentStatus: SubH
     action: "UPDATE",
     entityType: "subHire",
     entityId: id,
-    entityName: `${subHire.orderNumber} (${subHire.supplier.name})`,
+    entityName: `${subHire.orderNumber} (${supplierName})`,
     summary: `Updated payment status to ${paymentStatus.replace(/_/g, " ").toLowerCase()} on ${subHire.orderNumber}`,
   });
 
@@ -1710,6 +1777,8 @@ export async function addSubHireMedia(data: {
     include: { file: true },
   });
 
+  await mirrorMediaCreate("subHire", media);
+
   return serialize(media);
 }
 
@@ -1747,7 +1816,10 @@ export async function removeSubHireMedia(mediaId: string) {
 
   if (otherUsages.length === 0) {
     await prisma.fileUpload.delete({ where: { id: media.fileId } });
+    await mirrorFileUploadDelete(media.fileId);
   }
+
+  await syncMediaForParent("subHire", organizationId, media.subHireId);
 
   return serialize({ success: true });
 }

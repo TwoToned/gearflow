@@ -1,9 +1,9 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { getCustomRoles } from "@/server/custom-roles";
+import { useActiveOrganization } from "@/lib/auth-client";
+import { useCustomRoles } from "@/hooks/use-custom-roles";
 import type { OrgSSOSettings } from "@/lib/sso-types";
 
 const PROVISIONING_MODES = [
@@ -39,10 +39,9 @@ interface Props {
 }
 
 export function SSOProvisioningSection({ provisioningMode, defaultRole, canUpdate, onUpdate }: Props) {
-  const { data: customRoles } = useQuery({
-    queryKey: ["custom-roles"],
-    queryFn: () => getCustomRoles(),
-  });
+  const { data: activeOrg } = useActiveOrganization();
+  const orgId = activeOrg?.id;
+  const { data: customRoles } = useCustomRoles(orgId);
 
   const allRoles = [
     ...BUILT_IN_ROLES,

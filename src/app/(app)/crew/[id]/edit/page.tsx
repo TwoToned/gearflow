@@ -3,7 +3,7 @@
 import { use } from "react";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { getCrewMemberById } from "@/server/crew";
 import { CrewMemberForm } from "@/components/crew/crew-member-form";
@@ -15,7 +15,7 @@ export default function EditCrewMemberPage({ params }: { params: Promise<{ id: s
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: member, isLoading } = useQuery({
+  const { data: member, isLoading } = useServerQuery({
     queryKey: ["crew-member", orgId, id],
     queryFn: () => getCrewMemberById(id),
   });

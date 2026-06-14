@@ -13,6 +13,7 @@ import {
   crewCancellationEmail,
   crewBulkMessageEmail,
 } from "@/lib/crew-emails";
+import { syncCrewAssignmentToConvex } from "@/lib/crew-scheduling-mirror";
 
 function generateToken(): string {
   return randomBytes(32).toString("base64url");
@@ -99,6 +100,8 @@ export async function sendCrewOffer(assignmentId: string) {
       offeredAt: new Date(),
     },
   });
+
+  await syncCrewAssignmentToConvex(assignmentId);
 
   // Build accept/decline URLs
   const baseUrl = env.NEXT_PUBLIC_APP_URL;

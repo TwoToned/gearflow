@@ -3,7 +3,8 @@
 import { use, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   Pencil,
   Archive,
@@ -50,20 +51,18 @@ import {
 export default function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: client, isLoading } = useQuery({
+  const { data: client, isLoading, refetch } = useServerQuery({
     queryKey: ["client", orgId, id],
     queryFn: () => getClient(id),
   });
 
-  const archiveMutation = useMutation({
+  const archiveMutation = useServerMutation({
     mutationFn: () => archiveClient(id),
     onSuccess: () => {
       toast.success("Client archived");
-      queryClient.invalidateQueries({ queryKey: ["clients"] });
       router.push("/clients");
     },
   });
@@ -106,8 +105,8 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                   <h1 className="t-title text-fg">{client.name}</h1>
                   <StatusIndicator
                     category="clientType"
-                    value={client.type}
-                    label={clientTypeLabels[client.type] || client.type}
+                    value={client.type ?? "COMPANY"}
+                    label={(client.type && clientTypeLabels[client.type]) || client.type || "Company"}
                   />
                   {!client.isActive && <Badge variant="destructive">Archived</Badge>}
                 </div>
@@ -219,7 +218,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                 <TabsContent value="notes" className="mt-4">
                   <NotesEditor
                     initialNotes={client.notes || ""}
-                    queryKey={["client", orgId, id]}
+                    onChanged={refetch}
                     onSave={(notes) => updateClientNotes(id, notes)}
                     placeholder="Add notes about this client..."
                   />
@@ -233,7 +232,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                       entityId={id}
                       accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,image/*"
                       existingMedia={(client.media || []).map((m: MediaItem) => m)}
-                      queryKey={["client", orgId, id]}
+                      onChanged={refetch}
                       onUploadComplete={async (fileUpload) => {
                         await addClientMedia({
                           clientId: id,

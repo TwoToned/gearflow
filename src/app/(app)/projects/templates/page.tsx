@@ -3,7 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { BookTemplate, Plus, Trash2, Copy } from "lucide-react";
@@ -51,7 +52,6 @@ const typeLabels: Record<string, string> = {
 
 export default function TemplatesPage() {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const [createFrom, setCreateFrom] = useState<any>(null);
   const [projectNumber, setProjectNumber] = useState("");
   const [projectName, setProjectName] = useState("");
@@ -59,25 +59,24 @@ export default function TemplatesPage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: templates, isLoading } = useQuery({
+  const { data: templates, isLoading, refetch: refetchTemplates } = useServerQuery({
     queryKey: ["templates", orgId],
     queryFn: getTemplates,
   });
 
-  const deleteMut = useMutation({
+  const deleteMut = useServerMutation({
     mutationFn: deleteTemplate,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["templates"] });
+      refetchTemplates();
       toast.success("Template deleted");
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const createMut = useMutation({
+  const createMut = useServerMutation({
     mutationFn: () =>
       duplicateProject(createFrom.id, projectNumber, projectName),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["projects"] });
       toast.success("Project created from template");
       setCreateFrom(null);
       router.push(`/projects/${result.id}`);

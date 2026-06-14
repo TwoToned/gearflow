@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useProfile, refreshProfile } from "@/hooks/use-profile";
 import { toast } from "sonner";
 import { usePlatformBranding } from "@/lib/use-platform-name";
 
@@ -34,7 +36,6 @@ import {
 } from "lucide-react";
 import { authClient, useSession } from "@/lib/auth-client";
 import {
-  getProfile,
   updateProfile,
   getActiveSessions,
   revokeSession,
@@ -45,8 +46,8 @@ import { SectionHeader } from "@/components/layout/page-layouts";
 import { FadeIn } from "@/components/ui/motion";
 
 export default function AccountPage() {
-  const queryClient = useQueryClient();
   const { data: session } = useSession();
+  const userId = session?.user?.id;
   const { name: platformName } = usePlatformBranding();
   const [name, setName] = useState("");
   const [nameLoaded, setNameLoaded] = useState(false);
@@ -77,17 +78,14 @@ export default function AccountPage() {
   const [deletePasskeyId, setDeletePasskeyId] = useState<string | null>(null);
   const [passkeyNewName, setPasskeyNewName] = useState("");
 
-  const profileQuery = useQuery({
-    queryKey: ["profile"],
-    queryFn: getProfile,
-  });
+  const { data: profile } = useProfile(userId);
 
-  const sessionsQuery = useQuery({
+  const sessionsQuery = useServerQuery({
     queryKey: ["active-sessions"],
     queryFn: getActiveSessions,
   });
 
-  const passkeysQuery = useQuery({
+  const passkeysQuery = useServerQuery({
     queryKey: ["passkeys"],
     queryFn: async () => {
       const res = await authClient.passkey.listUserPasskeys();
@@ -96,21 +94,21 @@ export default function AccountPage() {
   });
 
   // Set name once loaded
-  if (profileQuery.data && !nameLoaded) {
-    setName(profileQuery.data.name || "");
+  if (profile && !nameLoaded) {
+    setName(profile.name || "");
     setNameLoaded(true);
   }
 
-  const updateProfileMutation = useMutation({
+  const updateProfileMutation = useServerMutation({
     mutationFn: () => updateProfile({ name }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["profile"] });
+      refreshProfile(userId);
       toast.success("Profile updated");
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const uploadAvatarMutation = useMutation({
+  const uploadAvatarMutation = useServerMutation({
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append("file", file);
@@ -122,25 +120,25 @@ export default function AccountPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["profile"] });
+      refreshProfile(userId);
       toast.success("Profile picture updated");
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const removeAvatarMutation = useMutation({
+  const removeAvatarMutation = useServerMutation({
     mutationFn: async () => {
       const res = await fetch("/api/avatar", { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to remove avatar");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["profile"] });
+      refreshProfile(userId);
       toast.success("Profile picture removed");
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const changePasswordMutation = useMutation({
+  const changePasswordMutation = useServerMutation({
     mutationFn: async () => {
       if (newPassword !== confirmPassword) throw new Error("Passwords don't match");
       if (newPassword.length < 8) throw new Error("Password must be at least 8 characters");
@@ -160,26 +158,26 @@ export default function AccountPage() {
     onError: (e) => toast.error(e.message),
   });
 
-  const revokeSessionMutation = useMutation({
+  const revokeSessionMutation = useServerMutation({
     mutationFn: revokeSession,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["active-sessions"] });
+      sessionsQuery.refetch();
       toast.success("Session revoked");
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const revokeAllMutation = useMutation({
+  const revokeAllMutation = useServerMutation({
     mutationFn: revokeAllOtherSessions,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["active-sessions"] });
+      sessionsQuery.refetch();
       toast.success("All other sessions revoked");
     },
     onError: (e) => toast.error(e.message),
   });
 
   // 2FA setup
-  const enable2FAMutation = useMutation({
+  const enable2FAMutation = useServerMutation({
     mutationFn: async () => {
       const res = await authClient.twoFactor.enable({
         password: currentPassword,
@@ -200,7 +198,7 @@ export default function AccountPage() {
     onError: (e) => toast.error(e.message),
   });
 
-  const verify2FAMutation = useMutation({
+  const verify2FAMutation = useServerMutation({
     mutationFn: async () => {
       const res = await authClient.twoFactor.verifyTotp({
         code: verifyCode,
@@ -208,7 +206,7 @@ export default function AccountPage() {
       if (res.error) throw new Error(res.error.message || "Invalid code");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["profile"] });
+      refreshProfile(userId);
       toast.success("2FA enabled successfully");
       setShow2FASetup(false);
       setVerifyCode("");
@@ -219,7 +217,7 @@ export default function AccountPage() {
     onError: (e) => toast.error(e.message),
   });
 
-  const disable2FAMutation = useMutation({
+  const disable2FAMutation = useServerMutation({
     mutationFn: async () => {
       const res = await authClient.twoFactor.disable({
         password: currentPassword,
@@ -227,7 +225,7 @@ export default function AccountPage() {
       if (res.error) throw new Error(res.error.message || "Failed to disable 2FA");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["profile"] });
+      refreshProfile(userId);
       toast.success("2FA disabled");
       setCurrentPassword("");
     },
@@ -235,7 +233,7 @@ export default function AccountPage() {
   });
 
   // Passkey mutations
-  const addPasskeyMutation = useMutation({
+  const addPasskeyMutation = useServerMutation({
     mutationFn: async () => {
       const email = profile?.email || session?.user?.email || "unknown";
       const res = await authClient.passkey.addPasskey({
@@ -244,31 +242,31 @@ export default function AccountPage() {
       if (res?.error) throw new Error(res.error.message || "Failed to add passkey");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["passkeys"] });
+      passkeysQuery.refetch();
       toast.success("Passkey registered");
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const deletePasskeyMutation = useMutation({
+  const deletePasskeyMutation = useServerMutation({
     mutationFn: async (id: string) => {
       const res = await authClient.passkey.deletePasskey({ id });
       if (res?.error) throw new Error(res.error.message || "Failed to delete passkey");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["passkeys"] });
+      passkeysQuery.refetch();
       toast.success("Passkey deleted");
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const renamePasskeyMutation = useMutation({
+  const renamePasskeyMutation = useServerMutation({
     mutationFn: async ({ id, name }: { id: string; name: string }) => {
       const res = await authClient.passkey.updatePasskey({ id, name });
       if (res?.error) throw new Error(res.error.message || "Failed to rename passkey");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["passkeys"] });
+      passkeysQuery.refetch();
       toast.success("Passkey renamed");
       setRenamePasskey(null);
     },
@@ -287,7 +285,6 @@ export default function AccountPage() {
     }
   };
 
-  const profile = profileQuery.data;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const passkeys = (passkeysQuery.data || []) as any[];

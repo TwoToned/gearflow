@@ -2,7 +2,7 @@
 
 import { use } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useProjectServices } from "@/hooks/use-project-services";
 import {
   ArrowLeft,
   Truck,
@@ -16,9 +16,7 @@ import {
   Phone,
   Users,
 } from "lucide-react";
-import { useActiveOrganization } from "@/lib/auth-client";
-import { getProject } from "@/server/projects";
-import { getProjectServices } from "@/server/project-services";
+import { useProjectDetail } from "@/hooks/use-project-detail";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SERVICE_STATUS_LABELS } from "@/lib/constants/services";
@@ -115,18 +113,10 @@ export default function RunsheetPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
 
-  const { data: project } = useQuery({
-    queryKey: ["project", orgId, id],
-    queryFn: () => getProject(id),
-  });
+  const { data: project } = useProjectDetail(id);
 
-  const { data: services, isLoading } = useQuery({
-    queryKey: ["project-services", orgId, id],
-    queryFn: () => getProjectServices(id),
-  });
+  const { data: services, isLoading } = useProjectServices(id);
 
   const dateGroups = services ? groupByDate(services) : [];
   const today = new Date().toISOString().slice(0, 10);

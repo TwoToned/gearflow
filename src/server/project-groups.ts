@@ -10,6 +10,12 @@ import {
 } from "@/lib/validations/project-group";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import {
+  mirrorProjectGroupCreate,
+  removeProjectGroupFromConvex,
+  syncProjectGroupsToConvex,
+} from "@/lib/project-grouping-mirror";
+import { upsertProjectLineItemsToConvex, syncLineItemsToConvex } from "@/lib/line-item-mirror";
 import { roundCurrency } from "@/lib/formatters";
 import { recalculateProjectTotals } from "./line-items";
 import { optimizePrice, computeTotalDays } from "@/lib/pricing";
@@ -184,6 +190,7 @@ export async function recalculateGroupPrices(groupId: string): Promise<number> {
   if (updates.length === 0) return 0;
 
   await prisma.$transaction(updates);
+  await upsertProjectLineItemsToConvex(group.projectId);
 
   // Recalculate suggested price and project totals
   const suggested = await calculateSuggestedPrice(groupId);
@@ -191,6 +198,7 @@ export async function recalculateGroupPrices(groupId: string): Promise<number> {
     where: { id: groupId },
     data: { suggestedPrice: suggested },
   });
+  await syncProjectGroupsToConvex([groupId]);
 
   await recalculateProjectTotals(group.projectId);
 
@@ -243,6 +251,7 @@ export async function createProjectGroup(
       suggestedPrice: 0,
     },
   });
+  await mirrorProjectGroupCreate(group);
 
   await logActivity({
     organizationId,
@@ -287,6 +296,7 @@ export async function updateProjectGroup(
       data: { suggestedPrice: suggested },
     });
   }
+  await syncProjectGroupsToConvex([groupId]);
 
   await logActivity({
     organizationId,
@@ -312,6 +322,7 @@ export async function updateGroupPrice(groupId: string, price: number) {
     where: { id: groupId, organizationId },
     data: { price },
   });
+  await syncProjectGroupsToConvex([groupId]);
 
   await logActivity({
     organizationId,
@@ -342,6 +353,7 @@ export async function acceptSuggestedPrice(groupId: string) {
     where: { id: groupId },
     data: { price: suggested, suggestedPrice: suggested },
   });
+  await syncProjectGroupsToConvex([groupId]);
 
   await logActivity({
     organizationId,
@@ -384,6 +396,7 @@ export async function acceptAllSuggestedPrices(
       count++;
     }
   }
+  await syncProjectGroupsToConvex(groups.map((g) => g.id));
 
   await logActivity({
     organizationId,
@@ -419,6 +432,7 @@ export async function deleteProjectGroup(groupId: string) {
       where: { id: groupId, organizationId },
     }),
   ]);
+  await removeProjectGroupFromConvex(groupId);
 
   await logActivity({
     organizationId,
@@ -471,6 +485,11 @@ export async function moveLineItemToGroup(
       data: { suggestedPrice: suggested },
     });
   }
+  // Mirror the moved line item's new groupId/categoryId + the affected groups'
+  // suggestedPrice recalcs. (Move to standalone clears groupId→null — the
+  // documented clear-to-null no-op in Convex.)
+  await syncLineItemsToConvex([parsed.lineItemId]);
+  await syncProjectGroupsToConvex([oldGroupId, parsed.targetGroupId]);
 
   await logActivity({
     organizationId,
@@ -502,6 +521,7 @@ export async function reorderProjectGroups(
       })
     )
   );
+  await syncProjectGroupsToConvex(orderedIds);
 
   return serialize({ success: true });
 }

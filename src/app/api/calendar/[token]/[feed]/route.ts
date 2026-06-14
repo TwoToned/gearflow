@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientMap } from "@/lib/clients-read";
 import {
   generateVCalendar,
   buildDateTime,
@@ -57,13 +58,14 @@ async function buildProjectsFeed(
       status: { notIn: ["ENQUIRY", "CANCELLED"] },
     },
     include: {
-      client: { select: { name: true } },
       location: { select: { name: true, address: true } },
       projectManager: { select: { name: true } },
     },
     orderBy: { createdAt: "desc" },
   });
 
+  // Clients live in Convex — resolve names by clientId.
+  const clientMap = await getClientMap(orgId);
   const events: ICalEvent[] = [];
 
   for (const p of projects) {
@@ -102,7 +104,8 @@ async function buildProjectsFeed(
       `Project: #${p.projectNumber} - ${p.name}`,
       `Status: ${p.status.replace(/_/g, " ")}`,
     ];
-    if (p.client?.name) descLines.push(`Client: ${p.client.name}`);
+    const clientName = p.clientId ? clientMap.get(p.clientId)?.name : null;
+    if (clientName) descLines.push(`Client: ${clientName}`);
     if (p.projectManager?.name)
       descLines.push(`PM: ${p.projectManager.name}`);
     if (location) descLines.push(`Location: ${location}`);

@@ -15,10 +15,12 @@
  * touches Asset.status directly.
  */
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useMaintenanceRecords, fingerprintMaintenanceRecords } from "@/hooks/use-maintenance";
 import {
   Wrench,
   ChevronLeft,
@@ -260,7 +262,6 @@ function CardRow({
 }
 
 function WorkshopContent() {
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const searchParams = useSearchParams();
@@ -268,7 +269,7 @@ function WorkshopContent() {
 
   const [search, setSearch] = useState("");
 
-  const { data: records, isLoading } = useQuery({
+  const { data: records, isLoading, refetch } = useServerQuery({
     queryKey: ["workshop-queue", orgId, search, urlProjectId],
     queryFn: () =>
       getWorkshopQueue({
@@ -278,7 +279,20 @@ function WorkshopContent() {
     enabled: !!orgId,
   });
 
-  const statusMutation = useMutation({
+  // Cross-tab live sync: subscribe to the dual-written Convex maintenanceRecords
+  // table so a kanban status move (or any maintenance edit) in another tab
+  // re-fetches this board automatically.
+  const maintenanceDocs = useMaintenanceRecords(orgId);
+  const maintenanceFp = fingerprintMaintenanceRecords(maintenanceDocs);
+  const prevMaintenanceFp = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (maintenanceFp !== undefined && prevMaintenanceFp.current !== undefined && maintenanceFp !== prevMaintenanceFp.current) {
+      refetch();
+    }
+    if (maintenanceFp !== undefined) prevMaintenanceFp.current = maintenanceFp;
+  }, [maintenanceFp, refetch]);
+
+  const statusMutation = useServerMutation({
     mutationFn: ({
       id,
       nextStatus,
@@ -296,8 +310,7 @@ function WorkshopContent() {
             : "Marked PASS — asset released"
           : `Moved to ${vars.nextStatus.replace("_", " ")}`,
       );
-      queryClient.invalidateQueries({ queryKey: ["workshop-queue"] });
-      queryClient.invalidateQueries({ queryKey: ["maintenance-records"] });
+      refetch();
     },
     onError: (e) => showError(e),
   });

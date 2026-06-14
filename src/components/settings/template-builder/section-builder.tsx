@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
 import {
   DndContext,
@@ -79,7 +79,6 @@ export function SectionBuilder({
   brandTemplateId,
 }: SectionBuilderProps) {
   const router = useRouter();
-  const queryClient = useQueryClient();
 
   // ─── State ──────────────────────────────────────────────────────────────────
   const [sections, setSections] = useState<TemplateSection[]>(initialSections);
@@ -297,19 +296,21 @@ export function SectionBuilder({
   }, [generatePreview]);
 
   // ─── Save / Publish ─────────────────────────────────────────────────────────
-  const saveMutation = useMutation({
-    mutationFn: () =>
-      saveTemplateSections({
+  const saveMutation = useServerMutation({
+    mutationFn: () => {
+      setSaveState("saving");
+      return saveTemplateSections({
         id: templateId,
         // Cast needed: TS union SectionSettings doesn't satisfy Record<string, unknown>
         // but Zod validates the shape at runtime
         sections: sectionsRef.current as Parameters<typeof saveTemplateSections>[0]["sections"],
         brandTemplateId: brandTemplateId || null,
-      }),
-    onMutate: () => setSaveState("saving"),
+      });
+    },
     onSuccess: () => {
       setSaveState("saved");
-      queryClient.invalidateQueries({ queryKey: ["document-templates"] });
+      // The documents list (sole reader of document-templates) is cross-route —
+      // it remounts + refetches on navigation back. No cache to invalidate.
       setTimeout(() => setSaveState("idle"), 2000);
     },
     onError: () => {
@@ -318,7 +319,7 @@ export function SectionBuilder({
     },
   });
 
-  const publishMutation = useMutation({
+  const publishMutation = useServerMutation({
     mutationFn: async () => {
       await saveTemplateSections({
         id: templateId,
@@ -328,7 +329,6 @@ export function SectionBuilder({
       return publishDocumentTemplate(templateId);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["document-templates"] });
       toast.success("Template published");
     },
     onError: () => toast.error("Failed to publish template"),

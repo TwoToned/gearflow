@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/org-context";
+import { attachClient } from "@/lib/clients-read";
 import { serialize } from "@/lib/serialize";
 
 export async function getDashboardStats() {
@@ -89,7 +90,6 @@ export async function getMyHomeData() {
       OR: [{ projectManagerId: userId }, { projectManagers: { some: { userId } } }],
     },
     include: {
-      client: { select: { name: true } },
       _count: { select: { lineItems: { where: { type: "EQUIPMENT" } } } },
     },
     // Soonest first; undated projects (enquiries/drafts) sort last so they can't
@@ -98,7 +98,9 @@ export async function getMyHomeData() {
     take: 24,
   });
 
-  return serialize({ userName, userId, myProjects });
+  // Clients live in Convex — attach instead of a Prisma join.
+  const withClients = await attachClient(organizationId, myProjects);
+  return serialize({ userName, userId, myProjects: withClients });
 }
 
 export async function getUpcomingProjects() {
@@ -114,14 +116,14 @@ export async function getUpcomingProjects() {
       rentalStartDate: { gte: now },
     },
     include: {
-      client: true,
       _count: { select: { lineItems: { where: { type: "EQUIPMENT" } } } },
     },
     orderBy: { rentalStartDate: "asc" },
     take: 8,
   });
 
-  return serialize(projects);
+  // Clients live in Convex — attach instead of a Prisma join.
+  return serialize(await attachClient(organizationId, projects));
 }
 
 export async function getRecentActivity() {

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   MapPin,
   Package,
@@ -31,7 +31,7 @@ interface StocktakeDraftProps {
 export function StocktakeDraft({ stocktake, onUpdate }: StocktakeDraftProps) {
   const router = useRouter();
 
-  const startMutation = useMutation({
+  const startMutation = useServerMutation({
     mutationFn: () => startStocktake(stocktake.id),
     onSuccess: () => {
       toast.success("Stocktake started");
@@ -40,7 +40,7 @@ export function StocktakeDraft({ stocktake, onUpdate }: StocktakeDraftProps) {
     onError: (e) => toast.error(e.message),
   });
 
-  const cancelMutation = useMutation({
+  const cancelMutation = useServerMutation({
     mutationFn: () => cancelStocktake(stocktake.id),
     onSuccess: () => {
       toast.success("Stocktake cancelled");

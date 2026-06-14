@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { refreshPlatformBranding } from "@/lib/use-platform-name";
 import { toast } from "sonner";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { Button } from "@/components/ui/button";
@@ -14,9 +16,7 @@ import { DynamicIcon } from "@/components/ui/dynamic-icon";
 import { getSiteSettings, updateSiteSettings } from "@/server/site-admin";
 
 export default function AdminSettingsPage() {
-  const queryClient = useQueryClient();
-
-  const { data: settings } = useQuery({
+  const { data: settings, refetch } = useServerQuery({
     queryKey: ["site-settings"],
     queryFn: getSiteSettings,
   });
@@ -45,11 +45,11 @@ export default function AdminSettingsPage() {
     }
   }, [settings]);
 
-  const saveMutation = useMutation({
+  const saveMutation = useServerMutation({
     mutationFn: () => updateSiteSettings(form),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["site-settings"] });
-      queryClient.invalidateQueries({ queryKey: ["platform-branding"] });
+      refetch();
+      refreshPlatformBranding();
       toast.success("Settings saved");
     },
     onError: (e) => toast.error(e.message),

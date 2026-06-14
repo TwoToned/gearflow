@@ -3,7 +3,10 @@
 import { use, useState, useRef, useCallback, useMemo, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useReactiveServerQuery } from "@/hooks/use-reactive-server-query";
+import { useWarehouseProjectVersion } from "@/hooks/use-warehouse";
 import {
   ScanBarcode,
   ChevronRight,
@@ -288,7 +291,6 @@ function WarehouseProjectPage({
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
   const initialTab = tabParam === "check-in" ? "check-in" : tabParam === "check-out" ? "check-out" : tabParam === "close-out" ? "close-out" : "pick-prep";
-  const queryClient = useQueryClient();
   const scanInputRef = useRef<HTMLInputElement>(null);
   const deployScanInputRef = useRef<HTMLInputElement>(null);
   const returnScanInputRef = useRef<HTMLInputElement>(null);
@@ -503,10 +505,10 @@ function WarehouseProjectPage({
             .catch((e) => showError(e, { fallbackTitle: "Failed to deprep kit" }));
         }
       } else {
-        kitCheckInMutation.mutate(
-          { kitId: kitQueueKitId, returnCondition: kitQueueReturnCondition || "GOOD" },
-          { onSuccess: () => { toast.success("Kit returned after checks"); setReturnNotes(""); } }
-        );
+        kitCheckInMutation
+          .mutateAsync({ kitId: kitQueueKitId, returnCondition: kitQueueReturnCondition || "GOOD" })
+          .then(() => { toast.success("Kit returned after checks"); setReturnNotes(""); })
+          .catch(() => {});
       }
     } else if (checkQueueDirectItems.length > 0) {
       // Reuse the snapshot we captured above — avoid re-reading checkQueue[0]
@@ -522,10 +524,10 @@ function WarehouseProjectPage({
           invalidate();
         })().catch((e) => showError(e));
       } else {
-        checkInMutation.mutate(
-          { items: checkQueueDirectItems.map((i) => ({ lineItemId: i.lineItemId, assetId: i.assetId, returnCondition: (i.returnCondition || "GOOD") as "GOOD" | "DAMAGED" | "MISSING", quantity: i.quantity, notes: i.notes })) },
-          { onSuccess: () => { toast.success(`Returned remaining items`); setReturnNotes(""); } }
-        );
+        checkInMutation
+          .mutateAsync({ items: checkQueueDirectItems.map((i) => ({ lineItemId: i.lineItemId, assetId: i.assetId, returnCondition: (i.returnCondition || "GOOD") as "GOOD" | "DAMAGED" | "MISSING", quantity: i.quantity, notes: i.notes })) })
+          .then(() => { toast.success(`Returned remaining items`); setReturnNotes(""); })
+          .catch(() => {});
       }
     }
 
@@ -607,14 +609,23 @@ function WarehouseProjectPage({
     }
   }
 
-  const { data: project, isLoading } = useQuery({
+  // Reactive detail composite: a cheap Convex "version vector"
+  // (useWarehouseProjectVersion) drives re-runs of the unchanged
+  // getProjectForWarehouse server action — cross-user over the WebSocket. Same
+  // pattern as the kit/asset detail pages. See convex/warehouseDetail.ts.
+  const projectVersion = useWarehouseProjectVersion(projectId);
+  const { data: project, isLoading, refetch: refetchProject } = useReactiveServerQuery({
+    watch: projectVersion,
     queryKey: ["warehouse-project", orgId, projectId],
     queryFn: () => getProjectForWarehouse(projectId),
   });
 
+  // Same-view refresh after a write. The Convex vector also pushes the change,
+  // but refetchProject re-reads the Prisma source of truth immediately without
+  // waiting for the mirror write to land. The old ["project-prep-kits"]
+  // invalidation is dropped — nothing reads that key (dead key, data-identical).
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ["warehouse-project", orgId, projectId] });
-    queryClient.invalidateQueries({ queryKey: ["project-prep-kits", orgId, projectId] });
+    refetchProject();
     setSelectedOut(new Set());
     setSelectedIn(new Set());
   };
@@ -629,7 +640,7 @@ function WarehouseProjectPage({
     }
   }, [projectId]);
 
-  const checkOutMutation = useMutation({
+  const checkOutMutation = useServerMutation({
     mutationFn: async (params: { items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>; includeAccessories?: boolean }) => {
       const result = await checkOutItems(projectId, params.items, params.includeAccessories);
       // Sync container status for affected containers
@@ -643,7 +654,7 @@ function WarehouseProjectPage({
     onError: (e) => showError(e),
   });
 
-  const checkInMutation = useMutation({
+  const checkInMutation = useServerMutation({
     mutationFn: async (data: {
       items: Array<{ lineItemId: string; assetId?: string; returnCondition: "GOOD" | "DAMAGED" | "MISSING"; quantity?: number; notes?: string }>;
     }) => {
@@ -685,7 +696,7 @@ function WarehouseProjectPage({
     onError: (e) => showError(e),
   });
 
-  const quickAddMutation = useMutation({
+  const quickAddMutation = useServerMutation({
     mutationFn: async (data: { modelId: string; assetId?: string; bulkAssetId?: string; quantity?: number }) => {
       await ensureContainerIfNeeded();
       return quickAddAndCheckOut(projectId, { ...data, prepContainer: selectedContainer || null });
@@ -729,20 +740,20 @@ function WarehouseProjectPage({
     onError: (e) => showError(e),
   });
 
-  const kitCheckOutMutation = useMutation({
+  const kitCheckOutMutation = useServerMutation({
     mutationFn: (kitId: string) => checkOutKit(projectId, kitId),
     onSuccess: () => invalidate(),
     onError: (e) => showError(e),
   });
 
-  const kitCheckInMutation = useMutation({
+  const kitCheckInMutation = useServerMutation({
     mutationFn: (data: { kitId: string; returnCondition: "GOOD" | "DAMAGED" | "MISSING" }) =>
       checkInKit(projectId, data.kitId, data.returnCondition),
     onSuccess: () => invalidate(),
     onError: (e) => showError(e),
   });
 
-  const deprepMutation = useMutation({
+  const deprepMutation = useServerMutation({
     mutationFn: (args: string | { lineItemId: string; quantity?: number }) => {
       const lineItemId = typeof args === "string" ? args : args.lineItemId;
       const quantity = typeof args === "string" ? 1 : args.quantity;
@@ -755,7 +766,7 @@ function WarehouseProjectPage({
     onError: (e) => showError(e),
   });
 
-  const clearContainerMutation = useMutation({
+  const clearContainerMutation = useServerMutation({
     mutationFn: (containerName: string) => clearPrepContainer(projectId, containerName),
     onSuccess: () => {
       toast.success("Container removed");
@@ -765,7 +776,7 @@ function WarehouseProjectPage({
   });
 
   // --- Scan mutations ---
-  const scanMutation = useMutation({
+  const scanMutation = useServerMutation({
     mutationFn: (assetTag: string) => lookupAssetForScan(projectId, assetTag, "checkout"),
     onSuccess: async (result) => {
       // Handle kit scans — prep the kit (not deploy)
@@ -934,7 +945,7 @@ function WarehouseProjectPage({
     },
   });
 
-  const deployScanMutation = useMutation({
+  const deployScanMutation = useServerMutation({
     mutationFn: (assetTag: string) => lookupAssetForScan(projectId, assetTag, "checkout"),
     onSuccess: (result) => {
       // Deploy scan: find matching prepped item and deploy it
@@ -942,9 +953,10 @@ function WarehouseProjectPage({
         const kitResult = result as { kitId: string; assetName: string; lineItemId: string | null; reason: string | null };
         const kitLi = lineItems.find((l) => l.kitId === kitResult.kitId && !l.isKitChild);
         if (kitLi && kitLi.prepStatus === "PACKED") {
-          kitCheckOutMutation.mutate(kitResult.kitId, {
-            onSuccess: () => toast.success(`Deployed kit: ${kitResult.assetName}`),
-          });
+          kitCheckOutMutation
+            .mutateAsync(kitResult.kitId)
+            .then(() => toast.success(`Deployed kit: ${kitResult.assetName}`))
+            .catch(() => {});
         } else if (kitResult.reason === "already_checked_out") {
           toast.error("Kit already deployed");
         } else {
@@ -974,10 +986,10 @@ function WarehouseProjectPage({
       if (result.found && result.lineItemId) {
         const matchedLi = lineItems.find((l) => l.id === result.lineItemId);
         if (matchedLi?.prepStatus === "PACKED" && matchedLi.status !== "CHECKED_OUT") {
-          checkOutMutation.mutate(
-            { items: [{ lineItemId: result.lineItemId, assetId: result.assetId || undefined }] },
-            { onSuccess: () => toast.success(`Deployed: ${result.assetName || "Item"}`) }
-          );
+          checkOutMutation
+            .mutateAsync({ items: [{ lineItemId: result.lineItemId, assetId: result.assetId || undefined }] })
+            .then(() => toast.success(`Deployed: ${result.assetName || "Item"}`))
+            .catch(() => {});
         } else if (matchedLi?.status === "CHECKED_OUT") {
           toast.error("Item already deployed");
         } else {
@@ -998,7 +1010,7 @@ function WarehouseProjectPage({
     },
   });
 
-  const returnScanMutation = useMutation({
+  const returnScanMutation = useServerMutation({
     mutationFn: (assetTag: string) => lookupAssetForScan(projectId, assetTag, "checkin"),
     onSuccess: (result) => {
       // Handle kit return scans
@@ -1026,17 +1038,15 @@ function WarehouseProjectPage({
             // Try to start kit check flow; if no checks needed, return directly
             const started = kitLi ? startKitCheckFlow(kitResult.kitId, kitLi, "RETURN", returnCondition as "GOOD" | "DAMAGED" | "MISSING") : false;
             if (!started) {
-              kitCheckInMutation.mutate(
-                { kitId: kitResult.kitId, returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING" },
-                {
-                  onSuccess: () => {
-                    toast.success(`Kit returned: ${kitResult.assetName}`);
-                    setReturnScanValue("");
-                    setReturnNotes("");
-                    returnScanInputRef.current?.focus();
-                  },
-                }
-              );
+              kitCheckInMutation
+                .mutateAsync({ kitId: kitResult.kitId, returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING" })
+                .then(() => {
+                  toast.success(`Kit returned: ${kitResult.assetName}`);
+                  setReturnScanValue("");
+                  setReturnNotes("");
+                  returnScanInputRef.current?.focus();
+                })
+                .catch(() => {});
             }
           }
         } else {
@@ -1111,24 +1121,22 @@ function WarehouseProjectPage({
           returnScanInputRef.current?.focus();
         } else {
           // No check items — direct checkin (existing behavior)
-          checkInMutation.mutate(
-            {
+          checkInMutation
+            .mutateAsync({
               items: [{
                 lineItemId: result.lineItemId,
                 assetId: result.assetId ?? undefined,
                 returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING",
                 notes: returnNotes || undefined,
               }],
-            },
-            {
-              onSuccess: () => {
-                toast.success(`Returned: ${result.assetName || "Asset"}`);
-                setReturnScanValue("");
-                setReturnNotes("");
-                returnScanInputRef.current?.focus();
-              },
-            }
-          );
+            })
+            .then(() => {
+              toast.success(`Returned: ${result.assetName || "Asset"}`);
+              setReturnScanValue("");
+              setReturnNotes("");
+              returnScanInputRef.current?.focus();
+            })
+            .catch(() => {});
         }
       } else if (result.found && !result.lineItemId) {
         const messages: Record<string, string> = {
@@ -1228,10 +1236,9 @@ function WarehouseProjectPage({
   const lineItems = project ? (project.lineItems || []) as unknown as LineItem[] : [];
 
   // Fetch container assets from the configured case category
-  const { data: caseAssets } = useQuery({
+  const { data: caseAssets } = useServerQuery({
     queryKey: ["containerAssets", orgId],
     queryFn: () => searchContainerAssets(""),
-    staleTime: 60_000,
   });
 
   type ContainerAsset = { value: string; label: string; assetId?: string; assetTag?: string; modelId?: string };
@@ -1719,9 +1726,10 @@ function WarehouseProjectPage({
 
     if (items.length === 0) return;
 
-    checkOutMutation.mutate({ items, includeAccessories }, {
-      onSuccess: () => toast.success(`Deployed ${selectedOutCount} items`),
-    });
+    checkOutMutation
+      .mutateAsync({ items, includeAccessories })
+      .then(() => toast.success(`Deployed ${selectedOutCount} items`))
+      .catch(() => {});
   };
 
   const handleAssetPickerConfirm = () => {
@@ -1902,10 +1910,10 @@ function WarehouseProjectPage({
         return;
       }
 
-      checkInMutation.mutate(
-        { items },
-        { onSuccess: () => { toast.success(`Returned items`); setReturnNotes(""); } }
-      );
+      checkInMutation
+        .mutateAsync({ items })
+        .then(() => { toast.success(`Returned items`); setReturnNotes(""); })
+        .catch(() => {});
     } else if (kitIds.length > 0) {
       setReturnNotes("");
     }
@@ -2271,14 +2279,14 @@ function WarehouseProjectPage({
         {/* BULK CHECK-IN TAB — accessory totals across the whole project    */}
         {/* ================================================================ */}
         <TabsContent value="bulk-checkin">
-          <BulkCheckInTab projectId={projectId} />
+          <BulkCheckInTab projectId={projectId} onChanged={refetchProject} />
         </TabsContent>
 
         {/* ================================================================ */}
         {/* CLOSE-OUT TAB                                                    */}
         {/* ================================================================ */}
         <TabsContent value="close-out">
-          <CloseOutTab projectId={projectId} />
+          <CloseOutTab projectId={projectId} onChanged={refetchProject} />
         </TabsContent>
       </Tabs>
 
@@ -2317,16 +2325,16 @@ function WarehouseProjectPage({
                       }).catch((e) => showError(e));
                     } else {
                       // Return only verified children — kit parent stays deployed until all returned
-                      checkInMutation.mutate(
-                        {
+                      checkInMutation
+                        .mutateAsync({
                           items: kitConfirm.verifiedIds.map((id) => ({
                             lineItemId: id,
                             returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING",
                             notes: returnNotes || undefined,
                           })),
-                        },
-                        { onSuccess: () => toast.success(`Returned ${kitConfirm.verifiedCount} verified items`) }
-                      );
+                        })
+                        .then(() => toast.success(`Returned ${kitConfirm.verifiedCount} verified items`))
+                        .catch(() => {});
                     }
                     setKitConfirm(null);
                   }}

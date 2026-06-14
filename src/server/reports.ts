@@ -2,9 +2,15 @@
 
 import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
+import { getClientsByOrg } from "@/lib/clients-read";
 import { serialize } from "@/lib/serialize";
 import { executeReport, generateCSV } from "@/lib/report-engine";
 import { logActivity } from "@/lib/activity-log";
+import {
+  mirrorSavedReportCreate,
+  patchSavedReportInConvex,
+  removeSavedReportFromConvex,
+} from "@/lib/saved-reports-mirror";
 import type { ReportConfig } from "@/lib/report-types";
 import type { Prisma } from "@/generated/prisma/client";
 
@@ -34,7 +40,8 @@ export async function getReportsSummary() {
       where: { organizationId, isTemplate: false },
       _count: { status: true },
     }),
-    prisma.client.count({ where: { organizationId, isActive: true } }),
+    // Clients live in Convex now — count active ones there.
+    getClientsByOrg(organizationId).then((cs) => cs.filter((c) => c.isActive ?? true).length),
     prisma.project.findMany({
       where: {
         organizationId,
@@ -164,6 +171,8 @@ export async function saveReport(data: {
     },
   });
 
+  await mirrorSavedReportCreate(report as unknown as Record<string, unknown>);
+
   await logActivity({
     organizationId,
     userId,
@@ -207,6 +216,8 @@ export async function updateSavedReport(
     },
   });
 
+  await patchSavedReportInConvex(report.id, report as unknown as Record<string, unknown>);
+
   await logActivity({
     organizationId,
     userId,
@@ -231,6 +242,8 @@ export async function deleteSavedReport(id: string) {
   if (!existing) throw new Error("Report not found or you don't have permission to delete it");
 
   await prisma.savedReport.delete({ where: { id } });
+
+  await removeSavedReportFromConvex(id);
 
   await logActivity({
     organizationId,
@@ -261,6 +274,8 @@ export async function togglePinReport(id: string) {
     where: { id },
     data: { isPinned: !existing.isPinned },
   });
+
+  await patchSavedReportInConvex(report.id, report as unknown as Record<string, unknown>);
 
   return serialize(report);
 }

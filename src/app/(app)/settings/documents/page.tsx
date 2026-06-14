@@ -1,13 +1,13 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { FileText } from "lucide-react";
 import { getDocumentTemplates } from "@/server/document-templates";
 import { DocumentTemplateManager } from "@/components/settings/document-template-manager";
 import { FadeIn } from "@/components/ui/motion";
 
 export default function DocumentsSettingsPage() {
-  const { data: templates, isLoading } = useQuery({
+  const { data: templates, isLoading, refetch } = useServerQuery({
     queryKey: ["document-templates"],
     queryFn: () => getDocumentTemplates(),
   });
@@ -28,6 +28,7 @@ export default function DocumentsSettingsPage() {
       <DocumentTemplateManager
         templates={templates || []}
         isLoading={isLoading}
+        onChanged={refetch}
       />
     </div>
     </FadeIn>

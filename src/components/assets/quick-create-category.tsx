@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { useActiveOrganization } from "@/lib/auth-client";
-import { createCategory, getCategories } from "@/server/categories";
+import { createCategory } from "@/server/categories";
+import { useCategories } from "@/hooks/use-categories";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   Dialog,
   DialogContent,
@@ -28,29 +29,28 @@ interface QuickCreateCategoryProps {
 export function QuickCreateCategory({ open, onOpenChange, onCreated }: QuickCreateCategoryProps) {
   const [name, setName] = useState("");
   const [parentId, setParentId] = useState("");
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: categories = [] } = useQuery({
-    queryKey: ["categories", orgId],
-    queryFn: () => getCategories(),
-    staleTime: 0,
-  });
+  // Reactive category list (Convex). Only top-level categories can be parents
+  // (keep it to one level of nesting), sorted by sortOrder then name.
+  const categories = useCategories(orgId);
+  const parentOptions = useMemo(
+    () =>
+      [...(categories ?? [])]
+        .filter((cat) => !cat.parentId)
+        .sort((a, b) => {
+          const so = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+          return so !== 0 ? so : a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+        })
+        .map((cat) => ({ value: cat.id, label: cat.name })),
+    [categories],
+  );
 
-  // Only top-level categories can be parents (keep it to one level of nesting)
-  const parentOptions = categories
-    .filter((cat) => !cat.parentId)
-    .map((cat) => ({
-      value: cat.id,
-      label: cat.name,
-    }));
-
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: () => createCategory({ name, parentId: parentId || undefined }),
-    onSuccess: async (result) => {
+    onSuccess: (result) => {
       toast.success("Category created");
-      await queryClient.invalidateQueries({ queryKey: ["categories"] });
       onCreated?.(result.id);
       onOpenChange(false);
       setName("");

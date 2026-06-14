@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useRouter } from "next/navigation";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -36,7 +36,6 @@ export function DuplicateProjectDialog({
   mode,
 }: DuplicateProjectDialogProps) {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const isTemplate = mode === "template";
 
   const [projectNumber, setProjectNumber] = useState(
@@ -46,14 +45,12 @@ export function DuplicateProjectDialog({
     isTemplate ? `${sourceProject.name} (Template)` : `${sourceProject.name} (Copy)`
   );
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: () =>
       isTemplate
         ? saveAsTemplate(sourceProject.id, name)
         : duplicateProject(sourceProject.id, projectNumber, name),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["projects"] });
-      queryClient.invalidateQueries({ queryKey: ["templates"] });
       toast.success(isTemplate ? "Template created" : "Project duplicated");
       onOpenChange(false);
       router.push(`/projects/${result.id}`);

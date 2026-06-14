@@ -4,6 +4,7 @@ import { validateCsrfOrigin } from "@/lib/csrf";
 import { prisma } from "@/lib/prisma";
 import { uploadToS3, deleteFromS3, ensureBucket, storageKeyFromUrl } from "@/lib/storage";
 import { getOrgContext } from "@/lib/org-context";
+import { patchCrewMemberInConvex } from "@/lib/crew-mirror";
 import sharp from "sharp";
 import { fileTypeFromBuffer } from "file-type";
 
@@ -91,6 +92,7 @@ export async function POST(request: NextRequest) {
       where: { id: crewMemberId, organizationId },
       data: { image: url },
     });
+    await patchCrewMemberInConvex(crewMemberId, { image: url });
 
     return NextResponse.json({ url });
   } catch (error) {
@@ -137,6 +139,7 @@ export async function DELETE(request: NextRequest) {
       where: { id: crewMemberId, organizationId },
       data: { image: null },
     });
+    await patchCrewMemberInConvex(crewMemberId, { image: null });
 
     return NextResponse.json({ success: true });
   } catch (error) {

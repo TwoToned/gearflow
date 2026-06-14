@@ -1,9 +1,11 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useSupplierOrders, fingerprintSupplierOrders } from "@/hooks/use-back-office";
 import { Pencil, Mail, Phone, Globe, MapPin, Trash2, Plus, ChevronRight } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AddressDisplay } from "@/components/ui/address-display";
@@ -48,38 +50,49 @@ const orderTypeLabels: Record<string, string> = {
 export default function SupplierDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: supplier, isLoading } = useQuery({
+  const { data: supplier, isLoading } = useServerQuery({
     queryKey: ["supplier", orgId, id],
     queryFn: () => getSupplierById(id),
   });
 
-  const { data: ordersData } = useQuery({
+  const { data: ordersData, refetch: refetchOrders } = useServerQuery({
     queryKey: ["supplier-orders", orgId, id],
     queryFn: () => getSupplierOrders({ supplierId: id, pageSize: 50 }),
     enabled: !!supplier,
   });
 
-  const { data: assetsData } = useQuery({
+  // Cross-tab live sync: subscribe to the dual-written Convex supplierOrders
+  // table; a fingerprint change (order placed/edited/received in another tab)
+  // re-fetches this supplier's orders.
+  const supplierOrderDocs = useSupplierOrders(orgId);
+  const supplierOrderFp = fingerprintSupplierOrders(supplierOrderDocs);
+  const prevSupplierOrderFp = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (supplierOrderFp !== undefined && prevSupplierOrderFp.current !== undefined && supplierOrderFp !== prevSupplierOrderFp.current) {
+      refetchOrders();
+    }
+    if (supplierOrderFp !== undefined) prevSupplierOrderFp.current = supplierOrderFp;
+  }, [supplierOrderFp, refetchOrders]);
+
+  const { data: assetsData } = useServerQuery({
     queryKey: ["supplier-assets", orgId, id],
     queryFn: () => getSupplierAssets(id, { pageSize: 50 }),
     enabled: !!supplier,
   });
 
-  const { data: subhiresData } = useQuery({
+  const { data: subhiresData } = useServerQuery({
     queryKey: ["supplier-subhires", orgId, id],
     queryFn: () => getSupplierSubhires(id, { pageSize: 50 }),
     enabled: !!supplier,
   });
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: () => deleteSupplier(id),
     onSuccess: () => {
       toast.success("Supplier deleted");
-      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
       router.push("/suppliers");
     },
     onError: (e) => toast.error(e.message),

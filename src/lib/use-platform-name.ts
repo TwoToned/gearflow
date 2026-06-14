@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { createSharedResource } from "@/hooks/use-shared-resource";
 
 interface PlatformBranding {
   name: string;
@@ -17,20 +17,33 @@ async function fetchPlatformBranding(): Promise<PlatformBranding> {
   };
 }
 
+/**
+ * Shared, multi-reader store for the platform branding (Phase 6 — React Query
+ * removal). Replaces the `useQuery({ queryKey: ["platform-branding"], queryFn:
+ * fetchPlatformBranding })` readers spread across the always-mounted layout
+ * (`AppSidebar` / `TopBar` / `DynamicFavicon` / `PageMeta`) + the auth pages.
+ *
+ * It MUST be a shared store, not `useServerQuery`: the platform name/icon is read
+ * by several always-mounted components at once, and the admin Platform Settings
+ * save must live-update them — exactly the cross-component refresh React Query's
+ * shared `["platform-branding"]` cache gave. The writer calls
+ * `refreshPlatformBranding()` (its old `invalidateQueries(["platform-branding"])`).
+ *
+ * The datum is platform-wide (not per-org), so the store key is a single
+ * constant; the fetcher ignores it.
+ */
+const resource = createSharedResource<PlatformBranding>(fetchPlatformBranding);
+const STORE_KEY = "platform";
+
+/** Re-fetch the platform branding and push to every subscriber. */
+export const refreshPlatformBranding = () => resource.refresh(STORE_KEY);
+
 export function usePlatformName(): string {
-  const { data } = useQuery({
-    queryKey: ["platform-branding"],
-    queryFn: fetchPlatformBranding,
-    staleTime: 5 * 60_000,
-  });
+  const { data } = resource.use(STORE_KEY);
   return data?.name || "GearFlow";
 }
 
 export function usePlatformBranding(): PlatformBranding {
-  const { data } = useQuery({
-    queryKey: ["platform-branding"],
-    queryFn: fetchPlatformBranding,
-    staleTime: 5 * 60_000,
-  });
+  const { data } = resource.use(STORE_KEY);
   return data || { name: "GearFlow", icon: null };
 }

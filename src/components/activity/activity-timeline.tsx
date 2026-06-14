@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { getEntityActivityLog } from "@/server/activity-log";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { StatusIndicator } from "@/components/ui/status-indicator";
@@ -28,7 +28,7 @@ export function ActivityTimeline({ entityType, entityId, limit = 5 }: ActivityTi
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useServerQuery({
     queryKey: ["entity-activity", orgId, entityType, entityId, limit],
     queryFn: () => getEntityActivityLog(entityType, entityId, limit),
     enabled: !!entityId,

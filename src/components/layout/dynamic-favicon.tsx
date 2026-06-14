@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { icons } from "lucide-react";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { getOrganization } from "@/server/settings";
+import { useOrganization } from "@/hooks/use-organization";
 import type { OrgBranding } from "@/server/settings";
 import { usePlatformBranding } from "@/lib/use-platform-name";
 
@@ -48,10 +47,7 @@ export function DynamicFavicon() {
   const { name: platformName, icon: platformIcon } = usePlatformBranding();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const { data: org } = useQuery({
-    queryKey: ["organization", orgId],
-    queryFn: getOrganization,
-  });
+  const { data: org } = useOrganization(orgId);
 
   const settings = (org as Record<string, unknown>)?.settings as { branding?: OrgBranding } | undefined;
   const primaryColor = settings?.branding?.primaryColor || "#0d9488";

@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { createClient } from "@/server/clients";
 import {
   Dialog,
@@ -28,13 +28,11 @@ export function QuickCreateClient({ open, onOpenChange, onCreated }: QuickCreate
   const [type, setType] = useState<"COMPANY" | "INDIVIDUAL" | "VENUE" | "PRODUCTION_COMPANY">("COMPANY");
   const [contactName, setContactName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
-  const queryClient = useQueryClient();
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: () => createClient({ name, type, contactName: contactName || undefined, contactEmail: contactEmail || undefined }),
-    onSuccess: async (result) => {
+    onSuccess: (result) => {
       toast.success("Client created");
-      await queryClient.invalidateQueries({ queryKey: ["clients"] });
       onCreated?.(result.id);
       onOpenChange(false);
       setName("");

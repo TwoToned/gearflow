@@ -1,8 +1,11 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCanDo } from "@/lib/use-permissions";
-import { getSSOSettings, updateSSOSettings, getSSOProviders } from "@/server/sso";
+import { useActiveOrganization } from "@/lib/auth-client";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useSSOSettings, refreshSSOSettings } from "@/hooks/use-sso-settings";
+import { useSSOProviders } from "@/hooks/use-sso-providers";
+import { updateSSOSettings } from "@/server/sso";
 import { SSOStatusSection } from "@/components/settings/sso-status";
 import { SSOProviderSection } from "@/components/settings/sso-providers";
 import { SSOProvisioningSection } from "@/components/settings/sso-provisioning";
@@ -16,22 +19,17 @@ import { toast } from "sonner";
 
 export default function SSOSettingsPage() {
   const canUpdate = useCanDo("orgSettings", "update");
-  const queryClient = useQueryClient();
+  const { data: activeOrg } = useActiveOrganization();
+  const orgId = activeOrg?.id;
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["sso-settings"],
-    queryFn: () => getSSOSettings(),
-  });
+  const { data, isLoading } = useSSOSettings(orgId);
 
-  const { data: providers, isLoading: providersLoading } = useQuery({
-    queryKey: ["sso-providers"],
-    queryFn: () => getSSOProviders(),
-  });
+  const { data: providers, isLoading: providersLoading } = useSSOProviders(orgId);
 
-  const updateMutation = useMutation({
+  const updateMutation = useServerMutation({
     mutationFn: (updates: Partial<OrgSSOSettings>) => updateSSOSettings(updates),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["sso-settings"] });
+      refreshSSOSettings(orgId);
       toast.success("SSO settings updated");
     },
     onError: (err: Error) => {

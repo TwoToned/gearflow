@@ -1,6 +1,8 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { mirrorFileUploadDelete } from "@/lib/file-upload-mirror";
+import { mirrorMediaCreate, syncMediaForParent } from "@/lib/media-mirror";
 import { getOrgContext } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { deleteFromS3 } from "@/lib/storage";
@@ -50,6 +52,8 @@ export async function addKitMedia(data: {
     include: { file: true },
   });
 
+  await mirrorMediaCreate("kit", media);
+
   return serialize(media);
 }
 
@@ -77,6 +81,7 @@ export async function removeKitMedia(mediaId: string) {
     // Best-effort cleanup
   }
   await prisma.fileUpload.delete({ where: { id: media.fileId } });
+  await mirrorFileUploadDelete(media.fileId);
 
   if (wasPrimary && media.type === "PHOTO") {
     const next = await prisma.kitMedia.findFirst({
@@ -90,6 +95,10 @@ export async function removeKitMedia(mediaId: string) {
       });
     }
   }
+
+  // Reconcile the kit's media into Convex (removes the deleted row, upserts
+  // the newly-promoted primary).
+  await syncMediaForParent("kit", organizationId, kitId);
 }
 
 export async function setKitPrimaryPhoto(kitId: string, mediaId: string) {
@@ -110,6 +119,8 @@ export async function setKitPrimaryPhoto(kitId: string, mediaId: string) {
       data: { isPrimary: true },
     }),
   ]);
+
+  await syncMediaForParent("kit", organizationId, kitId);
 }
 
 export async function getKitMedia(kitId: string) {

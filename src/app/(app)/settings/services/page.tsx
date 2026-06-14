@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useServiceTemplates, refreshServiceTemplates } from "@/hooks/use-service-templates";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -19,7 +20,6 @@ import {
 import { toast } from "sonner";
 
 import {
-  getServiceTemplates,
   createServiceTemplate,
   updateServiceTemplate,
   deleteServiceTemplate,
@@ -92,23 +92,19 @@ const PRICING_TYPE_LABELS: Record<string, string> = {
 export default function ServiceTemplatesPage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
   const canEdit = useCanDo("orgSettings", "update");
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Record<string, unknown> | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
 
-  const { data: templates = [], isLoading } = useQuery({
-    queryKey: ["service-templates", orgId],
-    queryFn: () => getServiceTemplates(),
-  });
+  const { data: templates = [], isLoading } = useServiceTemplates(orgId);
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: (id: string) => deleteServiceTemplate(id),
     onSuccess: () => {
       toast.success("Template deleted");
-      queryClient.invalidateQueries({ queryKey: ["service-templates", orgId] });
+      refreshServiceTemplates(orgId);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -283,7 +279,6 @@ function TemplateDialog({
 }) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
   const isEditing = !!editing;
 
   const defaultValues: ServiceTemplateFormValues = editing
@@ -315,22 +310,22 @@ function TemplateDialog({
     values: open ? defaultValues : undefined,
   });
 
-  const createMutation = useMutation({
+  const createMutation = useServerMutation({
     mutationFn: (data: ServiceTemplateFormValues) => createServiceTemplate(data),
     onSuccess: () => {
       toast.success("Template created");
-      queryClient.invalidateQueries({ queryKey: ["service-templates", orgId] });
+      refreshServiceTemplates(orgId);
       onOpenChange(false);
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const updateMutation = useMutation({
+  const updateMutation = useServerMutation({
     mutationFn: (data: ServiceTemplateFormValues) =>
       updateServiceTemplate(editing!.id as string, data),
     onSuccess: () => {
       toast.success("Template updated");
-      queryClient.invalidateQueries({ queryKey: ["service-templates", orgId] });
+      refreshServiceTemplates(orgId);
       onOpenChange(false);
     },
     onError: (e) => toast.error(e.message),

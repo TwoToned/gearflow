@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   Plus,
   Trash2,
@@ -17,12 +17,12 @@ import { toast } from "sonner";
 import Link from "next/link";
 
 import {
-  getKitCheckItems,
-  getCheckItems,
   addCheckItemToKit,
   removeCheckItemFromKit,
   reorderKitCheckItems,
 } from "@/server/check-items";
+import { useKitCheckItems } from "@/hooks/use-check-item-assignments";
+import { useCheckItems } from "@/hooks/use-check-items";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useCanDo } from "@/lib/use-permissions";
 
@@ -75,41 +75,32 @@ interface KitChecksTabProps {
 export function KitChecksTab({ kitId, checkMode }: KitChecksTabProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
   const canEdit = useCanDo("checkItem", "update");
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<{ id: string; label: string } | null>(null);
   const isPerItem = checkMode === "PER_ITEM";
 
-  const { data: kitCheckItems = [], isLoading } = useQuery({
-    queryKey: ["kit-check-items", orgId, kitId],
-    queryFn: () => getKitCheckItems(kitId),
-    enabled: !isPerItem,
-  });
+  // Reactive list straight from Convex — add / remove / reorder via the
+  // dual-write server actions push a live update, no manual invalidation. (In
+  // PER_ITEM mode the list isn't rendered; the subscription is harmless.)
+  const kitCheckItems = useKitCheckItems(orgId, kitId);
+  const isLoading = kitCheckItems === undefined;
 
-  const removeMutation = useMutation({
+  const removeMutation = useServerMutation({
     mutationFn: (checkItemId: string) =>
       removeCheckItemFromKit(kitId, checkItemId),
     onSuccess: () => {
       toast.success("Check item removed");
-      queryClient.invalidateQueries({
-        queryKey: ["kit-check-items", orgId, kitId],
-      });
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const items = kitCheckItems as Record<string, unknown>[];
+  const items = (kitCheckItems ?? []) as Record<string, unknown>[];
 
-  const reorderMutation = useMutation({
+  const reorderMutation = useServerMutation({
     mutationFn: (orderedIds: string[]) =>
       reorderKitCheckItems(kitId, orderedIds),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["kit-check-items", orgId, kitId],
-      });
-    },
     onError: (e) => toast.error(e.message),
   });
 
@@ -315,28 +306,20 @@ function KitCheckItemPicker({
 }) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
 
-  const { data: allCheckItems = [], isLoading } = useQuery({
-    queryKey: ["check-items", orgId],
-    queryFn: () => getCheckItems(),
-    enabled: open,
-  });
+  const allCheckItems = useCheckItems(orgId);
+  const isLoading = allCheckItems === undefined;
 
-  const addMutation = useMutation({
+  const addMutation = useServerMutation({
     mutationFn: (checkItemId: string) =>
       addCheckItemToKit(kitId, checkItemId),
     onSuccess: () => {
       toast.success("Check item added");
-      queryClient.invalidateQueries({
-        queryKey: ["kit-check-items", orgId, kitId],
-      });
-      queryClient.invalidateQueries({ queryKey: ["check-items", orgId] });
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const items = allCheckItems as Record<string, unknown>[];
+  const items = (allCheckItems ?? []) as Record<string, unknown>[];
   const available = items.filter(
     (i) => !existingCheckItemIds.includes(i.id as string)
   );

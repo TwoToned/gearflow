@@ -1,20 +1,21 @@
 "use client";
 
-import { useState, useEffect, Fragment } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect, useMemo, Fragment } from "react";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { refreshProjectDetail } from "@/hooks/use-project-detail";
+import { useProjectCategories, refreshProjectCategories, useProjectSubHires, refreshProjectSubHires, refreshUncategorizedItems, useSubHire, refreshSubHire } from "@/hooks/use-project-equipment";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { Plus, Pencil, Trash2, Loader2, ArrowLeft, MoreVertical, AlertTriangle, FolderPlus, ChevronDown, MapPin } from "lucide-react";
 import { toast } from "sonner";
 
 import {
   createSubHire,
-  getSubHire,
   updateSubHire,
   deleteSubHire,
   updateSubHireStatus,
   addSubHireItem,
   updateSubHireItem,
   removeSubHireItem,
-  getSubHires,
   getSupplierModelRate,
   getSupplierRateHistory,
   createSubHireGroup,
@@ -27,9 +28,8 @@ import {
   addSubHireMedia,
   removeSubHireMedia,
 } from "@/server/sub-hires";
-import { getProjectCategories } from "@/server/project-categories";
-import { getSuppliers } from "@/server/suppliers";
-import { getModels } from "@/server/models";
+import { useSuppliers } from "@/hooks/use-suppliers";
+import { useModels } from "@/hooks/use-models";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { subHireStatusLabels, formatLabel } from "@/lib/status-labels";
 import { StatusIndicator } from "@/components/ui/status-indicator";
@@ -151,11 +151,7 @@ function PlacementPicker({
 }) {
   const { data: activeOrg } = useActiveOrganization();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: categories } = useQuery<any[]>({
-    queryKey: ["project-categories", activeOrg?.id, projectId],
-    queryFn: () => getProjectCategories(projectId),
-    enabled: !!activeOrg?.id && !!projectId,
-  });
+  const { data: categories } = useProjectCategories(projectId) as { data: any[] | undefined };
 
   // Build a flat encoded value: "uncategorized", "cat:ID", or "grp:ID"
   const encoded = value.groupId
@@ -249,7 +245,6 @@ export function SubHireOrderDialog({
 }: SubHireOrderDialogProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
 
   // Track which sub-hire we're managing (null = list/create mode)
   const [managingId, setManagingId] = useState<string | null>(initialSubHireId || null);
@@ -273,15 +268,15 @@ export function SubHireOrderDialog({
   const handleCreated = (newId: string) => {
     setManagingId(newId);
     setView("manage");
-    queryClient.invalidateQueries({ queryKey: ["project-sub-hires"] });
-    queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] });
+    refreshProjectSubHires(projectId);
+    refreshProjectDetail(projectId);
   };
 
   const handleDeleted = () => {
     setManagingId(null);
     setView("list");
-    queryClient.invalidateQueries({ queryKey: ["project-sub-hires"] });
-    queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] });
+    refreshProjectSubHires(projectId);
+    refreshProjectDetail(projectId);
   };
 
   const handleBack = () => {
@@ -327,7 +322,6 @@ export function SubHireOrderDialog({
 
 function SubHireListView({
   projectId,
-  orgId,
   onCreateNew,
   onManage,
   onClose,
@@ -339,10 +333,7 @@ function SubHireListView({
   onClose: () => void;
 }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: subHires = [], isLoading } = useQuery<any[]>({
-    queryKey: ["project-sub-hires", orgId, projectId],
-    queryFn: () => getSubHires({ projectId }),
-  });
+  const { data: subHires = [], isLoading } = useProjectSubHires(projectId) as { data: any[]; isLoading: boolean };
 
   return (
     <>
@@ -447,16 +438,13 @@ function SubHireCreateView({
   const [showOnDocs, setShowOnDocs] = useState(false);
   const [notes, setNotes] = useState("");
 
-  const { data: suppliersData } = useQuery({
-    queryKey: ["suppliers", orgId],
-    queryFn: () => getSuppliers(),
-  });
-  const supplierOptions = ((suppliersData || []) as Array<Record<string, unknown>>).map((s) => ({
-    value: s.id as string,
-    label: s.name as string,
-  }));
+  // Reactive supplier list from Convex; active-only (matches old getSuppliers).
+  const allSuppliers = useSuppliers(orgId);
+  const supplierOptions = (allSuppliers ?? [])
+    .filter((s) => s.isActive ?? true)
+    .map((s) => ({ value: s.id, label: s.name }));
 
-  const createMutation = useMutation({
+  const createMutation = useServerMutation({
     mutationFn: () =>
       createSubHire({
         supplierId,
@@ -545,7 +533,6 @@ function SubHireCreateView({
 
 function SubHireManageView({
   subHireId,
-  orgId,
   projectId,
   onBack,
   onDeleted,
@@ -556,7 +543,6 @@ function SubHireManageView({
   onBack: () => void;
   onDeleted: () => void;
 }) {
-  const queryClient = useQueryClient();
   const [showItemForm, setShowItemForm] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [editingItem, setEditingItem] = useState<any>(null);
@@ -569,12 +555,9 @@ function SubHireManageView({
   const [editingGroup, setEditingGroup] = useState<Record<string, any> | null>(null);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: subHire, isLoading } = useQuery<any>({
-    queryKey: ["sub-hire", orgId, subHireId],
-    queryFn: () => getSubHire(subHireId),
-  });
+  const { data: subHire, isLoading } = useSubHire(subHireId) as { data: any; isLoading: boolean };
 
-  const statusMutation = useMutation({
+  const statusMutation = useServerMutation({
     mutationFn: (newStatus: SubHireStatus) => updateSubHireStatus(subHireId, newStatus),
     onSuccess: () => {
       toast.success("Status updated");
@@ -583,7 +566,7 @@ function SubHireManageView({
     onError: (e) => toast.error(e.message),
   });
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: () => deleteSubHire(subHireId),
     onSuccess: () => {
       toast.success("Sub-hire deleted");
@@ -592,13 +575,13 @@ function SubHireManageView({
     onError: (e) => toast.error(e.message),
   });
 
-  const updateMutation = useMutation({
+  const updateMutation = useServerMutation({
     mutationFn: (data: Record<string, unknown>) => updateSubHire(subHireId, data),
     onSuccess: () => invalidate(),
     onError: (e) => toast.error(e.message),
   });
 
-  const paymentStatusMutation = useMutation({
+  const paymentStatusMutation = useServerMutation({
     mutationFn: (status: SubHirePaymentStatus) => updateSubHirePaymentStatus(subHireId, status),
     onSuccess: () => {
       toast.success("Payment status updated");
@@ -607,7 +590,7 @@ function SubHireManageView({
     onError: (e) => toast.error(e.message),
   });
 
-  const removeItemMutation = useMutation({
+  const removeItemMutation = useServerMutation({
     mutationFn: (itemId: string) => removeSubHireItem(itemId),
     onSuccess: () => {
       toast.success("Item removed");
@@ -616,7 +599,7 @@ function SubHireManageView({
     onError: (e) => toast.error(e.message),
   });
 
-  const createGroupMutation = useMutation({
+  const createGroupMutation = useServerMutation({
     mutationFn: (title: string) => createSubHireGroup(subHireId, { title }),
     onSuccess: (result: Record<string, unknown>) => {
       toast.success("Group created");
@@ -628,7 +611,7 @@ function SubHireManageView({
     onError: (e) => toast.error(e.message),
   });
 
-  const deleteGroupMutation = useMutation({
+  const deleteGroupMutation = useServerMutation({
     mutationFn: (groupId: string) => deleteSubHireGroup(groupId),
     onSuccess: () => {
       toast.success("Group deleted");
@@ -637,7 +620,7 @@ function SubHireManageView({
     onError: (e) => toast.error(e.message),
   });
 
-  const updateGroupMutation = useMutation({
+  const updateGroupMutation = useServerMutation({
     mutationFn: ({ groupId, data }: { groupId: string; data: Record<string, unknown> }) =>
       updateSubHireGroup(groupId, data),
     onSuccess: () => {
@@ -648,14 +631,14 @@ function SubHireManageView({
     onError: (e) => toast.error(e.message),
   });
 
-  const moveItemMutation = useMutation({
+  const moveItemMutation = useServerMutation({
     mutationFn: ({ itemId, groupId }: { itemId: string; groupId: string | null }) =>
       setItemGroup(itemId, groupId),
     onSuccess: () => invalidate(),
     onError: (e) => toast.error(e.message),
   });
 
-  const placementMutation = useMutation({
+  const placementMutation = useServerMutation({
     mutationFn: (args: { entityType: "order" | "group" | "item"; entityId: string; targetGroupId: string | null; targetCategoryId: string | null }) =>
       updateSubHirePlacement(args.entityType, args.entityId, {
         targetGroupId: args.targetGroupId,
@@ -665,7 +648,7 @@ function SubHireManageView({
     onError: (e) => toast.error(e.message),
   });
 
-  const pricingMutation = useMutation({
+  const pricingMutation = useServerMutation({
     mutationFn: (data: { pricingMode: string; orderTotalCost?: number | null; orderTotalCharge?: number | null }) =>
       updateSubHireOrderPricing(subHireId, data),
     onSuccess: () => {
@@ -676,13 +659,12 @@ function SubHireManageView({
   });
 
   function invalidate() {
-    queryClient.invalidateQueries({ queryKey: ["sub-hire", orgId, subHireId] });
-    queryClient.invalidateQueries({ queryKey: ["project-sub-hires"] });
-    queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] });
+    refreshSubHire(subHireId);
+    refreshProjectSubHires(projectId);
+    refreshProjectDetail(projectId);
     // Refresh equipment tab data when line items are generated/modified
-    queryClient.invalidateQueries({ queryKey: ["project-categories", projectId] });
-    queryClient.invalidateQueries({ queryKey: ["uncategorized-items", projectId] });
-    queryClient.invalidateQueries({ queryKey: ["project-line-items"] });
+    refreshProjectCategories(projectId);
+    refreshUncategorizedItems(projectId);
   }
 
   if (isLoading) {
@@ -1343,13 +1325,11 @@ function SubHireManageView({
                 fileId: fileUpload.id,
                 type: "DOCUMENT",
               });
-              invalidate();
             }}
             onRemove={async (mediaId) => {
               await removeSubHireMedia(mediaId);
-              invalidate();
             }}
-            queryKey={["sub-hire", subHire.id]}
+            onChanged={invalidate}
           />
         </div>
       </div>
@@ -1720,23 +1700,28 @@ function SubHireItemForm({
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: modelsData } = useQuery({
-    queryKey: ["models", orgId],
-    queryFn: () => getModels({ pageSize: 500 }),
-    enabled: open,
-  });
-  const modelOptions = ((modelsData as Record<string, unknown>)?.models as Array<Record<string, unknown>> || []).map((m) => ({
-    value: m.id as string,
-    label: m.name as string,
+  // Reactive models (Convex), skipped while closed (mirrors enabled:open).
+  // Re-apply getModels's default active filter and name sort client-side.
+  const modelDocs = useModels(open ? orgId : undefined);
+  const activeModels = useMemo(
+    () =>
+      [...(modelDocs ?? [])]
+        .filter((m) => m.isActive === true)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [modelDocs],
+  );
+  const modelOptions = activeModels.map((m) => ({
+    value: m.id,
+    label: m.name,
   }));
 
-  const { data: supplierRate } = useQuery({
+  const { data: supplierRate } = useServerQuery({
     queryKey: ["supplier-rate", supplierId, modelId],
     queryFn: () => getSupplierModelRate(supplierId, modelId),
     enabled: !!modelId && !!supplierId && open,
   });
 
-  const { data: allRates } = useQuery({
+  const { data: allRates } = useServerQuery({
     queryKey: ["model-rates", modelId],
     queryFn: () => getSupplierRateHistory(modelId),
     enabled: !!modelId && open,
@@ -1745,9 +1730,9 @@ function SubHireItemForm({
   const handleModelChange = (newModelId: string) => {
     setModelId(newModelId);
     if (newModelId) {
-      const model = ((modelsData as Record<string, unknown>)?.models as Array<Record<string, unknown>> || []).find((m) => m.id === newModelId);
+      const model = activeModels.find((m) => m.id === newModelId);
       if (model && !description) {
-        setDescription(model.name as string);
+        setDescription(model.name);
       }
     }
   };
@@ -1787,7 +1772,7 @@ function SubHireItemForm({
     }
   }, [open, editingItem]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const addMutation = useMutation({
+  const addMutation = useServerMutation({
     mutationFn: () =>
       editingItem
         ? updateSubHireItem(editingItem.id, { modelId: modelId || undefined, description, quantity, unitCost, unitCharge, pricingType, duration, discount, showOnQuote, showOnDocs, groupId: editingItem.groupId || groupId || undefined })

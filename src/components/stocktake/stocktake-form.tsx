@@ -1,9 +1,10 @@
 "use client";
 
+import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -12,8 +13,8 @@ import {
   type CreateStocktakeValues,
 } from "@/lib/validations/stocktake";
 import { createStocktake, updateStocktake } from "@/server/stocktake";
-import { getLocations } from "@/server/locations";
-import { getCategories } from "@/server/categories";
+import { useLocations } from "@/hooks/use-locations";
+import { useCategories } from "@/hooks/use-categories";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,15 +31,19 @@ export function StocktakeForm({ initialData }: StocktakeFormProps) {
   const orgId = activeOrg?.id;
   const isEditing = !!initialData?.id;
 
-  const { data: locationsData } = useQuery({
-    queryKey: ["locations", orgId],
-    queryFn: () => getLocations(),
-  });
+  // Reactive location list from Convex.
+  const locations = useLocations(orgId) ?? [];
 
-  const { data: categoriesData } = useQuery({
-    queryKey: ["categories", orgId],
-    queryFn: () => getCategories(),
-  });
+  // Reactive categories (Convex) → sorted by sortOrder then name.
+  const categoriesDocs = useCategories(orgId);
+  const categories = useMemo(
+    () =>
+      [...(categoriesDocs ?? [])].sort((a, b) => {
+        const so = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+        return so !== 0 ? so : a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+      }),
+    [categoriesDocs],
+  );
 
   const form = useForm<CreateStocktakeValues>({
     resolver: zodResolver(createStocktakeSchema),
@@ -53,7 +58,7 @@ export function StocktakeForm({ initialData }: StocktakeFormProps) {
 
   const scope = form.watch("scope");
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (data: CreateStocktakeValues) =>
       isEditing ? updateStocktake(initialData!.id, data) : createStocktake(data),
     onSuccess: (result) => {
@@ -64,8 +69,6 @@ export function StocktakeForm({ initialData }: StocktakeFormProps) {
     onError: (e) => toast.error(e.message),
   });
 
-  const locations = locationsData?.locations ?? [];
-  const categories = categoriesData ?? [];
 
   return (
     <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))}>

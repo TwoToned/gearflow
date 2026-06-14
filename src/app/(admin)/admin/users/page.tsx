@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { Button } from "@/components/ui/button";
@@ -42,7 +43,6 @@ import {
 type UserRow = any;
 
 export default function AdminUsersPage() {
-  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [deleteTarget, setDeleteTarget] = useState<UserRow | null>(null);
@@ -50,15 +50,14 @@ export default function AdminUsersPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [revokeTarget, setRevokeTarget] = useState<{ id: string; email: string } | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch: refetchUsers } = useServerQuery({
     queryKey: ["admin-users", search, page],
     queryFn: () => getAllUsers({ page, pageSize: 20, search }),
   });
 
-  const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+  const invalidate = () => refetchUsers();
 
-  const promoteMutation = useMutation({
+  const promoteMutation = useServerMutation({
     mutationFn: promoteToSiteAdmin,
     onSuccess: () => {
       invalidate();
@@ -67,7 +66,7 @@ export default function AdminUsersPage() {
     onError: (e) => toast.error(e.message),
   });
 
-  const demoteMutation = useMutation({
+  const demoteMutation = useServerMutation({
     mutationFn: demoteFromSiteAdmin,
     onSuccess: () => {
       invalidate();
@@ -76,7 +75,7 @@ export default function AdminUsersPage() {
     onError: (e) => toast.error(e.message),
   });
 
-  const banMutation = useMutation({
+  const banMutation = useServerMutation({
     mutationFn: banUser,
     onSuccess: () => {
       invalidate();
@@ -85,7 +84,7 @@ export default function AdminUsersPage() {
     onError: (e) => toast.error(e.message),
   });
 
-  const unbanMutation = useMutation({
+  const unbanMutation = useServerMutation({
     mutationFn: unbanUser,
     onSuccess: () => {
       invalidate();
@@ -94,7 +93,7 @@ export default function AdminUsersPage() {
     onError: (e) => toast.error(e.message),
   });
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: adminDeleteUser,
     onSuccess: () => {
       invalidate();
@@ -104,7 +103,7 @@ export default function AdminUsersPage() {
     onError: (e) => toast.error(e.message),
   });
 
-  const disable2FAMutation = useMutation({
+  const disable2FAMutation = useServerMutation({
     mutationFn: forceDisable2FA,
     onSuccess: () => {
       invalidate();
@@ -113,25 +112,25 @@ export default function AdminUsersPage() {
     onError: (e) => toast.error(e.message),
   });
 
-  const { data: pendingInvitations } = useQuery({
+  const { data: pendingInvitations, refetch: refetchPending } = useServerQuery({
     queryKey: ["admin-pending-invitations"],
     queryFn: adminGetPendingInvitations,
   });
 
-  const revokeMutation = useMutation({
+  const revokeMutation = useServerMutation({
     mutationFn: adminRevokeInvitation,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-pending-invitations"] });
+      refetchPending();
       toast.success("Invitation revoked");
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const inviteMutation = useMutation({
+  const inviteMutation = useServerMutation({
     mutationFn: adminInviteUser,
     onSuccess: (_data) => {
       invalidate();
-      queryClient.invalidateQueries({ queryKey: ["admin-pending-invitations"] });
+      refetchPending();
       toast.success(`Invitation sent to ${inviteEmail}`);
       setInviteOpen(false);
       setInviteEmail("");

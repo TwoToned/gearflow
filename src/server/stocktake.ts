@@ -4,6 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import { syncAssetsToConvex, syncBulkAssetsToConvex } from "@/lib/asset-mirror";
+import { syncStocktakeToConvex } from "@/lib/stocktake-mirror";
+import { getModelMap, type ConvexModel } from "@/lib/models-read";
+import { getLocationMap } from "@/lib/locations-read";
 import {
   createStocktakeSchema,
   type CreateStocktakeValues,
@@ -19,72 +23,33 @@ import {
   type BulkResolveValues,
 } from "@/lib/validations/stocktake";
 
-// Update active stocktakes when an asset moves location.
-export async function syncStocktakeOnLocationChange({
-  assetId,
-  bulkAssetId,
-  oldLocationId,
-  newLocationId,
-  organizationId,
-}: {
-  assetId?: string;
-  bulkAssetId?: string;
-  oldLocationId: string | null;
-  newLocationId: string | null;
-  organizationId: string;
-}) {
-  if (oldLocationId === newLocationId) return;
-
-  // Find active stocktakes at old/new locations
-  const [oldStocktake, newStocktake] = await Promise.all([
-    oldLocationId
-      ? prisma.stocktake.findFirst({
-          where: { organizationId, locationId: oldLocationId, status: "IN_PROGRESS" },
-        })
-      : null,
-    newLocationId
-      ? prisma.stocktake.findFirst({
-          where: { organizationId, locationId: newLocationId, status: "IN_PROGRESS" },
-        })
-      : null,
-  ]);
-
-  // Asset moved AWAY from a stocktake location
-  if (oldStocktake) {
-    const itemWhere = {
-      stocktakeId: oldStocktake.id,
-      ...(assetId ? { assetId } : { bulkAssetId }),
-    };
-    const existingItem = await prisma.stocktakeItem.findFirst({ where: itemWhere });
-    if (existingItem && existingItem.expectedAtLocation) {
-      await prisma.stocktakeItem.update({
-        where: { id: existingItem.id },
-        data: { result: "WRONG_LOCATION", found: false },
-      });
-    }
-  }
-
-  // Asset moved INTO a stocktake location
-  if (newStocktake) {
-    const itemWhere = {
-      stocktakeId: newStocktake.id,
-      ...(assetId ? { assetId } : { bulkAssetId }),
-    };
-    const existingItem = await prisma.stocktakeItem.findFirst({ where: itemWhere });
-    if (!existingItem) {
-      await prisma.stocktakeItem.create({
-        data: {
-          stocktakeId: newStocktake.id,
-          ...(assetId ? { assetId } : { bulkAssetId }),
-          expectedAtLocation: false,
-          expectedQuantity: 1,
-          found: false,
-          result: "UNEXPECTED",
-        },
-      });
-    }
-  }
+// asset.model + bulkAsset.model live in Convex — grafted onto stocktake items
+// from the model map (replaces the nested `asset: { include: { model } }` joins).
+type WithModel<A> = A extends null | undefined ? A : A & { model: ConvexModel | null };
+async function attachStocktakeModels<T extends { asset?: unknown; bulkAsset?: unknown }>(
+  organizationId: string,
+  items: T[],
+): Promise<Array<Omit<T, "asset" | "bulkAsset"> & { asset: WithModel<T["asset"]>; bulkAsset: WithModel<T["bulkAsset"]> }>> {
+  const modelMap = await getModelMap(organizationId);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const graft = (a: any) =>
+    a ? { ...a, model: a.modelId ? modelMap.get(a.modelId) ?? null : null } : a;
+  return items.map((it) => ({
+    ...it,
+    asset: graft((it as { asset?: unknown }).asset),
+    bulkAsset: graft((it as { bulkAsset?: unknown }).bulkAsset),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  })) as any;
 }
+
+// NOTE (security review P0-1): a `syncStocktakeOnLocationChange` server action
+// used to live here. It was exported from this `"use server"` module, accepted
+// `organizationId` directly from the caller, performed stocktake writes WITHOUT
+// any permission/org-context check, and had ZERO in-repo callers — i.e. a dead,
+// unauthenticated cross-tenant write endpoint. Removed. If location-change →
+// active-stocktake reconciliation is wanted, rebuild it as a NON-exported helper
+// (or a lib module) invoked from an already-authenticated server action that
+// derives organizationId from the session, never from caller input.
 
 export async function getStocktakes(params?: {
   page?: number;
@@ -116,7 +81,8 @@ export async function getStocktakes(params?: {
   const [items, total] = await Promise.all([
     prisma.stocktake.findMany({
       where,
-      include: { location: true, startedBy: true },
+      // location lives in Convex — attached below, not joined.
+      include: { startedBy: true },
       orderBy,
       skip,
       take: pageSize,
@@ -124,7 +90,13 @@ export async function getStocktakes(params?: {
     prisma.stocktake.count({ where }),
   ]);
 
-  return serialize({ items, total, page, pageSize });
+  const locationMap = await getLocationMap(organizationId);
+  const withLocation = items.map((s) => ({
+    ...s,
+    location: s.locationId ? locationMap.get(s.locationId) ?? null : null,
+  }));
+
+  return serialize({ items: withLocation, total, page, pageSize });
 }
 
 export async function getStocktakeById(id: string) {
@@ -133,13 +105,13 @@ export async function getStocktakeById(id: string) {
   const stocktake = await prisma.stocktake.findUnique({
     where: { id, organizationId },
     include: {
-      location: true,
+      // location + items[].asset.model + items[].bulkAsset.model live in Convex.
       startedBy: true,
       reviewedBy: true,
       items: {
         include: {
-          asset: { include: { model: true } },
-          bulkAsset: { include: { model: true } },
+          asset: true,
+          bulkAsset: true,
         },
         orderBy: { result: "asc" },
       },
@@ -147,7 +119,12 @@ export async function getStocktakeById(id: string) {
   });
 
   if (!stocktake) throw new Error("Stocktake not found");
-  return serialize(stocktake);
+  const locationMap = await getLocationMap(organizationId);
+  return serialize({
+    ...stocktake,
+    location: stocktake.locationId ? locationMap.get(stocktake.locationId) ?? null : null,
+    items: await attachStocktakeModels(organizationId, stocktake.items),
+  });
 }
 
 export async function getStocktakeProgress(id: string) {
@@ -271,6 +248,7 @@ export async function createStocktake(data: CreateStocktakeValues) {
     summary: `Created stocktake "${stocktake.name}" at ${location.name} (${expectedCount} expected items)`,
   });
 
+  await syncStocktakeToConvex(stocktake.id);
   return serialize(stocktake);
 }
 
@@ -388,6 +366,7 @@ export async function updateStocktake(id: string, data: UpdateStocktakeValues) {
       summary: `Updated stocktake "${stocktake.name}" — regenerated ${expectedCount} expected items`,
     });
 
+    await syncStocktakeToConvex(stocktake.id);
     return serialize(stocktake);
   }
 
@@ -411,6 +390,7 @@ export async function updateStocktake(id: string, data: UpdateStocktakeValues) {
     summary: `Updated stocktake "${stocktake.name}"`,
   });
 
+  await syncStocktakeToConvex(stocktake.id);
   return serialize(stocktake);
 }
 
@@ -446,6 +426,8 @@ export async function startStocktake(id: string) {
     entityName: stocktake.name,
     summary: `Started stocktake "${stocktake.name}"`,
   });
+
+  await syncStocktakeToConvex(id);
 }
 
 export async function scanStocktakeItem(data: ScanItemValues) {
@@ -465,15 +447,13 @@ export async function scanStocktakeItem(data: ScanItemValues) {
 
   const tag = parsed.assetTag.trim();
 
-  // Look up asset or bulk asset by tag
+  // Look up asset or bulk asset by tag (model not needed here — only id/location/status).
   const [asset, bulkAsset] = await Promise.all([
     prisma.asset.findFirst({
       where: { assetTag: tag, organizationId },
-      include: { model: true },
     }),
     prisma.bulkAsset.findFirst({
       where: { assetTag: tag, organizationId },
-      include: { model: true },
     }),
   ]);
 
@@ -488,8 +468,8 @@ export async function scanStocktakeItem(data: ScanItemValues) {
       ...(asset ? { assetId: asset.id } : { bulkAssetId: bulkAsset!.id }),
     },
     include: {
-      asset: { include: { model: true } },
-      bulkAsset: { include: { model: true } },
+      asset: true,
+      bulkAsset: true,
     },
   });
 
@@ -501,12 +481,14 @@ export async function scanStocktakeItem(data: ScanItemValues) {
         where: { id: existingItem.id },
         data: { scannedAt: new Date(), scannedById: userId },
         include: {
-          asset: { include: { model: true } },
-          bulkAsset: { include: { model: true } },
+          asset: true,
+          bulkAsset: true,
         },
       });
+      await syncStocktakeToConvex(parsed.stocktakeId);
+      const [grafted] = await attachStocktakeModels(organizationId, [updated]);
       return serialize({
-        ...updated,
+        ...grafted,
         alreadyScanned: true,
         isExpected: existingItem.expectedAtLocation,
       });
@@ -522,12 +504,14 @@ export async function scanStocktakeItem(data: ScanItemValues) {
         result: "MATCH",
       },
       include: {
-        asset: { include: { model: true } },
-        bulkAsset: { include: { model: true } },
+        asset: true,
+        bulkAsset: true,
       },
     });
 
-    return serialize({ ...updated, alreadyScanned: false, isExpected: true });
+    await syncStocktakeToConvex(parsed.stocktakeId);
+    const [grafted] = await attachStocktakeModels(organizationId, [updated]);
+    return serialize({ ...grafted, alreadyScanned: false, isExpected: true });
   }
 
   // Not in expected list — determine why
@@ -559,12 +543,14 @@ export async function scanStocktakeItem(data: ScanItemValues) {
       result,
     },
     include: {
-      asset: { include: { model: true } },
-      bulkAsset: { include: { model: true } },
+      asset: true,
+      bulkAsset: true,
     },
   });
 
-  return serialize({ ...newItem, alreadyScanned: false, isExpected: false });
+  await syncStocktakeToConvex(parsed.stocktakeId);
+  const [grafted] = await attachStocktakeModels(organizationId, [newItem]);
+  return serialize({ ...grafted, alreadyScanned: false, isExpected: false });
 }
 
 export async function updateBulkCount(data: UpdateBulkCountValues) {
@@ -595,6 +581,8 @@ export async function updateBulkCount(data: UpdateBulkCountValues) {
       result,
     },
   });
+
+  await syncStocktakeToConvex(item.stocktakeId);
 }
 
 export async function completeScanning(id: string) {
@@ -671,6 +659,8 @@ export async function completeScanning(id: string) {
     entityName: stocktake.name,
     summary: `Completed scanning for "${stocktake.name}" — ${foundCount} found, ${missingCount} missing, ${unexpectedCount} unexpected`,
   });
+
+  await syncStocktakeToConvex(id);
 }
 
 export async function resumeScanning(id: string) {
@@ -715,6 +705,8 @@ export async function resumeScanning(id: string) {
     entityName: stocktake.name,
     summary: `Resumed scanning for "${stocktake.name}"`,
   });
+
+  await syncStocktakeToConvex(id);
 }
 
 export async function resolveDiscrepancy(data: ResolveDiscrepancyValues) {
@@ -835,6 +827,12 @@ export async function resolveDiscrepancy(data: ResolveDiscrepancyValues) {
       break;
     }
   }
+
+  // Mirror any asset/bulk status/location/quantity change to Convex (no-op for
+  // IGNORE; the helpers skip null ids and re-patch current values idempotently).
+  await syncAssetsToConvex([item.assetId]);
+  await syncBulkAssetsToConvex([item.bulkAssetId]);
+  await syncStocktakeToConvex(item.stocktakeId);
 }
 
 export async function bulkResolveDiscrepancies(data: BulkResolveValues) {
@@ -886,6 +884,8 @@ export async function bulkResolveDiscrepancies(data: BulkResolveValues) {
         data: { actionTaken: "Marked as LOST (bulk)" },
       });
     });
+    // Mirror the assets flipped to LOST.
+    await syncAssetsToConvex(assetIds);
 
     await logActivity({
       organizationId,
@@ -909,6 +909,8 @@ export async function bulkResolveDiscrepancies(data: BulkResolveValues) {
       data: { actionTaken: "Ignored (bulk)" },
     });
   }
+
+  await syncStocktakeToConvex(parsed.stocktakeId);
 }
 
 export async function completeStocktake(id: string) {
@@ -957,6 +959,8 @@ export async function completeStocktake(id: string) {
     entityName: stocktake.name,
     summary: `Completed stocktake "${stocktake.name}" — ${foundCount}/${stocktake.expectedCount} found, ${discrepancyCount} discrepancies`,
   });
+
+  await syncStocktakeToConvex(id);
 }
 
 export async function cancelStocktake(id: string) {
@@ -987,6 +991,8 @@ export async function cancelStocktake(id: string) {
     entityName: stocktake.name,
     summary: `Cancelled stocktake "${stocktake.name}"`,
   });
+
+  await syncStocktakeToConvex(id);
 }
 
 export async function getRecentScans(stocktakeId: string, limit = 10) {
@@ -1005,14 +1011,14 @@ export async function getRecentScans(stocktakeId: string, limit = 10) {
       scannedAt: { not: null },
     },
     include: {
-      asset: { include: { model: true } },
-      bulkAsset: { include: { model: true } },
+      asset: true,
+      bulkAsset: true,
     },
     orderBy: { scannedAt: "desc" },
     take: limit,
   });
 
-  return serialize(items);
+  return serialize(await attachStocktakeModels(organizationId, items));
 }
 
 export async function searchStocktakeAssets(
@@ -1064,13 +1070,13 @@ export async function searchStocktakeAssets(
       ],
     },
     include: {
-      asset: { include: { model: true } },
-      bulkAsset: { include: { model: true } },
+      asset: true,
+      bulkAsset: true,
     },
     take: 30,
   });
 
-  return serialize(items);
+  return serialize(await attachStocktakeModels(organizationId, items));
 }
 
 export async function markStocktakeItemFound(itemId: string) {
@@ -1083,8 +1089,8 @@ export async function markStocktakeItemFound(itemId: string) {
     where: { id: itemId },
     include: {
       stocktake: true,
-      asset: { include: { model: true } },
-      bulkAsset: { include: { model: true } },
+      asset: true,
+      bulkAsset: true,
     },
   });
   if (!item || item.stocktake.organizationId !== organizationId)
@@ -1102,12 +1108,14 @@ export async function markStocktakeItemFound(itemId: string) {
       result: "MATCH",
     },
     include: {
-      asset: { include: { model: true } },
-      bulkAsset: { include: { model: true } },
+      asset: true,
+      bulkAsset: true,
     },
   });
 
-  return serialize(updated);
+  await syncStocktakeToConvex(item.stocktakeId);
+  const [grafted] = await attachStocktakeModels(organizationId, [updated]);
+  return serialize(grafted);
 }
 
 export async function unmarkStocktakeItemFound(itemId: string) {
@@ -1138,4 +1146,6 @@ export async function unmarkStocktakeItemFound(itemId: string) {
       result: item.expectedAtLocation ? "MATCH" : item.result,
     },
   });
+
+  await syncStocktakeToConvex(item.stocktakeId);
 }

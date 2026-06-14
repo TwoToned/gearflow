@@ -4,18 +4,18 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Controller } from "react-hook-form";
 import { kitSchema, type KitFormValues } from "@/lib/validations/kit";
 import { createKit, updateKit } from "@/server/kits";
-import { getOrgTags } from "@/server/tags";
+import { useOrgTags } from "@/hooks/use-org-tags";
 import { TagInput } from "@/components/ui/tag-input";
 import { peekNextAssetTags } from "@/server/settings";
-import { getCategories } from "@/server/categories";
-import { getLocations } from "@/server/locations";
+import { useCategoriesWithParent } from "@/hooks/use-categories";
+import { useLocations } from "@/hooks/use-locations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScanInput } from "@/components/ui/scan-input";
@@ -37,21 +37,19 @@ export function KitForm({ initialData }: KitFormProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: categories = [] } = useQuery({
-    queryKey: ["categories", orgId],
-    queryFn: () => getCategories(),
-  });
+  // Reactive categories (Convex) with synthetic parent name, sorted to match the
+  // old getCategories() order.
+  const categories = useCategoriesWithParent(orgId) ?? [];
 
-  const { data: locationsData } = useQuery({
-    queryKey: ["locations", orgId],
-    queryFn: () => getLocations({ pageSize: 100 }),
-  });
-  const locations = locationsData?.locations || [];
+  // Reactive location list from Convex; parent.name resolved from the flat list.
+  const rawLocations = useLocations(orgId) ?? [];
+  const locNameById = new Map(rawLocations.map((l) => [l.id, l.name]));
+  const locations = rawLocations.map((l) => ({
+    ...l,
+    parent: l.parentId ? { name: locNameById.get(l.parentId) ?? "" } : null,
+  }));
 
-  const { data: orgTags } = useQuery({
-    queryKey: ["org-tags", orgId],
-    queryFn: () => getOrgTags(),
-  });
+  const orgTags = useOrgTags(orgId);
 
   const form = useForm<KitFormValues>({
     resolver: zodResolver(kitSchema),
@@ -87,7 +85,7 @@ export function KitForm({ initialData }: KitFormProps) {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (data: KitFormValues) =>
       isEditing ? updateKit(initialData.id, data) : createKit(data),
     onSuccess: (result) => {

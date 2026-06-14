@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { toast } from "sonner";
 import {
   ArrowLeft, FileText, AlertTriangle, ClipboardList, History,
@@ -134,14 +134,14 @@ export default function TestTagReportsPage() {
   const orgId = activeOrg?.id;
 
   // For item-history: search test tag assets
-  const { data: searchResults } = useQuery({
+  const { data: searchResults } = useServerQuery({
     queryKey: ["test-tag-search", orgId, searchInput],
     queryFn: () => getTestTagAssets({ search: searchInput, pageSize: 5 }),
     enabled: activeReport?.key === "item-history" && searchInput.length >= 2,
   });
 
   // For bulk-summary: search bulk-linked test tag assets
-  const { data: bulkAssets } = useQuery({
+  const { data: bulkAssets } = useServerQuery({
     queryKey: ["test-tag-bulk-assets", orgId],
     queryFn: () => getTestTagAssets({ assetLinkType: "bulk", pageSize: 100 }),
     enabled: activeReport?.key === "bulk-summary",

@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { Loader2, X, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 
@@ -14,8 +15,8 @@ import {
 } from "@/lib/validations/project";
 import { createProject, updateProject, peekNextProjectNumber } from "@/server/projects";
 import { addProjectManager, removeProjectManager } from "@/server/project-managers";
-import { getClients } from "@/server/clients";
-import { getLocations } from "@/server/locations";
+import { useClients } from "@/hooks/use-clients";
+import { useLocations } from "@/hooks/use-locations";
 import { getOrgMembers } from "@/server/org-members";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,7 +34,7 @@ import {
 import { QuickCreateClient } from "@/components/clients/quick-create-client";
 import { QuickCreateLocation } from "@/components/assets/quick-create-location";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { getOrgTags } from "@/server/tags";
+import { useOrgTags } from "@/hooks/use-org-tags";
 import { TagInput } from "@/components/ui/tag-input";
 
 interface ProjectFormProps {
@@ -77,7 +78,6 @@ function formatDateForInput(date: unknown): string {
 
 export function ProjectForm({ initialData, isTemplate: isTemplateProp, initialManagerIds = [] }: ProjectFormProps) {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const isEditing = !!initialData;
@@ -85,11 +85,10 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp, initialMa
 
   // When creating a project and the org has auto project numbers configured,
   // preview the next code so the user can leave the field blank.
-  const { data: nextProjectNumber } = useQuery({
+  const { data: nextProjectNumber } = useServerQuery({
     queryKey: ["project-number-next", orgId],
     queryFn: () => peekNextProjectNumber(),
     enabled: !isTemplate && !isEditing && !!orgId,
-    staleTime: 30_000,
   });
   const [quickCreateClientOpen, setQuickCreateClientOpen] = useState(false);
   const [quickCreateLocationOpen, setQuickCreateLocationOpen] = useState(false);
@@ -142,28 +141,22 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp, initialMa
   const watchType = form.watch("type");
   const watchStatus = form.watch("status");
 
-  const { data: clientsData } = useQuery({
-    queryKey: ["clients", orgId, { pageSize: 200 }],
-    queryFn: () => getClients({ pageSize: 200 }),
-  });
+  // Reactive client list straight from Convex — a client created in the
+  // quick-create dialog appears in this dropdown instantly.
+  const clients = useClients(orgId);
 
-  const clientOptions = (clientsData?.clients || []).map((c) => ({
+  const clientOptions = (clients ?? []).map((c) => ({
     value: c.id,
     label: c.name,
     description: c.contactName || undefined,
   }));
 
-  const { data: locationsData } = useQuery({
-    queryKey: ["locations", orgId],
-    queryFn: () => getLocations({ pageSize: 100 }),
-  });
+  // Reactive location list from Convex (a quick-created location appears instantly).
+  const rawLocations = useLocations(orgId) ?? [];
 
-  const { data: orgTags } = useQuery({
-    queryKey: ["org-tags", orgId],
-    queryFn: () => getOrgTags(),
-  });
+  const orgTags = useOrgTags(orgId);
 
-  const { data: membersData } = useQuery({
+  const { data: membersData } = useServerQuery({
     queryKey: ["org-members", orgId],
     queryFn: () => getOrgMembers({ pageSize: 200 }),
   });
@@ -174,13 +167,14 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp, initialMa
     description: m.user.name ? m.user.email : undefined,
   }));
 
-  const locationOptions = (locationsData?.locations || []).map((l) => ({
+  const locNameById = new Map(rawLocations.map((l) => [l.id, l.name]));
+  const locationOptions = rawLocations.map((l) => ({
     value: l.id,
-    label: l.parent ? `${l.parent.name} → ${l.name}` : l.name,
+    label: l.parentId ? `${locNameById.get(l.parentId) ?? ""} → ${l.name}` : l.name,
     description: l.address || undefined,
   }));
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: async (data: ProjectFormValues) => {
       const result = isEditing
         ? await updateProject(initialData.id, data)
@@ -680,9 +674,6 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp, initialMa
         onOpenChange={setQuickCreateClientOpen}
         onCreated={(id) => {
           form.setValue("clientId", id);
-          queryClient.invalidateQueries({
-            queryKey: ["clients"],
-          });
         }}
       />
       <QuickCreateLocation
@@ -690,9 +681,6 @@ export function ProjectForm({ initialData, isTemplate: isTemplateProp, initialMa
         onOpenChange={setQuickCreateLocationOpen}
         onCreated={(id) => {
           form.setValue("locationId", id);
-          queryClient.invalidateQueries({
-            queryKey: ["locations"],
-          });
         }}
       />
     </>

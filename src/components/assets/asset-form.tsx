@@ -1,22 +1,22 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Loader2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Controller } from "react-hook-form";
 import { assetSchema, type AssetFormValues } from "@/lib/validations/asset";
 import { createAsset, createAssets, updateAsset } from "@/server/assets";
-import { getOrgTags } from "@/server/tags";
+import { useOrgTags } from "@/hooks/use-org-tags";
 import { TagInput } from "@/components/ui/tag-input";
 import { peekNextAssetTags } from "@/server/settings";
-import { getModels } from "@/server/models";
-import { getLocations } from "@/server/locations";
-import { getSuppliers } from "@/server/suppliers";
+import { useModels } from "@/hooks/use-models";
+import { useLocations } from "@/hooks/use-locations";
+import { useSuppliers } from "@/hooks/use-suppliers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScanInput } from "@/components/ui/scan-input";
@@ -43,26 +43,34 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: modelsData } = useQuery({
-    queryKey: ["models", orgId, { isActive: true, assetType: "SERIALIZED", pageSize: 200 }],
-    queryFn: () => getModels({ assetType: "SERIALIZED", pageSize: 200 }),
-  });
+  // Reactive models (Convex). Org-scoped list returns all models; re-apply
+  // getModels's default filter (active, serialized) and name sort client-side.
+  const modelDocs = useModels(orgId);
+  const models = useMemo(
+    () =>
+      [...(modelDocs ?? [])]
+        .filter((m) => m.isActive === true && m.assetType === "SERIALIZED")
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [modelDocs],
+  );
 
-  const { data: locationsData } = useQuery({
-    queryKey: ["locations", orgId],
-    queryFn: () => getLocations({ pageSize: 100 }),
-  });
-  const locations = locationsData?.locations || [];
+  // Reactive location list from Convex; a location added via quick-create now
+  // appears in the dropdown instantly. parent.name resolved from the flat list
+  // (the Convex doc carries parentId, not a parent relation).
+  const rawLocations = useLocations(orgId) ?? [];
+  const locNameById = new Map(rawLocations.map((l) => [l.id, l.name]));
+  const locations = rawLocations.map((l) => ({
+    ...l,
+    parent: l.parentId ? { name: locNameById.get(l.parentId) ?? "" } : null,
+  }));
 
-  const { data: suppliers = [] } = useQuery({
-    queryKey: ["suppliers", orgId],
-    queryFn: () => getSuppliers(),
-  });
+  // Reactive supplier list from Convex; a supplier added via the quick-create
+  // dialog now appears in the dropdown instantly. Active-only (matches the old
+  // getSuppliers where: isActive).
+  const allSuppliers = useSuppliers(orgId);
+  const suppliers = (allSuppliers ?? []).filter((s) => s.isActive ?? true);
 
-  const { data: orgTags } = useQuery({
-    queryKey: ["org-tags", orgId],
-    queryFn: () => getOrgTags(),
-  });
+  const orgTags = useOrgTags(orgId);
 
   const form = useForm<AssetFormValues>({
     resolver: zodResolver(assetSchema),
@@ -110,7 +118,7 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
     setExtraAssets((prev) => prev.map((a, i) => (i === index ? { ...a, [field]: value } : a)));
   };
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: async (data: AssetFormValues) => {
       if (isEditing) {
         return updateAsset(initialData.id, data);
@@ -139,7 +147,6 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
     onError: (e) => toast.error(e.message),
   });
 
-  const models = modelsData?.models || [];
   const totalCount = 1 + extraAssets.length;
 
   return (

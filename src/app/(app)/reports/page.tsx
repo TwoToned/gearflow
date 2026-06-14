@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useSavedReports, fingerprintSavedReports } from "@/hooks/use-back-office";
+import { useServerQuery } from "@/hooks/use-server-query";
 import Link from "next/link";
 import {
   Package,
@@ -83,31 +85,43 @@ const ICON_MAP: Record<string, React.ReactNode> = {
 export default function ReportsPage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
 
   const [activeReport, setActiveReport] = useState<{
     config: ReportConfig;
     title: string;
   } | null>(null);
 
-  const { data: summary, isLoading: summaryLoading } = useQuery({
+  const { data: summary, isLoading: summaryLoading } = useServerQuery({
     queryKey: ["reports-summary", orgId],
     queryFn: getReportsSummary,
   });
 
-  const { data: savedReports } = useQuery({
+  const { data: savedReports, refetch: refetchSavedReports } = useServerQuery({
     queryKey: ["saved-reports", orgId],
     queryFn: getSavedReports,
   });
 
-  const deleteMutation = useMutation({
+  // Cross-tab live sync: subscribe to the dual-written Convex savedReports table;
+  // a fingerprint change (shared report created/edited/pinned/deleted in another
+  // tab) re-fetches the list.
+  const savedReportDocs = useSavedReports(orgId);
+  const savedReportFp = fingerprintSavedReports(savedReportDocs);
+  const prevSavedReportFp = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (savedReportFp !== undefined && prevSavedReportFp.current !== undefined && savedReportFp !== prevSavedReportFp.current) {
+      refetchSavedReports();
+    }
+    if (savedReportFp !== undefined) prevSavedReportFp.current = savedReportFp;
+  }, [savedReportFp, refetchSavedReports]);
+
+  const deleteMutation = useServerMutation({
     mutationFn: deleteSavedReport,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["saved-reports"] }),
+    onSuccess: () => refetchSavedReports(),
   });
 
-  const pinMutation = useMutation({
+  const pinMutation = useServerMutation({
     mutationFn: togglePinReport,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["saved-reports"] }),
+    onSuccess: () => refetchSavedReports(),
   });
 
   const reportsByCategory = getReportsByCategory();

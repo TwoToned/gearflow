@@ -1,6 +1,11 @@
 "use server";
 
+import { type FunctionArgs } from "convex/server";
 import { prisma } from "@/lib/prisma";
+import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import { removeAssetFromConvex, removeBulkAssetFromConvex } from "@/lib/asset-mirror";
+import { getPrimaryPhotoMap } from "@/lib/media-read";
+import { api } from "../../convex/_generated/api";
 import { serialize } from "@/lib/serialize";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { modelSchema, type ModelFormValues } from "@/lib/validations/model";
@@ -9,6 +14,32 @@ import { backfillTestTagAssets } from "@/server/test-tag-assets";
 import { getOrgTestTagSettings } from "@/server/settings";
 import { logActivity } from "@/lib/activity-log";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
+
+// Models are DUAL-WRITTEN: every create/update/archive writes the Prisma `model`
+// row (the durable FK anchor — asset/bulk_asset hold a required + Restrict FK;
+// model_media/model_check_item/supplier_model_rate/model_bulk_accessory hold a
+// required + Cascade FK; project_line_item/supplier_order_item/group_template_item/
+// sub_hire_item hold nullable FKs) AND the Convex `models` doc (the reactive read
+// source). Prisma is written first; the Convex payload is derived from the written
+// row via toConvexDoc so the two can't drift. Cross-domain `model.*` joins stay on
+// the always-fresh Prisma mirror and migrate at decommission. See FEATUREDOCS/54.
+
+/** Mirror a freshly written Prisma model row into Convex (create). */
+async function mirrorModelToConvex(row: Record<string, unknown>) {
+  await (await getConvexClient()).mutation(
+    api.models.create,
+    toConvexDoc(row) as FunctionArgs<typeof api.models.create>,
+  );
+}
+
+/** Mirror an updated Prisma model row into Convex (patch, id stripped). */
+async function patchModelInConvex(id: string, row: Record<string, unknown>) {
+  const { id: _id, ...patch } = toConvexDoc(row);
+  await (await getConvexClient()).mutation(api.models.update, {
+    id,
+    patch: patch as FunctionArgs<typeof api.models.update>["patch"],
+  });
+}
 
 const modelFilterColumns: FilterColumnDef[] = [
   { id: "categoryId", filterType: "enum" },
@@ -77,6 +108,31 @@ export async function getModels(params?: {
   return serialize({ models, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
 }
 
+/**
+ * Per-model asset/bulk-asset counts + primary photo (modelId -> meta).
+ * Cross-domain: assets + bulk assets still live in Prisma (counts come off the
+ * fresh mirror); the primary photo comes off the Convex `modelMedia` +
+ * `fileUploads` mirror via getPrimaryPhotoMap (Phase 6 decommission — model_media
+ * is now dual-written). Used by the reactive model table, which subscribes to the
+ * model list via Convex and merges these (non-reactive) values in.
+ */
+export async function getModelCounts(): Promise<
+  Record<string, { assets: number; bulkAssets: number; media: { url: string | null; thumbnailUrl: string | null } | null }>
+> {
+  const { organizationId } = await getOrgContext();
+  const [assetGroups, bulkGroups, photoMap] = await Promise.all([
+    prisma.asset.groupBy({ by: ["modelId"], where: { organizationId, isActive: true }, _count: { _all: true } }),
+    prisma.bulkAsset.groupBy({ by: ["modelId"], where: { organizationId, isActive: true }, _count: { _all: true } }),
+    getPrimaryPhotoMap("model", organizationId),
+  ]);
+  const out: Record<string, { assets: number; bulkAssets: number; media: { url: string | null; thumbnailUrl: string | null } | null }> = {};
+  const ensure = (id: string) => (out[id] ??= { assets: 0, bulkAssets: 0, media: null });
+  for (const g of assetGroups) if (g.modelId) ensure(g.modelId).assets = g._count._all;
+  for (const g of bulkGroups) if (g.modelId) ensure(g.modelId).bulkAssets = g._count._all;
+  for (const [modelId, meta] of Object.entries(photoMap)) ensure(modelId).media = meta;
+  return serialize(out);
+}
+
 export async function getModel(id: string) {
   const { organizationId } = await getOrgContext();
   const model = await prisma.model.findUnique({
@@ -143,6 +199,7 @@ export async function createModel(data: ModelFormValues) {
       tags: parsed.tags,
     },
   });
+  await mirrorModelToConvex(model);
 
   if (parsed.requiresTestAndTag) {
     await backfillTestTagAssets();
@@ -200,6 +257,7 @@ export async function updateModel(id: string, data: ModelFormValues) {
       tags: parsed.tags,
     },
   });
+  await patchModelInConvex(id, model);
 
   if (parsed.requiresTestAndTag) {
     await backfillTestTagAssets();
@@ -250,16 +308,24 @@ export async function updateModel(id: string, data: ModelFormValues) {
 export async function archiveModel(id: string) {
   const { organizationId, userId, userName } = await requirePermission("model", "delete");
 
-  // Delete all assets and bulk assets under this model
+  // Delete all assets and bulk assets under this model — capture their ids first
+  // so we can mirror the removals to Convex (both are dual-written).
+  const [assetsToRemove, bulkToRemove] = await Promise.all([
+    prisma.asset.findMany({ where: { modelId: id, organizationId }, select: { id: true } }),
+    prisma.bulkAsset.findMany({ where: { modelId: id, organizationId }, select: { id: true } }),
+  ]);
   await Promise.all([
     prisma.asset.deleteMany({ where: { modelId: id, organizationId } }),
     prisma.bulkAsset.deleteMany({ where: { modelId: id, organizationId } }),
   ]);
+  for (const a of assetsToRemove) await removeAssetFromConvex(a.id);
+  for (const b of bulkToRemove) await removeBulkAssetFromConvex(b.id);
 
   const archived = await prisma.model.update({
     where: { id, organizationId },
     data: { isActive: false },
   });
+  await patchModelInConvex(id, archived);
 
   await logActivity({
     organizationId,
@@ -322,7 +388,11 @@ export async function bulkUpdateRates(
     });
   });
 
-  await prisma.$transaction(updates);
+  const updatedRows = await prisma.$transaction(updates);
+  // Mirror each rate change into Convex (the reactive read source).
+  for (const row of updatedRows) {
+    await patchModelInConvex(row.id, row);
+  }
 
   await logActivity({
     organizationId,

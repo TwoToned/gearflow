@@ -2,10 +2,11 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
 import { Plus, Star } from "lucide-react";
 
-import { getLocations } from "@/server/locations";
+import { getLocationCounts } from "@/server/locations";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useLocations } from "@/hooks/use-locations";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
@@ -149,19 +150,65 @@ export function LocationTable() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["locations", orgId, { search, filters, page, pageSize, sortBy, sortOrder }],
-    queryFn: () => getLocations({
-      search: search || undefined,
-      filters,
-      page,
-      pageSize,
-      sortBy,
-      sortOrder,
-    }),
+  // Reactive location list straight from Convex (auto-updates on any location
+  // create/update/delete). Asset/bulk/kit counts are cross-domain (still in
+  // Prisma) so they come from a separate, non-reactive server query.
+  const allLocations = useLocations(orgId);
+  const { data: locationCounts } = useServerQuery({
+    queryKey: ["location-counts", orgId],
+    queryFn: () => getLocationCounts(),
+    enabled: !!orgId,
   });
 
-  const treeRows = useMemo(() => buildTreeRows(data?.locations || []), [data?.locations]);
+  // Filter (search name/address + type) → sort siblings (isDefault first, then
+  // the chosen column) → build the hierarchy tree → paginate the tree rows. All
+  // client-side over the reactive list. Counts merged in (children derived from
+  // the flat list itself).
+  const { treeRows, total } = useMemo(() => {
+    const source = allLocations ?? [];
+    const q = search.trim().toLowerCase();
+    const typeFilter = filters?.type as string | undefined;
+    const nameById = new Map(source.map((l) => [l.id, l.name]));
+
+    const filtered = source.filter((l) => {
+      if (typeFilter && l.type !== typeFilter) return false;
+      if (q) {
+        const hit = l.name.toLowerCase().includes(q) || (l.address?.toLowerCase().includes(q) ?? false);
+        if (!hit) return false;
+      }
+      return true;
+    });
+
+    const dir = sortOrder === "desc" ? -1 : 1;
+    const sorted = [...filtered].sort((a, b) => {
+      // Mirror the server's [{ isDefault: desc }, { sortBy: order }] default.
+      if ((b.isDefault ? 1 : 0) !== (a.isDefault ? 1 : 0)) return (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0);
+      const av = sortBy === "parent" ? (a.parentId ? nameById.get(a.parentId) : undefined) : (a as Record<string, unknown>)[sortBy];
+      const bv = sortBy === "parent" ? (b.parentId ? nameById.get(b.parentId) : undefined) : (b as Record<string, unknown>)[sortBy];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      return String(av).localeCompare(String(bv), undefined, { sensitivity: "base" }) * dir;
+    });
+
+    const childCount = new Map<string, number>();
+    for (const l of source) if (l.parentId) childCount.set(l.parentId, (childCount.get(l.parentId) ?? 0) + 1);
+
+    const tree = buildTreeRows(sorted).map((r) => ({
+      ...r,
+      _count: {
+        assets: locationCounts?.[r.id]?.assets ?? 0,
+        bulkAssets: locationCounts?.[r.id]?.bulkAssets ?? 0,
+        kits: locationCounts?.[r.id]?.kits ?? 0,
+        children: childCount.get(r.id) ?? 0,
+      },
+    }));
+    const start = (page - 1) * pageSize;
+    return { treeRows: tree.slice(start, start + pageSize), total: tree.length };
+  }, [allLocations, locationCounts, search, filters, sortBy, sortOrder, page, pageSize]);
+
+  const isLoading = allLocations === undefined;
 
   const actionButtons = (
     <Button render={<Link href="/locations/new" />}>
@@ -174,7 +221,7 @@ export function LocationTable() {
     <DataTable
       data={treeRows}
       columns={columns}
-      totalRows={data?.total || 0}
+      totalRows={total}
       page={page}
       pageSize={pageSize}
       onPageChange={setPage}

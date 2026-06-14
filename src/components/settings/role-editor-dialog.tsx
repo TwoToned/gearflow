@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import {
@@ -23,6 +22,10 @@ import {
 } from "@/components/ui/select";
 import { PermissionMatrix } from "./permission-matrix";
 import { createCustomRole, updateCustomRole } from "@/server/custom-roles";
+import { useActiveOrganization } from "@/lib/auth-client";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { refreshCustomRoles } from "@/hooks/use-custom-roles";
+import { refreshCurrentRole } from "@/hooks/use-current-role";
 import {
   rolePermissions,
   ASSIGNABLE_BUILT_IN_ROLES,
@@ -68,7 +71,8 @@ export function RoleEditorDialog({
   onOpenChange,
   editingRole,
 }: RoleEditorDialogProps) {
-  const queryClient = useQueryClient();
+  const { data: activeOrg } = useActiveOrganization();
+  const orgId = activeOrg?.id;
   const isEditing = !!editingRole;
 
   const [name, setName] = useState("");
@@ -96,23 +100,26 @@ export function RoleEditorDialog({
     }
   }, [open, editingRole]);
 
-  const createMut = useMutation({
+  const createMut = useServerMutation({
     mutationFn: () =>
       createCustomRole({ name, description, color, ssoGroupClaim: ssoGroupClaim || undefined, permissions }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["custom-roles"] });
+      refreshCustomRoles(orgId);
       toast.success("Role created");
       onOpenChange(false);
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const updateMut = useMutation({
+  const updateMut = useServerMutation({
     mutationFn: () =>
       updateCustomRole(editingRole!.id, { name, description, color, ssoGroupClaim: ssoGroupClaim || undefined, permissions }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["custom-roles"] });
-      queryClient.invalidateQueries({ queryKey: ["current-role"] });
+      refreshCustomRoles(orgId);
+      // Editing a role's permissions can change the viewer's own effective
+      // permissions (use-permissions.ts) — refresh that shared store, the
+      // analogue of the old invalidateQueries(["current-role"]).
+      refreshCurrentRole(orgId);
       toast.success("Role updated");
       onOpenChange(false);
     },

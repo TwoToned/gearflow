@@ -1,7 +1,22 @@
 "use client";
 
 import React, { useState, useCallback, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { refreshProjectDetail } from "@/hooks/use-project-detail";
+import {
+  useProjectCategories,
+  refreshProjectCategories,
+  useUncategorizedItems,
+  refreshUncategorizedItems,
+  useUncategorizedSubHireGroups,
+  refreshUncategorizedSubHireGroups,
+  useUncategorizedProjectGroups,
+  refreshUncategorizedProjectGroups,
+  useProjectOverbooked,
+  refreshProjectOverbooked,
+  useProjectSubHires,
+  useProjectEquipmentLiveSync,
+} from "@/hooks/use-project-equipment";
 import {
   DndContext,
   closestCenter,
@@ -22,8 +37,8 @@ import {
 import { Plus, FolderPlus, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
-import { getProjectCategories } from "@/server/project-categories";
-import { getProjectServices } from "@/server/project-services";
+import { useProjectServices } from "@/hooks/use-project-services";
+import { useGroupTemplates, refreshGroupTemplates } from "@/hooks/use-group-templates";
 import {
   createProjectGroup,
   updateProjectGroup,
@@ -47,7 +62,7 @@ import {
   moveSubHireGroupToCategory,
   reorderMixedGroupsInCategory,
 } from "@/server/category-slots";
-import { getGroupTemplates, applyGroupTemplate, saveGroupAsTemplate } from "@/server/group-templates";
+import { applyGroupTemplate, saveGroupAsTemplate } from "@/server/group-templates";
 import { removeLineItem, updateLineItem, reorderLineItems } from "@/server/line-items";
 import { Button } from "@/components/ui/button";
 import {
@@ -106,9 +121,13 @@ interface EquipmentTabProps {
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: EquipmentTabProps) {
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+
+  // Cross-tab live sync: subscribe to the dual-written line-item / group /
+  // category Convex tables and re-fetch the equipment composites whenever
+  // another tab (or collaborator) edits pricing, moves items, or changes groups.
+  useProjectEquipmentLiveSync(projectId, orgId);
 
   // The sortable ID currently being hovered with a disallowed drop (Drop
   // Matrix 8C). Cleared on drag end / leave. Row components read this to
@@ -253,77 +272,40 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  const queryKey = ["project-categories", projectId];
+  const { data: categories = [], isLoading } = useProjectCategories(projectId);
 
-  const { data: categories = [], isLoading } = useQuery({
-    queryKey,
-    queryFn: () => getProjectCategories(projectId),
-    staleTime: 60_000,
-  });
+  const { data: uncategorizedItems = [] } = useUncategorizedItems(projectId);
 
-  const { data: uncategorizedItems = [] } = useQuery({
-    queryKey: ["uncategorized-items", projectId],
-    queryFn: () => getUncategorizedLineItems(projectId),
-    staleTime: 60_000,
-  });
+  const { data: uncategorizedSubHireGroups = [] } = useUncategorizedSubHireGroups(projectId);
 
-  const { data: uncategorizedSubHireGroups = [] } = useQuery({
-    queryKey: ["uncategorized-subhire-groups", projectId],
-    queryFn: () => getUncategorizedSubHireGroups(projectId),
-    staleTime: 60_000,
-  });
+  const { data: uncategorizedProjectGroups = [] } = useUncategorizedProjectGroups(projectId);
 
-  const { data: uncategorizedProjectGroups = [] } = useQuery({
-    queryKey: ["uncategorized-project-groups", projectId],
-    queryFn: () => getUncategorizedProjectGroups(projectId),
-    staleTime: 60_000,
-  });
+  const { data: templates = [] } = useGroupTemplates(orgId);
 
-  const { data: templates = [] } = useQuery({
-    queryKey: ["group-templates"],
-    queryFn: () => getGroupTemplates(),
-    staleTime: 60_000,
-  });
+  const { data: servicesData } = useProjectServices(projectId);
 
-  const { data: servicesData } = useQuery({
-    queryKey: ["project-services", projectId],
-    queryFn: () => getProjectServices(projectId),
-    staleTime: 60_000,
-  });
-
-  const { data: overbookedMap = {} } = useQuery({
-    queryKey: ["project-overbooked", projectId],
-    queryFn: () => getProjectOverbookedStatus(projectId),
-    staleTime: 30_000,
-  });
+  const { data: overbookedMap = {} } = useProjectOverbooked(projectId);
 
   // Availability check for the currently-edited line item (equipment w/ modelId only)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: projectSubHires = [] } = useQuery<any[]>({
-    queryKey: ["project-sub-hires", orgId, projectId],
-    queryFn: () => getSubHires({ projectId }),
-  });
+  const { data: projectSubHires = [] } = useProjectSubHires(projectId) as { data: any[] };
 
   const templateOptions = (templates as { id: string; name: string; description: string | null; items: unknown[] }[]).map(
     (t) => ({ id: t.id, name: t.name, description: t.description, itemCount: t.items.length })
   );
 
   const invalidate = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey });
-    queryClient.invalidateQueries({ queryKey: ["uncategorized-items", projectId] });
-    queryClient.invalidateQueries({ queryKey: ["uncategorized-subhire-groups", projectId] });
-    queryClient.invalidateQueries({ queryKey: ["uncategorized-project-groups", projectId] });
-    queryClient.invalidateQueries({ queryKey: ["project", projectId] });
-    queryClient.invalidateQueries({ queryKey: ["project-overbooked", projectId] });
-    // Any mutation that changes line item quantity/presence must refresh
-    // availability so the next add/edit dialog sees fresh booked counts.
-    queryClient.invalidateQueries({ queryKey: ["availability"] });
-    queryClient.invalidateQueries({ queryKey: ["asset-lookup"] });
-  }, [queryClient, queryKey, projectId]);
+    refreshProjectCategories(projectId);
+    refreshUncategorizedItems(projectId);
+    refreshUncategorizedSubHireGroups(projectId);
+    refreshUncategorizedProjectGroups(projectId);
+    refreshProjectDetail(projectId);
+    refreshProjectOverbooked(projectId);
+  }, [projectId]);
 
   // ─── Mutations ───────────────────────────────────────────────────────────
 
-  const createCategoryMut = useMutation({
+  const createCategoryMut = useServerMutation({
     mutationFn: (name: string) => createProjectCategory(projectId, { name }),
     onSuccess: () => {
       invalidate();
@@ -333,7 +315,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const renameCategoryMut = useMutation({
+  const renameCategoryMut = useServerMutation({
     mutationFn: ({ id, name }: { id: string; name: string }) => updateProjectCategory(id, { name }),
     onSuccess: () => {
       invalidate();
@@ -343,7 +325,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const deleteCategoryMut = useMutation({
+  const deleteCategoryMut = useServerMutation({
     mutationFn: (id: string) => deleteProjectCategory(id),
     onSuccess: () => {
       invalidate();
@@ -352,7 +334,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const moveLineItemMut = useMutation({
+  const moveLineItemMut = useServerMutation({
     mutationFn: ({ lineItemId, targetGroupId, targetCategoryId }: {
       lineItemId: string;
       targetGroupId: string | null;
@@ -369,7 +351,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const updateLineItemMut = useMutation({
+  const updateLineItemMut = useServerMutation({
     mutationFn: ({ id, data, allowOverbook }: { id: string; data: Record<string, unknown>; allowOverbook?: boolean }) =>
       updateLineItem(id, data as Parameters<typeof updateLineItem>[1], allowOverbook ?? false),
     onSuccess: () => {
@@ -380,7 +362,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const removeMut = useMutation({
+  const removeMut = useServerMutation({
     mutationFn: (id: string) => removeLineItem(id),
     onSuccess: () => {
       invalidate();
@@ -390,19 +372,19 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   });
 
 
-  const saveAsTemplateMut = useMutation({
+  const saveAsTemplateMut = useServerMutation({
     mutationFn: ({ groupId, name, description }: { groupId: string; name: string; description?: string }) =>
       saveGroupAsTemplate(groupId, name, description),
     onSuccess: (t: unknown) => {
       const name = (t as { name?: string })?.name ?? "Template";
       toast.success(`Saved as template "${name}"`);
-      queryClient.invalidateQueries({ queryKey: ["group-templates"] });
+      refreshGroupTemplates(orgId);
       setSaveAsTemplateGroup(null);
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const createGroupMut = useMutation({
+  const createGroupMut = useServerMutation({
     mutationFn: ({ categoryId, title, templateId }: { categoryId: string | null; title: string; templateId?: string }) => {
       if (templateId) {
         // Templates are category-scoped concepts — fall back to no-template
@@ -424,7 +406,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   });
 
 
-  const deleteGroupMut = useMutation({
+  const deleteGroupMut = useServerMutation({
     mutationFn: (groupId: string) => deleteProjectGroup(groupId),
     onSuccess: () => {
       invalidate();
@@ -435,7 +417,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const updateGroupMut = useMutation({
+  const updateGroupMut = useServerMutation({
     mutationFn: ({ groupId, data }: { groupId: string; data: Partial<{ title: string; description: string; quantity: number; billingMonths: number; billingWeeks: number; billingDays: number }> }) =>
       updateProjectGroup(groupId, data),
     onSuccess: () => {
@@ -1094,8 +1076,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                   } else {
                                     toast.success(`Prices updated for ${count} item${count !== 1 ? "s" : ""}`);
                                   }
-                                  queryClient.invalidateQueries({ queryKey: ["project-categories"] });
-                                  queryClient.invalidateQueries({ queryKey: ["project-line-items"] });
+                                  refreshProjectCategories(projectId);
                                 } catch (e) {
                                   toast.error(e instanceof Error ? e.message : "Failed to recalculate");
                                 }

@@ -1,13 +1,12 @@
 import type { Metadata, Viewport } from "next";
 import { DM_Sans, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/providers/theme-provider";
-import { QueryProvider } from "@/components/providers/query-provider";
+import { ConvexClientProvider } from "@/components/providers/convex-provider";
 import { GoogleMapsProvider } from "@/components/providers/google-maps-provider";
 import { GlobalErrorBoundary } from "@/components/error-boundary";
 import { DomPatch } from "@/components/dom-patch";
 import { OverlayLockReset } from "@/components/overlay-lock-reset";
 import { ReducedMotionProvider } from "@/components/ui/motion";
-import { RealtimeProvider } from "@/providers/realtime-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { getPlatformName } from "@/lib/platform";
 import "./globals.css";
@@ -71,11 +70,9 @@ export default function RootLayout({
           <OverlayLockReset />
           <ThemeProvider>
             <GoogleMapsProvider>
-              <QueryProvider>
-                <RealtimeProvider>
-                  <ReducedMotionProvider>{children}</ReducedMotionProvider>
-                </RealtimeProvider>
-              </QueryProvider>
+              <ConvexClientProvider>
+                <ReducedMotionProvider>{children}</ReducedMotionProvider>
+              </ConvexClientProvider>
             </GoogleMapsProvider>
           </ThemeProvider>
           <Toaster />

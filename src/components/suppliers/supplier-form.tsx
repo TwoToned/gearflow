@@ -3,13 +3,13 @@
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { supplierSchema, type SupplierFormValues } from "@/lib/validations/supplier";
 import { createSupplier, updateSupplier } from "@/server/suppliers";
-import { getOrgTags } from "@/server/tags";
+import { useOrgTags } from "@/hooks/use-org-tags";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrgCountry } from "@/lib/use-org-country";
 import { TagInput } from "@/components/ui/tag-input";
@@ -31,10 +31,7 @@ export function SupplierForm({ initialData }: SupplierFormProps) {
   const orgId = activeOrg?.id;
   const orgCountry = useOrgCountry();
 
-  const { data: orgTags } = useQuery({
-    queryKey: ["org-tags", orgId],
-    queryFn: () => getOrgTags(),
-  });
+  const orgTags = useOrgTags(orgId);
 
   const form = useForm<SupplierFormValues>({
     resolver: zodResolver(supplierSchema),
@@ -56,7 +53,7 @@ export function SupplierForm({ initialData }: SupplierFormProps) {
     },
   });
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (data: SupplierFormValues) =>
       isEditing ? updateSupplier(initialData.id, data) : createSupplier(data),
     onSuccess: (result) => {

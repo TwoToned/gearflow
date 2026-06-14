@@ -11,7 +11,7 @@
  */
 
 import { Fragment } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useSubHire } from "@/hooks/use-project-equipment";
 
 import { formatCurrency } from "@/lib/formatters";
 
@@ -24,14 +24,7 @@ interface SubHireExpandedItemsProps {
 
 export function SubHireExpandedItems({ subHireId, orgId }: SubHireExpandedItemsProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: subHire } = useQuery<any>({
-    queryKey: ["sub-hire", orgId, subHireId],
-    queryFn: async () => {
-      const { getSubHire } = await import("@/server/sub-hires");
-      return getSubHire(subHireId);
-    },
-    enabled: !!orgId,
-  });
+  const { data: subHire } = useSubHire(orgId ? subHireId : undefined) as { data: any };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const items = (subHire?.items || []) as Array<Record<string, any>>;

@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { refreshProjectDetail } from "@/hooks/use-project-detail";
+import { useServerQuery } from "@/hooks/use-server-query";
+
 import { Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -34,11 +37,10 @@ export function ProjectManagersPanel({
   projectId,
   managers,
 }: ProjectManagersPanelProps) {
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const [showPicker, setShowPicker] = useState(false);
 
-  const { data: members } = useQuery({
+  const { data: members } = useServerQuery({
     queryKey: ["members", activeOrg?.id],
     queryFn: getMembers,
     enabled: showPicker,
@@ -59,19 +61,19 @@ export function ProjectManagersPanel({
       })
     );
 
-  const addMutation = useMutation({
+  const addMutation = useServerMutation({
     mutationFn: (userId: string) => addProjectManager(projectId, userId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+      refreshProjectDetail(projectId);
       setShowPicker(false);
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const removeMutation = useMutation({
+  const removeMutation = useServerMutation({
     mutationFn: (userId: string) => removeProjectManager(projectId, userId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+      refreshProjectDetail(projectId);
     },
     onError: (e) => toast.error(e.message),
   });

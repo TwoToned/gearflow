@@ -9,10 +9,13 @@
  * supplies that.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { refreshProjectDetail } from "@/hooks/use-project-detail";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useProjectCategories, refreshProjectCategories, refreshUncategorizedItems, refreshProjectOverbooked } from "@/hooks/use-project-equipment";
 import { Loader2, AlertTriangle, CheckCircle2, XCircle, Search } from "lucide-react";
 import { toast } from "sonner";
 
@@ -21,8 +24,7 @@ import {
   type LineItemFormValues,
 } from "@/lib/validations/line-item";
 import { addLineItem, checkAvailability, lookupAssetByTag } from "@/server/line-items";
-import { getModels } from "@/server/models";
-import { getProjectCategories } from "@/server/project-categories";
+import { useModels } from "@/hooks/use-models";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,7 +67,6 @@ export function EquipmentAddForm({
   onClose,
   onOpenSubHire,
 }: EquipmentAddFormProps) {
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const [mode, setMode] = useState<AddMode>("model");
@@ -89,33 +90,37 @@ export function EquipmentAddForm({
     },
   });
 
-  const { data: modelsData } = useQuery({
-    queryKey: ["models", orgId, { pageSize: 200 }],
-    queryFn: () => getModels({ pageSize: 200 }),
-  });
+  // Reactive models (Convex). Org-scoped list returns all models; re-apply
+  // getModels's default active filter and name sort client-side.
+  const modelDocs = useModels(orgId);
+  const activeModels = useMemo(
+    () =>
+      [...(modelDocs ?? [])]
+        .filter((m) => m.isActive === true)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [modelDocs],
+  );
 
-  // Categories for the optional category picker (only when not pre-set)
-  const { data: categoriesData } = useQuery({
-    queryKey: ["project-categories", projectId],
-    queryFn: () => getProjectCategories(projectId),
-    enabled: !categoryId,
-  });
+  // Categories for the optional category picker (only when not pre-set).
+  // Passing an undefined key when a category is pre-set preserves the old
+  // `enabled: !categoryId` (no fetch).
+  const { data: categoriesData } = useProjectCategories(categoryId ? undefined : projectId);
 
   const categoryOptions = (categoriesData ?? []).map((c: { id: string; name: string }) => ({
     value: c.id,
     label: c.name,
   }));
 
-  const modelOptions = (modelsData?.models || []).map((m) => ({
+  const modelOptions = activeModels.map((m) => ({
     value: m.id,
     label: m.name,
     description: [m.manufacturer, m.modelNumber].filter(Boolean).join(" - ") || undefined,
   }));
 
-  const selectedModel = modelsData?.models?.find((m) => m.id === selectedModelId);
+  const selectedModel = activeModels.find((m) => m.id === selectedModelId);
 
   // Model-based availability check (works with or without dates)
-  const { data: availability, isLoading: availabilityLoading } = useQuery({
+  const { data: availability, isLoading: availabilityLoading } = useServerQuery({
     queryKey: [
       "availability",
       orgId,
@@ -135,7 +140,7 @@ export function EquipmentAddForm({
   });
 
   // Asset tag lookup
-  const { data: assetLookup, isLoading: lookupLoading } = useQuery({
+  const { data: assetLookup, isLoading: lookupLoading } = useServerQuery({
     queryKey: [
       "asset-lookup",
       orgId,
@@ -172,7 +177,7 @@ export function EquipmentAddForm({
     }
   }, [assetLookup, form]);
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (data: LineItemFormValues) => {
       let disc = data.discount;
       if (discountMode === "%" && disc && data.unitPrice) {
@@ -195,11 +200,10 @@ export function EquipmentAddForm({
       } else {
         toast.success("Equipment added");
       }
-      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
-      queryClient.invalidateQueries({ queryKey: ["availability"] });
-      queryClient.invalidateQueries({ queryKey: ["project-categories", projectId] });
-      queryClient.invalidateQueries({ queryKey: ["uncategorized-items", projectId] });
-      queryClient.invalidateQueries({ queryKey: ["project-overbooked", projectId] });
+      refreshProjectDetail(projectId);
+      refreshProjectCategories(projectId);
+      refreshUncategorizedItems(projectId);
+      refreshProjectOverbooked(projectId);
       onInvalidate?.();
       onClose();
     },

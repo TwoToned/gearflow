@@ -1,12 +1,12 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { getAdminDashboardStats } from "@/server/site-admin";
 import { Users, Building2, Shield } from "lucide-react";
 
 export default function AdminDashboardPage() {
-  const { data } = useQuery({
+  const { data } = useServerQuery({
     queryKey: ["admin-dashboard"],
     queryFn: getAdminDashboardStats,
   });

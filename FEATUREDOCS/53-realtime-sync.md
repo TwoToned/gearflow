@@ -1,5 +1,19 @@
 # Real-Time Sync System
 
+> **⚠️ SUPERSEDED & REMOVED (2026-06-11).** This system was torn out as the
+> next-to-last step of the Phase 6 Convex migration. It never delivered a single
+> cross-user update: the emit side was a no-op (a PascalCase vs lowercase
+> `entityType` mismatch in `mapEntityTypeToEvent` meant `events.emit` was never
+> reached), and the read side only invalidated React Query keys whose every reader
+> is now a reactive Convex hook or `useServerQuery`. All four files
+> (`src/lib/events.ts`, `src/app/api/realtime/route.ts`, `src/hooks/use-realtime.ts`,
+> `src/providers/realtime-provider.tsx`) and the `logActivity` emit hook are gone.
+> Cross-user liveness is now Convex's reactive engine; the version-vector pattern
+> (`useReactiveServerQuery` + `convex/<table>Detail.ts`) covers detail composites
+> Convex can't subscribe to directly. See
+> [FEATUREDOCS/54 — Convex Data Layer](./54-convex-data-layer.md) (the "SSE /
+> EventEmitter teardown" section). This document is retained for historical context only.
+
 ## Overview
 
 Server-Sent Events (SSE) + in-memory event bus + React Query invalidation. When any server action writes to the database, the event system broadcasts a "this changed" notification to all connected clients in the same organization. Each client invalidates its React Query cache for the affected data, triggering an automatic refetch — no manual page refresh needed.

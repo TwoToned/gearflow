@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { toast } from "sonner";
 import { X, Camera } from "lucide-react";
 
@@ -34,7 +35,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { getOrgTags } from "@/server/tags";
+import { useOrgTags } from "@/hooks/use-org-tags";
 import { TagInput } from "@/components/ui/tag-input";
 
 const typeLabels: Record<string, string> = {
@@ -62,20 +63,17 @@ export function MaintenanceForm({ initialData }: MaintenanceFormProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: assets } = useQuery({
+  const { data: assets } = useServerQuery({
     queryKey: ["maintenance-assets", orgId],
     queryFn: getAssetsForMaintenanceSelect,
   });
 
-  const { data: members } = useQuery({
+  const { data: members } = useServerQuery({
     queryKey: ["members", orgId],
     queryFn: getMembers,
   });
 
-  const { data: orgTags } = useQuery({
-    queryKey: ["org-tags", orgId],
-    queryFn: () => getOrgTags(),
-  });
+  const orgTags = useOrgTags(orgId);
 
   const [cameraOpen, setCameraOpen] = useState(false);
   const [photosUploading, setPhotosUploading] = useState(false);
@@ -106,7 +104,7 @@ export function MaintenanceForm({ initialData }: MaintenanceFormProps) {
     },
   });
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (data: MaintenanceFormValues) =>
       isEdit
         ? updateMaintenanceRecord(initialData!.id, data)

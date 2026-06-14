@@ -1,12 +1,43 @@
 "use server";
 
+import { type FunctionArgs } from "convex/server";
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
+import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { supplierSchema, type SupplierFormValues } from "@/lib/validations/supplier";
 import { logActivity, buildChanges } from "@/lib/activity-log";
 import { buildFilterWhere, type FilterValue } from "@/lib/table-utils";
 import type { ColumnDef } from "@/components/ui/data-table";
+
+// Suppliers are DUAL-WRITTEN: every create/update/delete writes the Prisma
+// `supplier` row (the durable FK anchor — asset/bulk_asset/project_line_item/
+// sub_hire/supplier_order/supplier_model_rate all carry a real FK, two required
+// + Cascade) AND the Convex `suppliers` doc (the reactive read source the
+// browser subscribes to via use-suppliers). Prisma is written first so it stays
+// the integrity anchor and the idempotent backfill can heal a missing Convex
+// row; the Convex payload is derived from the written Prisma row via toConvexDoc
+// so the two stores can't drift. Server-side reads below stay on the (always
+// fresh) Prisma mirror; the reactive UI reads Convex. See FEATUREDOCS/54.
+
+/** Mirror a freshly written Prisma supplier row into Convex (create). */
+async function mirrorSupplierToConvex(row: Record<string, unknown>) {
+  await (await getConvexClient()).mutation(
+    api.suppliers.create,
+    toConvexDoc(row) as FunctionArgs<typeof api.suppliers.create>,
+  );
+}
+
+/** Mirror an updated Prisma supplier row into Convex (patch, id stripped). */
+async function patchSupplierInConvex(id: string, row: Record<string, unknown>) {
+  const { id: _id, ...patch } = toConvexDoc(row);
+  await (await getConvexClient()).mutation(api.suppliers.update, {
+    id,
+    patch: patch as FunctionArgs<typeof api.suppliers.update>["patch"],
+  });
+}
 
 // Column defs for server-side filter building
 const filterColumnDefs: ColumnDef<unknown>[] = [
@@ -67,6 +98,36 @@ export async function getSuppliersPaginated(params: {
   ]);
 
   return serialize({ suppliers, total });
+}
+
+/**
+ * Asset + order counts per supplier (supplierId -> { assets, orders }).
+ * Cross-domain: assets and supplier orders still live in Prisma, so this can't
+ * come from Convex. Used by the reactive supplier table, which subscribes to the
+ * supplier list via Convex and merges these (non-reactive) counts.
+ */
+export async function getSupplierCounts(): Promise<Record<string, { assets: number; orders: number }>> {
+  const { organizationId } = await getOrgContext();
+  const [assetGroups, orderGroups] = await Promise.all([
+    prisma.asset.groupBy({
+      by: ["supplierId"],
+      where: { organizationId, supplierId: { not: null } },
+      _count: { _all: true },
+    }),
+    prisma.supplierOrder.groupBy({
+      by: ["supplierId"],
+      where: { organizationId },
+      _count: { _all: true },
+    }),
+  ]);
+  const counts: Record<string, { assets: number; orders: number }> = {};
+  for (const g of assetGroups) {
+    if (g.supplierId) (counts[g.supplierId] ??= { assets: 0, orders: 0 }).assets = g._count._all;
+  }
+  for (const g of orderGroups) {
+    if (g.supplierId) (counts[g.supplierId] ??= { assets: 0, orders: 0 }).orders = g._count._all;
+  }
+  return serialize(counts);
 }
 
 export async function getSupplierById(id: string) {
@@ -159,9 +220,12 @@ export async function createSupplier(data: SupplierFormValues) {
     defaultLeadTime: parsed.defaultLeadTime || null,
     tags: (parsed.tags || []).map((t: string) => t.toLowerCase()),
   };
+  // Explicit cuid so the Prisma row and the Convex doc share one id.
+  const id = createId();
   const result = await prisma.supplier.create({
-    data: { ...cleaned, organizationId },
+    data: { ...cleaned, id, organizationId },
   });
+  await mirrorSupplierToConvex(result);
 
   await logActivity({
     organizationId,
@@ -203,6 +267,7 @@ export async function updateSupplier(id: string, data: SupplierFormValues) {
     where: { id, organizationId },
     data: cleaned,
   });
+  await patchSupplierInConvex(id, updated);
 
   const changes = buildChanges(before, updated, [
     "name", "contactName", "email", "phone", "website", "address",
@@ -241,6 +306,7 @@ export async function deleteSupplier(id: string) {
     throw new Error("Cannot delete supplier with existing orders. Archive it instead.");
   }
   await prisma.supplier.delete({ where: { id, organizationId } });
+  await (await getConvexClient()).mutation(api.suppliers.remove, { id });
 
   await logActivity({
     organizationId,

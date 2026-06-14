@@ -9,6 +9,7 @@
  */
 import { Prisma, ProjectStatus } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
+import { syncProjectToConvex } from "@/lib/project-mirror";
 import { DiscordApiError } from "@/lib/discord/api-errors";
 import {
   ACTIVE_PROJECT_STATUS_FILTER,
@@ -146,7 +147,11 @@ export async function recordProjectChannelId(
     where: { id: projectId, organizationId, discordChannelId: null },
     data: { discordChannelId: channelId },
   });
-  if (claim.count === 1) return { channelId, created: true };
+  if (claim.count === 1) {
+    // Mirror the discordChannelId claim to Convex (project is dual-written).
+    await syncProjectToConvex(projectId);
+    return { channelId, created: true };
+  }
 
   const existing = await db.project.findFirst({
     where: { id: projectId, organizationId },

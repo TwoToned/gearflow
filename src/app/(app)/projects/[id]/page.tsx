@@ -1,9 +1,14 @@
 "use client";
 
 import { use, useState } from "react";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useProjectDetail, refreshProjectDetail } from "@/hooks/use-project-detail";
+import { useProjectServicesSummary } from "@/hooks/use-project-services";
+import { useProjectLabourCost } from "@/hooks/use-project-crew";
+import { refreshProjectOverbooked } from "@/hooks/use-project-equipment";
 import {
   Pencil,
   Archive,
@@ -37,14 +42,11 @@ import { toast } from "sonner";
 import { useActiveOrganization } from "@/lib/auth-client";
 
 import {
-  getProject,
   updateProjectStatus,
   updateProjectNotes,
   archiveProject,
   deleteProject,
 } from "@/server/projects";
-import { getProjectLabourCost } from "@/server/crew-assignments";
-import { getProjectServicesSummary } from "@/server/project-services";
 import { DuplicateProjectDialog } from "@/components/projects/duplicate-project-dialog";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -133,7 +135,6 @@ export default function ProjectDetailPage({
 }) {
   const { id } = use(params);
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
@@ -142,18 +143,14 @@ export default function ProjectDetailPage({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
 
-  const { data: project, isLoading } = useQuery({
-    queryKey: ["project", orgId, id],
-    queryFn: () => getProject(id),
-  });
+  const { data: project, isLoading } = useProjectDetail(id);
 
-  const { data: customTemplates } = useQuery({
+  const { data: customTemplates } = useServerQuery({
     queryKey: ["document-templates-dropdown", orgId],
     queryFn: () => getPublishedTemplatesForDropdown(),
-    staleTime: 60_000,
   });
 
-  const statusMutation = useMutation({
+  const statusMutation = useServerMutation({
     mutationFn: (nextStatus: string) =>
       updateProjectStatus(
         id,
@@ -161,33 +158,28 @@ export default function ProjectDetailPage({
       ),
     onSuccess: () => {
       toast.success("Status updated");
-      queryClient.invalidateQueries({ queryKey: ["project", orgId, id] });
-      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      refreshProjectDetail(id);
       // A status transition into CANCELLED/RETURNED/COMPLETED/INVOICED releases
       // stock; any other open project's overbook/availability caches are now stale.
-      queryClient.invalidateQueries({ queryKey: ["project-overbooked"] });
-      queryClient.invalidateQueries({ queryKey: ["availability"] });
+      refreshProjectOverbooked(id);
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const archiveMutation = useMutation({
+  const archiveMutation = useServerMutation({
     mutationFn: () => archiveProject(id),
     onSuccess: () => {
       toast.success("Project cancelled");
-      queryClient.invalidateQueries({ queryKey: ["projects"] });
-      queryClient.invalidateQueries({ queryKey: ["project", orgId, id] });
-      queryClient.invalidateQueries({ queryKey: ["project-overbooked"] });
-      queryClient.invalidateQueries({ queryKey: ["availability"] });
+      refreshProjectDetail(id);
+      refreshProjectOverbooked(id);
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: () => deleteProject(id),
     onSuccess: () => {
       toast.success("Project deleted");
-      queryClient.invalidateQueries({ queryKey: ["projects"] });
       router.push("/projects");
     },
     onError: (e) => toast.error(e.message),
@@ -489,7 +481,9 @@ export default function ProjectDetailPage({
                     <NotesEditor
                       title="Crew Notes"
                       initialNotes={project.crewNotes || ""}
-                      queryKey={["project", orgId, id]}
+                      onChanged={() =>
+                        refreshProjectDetail(id)
+                      }
                       onSave={(notes) => updateProjectNotes(id, "crewNotes", notes)}
                       placeholder="Notes for crew members..."
                       rows={4}
@@ -497,7 +491,9 @@ export default function ProjectDetailPage({
                     <NotesEditor
                       title="Internal Notes"
                       initialNotes={project.internalNotes || ""}
-                      queryKey={["project", orgId, id]}
+                      onChanged={() =>
+                        refreshProjectDetail(id)
+                      }
                       onSave={(notes) => updateProjectNotes(id, "internalNotes", notes)}
                       placeholder="Internal notes (not visible to client)..."
                       rows={4}
@@ -505,7 +501,9 @@ export default function ProjectDetailPage({
                     <NotesEditor
                       title="Client Notes"
                       initialNotes={project.clientNotes || ""}
-                      queryKey={["project", orgId, id]}
+                      onChanged={() =>
+                        refreshProjectDetail(id)
+                      }
                       onSave={(notes) => updateProjectNotes(id, "clientNotes", notes)}
                       placeholder="Notes visible to client on documents..."
                       rows={4}
@@ -521,7 +519,9 @@ export default function ProjectDetailPage({
                       entityId={id}
                       accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.dwg,.dxf,.txt"
                       existingMedia={(project.media || []) as MediaItem[]}
-                      queryKey={["project", orgId, id]}
+                      onChanged={() =>
+                        refreshProjectDetail(id)
+                      }
                       onUploadComplete={async (fileUpload) => {
                         await addProjectMedia({
                           projectId: id,
@@ -871,10 +871,7 @@ export default function ProjectDetailPage({
 function LabourCostDisplay({ projectId }: { projectId: string }) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const { data } = useQuery({
-    queryKey: ["project-labour-cost", orgId, projectId],
-    queryFn: () => getProjectLabourCost(projectId),
-  });
+  const { data } = useProjectLabourCost(projectId);
   return (
     <span className="t-data font-medium">
       {data ? formatCurrency(Number(data.totalLabourCost)) : "\u2014"}
@@ -894,15 +891,9 @@ function ProjectSummaryStrip({
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: labourData } = useQuery({
-    queryKey: ["project-labour-cost", orgId, projectId],
-    queryFn: () => getProjectLabourCost(projectId),
-  });
+  const { data: labourData } = useProjectLabourCost(projectId);
 
-  const { data: serviceData } = useQuery({
-    queryKey: ["project-services-summary", orgId, projectId],
-    queryFn: () => getProjectServicesSummary(projectId),
-  });
+  const { data: serviceData } = useProjectServicesSummary(projectId);
 
   const metrics = [
     {

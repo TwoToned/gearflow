@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import { serialize } from "@/lib/serialize";
 import { getOrgContext } from "@/lib/org-context";
+import { getClientMap } from "@/lib/clients-read";
 
 export interface CalendarProject {
   id: string;
@@ -66,7 +67,7 @@ export async function getModelBookings(
             status: true,
             rentalStartDate: true,
             rentalEndDate: true,
-            client: { select: { name: true } },
+            clientId: true,
           },
         },
       },
@@ -81,6 +82,9 @@ export async function getModelBookings(
     }),
   ]);
 
+  // Clients live in Convex — resolve names by clientId.
+  const clientMap = await getClientMap(organizationId);
+
   // Deduplicate by project (sum quantities per project)
   const byProject = new Map<string, BookingEntry>();
   for (const li of lineItems) {
@@ -94,7 +98,7 @@ export async function getModelBookings(
         projectId: li.project.id,
         projectNumber: li.project.projectNumber,
         projectName: li.project.name,
-        clientName: li.project.client?.name || null,
+        clientName: clientMap.get(li.project.clientId ?? "")?.name ?? null,
         projectStatus: li.project.status,
         rentalStartDate: li.project.rentalStartDate?.toISOString() || "",
         rentalEndDate: li.project.rentalEndDate?.toISOString() || "",
@@ -151,7 +155,7 @@ export async function getAssetBookings(
     status: true,
     rentalStartDate: true,
     rentalEndDate: true,
-    client: { select: { name: true } },
+    clientId: true,
   } as const;
 
   const [lineItems, units] = await Promise.all([
@@ -180,6 +184,7 @@ export async function getAssetBookings(
     }),
   ]);
 
+  const clientMap = await getClientMap(organizationId);
   const seenLineIds = new Set<string>();
   const bookings: BookingEntry[] = [];
   for (const li of lineItems) {
@@ -189,7 +194,7 @@ export async function getAssetBookings(
       projectId: li.project.id,
       projectNumber: li.project.projectNumber,
       projectName: li.project.name,
-      clientName: li.project.client?.name || null,
+      clientName: clientMap.get(li.project.clientId ?? "")?.name ?? null,
       projectStatus: li.project.status,
       rentalStartDate: li.project.rentalStartDate?.toISOString() || "",
       rentalEndDate: li.project.rentalEndDate?.toISOString() || "",
@@ -204,7 +209,7 @@ export async function getAssetBookings(
       projectId: p.id,
       projectNumber: p.projectNumber,
       projectName: p.name,
-      clientName: p.client?.name || null,
+      clientName: clientMap.get(p.clientId ?? "")?.name ?? null,
       projectStatus: p.status,
       rentalStartDate: p.rentalStartDate?.toISOString() || "",
       rentalEndDate: p.rentalEndDate?.toISOString() || "",
@@ -249,19 +254,20 @@ export async function getKitBookings(
           status: true,
           rentalStartDate: true,
           rentalEndDate: true,
-          client: { select: { name: true } },
+          clientId: true,
         },
       },
     },
     orderBy: { project: { rentalStartDate: "asc" } },
   });
 
+  const clientMap = await getClientMap(organizationId);
   const bookings: BookingEntry[] = lineItems.map((li) => ({
     id: li.id,
     projectId: li.project.id,
     projectNumber: li.project.projectNumber,
     projectName: li.project.name,
-    clientName: li.project.client?.name || null,
+    clientName: clientMap.get(li.project.clientId ?? "")?.name ?? null,
     projectStatus: li.project.status,
     rentalStartDate: li.project.rentalStartDate?.toISOString() || "",
     rentalEndDate: li.project.rentalEndDate?.toISOString() || "",
@@ -288,7 +294,7 @@ export async function getCalendarData(params: {
       rentalEndDate: { gte: start },
     },
     include: {
-      client: { select: { name: true } },
+      clientId: true,
       _count: {
         select: {
           lineItems: { where: { status: { not: "CANCELLED" } } },
@@ -298,11 +304,12 @@ export async function getCalendarData(params: {
     orderBy: { rentalStartDate: "asc" },
   });
 
+  const clientMap = await getClientMap(organizationId);
   const result: CalendarProject[] = projects.map((p) => ({
     id: p.id,
     projectNumber: p.projectNumber,
     name: p.name,
-    clientName: p.client?.name || null,
+    clientName: clientMap.get(p.clientId ?? "")?.name ?? null,
     status: p.status,
     rentalStartDate: p.rentalStartDate?.toISOString() || "",
     rentalEndDate: p.rentalEndDate?.toISOString() || "",

@@ -1,7 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { ReportBuilder } from "@/components/reports/report-builder";
@@ -11,7 +11,7 @@ import type { ReportConfig } from "@/lib/report-types";
 export default function EditReportPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
 
-  const { data: report, isLoading } = useQuery({
+  const { data: report, isLoading } = useServerQuery({
     queryKey: ["saved-report", id],
     queryFn: () => getSavedReportById(id),
   });

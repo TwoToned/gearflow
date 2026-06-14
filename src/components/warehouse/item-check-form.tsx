@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import {
   CheckCircle2,
   XCircle,
@@ -109,7 +109,7 @@ export function ItemCheckForm({
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: modelCheckItems = [], isLoading } = useQuery<unknown[]>({
+  const { data: modelCheckItems = [], isLoading } = useServerQuery<unknown[]>({
     queryKey: kitId ? ["kit-check-items", orgId, kitId] : ["model-check-items", orgId, modelId],
     queryFn: () => (kitId ? getKitCheckItems(kitId) : getModelCheckItems(modelId!)) as Promise<unknown[]>,
     enabled: open && !!(modelId || kitId),

@@ -9,14 +9,39 @@ import {
 import type { Prisma, MaintenanceStatus } from "@/generated/prisma/client";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import { syncAssetsToConvex } from "@/lib/asset-mirror";
+import {
+  mirrorMaintenanceCreate,
+  patchMaintenanceInConvex,
+  removeMaintenanceFromConvex,
+} from "@/lib/maintenance-mirror";
 import { UserFacingError } from "@/lib/errors";
+import { getModelMap } from "@/lib/models-read";
 
+// asset.model lives in Convex — `asset: true` keeps the asset scalars (incl.
+// modelId); the model doc is grafted onto each record's assets[].asset below.
 const assetInclude = {
   assets: {
-    include: { asset: { include: { model: true } } },
+    include: { asset: true },
     orderBy: { asset: { assetTag: "asc" as const } },
   },
 };
+
+/** Graft the Convex model doc onto every maintenance record's assets[].asset. */
+async function attachAssetModels<T>(organizationId: string, records: T[]): Promise<T[]> {
+  const modelMap = await getModelMap(organizationId);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return records.map((r: any) => ({
+    ...r,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    assets: r.assets?.map((ra: any) => ({
+      ...ra,
+      asset: ra.asset
+        ? { ...ra.asset, model: ra.asset.modelId ? modelMap.get(ra.asset.modelId) ?? null : null }
+        : ra.asset,
+    })),
+  }));
+}
 
 export async function getMaintenanceRecords(params?: {
   search?: string;
@@ -64,7 +89,7 @@ export async function getMaintenanceRecords(params?: {
   ]);
 
   return serialize({
-    records,
+    records: await attachAssetModels(organizationId, records),
     total,
     page,
     pageSize,
@@ -103,29 +128,31 @@ export async function getWorkshopQueue(params?: {
   const records = await prisma.maintenanceRecord.findMany({
     where,
     include: {
-      assets: { include: { asset: { select: { id: true, assetTag: true, model: { select: { name: true } } } } } },
+      // asset.model grafted from Convex below; select modelId for the lookup.
+      assets: { include: { asset: { select: { id: true, assetTag: true, modelId: true } } } },
       assignedTo: { select: { id: true, name: true, image: true } },
       project: { select: { id: true, projectNumber: true, name: true } },
     },
     orderBy: [{ scheduledDate: "asc" }, { createdAt: "asc" }],
   });
 
-  return serialize(records);
+  return serialize(await attachAssetModels(organizationId, records));
 }
 
 export async function getMaintenanceRecord(id: string) {
   const { organizationId } = await getOrgContext();
 
-  return serialize(
-    await prisma.maintenanceRecord.findUnique({
-      where: { id, organizationId },
-      include: {
-        ...assetInclude,
-        assignedTo: true,
-        reportedBy: true,
-      },
-    })
-  );
+  const record = await prisma.maintenanceRecord.findUnique({
+    where: { id, organizationId },
+    include: {
+      ...assetInclude,
+      assignedTo: true,
+      reportedBy: true,
+    },
+  });
+  if (!record) return serialize(null);
+  const [grafted] = await attachAssetModels(organizationId, [record]);
+  return serialize(grafted);
 }
 
 /**
@@ -251,6 +278,9 @@ export async function createMaintenanceRecord(data: MaintenanceFormValues) {
 
     return created;
   });
+  // Mirror any asset status flips (hold/release) to Convex.
+  await syncAssetsToConvex(assetIds);
+  await mirrorMaintenanceCreate(record as unknown as Record<string, unknown>);
 
   await logActivity({
     organizationId,
@@ -366,6 +396,9 @@ export async function updateMaintenanceRecord(
 
     return updated;
   });
+  // Mirror any asset status flips (removed-asset release + remaining hold/release).
+  await syncAssetsToConvex([...toRemove, ...newAssetIds]);
+  await patchMaintenanceInConvex(record.id, record as unknown as Record<string, unknown>);
 
   await logActivity({
     organizationId,
@@ -440,6 +473,9 @@ export async function setMaintenanceStatus(
     }
     return u;
   });
+  // Mirror any asset status flips (hold/release) to Convex.
+  await syncAssetsToConvex(assetIds);
+  await patchMaintenanceInConvex(id, updated as unknown as Record<string, unknown>);
 
   await logActivity({
     organizationId,
@@ -484,6 +520,9 @@ export async function deleteMaintenanceRecord(id: string) {
       where: { id, organizationId },
     });
   });
+  // Mirror any released asset status flips to Convex.
+  await syncAssetsToConvex(record.assets.map((a) => a.assetId));
+  await removeMaintenanceFromConvex(id);
 
   await logActivity({
     organizationId,
@@ -503,14 +542,15 @@ export async function getAssetsForMaintenanceSelect() {
 
   const assets = await prisma.asset.findMany({
     where: { organizationId, isActive: true },
-    include: { model: true },
     orderBy: { assetTag: "asc" },
   });
 
+  // asset.model lives in Convex — resolve the name from the model map.
+  const modelMap = await getModelMap(organizationId);
   return serialize(
     assets.map((a) => ({
       id: a.id,
-      label: `${a.assetTag} — ${a.model.name}${a.customName ? ` (${a.customName})` : ""}`,
+      label: `${a.assetTag} — ${a.modelId ? modelMap.get(a.modelId)?.name ?? "" : ""}${a.customName ? ` (${a.customName})` : ""}`,
     }))
   );
 }

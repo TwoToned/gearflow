@@ -1,6 +1,34 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { prisma } from "@/lib/prisma";
 import { uploadToS3, ensureBucket } from "@/lib/storage";
+import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
+import {
+  mirrorKitCreate,
+  patchKitInConvex,
+  mirrorKitSerializedItemCreate,
+  mirrorKitBulkItemCreate,
+} from "@/lib/kit-mirror";
+import {
+  mirrorAssetCreate,
+  patchAssetInConvex,
+  mirrorBulkAssetCreate,
+} from "@/lib/asset-mirror";
+import { mirrorLineItemRow } from "@/lib/line-item-mirror";
+import { mirrorSupplierOrderCreate, mirrorSupplierOrderItemCreate } from "@/lib/sub-hire-mirror";
+import { mirrorProjectCreate } from "@/lib/project-mirror";
+import { mirrorMediaCreate, type MediaKind } from "@/lib/media-mirror";
+import {
+  mirrorModelCheckItemCreate,
+  mirrorKitCheckItemCreate,
+} from "@/lib/check-item-assignment-mirror";
+import {
+  mirrorCrewCertificationCreate,
+  mirrorCrewAssignmentCreate,
+  mirrorCrewShiftCreate,
+  mirrorCrewAvailabilityCreate,
+  mirrorCrewTimeEntryCreate,
+} from "@/lib/crew-scheduling-mirror";
 import { MANIFEST_VERSION, type OrgExportManifest } from "./org-transfer-types";
 import { createId } from "@paralleldrive/cuid2";
 import unzipper from "unzipper";
@@ -205,9 +233,9 @@ export async function importOrganization(
     });
   }
 
-  // ── 2. Categories (hierarchical) ─────────────────────────────────
+  // ── 2. Categories (hierarchical; dual-written: Prisma FK anchor + Convex doc) ──
   await insertWithHierarchy("category", manifest.categories as Rec[], async (r, id) => {
-    await prisma.category.create({
+    const created = await prisma.category.create({
       data: {
         ...stripRelations(r),
         id,
@@ -217,11 +245,12 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await (await getConvexClient()).mutation(api.categories.create, toConvexDoc(created) as any);
   });
 
-  // ── 3. Locations (hierarchical) ──────────────────────────────────
+  // ── 3. Locations (hierarchical; dual-written: Prisma FK anchor + Convex doc) ──
   await insertWithHierarchy("location", manifest.locations as Rec[], async (r, id) => {
-    await prisma.location.create({
+    const created = await prisma.location.create({
       data: {
         ...stripRelations(r),
         id,
@@ -231,12 +260,13 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await (await getConvexClient()).mutation(api.locations.create, toConvexDoc(created) as any);
   });
 
-  // ── 4. Suppliers ─────────────────────────────────────────────────
+  // ── 4. Suppliers (dual-written: Prisma FK anchor + Convex reactive doc) ──
   for (const r of manifest.suppliers as Rec[]) {
     const id = newId("supplier", r.id);
-    await prisma.supplier.create({
+    const created = await prisma.supplier.create({
       data: {
         ...stripRelations(r),
         id,
@@ -245,12 +275,13 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await (await getConvexClient()).mutation(api.suppliers.create, toConvexDoc(created) as any);
   }
 
   // ── 5. Models ────────────────────────────────────────────────────
   for (const r of manifest.models as Rec[]) {
     const id = newId("model", r.id);
-    await prisma.model.create({
+    const created = await prisma.model.create({
       data: {
         ...stripRelations(r),
         id,
@@ -260,12 +291,13 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await (await getConvexClient()).mutation(api.models.create, toConvexDoc(created) as any);
   }
 
   // ── 6. Kits ──────────────────────────────────────────────────────
   for (const r of manifest.kits as Rec[]) {
     const id = newId("kit", r.id);
-    await prisma.kit.create({
+    const created = await prisma.kit.create({
       data: {
         ...stripRelations(r),
         id,
@@ -276,12 +308,13 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await mirrorKitCreate(created);
   }
 
   // ── 7. Assets ────────────────────────────────────────────────────
   for (const r of manifest.assets as Rec[]) {
     const id = newId("asset", r.id);
-    await prisma.asset.create({
+    const created = await prisma.asset.create({
       data: {
         ...stripRelations(r),
         id,
@@ -299,12 +332,13 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await mirrorAssetCreate(created);
   }
 
   // ── 8. Bulk Assets ───────────────────────────────────────────────
   for (const r of manifest.bulkAssets as Rec[]) {
     const id = newId("bulkAsset", r.id);
-    await prisma.bulkAsset.create({
+    const created = await prisma.bulkAsset.create({
       data: {
         ...stripRelations(r),
         id,
@@ -315,12 +349,13 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await mirrorBulkAssetCreate(created);
   }
 
   // ── 9. Kit Serialized Items ──────────────────────────────────────
   for (const r of manifest.kitSerializedItems as Rec[]) {
     const id = newId("kitSerializedItem", r.id);
-    await prisma.kitSerializedItem.create({
+    const created = await prisma.kitSerializedItem.create({
       data: {
         id,
         organizationId: newOrgId,
@@ -333,12 +368,13 @@ export async function importOrganization(
         notes: r.notes ?? null,
       } as any,
     });
+    await mirrorKitSerializedItemCreate(created);
   }
 
   // ── 10. Kit Bulk Items ───────────────────────────────────────────
   for (const r of manifest.kitBulkItems as Rec[]) {
     const id = newId("kitBulkItem", r.id);
-    await prisma.kitBulkItem.create({
+    const created = await prisma.kitBulkItem.create({
       data: {
         id,
         organizationId: newOrgId,
@@ -352,26 +388,41 @@ export async function importOrganization(
         notes: r.notes ?? null,
       } as any,
     });
+    await mirrorKitBulkItemCreate(created);
   }
 
-  // ── 11. Clients ──────────────────────────────────────────────────
+  // ── 11. Clients (live in Convex) ─────────────────────────────────
   for (const r of manifest.clients as Rec[]) {
     const id = newId("client", r.id);
-    await prisma.client.create({
-      data: {
-        ...stripRelations(r),
-        id,
-        organizationId: newOrgId,
-        createdAt: safeDate(r.createdAt),
-        updatedAt: safeDate(r.updatedAt),
-      } as any,
+    await (await getConvexClient()).mutation(api.clients.create, {
+      id,
+      organizationId: newOrgId,
+      name: String(r.name),
+      type: (r.type as any) ?? "COMPANY",
+      contactName: r.contactName ?? undefined,
+      contactEmail: r.contactEmail ?? undefined,
+      contactPhone: r.contactPhone ?? undefined,
+      billingAddress: r.billingAddress ?? undefined,
+      billingLatitude: r.billingLatitude ?? undefined,
+      billingLongitude: r.billingLongitude ?? undefined,
+      shippingAddress: r.shippingAddress ?? undefined,
+      shippingLatitude: r.shippingLatitude ?? undefined,
+      shippingLongitude: r.shippingLongitude ?? undefined,
+      taxId: r.taxId ?? undefined,
+      paymentTerms: r.paymentTerms ?? undefined,
+      defaultDiscount: r.defaultDiscount ?? undefined,
+      notes: r.notes ?? undefined,
+      tags: (r.tags as string[]) ?? [],
+      isActive: r.isActive ?? true,
+      createdAt: safeDate(r.createdAt).getTime(),
+      updatedAt: safeDate(r.updatedAt).getTime(),
     });
   }
 
   // ── 12. Projects ─────────────────────────────────────────────────
   for (const r of manifest.projects as Rec[]) {
     const id = newId("project", r.id);
-    await prisma.project.create({
+    const created = await prisma.project.create({
       data: {
         ...stripRelations(r, ["_count"]),
         id,
@@ -389,12 +440,13 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await mirrorProjectCreate(created as unknown as Record<string, unknown>);
   }
 
   // ── 12b. Supplier Orders ────────────────────────────────────────────
   for (const r of (manifest.supplierOrders ?? []) as Rec[]) {
     const id = newId("supplierOrder", r.id);
-    await prisma.supplierOrder.create({
+    const created = await prisma.supplierOrder.create({
       data: {
         ...stripRelations(r),
         id,
@@ -409,6 +461,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await mirrorSupplierOrderCreate(created as unknown as Record<string, unknown>);
   }
 
   // ── 12c. Supplier Order Items ──────────────────────────────────────
@@ -416,7 +469,7 @@ export async function importOrganization(
     const id = newId("supplierOrderItem", r.id);
     const orderId = remap("supplierOrder", r.orderId);
     if (!orderId) continue;
-    await prisma.supplierOrderItem.create({
+    const created = await prisma.supplierOrderItem.create({
       data: {
         id,
         orderId,
@@ -430,11 +483,12 @@ export async function importOrganization(
         sortOrder: r.sortOrder ?? 0,
       } as any,
     });
+    await mirrorSupplierOrderItemCreate(created as unknown as Record<string, unknown>);
   }
 
   // ── 13. Project Line Items (with parent hierarchy for kit children) ──
   await insertWithHierarchy("projectLineItem", manifest.projectLineItems as Rec[], async (r, id) => {
-    await prisma.projectLineItem.create({
+    const created = await prisma.projectLineItem.create({
       data: {
         ...stripRelations(r),
         id,
@@ -454,6 +508,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await mirrorLineItemRow(created as unknown as Record<string, unknown>);
   });
 
   // ── 14. Asset Scan Logs ──────────────────────────────────────────
@@ -608,7 +663,7 @@ export async function importOrganization(
       if (oldUrl) urlMap.set(oldUrl, newUrl);
     }
 
-    await prisma.fileUpload.create({
+    const createdFile = await prisma.fileUpload.create({
       data: {
         ...stripRelations(r),
         id,
@@ -621,6 +676,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await (await getConvexClient()).mutation(api.fileUploads.create, toConvexDoc(createdFile) as any);
   }
 
   // ── 19b. Update image URL references on models, assets, kits ────
@@ -642,7 +698,7 @@ export async function importOrganization(
       const hasImages = r.images?.length && r.images.some((u: string) => urlMap.has(u));
       const hasManuals = r.manuals?.length && r.manuals.some((u: string) => urlMap.has(u));
       if (hasImage || hasImages || hasManuals) {
-        await prisma.model.update({
+        const updated = await prisma.model.update({
           where: { id: newModelId },
           data: {
             ...(hasImage ? { image: remapUrl(r.image) } : {}),
@@ -650,6 +706,8 @@ export async function importOrganization(
             ...(hasManuals ? { manuals: remapUrls(r.manuals) } : {}),
           },
         });
+        const { id: _mid, ...mPatch } = toConvexDoc(updated);
+        await (await getConvexClient()).mutation(api.models.update, { id: newModelId, patch: mPatch as any });
       }
     }
 
@@ -659,10 +717,11 @@ export async function importOrganization(
       if (!newAssetId) continue;
       const hasImages = r.images?.length && r.images.some((u: string) => urlMap.has(u));
       if (hasImages) {
-        await prisma.asset.update({
+        const updated = await prisma.asset.update({
           where: { id: newAssetId },
           data: { images: remapUrls(r.images) },
         });
+        await patchAssetInConvex(updated.id, updated);
       }
     }
 
@@ -673,13 +732,14 @@ export async function importOrganization(
       const hasImage = r.image && urlMap.has(r.image);
       const hasImages = r.images?.length && r.images.some((u: string) => urlMap.has(u));
       if (hasImage || hasImages) {
-        await prisma.kit.update({
+        const updated = await prisma.kit.update({
           where: { id: newKitId },
           data: {
             ...(hasImage ? { image: remapUrl(r.image) } : {}),
             ...(hasImages ? { images: remapUrls(r.images) } : {}),
           },
         });
+        await patchKitInConvex(updated.id, updated);
       }
     }
   }
@@ -699,7 +759,7 @@ export async function importOrganization(
       const fkId = remap(fkEntity, r[fkField]);
       const fileId = remap("fileUpload", r.fileId);
       if (!fkId || !fileId) continue;
-      await create({
+      const created = await create({
         ...stripRelations(r),
         id: createId(),
         organizationId: newOrgId,
@@ -707,13 +767,16 @@ export async function importOrganization(
         fileId,
         createdAt: safeDate(r.createdAt),
       });
+      // Mirror to Convex (the *_media tables are dual-written). fkEntity is one
+      // of model/asset/kit/project/client/location — all MediaKind values.
+      await mirrorMediaCreate(fkEntity as MediaKind, created as Record<string, unknown>);
     }
   }
 
-  // ── 20a. Group templates (Track B) ──────────────────────────────
+  // ── 20a. Group templates (Track B; parent dual-written) ─────────
   for (const r of (manifest.groupTemplates ?? []) as Rec[]) {
     const id = newId("groupTemplate", r.id);
-    await prisma.groupTemplate.create({
+    const created = await prisma.groupTemplate.create({
       data: {
         ...stripRelations(r),
         id,
@@ -722,6 +785,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await (await getConvexClient()).mutation(api.groupTemplates.create, toConvexDoc(created) as any);
   }
   for (const r of (manifest.groupTemplateItems ?? []) as Rec[]) {
     const templateId = remap("groupTemplate", r.templateId);
@@ -744,27 +808,29 @@ export async function importOrganization(
   // shifts, availability, and time entries.
   for (const r of (manifest.crewRoles ?? []) as Rec[]) {
     const id = newId("crewRole", r.id);
-    await prisma.crewRole.create({
+    const created = await prisma.crewRole.create({
       data: {
         ...stripRelations(r),
         id,
         organizationId: newOrgId,
       } as any,
     });
+    await (await getConvexClient()).mutation(api.crewRoles.create, toConvexDoc(created) as any);
   }
   for (const r of (manifest.crewSkills ?? []) as Rec[]) {
     const id = newId("crewSkill", r.id);
-    await prisma.crewSkill.create({
+    const created = await prisma.crewSkill.create({
       data: {
         ...stripRelations(r),
         id,
         organizationId: newOrgId,
       } as any,
     });
+    await (await getConvexClient()).mutation(api.crewSkills.create, toConvexDoc(created) as any);
   }
   for (const r of (manifest.crewMembers ?? []) as Rec[]) {
     const id = newId("crewMember", r.id);
-    await prisma.crewMember.create({
+    const created = await prisma.crewMember.create({
       data: {
         ...stripRelations(r),
         id,
@@ -779,6 +845,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await (await getConvexClient()).mutation(api.crewMembers.create, toConvexDoc(created) as any);
   }
   // Re-link crew members <-> skills (implicit m:n join table)
   for (const link of (manifest.crewMemberSkills ?? []) as Array<{
@@ -796,7 +863,7 @@ export async function importOrganization(
   for (const r of (manifest.crewCertifications ?? []) as Rec[]) {
     const crewMemberId = remap("crewMember", r.crewMemberId);
     if (!crewMemberId) continue;
-    await prisma.crewCertification.create({
+    const createdCert = await prisma.crewCertification.create({
       data: {
         ...stripRelations(r),
         id: createId(),
@@ -805,13 +872,14 @@ export async function importOrganization(
         expiryDate: safeDateOpt(r.expiryDate),
       } as any,
     });
+    await mirrorCrewCertificationCreate(createdCert as unknown as Record<string, unknown>);
   }
   for (const r of (manifest.crewAssignments ?? []) as Rec[]) {
     const projectId = remap("project", r.projectId);
     const crewMemberId = remap("crewMember", r.crewMemberId);
     if (!projectId || !crewMemberId) continue;
     const id = newId("crewAssignment", r.id);
-    await prisma.crewAssignment.create({
+    const createdAssignment = await prisma.crewAssignment.create({
       data: {
         ...stripRelations(r),
         id,
@@ -831,11 +899,12 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await mirrorCrewAssignmentCreate(createdAssignment as unknown as Record<string, unknown>);
   }
   for (const r of (manifest.crewShifts ?? []) as Rec[]) {
     const assignmentId = remap("crewAssignment", r.assignmentId);
     if (!assignmentId) continue;
-    await prisma.crewShift.create({
+    const createdShift = await prisma.crewShift.create({
       data: {
         ...stripRelations(r),
         id: createId(),
@@ -843,11 +912,12 @@ export async function importOrganization(
         date: safeDate(r.date),
       } as any,
     });
+    await mirrorCrewShiftCreate(createdShift as unknown as Record<string, unknown>);
   }
   for (const r of (manifest.crewAvailability ?? []) as Rec[]) {
     const crewMemberId = remap("crewMember", r.crewMemberId);
     if (!crewMemberId) continue;
-    await prisma.crewAvailability.create({
+    const createdAvail = await prisma.crewAvailability.create({
       data: {
         ...stripRelations(r),
         id: createId(),
@@ -858,11 +928,12 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await mirrorCrewAvailabilityCreate(createdAvail as unknown as Record<string, unknown>);
   }
   for (const r of (manifest.crewTimeEntries ?? []) as Rec[]) {
     const crewMemberId = remap("crewMember", r.crewMemberId);
     if (!crewMemberId) continue;
-    await prisma.crewTimeEntry.create({
+    const createdTimeEntry = await prisma.crewTimeEntry.create({
       data: {
         ...stripRelations(r),
         id: createId(),
@@ -876,12 +947,13 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await mirrorCrewTimeEntryCreate(createdTimeEntry as unknown as Record<string, unknown>);
   }
 
-  // ── 20c. Check items (FEATUREDOCS/37, Track B) ──────────────────
+  // ── 20c. Check items (FEATUREDOCS/37, Track B; dual-written) ─────
   for (const r of (manifest.checkItems ?? []) as Rec[]) {
     const id = newId("checkItem", r.id);
-    await prisma.checkItem.create({
+    const created = await prisma.checkItem.create({
       data: {
         ...stripRelations(r),
         id,
@@ -891,12 +963,13 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await (await getConvexClient()).mutation(api.checkItems.create, toConvexDoc(created) as any);
   }
   for (const r of (manifest.modelCheckItems ?? []) as Rec[]) {
     const modelId = remap("model", r.modelId);
     const checkItemId = remap("checkItem", r.checkItemId);
     if (!modelId || !checkItemId) continue;
-    await prisma.modelCheckItem.create({
+    const createdMci = await prisma.modelCheckItem.create({
       data: {
         ...stripRelations(r),
         id: createId(),
@@ -906,12 +979,13 @@ export async function importOrganization(
         createdAt: safeDate(r.createdAt),
       } as any,
     });
+    await mirrorModelCheckItemCreate(createdMci);
   }
   for (const r of (manifest.kitCheckItems ?? []) as Rec[]) {
     const kitId = remap("kit", r.kitId);
     const checkItemId = remap("checkItem", r.checkItemId);
     if (!kitId || !checkItemId) continue;
-    await prisma.kitCheckItem.create({
+    const createdKci = await prisma.kitCheckItem.create({
       data: {
         ...stripRelations(r),
         id: createId(),
@@ -921,6 +995,7 @@ export async function importOrganization(
         createdAt: safeDate(r.createdAt),
       } as any,
     });
+    await mirrorKitCheckItemCreate(createdKci);
   }
   for (const r of (manifest.checkRecords ?? []) as Rec[]) {
     const checkItemId = remap("checkItem", r.checkItemId);

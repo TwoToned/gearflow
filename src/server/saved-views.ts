@@ -6,6 +6,11 @@ import { serialize } from "@/lib/serialize";
 import type { Prisma } from "@/generated/prisma/client";
 import type { SavedViewConfig } from "@/lib/saved-views";
 import { logActivity } from "@/lib/activity-log";
+import {
+  mirrorSavedViewUpsert,
+  removeSavedViewFromConvex,
+  syncUserTableViewsToConvex,
+} from "@/lib/saved-views-mirror";
 
 /**
  * Saved table views are personal: each is owned by the user who created it and
@@ -58,6 +63,10 @@ export async function createSavedView(data: {
     });
   });
 
+  // Re-sync all of the user's views for this table (the txn may have unset a
+  // previous default) so Convex keeps the single-default invariant.
+  await syncUserTableViewsToConvex(organizationId, userId, data.tableId);
+
   await logActivity({
     organizationId,
     userId,
@@ -99,6 +108,8 @@ export async function updateSavedView(
     },
   });
 
+  await mirrorSavedViewUpsert(view as unknown as Record<string, unknown>);
+
   await logActivity({
     organizationId,
     userId,
@@ -123,6 +134,8 @@ export async function deleteSavedView(id: string) {
   if (!existing) throw new Error("View not found");
 
   await prisma.savedTableView.delete({ where: { id } });
+
+  await removeSavedViewFromConvex(id);
 
   await logActivity({
     organizationId,
@@ -157,6 +170,9 @@ export async function setDefaultSavedView(tableId: string, id: string | null) {
       if (updated.count === 0) throw new Error("View not found");
     }
   });
+
+  // The txn flipped default flags across the user's views — re-sync them all.
+  await syncUserTableViewsToConvex(organizationId, userId, tableId);
 
   const viewName = id
     ? (await prisma.savedTableView.findUnique({ where: { id }, select: { name: true } }))?.name

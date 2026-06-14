@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { useActiveOrganization } from "@/lib/auth-client";
-import { createLocation, getLocations } from "@/server/locations";
+import { createLocation } from "@/server/locations";
+import { useLocations } from "@/hooks/use-locations";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   Dialog,
   DialogContent,
@@ -29,16 +30,11 @@ export function QuickCreateLocation({ open, onOpenChange, onCreated }: QuickCrea
   const [name, setName] = useState("");
   const [type, setType] = useState<"WAREHOUSE" | "VENUE" | "VEHICLE" | "OFFSITE">("WAREHOUSE");
   const [parentId, setParentId] = useState("");
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: locationsData } = useQuery({
-    queryKey: ["locations", orgId],
-    queryFn: () => getLocations({ pageSize: 100 }),
-    staleTime: 0,
-  });
-  const locations = locationsData?.locations || [];
+  // Reactive location list from Convex.
+  const locations = useLocations(orgId) ?? [];
 
   // Only top-level locations can be parents
   const parentOptions = locations
@@ -49,11 +45,10 @@ export function QuickCreateLocation({ open, onOpenChange, onCreated }: QuickCrea
       description: loc.type,
     }));
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: () => createLocation({ name, type, parentId: parentId || null }),
-    onSuccess: async (result) => {
+    onSuccess: (result) => {
       toast.success("Location created");
-      await queryClient.invalidateQueries({ queryKey: ["locations"] });
       onCreated?.(result.id);
       onOpenChange(false);
       setName("");

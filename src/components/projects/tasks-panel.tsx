@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useProjectTasks as useConvexProjectTasks } from "@/hooks/use-projects";
 import { toast } from "sonner";
 import {
   Plus,
@@ -97,17 +99,16 @@ function dueState(due: string | null): { label: string; overdue: boolean } | nul
 }
 
 export function TasksPanel({ projectId }: { projectId: string }) {
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const tasksKey = ["project-tasks", orgId, projectId];
 
-  const { data: tasks = [], isLoading } = useQuery({
+  const { data: tasks = [], isLoading, refetch } = useServerQuery({
     queryKey: tasksKey,
     queryFn: () => getProjectTasks(projectId) as unknown as Promise<Task[]>,
   });
 
-  const { data: assignees } = useQuery({
+  const { data: assignees } = useServerQuery({
     queryKey: ["task-assignees", orgId],
     queryFn: () =>
       getTaskAssignees() as unknown as Promise<{
@@ -119,9 +120,32 @@ export function TasksPanel({ projectId }: { projectId: string }) {
   const [newTitle, setNewTitle] = useState("");
   const [editing, setEditing] = useState<Task | null>(null);
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: tasksKey });
+  const invalidate = () => refetch();
 
-  const createMut = useMutation({
+  // Cross-tab live sync: subscribe to the dual-written Convex projectTasks table.
+  // When another tab creates/edits/deletes a task, the mirror pushes the change;
+  // the fingerprint flips and we refetch the server-action read (which carries
+  // assignee join data Convex doesn't hold).
+  const taskDocs = useConvexProjectTasks(projectId, orgId);
+  const taskFp =
+    taskDocs === undefined
+      ? undefined
+      : taskDocs
+          .map((t) => {
+            const r = t as { id: string; updatedAt?: number; status?: string; title?: string; priority?: string; dueDate?: number; assigneeUserId?: string; assigneeCrewId?: string; sortOrder?: number; completedAt?: number };
+            return `${r.id}:${r.updatedAt ?? 0}:${r.status ?? ""}:${r.title ?? ""}:${r.priority ?? ""}:${r.dueDate ?? ""}:${r.assigneeUserId ?? ""}:${r.assigneeCrewId ?? ""}:${r.sortOrder ?? ""}:${r.completedAt ?? ""}`;
+          })
+          .sort()
+          .join("|");
+  const prevTaskFp = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (taskFp !== undefined && prevTaskFp.current !== undefined && taskFp !== prevTaskFp.current) {
+      refetch();
+    }
+    if (taskFp !== undefined) prevTaskFp.current = taskFp;
+  }, [taskFp, refetch]);
+
+  const createMut = useServerMutation({
     mutationFn: (title: string) => createProjectTask({ projectId, title }),
     onSuccess: () => {
       invalidate();
@@ -130,14 +154,14 @@ export function TasksPanel({ projectId }: { projectId: string }) {
     onError: (e: Error) => toast.error(e.message || "Could not add task"),
   });
 
-  const updateMut = useMutation({
+  const updateMut = useServerMutation({
     mutationFn: (vars: { id: string; data: Parameters<typeof updateProjectTask>[1] }) =>
       updateProjectTask(vars.id, vars.data),
     onSuccess: () => invalidate(),
     onError: (e: Error) => toast.error(e.message || "Could not update task"),
   });
 
-  const deleteMut = useMutation({
+  const deleteMut = useServerMutation({
     mutationFn: (id: string) => deleteProjectTask(id),
     onSuccess: () => {
       invalidate();
@@ -336,10 +360,10 @@ export function TasksPanel({ projectId }: { projectId: string }) {
           assigneeOptions={assigneeOptions}
           onClose={() => setEditing(null)}
           onSave={(data) => {
-            updateMut.mutate(
-              { id: editing.id, data },
-              { onSuccess: () => setEditing(null) },
-            );
+            void updateMut
+              .mutateAsync({ id: editing.id, data })
+              .then(() => setEditing(null))
+              .catch(() => {});
           }}
         />
       )}

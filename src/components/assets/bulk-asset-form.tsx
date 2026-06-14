@@ -1,22 +1,22 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Controller } from "react-hook-form";
 import { bulkAssetSchema, type BulkAssetFormValues } from "@/lib/validations/asset";
 import { createBulkAsset, updateBulkAsset } from "@/server/bulk-assets";
-import { getOrgTags } from "@/server/tags";
+import { useOrgTags } from "@/hooks/use-org-tags";
 import { TagInput } from "@/components/ui/tag-input";
 import { peekNextAssetTags } from "@/server/settings";
-import { getModels } from "@/server/models";
-import { getLocations } from "@/server/locations";
-import { getSuppliers } from "@/server/suppliers";
+import { useModels } from "@/hooks/use-models";
+import { useLocations } from "@/hooks/use-locations";
+import { useSuppliers } from "@/hooks/use-suppliers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScanInput } from "@/components/ui/scan-input";
@@ -39,27 +39,30 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: modelsData } = useQuery({
-    queryKey: ["models", orgId, { isActive: true, assetType: "BULK", pageSize: 200 }],
-    queryFn: () => getModels({ assetType: "BULK", pageSize: 200 }),
-  });
+  // Reactive models (Convex). Org-scoped list returns all models; re-apply
+  // getModels's default filter (active, bulk) and name sort client-side.
+  const modelDocs = useModels(orgId);
+  const models = useMemo(
+    () =>
+      [...(modelDocs ?? [])]
+        .filter((m) => m.isActive === true && m.assetType === "BULK")
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [modelDocs],
+  );
 
-  const { data: locationsData } = useQuery({
-    queryKey: ["locations", orgId],
-    queryFn: () => getLocations({ pageSize: 100 }),
-  });
-  const locations = locationsData?.locations || [];
+  // Reactive location list from Convex; parent.name resolved from the flat list.
+  const rawLocations = useLocations(orgId) ?? [];
+  const locNameById = new Map(rawLocations.map((l) => [l.id, l.name]));
+  const locations = rawLocations.map((l) => ({
+    ...l,
+    parent: l.parentId ? { name: locNameById.get(l.parentId) ?? "" } : null,
+  }));
 
-  const { data: suppliersData } = useQuery({
-    queryKey: ["suppliers", orgId],
-    queryFn: () => getSuppliers(),
-  });
-  const suppliers = Array.isArray(suppliersData) ? suppliersData : [];
+  // Reactive supplier list from Convex; active-only (matches old getSuppliers).
+  const allSuppliers = useSuppliers(orgId);
+  const suppliers = (allSuppliers ?? []).filter((s) => s.isActive ?? true);
 
-  const { data: orgTags } = useQuery({
-    queryKey: ["org-tags", orgId],
-    queryFn: () => getOrgTags(),
-  });
+  const orgTags = useOrgTags(orgId);
 
   const form = useForm<BulkAssetFormValues>({
     resolver: zodResolver(bulkAssetSchema),
@@ -85,7 +88,7 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (data: BulkAssetFormValues) =>
       isEditing ? updateBulkAsset(initialData.id, data) : createBulkAsset(data),
     onSuccess: (result) => {
@@ -95,7 +98,6 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
     onError: (e) => toast.error(e.message),
   });
 
-  const models = modelsData?.models || [];
 
   return (
     <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))}>

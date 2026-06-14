@@ -1,9 +1,33 @@
 "use server";
 
+import { type FunctionArgs } from "convex/server";
 import { prisma } from "@/lib/prisma";
+import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
+import { mirrorAssetCreate, patchAssetInConvex } from "@/lib/asset-mirror";
+import { attachSupplier, getSuppliersByOrg } from "@/lib/suppliers-read";
+import { getModelWithCategoryMap } from "@/lib/models-read";
+import { getCategoryMap } from "@/lib/categories-read";
+import { getLocationMap } from "@/lib/locations-read";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+
+// Model writes in CSV import are dual-written to Convex (the reactive read
+// source) just like the Models server actions — see src/server/models.ts.
+async function mirrorModelCreate(row: Record<string, unknown>) {
+  await (await getConvexClient()).mutation(
+    api.models.create,
+    toConvexDoc(row) as FunctionArgs<typeof api.models.create>,
+  );
+}
+async function mirrorModelPatch(id: string, row: Record<string, unknown>) {
+  const { id: _id, ...patch } = toConvexDoc(row);
+  await (await getConvexClient()).mutation(api.models.update, {
+    id,
+    patch: patch as FunctionArgs<typeof api.models.update>["patch"],
+  });
+}
 import {
   buildModelIndex,
   hasIdentifierColumn,
@@ -19,11 +43,18 @@ import {
 export async function exportModelsCSV() {
   const { organizationId } = await getOrgContext();
 
-  const models = await prisma.model.findMany({
-    where: { organizationId, isActive: true },
-    include: { category: true },
-    orderBy: { name: "asc" },
-  });
+  // Category lives in Convex — resolve the name from the map, not a Prisma join.
+  const [modelRows, categoryMap] = await Promise.all([
+    prisma.model.findMany({
+      where: { organizationId, isActive: true },
+      orderBy: { name: "asc" },
+    }),
+    getCategoryMap(organizationId),
+  ]);
+  const models = modelRows.map((m) => ({
+    ...m,
+    category: m.categoryId ? categoryMap.get(m.categoryId) ?? null : null,
+  }));
 
   const headers = [
     "name",
@@ -75,15 +106,22 @@ export async function exportModelsCSV() {
 export async function exportAssetsCSV() {
   const { organizationId } = await getOrgContext();
 
-  const assets = await prisma.asset.findMany({
+  const assetRows = await prisma.asset.findMany({
     where: { organizationId, isActive: true },
-    include: {
-      model: { include: { category: true } },
-      location: true,
-      supplier: true,
-    },
     orderBy: { assetTag: "asc" },
   });
+  // Supplier + model (with nested category) + location all live in Convex —
+  // attach instead of Prisma joins.
+  const assetsWithSupplier = await attachSupplier(organizationId, assetRows);
+  const [modelMap, locationMap] = await Promise.all([
+    getModelWithCategoryMap(organizationId),
+    getLocationMap(organizationId),
+  ]);
+  const assets = assetsWithSupplier.map((a) => ({
+    ...a,
+    model: a.modelId ? modelMap.get(a.modelId) ?? null : null,
+    location: a.locationId ? locationMap.get(a.locationId) ?? null : null,
+  }));
 
   const headers = [
     "assetTag",
@@ -105,9 +143,9 @@ export async function exportAssetsCSV() {
 
   const rows = assets.map((a) => [
     a.assetTag,
-    a.model.name,
-    a.model.modelNumber || "",
-    a.model.category?.name || "",
+    a.model?.name || "",
+    a.model?.modelNumber || "",
+    a.model?.category?.name || "",
     a.serialNumber || "",
     a.customName || "",
     a.status,
@@ -127,14 +165,21 @@ export async function exportAssetsCSV() {
 export async function exportBulkAssetsCSV() {
   const { organizationId } = await getOrgContext();
 
-  const bulkAssets = await prisma.bulkAsset.findMany({
+  const bulkAssetRows = await prisma.bulkAsset.findMany({
     where: { organizationId, isActive: true },
-    include: {
-      model: { include: { category: true } },
-      location: true,
-    },
     orderBy: { assetTag: "asc" },
   });
+  // model (with nested category) + location live in Convex — attach instead of
+  // Prisma joins.
+  const [modelMap, locationMap] = await Promise.all([
+    getModelWithCategoryMap(organizationId),
+    getLocationMap(organizationId),
+  ]);
+  const bulkAssets = bulkAssetRows.map((ba) => ({
+    ...ba,
+    model: ba.modelId ? modelMap.get(ba.modelId) ?? null : null,
+    location: ba.locationId ? locationMap.get(ba.locationId) ?? null : null,
+  }));
 
   const headers = [
     "assetTag",
@@ -153,9 +198,9 @@ export async function exportBulkAssetsCSV() {
 
   const rows = bulkAssets.map((ba) => [
     ba.assetTag,
-    ba.model.name,
-    ba.model.modelNumber || "",
-    ba.model.category?.name || "",
+    ba.model?.name || "",
+    ba.model?.modelNumber || "",
+    ba.model?.category?.name || "",
     ba.totalQuantity.toString(),
     ba.availableQuantity.toString(),
     ba.status,
@@ -268,7 +313,7 @@ export async function importModelsCSV(csvContent: string): Promise<ImportResult>
       });
 
       if (existing) {
-        await prisma.model.update({
+        const updated = await prisma.model.update({
           where: { id: existing.id },
           data: {
             categoryId: data.categoryId ?? existing.categoryId,
@@ -289,14 +334,16 @@ export async function importModelsCSV(csvContent: string): Promise<ImportResult>
             ...(data.tags.length > 0 ? { tags: data.tags } : {}),
           },
         });
+        await mirrorModelPatch(updated.id, updated);
         result.updated++;
       } else {
-        await prisma.model.create({
+        const created = await prisma.model.create({
           data: {
             organizationId,
             ...data,
           },
         });
+        await mirrorModelCreate(created);
         result.created++;
       }
     } catch (e) {
@@ -328,7 +375,8 @@ export async function importAssetsCSV(csvContent: string): Promise<ImportResult>
   const locations = await prisma.location.findMany({ where: { organizationId } });
   const locationMap = new Map(locations.map((l) => [l.name.toLowerCase(), l.id]));
 
-  const suppliers = await prisma.supplier.findMany({ where: { organizationId } });
+  // Suppliers live in Convex — read the name→id map from there.
+  const suppliers = await getSuppliersByOrg(organizationId);
   const supplierMap = new Map(suppliers.map((s) => [s.name.toLowerCase(), s.id]));
 
   // Get next asset tag counter for auto-assignment
@@ -398,7 +446,7 @@ export async function importAssetsCSV(csvContent: string): Promise<ImportResult>
       });
 
       if (existing) {
-        await prisma.asset.update({
+        const updated = await prisma.asset.update({
           where: { id: existing.id },
           data: {
             serialNumber: get("serialnumber") || get("serial_number") || existing.serialNumber,
@@ -414,9 +462,10 @@ export async function importAssetsCSV(csvContent: string): Promise<ImportResult>
             ...(tags.length > 0 ? { tags } : {}),
           },
         });
+        await patchAssetInConvex(updated.id, updated);
         result.updated++;
       } else {
-        await prisma.asset.create({
+        const created = await prisma.asset.create({
           data: {
             organizationId,
             modelId: model.id,
@@ -434,6 +483,7 @@ export async function importAssetsCSV(csvContent: string): Promise<ImportResult>
             tags,
           },
         });
+        await mirrorAssetCreate(created);
         result.created++;
       }
     } catch (e) {
@@ -519,10 +569,11 @@ export async function importModelRatesCSV(csvContent: string): Promise<ImportRes
         data.defaultRentalPrice = parsed.rates.dailyRate;
       }
 
-      await prisma.model.update({
+      const updated = await prisma.model.update({
         where: { id: match.modelId, organizationId },
         data,
       });
+      await mirrorModelPatch(updated.id, updated);
       result.updated++;
     } catch (e) {
       result.errors.push({ row: i + 1, message: e instanceof Error ? e.message : "Unknown error" });

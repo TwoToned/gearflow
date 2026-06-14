@@ -11,6 +11,10 @@ import {
 } from "@/lib/validations/line-item";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import { syncProjectGroupsToConvex } from "@/lib/project-grouping-mirror";
+import { upsertProjectLineItemsToConvex, removeLineItemFromConvex } from "@/lib/line-item-mirror";
+import { patchProjectInConvex } from "@/lib/project-mirror";
+import { getSupplierById } from "@/lib/suppliers-read";
 import { roundCurrency } from "@/lib/formatters";
 import { calculateSuggestedPrice, getGroupBillingPeriod } from "./project-groups";
 import { optimizePrice, computeTotalDays } from "@/lib/pricing";
@@ -393,6 +397,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         projectId,
       });
 
+      await upsertProjectLineItemsToConvex(projectId);
       return serialize({ ...result, _merged: true, _newQuantity: newQuantity });
     }
   }
@@ -505,7 +510,6 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         model: true,
         asset: true,
         bulkAsset: true,
-        supplier: true,
       },
     });
 
@@ -531,6 +535,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
       where: { id: result.groupId },
       data: { suggestedPrice: suggested },
     });
+    await syncProjectGroupsToConvex([result.groupId]);
   }
 
   await recalculateProjectTotals(projectId);
@@ -547,7 +552,11 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
     projectId,
   });
 
-  return serialize(result);
+  await upsertProjectLineItemsToConvex(projectId);
+
+  // Supplier lives in Convex — attach instead of a Prisma join.
+  const supplier = result.supplierId ? await getSupplierById(result.supplierId) : null;
+  return serialize({ ...result, supplier });
 }
 
 export async function updateLineItem(id: string, data: LineItemFormValues, allowOverbook = false) {
@@ -686,7 +695,6 @@ export async function updateLineItem(id: string, data: LineItemFormValues, allow
       model: true,
       asset: true,
       bulkAsset: true,
-      supplier: true,
     },
   });
 
@@ -704,7 +712,10 @@ export async function updateLineItem(id: string, data: LineItemFormValues, allow
     projectId: result.projectId,
   });
 
-  return serialize(result);
+  await upsertProjectLineItemsToConvex(result.projectId);
+  // Supplier lives in Convex — attach instead of a Prisma join.
+  const supplier = result.supplierId ? await getSupplierById(result.supplierId) : null;
+  return serialize({ ...result, supplier });
 }
 
 export async function addKitLineItem(
@@ -822,6 +833,7 @@ export async function addKitLineItem(
   });
 
   await recalculateProjectTotals(projectId);
+  await upsertProjectLineItemsToConvex(projectId);
   return serialize(result.parentItem);
 }
 
@@ -890,6 +902,7 @@ export async function addCustomLineItem(projectId: string, data: CustomLineItemF
     projectId,
   });
 
+  await upsertProjectLineItemsToConvex(projectId);
   return serialize(result);
 }
 
@@ -926,12 +939,19 @@ export async function removeLineItem(id: string) {
 
   // Parent line (kit parent OR accessory parent): cascade-delete its children
   // atomically with the parent.
+  const children = await prisma.projectLineItem.findMany({
+    where: { parentLineItemId: item.id, organizationId },
+    select: { id: true },
+  });
   await prisma.$transaction(async (tx) => {
     await tx.projectLineItem.deleteMany({
       where: { parentLineItemId: item.id, organizationId },
     });
     await tx.projectLineItem.delete({ where: { id } });
   });
+  // Mirror the cascade delete to Convex (children first, then the parent).
+  for (const c of children) await removeLineItemFromConvex(c.id);
+  await removeLineItemFromConvex(id);
   await recalculateProjectTotals(item.projectId);
 
   await logActivity({
@@ -975,6 +995,7 @@ export async function reorderLineItems(
   }
 
   await prisma.$transaction(updates);
+  await upsertProjectLineItemsToConvex(projectId);
 
   return serialize({ success: true });
 }
@@ -1364,7 +1385,7 @@ export async function recalculateProjectTotals(projectId: string) {
   const total = roundCurrency(taxableAmount + taxAmount);
   const margin = roundCurrency(total - (serviceCostTotal + labourCostTotal + subHireCostTotal));
 
-  await prisma.project.update({
+  const updated = await prisma.project.update({
     where: { id: projectId },
     data: {
       equipmentRevenue,
@@ -1378,4 +1399,6 @@ export async function recalculateProjectTotals(projectId: string) {
       margin,
     },
   });
+  // Mirror the recomputed project totals to Convex (project is dual-written).
+  await patchProjectInConvex(updated.id, updated);
 }

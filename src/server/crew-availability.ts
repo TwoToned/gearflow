@@ -8,6 +8,10 @@ import {
   type CrewAvailabilityFormValues,
 } from "@/lib/validations/crew";
 import { logActivity } from "@/lib/activity-log";
+import {
+  mirrorCrewAvailabilityCreate,
+  removeCrewAvailabilityFromConvex,
+} from "@/lib/crew-scheduling-mirror";
 
 // ─── Availability CRUD ──────────────────────────────────────────────────────
 
@@ -65,6 +69,10 @@ export async function addAvailability(data: CrewAvailabilityFormValues) {
     },
   });
 
+  // Denormalize organizationId onto the Convex row (not a Prisma column) so the
+  // crew planner can subscribe org-wide for reactive availability reads.
+  await mirrorCrewAvailabilityCreate({ ...record, organizationId } as unknown as Record<string, unknown>);
+
   await logActivity({
     organizationId,
     userId,
@@ -95,6 +103,7 @@ export async function removeAvailability(id: string) {
   }
 
   await prisma.crewAvailability.delete({ where: { id } });
+  await removeCrewAvailabilityFromConvex(id);
   return { success: true };
 }
 

@@ -2,7 +2,7 @@
 
 import { useState, Suspense, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { Download } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -147,7 +147,7 @@ function ActivityLogContent() {
     order: sortOrder,
   };
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useServerQuery({
     queryKey: ["activity-logs", orgId, queryFilters],
     queryFn: () => getActivityLogs(queryFilters),
     enabled: !!orgId,

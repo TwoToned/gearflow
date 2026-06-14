@@ -1,7 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { refreshProjectDetail } from "@/hooks/use-project-detail";
+import { useProjectServices, refreshProjectServices, useProjectServicesSummary, refreshProjectServicesSummary, useProjectServicesLiveSync } from "@/hooks/use-project-services";
+import { useServiceTemplates } from "@/hooks/use-service-templates";
+import { refreshProjectCrew } from "@/hooks/use-project-crew";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -31,20 +36,18 @@ import {
 import { toast } from "sonner";
 
 import {
-  getProjectServices,
   createProjectService,
   updateProjectService,
   deleteProjectService,
   updateServiceStatus,
-  getProjectServicesSummary,
-  getServiceTemplates,
   updateServiceCrewStatus,
   generateProjectServices,
   cloneServicesFromProject,
   convertLineItemToService,
   generateCrewMessage,
 } from "@/server/project-services";
-import { getCrewRoleOptions, createCrewRole } from "@/server/crew";
+import { createCrewRole } from "@/server/crew";
+import { useCrewRoles } from "@/hooks/use-crew";
 import { getCrewMembersForAssignment } from "@/server/crew-assignments";
 import {
   projectServiceSchema,
@@ -180,7 +183,9 @@ export function ServicesPanel({
 }: ServicesPanelProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
+
+  // Cross-tab live sync: re-fetch the services composites when another tab edits.
+  useProjectServicesLiveSync(projectId, orgId);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingService, setEditingService] = useState<Record<string, unknown> | null>(null);
@@ -189,29 +194,20 @@ export function ServicesPanel({
   const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
   const [messageTarget, setMessageTarget] = useState<{ crewMemberId: string; name: string } | null>(null);
 
-  const { data: services = [], isLoading } = useQuery({
-    queryKey: ["project-services", orgId, projectId],
-    queryFn: () => getProjectServices(projectId),
-  });
+  const { data: services = [], isLoading } = useProjectServices(projectId);
 
-  const { data: summary } = useQuery({
-    queryKey: ["project-services-summary", orgId, projectId],
-    queryFn: () => getProjectServicesSummary(projectId),
-  });
+  const { data: summary } = useProjectServicesSummary(projectId);
 
-  const { data: templates = [] } = useQuery({
-    queryKey: ["service-templates", orgId],
-    queryFn: () => getServiceTemplates(),
-  });
+  const { data: templates = [] } = useServiceTemplates(orgId);
 
   const invalidateAll = () => {
-    queryClient.invalidateQueries({ queryKey: ["project-services", orgId, projectId] });
-    queryClient.invalidateQueries({ queryKey: ["project-services-summary", orgId, projectId] });
-    queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] });
-    queryClient.invalidateQueries({ queryKey: ["project-crew", orgId, projectId] });
+    refreshProjectServices(projectId);
+    refreshProjectServicesSummary(projectId);
+    refreshProjectDetail(projectId);
+    refreshProjectCrew(projectId);
   };
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: (id: string) => deleteProjectService(id),
     onSuccess: () => {
       toast.success("Service deleted");
@@ -221,7 +217,7 @@ export function ServicesPanel({
     onError: (e) => toast.error(e.message),
   });
 
-  const statusMutation = useMutation({
+  const statusMutation = useServerMutation({
     mutationFn: ({ id, status }: { id: string; status: ServiceStatus }) =>
       updateServiceStatus(id, status),
     onSuccess: () => {
@@ -231,7 +227,7 @@ export function ServicesPanel({
     onError: (e) => toast.error(e.message),
   });
 
-  const generateMutation = useMutation({
+  const generateMutation = useServerMutation({
     mutationFn: () => generateProjectServices(projectId),
     onSuccess: (result) => {
       const r = result as { created: number; lineItemsCreated: number };
@@ -785,7 +781,7 @@ function CloneServicesDialog({
   const [sourceProjectId, setSourceProjectId] = useState("");
 
   // Fetch recent projects to pick from
-  const { data: projects = [] } = useQuery({
+  const { data: projects = [] } = useServerQuery({
     queryKey: ["projects-list", orgId],
     queryFn: async () => {
       const { getProjects } = await import("@/server/projects");
@@ -801,7 +797,7 @@ function CloneServicesDialog({
       label: `${p.projectNumber} — ${p.name}`,
     }));
 
-  const cloneMutation = useMutation({
+  const cloneMutation = useServerMutation({
     mutationFn: () => cloneServicesFromProject(targetProjectId, sourceProjectId),
     onSuccess: (result) => {
       const r = result as { cloned: number };
@@ -866,7 +862,7 @@ function CrewMessageDialog({
   crewMemberId: string;
   crewMemberName: string;
 }) {
-  const { data: messageData, isLoading } = useQuery({
+  const { data: messageData, isLoading } = useServerQuery({
     queryKey: ["crew-message", projectId, crewMemberId],
     queryFn: () => generateCrewMessage(projectId, crewMemberId),
     enabled: open && !!crewMemberId,
@@ -1011,7 +1007,6 @@ function ServiceDialog({
 }) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
   const isEditing = !!editingService;
 
   const matchingTemplate = preselectedType
@@ -1109,18 +1104,22 @@ function ServiceDialog({
   const watchEndDate = form.watch("endDate") as string;
   const isCurrentlyMultiDay = canBeMultiDay && watchDate && watchEndDate && watchDate !== watchEndDate;
 
-  const { data: crewRoles = [] } = useQuery({
-    queryKey: ["crew-roles", orgId],
-    queryFn: () => getCrewRoleOptions(),
-    enabled: open,
-  });
+  // Reactive crew roles (Convex), skipped while closed (mirrors enabled:open).
+  // Re-apply getCrewRoleOptions's active filter + sortOrder/name sort.
+  const roleDocs = useCrewRoles(open ? orgId : undefined);
+  const roleOptions = useMemo(
+    () =>
+      [...(roleDocs ?? [])]
+        .filter((r) => r.isActive === true)
+        .sort((a, b) => {
+          const so = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+          return so !== 0 ? so : a.name.localeCompare(b.name);
+        })
+        .map((r) => ({ value: r.id, label: r.name })),
+    [roleDocs],
+  );
 
-  const roleOptions = (crewRoles as { id: string; name: string }[]).map((r) => ({
-    value: r.id,
-    label: r.name,
-  }));
-
-  const { data: crewMembers = [] } = useQuery({
+  const { data: crewMembers = [] } = useServerQuery({
     queryKey: ["crew-members-for-assignment", orgId, projectId],
     queryFn: () => getCrewMembersForAssignment(projectId),
     enabled: open,
@@ -1144,13 +1143,13 @@ function ServiceDialog({
   const setCrewMemberIds = (ids: string[]) => { form.setValue("crewMemberIds", ids); };
 
   const invalidateAll = () => {
-    queryClient.invalidateQueries({ queryKey: ["project-services", orgId, projectId] });
-    queryClient.invalidateQueries({ queryKey: ["project-services-summary", orgId, projectId] });
-    queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] });
-    queryClient.invalidateQueries({ queryKey: ["project-crew", orgId, projectId] });
+    refreshProjectServices(projectId);
+    refreshProjectServicesSummary(projectId);
+    refreshProjectDetail(projectId);
+    refreshProjectCrew(projectId);
   };
 
-  const createMutation = useMutation({
+  const createMutation = useServerMutation({
     mutationFn: (data: ProjectServiceFormValues) =>
       createProjectService(projectId, data),
     onSuccess: () => {
@@ -1161,7 +1160,7 @@ function ServiceDialog({
     onError: (e) => toast.error(e.message),
   });
 
-  const updateMutation = useMutation({
+  const updateMutation = useServerMutation({
     mutationFn: (data: ProjectServiceFormValues) =>
       updateProjectService(editingService!.id as string, data),
     onSuccess: () => {
@@ -1172,7 +1171,7 @@ function ServiceDialog({
     onError: (e) => toast.error(e.message),
   });
 
-  const crewStatusMutation = useMutation({
+  const crewStatusMutation = useServerMutation({
     mutationFn: ({ status }: { status: "OFFERED" | "CONFIRMED" | "CANCELLED" }) =>
       updateServiceCrewStatus(editingService!.id as string, status),
     onSuccess: (result, { status }) => {
@@ -1368,7 +1367,8 @@ function ServiceDialog({
                     } else {
                       createCrewRole({ name: v })
                         .then((role) => {
-                          queryClient.invalidateQueries({ queryKey: ["crew-roles", orgId] });
+                          // Role dropdown is reactive (useCrewRoles) — the new
+                          // role appears once the dual-write commits.
                           form.setValue("crewRoleId", role.id);
                           toast.success(`Role "${role.name}" created`);
                         })

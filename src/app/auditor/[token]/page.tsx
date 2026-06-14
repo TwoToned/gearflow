@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useState, useMemo, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { Shield, Search, ArrowUpDown, Sun, Moon, Lock } from "lucide-react";
 import { formatDate } from "@/lib/formatters";
 
@@ -89,7 +89,7 @@ export default function AuditorPortalPage({
     }
   }, []);
 
-  const { data, isLoading, error } = useQuery<AuditorData>({
+  const { data, isLoading, error } = useServerQuery<AuditorData>({
     queryKey: ["auditor", token],
     queryFn: async () => {
       const res = await fetch(`/api/auditor/${token}`);
@@ -99,7 +99,6 @@ export default function AuditorPortalPage({
       }
       return res.json();
     },
-    retry: false,
   });
 
   const filteredAssets = useMemo(() => {

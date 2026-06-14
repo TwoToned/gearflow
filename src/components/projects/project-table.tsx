@@ -1,12 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { Plus, AlertTriangle } from "lucide-react";
 
-import { getProjects, getProjectIssueFlags } from "@/server/projects";
+import { getProjectIssueFlags } from "@/server/projects";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { useProjects } from "@/hooks/use-projects";
+import { useClients } from "@/hooks/use-clients";
+import { useLocations } from "@/hooks/use-locations";
 import {
   Tooltip,
   TooltipTrigger,
@@ -31,7 +34,6 @@ function getDateRangeWindow() {
   rangeEnd.setDate(rangeEnd.getDate() + 53);
   return { rangeStart, rangeEnd };
 }
-
 
 const typeLabels: Record<string, string> = {
   DRY_HIRE: "Dry Hire",
@@ -58,11 +60,11 @@ const typeColors: Record<string, string> = {
 };
 
 function formatDateRange(
-  start: string | null | undefined,
-  end: string | null | undefined
+  start: number | string | null | undefined,
+  end: number | string | null | undefined,
 ) {
   if (!start && !end) return "—";
-  const fmt = (d: string) =>
+  const fmt = (d: number | string) =>
     new Date(d).toLocaleDateString("en-AU", {
       day: "numeric",
       month: "short",
@@ -179,8 +181,8 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     header: "Dates",
     sortKey: "rentalStartDate",
     cell: (row) => {
-      const start = row.rentalStartDate as string | null;
-      const end = row.rentalEndDate as string | null;
+      const start = row.rentalStartDate as number | null;
+      const end = row.rentalEndDate as number | null;
       const { rangeStart, rangeEnd } = getDateRangeWindow();
       return (
         <div className="flex flex-col gap-1 min-w-[120px]">
@@ -205,11 +207,6 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     sortKey: "total",
     align: "right",
     cell: (row) => (
-      // Show the canonical job total — equipment revenue + service cost +
-      // labour cost + sub-hire cost + adjustments − discount + tax, written
-      // by recalculateProjectTotals. Per P8, GearFlow doesn't own
-      // invoicing — `invoicedTotal` is operator memo only and shouldn't
-      // shadow the computed total in the list view.
       <span className="t-data">
         {row.total != null
           ? `$${Number(row.total).toLocaleString("en-AU", { minimumFractionDigits: 2 })}`
@@ -248,34 +245,95 @@ export function ProjectTable() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["projects", orgId, { search, filters, page, pageSize, sortBy, sortOrder }],
-    queryFn: () =>
-      getProjects({
-        search: search || undefined,
-        filters,
-        page,
-        pageSize,
-        sortBy,
-        sortOrder,
-      }),
-  });
+  // Convex reactive subscriptions — any update in any tab fires immediately
+  const allProjects = useProjects(orgId);
+  const clients = useClients(orgId);
+  const locations = useLocations(orgId);
 
-  const projects = data?.projects || [];
-  const total = data?.total || 0;
+  const clientMap = useMemo(
+    () => new Map((clients ?? []).map((c) => [c.id, c.name])),
+    [clients],
+  );
+  const locationMap = useMemo(
+    () => new Map((locations ?? []).map((l) => [l.id, l.name])),
+    [locations],
+  );
 
-  const projectIds = projects.map((p: AnyProject) => p.id);
-  const { data: issueFlags } = useQuery({
+  // Attach client + location name to each project doc
+  const withMeta = useMemo(() => {
+    if (!allProjects) return undefined;
+    return allProjects
+      .filter((p) => !p.isTemplate)
+      .map((p) => ({
+        ...p,
+        client: p.clientId ? { name: clientMap.get(p.clientId) ?? null } : null,
+        _locationName: p.locationId ? (locationMap.get(p.locationId) ?? null) : null,
+      }));
+  }, [allProjects, clientMap, locationMap]);
+
+  // Client-side search + filter
+  const filtered = useMemo(() => {
+    if (!withMeta) return undefined;
+    return withMeta.filter((p) => {
+      if (search) {
+        const q = search.toLowerCase();
+        const hit =
+          p.name.toLowerCase().includes(q) ||
+          p.projectNumber.toLowerCase().includes(q) ||
+          (p._locationName?.toLowerCase().includes(q) ?? false);
+        if (!hit) return false;
+      }
+      // Enum filters are string[] (selected values); filter passes if project value is in the set
+      const statusFilter = filters?.status;
+      if (Array.isArray(statusFilter) && statusFilter.length > 0 && p.status && !statusFilter.includes(p.status as string)) return false;
+      const typeFilter = filters?.type;
+      if (Array.isArray(typeFilter) && typeFilter.length > 0 && p.type && !typeFilter.includes(p.type as string)) return false;
+      return true;
+    });
+  }, [withMeta, search, filters]);
+
+  // Client-side sort
+  const sorted = useMemo(() => {
+    if (!filtered) return undefined;
+    return [...filtered].sort((a, b) => {
+      let aVal: unknown;
+      let bVal: unknown;
+      if (sortBy === "client") {
+        aVal = a.client?.name ?? "";
+        bVal = b.client?.name ?? "";
+      } else {
+        aVal = (a as Record<string, unknown>)[sortBy];
+        bVal = (b as Record<string, unknown>)[sortBy];
+      }
+      if (aVal == null && bVal == null) return 0;
+      if (aVal == null) return 1;
+      if (bVal == null) return -1;
+      const cmp = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+      return sortOrder === "asc" ? cmp : -cmp;
+    });
+  }, [filtered, sortBy, sortOrder]);
+
+  // Client-side pagination
+  const total = sorted?.length ?? 0;
+  const paged = useMemo(
+    () => sorted?.slice((page - 1) * pageSize, page * pageSize),
+    [sorted, page, pageSize],
+  );
+
+  const isLoading = allProjects === undefined;
+
+  // Issue flags stay server-side (overbooking calculation)
+  const projectIds = useMemo(() => (paged ?? []).map((p) => p.id), [paged]);
+  const { data: issueFlags } = useServerQuery({
     queryKey: ["project-issues", projectIds],
     queryFn: () => getProjectIssueFlags(projectIds),
     enabled: projectIds.length > 0,
   });
 
-  // Enrich projects with issue flags for use in cell renderers
-  const enrichedProjects = projects.map((p: AnyProject) => ({
-    ...p,
-    _issueFlags: issueFlags?.[p.id] || null,
-  }));
+  const enrichedProjects = useMemo(
+    () => (paged ?? []).map((p) => ({ ...p, _issueFlags: issueFlags?.[p.id] ?? null })),
+    [paged, issueFlags],
+  );
 
   const toolbarActions = (
     <CanDo resource="project" action="create">

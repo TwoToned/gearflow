@@ -1,7 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -20,11 +19,13 @@ import {
 import { toast } from "sonner";
 
 import {
-  getCheckItems,
   createCheckItem,
   updateCheckItem,
   deleteCheckItem,
 } from "@/server/check-items";
+import { useCheckItems } from "@/hooks/use-check-items";
+import { useModelCheckItemUsageCounts } from "@/hooks/use-check-item-assignments";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   checkItemSchema,
   type CheckItemFormValues,
@@ -89,7 +90,6 @@ const TYPE_COLORS: Record<CheckItemType, string> = {
 export default function CheckItemsPage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
   const canCreate = useCanDo("checkItem", "create");
   const canEdit = useCanDo("checkItem", "update");
   const canDelete = useCanDo("checkItem", "delete");
@@ -99,22 +99,31 @@ export default function CheckItemsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
 
-  const { data: checkItems = [], isLoading } = useQuery({
-    queryKey: ["check-items", orgId],
-    queryFn: () => getCheckItems(),
-  });
+  // Reactive check-item library straight from Convex (auto-updates on any
+  // create/update/delete). The per-item model-usage count is now reactive too —
+  // derived from the dual-written `modelCheckItems` table (the old server action
+  // also fetched a check-record count that this page never rendered).
+  const allCheckItems = useCheckItems(orgId);
+  const modelUsageCounts = useModelCheckItemUsageCounts(orgId);
+  const isLoading = allCheckItems === undefined;
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: (id: string) => deleteCheckItem(id),
     onSuccess: () => {
       toast.success("Check item deleted");
-      queryClient.invalidateQueries({ queryKey: ["check-items", orgId] });
     },
     onError: (e) => toast.error(e.message),
   });
 
-  // Group by category
-  const items = checkItems as Record<string, unknown>[];
+  // Sort by [category, label] (Convex list is unordered) + merge usage counts.
+  const items = useMemo(() => {
+    const source = (allCheckItems ?? []) as Record<string, unknown>[];
+    const sorted = [...source].sort((a, b) => {
+      const ca = ((a.category as string) || "").localeCompare((b.category as string) || "", undefined, { sensitivity: "base" });
+      return ca !== 0 ? ca : (a.label as string).localeCompare(b.label as string, undefined, { sensitivity: "base" });
+    });
+    return sorted.map((i) => ({ ...i, _count: { modelCheckItems: modelUsageCounts?.get(i.id as string) ?? 0 } })) as Record<string, unknown>[];
+  }, [allCheckItems, modelUsageCounts]);
   const filtered = searchQuery
     ? items.filter(
         (i) =>
@@ -206,7 +215,7 @@ export default function CheckItemsPage() {
                   grouped[category].map((item) => {
                     const type = item.type as CheckItemType;
                     const Icon = TYPE_ICONS[type];
-                    const count = item._count as { modelCheckItems: number; checkRecords: number } | undefined;
+                    const count = item._count as { modelCheckItems: number } | undefined;
                     return (
                       <TableRow key={item.id as string}>
                         <TableCell>
@@ -309,9 +318,6 @@ function CheckItemDialog({
   onOpenChange: (open: boolean) => void;
   editing: Record<string, unknown> | null;
 }) {
-  const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
   const isEditing = !!editing;
 
   const defaultValues: CheckItemFormValues = editing
@@ -347,22 +353,23 @@ function CheckItemDialog({
 
   const watchType = form.watch("type");
 
-  const createMutation = useMutation({
+  // No invalidation: every check-item-library reader (this page + the model-table
+  // bulk-assign dialog) subscribes to Convex, so the dual-write server action's
+  // Convex write pushes the update live.
+  const createMutation = useServerMutation({
     mutationFn: (data: CheckItemFormValues) => createCheckItem(data),
     onSuccess: () => {
       toast.success("Check item created");
-      queryClient.invalidateQueries({ queryKey: ["check-items", orgId] });
       onOpenChange(false);
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const updateMutation = useMutation({
+  const updateMutation = useServerMutation({
     mutationFn: (data: CheckItemFormValues) =>
       updateCheckItem(editing!.id as string, data),
     onSuccess: () => {
       toast.success("Check item updated");
-      queryClient.invalidateQueries({ queryKey: ["check-items", orgId] });
       onOpenChange(false);
     },
     onError: (e) => toast.error(e.message),

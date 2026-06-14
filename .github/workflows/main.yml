@@ -45,11 +45,18 @@ jobs:
           cd ${{ vars.APP_DIR }}
           pnpm exec prisma migrate deploy
 
-      - name: Build Next.js app
+      # Deploys the Convex functions + schema to the prod Cloud deployment AND
+      # runs the Next build with the prod NEXT_PUBLIC_CONVEX_URL injected. The
+      # build only runs if the Convex deploy succeeds, so a broken schema/function
+      # fails the deploy as a gate. CONVEX_DEPLOY_KEY is a prod deploy key from the
+      # Convex dashboard (Settings → URL & Deploy Key). Data backfills are NOT
+      # here — they're a one-time manual op (scripts/convex-backfill-all.ts).
+      - name: Deploy Convex functions + build Next.js app
         run: |
           cd ${{ vars.APP_DIR }}
-          pnpm run build
+          pnpm exec convex deploy --cmd 'pnpm run build'
         env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           NODE_OPTIONS: "--max-old-space-size=4096"
  
       - name: Restart app + Discord bot

@@ -10,9 +10,22 @@ import {
   type ServiceTemplateFormValues,
 } from "@/lib/validations/project-service";
 import { logActivity } from "@/lib/activity-log";
+import {
+  mirrorServiceTemplateCreate,
+  patchServiceTemplateInConvex,
+  removeServiceTemplateFromConvex,
+} from "@/lib/template-mirror";
 import { roundCurrency } from "@/lib/formatters";
 import { sendCrewOffer } from "@/server/crew-communication";
 import { recalculateProjectTotals } from "@/server/line-items";
+import { removeLineItemFromConvex } from "@/lib/line-item-mirror";
+import {
+  syncCrewAssignmentsForServiceToConvex,
+  syncCrewAssignmentsForProjectToConvex,
+  snapshotServiceCrew,
+  removeCrewAssignmentCascadeFromConvex,
+} from "@/lib/crew-scheduling-mirror";
+import { syncProjectServicesToConvex } from "@/lib/project-subtable-mirror";
 import { SERVICE_TYPE_LABELS } from "@/lib/constants/services";
 import type { ServiceType, PricingType, ProjectPhase } from "@/generated/prisma/client";
 
@@ -220,8 +233,14 @@ export async function createProjectService(
     return svc;
   });
 
+  // Mirror any crew assignments created with the service (dual-write).
+  if (parsed.crewMemberIds && parsed.crewMemberIds.length > 0) {
+    await syncCrewAssignmentsForServiceToConvex(service.id);
+  }
+
   // Always recalculate project totals — service charge/cost affects financials
   await recalculateProjectTotals(projectId);
+  await syncProjectServicesToConvex(organizationId, projectId);
 
   await logActivity({
     organizationId,
@@ -254,6 +273,10 @@ export async function updateProjectService(
   if (!existing) throw new Error("Service not found");
 
   const { fields, serviceDate, serviceEndDate } = buildServiceData(parsed);
+
+  // Capture the service's crew cascade before the tx may delete assignments, so
+  // removed assignments (+ their shifts/time-entries) can be dropped from Convex.
+  const crewBefore = parsed.crewMemberIds != null ? await snapshotServiceCrew(id) : [];
 
   // Wrap in transaction (Arch fix #1)
   const service = await prisma.$transaction(async (tx) => {
@@ -324,14 +347,27 @@ export async function updateProjectService(
     await prisma.projectLineItem.delete({
       where: { id: existing.lineItemId },
     }).catch(() => {});
+    await removeLineItemFromConvex(existing.lineItemId);
     await prisma.projectService.update({
       where: { id },
       data: { lineItemId: null },
     });
   }
 
+  // Reconcile the service's crew assignments in Convex: drop the ones removed by
+  // the tx (cascade their shifts/time-entries), then upsert the survivors + adds.
+  if (parsed.crewMemberIds != null) {
+    const currentIds = new Set(
+      (await snapshotServiceCrew(id)).map((c) => c.assignmentId),
+    );
+    const removed = crewBefore.filter((c) => !currentIds.has(c.assignmentId));
+    await removeCrewAssignmentCascadeFromConvex(removed);
+    await syncCrewAssignmentsForServiceToConvex(id);
+  }
+
   // Always recalculate project totals — service charge/cost affects financials
   await recalculateProjectTotals(existing.projectId);
+  await syncProjectServicesToConvex(organizationId, existing.projectId);
 
   await logActivity({
     organizationId,
@@ -359,6 +395,9 @@ export async function deleteProjectService(id: string) {
   });
   if (!service) throw new Error("Service not found");
 
+  // Capture the service's crew cascade before the deleteMany removes it.
+  const crewCascade = await snapshotServiceCrew(id);
+
   // Wrap in transaction (Arch fix #1)
   await prisma.$transaction(async (tx) => {
     // Unlink line item — set lineItemId to null, don't delete the line item (Arch fix #7)
@@ -380,8 +419,11 @@ export async function deleteProjectService(id: string) {
 
     await tx.projectService.delete({ where: { id } });
   });
+  if (service.lineItemId) await removeLineItemFromConvex(service.lineItemId);
+  await removeCrewAssignmentCascadeFromConvex(crewCascade);
 
   await recalculateProjectTotals(service.projectId);
+  await syncProjectServicesToConvex(organizationId, service.projectId);
 
   await logActivity({
     organizationId,
@@ -416,6 +458,7 @@ export async function updateServiceStatus(
   });
 
   await recalculateProjectTotals(service.projectId);
+  await syncProjectServicesToConvex(organizationId, service.projectId);
 
   await logActivity({
     organizationId,
@@ -453,6 +496,7 @@ export async function bulkUpdateServiceStatus(
 
   if (firstService) {
     await recalculateProjectTotals(firstService.projectId);
+    await syncProjectServicesToConvex(organizationId, firstService.projectId);
   }
 
   await logActivity({
@@ -515,6 +559,9 @@ export async function updateServiceCrewStatus(
       data: { status },
     });
     updatedCount = result.count;
+    // Mirror the bulk status change to Convex (the OFFERED branch mirrors per-offer
+    // via sendCrewOffer).
+    await syncCrewAssignmentsForServiceToConvex(serviceId);
   }
 
   const statusLabels: Record<string, string> = {
@@ -792,6 +839,7 @@ async function _createServicesFromTemplateData(
 
   // Sync line items for services that show on documents
   await recalculateProjectTotals(projectId);
+  await syncProjectServicesToConvex(organizationId, projectId);
 
   await logActivity({
     organizationId,
@@ -945,7 +993,11 @@ export async function cloneServicesFromProject(
     return results;
   });
 
+  // Mirror the cloned crew assignments (across all cloned services) to Convex.
+  await syncCrewAssignmentsForProjectToConvex(targetProjectId);
+
   await recalculateProjectTotals(targetProjectId);
+  await syncProjectServicesToConvex(organizationId, targetProjectId);
 
   await logActivity({
     organizationId,
@@ -1020,6 +1072,8 @@ export async function convertLineItemToService(lineItemId: string) {
     });
     return svc;
   });
+
+  await syncProjectServicesToConvex(organizationId, lineItem.projectId);
 
   await logActivity({
     organizationId,
@@ -1283,6 +1337,7 @@ export async function createServiceTemplate(data: ServiceTemplateFormValues) {
       sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
     },
   });
+  await mirrorServiceTemplateCreate(template);
 
   await logActivity({
     organizationId,
@@ -1330,6 +1385,7 @@ export async function updateServiceTemplate(
       isActive: parsed.isActive,
     },
   });
+  await patchServiceTemplateInConvex(template.id, template);
 
   await logActivity({
     organizationId,
@@ -1357,6 +1413,7 @@ export async function deleteServiceTemplate(id: string) {
   if (!template) throw new Error("Template not found");
 
   await prisma.serviceTemplate.delete({ where: { id } });
+  await removeServiceTemplateFromConvex(id);
 
   await logActivity({
     organizationId,

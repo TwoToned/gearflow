@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { Loader2, FileText, Calendar } from "lucide-react";
 import { toast } from "sonner";
 
-import { getProjectCrew } from "@/server/crew-assignments";
+import { useProjectCrew } from "@/hooks/use-project-crew";
 import { getCallSheetDates } from "@/server/projects";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -61,13 +61,9 @@ export function CallSheetDialog({
   const [selectedRoleId, setSelectedRoleId] = useState<string>("all");
   const [generating, setGenerating] = useState(false);
 
-  const crewQuery = useQuery({
-    queryKey: ["project-crew", projectId],
-    queryFn: () => getProjectCrew(projectId),
-    enabled: open,
-  });
+  const crewQuery = useProjectCrew(open ? projectId : undefined);
 
-  const datesQuery = useQuery({
+  const datesQuery = useServerQuery({
     queryKey: ["call-sheet-dates", projectId],
     queryFn: () => getCallSheetDates(projectId),
     enabled: open,

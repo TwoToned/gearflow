@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Loader2, Boxes, Cable, Layers } from "lucide-react";
 import { toast } from "sonner";
 
@@ -61,23 +62,30 @@ const ITEM_TYPE_VARIANTS: Record<CheckInItemType, "default" | "secondary" | "out
   ACCESSORY: "outline",
 };
 
-export function BulkCheckInTab({ projectId }: { projectId: string }) {
+export function BulkCheckInTab({
+  projectId,
+  onChanged,
+}: {
+  projectId: string;
+  /** Notify the parent warehouse page to refresh its project composite after a
+   *  bulk check-in (replaces the old cross-key ["warehouse-project"] invalidation). */
+  onChanged?: () => void;
+}) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
   const canCheckIn = useCanDo("warehouse", "check_in");
 
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [condition, setCondition] = useState<Condition>("GOOD");
 
-  const { data: totals, isLoading } = useQuery({
+  const { data: totals, isLoading, refetch } = useServerQuery({
     queryKey: ["bulk-checkin-totals", orgId, projectId],
     queryFn: () => getBulkCheckInTotals(projectId),
   });
 
   const rows = totals ?? [];
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (returns: Array<{ key: string; quantity: number; condition: Condition }>) =>
       checkInBulkTotals(projectId, returns),
     onSuccess: (res) => {
@@ -87,8 +95,8 @@ export function BulkCheckInTab({ projectId }: { projectId: string }) {
       );
       toast.success(total > 0 ? `Checked in ${total} item${total === 1 ? "" : "s"}` : "Nothing to check in");
       setCounts({});
-      queryClient.invalidateQueries({ queryKey: ["bulk-checkin-totals", orgId, projectId] });
-      queryClient.invalidateQueries({ queryKey: ["warehouse-project", orgId, projectId] });
+      refetch();
+      onChanged?.();
     },
     onError: (e) => showError(e, { fallbackTitle: "Bulk check-in failed" }),
   });

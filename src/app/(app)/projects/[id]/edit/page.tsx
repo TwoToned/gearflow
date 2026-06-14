@@ -2,10 +2,8 @@
 
 import { use } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
-import { getProject } from "@/server/projects";
+import { useProjectDetail } from "@/hooks/use-project-detail";
 import { ProjectForm } from "@/components/projects/project-form";
-import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
@@ -33,13 +31,8 @@ export default function EditProjectPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
 
-  const { data: project, isLoading } = useQuery({
-    queryKey: ["project", orgId, id],
-    queryFn: () => getProject(id),
-  });
+  const { data: project, isLoading } = useProjectDetail(id);
 
   if (isLoading)
     return <FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>;

@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -108,7 +109,6 @@ function CrewListView() {
 function CrewDashboard() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
   const [logTimeOpen, setLogTimeOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
 
@@ -124,57 +124,57 @@ function CrewDashboard() {
     return () => window.removeEventListener("slash-command", handler);
   }, []);
 
-  const { data: stats } = useQuery({
+  const { data: stats, refetch: refetchStats } = useServerQuery({
     queryKey: ["crew-dashboard-stats", orgId],
     queryFn: getCrewDashboardStats,
   });
 
-  const { data: pendingTime } = useQuery({
+  const { data: pendingTime, refetch: refetchPendingTime } = useServerQuery({
     queryKey: ["crew-pending-time", orgId],
     queryFn: getPendingTimeEntries,
   });
 
-  const { data: activeAssignments } = useQuery({
+  const { data: activeAssignments } = useServerQuery({
     queryKey: ["crew-active-assignments", orgId],
     queryFn: getActiveAssignmentsSummary,
   });
 
-  const { data: pendingOffers } = useQuery({
+  const { data: pendingOffers, refetch: refetchPendingOffers } = useServerQuery({
     queryKey: ["crew-pending-offers", orgId],
     queryFn: getPendingOffers,
   });
 
-  const { data: upcomingShifts } = useQuery({
+  const { data: upcomingShifts } = useServerQuery({
     queryKey: ["crew-upcoming-shifts", orgId],
     queryFn: getUpcomingShifts,
   });
 
-  const approveMutation = useMutation({
+  const approveMutation = useServerMutation({
     mutationFn: (ids: string[]) => approveTimeEntries(ids),
     onSuccess: (result) => {
       toast.success(`${result.count} entries approved`);
-      queryClient.invalidateQueries({ queryKey: ["crew-pending-time"] });
-      queryClient.invalidateQueries({ queryKey: ["crew-dashboard-stats"] });
+      refetchPendingTime();
+      refetchStats();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const disputeMutation = useMutation({
+  const disputeMutation = useServerMutation({
     mutationFn: (id: string) => disputeTimeEntry(id),
     onSuccess: () => {
       toast.success("Time entry disputed");
-      queryClient.invalidateQueries({ queryKey: ["crew-pending-time"] });
-      queryClient.invalidateQueries({ queryKey: ["crew-dashboard-stats"] });
+      refetchPendingTime();
+      refetchStats();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const sendOfferMutation = useMutation({
+  const sendOfferMutation = useServerMutation({
     mutationFn: (id: string) => sendCrewOffer(id),
     onSuccess: () => {
       toast.success("Offer sent");
-      queryClient.invalidateQueries({ queryKey: ["crew-pending-offers"] });
-      queryClient.invalidateQueries({ queryKey: ["crew-dashboard-stats"] });
+      refetchPendingOffers();
+      refetchStats();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -501,6 +501,10 @@ function CrewDashboard() {
       <LogTimeDialog
         open={logTimeOpen}
         onOpenChange={setLogTimeOpen}
+        onLogged={() => {
+          refetchPendingTime();
+          refetchStats();
+        }}
       />
 
       {/* Export Dialog */}
@@ -619,20 +623,22 @@ function ExportTimesheetDialog({
 function LogTimeDialog({
   open,
   onOpenChange,
+  onLogged,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Called after time entries are logged so the parent dashboard refreshes. */
+  onLogged?: () => void;
 }) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
 
   const [selectedCrewIds, setSelectedCrewIds] = useState<string[]>([]);
   const [step, setStep] = useState<"pick" | "form">("pick");
   const [isGeneral, setIsGeneral] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const { data: crewList } = useQuery({
+  const { data: crewList } = useServerQuery({
     queryKey: ["crew-picker-list", orgId],
     queryFn: getCrewPickerList,
     enabled: open,
@@ -707,9 +713,9 @@ function LogTimeDialog({
       }
       if (successCount > 0) {
         toast.success(`${successCount} time ${successCount === 1 ? "entry" : "entries"} added`);
-        queryClient.invalidateQueries({ queryKey: ["crew-pending-time"] });
-        queryClient.invalidateQueries({ queryKey: ["crew-dashboard-stats"] });
-        queryClient.invalidateQueries({ queryKey: ["crew-time-entries"] });
+        // Refresh the parent dashboard's pending-time + stats. crew-time-entries
+        // is read only by crew/[id] (useServerQuery, cross-route → remounts).
+        onLogged?.();
       }
       if (errors.length > 0) {
         toast.error(`${errors.length} failed: ${errors[0]}`);

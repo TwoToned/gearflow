@@ -20,6 +20,7 @@ import {
   type GroupPlan,
 } from "@/lib/split-sibling-collapse";
 import { nextOrdinal } from "@/lib/line-item-units";
+import { syncLineItemsToConvex } from "@/lib/line-item-mirror";
 import { syncLineItemRollup } from "@/lib/line-item-fulfillment";
 
 export interface CollapseRunStats {
@@ -290,4 +291,6 @@ export async function mergeGroup(
     });
     await syncLineItemRollup(tx, plan.canonicalId);
   });
+  // Mirror the canonical + deactivated sibling line items to Convex.
+  await syncLineItemsToConvex([plan.canonicalId, ...plan.moves.map((m) => m.siblingId)]);
 }

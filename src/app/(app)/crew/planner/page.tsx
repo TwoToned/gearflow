@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import {
   ChevronLeft,
   ChevronRight,
@@ -11,6 +11,7 @@ import {
 
 import { getCrewPlannerData } from "@/server/crew-availability";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { useOrgCrewAssignments, fingerprintCrewAssignments, useOrgAvailabilities, fingerprintAvailabilities } from "@/hooks/use-crew-scheduling";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { PageMeta } from "@/components/layout/page-meta";
 import { FadeIn } from "@/components/ui/motion";
@@ -93,10 +94,26 @@ export default function CrewPlannerPage() {
   const startDate = days[0].toISOString().split("T")[0];
   const endDate = days[days.length - 1].toISOString().split("T")[0];
 
-  const { data: members, isLoading } = useQuery({
+  const { data: members, isLoading, refetch } = useServerQuery({
     queryKey: ["crew-planner", orgId, startDate, endDate],
     queryFn: () => getCrewPlannerData(startDate, endDate),
   });
+
+  // Cross-tab live sync: subscribe to the dual-written Convex crewAssignments +
+  // crewAvailabilities tables; a fingerprint change (crew booked/moved/confirmed,
+  // or someone marking themselves off in another tab) re-fetches the planner.
+  const assignmentDocs = useOrgCrewAssignments(orgId);
+  const availabilityDocs = useOrgAvailabilities(orgId);
+  const plannerFp = `${fingerprintCrewAssignments(assignmentDocs) ?? ""}#${fingerprintAvailabilities(availabilityDocs) ?? ""}`;
+  const ready = assignmentDocs !== undefined || availabilityDocs !== undefined;
+  const prevPlannerFp = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!ready) return;
+    if (prevPlannerFp.current !== undefined && plannerFp !== prevPlannerFp.current) {
+      refetch();
+    }
+    prevPlannerFp.current = plannerFp;
+  }, [plannerFp, ready, refetch]);
 
   const goBack = () => setWeekStart((d) => addDays(d, -7));
   const goForward = () => setWeekStart((d) => addDays(d, 7));

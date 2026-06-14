@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { uploadToS3, ensureBucket } from "@/lib/storage";
 import { generateThumbnail, isImageMimeType, thumbExtension } from "@/lib/thumbnails";
 import { fileTypeFromBuffer } from "file-type";
+import { mirrorFileUploadCreate } from "@/lib/file-upload-mirror";
 import { env } from "@/env";
 
 export const runtime = "nodejs";
@@ -129,6 +130,7 @@ export async function POST(request: NextRequest) {
         uploadedById: userId,
       },
     });
+    await mirrorFileUploadCreate(fileUpload);
 
     return NextResponse.json(fileUpload);
   } catch (error) {

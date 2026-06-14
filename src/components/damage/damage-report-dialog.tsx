@@ -17,7 +17,7 @@
 import { useState, useRef } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
 import { Camera, Loader2, X } from "lucide-react";
 
@@ -114,7 +114,6 @@ export function DamageReportDialog({
   itemLabel,
   onCreated,
 }: DamageReportDialogProps) {
-  const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
 
@@ -135,7 +134,7 @@ export function DamageReportDialog({
     },
   });
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: createDamageEvent,
     onSuccess: () => {
       toast.success("Damage reported", {
@@ -143,10 +142,10 @@ export function DamageReportDialog({
           ? "A workshop ticket was created and the asset is on hold."
           : "Logged on the project's operational P&L.",
       });
-      // Refresh anything that reads damage data.
-      queryClient.invalidateQueries({ queryKey: ["project-operational-costs"] });
-      queryClient.invalidateQueries({ queryKey: ["damage-events"] });
-      queryClient.invalidateQueries({ queryKey: ["entity-activity"] });
+      // Same-view refresh flows through the parent's onCreated callback; the
+      // damage-events list reader (damage page) and the entity-activity timeline
+      // both fetch on mount (cross-route / not co-mounted here), so there is no
+      // cache to invalidate.
       onCreated?.();
       onOpenChange(false);
       form.reset();

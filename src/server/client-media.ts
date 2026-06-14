@@ -1,7 +1,10 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { mirrorFileUploadDelete } from "@/lib/file-upload-mirror";
+import { mirrorMediaCreate, syncMediaForParent } from "@/lib/media-mirror";
 import { getOrgContext } from "@/lib/org-context";
+import { getClientById } from "@/lib/clients-read";
 import { serialize } from "@/lib/serialize";
 import { deleteFromS3 } from "@/lib/storage";
 import type { MediaType } from "@/generated/prisma/client";
@@ -14,10 +17,8 @@ export async function addClientMedia(data: {
 }) {
   const { organizationId } = await getOrgContext();
 
-  const client = await prisma.client.findFirst({
-    where: { id: data.clientId, organizationId },
-  });
-  if (!client) throw new Error("Client not found");
+  const client = await getClientById(data.clientId);
+  if (!client || client.organizationId !== organizationId) throw new Error("Client not found");
 
   const file = await prisma.fileUpload.findFirst({
     where: { id: data.fileId, organizationId },
@@ -40,6 +41,8 @@ export async function addClientMedia(data: {
     },
     include: { file: true },
   });
+
+  await mirrorMediaCreate("client", media);
 
   return serialize(media);
 }
@@ -65,4 +68,7 @@ export async function removeClientMedia(mediaId: string) {
     // Best-effort cleanup
   }
   await prisma.fileUpload.delete({ where: { id: media.fileId } });
+  await mirrorFileUploadDelete(media.fileId);
+
+  await syncMediaForParent("client", organizationId, media.clientId);
 }

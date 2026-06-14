@@ -3,7 +3,8 @@
 import { use, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   ChevronRight,
   Pencil,
@@ -49,19 +50,19 @@ export default function MaintenanceDetailPage({
 }) {
   const { id } = use(params);
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: record, isLoading } = useQuery({
+  const { data: record, isLoading } = useServerQuery({
     queryKey: ["maintenance", orgId, id],
     queryFn: () => getMaintenanceRecord(id),
   });
 
-  const deleteMutation = useMutation({
+  // Navigates to the list on success; the list reader (useServerQuery) remounts
+  // fresh, so no cross-route invalidation is needed.
+  const deleteMutation = useServerMutation({
     mutationFn: () => deleteMaintenanceRecord(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["maintenance"] });
       toast.success("Record deleted");
       router.push("/maintenance");
     },

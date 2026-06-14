@@ -1,7 +1,8 @@
 "use client";
 
 import { use, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
 import Link from "next/link";
 import { AdminShell } from "@/components/admin/admin-shell";
@@ -91,7 +92,6 @@ export default function AdminOrgDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id: orgId } = use(params);
-  const queryClient = useQueryClient();
 
   const [addOpen, setAddOpen] = useState(false);
   const [addEmail, setAddEmail] = useState("");
@@ -136,20 +136,20 @@ export default function AdminOrgDetailPage({
     }
   }
 
-  const { data: org, isLoading } = useQuery({
+  const { data: org, isLoading, refetch: refetchOrg } = useServerQuery({
     queryKey: ["admin-org-detail", orgId],
     queryFn: () => adminGetOrganizationDetails(orgId),
   });
 
-  const { data: customRoles = [] } = useQuery({
+  const { data: customRoles = [] } = useServerQuery({
     queryKey: ["admin-org-custom-roles", orgId],
     queryFn: () => adminGetOrgCustomRoles(orgId),
   });
 
-  const addMutation = useMutation({
+  const addMutation = useServerMutation({
     mutationFn: () => adminAddMemberToOrg(orgId, addEmail, addRole),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-org-detail", orgId] });
+      refetchOrg();
       toast.success("Member added");
       setAddOpen(false);
       setAddEmail("");
@@ -158,18 +158,18 @@ export default function AdminOrgDetailPage({
     onError: (e) => toast.error(e.message),
   });
 
-  const removeMutation = useMutation({
+  const removeMutation = useServerMutation({
     mutationFn: (memberId: string) =>
       adminRemoveMemberFromOrg(orgId, memberId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-org-detail", orgId] });
+      refetchOrg();
       toast.success("Member removed");
       setRemoveTarget(null);
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const roleChangeMutation = useMutation({
+  const roleChangeMutation = useServerMutation({
     mutationFn: ({
       memberId,
       newRole,
@@ -178,29 +178,30 @@ export default function AdminOrgDetailPage({
       newRole: string;
     }) => adminChangeMemberRole(orgId, memberId, newRole),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-org-detail", orgId] });
+      refetchOrg();
       toast.success("Role updated");
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const transferMutation = useMutation({
+  const transferMutation = useServerMutation({
     mutationFn: (newOwnerId: string) =>
       adminTransferOwnership(orgId, newOwnerId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-org-detail", orgId] });
+      refetchOrg();
       toast.success("Ownership transferred");
       setTransferTarget(null);
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const updateOrgMutation = useMutation({
+  const updateOrgMutation = useServerMutation({
     mutationFn: (data: { name?: string; slug?: string }) =>
       adminUpdateOrganization(orgId, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-org-detail", orgId] });
-      queryClient.invalidateQueries({ queryKey: ["admin-the-org"] });
+      refetchOrg();
+      // The list page's ["admin-the-org"] is a different route — it remounts and
+      // refetches on navigation, so its cross-route invalidation drops here.
       toast.success("Organization updated");
       setEditOpen(false);
     },

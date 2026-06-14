@@ -2,8 +2,10 @@
 
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/org-context";
+import { getModelMap } from "@/lib/models-read";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import { mirrorWarehouseCloseCreate } from "@/lib/warehouse-close-mirror";
 import {
   warehouseCloseSchema,
   type WarehouseCloseFormValues,
@@ -44,11 +46,13 @@ export async function getCloseOutSummary(projectId: string) {
       quantity: true,
       returnedQuantity: true,
       checkedOutQuantity: true,
-      model: { select: { name: true } },
+      modelId: true,
       asset: { select: { assetTag: true } },
       bulkAsset: { select: { assetTag: true } },
     },
   });
+  // model name lives in Convex — resolve from the map, not a Prisma join.
+  const modelMap = await getModelMap(organizationId);
 
   // Categorize items
   let storedCount = 0;
@@ -66,7 +70,7 @@ export async function getCloseOutSummary(projectId: string) {
 
   for (const item of lineItems) {
     const isReturned = item.status === "RETURNED";
-    const modelName = item.model?.name || "Unknown";
+    const modelName = (item.modelId ? modelMap.get(item.modelId)?.name : null) || "Unknown";
     const assetTag = item.asset?.assetTag || item.bulkAsset?.assetTag || null;
 
     if (!isReturned) {
@@ -252,6 +256,8 @@ export async function closeOutProject(data: WarehouseCloseFormValues) {
     }
     throw err;
   }
+
+  await mirrorWarehouseCloseCreate(result as unknown as Record<string, unknown>);
 
   await logActivity({
     organizationId,

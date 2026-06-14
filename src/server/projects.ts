@@ -2,6 +2,11 @@
 
 import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
+import { getClientById, getClientMap, attachClient } from "@/lib/clients-read";
+import {
+  buildLineItemAttachMaps,
+  attachLineItemTree,
+} from "@/lib/line-item-tree-read";
 import {
   projectSchema,
   type ProjectFormValues,
@@ -11,6 +16,17 @@ import { serialize } from "@/lib/serialize";
 import { computeOverbookedStatus } from "@/lib/availability";
 import { recalculateProjectTotals } from "@/server/line-items";
 import { logActivity } from "@/lib/activity-log";
+import { syncKitsToConvex } from "@/lib/kit-mirror";
+import { syncAssetsToConvex } from "@/lib/asset-mirror";
+import { mirrorProjectCategoryCreate, mirrorProjectGroupCreate } from "@/lib/project-grouping-mirror";
+import { upsertProjectLineItemsToConvex, removeLineItemFromConvex } from "@/lib/line-item-mirror";
+import { mirrorProjectCreate, patchProjectInConvex, removeProjectFromConvex } from "@/lib/project-mirror";
+import {
+  syncProjectManagersToConvex,
+  syncProjectServicesToConvex,
+  syncProjectTasksToConvex,
+} from "@/lib/project-subtable-mirror";
+import { snapshotProjectCrew, removeCrewAssignmentCascadeFromConvex } from "@/lib/crew-scheduling-mirror";
 import { emitIfDiscordEnabled } from "@/lib/services/outbox-service";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
@@ -226,11 +242,15 @@ export async function getProjects(params?: {
     ...filterWhere,
   };
 
-  const [projects, total] = await Promise.all([
+  // Clients live in Convex (no Prisma join). Sorting by client name therefore
+  // can't happen in the DB — when sortBy === "client" we fetch all matching
+  // projects, attach clients, then sort + paginate in JS. Other sorts keep DB
+  // pagination and just attach clients to the page.
+  const sortByClient = sortBy === "client";
+  const [projectsRaw, total] = await Promise.all([
     prisma.project.findMany({
       where,
       include: {
-        client: true,
         location: true,
         ...(includeLineItems && {
           lineItems: {
@@ -239,13 +259,27 @@ export async function getProjects(params?: {
           },
         }),
       },
-      orderBy: sortBy === "client" ? { client: { name: sortOrder } }
-        : { [sortBy]: sortOrder },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
+      ...(sortByClient
+        ? {}
+        : { orderBy: { [sortBy]: sortOrder }, skip: (page - 1) * pageSize, take: pageSize }),
     }),
     prisma.project.count({ where }),
   ]);
+
+  const clientMap = await getClientMap(organizationId);
+  let projects = projectsRaw.map((p) => ({
+    ...p,
+    client: p.clientId ? clientMap.get(p.clientId) ?? null : null,
+  }));
+
+  if (sortByClient) {
+    const dir = sortOrder === "desc" ? -1 : 1;
+    projects.sort(
+      (a, b) =>
+        (a.client?.name ?? "").localeCompare(b.client?.name ?? "", undefined, { sensitivity: "base" }) * dir,
+    );
+    projects = projects.slice((page - 1) * pageSize, page * pageSize);
+  }
 
   return serialize({
     projects,
@@ -318,7 +352,6 @@ export async function getProject(id: string) {
   const project = await prisma.project.findUnique({
     where: { id, organizationId },
     include: {
-      client: true,
       location: { include: { parent: true } },
       projectManagers: {
         include: {
@@ -326,6 +359,8 @@ export async function getProject(id: string) {
         },
         orderBy: { addedAt: "asc" },
       },
+      // model + supplier are dual-written to Convex and attached in JS via
+      // attachLineItemTree below (Phase 6 decommission) — not joined here.
       categories: {
         include: {
           groups: {
@@ -336,11 +371,11 @@ export async function getProject(id: string) {
                 // so CANCELLED line items are only ever inert merge residue.
                 where: { status: { not: "CANCELLED" } },
                 include: {
-                  model: true, asset: true, bulkAsset: true, kit: true,
+                  asset: true, bulkAsset: true, kit: true,
                   units: PROJECT_UNIT_INCLUDE,
                   childLineItems: {
                     include: {
-                      model: true, asset: true, bulkAsset: true, kit: true,
+                      asset: true, bulkAsset: true, kit: true,
                       units: PROJECT_UNIT_INCLUDE,
                     },
                     orderBy: { sortOrder: "asc" },
@@ -354,11 +389,11 @@ export async function getProject(id: string) {
           lineItems: {
             where: { groupId: null, status: { not: "CANCELLED" } },
             include: {
-              model: true, asset: true, bulkAsset: true, kit: true,
+              asset: true, bulkAsset: true, kit: true,
               units: PROJECT_UNIT_INCLUDE,
               childLineItems: {
                 include: {
-                  model: true, asset: true, bulkAsset: true, kit: true,
+                  asset: true, bulkAsset: true, kit: true,
                   units: PROJECT_UNIT_INCLUDE,
                 },
                 orderBy: { sortOrder: "asc" },
@@ -372,19 +407,17 @@ export async function getProject(id: string) {
       lineItems: {
         where: { status: { not: "CANCELLED" } },
         include: {
-          model: true,
           asset: true,
           bulkAsset: true,
           kit: true,
-          supplier: true,
           units: PROJECT_UNIT_INCLUDE,
           childLineItems: {
             include: {
-              model: true, asset: true, bulkAsset: true, kit: true,
+              asset: true, bulkAsset: true, kit: true,
               units: PROJECT_UNIT_INCLUDE,
               childLineItems: {
                 include: {
-                  model: true, asset: true, bulkAsset: true,
+                  asset: true, bulkAsset: true,
                   units: PROJECT_UNIT_INCLUDE,
                 },
                 orderBy: { sortOrder: "asc" },
@@ -416,15 +449,29 @@ export async function getProject(id: string) {
     }
   }
 
+  // model + supplier live in Convex — attach across every line-item tree in the
+  // equipment composition (the two grouped trees under each category and the
+  // top-level list). One maps round-trip serves them all.
+  const attachMaps = await buildLineItemAttachMaps(organizationId);
+  const categories = project.categories.map((cat) => ({
+    ...cat,
+    groups: cat.groups.map((g) => ({
+      ...g,
+      lineItems: attachLineItemTree(g.lineItems, attachMaps),
+    })),
+    lineItems: attachLineItemTree(cat.lineItems, attachMaps),
+  }));
+  const topLineItems = attachLineItemTree(project.lineItems, attachMaps);
+
   const overbookedMap = await computeOverbookedStatus(
     organizationId,
-    project.lineItems,
+    topLineItems,
     project.rentalStartDate,
     project.rentalEndDate,
     project.id,
   );
 
-  const enrichedLineItems = project.lineItems.map((li) => {
+  const enrichedLineItems = topLineItems.map((li) => {
     const info = overbookedMap.get(li.id);
     return {
       ...li,
@@ -441,7 +488,9 @@ export async function getProject(id: string) {
     };
   });
 
-  return serialize({ ...project, lineItems: enrichedLineItems });
+  // Clients live in Convex — attach instead of a Prisma join.
+  const client = project.clientId ? await getClientById(project.clientId) : null;
+  return serialize({ ...project, categories, client, lineItems: enrichedLineItems });
 }
 
 export async function createProject(data: ProjectFormValues & { isTemplate?: boolean }) {
@@ -536,6 +585,7 @@ export async function createProject(data: ProjectFormValues & { isTemplate?: boo
 
       return project;
     });
+    await mirrorProjectCreate(result);
 
     await logActivity({
       organizationId,
@@ -618,6 +668,7 @@ export async function updateProject(id: string, data: ProjectFormValues) {
     }
     return result;
   });
+  await patchProjectInConvex(updated.id, updated);
 
   // Recalculate totals if tax rate changed
   if (parsed.taxRate !== undefined) {
@@ -676,6 +727,7 @@ export async function updateProjectStatus(
     }
     return result;
   });
+  await patchProjectInConvex(updated.id, updated);
 
   await logActivity({
     organizationId,
@@ -699,20 +751,22 @@ export async function updateProjectNotes(
   notes: string,
 ) {
   const { organizationId } = await requirePermission("project", "update");
-  return serialize(await prisma.project.update({
+  const updated = await prisma.project.update({
     where: { id, organizationId },
     data: { [field]: notes || null },
-  }));
+  });
+  await patchProjectInConvex(updated.id, updated);
+  return serialize(updated);
 }
 
 export async function archiveProject(id: string) {
   const { organizationId } = await requirePermission("project", "update");
-  return serialize(
-    await prisma.project.update({
-      where: { id, organizationId },
-      data: { status: "CANCELLED" },
-    })
-  );
+  const updated = await prisma.project.update({
+    where: { id, organizationId },
+    data: { status: "CANCELLED" },
+  });
+  await patchProjectInConvex(updated.id, updated);
+  return serialize(updated);
 }
 
 export async function duplicateProject(sourceId: string, newProjectNumber: string, newName: string) {
@@ -749,6 +803,10 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
     },
   });
 
+  // Mirror the duplicated grouping substructure to Convex after the tx commits
+  // (the new project + line items are step-6 / step-4 domains, not mirrored here).
+  const createdCategories: Array<Record<string, unknown>> = [];
+  const createdGroups: Array<Record<string, unknown>> = [];
   try {
     const result = await prisma.$transaction(async (tx) => {
       const newProject = await tx.project.create({
@@ -866,6 +924,7 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
             sortOrder: cat.sortOrder,
           },
         });
+        createdCategories.push(newCat);
 
         for (const group of cat.groups) {
           const newGroup = await tx.projectGroup.create({
@@ -883,6 +942,7 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
               sortOrder: group.sortOrder,
             },
           });
+          createdGroups.push(newGroup);
 
           for (const li of group.lineItems) {
             await copyLineItem(li, newProject.id, newCat.id, newGroup.id);
@@ -902,6 +962,14 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
 
       return newProject;
     });
+
+    // Mirror the duplicated project + categories + groups + line items to Convex.
+    await mirrorProjectCreate(result);
+    for (const c of createdCategories) await mirrorProjectCategoryCreate(c);
+    for (const g of createdGroups) await mirrorProjectGroupCreate(g);
+    await upsertProjectLineItemsToConvex(result.id);
+    // The duplicate copied project managers — mirror them too.
+    await syncProjectManagersToConvex(organizationId, result.id);
 
     // Recalculate totals after transaction commits
     await recalculateProjectTotals(result.id);
@@ -1022,6 +1090,10 @@ export async function saveAsTemplate(projectId: string, templateName: string) {
       return template;
     });
 
+    // Mirror the new template project + its copied line items to Convex.
+    await mirrorProjectCreate(result);
+    await upsertProjectLineItemsToConvex(result.id);
+
     // Recalculate totals after transaction commits
     await recalculateProjectTotals(result.id);
 
@@ -1039,14 +1111,14 @@ export async function getTemplates() {
   const templates = await prisma.project.findMany({
     where: { organizationId, isTemplate: true },
     include: {
-      client: true,
       location: true,
       _count: { select: { lineItems: { where: { isKitChild: false } } } },
     },
     orderBy: { updatedAt: "desc" },
   });
 
-  return serialize(templates);
+  // Clients live in Convex — attach instead of a Prisma join.
+  return serialize(await attachClient(organizationId, templates));
 }
 
 export async function deleteTemplate(id: string) {
@@ -1071,6 +1143,11 @@ export async function deleteTemplate(id: string) {
   }
 
   await prisma.project.delete({ where: { id, organizationId } });
+  await removeProjectFromConvex(id);
+  // Reconcile the cascade-deleted sub-tables (now 0 rows ⇒ remove Convex orphans).
+  await syncProjectManagersToConvex(organizationId, id);
+  await syncProjectServicesToConvex(organizationId, id);
+  await syncProjectTasksToConvex(organizationId, id);
   return { success: true };
 }
 
@@ -1128,7 +1205,11 @@ export async function deleteProject(id: string) {
     select: { id: true },
   });
 
-  await prisma.$transaction(async (tx) => {
+  // Capture the project's crew cascade (assignments → shifts/time-entries) before
+  // the project delete cascades them away, so they can be dropped from Convex.
+  const crewCascade = await snapshotProjectCrew(id);
+
+  const freedKitAssetIds = await prisma.$transaction(async (tx) => {
     // Reset checked-out assets to AVAILABLE
     if (checkedOutAssetIds.length > 0) {
       await tx.asset.updateMany({
@@ -1141,6 +1222,7 @@ export async function deleteProject(id: string) {
     }
 
     // Reset checked-out kits and their contents to AVAILABLE
+    let kitAssetIds: string[] = [];
     if (checkedOutKitIds.length > 0) {
       await tx.kit.updateMany({
         where: { id: { in: checkedOutKitIds }, organizationId },
@@ -1154,9 +1236,10 @@ export async function deleteProject(id: string) {
         where: { kitId: { in: checkedOutKitIds } },
         select: { assetId: true },
       });
-      if (kitAssets.length > 0) {
+      kitAssetIds = kitAssets.map((ka) => ka.assetId);
+      if (kitAssetIds.length > 0) {
         await tx.asset.updateMany({
-          where: { id: { in: kitAssets.map((ka) => ka.assetId) }, organizationId },
+          where: { id: { in: kitAssetIds }, organizationId },
           data: {
             status: "AVAILABLE",
             locationId: defaultLocation?.id ?? null,
@@ -1167,7 +1250,20 @@ export async function deleteProject(id: string) {
 
     // Delete the project (cascades to line items, media, etc.)
     await tx.project.delete({ where: { id, organizationId } });
+    return kitAssetIds;
   });
+
+  // Mirror the freed kits + assets (direct line-item assets + kit-content assets)
+  // status/location resets to Convex, and remove the cascade-deleted line items.
+  await syncKitsToConvex(checkedOutKitIds);
+  await syncAssetsToConvex([...checkedOutAssetIds, ...freedKitAssetIds]);
+  for (const li of project.lineItems) await removeLineItemFromConvex(li.id);
+  await removeCrewAssignmentCascadeFromConvex(crewCascade);
+  await removeProjectFromConvex(id);
+  // Reconcile the cascade-deleted sub-tables (now 0 rows ⇒ remove Convex orphans).
+  await syncProjectManagersToConvex(organizationId, id);
+  await syncProjectServicesToConvex(organizationId, id);
+  await syncProjectTasksToConvex(organizationId, id);
 
   await logActivity({
     organizationId,

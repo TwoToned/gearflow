@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { useActiveOrganization } from "@/lib/auth-client";
 import {
   ScanBarcode,
@@ -44,27 +44,27 @@ export default function DashboardPage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: stats } = useQuery({
+  const { data: stats } = useServerQuery({
     queryKey: ["dashboard-stats", orgId],
     queryFn: getDashboardStats,
   });
 
-  const { data: upcoming } = useQuery({
+  const { data: upcoming } = useServerQuery({
     queryKey: ["dashboard-upcoming", orgId],
     queryFn: getUpcomingProjects,
   });
 
-  const { data: activity } = useQuery({
+  const { data: activity } = useServerQuery({
     queryKey: ["dashboard-activity", orgId],
     queryFn: getRecentActivity,
   });
 
-  const { data: subHireStats } = useQuery({
+  const { data: subHireStats } = useServerQuery({
     queryKey: ["dashboard-sub-hire-stats", orgId],
     queryFn: getSubHireDashboardStats,
   });
 
-  const { data: myHome } = useQuery({
+  const { data: myHome } = useServerQuery({
     queryKey: ["my-home", orgId],
     queryFn: getMyHomeData,
   });

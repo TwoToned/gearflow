@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -26,12 +27,10 @@ import { toast } from "sonner";
 
 import { CallSheetDialog } from "@/components/projects/call-sheet-dialog";
 import {
-  getProjectCrew,
   createAssignment,
   updateAssignment,
   deleteAssignment,
   updateAssignmentStatus,
-  getProjectLabourCost,
   getCrewMembersForAssignment,
 } from "@/server/crew-assignments";
 import { checkCrewConflicts, type CrewConflict } from "@/server/crew-availability";
@@ -40,8 +39,10 @@ import {
   sendCrewOfferAll,
   sendBulkMessage,
 } from "@/server/crew-communication";
-import { getCrewRoleOptions, createCrewRole } from "@/server/crew";
-import { getProjectServices } from "@/server/project-services";
+import { createCrewRole } from "@/server/crew";
+import { useCrewRoles } from "@/hooks/use-crew";
+import { useProjectServices, refreshProjectServices } from "@/hooks/use-project-services";
+import { useProjectCrew, refreshProjectCrew, useProjectLabourCost, refreshProjectLabourCost, useProjectCrewLiveSync } from "@/hooks/use-project-crew";
 import {
   crewAssignmentSchema,
   type CrewAssignmentFormValues,
@@ -120,9 +121,12 @@ function formatDate(date: string | null | undefined): string {
 }
 
 export function CrewPanel({ projectId }: CrewPanelProps) {
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+
+  // Cross-tab live sync: re-fetch crew + labour cost when another tab changes
+  // a crew booking on this project.
+  useProjectCrewLiveSync(projectId, orgId);
 
   const [addOpen, setAddOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -131,51 +135,44 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
   const [offerAllOpen, setOfferAllOpen] = useState(false);
   const [removeAssignmentId, setRemoveAssignmentId] = useState<string | null>(null);
 
-  const { data: assignments, isLoading } = useQuery({
-    queryKey: ["project-crew", orgId, projectId],
-    queryFn: () => getProjectCrew(projectId),
-  });
+  const { data: assignments, isLoading } = useProjectCrew(projectId);
 
-  const { data: labourCost } = useQuery({
-    queryKey: ["project-labour-cost", orgId, projectId],
-    queryFn: () => getProjectLabourCost(projectId),
-  });
+  const { data: labourCost } = useProjectLabourCost(projectId);
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: (id: string) => deleteAssignment(id),
     onSuccess: () => {
       toast.success("Crew member removed");
-      queryClient.invalidateQueries({ queryKey: ["project-crew", orgId, projectId] });
-      queryClient.invalidateQueries({ queryKey: ["project-labour-cost", orgId, projectId] });
-      queryClient.invalidateQueries({ queryKey: ["crew-member"] });
+      refreshProjectCrew(projectId);
+      refreshProjectLabourCost(projectId);
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const statusMutation = useMutation({
+  const statusMutation = useServerMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
       updateAssignmentStatus(id, status),
     onSuccess: () => {
       toast.success("Status updated");
-      queryClient.invalidateQueries({ queryKey: ["project-crew", orgId, projectId] });
+      refreshProjectCrew(projectId);
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const offerMutation = useMutation({
+  const offerMutation = useServerMutation({
     mutationFn: (id: string) => sendCrewOffer(id),
     onSuccess: () => {
       toast.success("Offer sent");
-      queryClient.invalidateQueries({ queryKey: ["project-crew", orgId, projectId] });
+      refreshProjectCrew(projectId);
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const offerAllMutation = useMutation({
+  const offerAllMutation = useServerMutation({
     mutationFn: () => sendCrewOfferAll(projectId),
     onSuccess: (result) => {
       toast.success(`${result.sent} offer(s) sent`);
-      queryClient.invalidateQueries({ queryKey: ["project-crew", orgId, projectId] });
+      refreshProjectCrew(projectId);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -642,26 +639,31 @@ function AssignmentDialog({
   mode,
   assignment,
 }: AssignmentDialogProps) {
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const { data: crewMembers } = useQuery({
+  const { data: crewMembers } = useServerQuery({
     queryKey: ["crew-for-assignment", orgId, projectId],
     queryFn: () => getCrewMembersForAssignment(projectId),
     enabled: open && mode === "add",
   });
 
-  const { data: roles } = useQuery({
-    queryKey: ["crew-roles", orgId],
-    queryFn: () => getCrewRoleOptions(),
-    enabled: open,
-  });
+  // Reactive crew roles (Convex), skipped while the dialog is closed (mirrors the
+  // old enabled:open). Re-apply getCrewRoleOptions's active filter + sortOrder/
+  // name sort and project to the {id,name,department} shape roleOptions expects.
+  const roleDocs = useCrewRoles(open ? orgId : undefined);
+  const roles = useMemo(
+    () =>
+      [...(roleDocs ?? [])]
+        .filter((r) => r.isActive === true)
+        .sort((a, b) => {
+          const so = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+          return so !== 0 ? so : a.name.localeCompare(b.name);
+        })
+        .map((r) => ({ id: r.id, name: r.name, department: r.department ?? null })),
+    [roleDocs],
+  );
 
-  const { data: projectServices = [] } = useQuery({
-    queryKey: ["project-services", orgId, projectId],
-    queryFn: () => getProjectServices(projectId),
-    enabled: open,
-  });
+  const { data: projectServices = [] } = useProjectServices(open ? projectId : undefined);
 
   const serviceOptions = (projectServices as { id: string; title: string; type: string; crewCountRequired: number | null; crewAssignments: unknown[] }[])
     .filter((s) => (s as { status?: string }).status !== "CANCELLED")
@@ -735,7 +737,7 @@ function AssignmentDialog({
       ? new Date(watchEndDate as string | Date).toISOString().split("T")[0]
       : "";
 
-  const { data: conflicts } = useQuery({
+  const { data: conflicts } = useServerQuery({
     queryKey: [
       "crew-conflicts",
       watchCrewMemberId,
@@ -760,42 +762,28 @@ function AssignmentDialog({
     (c: CrewConflict) => c.severity === "soft"
   );
 
-  const createMut = useMutation({
+  const createMut = useServerMutation({
     mutationFn: (data: CrewAssignmentFormValues) =>
       createAssignment(projectId, data),
     onSuccess: () => {
       toast.success("Crew member assigned");
-      queryClient.invalidateQueries({
-        queryKey: ["project-crew", orgId, projectId],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["project-labour-cost", orgId, projectId],
-      });
-      queryClient.invalidateQueries({ queryKey: ["crew-member"] });
-      queryClient.invalidateQueries({
-        queryKey: ["project-services", orgId, projectId],
-      });
+      refreshProjectCrew(projectId);
+      refreshProjectLabourCost(projectId);
+      refreshProjectServices(projectId);
       onOpenChange(false);
       form.reset();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const updateMut = useMutation({
+  const updateMut = useServerMutation({
     mutationFn: (data: CrewAssignmentFormValues) =>
       updateAssignment(assignment!.id as string, data),
     onSuccess: () => {
       toast.success("Assignment updated");
-      queryClient.invalidateQueries({
-        queryKey: ["project-crew", orgId, projectId],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["project-labour-cost", orgId, projectId],
-      });
-      queryClient.invalidateQueries({ queryKey: ["crew-member"] });
-      queryClient.invalidateQueries({
-        queryKey: ["project-services", orgId, projectId],
-      });
+      refreshProjectCrew(projectId);
+      refreshProjectLabourCost(projectId);
+      refreshProjectServices(projectId);
       onOpenChange(false);
     },
     onError: (e) => toast.error(e.message),
@@ -943,12 +931,11 @@ function AssignmentDialog({
                 if (isExisting || !v) {
                   form.setValue("crewRoleId", v);
                 } else {
-                  // Creatable mode — typed a new role name, create it
+                  // Creatable mode — typed a new role name, create it. The role
+                  // dropdown is reactive (useCrewRoles), so the new role appears
+                  // automatically once the dual-write commits — no invalidation.
                   createCrewRole({ name: v })
                     .then((role) => {
-                      queryClient.invalidateQueries({
-                        queryKey: ["crew-roles", orgId],
-                      });
                       form.setValue("crewRoleId", role.id);
                       toast.success(`Role "${role.name}" created`);
                     })
@@ -1222,7 +1209,7 @@ function BulkMessageDialog({
 }) {
   const [message, setMessage] = useState("");
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: () => sendBulkMessage(projectId, message),
     onSuccess: (result) => {
       toast.success(`Message sent to ${result.sent} crew member(s)`);

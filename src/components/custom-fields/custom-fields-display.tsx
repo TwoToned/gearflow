@@ -8,8 +8,8 @@
  * orphaned value keys (definition deleted) are not shown.
  */
 
-import { useQuery } from "@tanstack/react-query";
-import { getActiveCustomFields } from "@/server/custom-fields";
+import { useActiveOrganization } from "@/lib/auth-client";
+import { useActiveCustomFields } from "@/hooks/use-custom-fields";
 import { SectionHeader } from "@/components/layout/page-layouts";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -35,10 +35,8 @@ export function CustomFieldsDisplay({
   entityType = "ASSET",
   values,
 }: CustomFieldsDisplayProps) {
-  const { data: defs } = useQuery({
-    queryKey: ["active-custom-fields", entityType],
-    queryFn: () => getActiveCustomFields(entityType),
-  });
+  const { data: activeOrg } = useActiveOrganization();
+  const defs = useActiveCustomFields(activeOrg?.id, entityType);
 
   const list = (defs ?? []) as Def[];
   const vals = values ?? {};

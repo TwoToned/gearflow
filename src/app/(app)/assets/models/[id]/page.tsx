@@ -3,7 +3,8 @@
 import { use, useMemo, Suspense, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Pencil, Archive, Plus, Trash2, RotateCcw, ChevronRight } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -60,7 +61,6 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const queryClient = useQueryClient();
 
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
@@ -74,46 +74,42 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
     return isNaN(parsed.getTime()) ? null : parsed;
   }, [searchParams]);
 
-  const { data: model, isLoading } = useQuery({
+  const { data: model, isLoading, refetch } = useServerQuery({
     queryKey: ["model", orgId, id],
     queryFn: () => getModel(id),
   });
 
-  const archiveMutation = useMutation({
+  const archiveMutation = useServerMutation({
     mutationFn: () => archiveModel(id),
     onSuccess: () => {
       toast.success("Model archived");
-      queryClient.invalidateQueries({ queryKey: ["models"] });
       router.push("/assets/models");
     },
   });
 
-  const archiveBulkMutation = useMutation({
+  const archiveBulkMutation = useServerMutation({
     mutationFn: (bulkId: string) => archiveBulkAsset(bulkId),
     onSuccess: () => {
       toast.success("Bulk asset archived");
-      queryClient.invalidateQueries({ queryKey: ["model", orgId, id] });
-      queryClient.invalidateQueries({ queryKey: ["bulk-assets"] });
+      refetch();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const deleteBulkMutation = useMutation({
+  const deleteBulkMutation = useServerMutation({
     mutationFn: (bulkId: string) => deleteBulkAsset(bulkId),
     onSuccess: () => {
       toast.success("Bulk asset deleted");
-      queryClient.invalidateQueries({ queryKey: ["model", orgId, id] });
-      queryClient.invalidateQueries({ queryKey: ["bulk-assets"] });
+      refetch();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const forceReturnMutation = useMutation({
+  const forceReturnMutation = useServerMutation({
     mutationFn: (assetId: string) => forceReturnAsset(assetId),
     onSuccess: () => {
       toast.success("Asset force returned to available");
-      queryClient.invalidateQueries({ queryKey: ["model", orgId, id] });
-      queryClient.invalidateQueries({ queryKey: ["assets"] });
+      refetch();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -465,7 +461,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       entityId={id}
                       accept="image/*"
                       existingMedia={photos}
-                      queryKey={["model", orgId, id]}
+                      onChanged={refetch}
                       onUploadComplete={async (fileUpload) => {
                         await addModelMedia({
                           modelId: id,
@@ -494,7 +490,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       entityId={id}
                       accept=".pdf,.doc,.docx,.xls,.xlsx,.txt"
                       existingMedia={documents}
-                      queryKey={["model", orgId, id]}
+                      onChanged={refetch}
                       onUploadComplete={async (fileUpload) => {
                         await addModelMedia({
                           modelId: id,
@@ -640,6 +636,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   <ModelAccessoriesManager
                     modelId={id}
                     bulkAccessories={model.bulkAccessories ?? []}
+                    onChanged={refetch}
                   />
                 </CanDo>
               </SidebarSection>

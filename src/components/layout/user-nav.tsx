@@ -3,9 +3,9 @@
 import { useRouter } from "next/navigation";
 import { LogOut, User, ChevronsUpDown, Shield, HardHat } from "lucide-react";
 import { useSession, signOut, useActiveOrganization } from "@/lib/auth-client";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useProfile } from "@/hooks/use-profile";
 import { UserAvatar } from "@/components/ui/user-avatar";
-import { getProfile } from "@/server/user-profile";
 import { getMyCrewMemberId } from "@/server/crew";
 import {
   DropdownMenu,
@@ -20,7 +20,6 @@ import { SidebarMenuButton } from "@/components/ui/sidebar";
 
 export function UserNav() {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { data: session } = useSession();
 
   const user = session?.user;
@@ -28,19 +27,15 @@ export function UserNav() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  // Fetch profile for up-to-date avatar (session cookie cache may be stale)
-  const { data: profile } = useQuery({
-    queryKey: ["profile"],
-    queryFn: getProfile,
-    staleTime: 60_000,
-  });
+  // Fetch profile for up-to-date avatar (session cookie cache may be stale).
+  // Shared store so an account-page avatar/name edit live-updates this nav.
+  const { data: profile } = useProfile(user?.id);
   const userImage = profile?.image || user?.image;
 
   // Check if user has a linked crew profile
-  const { data: myCrewId } = useQuery({
+  const { data: myCrewId } = useServerQuery({
     queryKey: ["my-crew-id", orgId],
     queryFn: () => getMyCrewMemberId(),
-    staleTime: 120_000,
     enabled: !!orgId,
   });
 
@@ -104,7 +99,6 @@ export function UserNav() {
         <DropdownMenuGroup>
           <DropdownMenuItem
             onClick={async () => {
-              queryClient.clear();
               await signOut();
               router.push("/login");
             }}

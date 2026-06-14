@@ -1,5 +1,5 @@
 import { betterAuth } from "better-auth";
-import { organization, twoFactor, admin } from "better-auth/plugins";
+import { organization, twoFactor, admin, jwt } from "better-auth/plugins";
 import { passkey } from "@better-auth/passkey";
 import { sso } from "@better-auth/sso";
 import { prismaAdapter } from "better-auth/adapters/prisma";
@@ -8,6 +8,8 @@ import { prisma } from "./prisma";
 import { sendEmail } from "./email";
 import { getPlatformName } from "./platform";
 import { handleSSOProvisioning } from "./sso-provisioning";
+import { getTheOrg } from "./single-org";
+import { CONVEX_JWT_AUDIENCE, USER_TOKEN_TTL } from "./convex-auth-constants";
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
@@ -119,6 +121,46 @@ export const auth = betterAuth({
       saml: {
         enableInResponseToValidation: true,
         allowIdpInitiated: false,
+      },
+    }),
+    // Convex auth bridge (Phase 5). Mints ES256 JWTs the self-hosted Convex
+    // backend validates via its customJwt provider. Two token shapes share this
+    // one signer/JWKS (see docs/designs/convex-phase5-auth-bridge.md):
+    //   • USER token  — GET /api/auth/token (session-gated). Carries orgId/role
+    //     from a FRESH membership read; grants org-scoped reads in Convex.
+    //   • SERVICE token — auth.api.signJWT() in-process (no HTTP route); carries
+    //     svc:true; grants the trusted backend full access.
+    // ES256 (not Better Auth's default EdDSA) because Convex customJwt accepts
+    // only RS256/ES256.
+    jwt({
+      jwks: {
+        keyPairConfig: { alg: "ES256" },
+      },
+      // Don't sign a JWT on every /get-session — the browser fetches /api/auth/token
+      // explicitly and the server mints service tokens directly. Avoids a DB read +
+      // sign on every session check and shrinks the token-issuance surface.
+      disableSettingJwtHeader: true,
+      jwt: {
+        issuer: env.BETTER_AUTH_URL,
+        audience: CONVEX_JWT_AUDIENCE,
+        expirationTime: USER_TOKEN_TTL,
+        // Re-read org membership at every mint so orgId/role can't be elevated by
+        // stale or client-controlled session metadata (codex review). Single-org
+        // app: the one org + this user's member row. NEVER set `svc` here — that
+        // claim is reserved for the in-process service token.
+        definePayload: async ({ user }) => {
+          const org = await getTheOrg();
+          const orgId = org?.id ?? null;
+          let role: string | null = null;
+          if (orgId) {
+            const member = await prisma.member.findFirst({
+              where: { organizationId: orgId, userId: user.id },
+              select: { role: true },
+            });
+            role = member?.role ?? null;
+          }
+          return { orgId, role };
+        },
       },
     }),
   ],

@@ -2,7 +2,8 @@
 
 import { use, Fragment, Suspense, useState } from "react";
 import Link from "next/link";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -120,30 +121,27 @@ export default function TestTagDetailPage({ params }: { params: Promise<{ id: st
 function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: item, isLoading, error } = useQuery({
+  const { data: item, isLoading, error, refetch } = useServerQuery({
     queryKey: ["test-tag-asset", orgId, id],
     queryFn: () => getTestTagAsset(id),
   });
 
-  const retireMutation = useMutation({
+  const retireMutation = useServerMutation({
     mutationFn: () => retireTestTagAsset(id),
     onSuccess: () => {
       toast.success("Test tag asset retired");
-      queryClient.invalidateQueries({ queryKey: ["test-tag-asset"] });
-      queryClient.invalidateQueries({ queryKey: ["test-tag-assets"] });
+      refetch();
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: () => deleteTestTagAsset(id),
     onSuccess: () => {
       toast.success("Test tag asset deleted");
-      queryClient.invalidateQueries({ queryKey: ["test-tag-assets"] });
       router.push("/test-and-tag/registry");
     },
     onError: (e: Error) => toast.error(e.message),

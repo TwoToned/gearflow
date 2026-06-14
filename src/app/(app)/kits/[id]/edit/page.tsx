@@ -3,25 +3,20 @@
 import { use } from "react";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
 
-import { getKit } from "@/server/kits";
 import { KitForm } from "@/components/kits/kit-form";
-import { useActiveOrganization } from "@/lib/auth-client";
+import { useKit } from "@/hooks/use-kits";
 import { FadeIn } from "@/components/ui/motion";
 import { FormSkeleton } from "@/components/ui/skeleton";
 
 export default function EditKitPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
 
-  const { data: kit, isLoading } = useQuery({
-    queryKey: ["kit", orgId, id],
-    queryFn: () => getKit(id),
-  });
+  // Reactive kit straight from Convex — the edit form only needs kit scalar
+  // fields (no cross-domain composition), so a pure useQuery subscription suffices.
+  const kit = useKit(id);
 
-  if (isLoading) return <FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>;
+  if (kit === undefined) return <FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>;
   if (!kit) return <div className="t-body text-fg-3">Kit not found.</div>;
 
   return (

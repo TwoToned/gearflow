@@ -1,25 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 
 import { FormSection } from "@/components/layout/page-layouts";
 import { BrandingSettings } from "@/components/settings/branding-settings";
 import {
-  getOrganization,
   type OrgSettings,
 } from "@/server/settings";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { useOrganization } from "@/hooks/use-organization";
 import { FadeIn } from "@/components/ui/motion";
 
 export default function BrandingSettingsPage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: org } = useQuery({
-    queryKey: ["organization", orgId],
-    queryFn: getOrganization,
-  });
+  const { data: org } = useOrganization(orgId);
 
   const [name, setName] = useState("");
   const [settings, setSettings] = useState<OrgSettings>({});

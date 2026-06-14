@@ -3,7 +3,8 @@
 import { use, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   Pencil,
   Trash2,
@@ -51,20 +52,18 @@ import {
 export default function LocationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: location, isLoading } = useQuery({
+  const { data: location, isLoading, refetch } = useServerQuery({
     queryKey: ["location", orgId, id],
     queryFn: () => getLocation(id),
   });
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: () => deleteLocation(id),
     onSuccess: () => {
       toast.success("Location deleted");
-      queryClient.invalidateQueries({ queryKey: ["locations"] });
       router.push("/locations");
     },
     onError: (e) => toast.error(e.message),
@@ -278,7 +277,7 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
                 <TabsContent value="notes" className="mt-4">
                   <NotesEditor
                     initialNotes={location.notes || ""}
-                    queryKey={["location", orgId, id]}
+                    onChanged={refetch}
                     onSave={(notes) => updateLocationNotes(id, notes)}
                     placeholder="Add notes about this location..."
                   />
@@ -290,7 +289,7 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
                     entityId={id}
                     accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,image/*"
                     existingMedia={(location.media || []).map((m: MediaItem) => m)}
-                    queryKey={["location", orgId, id]}
+                    onChanged={refetch}
                     onUploadComplete={async (fileUpload) => {
                       await addLocationMedia({
                         locationId: id,

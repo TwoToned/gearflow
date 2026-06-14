@@ -17,7 +17,7 @@
  */
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -80,7 +80,6 @@ function MoveProjectGroupDialogBody({
   categories,
   onInvalidate,
 }: MoveProjectGroupDialogProps) {
-  const queryClient = useQueryClient();
   // Seed with Uncategorised — a meaningful default that doesn't
   // require the user to remember which category they picked last.
   // Picking a category from the dropdown still lets them move into
@@ -89,10 +88,9 @@ function MoveProjectGroupDialogBody({
 
   function refreshCaches() {
     onInvalidate();
-    queryClient.invalidateQueries({ queryKey: ["project-categories"] });
   }
 
-  const moveMut = useMutation({
+  const moveMut = useServerMutation({
     mutationFn: async () => {
       if (!groupId) throw new Error("No project group selected");
       if (!selectedCategoryId) throw new Error("Pick a destination");
@@ -114,7 +112,7 @@ function MoveProjectGroupDialogBody({
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const createMut = useMutation({
+  const createMut = useServerMutation({
     mutationFn: async (name: string) => {
       if (!groupId) throw new Error("No project group selected");
       return createCategoryAndPlaceGroup({

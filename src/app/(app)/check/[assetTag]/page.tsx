@@ -1,7 +1,8 @@
 "use client";
 
 import { use, useState, useRef } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useServerQuery } from "@/hooks/use-server-query";
 import {
   ScanBarcode,
   Loader2,
@@ -35,7 +36,7 @@ export default function AdHocCheckPage({
 
   const [completed, setCompleted] = useState(false);
 
-  const { data: result, isLoading } = useQuery({
+  const { data: result, isLoading } = useServerQuery({
     queryKey: ["ad-hoc-lookup", orgId, decodedTag],
     queryFn: () => lookupAssetForAdHocCheck(decodedTag),
   });
@@ -52,7 +53,7 @@ export default function AdHocCheckPage({
     } | null;
   } | undefined;
 
-  const submitMutation = useMutation({
+  const submitMutation = useServerMutation({
     mutationFn: (checks: Array<{
       checkItemId: string;
       result: "PASS" | "FAIL" | "NOTES_ONLY";

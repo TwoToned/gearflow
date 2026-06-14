@@ -3,7 +3,8 @@
 import { use, useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -166,7 +167,6 @@ export default function CrewMemberDetailPage({
 }) {
   const { id } = use(params);
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const { data: session } = useSession();
@@ -205,158 +205,147 @@ export default function CrewMemberDetailPage({
     return () => window.removeEventListener("slash-command", handler);
   }, []);
 
-  const { data: member, isLoading } = useQuery({
+  const { data: member, isLoading, refetch: refetchMember } = useServerQuery({
     queryKey: ["crew-member", orgId, id],
     queryFn: () => getCrewMemberById(id),
   });
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: () => deleteCrewMember(id),
     onSuccess: () => {
       toast.success("Crew member deleted");
-      queryClient.invalidateQueries({ queryKey: ["crew-members"] });
+      // The crew roster (/crew) is Convex-reactive (useCrewMembers); the old
+      // ["crew-members"] invalidation had no React Query reader left. Navigate.
       router.push("/crew");
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const removeCertMutation = useMutation({
+  const removeCertMutation = useServerMutation({
     mutationFn: (certId: string) => removeCertification(certId),
     onSuccess: () => {
       toast.success("Certification removed");
-      queryClient.invalidateQueries({
-        queryKey: ["crew-member", orgId, id],
-      });
+      refetchMember();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const { data: availabilityRecords } = useQuery({
+  const { data: availabilityRecords, refetch: refetchAvailability } = useServerQuery({
     queryKey: ["crew-availability", orgId, id],
     queryFn: () => getCrewAvailability(id),
   });
 
-  const { data: icalSettings } = useQuery({
+  const { data: icalSettings, refetch: refetchIcal } = useServerQuery({
     queryKey: ["crew-ical", orgId, id],
     queryFn: () => getIcalSettings(id),
   });
 
-  const { data: timeEntries } = useQuery({
+  const { data: timeEntries, refetch: refetchTimeEntries } = useServerQuery({
     queryKey: ["crew-time-entries", orgId, id],
     queryFn: () => getTimeEntriesForMember(id),
   });
 
-  const enableIcalMutation = useMutation({
+  const enableIcalMutation = useServerMutation({
     mutationFn: () => enableIcalFeed(id),
     onSuccess: () => {
       toast.success("iCal feed enabled");
-      queryClient.invalidateQueries({ queryKey: ["crew-ical", orgId, id] });
+      refetchIcal();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const disableIcalMutation = useMutation({
+  const disableIcalMutation = useServerMutation({
     mutationFn: () => disableIcalFeed(id),
     onSuccess: () => {
       toast.success("iCal feed disabled");
-      queryClient.invalidateQueries({ queryKey: ["crew-ical", orgId, id] });
+      refetchIcal();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const regenerateTokenMutation = useMutation({
+  const regenerateTokenMutation = useServerMutation({
     mutationFn: () => regenerateIcalToken(id),
     onSuccess: () => {
       toast.success("iCal token regenerated — old URL is now invalid");
-      queryClient.invalidateQueries({ queryKey: ["crew-ical", orgId, id] });
+      refetchIcal();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const removeAvailMutation = useMutation({
+  const removeAvailMutation = useServerMutation({
     mutationFn: (availId: string) => removeAvailability(availId),
     onSuccess: () => {
       toast.success("Availability block removed");
-      queryClient.invalidateQueries({
-        queryKey: ["crew-availability", orgId, id],
-      });
+      refetchAvailability();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const deleteTimeMutation = useMutation({
+  const deleteTimeMutation = useServerMutation({
     mutationFn: (entryId: string) => deleteTimeEntry(entryId),
     onSuccess: () => {
       toast.success("Time entry deleted");
-      queryClient.invalidateQueries({
-        queryKey: ["crew-time-entries", orgId, id],
-      });
+      refetchTimeEntries();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const submitTimeMutation = useMutation({
+  const submitTimeMutation = useServerMutation({
     mutationFn: (ids: string[]) => submitTimeEntries(ids),
     onSuccess: (result) => {
       toast.success(`${result.count} entries submitted for approval`);
-      queryClient.invalidateQueries({
-        queryKey: ["crew-time-entries", orgId, id],
-      });
+      refetchTimeEntries();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const approveTimeMutation = useMutation({
+  const approveTimeMutation = useServerMutation({
     mutationFn: (ids: string[]) => approveTimeEntries(ids),
     onSuccess: (result) => {
       toast.success(`${result.count} entries approved`);
-      queryClient.invalidateQueries({
-        queryKey: ["crew-time-entries", orgId, id],
-      });
+      refetchTimeEntries();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const disputeTimeMutation = useMutation({
+  const disputeTimeMutation = useServerMutation({
     mutationFn: (entryId: string) => disputeTimeEntry(entryId),
     onSuccess: () => {
       toast.success("Time entry disputed");
-      queryClient.invalidateQueries({
-        queryKey: ["crew-time-entries", orgId, id],
-      });
+      refetchTimeEntries();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const updateAssignmentStatusMutation = useMutation({
+  const updateAssignmentStatusMutation = useServerMutation({
     mutationFn: ({ assignmentId, status }: { assignmentId: string; status: string }) =>
       updateAssignmentStatus(assignmentId, status),
     onSuccess: () => {
       toast.success("Assignment status updated");
-      queryClient.invalidateQueries({ queryKey: ["crew-member", orgId, id] });
+      refetchMember();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const deleteAssignmentMutation = useMutation({
+  const deleteAssignmentMutation = useServerMutation({
     mutationFn: (assignmentId: string) => deleteAssignment(assignmentId),
     onSuccess: () => {
       toast.success("Assignment removed");
-      queryClient.invalidateQueries({ queryKey: ["crew-member", orgId, id] });
+      refetchMember();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const sendOfferMutation = useMutation({
+  const sendOfferMutation = useServerMutation({
     mutationFn: (assignmentId: string) => sendCrewOffer(assignmentId),
     onSuccess: () => {
       toast.success("Offer sent");
-      queryClient.invalidateQueries({ queryKey: ["crew-member", orgId, id] });
+      refetchMember();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const uploadAvatarMutation = useMutation({
+  const uploadAvatarMutation = useServerMutation({
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append("file", file);
@@ -369,13 +358,13 @@ export default function CrewMemberDetailPage({
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["crew-member", orgId, id] });
+      refetchMember();
       toast.success("Profile picture updated");
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const removeAvatarMutation = useMutation({
+  const removeAvatarMutation = useServerMutation({
     mutationFn: async () => {
       const res = await fetch("/api/crew/avatar", {
         method: "DELETE",
@@ -385,7 +374,7 @@ export default function CrewMemberDetailPage({
       if (!res.ok) throw new Error("Failed to remove image");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["crew-member", orgId, id] });
+      refetchMember();
       toast.success("Profile picture removed");
     },
     onError: (e) => toast.error(e.message),
@@ -1546,6 +1535,7 @@ export default function CrewMemberDetailPage({
         crewMemberId={id}
         open={addCertOpen}
         onOpenChange={setAddCertOpen}
+        onSaved={refetchMember}
       />
 
       {/* Add Availability Dialog */}
@@ -1553,12 +1543,14 @@ export default function CrewMemberDetailPage({
         crewMemberId={id}
         open={addAvailOpen}
         onOpenChange={setAddAvailOpen}
+        onSaved={refetchAvailability}
       />
 
       {/* Add/Edit Time Entry Dialog */}
       <AddTimeEntryDialog
         crewMemberId={id}
         assignments={assignments}
+        onSaved={refetchTimeEntries}
         open={addTimeOpen}
         onOpenChange={(open) => {
           setAddTimeOpen(open);
@@ -1582,15 +1574,13 @@ function AddCertificationDialog({
   crewMemberId,
   open,
   onOpenChange,
+  onSaved,
 }: {
   crewMemberId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onSaved: () => void;
 }) {
-  const queryClient = useQueryClient();
-  const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
-
   const form = useForm<CrewCertificationFormValues>({
     resolver: zodResolver(crewCertificationSchema),
     defaultValues: {
@@ -1601,14 +1591,12 @@ function AddCertificationDialog({
     },
   });
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (data: CrewCertificationFormValues) =>
       addCertification(crewMemberId, data),
     onSuccess: () => {
       toast.success("Certification added");
-      queryClient.invalidateQueries({
-        queryKey: ["crew-member", orgId, crewMemberId],
-      });
+      onSaved();
       onOpenChange(false);
       form.reset();
     },
@@ -1715,15 +1703,13 @@ function AddAvailabilityDialog({
   crewMemberId,
   open,
   onOpenChange,
+  onSaved,
 }: {
   crewMemberId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onSaved: () => void;
 }) {
-  const queryClient = useQueryClient();
-  const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
-
   const form = useForm<CrewAvailabilityFormValues>({
     resolver: zodResolver(crewAvailabilitySchema),
     defaultValues: {
@@ -1738,13 +1724,11 @@ function AddAvailabilityDialog({
 
   const isAllDay = form.watch("isAllDay");
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (data: CrewAvailabilityFormValues) => addAvailability(data),
     onSuccess: () => {
       toast.success("Availability block added");
-      queryClient.invalidateQueries({
-        queryKey: ["crew-availability", orgId, crewMemberId],
-      });
+      onSaved();
       onOpenChange(false);
       form.reset({ crewMemberId, type: "UNAVAILABLE", isAllDay: true, reason: "", startTime: "", endTime: "" });
     },
@@ -1863,17 +1847,15 @@ function AddTimeEntryDialog({
   open,
   onOpenChange,
   editingEntry,
+  onSaved,
 }: {
   crewMemberId: string;
   assignments: any[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editingEntry?: any;
+  onSaved: () => void;
 }) {
-  const queryClient = useQueryClient();
-  const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
-
   const isEditing = !!editingEntry;
   const [isGeneral, setIsGeneral] = useState(false);
 
@@ -1926,27 +1908,23 @@ function AddTimeEntryDialog({
     }
   }
 
-  const createMutation = useMutation({
+  const createMutation = useServerMutation({
     mutationFn: (data: CrewTimeEntryFormValues) => createTimeEntry(data),
     onSuccess: () => {
       toast.success("Time entry added");
-      queryClient.invalidateQueries({
-        queryKey: ["crew-time-entries", orgId, crewMemberId],
-      });
+      onSaved();
       onOpenChange(false);
       form.reset();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const updateMutation = useMutation({
+  const updateMutation = useServerMutation({
     mutationFn: (data: CrewTimeEntryFormValues) =>
       updateTimeEntry(editingEntry?.id, data),
     onSuccess: () => {
       toast.success("Time entry updated");
-      queryClient.invalidateQueries({
-        queryKey: ["crew-time-entries", orgId, crewMemberId],
-      });
+      onSaved();
       onOpenChange(false);
       form.reset();
     },

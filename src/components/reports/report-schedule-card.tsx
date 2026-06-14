@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { toast } from "sonner";
 import { CalendarClock, Loader2, X } from "lucide-react";
 
@@ -58,11 +59,10 @@ const FREQ_LABELS: Record<ScheduleFrequency, string> = {
 };
 
 export function ReportScheduleCard({ reportId }: Props) {
-  const queryClient = useQueryClient();
   const [form, setForm] = useState<FormState>({ ...DEFAULT_FORM });
   const [hydrated, setHydrated] = useState(false);
 
-  const query = useQuery({
+  const query = useServerQuery({
     queryKey: ["report-schedule", reportId],
     queryFn: () => getReportSchedule(reportId),
   });
@@ -81,7 +81,7 @@ export function ReportScheduleCard({ reportId }: Props) {
     setHydrated(true);
   }, [query.data, hydrated]);
 
-  const saveMutation = useMutation({
+  const saveMutation = useServerMutation({
     mutationFn: async () => {
       const payload = form.enabled
         ? {
@@ -108,7 +108,7 @@ export function ReportScheduleCard({ reportId }: Props) {
     },
     onSuccess: () => {
       toast.success(form.enabled ? "Schedule saved" : "Schedule cleared");
-      queryClient.invalidateQueries({ queryKey: ["report-schedule", reportId] });
+      query.refetch();
     },
     onError: (e: Error) => toast.error(e.message),
   });

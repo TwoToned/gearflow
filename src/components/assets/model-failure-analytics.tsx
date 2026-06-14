@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { Loader2, BarChart3, AlertTriangle } from "lucide-react";
 
 import { getModelFailureAnalytics } from "@/server/check-records";
@@ -19,7 +19,7 @@ export function ModelFailureAnalytics({ modelId }: { modelId: string }) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: analytics = [], isLoading } = useQuery({
+  const { data: analytics = [], isLoading } = useServerQuery({
     queryKey: ["model-failure-analytics", orgId, modelId],
     queryFn: () => getModelFailureAnalytics(modelId),
   });

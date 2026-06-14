@@ -1,12 +1,61 @@
 "use server";
 
+import { type FunctionArgs } from "convex/server";
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
+import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
+import { getClientMap } from "@/lib/clients-read";
 import { locationSchema, type LocationFormValues } from "@/lib/validations/asset";
 import type { Prisma } from "@/generated/prisma/client";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
+
+// Locations are DUAL-WRITTEN: every create/update/delete writes the Prisma
+// `location` row (the durable FK anchor — asset/bulk_asset/kit/project/
+// warehouse_dashboard_token hold a nullable FK; location_media + stocktake hold
+// a required + Cascade FK; plus the self-referential parentId) AND the Convex
+// `locations` doc (the reactive read source). Prisma is written first; the Convex
+// payload is derived from the written row via toConvexDoc so the two can't drift.
+// The single-default invariant (only one isDefault per org) is enforced by a
+// Prisma updateMany — that multi-row unset is mirrored to Convex too, else the
+// reactive list would show two defaults. Server-side reads + the parent/children
+// hierarchy stay on the always-fresh Prisma mirror. See FEATUREDOCS/54.
+
+/** Mirror a freshly written Prisma location row into Convex (create). */
+async function mirrorLocationToConvex(row: Record<string, unknown>) {
+  await (await getConvexClient()).mutation(
+    api.locations.create,
+    toConvexDoc(row) as FunctionArgs<typeof api.locations.create>,
+  );
+}
+
+/** Mirror an updated Prisma location row into Convex (patch, id stripped). */
+async function patchLocationInConvex(id: string, row: Record<string, unknown>) {
+  const { id: _id, ...patch } = toConvexDoc(row);
+  await (await getConvexClient()).mutation(api.locations.update, {
+    id,
+    patch: patch as FunctionArgs<typeof api.locations.update>["patch"],
+  });
+}
+
+/**
+ * Clear `isDefault` in Convex for the given location ids (mirrors the Prisma
+ * updateMany that enforces one default per org). Skips one id (the row about to
+ * become/stay default) so we don't immediately re-clear it.
+ */
+async function unsetDefaultsInConvex(organizationId: string, exceptId?: string) {
+  const prevDefaults = await prisma.location.findMany({
+    where: { organizationId, isDefault: true, ...(exceptId ? { id: { not: exceptId } } : {}) },
+    select: { id: true },
+  });
+  const convex = (await getConvexClient());
+  for (const d of prevDefaults) {
+    await convex.mutation(api.locations.update, { id: d.id, patch: { isDefault: false } });
+  }
+}
 
 const locationFilterColumns: FilterColumnDef[] = [
   { id: "type", filterType: "enum", filterKey: "type" },
@@ -70,6 +119,28 @@ export async function getLocations(params?: {
   });
 }
 
+/**
+ * Asset + bulk-asset + kit counts per location (locationId -> counts).
+ * Cross-domain: assets / bulk assets / kits still live in Prisma, so this can't
+ * come from Convex. Used by the reactive location table, which subscribes to the
+ * location list via Convex and merges these (non-reactive) counts. (Children
+ * counts are derived client-side from the reactive list itself.)
+ */
+export async function getLocationCounts(): Promise<Record<string, { assets: number; bulkAssets: number; kits: number }>> {
+  const { organizationId } = await getOrgContext();
+  const [assetGroups, bulkGroups, kitGroups] = await Promise.all([
+    prisma.asset.groupBy({ by: ["locationId"], where: { organizationId, locationId: { not: null } }, _count: { _all: true } }),
+    prisma.bulkAsset.groupBy({ by: ["locationId"], where: { organizationId, locationId: { not: null } }, _count: { _all: true } }),
+    prisma.kit.groupBy({ by: ["locationId"], where: { organizationId, locationId: { not: null } }, _count: { _all: true } }),
+  ]);
+  const counts: Record<string, { assets: number; bulkAssets: number; kits: number }> = {};
+  const ensure = (id: string) => (counts[id] ??= { assets: 0, bulkAssets: 0, kits: 0 });
+  for (const g of assetGroups) if (g.locationId) ensure(g.locationId).assets = g._count._all;
+  for (const g of bulkGroups) if (g.locationId) ensure(g.locationId).bulkAssets = g._count._all;
+  for (const g of kitGroups) if (g.locationId) ensure(g.locationId).kits = g._count._all;
+  return serialize(counts);
+}
+
 /** Inherit address/coordinates from parent when a child location has none of its own. */
 function resolveLocationInheritance<T extends { address?: string | null; latitude?: number | null; longitude?: number | null; parent?: { address?: string | null; latitude?: number | null; longitude?: number | null } | null }>(location: T): T {
   if (location.parent) {
@@ -112,7 +183,6 @@ export async function getLocation(id: string) {
       projects: {
         orderBy: { createdAt: "desc" },
         take: 20,
-        include: { client: true },
       },
       media: {
         include: { file: true },
@@ -122,28 +192,43 @@ export async function getLocation(id: string) {
     },
   });
   if (!location) return null;
-  return serialize(location);
+
+  // Clients live in Convex — attach to each project instead of a Prisma join.
+  const clientMap = await getClientMap(organizationId);
+  const withClients = {
+    ...location,
+    projects: location.projects.map((p) => ({
+      ...p,
+      client: p.clientId ? clientMap.get(p.clientId) ?? null : null,
+    })),
+  };
+  return serialize(withClients);
 }
 
 export async function createLocation(data: LocationFormValues) {
   const { organizationId, userId, userName } = await requirePermission("location", "create");
   const parsed = locationSchema.parse(data);
 
-  // If this is set as default, unset other defaults
+  // If this is set as default, unset other defaults (in Prisma AND Convex).
   if (parsed.isDefault) {
+    await unsetDefaultsInConvex(organizationId);
     await prisma.location.updateMany({
       where: { organizationId, isDefault: true },
       data: { isDefault: false },
     });
   }
 
+  // Explicit cuid so the Prisma row and the Convex doc share one id.
+  const id = createId();
   const result = await prisma.location.create({
     data: {
       ...parsed,
+      id,
       parentId: parsed.parentId || null,
       organizationId,
     },
   });
+  await mirrorLocationToConvex(result);
 
   await logActivity({
     organizationId,
@@ -164,6 +249,7 @@ export async function updateLocation(id: string, data: LocationFormValues) {
   const parsed = locationSchema.parse(data);
 
   if (parsed.isDefault) {
+    await unsetDefaultsInConvex(organizationId, id);
     await prisma.location.updateMany({
       where: { organizationId, isDefault: true, id: { not: id } },
       data: { isDefault: false },
@@ -177,6 +263,7 @@ export async function updateLocation(id: string, data: LocationFormValues) {
       parentId: parsed.parentId || null,
     },
   });
+  await patchLocationInConvex(id, updated);
 
   await logActivity({
     organizationId,
@@ -204,6 +291,7 @@ export async function deleteLocation(id: string) {
     throw new Error("Cannot delete location with assets assigned to it");
   }
   await prisma.location.delete({ where: { id, organizationId } });
+  await (await getConvexClient()).mutation(api.locations.remove, { id });
 
   await logActivity({
     organizationId,
@@ -222,8 +310,10 @@ export async function deleteLocation(id: string) {
 
 export async function updateLocationNotes(id: string, notes: string) {
   const { organizationId } = await requirePermission("location", "update");
-  return serialize(await prisma.location.update({
+  const updated = await prisma.location.update({
     where: { id, organizationId },
     data: { notes: notes || null },
-  }));
+  });
+  await patchLocationInConvex(id, updated);
+  return serialize(updated);
 }

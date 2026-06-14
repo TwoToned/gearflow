@@ -65,6 +65,25 @@ const serverEnvSchema = z.object({
   // Cron / scheduled jobs
   CRON_SECRET: z.string().optional(),
 
+  // Convex (hybrid migration — see docs/designs/convex-hybrid-migration.md).
+  // Optional during the migration so the app boots without Convex configured;
+  // a domain only depends on Convex once its phase lands. Server actions read
+  // the self-hosted URL + admin key to call mutations via convex/nextjs.
+  CONVEX_SELF_HOSTED_URL: z
+    .string()
+    .url("CONVEX_SELF_HOSTED_URL must be a valid URL")
+    .optional(),
+  CONVEX_SELF_HOSTED_ADMIN_KEY: z.string().optional(),
+  // Browser client target (Convex WebSocket). NEXT_PUBLIC_* is inlined at build.
+  NEXT_PUBLIC_CONVEX_URL: z
+    .string()
+    .url("NEXT_PUBLIC_CONVEX_URL must be a valid URL")
+    .optional(),
+  NEXT_PUBLIC_CONVEX_SITE_URL: z
+    .string()
+    .url("NEXT_PUBLIC_CONVEX_SITE_URL must be a valid URL")
+    .optional(),
+
   // Discord bot — RUNS IN-PROCESS NOW. All credentials and config live in the
   // DiscordIntegration row (encrypted token via secret-vault). No bot env vars
   // here; instrumentation.ts boots it on server start.

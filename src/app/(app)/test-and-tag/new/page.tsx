@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
 import { ChevronRight, Loader2 } from "lucide-react";
 
@@ -13,7 +14,7 @@ import { testTagAssetSchema, type TestTagAssetFormValues } from "@/lib/validatio
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { createTestTagAsset, peekNextTestTagIds } from "@/server/test-tag-assets";
-import { getTestProfiles } from "@/server/test-tag-profiles";
+import { useTestProfiles } from "@/hooks/use-test-profiles";
 import { getAssets } from "@/server/assets";
 import { getBulkAssets } from "@/server/bulk-assets";
 import { Button } from "@/components/ui/button";
@@ -52,28 +53,25 @@ function NewTestTagAssetInner() {
     },
   });
 
-  const peekQuery = useQuery({
+  const peekQuery = useServerQuery({
     queryKey: ["peek-test-tag-ids", orgId],
     queryFn: () => peekNextTestTagIds(1),
   });
 
-  const assetsQuery = useQuery({
+  const assetsQuery = useServerQuery({
     queryKey: ["assets", orgId, { pageSize: 500 }],
     queryFn: () => getAssets({ pageSize: 500 }),
   });
 
-  const bulkAssetsQuery = useQuery({
+  const bulkAssetsQuery = useServerQuery({
     queryKey: ["bulk-assets", orgId, { pageSize: 500 }],
     queryFn: () => getBulkAssets({ pageSize: 500 }),
   });
 
-  const profilesQuery = useQuery({
-    queryKey: ["testProfiles", orgId],
-    queryFn: () => getTestProfiles(),
-    enabled: !!orgId,
-  });
+  // Reactive: testProfiles subscribes to Convex (filter isActive client-side).
+  const profilesData = useTestProfiles(orgId);
 
-  const profileList = (profilesQuery.data || []) as { id: string; name: string; equipmentClass: string; applianceType: string; isActive: boolean }[];
+  const profileList = (profilesData || []) as unknown as { id: string; name: string; equipmentClass: string; applianceType: string; isActive: boolean }[];
   const activeProfiles = profileList.filter(p => p.isActive);
 
   // Auto-populate the test tag ID from peek (only when no linked asset)
@@ -155,7 +153,7 @@ function NewTestTagAssetInner() {
   const watchAssetId = form.watch("assetId");
   const watchProfileId = form.watch("testProfileId");
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (data: TestTagAssetFormValues) =>
       createTestTagAsset({
         testTagId: data.testTagId,
@@ -216,9 +214,9 @@ function NewTestTagAssetInner() {
                       populateFromBulkAsset(v);
                     }
                   }}
-                  options={(bulkAssetsQuery.data?.bulkAssets || []).map((a: { id: string; assetTag: string; model: { name: string } }) => ({
+                  options={(bulkAssetsQuery.data?.bulkAssets || []).map((a: { id: string; assetTag: string; model: { name: string } | null }) => ({
                     value: a.id,
-                    label: `${a.assetTag} - ${a.model.name}`,
+                    label: `${a.assetTag} - ${a.model?.name ?? ""}`,
                   }))}
                   placeholder="None"
                   searchPlaceholder="Search bulk assets..."

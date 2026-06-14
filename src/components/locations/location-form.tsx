@@ -3,14 +3,15 @@
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { locationSchema, type LocationFormValues } from "@/lib/validations/asset";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrgCountry } from "@/lib/use-org-country";
-import { createLocation, updateLocation, getLocations } from "@/server/locations";
-import { getOrgTags } from "@/server/tags";
+import { createLocation, updateLocation } from "@/server/locations";
+import { useLocations } from "@/hooks/use-locations";
+import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useOrgTags } from "@/hooks/use-org-tags";
 import { TagInput } from "@/components/ui/tag-input";
 import { AddressInput } from "@/components/ui/address-input";
 import { Button } from "@/components/ui/button";
@@ -33,25 +34,18 @@ interface LocationFormProps {
 
 export function LocationForm({ initialData }: LocationFormProps) {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const isEditing = !!initialData?.id;
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const orgCountry = useOrgCountry();
 
-  const { data: locationsData } = useQuery({
-    queryKey: ["locations", orgId, { pageSize: 100 }],
-    queryFn: () => getLocations({ pageSize: 100 }),
-  });
-
-  const allLocations = (locationsData?.locations || []).filter(
+  // Reactive location list from Convex (a sibling created elsewhere appears as a
+  // selectable parent instantly). Exclude self — a location can't be its own parent.
+  const allLocations = (useLocations(orgId) ?? []).filter(
     (l) => l.id !== initialData?.id
   );
 
-  const { data: orgTags } = useQuery({
-    queryKey: ["org-tags", orgId],
-    queryFn: () => getOrgTags(),
-  });
+  const orgTags = useOrgTags(orgId);
 
   const form = useForm<LocationFormValues>({
     resolver: zodResolver(locationSchema),
@@ -67,11 +61,10 @@ export function LocationForm({ initialData }: LocationFormProps) {
     },
   });
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: (data: LocationFormValues) =>
       isEditing ? updateLocation(initialData!.id, data) : createLocation(data),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["locations"] });
       toast.success(isEditing ? "Location updated" : "Location created");
       const id = isEditing ? initialData!.id : (result as { id: string }).id;
       router.push(`/locations/${id}`);

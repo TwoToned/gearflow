@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   Copy,
   FileText,
@@ -85,46 +85,47 @@ const DOC_TYPE_ACCENT: Record<string, string> = {
 export function DocumentTemplateManager({
   templates,
   isLoading,
+  onChanged,
 }: {
   templates: TemplateEntry[];
   isLoading: boolean;
+  onChanged?: () => void;
 }) {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const [deleteTarget, setDeleteTarget] = useState<TemplateEntry | null>(null);
 
-  const customiseMutation = useMutation({
+  const customiseMutation = useServerMutation({
     mutationFn: (type: string) => duplicateSystemDefaultWithSections(type),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["document-templates"] });
+      onChanged?.();
       router.push(`/template-designer/${result.id}`);
     },
     onError: () => toast.error("Failed to create custom template"),
   });
 
-  const duplicateMutation = useMutation({
+  const duplicateMutation = useServerMutation({
     mutationFn: (id: string) => duplicateDocumentTemplate(id),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["document-templates"] });
+      onChanged?.();
       router.push(`/template-designer/${result.id}`);
     },
     onError: () => toast.error("Failed to duplicate template"),
   });
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useServerMutation({
     mutationFn: (id: string) => deleteDocumentTemplate(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["document-templates"] });
+      onChanged?.();
       toast.success("Template deleted");
       setDeleteTarget(null);
     },
     onError: () => toast.error("Failed to delete template"),
   });
 
-  const setDefaultMutation = useMutation({
+  const setDefaultMutation = useServerMutation({
     mutationFn: (id: string) => setDefaultTemplate(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["document-templates"] });
+      onChanged?.();
       toast.success("Default template updated");
     },
     onError: (err) =>
@@ -133,10 +134,10 @@ export function DocumentTemplateManager({
       ),
   });
 
-  const unsetDefaultMutation = useMutation({
+  const unsetDefaultMutation = useServerMutation({
     mutationFn: (id: string) => unsetDefaultTemplate(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["document-templates"] });
+      onChanged?.();
       toast.success("Reverted to system default");
     },
     onError: () => toast.error("Failed to unset default"),

@@ -1,29 +1,13 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { isReadOnly, type Resource, type PermissionMap } from "./permissions";
-
-interface RoleData {
-  role: string | null;
-  roleName: string | null;
-  permissions: PermissionMap | null;
-}
-
-async function fetchCurrentRole(): Promise<RoleData> {
-  const res = await fetch("/api/current-role");
-  if (!res.ok) return { role: null, roleName: null, permissions: null };
-  return res.json();
-}
+import { isReadOnly, type Resource } from "./permissions";
+import { useCurrentRoleResource } from "@/hooks/use-current-role";
 
 export function useCurrentRole() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const { data, isLoading } = useQuery({
-    queryKey: ["current-role", orgId],
-    queryFn: fetchCurrentRole,
-    staleTime: 60_000,
-  });
+  const { data, isLoading } = useCurrentRoleResource(orgId);
   return {
     role: data?.role ?? null,
     roleName: data?.roleName ?? null,

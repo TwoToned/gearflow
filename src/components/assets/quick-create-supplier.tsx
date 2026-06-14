@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { createSupplier } from "@/server/suppliers";
 import {
   Dialog,
@@ -27,13 +27,11 @@ export function QuickCreateSupplier({ open, onOpenChange, onCreated }: QuickCrea
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
-  const queryClient = useQueryClient();
 
-  const mutation = useMutation({
+  const mutation = useServerMutation({
     mutationFn: () => createSupplier({ name, phone: phone || undefined, email: email || undefined }),
-    onSuccess: async (result: { id: string }) => {
+    onSuccess: (result: { id: string }) => {
       toast.success("Supplier created");
-      await queryClient.invalidateQueries({ queryKey: ["suppliers"] });
       onCreated?.(result.id);
       onOpenChange(false);
       setName("");

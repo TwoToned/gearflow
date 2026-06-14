@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,8 +16,10 @@ import {
 import { UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { addMemberByEmail } from "@/server/settings";
-import { getCustomRoles } from "@/server/custom-roles";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { useCustomRoles } from "@/hooks/use-custom-roles";
+import { refreshOrgMembers } from "@/hooks/use-org-members";
+import { refreshPendingInvitations } from "@/hooks/use-pending-invitations";
 import type { PermissionMap } from "@/lib/permissions";
 
 const builtInRoles = [
@@ -34,22 +36,18 @@ interface CustomRoleData {
 }
 
 export function InviteMember() {
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("member");
 
-  const { data: customRoles } = useQuery({
-    queryKey: ["custom-roles", orgId],
-    queryFn: getCustomRoles,
-  });
+  const { data: customRoles } = useCustomRoles(orgId);
 
-  const addMutation = useMutation({
+  const addMutation = useServerMutation({
     mutationFn: () => addMemberByEmail(email, role),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["org-members"] });
-      queryClient.invalidateQueries({ queryKey: ["pending-invitations"] });
+      refreshOrgMembers(orgId);
+      refreshPendingInvitations(orgId);
       const data = result as { invited?: boolean };
       if (data.invited) {
         toast.success(`Invitation sent to ${email}`);

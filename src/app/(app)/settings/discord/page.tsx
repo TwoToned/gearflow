@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useForm, Controller, type Control } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Copy,
   Eye,
@@ -83,6 +82,8 @@ const ALL_PROJECT_STATUSES: { value: ProjectStatusLiteral; label: string }[] = [
   { value: "CANCELLED", label: "Cancelled" },
 ];
 import { useActiveOrganization } from "@/lib/auth-client";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -123,12 +124,11 @@ function connectionStatus(lastHeartbeatAt: Date | string | null | undefined): {
 export default function DiscordSettingsPage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const queryClient = useQueryClient();
   const [showSecret, setShowSecret] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
   const [unlinkTarget, setUnlinkTarget] = useState<RosterRow | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch: refetchIntegration } = useServerQuery({
     queryKey: ["discord-integration", orgId],
     queryFn: () => getDiscordIntegrationSettings(),
     enabled: !!orgId,
@@ -136,7 +136,7 @@ export default function DiscordSettingsPage() {
   // Bot lifecycle state lives behind an API route (the page can't import the
   // bot-process module — discord.js would land in the client bundle). Refresh
   // automatically every 10s while the tab is open.
-  const { data: botStatus } = useQuery({
+  const { data: botStatus, refetch: refetchBotStatus } = useServerQuery({
     queryKey: ["discord-bot-status", orgId],
     queryFn: fetchBotStatus,
     enabled: !!orgId,
@@ -150,8 +150,8 @@ export default function DiscordSettingsPage() {
   const conn = connectionStatus(integration?.lastHeartbeatAt);
 
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ["discord-integration", orgId] });
-    queryClient.invalidateQueries({ queryKey: ["discord-bot-status", orgId] });
+    refetchIntegration();
+    refetchBotStatus();
   };
 
   const form = useForm<DiscordIntegrationConfigValues>({
@@ -190,7 +190,7 @@ export default function DiscordSettingsPage() {
     invalidate();
   };
 
-  const toggleEnabled = useMutation({
+  const toggleEnabled = useServerMutation({
     mutationFn: async (enabled: boolean) => {
       if (!integration) await ensureDiscordIntegration();
       return setDiscordIntegrationEnabled(enabled);
@@ -214,7 +214,7 @@ export default function DiscordSettingsPage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to update"),
   });
 
-  const saveConfig = useMutation({
+  const saveConfig = useServerMutation({
     mutationFn: (values: DiscordIntegrationConfigValues) => updateDiscordIntegrationConfig(values),
     onSuccess: async () => {
       toast.success("Settings saved");
@@ -226,7 +226,7 @@ export default function DiscordSettingsPage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to save"),
   });
 
-  const regenerate = useMutation({
+  const regenerate = useServerMutation({
     mutationFn: () => regenerateDiscordSigningSecret(),
     onSuccess: () => {
       toast.success("Signing secret regenerated");
@@ -236,7 +236,7 @@ export default function DiscordSettingsPage() {
   });
 
   const [pendingBotToken, setPendingBotToken] = useState("");
-  const saveBotToken = useMutation({
+  const saveBotToken = useServerMutation({
     mutationFn: (val: string | null) => setDiscordCredentials({ discordBotToken: val }),
     onSuccess: async (_r, val) => {
       toast.success(val === null ? "Discord bot token cleared" : "Discord bot token saved");
@@ -258,7 +258,7 @@ export default function DiscordSettingsPage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to save token"),
   });
 
-  const deployCommands = useMutation({
+  const deployCommands = useServerMutation({
     mutationFn: async () => {
       const deploy = await deployDiscordCommands();
       // After pushing the command registry to Discord, restart the bot so its
@@ -275,7 +275,7 @@ export default function DiscordSettingsPage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to deploy commands"),
   });
 
-  const unlink = useMutation({
+  const unlink = useServerMutation({
     mutationFn: (crewMemberId: string) => unlinkDiscordAccount(crewMemberId),
     onSuccess: () => {
       toast.success("Discord account unlinked");

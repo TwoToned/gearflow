@@ -10,7 +10,7 @@
  */
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
 import type { DocumentType } from "@/lib/pdfme/types";
 import type {
@@ -77,7 +77,6 @@ export function BlockEditor({
   brandTemplateId,
 }: BlockEditorProps) {
   const router = useRouter();
-  const queryClient = useQueryClient();
 
   // Convert flat sections → block tree on mount
   const initialBlocks = useMemo(
@@ -404,21 +403,23 @@ export function BlockEditor({
   }, [generatePreview]);
 
   // ─── Save / Publish ─────────────────────────────────────────────────────────
-  const saveMutation = useMutation({
-    mutationFn: () =>
-      saveTemplateBlocks({
+  const saveMutation = useServerMutation({
+    mutationFn: () => {
+      setSaveState("saving");
+      return saveTemplateBlocks({
         id: templateId,
         blocks: blocksRef.current as Parameters<typeof saveTemplateBlocks>[0]["blocks"],
         brandTemplateId: brandTemplateId || null,
         version: currentVersion,
-      }),
-    onMutate: () => setSaveState("saving"),
+      });
+    },
     onSuccess: (result) => {
       setSaveState("saved");
       if (result && "version" in result) {
         setCurrentVersion(result.version as number);
       }
-      queryClient.invalidateQueries({ queryKey: ["document-templates"] });
+      // The documents list (sole reader of document-templates) is cross-route —
+      // it remounts + refetches on navigation back. No cache to invalidate.
       setTimeout(() => setSaveState("idle"), 2000);
     },
     onError: (err) => {
@@ -432,7 +433,7 @@ export function BlockEditor({
     },
   });
 
-  const publishMutation = useMutation({
+  const publishMutation = useServerMutation({
     mutationFn: async () => {
       await saveTemplateBlocks({
         id: templateId,
@@ -443,7 +444,6 @@ export function BlockEditor({
       return publishDocumentTemplate(templateId);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["document-templates"] });
       toast.success("Template published");
     },
     onError: () => toast.error("Failed to publish template"),

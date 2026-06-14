@@ -15,7 +15,8 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { useServerMutation } from "@/hooks/use-server-mutation";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import {
@@ -48,11 +49,13 @@ interface SupplierGroup {
 }
 
 function ReorderContent() {
-  const queryClient = useQueryClient();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  const { data: candidates, isLoading } = useQuery({
+  // Reorder candidates are NOT in the SSE realtime map (no cross-user liveness
+  // existed) — a plain server-action read is data-identical. The create-draft
+  // mutation re-reads via refetch().
+  const { data: candidates, isLoading, refetch } = useServerQuery({
     queryKey: ["reorder-candidates", orgId],
     queryFn: () => getReorderCandidates(),
     enabled: !!orgId,
@@ -82,13 +85,13 @@ function ReorderContent() {
     );
   }, [candidates]);
 
-  const createDraftMutation = useMutation({
+  const createDraftMutation = useServerMutation({
     mutationFn: createReorderDraft,
     onSuccess: (result) => {
       toast.success(`Created draft ${result.orderNumber}`, {
         description: `${result.lineCount} line${result.lineCount === 1 ? "" : "s"} — edit and send from Supplier Orders.`,
       });
-      queryClient.invalidateQueries({ queryKey: ["reorder-candidates"] });
+      refetch();
       // Clear selections for the items we just ordered
       setSelected((prev) => {
         const next = new Set(prev);

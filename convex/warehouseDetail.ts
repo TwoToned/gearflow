@@ -45,27 +45,34 @@ import { requireOrgRead, requireOrgReadDoc } from "./lib/auth";
 
 // Mirrors WAREHOUSE_STATUSES in src/app/(app)/warehouse/page.tsx — the project
 // statuses the warehouse landing list renders.
-const WAREHOUSE_STATUSES = new Set([
+const WAREHOUSE_STATUSES = [
   "CONFIRMED",
   "PREPPING",
   "CHECKED_OUT",
   "ON_SITE",
   "RETURNED",
-]);
+] as const;
 
 export const listVersion = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
     await requireOrgRead(ctx, orgId);
 
-    const projects = await ctx.db
-      .query("projects")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
-      .collect();
-
-    const pipeline = projects.filter(
-      (p) => p.isTemplate !== true && WAREHOUSE_STATUSES.has(p.status ?? ""),
+    // P2-1: query ONLY the 5 pipeline statuses via the by_organizationId_status
+    // composite index, instead of collecting EVERY org project (incl. archived/
+    // completed) and filtering in JS. At scale this reads ~the pipeline size, not
+    // the whole project history.
+    const byStatus = await Promise.all(
+      WAREHOUSE_STATUSES.map((status) =>
+        ctx.db
+          .query("projects")
+          .withIndex("by_organizationId_status", (q) =>
+            q.eq("organizationId", orgId).eq("status", status),
+          )
+          .collect(),
+      ),
     );
+    const pipeline = byStatus.flat().filter((p) => p.isTemplate !== true);
 
     // getProjects' dependencies beyond the project row are TWO cross-domain joins
     // that don't touch the project row when they change (so project.updatedAt won't

@@ -55,7 +55,9 @@ interface MediaSpec {
   fields: string[];
   convex: {
     list: AnyQueryRef;
+    listByParent: AnyQueryRef;
     create: AnyRef;
+    createIfMissing: AnyRef;
     update: AnyRef;
     getById: AnyQueryRef;
     remove: AnyRef;
@@ -174,16 +176,20 @@ export async function mirrorMediaCreate(kind: MediaKind, row: Row) {
  */
 export async function syncMediaForParent(kind: MediaKind, orgId: string, parentId: string) {
   const spec = MEDIA_SPECS[kind];
+  void orgId; // reconcile is parent-scoped now; orgId kept for call-site compatibility
   const prismaRows = await spec.findRows(parentId);
   const convex = await getConvexClient();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const convexRows = (await convex.query(spec.convex.list, { orgId } as any)) as Row[];
-  const prismaIds = new Set(prismaRows.map((r) => r.id as string));
   for (const row of prismaRows) {
     await upsertIn(spec, row.id as string, mediaDoc(kind, row));
   }
+  // P1-4: query ONLY this parent's Convex rows (was an org-wide list + JS filter),
+  // and re-read the live Prisma ids immediately before deleting so a row created
+  // concurrently during the upsert pass isn't removed as stale (race guard).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const convexRows = (await convex.query(spec.convex.listByParent, { parentId } as any)) as Row[];
+  const liveIds = new Set((await spec.findRows(parentId)).map((r) => r.id as string));
   for (const cr of convexRows) {
-    if (cr[spec.fk] === parentId && !prismaIds.has(cr.id as string)) {
+    if (!liveIds.has(cr.id as string)) {
       await removeIn(spec.convex.remove, cr.id as string);
     }
   }

@@ -45,9 +45,11 @@ export function useOrgTimeEntries(orgId: string | undefined): CrewTimeEntryDoc[]
   return useQuery(api.crewTimeEntries.list, orgId ? { orgId } : "skip");
 }
 
-/** All availability blocks for an org (the planner availability signal). */
+/** All availability blocks for an org (the planner availability signal).
+ *  crewAvailabilities is org-scoped in Convex via a denormalized organizationId
+ *  (the Prisma model scopes via crewMember), so the standard org `list` works. */
 export function useOrgAvailabilities(orgId: string | undefined): CrewAvailabilityDoc[] | undefined {
-  return useQuery(api.crewAvailabilities.listByOrg, orgId ? { orgId } : "skip");
+  return useQuery(api.crewAvailabilities.list, orgId ? { orgId } : "skip");
 }
 
 /**

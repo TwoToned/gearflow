@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/org-context";
 import { attachClient } from "@/lib/clients-read";
 import { serialize } from "@/lib/serialize";
+import { listOpenBlockingThreads } from "@/lib/blocking-comments-read";
 
 export async function getDashboardStats() {
   const { organizationId } = await getOrgContext();
@@ -101,6 +102,58 @@ export async function getMyHomeData() {
   // Clients live in Convex — attach instead of a Prisma join.
   const withClients = await attachClient(organizationId, myProjects);
   return serialize({ userName, userId, myProjects: withClients });
+}
+
+/**
+ * Open blocking comments that need the current user's attention: ones on a
+ * project they manage, or where they've been @mentioned. Surfaced on the
+ * dashboard so a blocker that's gating prep / send-out can't sit unnoticed.
+ */
+export async function getMyBlockingComments() {
+  const { organizationId, userId } = await getOrgContext();
+
+  const threads = await listOpenBlockingThreads(organizationId);
+  if (threads.length === 0) return serialize([]);
+
+  const projectIds = Array.from(new Set(threads.map((t) => t.projectId).filter(Boolean)));
+  const projects = await prisma.project.findMany({
+    where: { organizationId, id: { in: projectIds } },
+    select: {
+      id: true,
+      name: true,
+      projectNumber: true,
+      projectManagerId: true,
+      projectManagers: { select: { userId: true } },
+    },
+  });
+  const projectMap = new Map(projects.map((p) => [p.id, p]));
+
+  const surfaced = threads
+    .map((t) => {
+      const project = projectMap.get(t.projectId);
+      if (!project) return null;
+      const isPM =
+        project.projectManagerId === userId ||
+        project.projectManagers.some((pm) => pm.userId === userId);
+      const isMentioned = t.mentionUserIds.includes(userId);
+      if (!isPM && !isMentioned) return null;
+      return {
+        threadId: t.threadId,
+        projectId: t.projectId,
+        projectName: project.name,
+        projectNumber: project.projectNumber,
+        targetType: t.targetType,
+        snippet: t.snippet,
+        createdByName: t.createdByName,
+        createdAt: t.createdAt,
+        // "mention" wins as the more personal reason when both apply.
+        reason: isMentioned ? ("mention" as const) : ("pm" as const),
+      };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null)
+    .sort((a, b) => b.createdAt - a.createdAt);
+
+  return serialize(surfaced);
 }
 
 export async function getUpcomingProjects() {

@@ -31,6 +31,7 @@ import { emitIfDiscordEnabled } from "@/lib/services/outbox-service";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
 import { createId } from "@paralleldrive/cuid2";
+import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
 import {
   renderProjectNumber,
   scopeKeyFor,
@@ -48,6 +49,16 @@ type ProjectNumberConfig = {
   padding: number;
   timezone?: string;
 };
+
+const BLOCKED_FORWARD_PROJECT_STATUSES: ProjectStatus[] = [
+  "PREPPING",
+  "CHECKED_OUT",
+  "ON_SITE",
+];
+
+function isBlockedForwardProjectStatus(status: ProjectStatus | ProjectFormValues["status"] | null | undefined) {
+  return status ? BLOCKED_FORWARD_PROJECT_STATUSES.includes(status as ProjectStatus) : false;
+}
 
 /** Parse the org's auto project-number config from its settings metadata JSON. */
 function readProjectNumberConfig(metadata: string | null): ProjectNumberConfig | null {
@@ -640,44 +651,55 @@ export async function updateProject(id: string, data: ProjectFormValues) {
     select: { status: true, isTemplate: true },
   });
 
+  if (
+    before &&
+    !before.isTemplate &&
+    before.status !== parsed.status &&
+    isBlockedForwardProjectStatus(parsed.status)
+  ) {
+    await assertNoBlockingComments(organizationId, id, {
+      actionLabel: `move this project to ${String(parsed.status).toLowerCase().replaceAll("_", " ")}`,
+    });
+  }
+
   const updated = await prisma.$transaction(async (tx) => {
     const result = await tx.project.update({
-    where: { id, organizationId },
-    data: {
-      projectNumber: parsed.projectNumber,
-      name: parsed.name,
-      clientId: parsed.clientId || null,
-      status: parsed.status,
-      type: parsed.type,
-      description: parsed.description || null,
-      locationId: parsed.locationId || null,
-      siteContactName: parsed.siteContactName || null,
-      siteContactPhone: parsed.siteContactPhone || null,
-      siteContactEmail: parsed.siteContactEmail || null,
-      loadInDate: parsed.loadInDate ?? null,
-      loadInTime: parsed.loadInTime || null,
-      eventStartDate: parsed.eventStartDate ?? null,
-      eventStartTime: parsed.eventStartTime || null,
-      eventEndDate: parsed.eventEndDate ?? null,
-      eventEndTime: parsed.eventEndTime || null,
-      loadOutDate: parsed.loadOutDate ?? null,
-      loadOutTime: parsed.loadOutTime || null,
-      rentalStartDate: parsed.rentalStartDate ?? null,
-      rentalEndDate: parsed.rentalEndDate ?? null,
-      defaultRentalPeriod: parsed.defaultRentalPeriod || null,
-      defaultRentalQuantity: parsed.defaultRentalQuantity || null,
-      billingWeeks: parsed.billingWeeks ?? null,
-      billingDays: parsed.billingDays ?? null,
-      taxRate: parsed.taxRate ?? null,
-      crewNotes: parsed.crewNotes || null,
-      internalNotes: parsed.internalNotes || null,
-      clientNotes: parsed.clientNotes || null,
-      discountPercent: parsed.discountPercent ?? null,
-      depositPercent: parsed.depositPercent ?? null,
-      depositPaid: parsed.depositPaid ?? null,
-      invoicedTotal: parsed.invoicedTotal ?? null,
-      tags: parsed.tags,
-    },
+      where: { id, organizationId },
+      data: {
+        projectNumber: parsed.projectNumber,
+        name: parsed.name,
+        clientId: parsed.clientId || null,
+        status: parsed.status,
+        type: parsed.type,
+        description: parsed.description || null,
+        locationId: parsed.locationId || null,
+        siteContactName: parsed.siteContactName || null,
+        siteContactPhone: parsed.siteContactPhone || null,
+        siteContactEmail: parsed.siteContactEmail || null,
+        loadInDate: parsed.loadInDate ?? null,
+        loadInTime: parsed.loadInTime || null,
+        eventStartDate: parsed.eventStartDate ?? null,
+        eventStartTime: parsed.eventStartTime || null,
+        eventEndDate: parsed.eventEndDate ?? null,
+        eventEndTime: parsed.eventEndTime || null,
+        loadOutDate: parsed.loadOutDate ?? null,
+        loadOutTime: parsed.loadOutTime || null,
+        rentalStartDate: parsed.rentalStartDate ?? null,
+        rentalEndDate: parsed.rentalEndDate ?? null,
+        defaultRentalPeriod: parsed.defaultRentalPeriod || null,
+        defaultRentalQuantity: parsed.defaultRentalQuantity || null,
+        billingWeeks: parsed.billingWeeks ?? null,
+        billingDays: parsed.billingDays ?? null,
+        taxRate: parsed.taxRate ?? null,
+        crewNotes: parsed.crewNotes || null,
+        internalNotes: parsed.internalNotes || null,
+        clientNotes: parsed.clientNotes || null,
+        discountPercent: parsed.discountPercent ?? null,
+        depositPercent: parsed.depositPercent ?? null,
+        depositPaid: parsed.depositPaid ?? null,
+        invoicedTotal: parsed.invoicedTotal ?? null,
+        tags: parsed.tags,
+      },
     });
 
     if (before && !before.isTemplate && before.status !== parsed.status) {
@@ -732,6 +754,13 @@ export async function updateProjectStatus(
       message: "Templates don't have a status — they're a starting point for creating projects.",
     });
   }
+
+  if (project.status !== status && isBlockedForwardProjectStatus(status)) {
+    await assertNoBlockingComments(organizationId, id, {
+      actionLabel: `move this project to ${String(status).toLowerCase().replaceAll("_", " ")}`,
+    });
+  }
+
   const updated = await prisma.$transaction(async (tx) => {
     const result = await tx.project.update({
       where: { id, organizationId },

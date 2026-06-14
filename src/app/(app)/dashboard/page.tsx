@@ -9,6 +9,8 @@ import {
   Wrench,
   ArrowRight,
   CheckCircle2,
+  ShieldAlert,
+  AtSign,
 } from "lucide-react";
 import {
   FadeIn,
@@ -24,6 +26,7 @@ import {
   getUpcomingProjects,
   getRecentActivity,
   getMyHomeData,
+  getMyBlockingComments,
 } from "@/server/dashboard";
 import { MyWorkSection } from "@/components/dashboard/my-work-section";
 import { getSubHireDashboardStats } from "@/server/sub-hires";
@@ -67,6 +70,11 @@ export default function DashboardPage() {
   const { data: myHome } = useServerQuery({
     queryKey: ["my-home", orgId],
     queryFn: getMyHomeData,
+  });
+
+  const { data: myBlockers } = useServerQuery({
+    queryKey: ["my-blocking-comments", orgId],
+    queryFn: getMyBlockingComments,
   });
 
   // Greeting logic — personalised with the user's first name.
@@ -127,6 +135,63 @@ export default function DashboardPage() {
           </div>
         </div>
       </FadeIn>
+
+      {/* ── Blockers needing you (PM / mentioned) ── */}
+      {myBlockers && myBlockers.length > 0 && (
+        <FadeIn delay={0.03}>
+          <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-5 sm:p-6">
+            <div className="mb-3 flex items-center gap-2">
+              <ShieldAlert className="h-4 w-4 text-red-600" />
+              <h2 className="text-sm font-semibold text-fg">
+                Blockers needing you
+              </h2>
+              <span className="rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                {myBlockers.length}
+              </span>
+            </div>
+            <StaggerList className="space-y-1">
+              {myBlockers.map((b: Record<string, unknown>) => (
+                <StaggerItem key={b.threadId as string}>
+                  <Link
+                    href={`/projects/${b.projectId}`}
+                    className="group block rounded-md px-3 py-2.5 transition-colors hover:bg-red-500/10"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[11px] text-fg-3">
+                            {b.projectNumber as string}
+                          </span>
+                          <span className="truncate text-sm font-medium text-fg">
+                            {b.projectName as string}
+                          </span>
+                          {b.reason === "mention" && (
+                            <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
+                              <AtSign className="h-2.5 w-2.5" />
+                              mentioned
+                            </span>
+                          )}
+                        </div>
+                        {b.snippet ? (
+                          <p className="mt-0.5 truncate text-xs text-fg-3">
+                            &ldquo;{b.snippet as string}&rdquo;
+                          </p>
+                        ) : null}
+                      </div>
+                      <span className="shrink-0 text-[11px] text-fg-3">
+                        {b.createdByName as string} &middot;{" "}
+                        {formatDistanceToNow(new Date(b.createdAt as number), {
+                          addSuffix: true,
+                        })}
+                      </span>
+                    </div>
+                  </Link>
+                </StaggerItem>
+              ))}
+            </StaggerList>
+          </div>
+        </FadeIn>
+      )}
 
       {/* ── Your work (user-centric) ── */}
       <FadeIn delay={0.04}>

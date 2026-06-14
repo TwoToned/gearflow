@@ -1,6 +1,10 @@
 # Warehouse Linear Flow — Pick/Prep → Prepped → Deployed → Returned → Depreped
 
-> Status: APPROVED (via /autoplan) — ready to implement
+> Status: IN PROGRESS — v1 tabs implemented (PR #184). Stage model
+> (`src/lib/warehouse-stage.ts` + tests), deprep-preserves-returned-units fix,
+> and the Returned/Depreped tabs + leak removal are landed. Visual QA + the
+> partial-return presentation pass still pending; Kanban board is the fast-follow.
+> (Originally: APPROVED via /autoplan — ready to implement.)
 > Branch: worktree-bridge-cse_013eDwEAQ9UkG61zX5gBcp98
 > Owner: Jayden
 >

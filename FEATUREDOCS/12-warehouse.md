@@ -1,10 +1,36 @@
 # Warehouse Operations
 
 ## UI Terminology
-- "Check Out" is displayed as **"Deploy"** in the UI
-- "Check In" is displayed as **"Return"** in the UI
+- The per-project board reads as a single left-to-right pipeline:
+  **Pick/Prep → Prepped → Deployed → Returned → Depreped** (+ Bulk Check-In and
+  Close-Out). See [Warehouse Linear Flow](../docs/designs/warehouse-linear-flow.md).
+- The **Prepped** tab is where you **Deploy** (check out); the **Deployed** tab is
+  where you **Return** (check in). The tab is named for the stage it shows; the
+  button inside moves an item forward.
 - `CHECKED_OUT` status displays as **"Deployed"**
-- Internal code (function names, enum values, API params) still uses `checkOut`/`checkIn`/`CHECKED_OUT`
+- Internal code (function names, enum values, API params) still uses `checkOut`/`checkIn`/`CHECKED_OUT`. Tab *value* keys are also unchanged (`check-out` = Prepped, `check-in` = Deployed) so existing `?tab=` deep links keep working.
+
+## Stage model — single source of truth (`src/lib/warehouse-stage.ts`)
+
+Tab membership comes from `stagesForItem(item)` / `belongsInStage(item, stage)`,
+NOT ad-hoc per-tab filters. It's **unit/quantity-aware**: a line can occupy
+several stages at once (a bulk line 6-out-4-back is in Deployed AND Returned), and
+kit/group parents aggregate their descendants. Unit-tested in `warehouse-stage.test.ts`.
+
+| Stage | Membership |
+|-------|-----------|
+| Pick/Prep | needs pick/pack; `quantity>0`, not packed/out; **never RETURNED** (this killed the old leak where returned gear reappeared in Pick/Prep looking like it never shipped) |
+| Prepped | `prepStatus=PACKED`, not deployed, not returned |
+| Deployed | `checkedOutQuantity > returnedQuantity` (units still out) |
+| Returned | `returnedQuantity > 0` AND `prepStatus !== PENDING` (back, awaiting deprep; a `FLAGGED_*` hold still shows here) |
+| Depreped | returned AND `prepStatus = PENDING` (put away) |
+
+**Deprep is the forward Returned → Depreped step.** It must preserve the RETURNED
+units (the return record): `deprepItem` excludes RETURNED units from its unit
+deletion and `completeCheckAndDeprep` resets the returned units' stale PACKED
+prepStatus so a later rollup can't bounce the line back to Returned. The unit
+deletion in `deprepItem` is reserved for the backward "packed by mistake" undo on
+the Prepped tab. (Kanban board view: deferred fast-follow.)
 
 ## Three-Phase Warehouse Flow
 

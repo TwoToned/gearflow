@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import { useQuery } from "convex/react";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../../convex/_generated/api";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { Plus, AlertTriangle, ShieldAlert } from "lucide-react";
@@ -337,7 +337,7 @@ export function ProjectTable() {
 
   // Blocking-comment counts — reactive so a blocker raised elsewhere lights up
   // the badge immediately. Scoped to the current page's project ids.
-  const blockingCounts = useQuery(
+  const blockingCounts = useAuthedQuery(
     api.collaboration.listBlockingForProjects,
     orgId && projectIds.length > 0 ? { orgId, projectIds } : "skip",
   ) as Record<string, number> | undefined;

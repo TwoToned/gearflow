@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 
@@ -17,16 +17,16 @@ export type SavedReportDoc = Doc<"savedReports">;
 export type SavedTableViewDoc = Doc<"savedTableViews">;
 
 export function useSupplierOrders(orgId: string | undefined): SupplierOrderDoc[] | undefined {
-  return useQuery(api.supplierOrders.list, orgId ? { orgId } : "skip");
+  return useAuthedQuery(api.supplierOrders.list, orgId ? { orgId } : "skip");
 }
 export function useWarehouseCloses(orgId: string | undefined): WarehouseCloseDoc[] | undefined {
-  return useQuery(api.warehouseCloses.list, orgId ? { orgId } : "skip");
+  return useAuthedQuery(api.warehouseCloses.list, orgId ? { orgId } : "skip");
 }
 export function useSavedReports(orgId: string | undefined): SavedReportDoc[] | undefined {
-  return useQuery(api.savedReports.list, orgId ? { orgId } : "skip");
+  return useAuthedQuery(api.savedReports.list, orgId ? { orgId } : "skip");
 }
 export function useSavedTableViews(orgId: string | undefined): SavedTableViewDoc[] | undefined {
-  return useQuery(api.savedTableViews.list, orgId ? { orgId } : "skip");
+  return useAuthedQuery(api.savedTableViews.list, orgId ? { orgId } : "skip");
 }
 
 export function fingerprintSupplierOrders(rows: SupplierOrderDoc[] | undefined): string | undefined {

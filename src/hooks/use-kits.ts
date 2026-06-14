@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 
@@ -19,11 +19,11 @@ import type { Doc } from "../../convex/_generated/dataModel";
 export type KitDoc = Doc<"kits">;
 
 export function useKits(orgId: string | undefined): KitDoc[] | undefined {
-  return useQuery(api.kits.list, orgId ? { orgId } : "skip");
+  return useAuthedQuery(api.kits.list, orgId ? { orgId } : "skip");
 }
 
 export function useKit(id: string | undefined): KitDoc | null | undefined {
-  return useQuery(api.kits.getById, id ? { id } : "skip");
+  return useAuthedQuery(api.kits.getById, id ? { id } : "skip");
 }
 
 /**
@@ -35,5 +35,5 @@ export function useKit(id: string | undefined): KitDoc | null | undefined {
  * convex/kitDetail.ts and src/hooks/use-reactive-server-query.ts.
  */
 export function useKitDetailVersion(id: string | undefined) {
-  return useQuery(api.kitDetail.version, id ? { id } : "skip");
+  return useAuthedQuery(api.kitDetail.version, id ? { id } : "skip");
 }

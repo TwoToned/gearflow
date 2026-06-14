@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../../convex/_generated/api";
 import { getForegroundColor, getUserInitials, timeAgo } from "@/lib/collaboration-colors";
 import { cn } from "@/lib/utils";
@@ -64,7 +64,7 @@ export function ProjectActivityFeed({
   className,
   emptyText = "No recent activity.",
 }: ProjectActivityFeedProps) {
-  const events = useQuery(
+  const events = useAuthedQuery(
     api.collaboration.listActivityEvents,
     orgId ? { orgId, entityType, entityId, limit } : "skip"
   ) as ActivityEvent[] | undefined;

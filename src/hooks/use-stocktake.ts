@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../convex/_generated/api";
 
 /**
@@ -15,5 +15,5 @@ import { api } from "../../convex/_generated/api";
  * module. See FEATUREDOCS/54.
  */
 export function useStocktakeVersion(stocktakeId: string | undefined) {
-  return useQuery(api.stocktakeDetail.version, stocktakeId ? { stocktakeId } : "skip");
+  return useAuthedQuery(api.stocktakeDetail.version, stocktakeId ? { stocktakeId } : "skip");
 }

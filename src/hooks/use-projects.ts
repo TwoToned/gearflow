@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 
@@ -29,12 +29,12 @@ export type SubHireDoc = Doc<"subHires">;
 
 /** All projects for an org (includes templates — filter isTemplate in consumer). */
 export function useProjects(orgId: string | undefined): ProjectDoc[] | undefined {
-  return useQuery(api.projects.list, orgId ? { orgId } : "skip");
+  return useAuthedQuery(api.projects.list, orgId ? { orgId } : "skip");
 }
 
 /** Single project by cuid. Returns undefined while loading, null if not found. */
 export function useProject(id: string | undefined): ProjectDoc | null | undefined {
-  return useQuery(api.projects.getById, id ? { id } : "skip");
+  return useAuthedQuery(api.projects.getById, id ? { id } : "skip");
 }
 
 /** All categories for a project. */
@@ -42,7 +42,7 @@ export function useProjectCategories(
   projectId: string | undefined,
   orgId: string | undefined,
 ): ProjectCategoryDoc[] | undefined {
-  return useQuery(
+  return useAuthedQuery(
     api.projectCategories.listByProject,
     projectId && orgId ? { projectId, orgId } : "skip",
   );
@@ -53,7 +53,7 @@ export function useProjectGroups(
   projectId: string | undefined,
   orgId: string | undefined,
 ): ProjectGroupDoc[] | undefined {
-  return useQuery(
+  return useAuthedQuery(
     api.projectGroups.listByProject,
     projectId && orgId ? { projectId, orgId } : "skip",
   );
@@ -64,7 +64,7 @@ export function useProjectManagers(
   projectId: string | undefined,
   orgId: string | undefined,
 ): ProjectManagerDoc[] | undefined {
-  return useQuery(
+  return useAuthedQuery(
     api.projectManagers.listByProject,
     projectId && orgId ? { projectId, orgId } : "skip",
   );
@@ -75,7 +75,7 @@ export function useProjectServices(
   projectId: string | undefined,
   orgId: string | undefined,
 ): ProjectServiceDoc[] | undefined {
-  return useQuery(
+  return useAuthedQuery(
     api.projectServices.listByProject,
     projectId && orgId ? { projectId, orgId } : "skip",
   );
@@ -86,7 +86,7 @@ export function useProjectTasks(
   projectId: string | undefined,
   orgId: string | undefined,
 ): ProjectTaskDoc[] | undefined {
-  return useQuery(
+  return useAuthedQuery(
     api.projectTasks.listByProject,
     projectId && orgId ? { projectId, orgId } : "skip",
   );
@@ -97,7 +97,7 @@ export function useProjectLineItems(
   projectId: string | undefined,
   orgId: string | undefined,
 ): ProjectLineItemDoc[] | undefined {
-  return useQuery(
+  return useAuthedQuery(
     api.projectLineItems.listByProject,
     projectId && orgId ? { projectId, orgId } : "skip",
   );
@@ -108,7 +108,7 @@ export function useProjectSubHireDocs(
   projectId: string | undefined,
   orgId: string | undefined,
 ): SubHireDoc[] | undefined {
-  return useQuery(
+  return useAuthedQuery(
     api.subHires.listByProject,
     projectId && orgId ? { projectId, orgId } : "skip",
   );

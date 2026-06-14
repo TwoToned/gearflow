@@ -823,7 +823,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" data-shortcut-scope="equipment">
       {/* Toolbar */}
       <div className="flex items-center gap-2">
         {/* Single Add entry — opens UnifiedAddDialog. Tabs inside the

@@ -7,6 +7,7 @@ import { ChevronRight } from "lucide-react";
 import { KitForm } from "@/components/kits/kit-form";
 import { useKit } from "@/hooks/use-kits";
 import { FadeIn } from "@/components/ui/motion";
+import { FormSkeleton } from "@/components/ui/skeleton";
 
 export default function EditKitPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -15,7 +16,7 @@ export default function EditKitPage({ params }: { params: Promise<{ id: string }
   // fields (no cross-domain composition), so a pure useQuery subscription suffices.
   const kit = useKit(id);
 
-  if (kit === undefined) return <div className="t-body text-fg-3">Loading...</div>;
+  if (kit === undefined) return <FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>;
   if (!kit) return <div className="t-body text-fg-3">Kit not found.</div>;
 
   return (

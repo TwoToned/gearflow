@@ -41,6 +41,13 @@ div.app-shell (position: fixed, inset: 0, flex column, overflow: hidden)
 - 5 items: Home, Assets, Scan, Projects, Warehouse
 - Scan button opens camera overlay via `BarcodeScanner`
 - Scan result resolved via `scanLookup()` → navigates to matched entity
+- **Note**: A UX-gaps pass proposed dropping Scan for a "4-tab" bar citing DESIGN.md.
+  DESIGN.md has no such rule and names warehouse scanning as a primary daily
+  workflow, so the Scan tab is intentionally kept (see header comment in the file).
+- The full nav (everything beyond these 5 tabs + user/logout) lives in the
+  off-canvas sidebar `Sheet`, opened by the `SidebarTrigger` hamburger in the
+  TopBar. That `Sheet` **is** `AppSidebar`'s mobile rendering — it must stay
+  mounted on mobile, so the sidebar is not stripped on small screens.
 
 ## Barcode & QR Code Scanning
 
@@ -63,3 +70,13 @@ Resolves barcode value to entity URL:
 
 ## Touch Targets
 `min-height: 44px; min-width: 44px` for `.touch-target` on touch devices. Checkboxes get 24px min size.
+
+Component-level mobile overrides (applied when `useIsMobile()` is true):
+- **Sidebar menu buttons** (`SidebarMenuButton`): `min-h-11 py-2.5` on mobile (desktop stays compact at `h-8`).
+- **Header search**: mobile trigger is `h-11 w-11`; the command palette mobile dialog is full-screen with safe-area padding.
+
+## Full-screen mobile dialogs
+Dialogs that benefit from edge-to-edge space on phones switch to a full-screen
+sheet when `useIsMobile()` is true: `h-[100dvh] max-h-[100dvh] w-full max-w-full
+rounded-none border-0` plus `env(safe-area-inset-*)` padding. Examples:
+`CommandSearch` dialog and the task edit dialog in `tasks-panel.tsx`.

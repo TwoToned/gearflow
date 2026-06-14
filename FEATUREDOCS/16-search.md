@@ -32,8 +32,9 @@ Uses PostgreSQL ILIKE and trigram similarity for fuzzy matching. Tags matched vi
   - Commands define `pages` (route patterns) and optional `requiredPermission` ([resource, action])
   - Page components listen for `slash-command` CustomEvents for `open_dialog` and `trigger` action types
 - **Date shortcuts**: Typing DD/MM/YYYY navigates to availability calendar
+- **Open shortcuts**: `⌘K`/`Ctrl+K` toggles the palette. Bare `/` opens it pre-filled with `/` (slash-command mode) — but only when focus is **not** in an `<input>`/`<textarea>`/contentEditable, and the page does **not** render a `[data-search-input]` element (pages with their own search box opt out by tagging it, so `/` types into that box instead).
 - **Keyboard**: `Shift+↑/↓` skip children, `Tab` drill, `Esc` back, `Cmd+L` toggle children
-- **Mobile**: Full-screen dialog with safe area padding, `/` and `@` quick-access buttons
+- **Mobile**: Full-screen dialog with safe area padding, `/` and `@` quick-access buttons; mobile trigger button is a 44px touch target
 
 ## Slash Command Registry (`src/lib/slash-commands.ts`)
 - `SlashCommand` interface: `id, label, command, aliases[], description, icon, pages[], action, requiredPermission?`

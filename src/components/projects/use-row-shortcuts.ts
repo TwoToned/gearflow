@@ -8,6 +8,7 @@
  *   e → edit       (onEdit)
  *   m → move       (onMove)
  *   d → delete     (onDelete)
+ *   c → copy/close (onCopy) — optional, only bound where a natural action exists
  *
  * Returns a small object of handlers to spread onto the row's
  * <TableRow>: onMouseEnter, onMouseLeave. The hook only attaches a
@@ -30,6 +31,7 @@ export interface RowShortcutCallbacks {
   e?: () => void;
   m?: () => void;
   d?: () => void;
+  c?: () => void;
 }
 
 export function isShortcutSuppressed(): boolean {
@@ -51,15 +53,17 @@ export function isShortcutSuppressed(): boolean {
   return false;
 }
 
-export function useRowShortcuts(callbacks: RowShortcutCallbacks) {
+export function useRowShortcuts(callbacks: RowShortcutCallbacks, scope?: string) {
   const [hovered, setHovered] = useState(false);
-  const { e, m, d } = callbacks;
+  const { e, m, d, c } = callbacks;
 
   useEffect(() => {
     if (!hovered) return;
     function handler(event: KeyboardEvent) {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (isShortcutSuppressed()) return;
+      // Scope gate: only fire when the page declares the matching scope.
+      if (scope && !document.querySelector(`[data-shortcut-scope="${scope}"]`)) return;
       if (event.key === "e" && e) {
         event.preventDefault();
         e();
@@ -69,11 +73,14 @@ export function useRowShortcuts(callbacks: RowShortcutCallbacks) {
       } else if (event.key === "d" && d) {
         event.preventDefault();
         d();
+      } else if (event.key === "c" && c) {
+        event.preventDefault();
+        c();
       }
     }
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [hovered, e, m, d]);
+  }, [hovered, e, m, d, c, scope]);
 
   return {
     onMouseEnter: () => setHovered(true),

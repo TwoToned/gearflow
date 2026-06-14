@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useClient } from "@/hooks/use-clients";
 import { ClientForm } from "@/components/clients/client-form";
 import { FadeIn } from "@/components/ui/motion";
+import { FormSkeleton } from "@/components/ui/skeleton";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -21,7 +22,7 @@ export default function EditClientPage({ params }: { params: Promise<{ id: strin
   // Reactive read straight from Convex — edits by another user show live.
   const client = useClient(id);
 
-  if (client === undefined) return <div className="text-fg-3">Loading...</div>;
+  if (client === undefined) return <FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>;
   if (!client) return <div className="text-fg-3">Client not found.</div>;
 
   const initialData: ClientFormValues & { id: string } = {

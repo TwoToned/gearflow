@@ -8,6 +8,7 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { getCrewMemberById } from "@/server/crew";
 import { CrewMemberForm } from "@/components/crew/crew-member-form";
 import { FadeIn } from "@/components/ui/motion";
+import { FormSkeleton } from "@/components/ui/skeleton";
 
 export default function EditCrewMemberPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -19,7 +20,7 @@ export default function EditCrewMemberPage({ params }: { params: Promise<{ id: s
     queryFn: () => getCrewMemberById(id),
   });
 
-  if (isLoading) return <div className="text-fg-3">Loading...</div>;
+  if (isLoading) return <FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>;
   if (!member) return <div className="text-fg-3">Crew member not found.</div>;
 
   const memberName = `${member.firstName} ${member.lastName}`;

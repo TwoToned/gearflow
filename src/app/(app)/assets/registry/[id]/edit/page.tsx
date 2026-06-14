@@ -7,6 +7,7 @@ import { useAsset, useBulkAsset } from "@/hooks/use-assets";
 import { AssetForm } from "@/components/assets/asset-form";
 import { BulkAssetForm } from "@/components/assets/bulk-asset-form";
 import { FadeIn } from "@/components/ui/motion";
+import { FormSkeleton } from "@/components/ui/skeleton";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -20,7 +21,7 @@ import type { BulkAssetFormValues } from "@/lib/validations/asset";
 
 export default function EditAssetPage({ params }: { params: Promise<{ id: string }> }) {
   return (
-    <Suspense fallback={<div className="t-body text-fg-3">Loading...</div>}>
+    <Suspense fallback={<FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>}>
       <EditAssetContent params={params} />
     </Suspense>
   );
@@ -37,7 +38,7 @@ function EditAssetContent({ params }: { params: Promise<{ id: string }> }) {
   const ba = useBulkAsset(isBulk ? id : undefined);
 
   const isLoading = isBulk ? ba === undefined : asset === undefined;
-  if (isLoading) return <div className="t-body text-fg-3">Loading...</div>;
+  if (isLoading) return <FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>;
 
   if (isBulk) {
     if (!ba) return <div className="t-body text-fg-3">Bulk asset not found.</div>;

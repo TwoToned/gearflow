@@ -6,6 +6,7 @@ import { ChevronRight } from "lucide-react";
 import { useSupplier } from "@/hooks/use-suppliers";
 import { SupplierForm } from "@/components/suppliers/supplier-form";
 import { FadeIn } from "@/components/ui/motion";
+import { FormSkeleton } from "@/components/ui/skeleton";
 
 export default function EditSupplierPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -14,7 +15,7 @@ export default function EditSupplierPage({ params }: { params: Promise<{ id: str
   // useQuery against Convex is sufficient. undefined = loading, null = not found.
   const supplier = useSupplier(id);
 
-  if (supplier === undefined) return <div className="text-fg-3">Loading...</div>;
+  if (supplier === undefined) return <FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>;
   if (!supplier) return <div className="text-fg-3">Supplier not found.</div>;
 
   return (

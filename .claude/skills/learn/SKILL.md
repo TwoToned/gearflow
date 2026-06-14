@@ -1,0 +1,1 @@
+/home/jayden/code/gearflow/.claude/worktrees/bridge-cse_012mKMzxFZy5QzwJJkk2ZnTb/.claude/skills/gstack/learn/SKILL.md

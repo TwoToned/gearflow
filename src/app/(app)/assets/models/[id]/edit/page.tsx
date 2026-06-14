@@ -8,6 +8,7 @@ import { getModel } from "@/server/models";
 import { ModelForm } from "@/components/assets/model-form";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { FadeIn } from "@/components/ui/motion";
+import { FormSkeleton } from "@/components/ui/skeleton";
 import type { ModelFormValues } from "@/lib/validations/model";
 
 export default function EditModelPage({ params }: { params: Promise<{ id: string }> }) {
@@ -20,7 +21,7 @@ export default function EditModelPage({ params }: { params: Promise<{ id: string
     queryFn: () => getModel(id),
   });
 
-  if (isLoading) return <div className="t-body text-fg-3">Loading...</div>;
+  if (isLoading) return <FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>;
   if (!model) return <div className="t-body text-fg-3">Model not found.</div>;
 
   const initialData: ModelFormValues & { id: string } = {

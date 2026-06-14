@@ -6,6 +6,7 @@ import { ChevronRight } from "lucide-react";
 import { useLocation } from "@/hooks/use-locations";
 import { LocationForm } from "@/components/locations/location-form";
 import { FadeIn } from "@/components/ui/motion";
+import { FormSkeleton } from "@/components/ui/skeleton";
 import type { LocationFormValues } from "@/lib/validations/asset";
 
 export default function EditLocationPage({ params }: { params: Promise<{ id: string }> }) {
@@ -15,7 +16,7 @@ export default function EditLocationPage({ params }: { params: Promise<{ id: str
   // undefined = loading, null = not found.
   const location = useLocation(id);
 
-  if (location === undefined) return <div className="text-fg-3">Loading...</div>;
+  if (location === undefined) return <FadeIn><div className="mx-auto max-w-3xl"><FormSkeleton /></div></FadeIn>;
   if (!location) return <div className="text-fg-3">Location not found.</div>;
 
   const initialData: LocationFormValues & { id: string } = {

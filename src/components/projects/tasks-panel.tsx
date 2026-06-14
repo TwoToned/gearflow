@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -393,6 +394,7 @@ function TaskEditDialog({
   );
   const [checklist, setChecklist] = useState<ChecklistItem[]>(task.checklist ?? []);
   const [newItem, setNewItem] = useState("");
+  const isMobile = useIsMobile();
 
   function addChecklistItem() {
     const text = newItem.trim();
@@ -419,7 +421,18 @@ function TaskEditDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent
+        className={cn(
+          isMobile
+            ? "h-[100dvh] max-h-[100dvh] w-full max-w-full rounded-none border-0 overflow-y-auto"
+            : "sm:max-w-md",
+        )}
+        style={
+          isMobile
+            ? { paddingTop: "env(safe-area-inset-top, 0px)", paddingBottom: "env(safe-area-inset-bottom, 0px)" }
+            : undefined
+        }
+      >
         <DialogHeader>
           <DialogTitle>Edit task</DialogTitle>
         </DialogHeader>

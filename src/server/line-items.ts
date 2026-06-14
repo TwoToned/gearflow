@@ -22,6 +22,7 @@ import { getOrgDaysPerMonth } from "@/lib/org-pricing";
 import { UserFacingError } from "@/lib/errors";
 import { computeStockBreakdown } from "@/lib/availability";
 import { isStaleRevision } from "@/lib/collaboration-conflict";
+import { writeCollabActivityEvent } from "@/lib/collaboration-activity";
 
 /**
  * Expand a serialised asset's permanent accessories into child line items.
@@ -737,6 +738,22 @@ export async function updateLineItem(
     summary: `Updated line item on project`,
     projectId: result.projectId,
   });
+
+  await writeCollabActivityEvent(
+    { organizationId, userId, userName },
+    {
+      entityType: "project",
+      entityId: result.projectId,
+      action: "line_item_updated",
+      summary: `updated ${result.description || "a line item"}`,
+      targetType: "lineItem",
+      targetId: result.id,
+      metadata: {
+        quantity: result.quantity,
+        lineTotal: result.lineTotal?.toString?.() ?? null,
+      },
+    },
+  );
 
   await upsertProjectLineItemsToConvex(result.projectId);
   // Supplier lives in Convex — attach instead of a Prisma join.

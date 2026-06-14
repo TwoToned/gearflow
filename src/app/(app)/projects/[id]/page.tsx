@@ -37,6 +37,8 @@ import { FinancialSummary } from "@/components/projects/financial-summary";
 import { ProjectCostsPanel } from "@/components/projects/project-costs-panel";
 import { ProjectConflictsBanner } from "@/components/projects/project-conflicts-banner";
 import { ProjectManagersPanel } from "@/components/projects/project-managers-panel";
+import { PresenceAvatarStack } from "@/components/collaboration/presence-avatar-stack";
+import { ProjectCommentsButton } from "@/components/collaboration/project-comments-button";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -262,6 +264,15 @@ export default function ProjectDetailPage({
                       ))}
                     </div>
                   )}
+                  {/* Live presence — who else is viewing this project */}
+                  {orgId && !project.isTemplate && (
+                    <PresenceAvatarStack
+                      entityType="project"
+                      entityId={id}
+                      size="sm"
+                      className="ml-1"
+                    />
+                  )}
                 </div>
                 {(project.client || project.location) && (
                   <p className="mt-1 text-sm text-fg-3">
@@ -281,6 +292,9 @@ export default function ProjectDetailPage({
 
               {/* Action buttons */}
               <div className="flex flex-wrap gap-2">
+                {orgId && !project.isTemplate && (
+                  <ProjectCommentsButton orgId={orgId} projectId={id} />
+                )}
                 {!project.isTemplate && (
                   <Button variant="outline" size="sm" render={<Link href={`/warehouse/${id}`} />}>
                     <Warehouse className="mr-2 h-4 w-4" />

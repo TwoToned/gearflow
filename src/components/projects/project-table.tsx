@@ -2,8 +2,10 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
+import { useQuery } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 import { useServerQuery } from "@/hooks/use-server-query";
-import { Plus, AlertTriangle } from "lucide-react";
+import { Plus, AlertTriangle, ShieldAlert } from "lucide-react";
 
 import { getProjectIssueFlags } from "@/server/projects";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -110,6 +112,9 @@ const projectColumns: ColumnDef<AnyProject>[] = [
           </Link>
           {row._issueFlags && (
             <ProjectIssueBadge issues={row._issueFlags} />
+          )}
+          {row._blockingCount > 0 && (
+            <ProjectBlockingBadge count={row._blockingCount} />
           )}
         </div>
         {row.client?.name && (
@@ -330,9 +335,21 @@ export function ProjectTable() {
     enabled: projectIds.length > 0,
   });
 
+  // Blocking-comment counts — reactive so a blocker raised elsewhere lights up
+  // the badge immediately. Scoped to the current page's project ids.
+  const blockingCounts = useQuery(
+    api.collaboration.listBlockingForProjects,
+    orgId && projectIds.length > 0 ? { orgId, projectIds } : "skip",
+  ) as Record<string, number> | undefined;
+
   const enrichedProjects = useMemo(
-    () => (paged ?? []).map((p) => ({ ...p, _issueFlags: issueFlags?.[p.id] ?? null })),
-    [paged, issueFlags],
+    () =>
+      (paged ?? []).map((p) => ({
+        ...p,
+        _issueFlags: issueFlags?.[p.id] ?? null,
+        _blockingCount: blockingCounts?.[p.id] ?? 0,
+      })),
+    [paged, issueFlags, blockingCounts],
   );
 
   const toolbarActions = (
@@ -369,6 +386,22 @@ export function ProjectTable() {
       emptyPreset="projects"
       toolbarActions={toolbarActions}
     />
+  );
+}
+
+function ProjectBlockingBadge({ count }: { count: number }) {
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger className="inline-flex items-center gap-0.5 rounded-full bg-red-500/10 px-1.5 py-0.5 text-[10px] font-medium text-red-600">
+          <ShieldAlert className="h-3 w-3" />
+          {count}
+        </TooltipTrigger>
+        <TooltipContent>
+          {count} unresolved blocking comment{count === 1 ? "" : "s"} — prep &amp; send-out are gated
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 

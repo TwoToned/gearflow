@@ -6,6 +6,7 @@ import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { syncAssetsToConvex } from "@/lib/asset-mirror";
 import { upsertProjectLineItemsToConvex } from "@/lib/line-item-mirror";
+import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
 import { getModelMap, getModelById, type ConvexModel } from "@/lib/models-read";
 import { getModelCheckItemCountMap } from "@/lib/line-item-tree-read";
 import {
@@ -189,6 +190,11 @@ export async function pullItem(projectId: string, lineItemId: string) {
   if (!lineItem) {
     throw new Error("Line item not found in project");
   }
+
+  await assertNoBlockingComments(organizationId, projectId, {
+    lineItemId,
+    actionLabel: "pull this item",
+  });
 
   const result = await prisma.projectLineItem.update({
     where: { id: lineItemId },

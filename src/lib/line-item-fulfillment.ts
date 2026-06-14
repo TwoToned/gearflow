@@ -158,9 +158,12 @@ export function assetStatusFromReturnCondition(
  * Three modes:
  *   - `assetId` given → return exactly that asset's unit (scan flow).
  *   - `bulkAssetId` given → accumulate quantity onto the bulk unit row.
- *   - Neither → "return whole line": find every still-out unit and
- *     flip each. Falls back to flipping the order line directly if no
- *     units exist (kit children + legacy lines).
+ *   - Neither → return still-out units on the line. When `quantity` is
+ *     given (the warehouse UI when the user ticks N of M identical
+ *     units) flip exactly that many, lowest ordinal first; without a
+ *     quantity flip every still-out unit ("return whole line"). Falls
+ *     back to flipping the order line directly if no units exist (kit
+ *     children + legacy lines).
  *
  * Caller is responsible for the `requirePermission` check and the
  * surrounding $transaction. This function MUST run inside one. Caller
@@ -277,12 +280,16 @@ export async function returnLineUnits(
     return { unitsFlipped: unit ? 1 : 0, assetsTouched: [] };
   }
 
-  // ── 3. Return-whole-line ───────────────────────────────────────
-  // No specific asset and no line-level bulk: find every still-out
-  // unit on this line and flip each. If there are none, the line is
-  // a kit child / generic — flip the line itself.
+  // ── 3. Partial or whole-line return ────────────────────────────
+  // No specific asset and no line-level bulk: flip still-out units on
+  // this line. A caller that passes `quantity` (the warehouse UI when
+  // the user ticks N of M identical units) flips exactly that many,
+  // lowest ordinal first; without a quantity every still-out unit is
+  // flipped ("return whole line"). If there are no units the line is a
+  // kit child / generic — flip the line itself.
   const outUnits = await tx.projectLineItemUnit.findMany({
     where: { lineItemId: lineItem.id, status: "CHECKED_OUT" },
+    orderBy: { ordinal: "asc" },
   });
   if (outUnits.length === 0) {
     await tx.projectLineItem.update({
@@ -298,8 +305,12 @@ export async function returnLineUnits(
     });
     return { unitsFlipped: 0, assetsTouched: [] };
   }
+  const unitsToFlip =
+    args.quantity != null
+      ? outUnits.slice(0, Math.max(0, Math.min(args.quantity, outUnits.length)))
+      : outUnits;
   const assetsTouched: string[] = [];
-  for (const u of outUnits) {
+  for (const u of unitsToFlip) {
     await tx.projectLineItemUnit.update({
       where: { id: u.id },
       data: {
@@ -319,7 +330,7 @@ export async function returnLineUnits(
       assetsTouched.push(u.assetId);
     }
   }
-  return { unitsFlipped: outUnits.length, assetsTouched };
+  return { unitsFlipped: unitsToFlip.length, assetsTouched };
 }
 
 /**

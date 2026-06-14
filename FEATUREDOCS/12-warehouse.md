@@ -71,6 +71,9 @@ parallel to the Return tab — the per-parent flow is unchanged. See
    - DAMAGED → asset status `IN_MAINTENANCE`, disconnects
    - MISSING → asset status `LOST`, disconnects
 3. For kit/prep-kit: `checkInKit` atomically reverses deployment
+
+**Partial return of identical units.** A single order line of N identical serialised units (e.g. "SM58 x4") has no line-level `assetId` and no `bulkAssetId` — the assets live on the per-unit `ProjectLineItemUnit` rows. Ticking some-but-not-all units in the return tab sends `{ lineItemId, quantity: K }` with no `assetId`, which lands in `returnLineUnits`' whole-line branch. That branch honours `quantity`: it flips exactly K still-out units (lowest ordinal first) and leaves the rest deployed; omitting `quantity` flips every still-out unit ("return whole line"). Bug history: the branch used to ignore `quantity` and flip all N units, so ticking one of four returned all four (fixed + regression-tested in `line-item-fulfillment.int.test.ts`). The checkout side already honoured the count via `expandPrepUnitAssignments`.
+
 4. Returning a parent asset cascades the return to its permanent accessories via `checkinAccessoryChildren` (`line-item-fulfillment.ts`) — shared, so both `checkInItems` AND the **check-and-store** flow (`completeCheckAndStore`) release the accessories; de-prep also clears them from the deploy-staging board. On a multi-quantity model line, the cascade is **scoped to the returned unit** (`returnedAssetId`): serialised accessories return only with their own host asset, and the shared bulk accessory clears one unit's share per return, fully releasing once every host unit is back. The cascade only fires when the parent return actually flipped a unit (`unitsFlipped > 0`), so re-scanning an already-returned unit can't double-return the shared accessory. See [Child Assets / Accessories](./48-child-assets-accessories.md).
 
 ## Kit Verification

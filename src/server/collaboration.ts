@@ -2,7 +2,7 @@
 
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
-import { getOrgContext } from "@/lib/org-context";
+import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getUserColor } from "@/lib/collaboration-colors";
 import { serialize } from "@/lib/serialize";
 
@@ -144,6 +144,9 @@ export async function createThread(
   options?: { isBlocking?: boolean; mentionUserIds?: string[]; projectId?: string }
 ) {
   const ctx = await getOrgContext();
+  if (options?.isBlocking) {
+    await requirePermission("project", "manage_line_items");
+  }
   const userColor = getUserColor(ctx.userId);
   const convex = await getConvexClient();
   const threadId = await convex.mutation(api.collaboration.createThread, {
@@ -185,6 +188,7 @@ export async function addComment(
 
 export async function setThreadBlocking(threadId: string, isBlocking: boolean) {
   const ctx = await getOrgContext();
+  await requirePermission("project", "manage_line_items");
   const convex = await getConvexClient();
   await convex.mutation(api.collaboration.setThreadBlocking, {
     orgId: ctx.organizationId,

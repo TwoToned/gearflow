@@ -935,6 +935,13 @@ export async function checkOutItems(
 ) {
   const { organizationId, userId, userName } = await requirePermission("warehouse", "check_out");
 
+  // Block send-out while any blocking comment on the project is unresolved.
+  // Do this before opening the Prisma transaction so a Convex read never holds
+  // a database connection hostage.
+  await assertNoBlockingComments(organizationId, projectId, {
+    actionLabel: "check out items",
+  });
+
   const touchedAssetIds = new Set<string>();
   const results = await prisma.$transaction(async (tx) => {
     const updated: unknown[] = [];

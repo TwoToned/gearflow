@@ -89,7 +89,16 @@ export async function assertNoBlockingComments(
   projectId: string,
   opts?: { lineItemId?: string; actionLabel?: string },
 ): Promise<void> {
-  const summary = await getProjectBlockingSummary(orgId, projectId);
+  let summary: ProjectBlockingSummary;
+  try {
+    summary = await getProjectBlockingSummary(orgId, projectId);
+  } catch (error) {
+    console.error("Failed to read blocking comments before warehouse action", error);
+    throw new Error(
+      "Can't verify blocking comments right now, so this action is paused. Try again once collaboration status is reachable.",
+    );
+  }
+
   if (summary.count === 0) return;
 
   const action = opts?.actionLabel ?? "continue";

@@ -6,11 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.19.5.1] - 2026-06-14
 
-### Changed
-- Added an approved design doc for the warehouse linear-flow rework (Pick/Prep →
-  Prepped → Deployed → Returned → Depreped, with a Tabs/Kanban toggle). Planning
-  only — no user-facing behaviour changes yet; the implementation lands in a later
-  release. Captures the fix for returned gear reappearing in Pick/Prep.
+### Added
+- **The warehouse board now reads as one left-to-right flow: Pick/Prep → Prepped
+  → Deployed → Returned → Depreped.** Returned gear gets its own "Returned" stage
+  (and a "Depreped" stage once it's put away), so you can tell at a glance what
+  has actually come back versus what never went out.
+
+### Fixed
+- **Returned gear no longer reappears in Pick/Prep looking like it never shipped.**
+  An item returned early used to fall back into the first tab; it now lands in the
+  new Returned stage. Depreping returned gear also no longer wipes its return
+  record (it used to be able to silently revert the item to "not yet prepped").
 
 ## [0.19.5.0] - 2026-06-14
 

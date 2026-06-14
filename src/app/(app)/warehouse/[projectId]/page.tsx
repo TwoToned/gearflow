@@ -21,6 +21,8 @@ import {
   ChevronDown,
   ExternalLink,
   Layers,
+  Undo2,
+  Archive,
 } from "lucide-react";
 import { toast } from "sonner";
 import { showError } from "@/lib/show-error";
@@ -84,6 +86,8 @@ import { BulkCheckInTab } from "@/components/warehouse/bulk-checkin-tab";
 import { PickPrepTab } from "@/components/warehouse/pick-prep-tab";
 import { DeployTab } from "@/components/warehouse/deploy-tab";
 import { ReturnTab } from "@/components/warehouse/return-tab";
+import { StageItemsTab } from "@/components/warehouse/stage-items-tab";
+import { belongsInStage } from "@/lib/warehouse-stage";
 import type { LineItem, AvailableAsset, GroupEntry } from "@/components/warehouse/warehouse-types";
 import {
   isBulkItem,
@@ -291,7 +295,11 @@ function WarehouseProjectPage({
   const { projectId } = use(params);
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const initialTab = tabParam === "check-in" ? "check-in" : tabParam === "check-out" ? "check-out" : tabParam === "close-out" ? "close-out" : "pick-prep";
+  // Stable tab value keys preserve existing ?tab= deep links (check-out =
+  // Prepped, check-in = Deployed) while the visible labels move to the
+  // left-to-right stage names. New stages add their own keys.
+  const VALID_TABS = ["pick-prep", "check-out", "check-in", "returned", "depreped", "bulk-checkin", "close-out"];
+  const initialTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : "pick-prep";
   const scanInputRef = useRef<HTMLInputElement>(null);
   const deployScanInputRef = useRef<HTMLInputElement>(null);
   const returnScanInputRef = useRef<HTMLInputElement>(null);
@@ -1301,73 +1309,30 @@ function WarehouseProjectPage({
     return true;
   });
 
-  // Pick/Prep: items that need to be picked and prepped (not yet PACKED)
-  const pickPrepItems = equipmentItems.filter((item) => {
-    if (item.status === "CANCELLED") return false;
-    if (item.status === "CHECKED_OUT") return false;
-    // Kit parents: show if any children still need prepping
-    if (isKitParent(item)) {
-      const children = (item.childLineItems || []) as LineItem[];
-      return children.some((c) => {
-        if (c.status === "CHECKED_OUT" || c.status === "CANCELLED") return false;
-        if (c.prepStatus === "PACKED") return false;
-        // Nested kit: check grandchildren too
-        if (c.kitId && c.childLineItems?.length) {
-          return (c.childLineItems as LineItem[]).some(
-            (gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED" && gc.prepStatus !== "PACKED"
-          );
-        }
-        return true;
-      });
-    }
-    // After prep-splitting, exhausted originals have qty=0 — hide them
-    if (item.quantity <= 0) return false;
-    if (item.prepStatus === "PACKED") return false;
-    if (item.status === "RETURNED") return true;
-    return true;
-  });
+  // Warehouse lifecycle stages come from the shared, unit-aware stage model
+  // (src/lib/warehouse-stage.ts) so tabs, counts and any future board can't
+  // drift. Stage membership is quantity-aware: a partially-returned line is in
+  // BOTH Deployed and Returned. See docs/designs/warehouse-linear-flow.md.
 
-  // Deploy: items that are prepped (PACKED) but not yet deployed (CHECKED_OUT)
-  const preppedItems = equipmentItems.filter((item) => {
-    if (item.status === "CANCELLED") return false;
-    if (item.status === "CHECKED_OUT") return false;
-    // Kit parents: show if any children are prepped but not deployed
-    if (isKitParent(item)) {
-      const children = (item.childLineItems || []) as LineItem[];
-      return children.some((c) => {
-        if (c.status === "CHECKED_OUT" || c.status === "CANCELLED") return false;
-        if (c.prepStatus === "PACKED") return true;
-        if (c.kitId && c.childLineItems?.length) {
-          return (c.childLineItems as LineItem[]).some(
-            (gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED" && gc.prepStatus === "PACKED"
-          );
-        }
-        return false;
-      });
-    }
-    if (item.quantity <= 0) return false;
-    return item.prepStatus === "PACKED";
-  });
+  // Pick/Prep: still needs pick/pack. Crucially excludes RETURNED (the old leak
+  // that made returned gear look like it never shipped).
+  const pickPrepItems = equipmentItems.filter((item) => belongsInStage(item, "PICK_PREP"));
+
+  // Prepped: packed and staged, not yet deployed (excludes RETURNED-packed gear,
+  // which now lives in the Returned stage).
+  const preppedItems = equipmentItems.filter((item) => belongsInStage(item, "PREPPED"));
 
   // Keep old name for compatibility with deploy tab selection logic
   const checkOutItemsList = preppedItems;
 
-  const checkedOutItems = equipmentItems.filter((item) => {
-    // Kit parents: show in return tab if any children/grandchildren are deployed
-    if (isKitParent(item)) {
-      const children = (item.childLineItems || []) as LineItem[];
-      return children.some((c) => {
-        if (c.status === "CHECKED_OUT") return true;
-        // Nested kit: check grandchildren too
-        if (c.kitId && c.childLineItems?.length) {
-          return (c.childLineItems as LineItem[]).some((gc) => gc.status === "CHECKED_OUT");
-        }
-        return false;
-      });
-    }
-    if (isBulkItem(item)) return item.status === "CHECKED_OUT" && item.checkedOutQuantity > item.returnedQuantity;
-    return item.status === "CHECKED_OUT";
-  });
+  // Deployed: units currently out (still on site, not yet returned).
+  const checkedOutItems = equipmentItems.filter((item) => belongsInStage(item, "DEPLOYED"));
+
+  // Returned: came back, awaiting deprep (prepStatus PACKED or a FLAGGED_* hold).
+  const returnedItems = equipmentItems.filter((item) => belongsInStage(item, "RETURNED"));
+
+  // Depreped: returned gear put away (prepStatus PENDING). Terminal per-item stage.
+  const deprepedItems = equipmentItems.filter((item) => belongsInStage(item, "DEPREPED"));
 
   const groupedPrep = groupItems(pickPrepItems);
   const groupedOut = groupItems(checkOutItemsList, "deploy");
@@ -1702,6 +1667,111 @@ function WarehouseProjectPage({
 
   // --- Checkout / Checkin selected ---
   // Deploy selected prepped items (no checks needed — items are already prepped)
+  // Deprep handler — shared by the Prepped tab (backward "packed by mistake"
+  // undo) and the Returned tab (forward put-away). Returned items with model
+  // check items route through a RETURN check queue; others deprep directly. The
+  // server's deprep paths preserve RETURNED units (the return record).
+  const handleDeprep = (ids: Set<string>) => {
+    if (ids.size === 0) return;
+    const bulkDeprepMap = new Map<string, number>();
+    const directIds: string[] = [];
+    ids.forEach((id) => {
+      if (id.includes(":")) {
+        const lineItemId = id.split(":")[0];
+        bulkDeprepMap.set(lineItemId, (bulkDeprepMap.get(lineItemId) || 0) + 1);
+      } else {
+        directIds.push(id);
+      }
+    });
+
+    // Build a RETURN check queue for returned items that have check items on their model.
+    // Items that were never deployed (outbound deprep) or have no check items bypass this
+    // entirely. Damaged items (prepStatus FLAGGED_FAULTY) also skip the second check.
+    const checkQueueBuild: CheckQueueItem[] = [];
+    const directDeprep: Array<{ lineItemId: string; quantity?: number; isKit?: boolean }> = [];
+
+    for (const [lineItemId, count] of bulkDeprepMap) {
+      const li = lineItems.find((l) => l.id === lineItemId);
+      const needsCheck =
+        li?.status === "RETURNED" &&
+        li.prepStatus === "PACKED" &&
+        !!li.model?._count?.modelCheckItems &&
+        li.model._count.modelCheckItems > 0 &&
+        !!li.modelId;
+      if (needsCheck && li) {
+        for (let i = 0; i < count; i++) {
+          checkQueueBuild.push({
+            context: "RETURN",
+            modelId: li.modelId!,
+            assetTag: li.asset?.assetTag || li.bulkAsset?.assetTag || "",
+            assetName: `${modelDisplayName(li)}${count > 1 ? ` #${i + 1}` : ""}`,
+            lineItemId,
+            assetId: li.assetId || "",
+            bulkAssetId: li.bulkAssetId || undefined,
+            fromDeprep: true,
+          });
+        }
+      } else {
+        directDeprep.push({ lineItemId, quantity: count });
+      }
+    }
+
+    for (const id of directIds) {
+      const li = lineItems.find((l) => l.id === id);
+      if (li && isKitParent(li)) {
+        // Kit deprep with checks: respects KIT_LEVEL / PER_ITEM via startKitCheckFlow
+        if (li.status === "RETURNED" && startKitCheckFlow(li.kitId!, li, "RETURN", "GOOD", true)) {
+          continue;
+        }
+        directDeprep.push({ lineItemId: id, isKit: true });
+      } else {
+        const needsCheck =
+          li?.status === "RETURNED" &&
+          li.prepStatus === "PACKED" &&
+          !!li.model?._count?.modelCheckItems &&
+          li.model._count.modelCheckItems > 0 &&
+          !!li.modelId;
+        if (needsCheck && li) {
+          checkQueueBuild.push({
+            context: "RETURN",
+            modelId: li.modelId!,
+            assetTag: li.asset?.assetTag || li.bulkAsset?.assetTag || "",
+            assetName: modelDisplayName(li),
+            lineItemId: id,
+            assetId: li.assetId || "",
+            bulkAssetId: li.bulkAssetId || undefined,
+            fromDeprep: true,
+          });
+        } else {
+          directDeprep.push({ lineItemId: id });
+        }
+      }
+    }
+
+    // Fire direct deprep for items without checks
+    for (const d of directDeprep) {
+      if (d.isKit) {
+        deprepKit(projectId, d.lineItemId)
+          .then(() => {
+            toast.success("Kit removed from prep");
+            invalidate();
+          })
+          .catch((e) => showError(e, { fallbackTitle: "Failed to deprep kit" }));
+      } else if (d.quantity) {
+        deprepMutation.mutate({ lineItemId: d.lineItemId, quantity: d.quantity });
+      } else {
+        deprepMutation.mutate(d.lineItemId);
+      }
+    }
+
+    // Start check queue for items that need it
+    if (checkQueueBuild.length > 0) {
+      startCheckQueue(checkQueueBuild);
+    }
+
+    setSelectedOut(new Set());
+  };
+
   const handleCheckOutSelected = async () => {
     const bulkQtyMap = new Map<string, number>();
     const serializedLineItemIds: string[] = [];
@@ -2111,11 +2181,19 @@ function WarehouseProjectPage({
           </TabsTrigger>
           <TabsTrigger value="check-out">
             <PackageCheck className="mr-1.5 h-4 w-4" />
-            Deploy ({preppedItems.length})
+            Prepped ({preppedItems.length})
           </TabsTrigger>
           <TabsTrigger value="check-in">
             <PackageX className="mr-1.5 h-4 w-4" />
-            Return ({checkedOutItems.length})
+            Deployed ({checkedOutItems.length})
+          </TabsTrigger>
+          <TabsTrigger value="returned">
+            <Undo2 className="mr-1.5 h-4 w-4" />
+            Returned ({returnedItems.length})
+          </TabsTrigger>
+          <TabsTrigger value="depreped">
+            <Archive className="mr-1.5 h-4 w-4" />
+            Depreped ({deprepedItems.length})
           </TabsTrigger>
           <TabsTrigger value="bulk-checkin">
             <Layers className="mr-1.5 h-4 w-4" />
@@ -2176,106 +2254,7 @@ function WarehouseProjectPage({
           includeAccessories={includeAccessories}
           onIncludeAccessoriesChange={setIncludeAccessories}
           handleCheckOutSelected={handleCheckOutSelected}
-          handleDeprep={(ids) => {
-            if (ids.size === 0) return;
-            const bulkDeprepMap = new Map<string, number>();
-            const directIds: string[] = [];
-            ids.forEach((id) => {
-              if (id.includes(":")) {
-                const lineItemId = id.split(":")[0];
-                bulkDeprepMap.set(lineItemId, (bulkDeprepMap.get(lineItemId) || 0) + 1);
-              } else {
-                directIds.push(id);
-              }
-            });
-
-            // Build a RETURN check queue for returned items that have check items on their model.
-            // Items that were never deployed (outbound deprep) or have no check items bypass this
-            // entirely. Damaged items (prepStatus FLAGGED_FAULTY) also skip the second check.
-            const checkQueueBuild: CheckQueueItem[] = [];
-            const directDeprep: Array<{ lineItemId: string; quantity?: number; isKit?: boolean }> = [];
-
-            for (const [lineItemId, count] of bulkDeprepMap) {
-              const li = lineItems.find((l) => l.id === lineItemId);
-              const needsCheck =
-                li?.status === "RETURNED" &&
-                li.prepStatus === "PACKED" &&
-                !!li.model?._count?.modelCheckItems &&
-                li.model._count.modelCheckItems > 0 &&
-                !!li.modelId;
-              if (needsCheck && li) {
-                for (let i = 0; i < count; i++) {
-                  checkQueueBuild.push({
-                    context: "RETURN",
-                    modelId: li.modelId!,
-                    assetTag: li.asset?.assetTag || li.bulkAsset?.assetTag || "",
-                    assetName: `${modelDisplayName(li)}${count > 1 ? ` #${i + 1}` : ""}`,
-                    lineItemId,
-                    assetId: li.assetId || "",
-                    bulkAssetId: li.bulkAssetId || undefined,
-                    fromDeprep: true,
-                  });
-                }
-              } else {
-                directDeprep.push({ lineItemId, quantity: count });
-              }
-            }
-
-            for (const id of directIds) {
-              const li = lineItems.find((l) => l.id === id);
-              if (li && isKitParent(li)) {
-                // Kit deprep with checks: respects KIT_LEVEL / PER_ITEM via startKitCheckFlow
-                if (li.status === "RETURNED" && startKitCheckFlow(li.kitId!, li, "RETURN", "GOOD", true)) {
-                  continue;
-                }
-                directDeprep.push({ lineItemId: id, isKit: true });
-              } else {
-                const needsCheck =
-                  li?.status === "RETURNED" &&
-                  li.prepStatus === "PACKED" &&
-                  !!li.model?._count?.modelCheckItems &&
-                  li.model._count.modelCheckItems > 0 &&
-                  !!li.modelId;
-                if (needsCheck && li) {
-                  checkQueueBuild.push({
-                    context: "RETURN",
-                    modelId: li.modelId!,
-                    assetTag: li.asset?.assetTag || li.bulkAsset?.assetTag || "",
-                    assetName: modelDisplayName(li),
-                    lineItemId: id,
-                    assetId: li.assetId || "",
-                    bulkAssetId: li.bulkAssetId || undefined,
-                    fromDeprep: true,
-                  });
-                } else {
-                  directDeprep.push({ lineItemId: id });
-                }
-              }
-            }
-
-            // Fire direct deprep for items without checks
-            for (const d of directDeprep) {
-              if (d.isKit) {
-                deprepKit(projectId, d.lineItemId)
-                  .then(() => {
-                    toast.success("Kit removed from prep");
-                    invalidate();
-                  })
-                  .catch((e) => showError(e, { fallbackTitle: "Failed to deprep kit" }));
-              } else if (d.quantity) {
-                deprepMutation.mutate({ lineItemId: d.lineItemId, quantity: d.quantity });
-              } else {
-                deprepMutation.mutate(d.lineItemId);
-              }
-            }
-
-            // Start check queue for items that need it
-            if (checkQueueBuild.length > 0) {
-              startCheckQueue(checkQueueBuild);
-            }
-
-            setSelectedOut(new Set());
-          }}
+          handleDeprep={handleDeprep}
           deprepIsPending={deprepMutation.isPending}
           clearContainerMutate={(c) => clearContainerMutation.mutate(c)}
           clearContainerIsPending={clearContainerMutation.isPending}
@@ -2314,6 +2293,27 @@ function WarehouseProjectPage({
           toggleGroupSelection={toggleGroupSelection}
           toggleAll={toggleAll}
           renderGroupHeader={renderGroupHeader}
+        />
+
+        {/* Returned Tab — gear that has come back, awaiting deprep (put-away). */}
+        <StageItemsTab
+          value="returned"
+          stage="RETURNED"
+          items={returnedItems}
+          emptyLabel="Nothing returned yet — returned gear lands here, separate from what never went out."
+          action={{
+            label: "Deprep",
+            onRun: handleDeprep,
+            isPending: deprepMutation.isPending,
+          }}
+        />
+
+        {/* Depreped Tab — returned gear put away (read-only). */}
+        <StageItemsTab
+          value="depreped"
+          stage="DEPREPED"
+          items={deprepedItems}
+          emptyLabel="Nothing depreped yet — gear shows here once it's been put away."
         />
 
         {/* ================================================================ */}

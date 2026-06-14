@@ -333,12 +333,25 @@ export async function deprepItem(
       throw new Error("Item is already deployed — return it first");
     }
 
-    // Clean up the unit rows. Post-cutover, prep creates a unit per
-    // assigned asset (and marks it PACKED); deprep needs to remove
-    // them or the asset stays "stuck" on the line — visible in the
-    // project view, on dockets, and blocking the asset from being
-    // reassigned to a different line / project. Without this the
-    // line.prepStatus reset is cosmetic.
+    // Forward deprep of a RETURNED line (Returned → Depreped): the units carry
+    // the return record (returnedQuantity, condition). NEVER delete them — that
+    // would roll returnedQuantity back to 0 and revert the line to CONFIRMED,
+    // making returned gear reappear in Pick/Prep as if it never shipped (the
+    // exact bug the linear-flow rework kills). Instead, just clear their stale
+    // PACKED prepStatus so the rollup keeps the line in Depreped instead of
+    // promoting it back to PACKED/Returned.
+    if (lineItem.status === "RETURNED") {
+      await tx.projectLineItemUnit.updateMany({
+        where: { lineItemId, status: "RETURNED", prepStatus: "PACKED" },
+        data: { prepStatus: "PENDING" },
+      });
+    }
+
+    // Backward deprep of a not-yet-shipped line ("packed by mistake"): remove the
+    // prep unit rows or the asset stays "stuck" on the line — visible in the
+    // project view, on dockets, and blocking the asset from being reassigned.
+    // RETURNED units are excluded (handled above) so a return record is never
+    // destroyed even if this path runs on a returned line.
     //
     // asset.status is left alone — prep never marked it CHECKED_OUT,
     // so it's still AVAILABLE. The unit row carries the assignment;
@@ -346,7 +359,7 @@ export async function deprepItem(
     const preppedUnits = await tx.projectLineItemUnit.findMany({
       where: {
         lineItemId,
-        status: { not: "CHECKED_OUT" },
+        status: { notIn: ["CHECKED_OUT", "RETURNED"] },
       },
       orderBy: { ordinal: "desc" },
       select: { id: true, quantity: true, bulkAssetId: true, assetId: true },
@@ -522,6 +535,22 @@ export async function completeCheckAndDeprep(data: {
           : {}),
       },
       include: { asset: true, bulkAsset: true },
+    });
+
+    // Clear the parent line's own RETURNED units' stale PACKED prepStatus. The
+    // line update above set line.prepStatus=PENDING, but if the returned units
+    // keep prepStatus=PACKED a later syncLineItemRollup would derive the line
+    // back to PACKED (deriveOrderLinePrepStatus) and bounce it from Depreped
+    // back into Returned. Scope to the returned asset when known.
+    await tx.projectLineItemUnit.updateMany({
+      where: {
+        lineItemId: data.lineItemId,
+        organizationId,
+        status: "RETURNED",
+        prepStatus: "PACKED",
+        ...(resolvedAssetId ? { assetId: resolvedAssetId } : {}),
+      },
+      data: { prepStatus: "PENDING" },
     });
 
     // Permanent accessories de-prep with their parent so they don't linger in

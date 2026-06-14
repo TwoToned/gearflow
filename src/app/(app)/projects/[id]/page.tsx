@@ -81,6 +81,7 @@ import { FadeIn } from "@/components/ui/motion";
 import { DateRangeBar } from "@/components/ui/sparkline";
 import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
+import { ProjectActivityFeed } from "@/components/collaboration/activity-feed";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 
 const projectStatusLabels: Record<string, string> = {
@@ -827,7 +828,20 @@ export default function ProjectDetailPage({
                   </div>
                 </SidebarSection>
 
-                {/* Activity Timeline */}
+                {/* Realtime collaboration feed (comments, blocking, reviews) */}
+                {orgId && !project.isTemplate && (
+                  <SidebarSection title="Collaboration" divider={false}>
+                    <ProjectActivityFeed
+                      orgId={orgId}
+                      entityType="project"
+                      entityId={id}
+                      limit={20}
+                      emptyText="No collaboration activity yet."
+                    />
+                  </SidebarSection>
+                )}
+
+                {/* Legacy audit timeline */}
                 <SidebarSection title="Activity" divider={false}>
                   <ActivityTimeline entityType="project" entityId={id} />
                 </SidebarSection>

@@ -25,6 +25,8 @@ import { projectStatusLabels, clientTypeLabels, formatLabel } from "@/lib/status
 import { formatCurrency } from "@/lib/formatters";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
+import { PresenceAvatarStack } from "@/components/collaboration/presence-avatar-stack";
+import { EntityCommentsButton } from "@/components/collaboration/entity-comments-button";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { NotesEditor } from "@/components/ui/notes-editor";
 import { addClientMedia, removeClientMedia } from "@/server/client-media";
@@ -115,24 +117,32 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                   {client.contactEmail && <> &middot; {client.contactEmail}</>}
                 </p>
               </div>
-              <CanDo resource="client" action="update">
-                <div className="flex gap-2">
-                  <Button variant="outline" render={<Link href={`/clients/${id}/edit`} />}>
-                    <Pencil className="mr-2 h-4 w-4" />
-                    Edit
-                  </Button>
-                  {client.isActive && (
-                    <Button
-                      variant="outline"
-                      className="text-destructive"
-                      onClick={() => setArchiveOpen(true)}
-                    >
-                      <Archive className="mr-2 h-4 w-4" />
-                      Archive
+              <div className="flex items-center gap-2">
+                {orgId && (
+                  <PresenceAvatarStack entityType="client" entityId={id} size="sm" />
+                )}
+                {orgId && (
+                  <EntityCommentsButton orgId={orgId} entityType="client" entityId={id} />
+                )}
+                <CanDo resource="client" action="update">
+                  <div className="flex gap-2">
+                    <Button variant="outline" render={<Link href={`/clients/${id}/edit`} />}>
+                      <Pencil className="mr-2 h-4 w-4" />
+                      Edit
                     </Button>
-                  )}
-                </div>
-              </CanDo>
+                    {client.isActive && (
+                      <Button
+                        variant="outline"
+                        className="text-destructive"
+                        onClick={() => setArchiveOpen(true)}
+                      >
+                        <Archive className="mr-2 h-4 w-4" />
+                        Archive
+                      </Button>
+                    )}
+                  </div>
+                </CanDo>
+              </div>
             </div>
           </div>
 

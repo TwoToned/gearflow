@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState, useCallback, useEffect } from "react";
+import { useQuery } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import {
@@ -111,6 +113,7 @@ import {
   type OverbookedInfo,
 } from "./equipment-rows";
 import { useSelection } from "./use-selection";
+import { targetKey } from "@/lib/collaboration-targets";
 
 interface EquipmentTabProps {
   projectId: string;
@@ -128,6 +131,28 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   // category Convex tables and re-fetch the equipment composites whenever
   // another tab (or collaborator) edits pricing, moves items, or changes groups.
   useProjectEquipmentLiveSync(projectId, orgId);
+
+  // Passive section/group collaboration state: one lock subscription and one
+  // comment-count subscription for the project, then row lookups by target key.
+  // This avoids mounting active edit-lock hooks for every group row.
+  const sectionLocks = useQuery(
+    api.collaboration.listLocksForEntity,
+    orgId ? { orgId, entityType: "project", entityId: projectId } : "skip"
+  );
+  const commentCounts = useQuery(
+    api.collaboration.listThreadCommentCounts,
+    orgId ? { orgId, entityType: "project", entityId: projectId } : "skip"
+  ) as Record<string, { open: number; total: number; blockingOpen: number }> | undefined;
+  const lockByTarget = React.useMemo(
+    () =>
+      new Map(
+        (sectionLocks ?? []).map((lock) => [
+          targetKey({ targetType: lock.targetType, targetId: lock.targetId }),
+          { name: lock.ownerName, color: lock.ownerColor },
+        ])
+      ),
+    [sectionLocks]
+  );
 
   // The sortable ID currently being hovered with a disallowed drop (Drop
   // Matrix 8C). Cleared on drag end / leave. Row components read this to
@@ -932,6 +957,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                       {/* Category label row — sortable */}
                       <CategoryRow
                         cat={cat}
+                        lockedBy={lockByTarget.get(targetKey({ targetType: "category", targetId: cat.id })) ?? null}
                         onRename={() => {
                           setRenameCategoryId(cat.id);
                           setRenameCategoryValue(cat.name);
@@ -1040,6 +1066,13 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                               group={group}
                               isExpanded={isExpanded}
                               indented
+                              orgId={orgId}
+                              projectId={projectId}
+                              lockedBy={lockByTarget.get(targetKey({ targetType: "group", targetId: group.id })) ?? null}
+                              commentBadge={{
+                                open: commentCounts?.[group.id]?.open ?? 0,
+                                blocking: commentCounts?.[group.id]?.blockingOpen ?? 0,
+                              }}
                               isRejectedDropTarget={rejectedDropTargetId === `grp-${group.id}`}
                               showCostColumn={showCostColumn}
                               onToggle={() => toggleGroup(group.id)}
@@ -1201,6 +1234,13 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                       <GroupRow
                         group={group}
                         isExpanded={isExpanded}
+                        orgId={orgId}
+                        projectId={projectId}
+                        lockedBy={lockByTarget.get(targetKey({ targetType: "group", targetId: group.id })) ?? null}
+                        commentBadge={{
+                          open: commentCounts?.[group.id]?.open ?? 0,
+                          blocking: commentCounts?.[group.id]?.blockingOpen ?? 0,
+                        }}
                         isRejectedDropTarget={rejectedDropTargetId === `grp-${group.id}`}
                         showCostColumn={showCostColumn}
                         onToggle={() => toggleGroup(group.id)}
@@ -1475,6 +1515,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
         categoryId={renameCategoryId}
         initialValue={renameCategoryValue}
         isPending={renameCategoryMut.isPending}
+        projectId={projectId}
+        orgId={orgId}
         onClose={() => setRenameCategoryId(null)}
         onSubmit={(id, name) => renameCategoryMut.mutate({ id, name })}
       />
@@ -1651,6 +1693,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
       <EditGroupDialog
         group={editGroupData}
         isPending={updateGroupMut.isPending}
+        projectId={projectId}
+        orgId={orgId}
         onClose={() => setEditGroupData(null)}
         onSubmit={(groupId, values, price) => {
           updateGroupMut.mutate({ groupId, data: values });

@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { useAsset, useBulkAsset } from "@/hooks/use-assets";
 import { AssetForm } from "@/components/assets/asset-form";
 import { BulkAssetForm } from "@/components/assets/bulk-asset-form";
+import { EditLockGate } from "@/components/collaboration/edit-lock-gate";
 import { FadeIn } from "@/components/ui/motion";
 import { FormSkeleton } from "@/components/ui/skeleton";
 import {
@@ -79,7 +80,9 @@ function EditAssetContent({ params }: { params: Promise<{ id: string }> }) {
             <h1 className="t-title text-fg">Edit Bulk Asset</h1>
             <p className="t-body text-fg-3 font-mono">{ba.assetTag}</p>
           </div>
-          <BulkAssetForm initialData={initialData} />
+          <EditLockGate entityType="asset" entityId={id}>
+            <BulkAssetForm initialData={initialData} />
+          </EditLockGate>
         </div>
       </FadeIn>
     );
@@ -136,7 +139,9 @@ function EditAssetContent({ params }: { params: Promise<{ id: string }> }) {
           <h1 className="t-title text-fg">Edit Asset</h1>
           <p className="t-body text-fg-3 font-mono">{asset.assetTag}</p>
         </div>
-        <AssetForm initialData={initialData} />
+        <EditLockGate entityType="asset" entityId={id}>
+          <AssetForm initialData={initialData} />
+        </EditLockGate>
       </div>
     </FadeIn>
   );

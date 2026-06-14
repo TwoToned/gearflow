@@ -17,6 +17,9 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { LockedEditorOverlay } from "@/components/collaboration/locked-editor-overlay";
+import { useEditLock } from "@/hooks/use-collaboration";
+import { COLLAB_TARGET_TYPES } from "@/lib/collaboration-targets";
 
 interface RenameCategoryDialogProps {
   /** Category id being renamed. Null closes the dialog. */
@@ -24,6 +27,8 @@ interface RenameCategoryDialogProps {
   /** Current name to pre-fill in the input. */
   initialValue: string;
   isPending: boolean;
+  projectId?: string;
+  orgId?: string;
   onClose: () => void;
   onSubmit: (categoryId: string, name: string) => void;
 }
@@ -44,13 +49,23 @@ function RenameCategoryDialogBody({
   categoryId,
   initialValue,
   isPending,
+  projectId,
+  orgId,
   onClose,
   onSubmit,
 }: RenameCategoryDialogProps & { categoryId: string }) {
   const [name, setName] = useState(initialValue);
+  const { lockState, isLocked, isStale, takeover } = useEditLock({
+    entityType: "project",
+    entityId: projectId ?? "",
+    targetType: COLLAB_TARGET_TYPES.category,
+    targetId: categoryId,
+    active: true,
+    enabled: !!orgId && !!projectId,
+  });
 
   function handleSubmit() {
-    if (!name.trim()) return;
+    if (!name.trim() || isLocked) return;
     onSubmit(categoryId, name.trim());
   }
 
@@ -59,6 +74,10 @@ function RenameCategoryDialogBody({
       <DialogHeader>
         <DialogTitle>Rename category</DialogTitle>
       </DialogHeader>
+      <LockedEditorOverlay
+        lockState={lockState}
+        onTakeover={isStale ? () => void takeover() : undefined}
+      />
       <Input
         placeholder="Category name"
         value={name}
@@ -67,12 +86,13 @@ function RenameCategoryDialogBody({
           if (e.key === "Enter") handleSubmit();
         }}
         autoFocus
+        disabled={isLocked}
       />
       <DialogFooter>
         <Button variant="outline" onClick={onClose}>
           Cancel
         </Button>
-        <Button onClick={handleSubmit} disabled={!name.trim() || isPending}>
+        <Button onClick={handleSubmit} disabled={!name.trim() || isPending || isLocked}>
           Rename
         </Button>
       </DialogFooter>

@@ -5,6 +5,7 @@ import { requirePermission } from "@/lib/org-context";
 import { projectCategorySchema, type ProjectCategoryFormValues } from "@/lib/validations/project-category";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import { writeCollabActivityEvent } from "@/lib/collaboration-activity";
 import {
   mirrorProjectCategoryCreate,
   patchProjectCategoryInConvex,
@@ -194,6 +195,21 @@ export async function updateProjectCategory(
     entityName: category.name,
     summary: `Updated category "${category.name}"`,
   });
+
+  // Realtime collaboration feed — only on renames, not pure reorders.
+  if (data.name !== undefined) {
+    await writeCollabActivityEvent(
+      { organizationId, userId, userName },
+      {
+        entityType: "project",
+        entityId: category.projectId,
+        action: "category_updated",
+        summary: `renamed a category to "${category.name}"`,
+        targetType: "category",
+        targetId: category.id,
+      },
+    );
+  }
 
   return serialize(category);
 }

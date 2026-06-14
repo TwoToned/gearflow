@@ -7,6 +7,7 @@ import { useSupplier } from "@/hooks/use-suppliers";
 import { SupplierForm } from "@/components/suppliers/supplier-form";
 import { FadeIn } from "@/components/ui/motion";
 import { FormSkeleton } from "@/components/ui/skeleton";
+import { EditLockGate } from "@/components/collaboration/edit-lock-gate";
 
 export default function EditSupplierPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -34,23 +35,25 @@ export default function EditSupplierPage({ params }: { params: Promise<{ id: str
             Update supplier details.
           </p>
         </div>
-        <SupplierForm initialData={{
-          id,
-          name: supplier.name,
-          contactName: supplier.contactName || "",
-          email: supplier.email || "",
-          phone: supplier.phone || "",
-          website: supplier.website || "",
-          address: supplier.address || "",
-          latitude: supplier.latitude ?? null,
-          longitude: supplier.longitude ?? null,
-          notes: supplier.notes || "",
-          accountNumber: supplier.accountNumber || "",
-          paymentTerms: supplier.paymentTerms || "",
-          defaultLeadTime: supplier.defaultLeadTime || "",
-          tags: supplier.tags || [],
-          isActive: supplier.isActive ?? true,
-        }} />
+        <EditLockGate entityType="supplier" entityId={id}>
+          <SupplierForm initialData={{
+            id,
+            name: supplier.name,
+            contactName: supplier.contactName || "",
+            email: supplier.email || "",
+            phone: supplier.phone || "",
+            website: supplier.website || "",
+            address: supplier.address || "",
+            latitude: supplier.latitude ?? null,
+            longitude: supplier.longitude ?? null,
+            notes: supplier.notes || "",
+            accountNumber: supplier.accountNumber || "",
+            paymentTerms: supplier.paymentTerms || "",
+            defaultLeadTime: supplier.defaultLeadTime || "",
+            tags: supplier.tags || [],
+            isActive: supplier.isActive ?? true,
+          }} />
+        </EditLockGate>
       </div>
     </FadeIn>
   );

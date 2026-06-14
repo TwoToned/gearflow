@@ -236,6 +236,11 @@ export async function prepItemDirect(
     "check_out"
   );
 
+  await assertNoBlockingComments(organizationId, projectId, {
+    lineItemId,
+    actionLabel: "prep this item",
+  });
+
   const result = await prisma.$transaction(async (tx) => {
     const lineItem = await tx.projectLineItem.findFirst({
       where: { id: lineItemId, projectId, organizationId },
@@ -610,6 +615,11 @@ export async function prepKitChildren(
 
   if (!parentLi) throw new Error("Kit line item not found");
 
+  await assertNoBlockingComments(organizationId, projectId, {
+    lineItemId: parentLineItemId,
+    actionLabel: "prep this kit",
+  });
+
   await prisma.$transaction(async (tx) => {
     const children = parentLi.childLineItems || [];
     for (const child of children) {
@@ -701,6 +711,11 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
     "check_out"
   );
   const parsed = completeCheckAndPackSchema.parse(data);
+
+  await assertNoBlockingComments(organizationId, parsed.projectId, {
+    lineItemId: parsed.lineItemId,
+    actionLabel: "complete the check & pack",
+  });
 
   const result = await prisma.$transaction(async (tx) => {
     // 1. Verify line item

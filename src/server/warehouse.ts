@@ -946,11 +946,6 @@ export async function checkOutItems(
     });
     const projectLocationId = project?.locationId || null;
 
-    // Block send-out while any blocking comment on the project is unresolved.
-    await assertNoBlockingComments(organizationId, projectId, {
-      actionLabel: "check out items",
-    });
-
     // Pre-flight T&T compliance block
     const preflightLineItems = await gatherTestTagAssetsAndAssert(
       tx, organizationId, userId, projectId, items,

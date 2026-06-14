@@ -16,6 +16,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or refresh no longer races into an error. This completes the fix started in
   0.19.3.0 (which only covered a token dropping mid-session).
 
+## [0.19.4.0] - 2026-06-14
+
+### Added
+- Prep dialog now lets you include or exclude each accessory per item. When you assign an asset tag to a handheld, its accessories (battery kit, mic clip, etc.) appear as checkboxes, ticked by default — untick one to leave it off that specific unit so it never packs or ships.
+
+### Fixed
+- Warehouse check-in: returning one of several identical deployed units (e.g. 1 of 4 SM58s) now returns only the one you ticked, not all of them.
+- Warehouse prep: prepping one of several identical units now preps only that one. Serialised items reliably route to the asset picker even when the catalog mirror is missing the asset type.
+- Accessories are now tracked per individual parent unit. Prep, deploy, and return for each handheld handle its own battery/clip independently — fixing "prep three handhelds, only the first battery set ticks" and dockets that showed one real accessory row plus blank placeholders. Depreping a unit also removes just that unit's accessories.
+
+### Changed
+- Accessory prep/deploy/return cascades reworked onto a per-parent-unit model: each parent unit carries its own accessory units, linked by a new `ProjectLineItemUnit.parentUnitAssetId` (Prisma + Convex schema).
+
 ## [0.19.3.0] - 2026-06-14
 
 ### Fixed

@@ -476,7 +476,7 @@ type AccessoryProfile = {
   bulks: Array<{ bulkAssetId: string; quantity: number; modelId: string | null; modelName: string | null }>;
 };
 
-async function resolveAssetAccessories(
+export async function resolveAssetAccessories(
   tx: Prisma.TransactionClient,
   organizationId: string,
   assetId: string,
@@ -567,9 +567,22 @@ export async function createAccessoryChildIfAbsent(
  */
 export async function expandAccessoriesForAsset(
   tx: Prisma.TransactionClient,
-  args: { organizationId: string; lineItemId: string; assetId: string },
+  args: {
+    organizationId: string;
+    lineItemId: string;
+    assetId: string;
+    /**
+     * Which of THIS parent unit's accessories to pack, by accessory identity
+     * (serialised accessory assetId, or bulk accessory bulkAssetId). Undefined =
+     * include all (default). The warehouse prep picker passes the ticked set so
+     * an operator can leave a battery/clip off a specific handheld — excluded
+     * accessories get no unit for this parent unit, so they never prep/deploy.
+     */
+    includeAccessoryIds?: Set<string> | null;
+  },
 ): Promise<string[]> {
   const { organizationId, lineItemId, assetId } = args;
+  const includeAccessoryIds = args.includeAccessoryIds ?? null;
   const line = await tx.projectLineItem.findFirst({
     where: { id: lineItemId, organizationId },
     select: {
@@ -591,7 +604,15 @@ export async function expandAccessoriesForAsset(
   // Single-resource lock (one row per line) → no deadlock across lines.
   await tx.$executeRaw`SELECT id FROM "project_line_item" WHERE id = ${lineItemId} FOR UPDATE`;
 
-  const profile = await resolveAssetAccessories(tx, organizationId, assetId);
+  const fullProfile = await resolveAssetAccessories(tx, organizationId, assetId);
+  // Apply the picker's include set (if any): drop accessories the operator
+  // unticked for THIS parent unit so no unit is materialised for them.
+  const profile: AccessoryProfile = includeAccessoryIds
+    ? {
+        serialised: fullProfile.serialised.filter((s) => includeAccessoryIds.has(s.assetId)),
+        bulks: fullProfile.bulks.filter((b) => includeAccessoryIds.has(b.bulkAssetId)),
+      }
+    : fullProfile;
   if (profile.serialised.length === 0 && profile.bulks.length === 0) return [];
 
   // Resolve every ACTIVE parent-unit asset (plus the one being expanded, in case
@@ -734,6 +755,9 @@ export async function prepUnit(
     bulkAssetId?: string | null;
     quantity?: number;
     prepContainer?: string | null;
+    /** Accessories to pack with this unit (by serialised assetId / bulk
+     *  bulkAssetId). Undefined = all. Unticked ones are left off this unit. */
+    includeAccessoryIds?: Set<string> | null;
   },
 ) {
   if (args.assetId) {
@@ -760,6 +784,7 @@ export async function prepUnit(
       organizationId: args.organizationId,
       lineItemId: args.lineItemId,
       assetId: args.assetId,
+      includeAccessoryIds: args.includeAccessoryIds ?? null,
     });
     await tx.projectLineItemUnit.updateMany({
       where: {

@@ -36,7 +36,7 @@ describe("per-parent-unit accessory prep + return", () => {
 
     const aaModel = await createModelFixture(org.id, { name: "AA Battery" });
     const aa = await createBulkAssetFixture(org.id, aaModel.id, { assetTag: "AA-POOL", total: 100 });
-    const handhelds = [];
+    const handhelds: { id: string }[] = [];
     for (let i = 0; i < 3; i++) {
       const h = await createAssetFixture(org.id, aaModel.id, { assetTag: `HH-${i}-${createId().slice(0, 4)}` });
       await testPrisma.assetBulkChild.create({
@@ -99,6 +99,40 @@ describe("per-parent-unit accessory prep + return", () => {
     expect(accUnits.find((u) => u.bulkAssetId === aa.id)?.quantity).toBe(2); // battery qty
   });
 
+  it("excluding an accessory at prep leaves no unit for it on that handheld", async () => {
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id);
+    const { line } = await seedHandheldLine(org.id, user.id, 1);
+
+    const aaModel = await createModelFixture(org.id, { name: "AA Battery" });
+    const clipModel = await createModelFixture(org.id, { name: "Mic Clip" });
+    const aa = await createBulkAssetFixture(org.id, aaModel.id, { assetTag: "AAX", total: 50 });
+    const handheld = await createAssetFixture(org.id, aaModel.id, { assetTag: `HHX-${createId().slice(0, 4)}` });
+    await testPrisma.assetBulkChild.create({
+      data: { organizationId: org.id, parentAssetId: handheld.id, bulkAssetId: aa.id, quantity: 2, addedById: user.id },
+    });
+    const clip = await createAssetFixture(org.id, clipModel.id, { assetTag: `CLIPX-${createId().slice(0, 4)}` });
+    await testPrisma.asset.update({ where: { id: clip.id }, data: { parentAssetId: handheld.id } });
+
+    // Prep, but include ONLY the clip — leave the battery off this handheld.
+    await testPrisma.$transaction((tx) =>
+      prepUnit(tx, {
+        organizationId: org.id,
+        lineItemId: line.id,
+        assetId: handheld.id,
+        bulkAssetId: null,
+        includeAccessoryIds: new Set([clip.id]),
+      }));
+
+    const accUnits = await testPrisma.projectLineItemUnit.findMany({
+      where: { lineItem: { parentLineItemId: line.id, childKind: "ACCESSORY" } },
+    });
+    // Only the clip got a unit; the battery was excluded.
+    expect(accUnits).toHaveLength(1);
+    expect(accUnits[0].assetId).toBe(clip.id);
+    expect(accUnits.some((u) => u.bulkAssetId === aa.id)).toBe(false);
+  });
+
   it("returning one handheld returns only ITS accessory; siblings stay out", async () => {
     const org = await createOrgFixture();
     const user = await createUserFixture(org.id);
@@ -106,7 +140,7 @@ describe("per-parent-unit accessory prep + return", () => {
 
     const aaModel = await createModelFixture(org.id, { name: "AA Battery" });
     const aa = await createBulkAssetFixture(org.id, aaModel.id, { assetTag: "AA3", total: 100 });
-    const handhelds = [];
+    const handhelds: { id: string }[] = [];
     for (let i = 0; i < 3; i++) {
       const h = await createAssetFixture(org.id, aaModel.id, { assetTag: `HH3-${i}-${createId().slice(0, 4)}`, status: "CHECKED_OUT" });
       await testPrisma.assetBulkChild.create({

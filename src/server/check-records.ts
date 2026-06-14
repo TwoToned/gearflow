@@ -13,6 +13,7 @@ import {
   syncLineItemRollup,
   returnLineUnits,
   checkinAccessoryChildren,
+  resolveAssetAccessories,
 } from "@/lib/line-item-fulfillment";
 import type { Prisma } from "@/generated/prisma/client";
 import {
@@ -218,12 +219,40 @@ export async function pullItem(projectId: string, lineItemId: string) {
 // Assigns the asset to the line item and sets prepStatus=PACKED without deploying.
 // Used in the Pick/Prep flow for items that have no check items assigned.
 
+/**
+ * The permanent accessories a specific asset carries (battery kit, mic clip, …),
+ * for the prep picker's per-accessory checkboxes. Each is keyed by its accessory
+ * identity — serialised accessory `assetId` or bulk accessory `bulkAssetId` —
+ * which is exactly what prep takes back in `includeAccessoryIds`.
+ */
+export async function getAssetAccessories(assetId: string) {
+  const { organizationId } = await getOrgContext();
+  const profile = await prisma.$transaction((tx) =>
+    resolveAssetAccessories(tx, organizationId, assetId)
+  );
+  return serialize({
+    serialised: profile.serialised.map((s) => ({
+      id: s.assetId,
+      name: s.modelName,
+    })),
+    bulk: profile.bulks.map((b) => ({
+      id: b.bulkAssetId,
+      name: b.modelName,
+      quantity: b.quantity,
+    })),
+  });
+}
+
 export async function prepItemDirect(
   projectId: string,
   lineItemId: string,
   assetId?: string,
   quantity?: number,
-  prepContainer?: string | null
+  prepContainer?: string | null,
+  /** Accessory identities (serialised assetId / bulk bulkAssetId) to pack with
+   *  this unit. Undefined = all of the asset's accessories. The prep picker
+   *  passes the ticked set so an operator can leave one off this handheld. */
+  includeAccessoryIds?: string[]
 ) {
   const { organizationId, userId, userName } = await requirePermission(
     "warehouse",
@@ -247,6 +276,7 @@ export async function prepItemDirect(
       bulkAssetId: assetId ? null : lineItem.bulkAssetId,
       quantity,
       prepContainer,
+      includeAccessoryIds: includeAccessoryIds ? new Set(includeAccessoryIds) : null,
     });
   });
 

@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as collaboration from "../collaboration.js";
 import type * as assetBulkChildren from "../assetBulkChildren.js";
 import type * as assetDetail from "../assetDetail.js";
 import type * as assetMedia from "../assetMedia.js";
@@ -105,6 +106,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  collaboration: typeof collaboration;
   assetBulkChildren: typeof assetBulkChildren;
   assetDetail: typeof assetDetail;
   assetMedia: typeof assetMedia;

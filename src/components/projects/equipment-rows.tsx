@@ -10,6 +10,8 @@
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { useQuery } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 import {
   GripVertical,
   ChevronRight,
@@ -20,6 +22,7 @@ import {
   Pencil,
   RefreshCw,
   AlertTriangle,
+  MessageCircle,
   BookmarkPlus,
   Handshake,
   ArrowRightLeft,
@@ -39,6 +42,11 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { TableCell, TableRow } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/formatters";
 import { useRowShortcuts } from "./use-row-shortcuts";
+import { ReviewMarkerBadge } from "@/components/collaboration/review-marker-badge";
+import type { MarkerStatus } from "@/components/collaboration/review-marker-badge";
+import { CommentThreadPanel } from "@/components/collaboration/comment-thread-panel";
+import { setReviewMarker } from "@/server/collaboration";
+import { toast } from "sonner";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -85,6 +93,9 @@ export interface LineItemData {
   }>;
   kit?: { name?: string } | null;
   childLineItems?: LineItemData[];
+  /** Optimistic-concurrency baseline — Prisma `updatedAt` (serialised). Sent
+   *  back on save so the server can reject stale writes (collaboration). */
+  updatedAt?: string | Date | number | null;
 }
 
 export interface GroupData {
@@ -777,6 +788,8 @@ export function LineItemRow({
   isExpanded,
   isSelected,
   showCostColumn,
+  orgId,
+  projectId,
   onToggle,
   onEdit,
   onMoveToCategory,
@@ -794,6 +807,9 @@ export function LineItemRow({
   /** 8H — render the Cost column cell. Standalone line items don't carry
    *  a supplier-cost concept, so the cell renders an em-dash. */
   showCostColumn?: boolean;
+  /** Collaboration: org and project identifiers for live status badges. */
+  orgId?: string;
+  projectId?: string;
   onToggle?: () => void;
   onEdit: () => void;
   /** Opens the "Move to category" dialog. The item lands under a
@@ -810,6 +826,26 @@ export function LineItemRow({
   const hasChildren = desc.hasChildren;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: `li-${item.id}` });
+
+  // Collaboration: reactive lock and review marker for this row
+  const liveLock = useQuery(
+    api.collaboration.getLock,
+    orgId && projectId ? { orgId, entityType: "project", entityId: projectId, targetType: "lineItem", targetId: item.id } : "skip"
+  );
+  const liveMarker = useQuery(
+    api.collaboration.getReviewMarker,
+    orgId && projectId ? { orgId, entityId: projectId, targetId: item.id } : "skip"
+  );
+  const hasActiveLock = liveLock && !liveLock.isStale && liveLock.status === "active";
+  const handleMarker = async (status: MarkerStatus) => {
+    if (!projectId) return;
+    try {
+      await setReviewMarker("project", projectId, "lineItem", item.id, status);
+      toast.success(status === "resolved" ? "Marker resolved" : "Marker updated");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update marker");
+    }
+  };
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -938,6 +974,27 @@ export function LineItemRow({
             </Badge>
           )}
           <OverbookedBadge info={overbookedInfo} />
+          {/* Collaboration badges: editing lock + review marker */}
+          {hasActiveLock && (
+            <span
+              className="inline-flex items-center gap-0.5 rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none ml-1"
+              style={{
+                background: liveLock.ownerColor + "22",
+                borderColor: liveLock.ownerColor + "66",
+                color: liveLock.ownerColor,
+              }}
+              title={`${liveLock.ownerName} is editing`}
+            >
+              ✏ {liveLock.ownerName.split(" ")[0]}
+            </span>
+          )}
+          {liveMarker && liveMarker.status !== "resolved" && (
+            <ReviewMarkerBadge
+              status={liveMarker.status as MarkerStatus}
+              reason={liveMarker.reason}
+              className="ml-1"
+            />
+          )}
         </div>
         {desc.isSubhire && item.supplier && (
           <p className={`text-xs text-fg-3 mt-0.5 ${indent}`}>via {item.supplier.name}</p>
@@ -976,6 +1033,20 @@ export function LineItemRow({
       </TableCell>
       <TableCell>
         <div className="flex items-center gap-1">
+          {orgId && projectId && (
+            <CommentThreadPanel
+              orgId={orgId}
+              entityType="project"
+              entityId={projectId}
+              targetType="lineItem"
+              targetId={item.id}
+              triggerLabel=""
+            >
+              <Button variant="ghost" size="icon-sm" title="Comments">
+                <MessageCircle className="h-3.5 w-3.5" />
+              </Button>
+            </CommentThreadPanel>
+          )}
           <Button variant="ghost" size="icon-sm" onClick={onEdit}>
             <Pencil className="h-3.5 w-3.5" />
           </Button>
@@ -994,6 +1065,20 @@ export function LineItemRow({
                   <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
                   Move to group
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleMarker("needs_review")}>
+                  <BookmarkPlus className="mr-2 h-3.5 w-3.5" />
+                  Needs review
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleMarker("follow_up")}>
+                  <Handshake className="mr-2 h-3.5 w-3.5" />
+                  Follow up
+                </DropdownMenuItem>
+                {liveMarker && liveMarker.status !== "resolved" && (
+                  <DropdownMenuItem onClick={() => handleMarker("resolved")}>
+                    <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                    Resolve marker
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   onClick={onRemove}
                   className="text-[oklch(0.58_0.22_27)]"

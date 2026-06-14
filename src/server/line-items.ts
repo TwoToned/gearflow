@@ -21,6 +21,7 @@ import { optimizePrice, computeTotalDays } from "@/lib/pricing";
 import { getOrgDaysPerMonth } from "@/lib/org-pricing";
 import { UserFacingError } from "@/lib/errors";
 import { computeStockBreakdown } from "@/lib/availability";
+import { isStaleRevision } from "@/lib/collaboration-conflict";
 
 /**
  * Expand a serialised asset's permanent accessories into child line items.
@@ -559,7 +560,18 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
   return serialize({ ...result, supplier });
 }
 
-export async function updateLineItem(id: string, data: LineItemFormValues, allowOverbook = false) {
+export async function updateLineItem(
+  id: string,
+  data: LineItemFormValues,
+  allowOverbook = false,
+  /**
+   * Optional optimistic-concurrency baseline: the `updatedAt` the editor opened
+   * with. If the row has changed since (someone else saved while this editor was
+   * open, e.g. after a lock expired), the save is rejected with a conflict. When
+   * omitted the check is skipped — edit locks remain the first line of defence.
+   */
+  baseUpdatedAt?: string | number | null,
+) {
   const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
   const parsed = lineItemSchema.parse(data);
 
@@ -573,8 +585,22 @@ export async function updateLineItem(id: string, data: LineItemFormValues, allow
       quantity: true,
       modelId: true,
       subHireId: true,
+      updatedAt: true,
     },
   });
+
+  // Optimistic-concurrency guard: reject stale saves even when the edit lock
+  // has lapsed. The editor sends the `updatedAt` it opened with; if the row is
+  // now newer, someone else saved in the meantime.
+  if (existing && isStaleRevision(existing.updatedAt, baseUpdatedAt)) {
+    throw new UserFacingError({
+      code: "STALE_LINE_ITEM",
+      title: "Item changed",
+      message:
+        "This line item was updated by someone else while you had it open.",
+      hint: "Close and reopen the item to see the latest values, then re-apply your change.",
+    });
+  }
 
   // Server-side availability enforcement for equipment (mirrors addLineItem).
   // Only re-validate on quantity increase. Editing other fields on an

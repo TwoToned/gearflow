@@ -2193,4 +2193,127 @@ export default defineSchema({
     .index("by_organizationId_userId_tableId_name", ["organizationId", "userId", "tableId", "name"])
     .index("by_userId_tableId", ["userId", "tableId"]),
 
+  // ─── Collaboration substrate ───────────────────────────────────────────────
+
+  // Who is currently viewing / editing a collaborative entity.
+  // TTL: expiresAt = lastSeenAt + 45 s. Stale rows are excluded by queries
+  // (not hard-deleted) so clients can let them age out naturally.
+  collaborationPresence: defineTable({
+    orgId: v.string(),
+    userId: v.string(),
+    userName: v.string(),
+    userColor: v.string(),
+    avatarUrl: v.optional(v.string()),
+    entityType: v.string(), // "project" | "asset" | "client"
+    entityId: v.string(),
+    section: v.optional(v.string()),
+    mode: v.union(v.literal("viewing"), v.literal("editing")),
+    activeTargetType: v.optional(v.string()),
+    activeTargetId: v.optional(v.string()),
+    lastSeenAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_orgId_entityType_entityId", ["orgId", "entityType", "entityId"])
+    .index("by_orgId_userId_entityType_entityId", ["orgId", "userId", "entityType", "entityId"])
+    .index("by_expiresAt", ["expiresAt"]),
+
+  // Record-level edit locks. Prevents two users editing the same target
+  // simultaneously. Atomic acquire; heartbeat extends expiresAt.
+  collaborationLocks: defineTable({
+    orgId: v.string(),
+    entityType: v.string(),
+    entityId: v.string(),
+    targetType: v.string(), // "lineItem" | "section" | "asset" | "client"
+    targetId: v.string(),
+    ownerUserId: v.string(),
+    ownerName: v.string(),
+    ownerColor: v.string(),
+    acquiredAt: v.number(),
+    heartbeatAt: v.number(),
+    expiresAt: v.number(),
+    releasedAt: v.optional(v.number()),
+    status: v.union(v.literal("active"), v.literal("released"), v.literal("expired")),
+    clientSessionId: v.string(),
+  })
+    .index("by_orgId_entityType_entityId_targetType_targetId", ["orgId", "entityType", "entityId", "targetType", "targetId"])
+    .index("by_ownerUserId_status", ["ownerUserId", "status"])
+    .index("by_expiresAt", ["expiresAt"]),
+
+  // Comment threads. Each thread belongs to an entity (e.g. project) and
+  // optionally a sub-target (e.g. a specific line item).
+  commentThreads: defineTable({
+    orgId: v.string(),
+    entityType: v.string(),
+    entityId: v.string(),
+    targetType: v.optional(v.string()),
+    targetId: v.optional(v.string()),
+    status: v.union(v.literal("open"), v.literal("resolved")),
+    createdBy: v.string(),
+    createdByName: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    resolvedBy: v.optional(v.string()),
+    resolvedAt: v.optional(v.number()),
+  })
+    .index("by_orgId_entityId", ["orgId", "entityId"])
+    .index("by_orgId_targetId", ["orgId", "targetId"])
+    .index("by_createdBy", ["createdBy"]),
+
+  // Individual comments within a thread.
+  comments: defineTable({
+    orgId: v.string(),
+    threadId: v.string(), // Convex _id of the commentThreads doc
+    body: v.string(),
+    authorId: v.string(),
+    authorName: v.string(),
+    authorColor: v.string(),
+    createdAt: v.number(),
+    editedAt: v.optional(v.number()),
+    deletedAt: v.optional(v.number()),
+  })
+    .index("by_threadId", ["threadId"])
+    .index("by_orgId_threadId", ["orgId", "threadId"])
+    .index("by_orgId_authorId", ["orgId", "authorId"]),
+
+  // Lightweight review/follow-up markers on quote line items and sections.
+  // Separate from comment threads: a marker can exist without a discussion.
+  reviewMarkers: defineTable({
+    orgId: v.string(),
+    entityType: v.string(),
+    entityId: v.string(),
+    targetType: v.string(),
+    targetId: v.string(),
+    status: v.union(v.literal("needs_review"), v.literal("follow_up"), v.literal("resolved")),
+    reason: v.optional(v.string()),
+    note: v.optional(v.string()),
+    createdBy: v.string(),
+    createdByName: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    resolvedBy: v.optional(v.string()),
+    resolvedAt: v.optional(v.number()),
+  })
+    .index("by_orgId_entityId", ["orgId", "entityId"])
+    .index("by_orgId_targetId", ["orgId", "targetId"])
+    .index("by_createdBy", ["createdBy"]),
+
+  // Lightweight activity log for collaboration context (not an audit trail).
+  // Records quote changes, comments, markers for the project activity feed.
+  activityEvents: defineTable({
+    orgId: v.string(),
+    actorUserId: v.string(),
+    actorName: v.string(),
+    actorColor: v.string(),
+    entityType: v.string(),
+    entityId: v.string(),
+    targetType: v.optional(v.string()),
+    targetId: v.optional(v.string()),
+    action: v.string(),
+    summary: v.string(),
+    metadata: v.optional(v.any()),
+    createdAt: v.number(),
+  })
+    .index("by_orgId_entityId_createdAt", ["orgId", "entityId", "createdAt"])
+    .index("by_orgId_createdAt", ["orgId", "createdAt"]),
+
 });

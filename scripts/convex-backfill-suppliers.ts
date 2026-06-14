@@ -26,13 +26,8 @@ async function main() {
   let created = 0;
   let skipped = 0;
   for (const s of suppliers) {
-    const existing = await convex.query(api.suppliers.getById, { id: s.id });
-    if (existing) {
-      skipped++;
-      continue;
-    }
-    await convex.mutation(api.suppliers.create, toConvexDoc(s) as SupplierCreateArgs);
-    created++;
+    const __res = await convex.mutation(api.suppliers.createIfMissing, toConvexDoc(s) as SupplierCreateArgs);
+    if (__res.created) created++; else skipped++;
     console.log(`  + ${s.name} (${s.id})`);
   }
 

@@ -18,12 +18,8 @@ async function main() {
 
   const rows = await prisma.savedReport.findMany();
   for (const r of rows) {
-    if (await convex.query(api.savedReports.getById, { id: r.id })) { skipped++; continue; }
-    await convex.mutation(
-      api.savedReports.create,
-      toConvexDoc(r) as FunctionArgs<typeof api.savedReports.create>,
-    );
-    created++;
+    const __res = await convex.mutation(api.savedReports.createIfMissing, toConvexDoc(r) as FunctionArgs<typeof api.savedReports.createIfMissing>);
+    if (__res.created) created++; else skipped++;
   }
 
   console.log(`Saved-reports backfill complete: ${created} created, ${skipped} already present (${rows.length} rows).`);

@@ -18,12 +18,8 @@ async function main() {
 
   const rows = await prisma.savedTableView.findMany();
   for (const r of rows) {
-    if (await convex.query(api.savedTableViews.getById, { id: r.id })) { skipped++; continue; }
-    await convex.mutation(
-      api.savedTableViews.create,
-      toConvexDoc(r) as FunctionArgs<typeof api.savedTableViews.create>,
-    );
-    created++;
+    const __res = await convex.mutation(api.savedTableViews.createIfMissing, toConvexDoc(r) as FunctionArgs<typeof api.savedTableViews.createIfMissing>);
+    if (__res.created) created++; else skipped++;
   }
 
   console.log(`Saved-views backfill complete: ${created} created, ${skipped} already present (${rows.length} rows).`);

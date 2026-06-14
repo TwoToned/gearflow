@@ -25,20 +25,20 @@ async function main() {
   const convex = await getConvexClient();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async function run(label: string, rows: any[], getById: any, create: any) {
+  async function run(label: string, rows: any[], createIfMissing: any) {
     let created = 0;
     let skipped = 0;
     for (const r of rows) {
-      if (await convex.query(getById, { id: r.id })) { skipped++; continue; }
-      await convex.mutation(create, toConvexDoc(strip(r)) as FunctionArgs<typeof create>);
-      created++;
+      // Atomic insert-if-missing (security review P0-2) — no query-then-create race.
+      const res = await convex.mutation(createIfMissing, toConvexDoc(strip(r)) as FunctionArgs<typeof createIfMissing>);
+      if (res.created) created++; else skipped++;
     }
     console.log(`  ${label}: ${created} created, ${skipped} present (${rows.length}).`);
   }
 
-  await run("projectManagers", await prisma.projectManager.findMany(), api.projectManagers.getById, api.projectManagers.create);
-  await run("projectServices", await prisma.projectService.findMany(), api.projectServices.getById, api.projectServices.create);
-  await run("projectTasks", await prisma.projectTask.findMany(), api.projectTasks.getById, api.projectTasks.create);
+  await run("projectManagers", await prisma.projectManager.findMany(), api.projectManagers.createIfMissing);
+  await run("projectServices", await prisma.projectService.findMany(), api.projectServices.createIfMissing);
+  await run("projectTasks", await prisma.projectTask.findMany(), api.projectTasks.createIfMissing);
 
   console.log("Project sub-table backfill complete.");
   await prisma.$disconnect();

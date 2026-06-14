@@ -21,16 +21,12 @@ async function main() {
 
   const docs = await prisma.documentTemplate.findMany();
   for (const d of docs) {
-    if (await convex.query(api.documentTemplates.getById, { id: d.id })) { skipped++; continue; }
-    await convex.mutation(api.documentTemplates.create, toConvexDoc(d) as FunctionArgs<typeof api.documentTemplates.create>);
-    created++;
+    { const __res = await convex.mutation(api.documentTemplates.createIfMissing, toConvexDoc(d) as FunctionArgs<typeof api.documentTemplates.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
 
   const svcs = await prisma.serviceTemplate.findMany();
   for (const s of svcs) {
-    if (await convex.query(api.serviceTemplates.getById, { id: s.id })) { skipped++; continue; }
-    await convex.mutation(api.serviceTemplates.create, toConvexDoc(s) as FunctionArgs<typeof api.serviceTemplates.create>);
-    created++;
+    { const __res = await convex.mutation(api.serviceTemplates.createIfMissing, toConvexDoc(s) as FunctionArgs<typeof api.serviceTemplates.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
 
   console.log(

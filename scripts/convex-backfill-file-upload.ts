@@ -27,13 +27,8 @@ async function main() {
   let created = 0;
   let skipped = 0;
   for (const f of files) {
-    const existing = await convex.query(api.fileUploads.getById, { id: f.id });
-    if (existing) {
-      skipped++;
-      continue;
-    }
-    await convex.mutation(api.fileUploads.create, toConvexDoc(f) as FileUploadCreateArgs);
-    created++;
+    const __res = await convex.mutation(api.fileUploads.createIfMissing, toConvexDoc(f) as FileUploadCreateArgs);
+    if (__res.created) created++; else skipped++;
     console.log(`  + ${f.fileName} (${f.id})`);
   }
 

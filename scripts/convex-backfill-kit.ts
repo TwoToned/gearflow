@@ -24,23 +24,17 @@ async function main() {
 
   const kits = await prisma.kit.findMany();
   for (const k of kits) {
-    if (await convex.query(api.kits.getById, { id: k.id })) { skipped++; continue; }
-    await convex.mutation(api.kits.create, toConvexDoc(k) as FunctionArgs<typeof api.kits.create>);
-    created++;
+    { const __res = await convex.mutation(api.kits.createIfMissing, toConvexDoc(k) as FunctionArgs<typeof api.kits.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
 
   const serializedItems = await prisma.kitSerializedItem.findMany();
   for (const s of serializedItems) {
-    if (await convex.query(api.kitSerializedItems.getById, { id: s.id })) { skipped++; continue; }
-    await convex.mutation(api.kitSerializedItems.create, toConvexDoc(s) as FunctionArgs<typeof api.kitSerializedItems.create>);
-    created++;
+    { const __res = await convex.mutation(api.kitSerializedItems.createIfMissing, toConvexDoc(s) as FunctionArgs<typeof api.kitSerializedItems.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
 
   const bulkItems = await prisma.kitBulkItem.findMany();
   for (const b of bulkItems) {
-    if (await convex.query(api.kitBulkItems.getById, { id: b.id })) { skipped++; continue; }
-    await convex.mutation(api.kitBulkItems.create, toConvexDoc(b) as FunctionArgs<typeof api.kitBulkItems.create>);
-    created++;
+    { const __res = await convex.mutation(api.kitBulkItems.createIfMissing, toConvexDoc(b) as FunctionArgs<typeof api.kitBulkItems.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
 
   console.log(

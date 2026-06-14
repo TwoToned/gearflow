@@ -27,13 +27,8 @@ async function main() {
   let created = 0;
   let skipped = 0;
   for (const l of locations) {
-    const existing = await convex.query(api.locations.getById, { id: l.id });
-    if (existing) {
-      skipped++;
-      continue;
-    }
-    await convex.mutation(api.locations.create, toConvexDoc(l) as LocationCreateArgs);
-    created++;
+    const __res = await convex.mutation(api.locations.createIfMissing, toConvexDoc(l) as LocationCreateArgs);
+    if (__res.created) created++; else skipped++;
     console.log(`  + ${l.name} (${l.id})`);
   }
 

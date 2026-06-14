@@ -22,12 +22,8 @@ async function main() {
 
   const rows = await prisma.maintenanceRecord.findMany();
   for (const r of rows) {
-    if (await convex.query(api.maintenanceRecords.getById, { id: r.id })) { skipped++; continue; }
-    await convex.mutation(
-      api.maintenanceRecords.create,
-      toConvexDoc(r) as FunctionArgs<typeof api.maintenanceRecords.create>,
-    );
-    created++;
+    const __res = await convex.mutation(api.maintenanceRecords.createIfMissing, toConvexDoc(r) as FunctionArgs<typeof api.maintenanceRecords.createIfMissing>);
+    if (__res.created) created++; else skipped++;
   }
 
   console.log(`Maintenance backfill complete: ${created} created, ${skipped} already present (${rows.length} records).`);

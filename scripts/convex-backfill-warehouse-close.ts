@@ -18,12 +18,8 @@ async function main() {
 
   const rows = await prisma.warehouseClose.findMany();
   for (const r of rows) {
-    if (await convex.query(api.warehouseCloses.getById, { id: r.id })) { skipped++; continue; }
-    await convex.mutation(
-      api.warehouseCloses.create,
-      toConvexDoc(r) as FunctionArgs<typeof api.warehouseCloses.create>,
-    );
-    created++;
+    const __res = await convex.mutation(api.warehouseCloses.createIfMissing, toConvexDoc(r) as FunctionArgs<typeof api.warehouseCloses.createIfMissing>);
+    if (__res.created) created++; else skipped++;
   }
 
   console.log(`Warehouse-close backfill complete: ${created} created, ${skipped} already present (${rows.length} rows).`);

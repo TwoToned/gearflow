@@ -22,33 +22,23 @@ async function main() {
 
   const subHires = await prisma.subHire.findMany();
   for (const r of subHires) {
-    if (await convex.query(api.subHires.getById, { id: r.id })) { skipped++; continue; }
-    await convex.mutation(api.subHires.create, toConvexDoc(r) as FunctionArgs<typeof api.subHires.create>);
-    created++;
+    { const __res = await convex.mutation(api.subHires.createIfMissing, toConvexDoc(r) as FunctionArgs<typeof api.subHires.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
   const subHireItems = await prisma.subHireItem.findMany();
   for (const r of subHireItems) {
-    if (await convex.query(api.subHireItems.getById, { id: r.id })) { skipped++; continue; }
-    await convex.mutation(api.subHireItems.create, toConvexDoc(r) as FunctionArgs<typeof api.subHireItems.create>);
-    created++;
+    { const __res = await convex.mutation(api.subHireItems.createIfMissing, toConvexDoc(r) as FunctionArgs<typeof api.subHireItems.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
   const subHireGroups = await prisma.subHireGroup.findMany();
   for (const r of subHireGroups) {
-    if (await convex.query(api.subHireGroups.getById, { id: r.id })) { skipped++; continue; }
-    await convex.mutation(api.subHireGroups.create, toConvexDoc(r) as FunctionArgs<typeof api.subHireGroups.create>);
-    created++;
+    { const __res = await convex.mutation(api.subHireGroups.createIfMissing, toConvexDoc(r) as FunctionArgs<typeof api.subHireGroups.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
   const supplierOrders = await prisma.supplierOrder.findMany();
   for (const r of supplierOrders) {
-    if (await convex.query(api.supplierOrders.getById, { id: r.id })) { skipped++; continue; }
-    await convex.mutation(api.supplierOrders.create, toConvexDoc(r) as FunctionArgs<typeof api.supplierOrders.create>);
-    created++;
+    { const __res = await convex.mutation(api.supplierOrders.createIfMissing, toConvexDoc(r) as FunctionArgs<typeof api.supplierOrders.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
   const supplierOrderItems = await prisma.supplierOrderItem.findMany();
   for (const r of supplierOrderItems) {
-    if (await convex.query(api.supplierOrderItems.getById, { id: r.id })) { skipped++; continue; }
-    await convex.mutation(api.supplierOrderItems.create, toConvexDoc(r) as FunctionArgs<typeof api.supplierOrderItems.create>);
-    created++;
+    { const __res = await convex.mutation(api.supplierOrderItems.createIfMissing, toConvexDoc(r) as FunctionArgs<typeof api.supplierOrderItems.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
 
   console.log(

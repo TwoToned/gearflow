@@ -27,17 +27,17 @@ async function main() {
 
   for (const r of rows) {
     const organizationId = r.crewMember.organizationId;
-    const existing = await convex.query(api.crewAvailabilities.getById, { id: r.id });
-    if (existing) {
+    const { crewMember: _cm, ...scalar } = r;
+    // Atomic: insert-if-missing (security review P0-2), else patch the org stamp.
+    const res = await convex.mutation(
+      api.crewAvailabilities.createIfMissing,
+      toConvexDoc({ ...scalar, organizationId }) as FunctionArgs<typeof api.crewAvailabilities.createIfMissing>,
+    );
+    if (res.created) {
+      created++;
+    } else {
       await convex.mutation(api.crewAvailabilities.update, { id: r.id, patch: { organizationId } });
       patched++;
-    } else {
-      const { crewMember: _cm, ...scalar } = r;
-      await convex.mutation(
-        api.crewAvailabilities.create,
-        toConvexDoc({ ...scalar, organizationId }) as FunctionArgs<typeof api.crewAvailabilities.create>,
-      );
-      created++;
     }
   }
 

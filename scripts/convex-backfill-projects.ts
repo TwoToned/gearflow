@@ -21,9 +21,7 @@ async function main() {
 
   const projects = await prisma.project.findMany();
   for (const p of projects) {
-    if (await convex.query(api.projects.getById, { id: p.id })) { skipped++; continue; }
-    await convex.mutation(api.projects.create, toConvexDoc(p) as FunctionArgs<typeof api.projects.create>);
-    created++;
+    { const __res = await convex.mutation(api.projects.createIfMissing, toConvexDoc(p) as FunctionArgs<typeof api.projects.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
 
   console.log(`Project backfill complete: ${created} created, ${skipped} already present (${projects.length} projects).`);

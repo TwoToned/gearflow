@@ -43,14 +43,10 @@ async function main() {
     let created = 0;
     let skipped = 0;
     for (const r of rows) {
-      const existing = await convex.query(spec.convex.getById, { id: r.id as string });
-      if (existing) {
-        skipped++;
-        continue;
-      }
+      // Atomic insert-if-missing (security review P0-2) — no query-then-create race.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await convex.mutation(spec.convex.create, toConvexDoc(mediaDoc(kind, r)) as any);
-      created++;
+      const res = (await convex.mutation(spec.convex.createIfMissing, toConvexDoc(mediaDoc(kind, r)) as any)) as { created: boolean };
+      if (res.created) created++; else skipped++;
     }
     console.log(`  ${kind}Media: ${rows.length} in Prisma — ${created} created, ${skipped} already present.`);
   }

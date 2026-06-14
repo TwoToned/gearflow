@@ -40,26 +40,22 @@ async function main() {
   console.log(`Found ${modelChecks.length} model_check_item rows in Prisma.`);
   let mCreated = 0, mSkipped = 0;
   for (const r of modelChecks) {
-    const existing = await convex.query(api.modelCheckItems.getById, { id: r.id });
-    if (existing) { mSkipped++; continue; }
-    await convex.mutation(
-      api.modelCheckItems.create,
+    const res = await convex.mutation(
+      api.modelCheckItems.createIfMissing,
       toConvexDoc(modelCheckItemDoc(r as unknown as Record<string, unknown>)) as ModelCheckItemCreateArgs,
     );
-    mCreated++;
+    if (res.created) mCreated++; else mSkipped++;
   }
 
   const kitChecks = await prisma.kitCheckItem.findMany({ orderBy: { createdAt: "asc" } });
   console.log(`Found ${kitChecks.length} kit_check_item rows in Prisma.`);
   let kCreated = 0, kSkipped = 0;
   for (const r of kitChecks) {
-    const existing = await convex.query(api.kitCheckItems.getById, { id: r.id });
-    if (existing) { kSkipped++; continue; }
-    await convex.mutation(
-      api.kitCheckItems.create,
+    const res = await convex.mutation(
+      api.kitCheckItems.createIfMissing,
       toConvexDoc(kitCheckItemDoc(r as unknown as Record<string, unknown>)) as KitCheckItemCreateArgs,
     );
-    kCreated++;
+    if (res.created) kCreated++; else kSkipped++;
   }
 
   console.log(`\nBackfill complete:`);

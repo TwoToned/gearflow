@@ -26,13 +26,8 @@ async function main() {
   let created = 0;
   let skipped = 0;
   for (const m of models) {
-    const existing = await convex.query(api.models.getById, { id: m.id });
-    if (existing) {
-      skipped++;
-      continue;
-    }
-    await convex.mutation(api.models.create, toConvexDoc(m) as ModelCreateArgs);
-    created++;
+    const __res = await convex.mutation(api.models.createIfMissing, toConvexDoc(m) as ModelCreateArgs);
+    if (__res.created) created++; else skipped++;
     console.log(`  + ${m.name} (${m.id})`);
   }
 

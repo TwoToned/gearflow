@@ -27,13 +27,8 @@ async function main() {
   let created = 0;
   let skipped = 0;
   for (const t of templates) {
-    const existing = await convex.query(api.groupTemplates.getById, { id: t.id });
-    if (existing) {
-      skipped++;
-      continue;
-    }
-    await convex.mutation(api.groupTemplates.create, toConvexDoc(t) as GroupTemplateCreateArgs);
-    created++;
+    const __res = await convex.mutation(api.groupTemplates.createIfMissing, toConvexDoc(t) as GroupTemplateCreateArgs);
+    if (__res.created) created++; else skipped++;
     console.log(`  + ${t.name} (${t.id})`);
   }
 

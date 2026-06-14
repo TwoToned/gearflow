@@ -26,13 +26,8 @@ async function main() {
   let created = 0;
   let skipped = 0;
   for (const p of presets) {
-    const existing = await convex.query(api.sectionPresets.getById, { id: p.id });
-    if (existing) {
-      skipped++;
-      continue;
-    }
-    await convex.mutation(api.sectionPresets.create, toConvexDoc(p) as SectionPresetCreateArgs);
-    created++;
+    const __res = await convex.mutation(api.sectionPresets.createIfMissing, toConvexDoc(p) as SectionPresetCreateArgs);
+    if (__res.created) created++; else skipped++;
     console.log(`  + ${p.name} (${p.id})`);
   }
 

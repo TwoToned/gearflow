@@ -25,13 +25,8 @@ async function main() {
   let created = 0;
   let skipped = 0;
   for (const d of defs) {
-    const existing = await convex.query(api.customFieldDefinitions.getById, { id: d.id });
-    if (existing) {
-      skipped++;
-      continue;
-    }
-    await convex.mutation(api.customFieldDefinitions.create, toConvexDoc(d) as CustomFieldCreateArgs);
-    created++;
+    const __res = await convex.mutation(api.customFieldDefinitions.createIfMissing, toConvexDoc(d) as CustomFieldCreateArgs);
+    if (__res.created) created++; else skipped++;
     console.log(`  + ${d.label} (${d.entityType}/${d.id})`);
   }
 

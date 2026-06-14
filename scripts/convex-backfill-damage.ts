@@ -20,12 +20,8 @@ async function main() {
 
   const rows = await prisma.damageEvent.findMany();
   for (const r of rows) {
-    if (await convex.query(api.damageEvents.getById, { id: r.id })) { skipped++; continue; }
-    await convex.mutation(
-      api.damageEvents.create,
-      toConvexDoc(r) as FunctionArgs<typeof api.damageEvents.create>,
-    );
-    created++;
+    const __res = await convex.mutation(api.damageEvents.createIfMissing, toConvexDoc(r) as FunctionArgs<typeof api.damageEvents.createIfMissing>);
+    if (__res.created) created++; else skipped++;
   }
 
   console.log(`Damage backfill complete: ${created} created, ${skipped} already present (${rows.length} events).`);

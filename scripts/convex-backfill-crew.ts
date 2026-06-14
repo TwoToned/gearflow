@@ -26,23 +26,17 @@ async function main() {
 
   const roles = await prisma.crewRole.findMany();
   for (const r of roles) {
-    if (await convex.query(api.crewRoles.getById, { id: r.id })) { skipped++; continue; }
-    await convex.mutation(api.crewRoles.create, toConvexDoc(r) as FunctionArgs<typeof api.crewRoles.create>);
-    created++;
+    { const __res = await convex.mutation(api.crewRoles.createIfMissing, toConvexDoc(r) as FunctionArgs<typeof api.crewRoles.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
 
   const skills = await prisma.crewSkill.findMany();
   for (const s of skills) {
-    if (await convex.query(api.crewSkills.getById, { id: s.id })) { skipped++; continue; }
-    await convex.mutation(api.crewSkills.create, toConvexDoc(s) as FunctionArgs<typeof api.crewSkills.create>);
-    created++;
+    { const __res = await convex.mutation(api.crewSkills.createIfMissing, toConvexDoc(s) as FunctionArgs<typeof api.crewSkills.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
 
   const members = await prisma.crewMember.findMany();
   for (const m of members) {
-    if (await convex.query(api.crewMembers.getById, { id: m.id })) { skipped++; continue; }
-    await convex.mutation(api.crewMembers.create, toConvexDoc(m) as FunctionArgs<typeof api.crewMembers.create>);
-    created++;
+    { const __res = await convex.mutation(api.crewMembers.createIfMissing, toConvexDoc(m) as FunctionArgs<typeof api.crewMembers.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
 
   console.log(

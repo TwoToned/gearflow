@@ -22,16 +22,12 @@ async function main() {
 
   const categories = await prisma.projectCategory.findMany();
   for (const c of categories) {
-    if (await convex.query(api.projectCategories.getById, { id: c.id })) { skipped++; continue; }
-    await convex.mutation(api.projectCategories.create, toConvexDoc(c) as FunctionArgs<typeof api.projectCategories.create>);
-    created++;
+    { const __res = await convex.mutation(api.projectCategories.createIfMissing, toConvexDoc(c) as FunctionArgs<typeof api.projectCategories.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
 
   const groups = await prisma.projectGroup.findMany();
   for (const g of groups) {
-    if (await convex.query(api.projectGroups.getById, { id: g.id })) { skipped++; continue; }
-    await convex.mutation(api.projectGroups.create, toConvexDoc(g) as FunctionArgs<typeof api.projectGroups.create>);
-    created++;
+    { const __res = await convex.mutation(api.projectGroups.createIfMissing, toConvexDoc(g) as FunctionArgs<typeof api.projectGroups.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
 
   console.log(

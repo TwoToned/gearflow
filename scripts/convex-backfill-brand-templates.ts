@@ -26,13 +26,8 @@ async function main() {
   let created = 0;
   let skipped = 0;
   for (const t of templates) {
-    const existing = await convex.query(api.brandTemplates.getById, { id: t.id });
-    if (existing) {
-      skipped++;
-      continue;
-    }
-    await convex.mutation(api.brandTemplates.create, toConvexDoc(t) as BrandTemplateCreateArgs);
-    created++;
+    const __res = await convex.mutation(api.brandTemplates.createIfMissing, toConvexDoc(t) as BrandTemplateCreateArgs);
+    if (__res.created) created++; else skipped++;
     console.log(`  + ${t.name} (${t.id})`);
   }
 

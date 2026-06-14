@@ -22,9 +22,7 @@ async function main() {
 
   const lineItems = await prisma.projectLineItem.findMany();
   for (const li of lineItems) {
-    if (await convex.query(api.projectLineItems.getById, { id: li.id })) { skipped++; continue; }
-    await convex.mutation(api.projectLineItems.create, toConvexDoc(li) as FunctionArgs<typeof api.projectLineItems.create>);
-    created++;
+    { const __res = await convex.mutation(api.projectLineItems.createIfMissing, toConvexDoc(li) as FunctionArgs<typeof api.projectLineItems.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
 
   console.log(`Line-item backfill complete: ${created} created, ${skipped} already present (${lineItems.length} line items).`);

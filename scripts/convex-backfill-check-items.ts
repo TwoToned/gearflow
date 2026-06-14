@@ -25,13 +25,8 @@ async function main() {
   let created = 0;
   let skipped = 0;
   for (const c of items) {
-    const existing = await convex.query(api.checkItems.getById, { id: c.id });
-    if (existing) {
-      skipped++;
-      continue;
-    }
-    await convex.mutation(api.checkItems.create, toConvexDoc(c) as CheckItemCreateArgs);
-    created++;
+    const __res = await convex.mutation(api.checkItems.createIfMissing, toConvexDoc(c) as CheckItemCreateArgs);
+    if (__res.created) created++; else skipped++;
     console.log(`  + ${c.label} (${c.id})`);
   }
 

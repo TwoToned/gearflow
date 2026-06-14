@@ -25,37 +25,27 @@ async function main() {
 
   const assignments = await prisma.crewAssignment.findMany();
   for (const a of assignments) {
-    if (await convex.query(api.crewAssignments.getById, { id: a.id })) { skipped++; continue; }
-    await convex.mutation(api.crewAssignments.create, toConvexDoc(a) as FunctionArgs<typeof api.crewAssignments.create>);
-    created++;
+    { const __res = await convex.mutation(api.crewAssignments.createIfMissing, toConvexDoc(a) as FunctionArgs<typeof api.crewAssignments.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
 
   const shifts = await prisma.crewShift.findMany();
   for (const s of shifts) {
-    if (await convex.query(api.crewShifts.getById, { id: s.id })) { skipped++; continue; }
-    await convex.mutation(api.crewShifts.create, toConvexDoc(s) as FunctionArgs<typeof api.crewShifts.create>);
-    created++;
+    { const __res = await convex.mutation(api.crewShifts.createIfMissing, toConvexDoc(s) as FunctionArgs<typeof api.crewShifts.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
 
   const availability = await prisma.crewAvailability.findMany();
   for (const av of availability) {
-    if (await convex.query(api.crewAvailabilities.getById, { id: av.id })) { skipped++; continue; }
-    await convex.mutation(api.crewAvailabilities.create, toConvexDoc(av) as FunctionArgs<typeof api.crewAvailabilities.create>);
-    created++;
+    { const __res = await convex.mutation(api.crewAvailabilities.createIfMissing, toConvexDoc(av) as FunctionArgs<typeof api.crewAvailabilities.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
 
   const certifications = await prisma.crewCertification.findMany();
   for (const c of certifications) {
-    if (await convex.query(api.crewCertifications.getById, { id: c.id })) { skipped++; continue; }
-    await convex.mutation(api.crewCertifications.create, toConvexDoc(c) as FunctionArgs<typeof api.crewCertifications.create>);
-    created++;
+    { const __res = await convex.mutation(api.crewCertifications.createIfMissing, toConvexDoc(c) as FunctionArgs<typeof api.crewCertifications.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
 
   const timeEntries = await prisma.crewTimeEntry.findMany();
   for (const t of timeEntries) {
-    if (await convex.query(api.crewTimeEntries.getById, { id: t.id })) { skipped++; continue; }
-    await convex.mutation(api.crewTimeEntries.create, toConvexDoc(t) as FunctionArgs<typeof api.crewTimeEntries.create>);
-    created++;
+    { const __res = await convex.mutation(api.crewTimeEntries.createIfMissing, toConvexDoc(t) as FunctionArgs<typeof api.crewTimeEntries.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
 
   console.log(

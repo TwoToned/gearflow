@@ -25,16 +25,12 @@ async function main() {
 
   const assets = await prisma.asset.findMany();
   for (const a of assets) {
-    if (await convex.query(api.assets.getById, { id: a.id })) { skipped++; continue; }
-    await convex.mutation(api.assets.create, toConvexDoc(a) as FunctionArgs<typeof api.assets.create>);
-    created++;
+    { const __res = await convex.mutation(api.assets.createIfMissing, toConvexDoc(a) as FunctionArgs<typeof api.assets.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
 
   const bulkAssets = await prisma.bulkAsset.findMany();
   for (const b of bulkAssets) {
-    if (await convex.query(api.bulkAssets.getById, { id: b.id })) { skipped++; continue; }
-    await convex.mutation(api.bulkAssets.create, toConvexDoc(b) as FunctionArgs<typeof api.bulkAssets.create>);
-    created++;
+    { const __res = await convex.mutation(api.bulkAssets.createIfMissing, toConvexDoc(b) as FunctionArgs<typeof api.bulkAssets.createIfMissing>); if (__res.created) created++; else skipped++; }
   }
 
   console.log(

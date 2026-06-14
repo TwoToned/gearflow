@@ -4,6 +4,16 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.19.2.1] - 2026-06-14
+
+### Fixed
+- **Auto project-number preview no longer suggests an already-used code.** When
+  the sequence counter lagged behind the real projects (codes entered manually,
+  imported, or created before auto-numbering was switched on), the new-project
+  autofill and the settings preview rendered a number that was already taken
+  (e.g. `260601` when `260601`-`260603` already exist). The preview now skips
+  past taken codes, matching what project creation actually allocates.
+
 ## [0.19.2.0] - 2026-06-06
 
 ### Added

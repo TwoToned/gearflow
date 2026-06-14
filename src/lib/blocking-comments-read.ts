@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getConvexClient } from "@/lib/convex-client";
+import { evaluateBlockingGate } from "@/lib/blocking-comments-gate";
 import { api } from "../../convex/_generated/api";
 
 /**
@@ -20,6 +21,7 @@ import { api } from "../../convex/_generated/api";
 export interface ProjectBlockingSummary {
   count: number;
   lineItemTargetIds: string[];
+  groupTargetIds: string[];
   hasProjectLevel: boolean;
 }
 
@@ -35,6 +37,7 @@ export async function getProjectBlockingSummary(
   return {
     count: res.count,
     lineItemTargetIds: res.lineItemTargetIds,
+    groupTargetIds: res.groupTargetIds ?? [],
     hasProjectLevel: res.hasProjectLevel,
   };
 }
@@ -87,7 +90,7 @@ export async function listOpenBlockingThreads(
 export async function assertNoBlockingComments(
   orgId: string,
   projectId: string,
-  opts?: { lineItemId?: string; actionLabel?: string },
+  opts?: { lineItemId?: string; groupId?: string | null; actionLabel?: string },
 ): Promise<void> {
   let summary: ProjectBlockingSummary;
   try {
@@ -99,22 +102,10 @@ export async function assertNoBlockingComments(
     );
   }
 
-  if (summary.count === 0) return;
-
-  const action = opts?.actionLabel ?? "continue";
-
-  if (opts?.lineItemId) {
-    const blockedByItem = summary.lineItemTargetIds.includes(opts.lineItemId);
-    if (!summary.hasProjectLevel && !blockedByItem) return;
-    throw new Error(
-      `Can't ${action}: this item has an unresolved blocking comment. ` +
-        `Resolve it before prepping or sending out.`,
-    );
-  }
-
-  const n = summary.count;
-  throw new Error(
-    `Can't ${action}: this project has ${n} unresolved blocking comment${n === 1 ? "" : "s"}. ` +
-      `Resolve ${n === 1 ? "it" : "them"} before prepping or sending out.`,
-  );
+  const result = evaluateBlockingGate(summary, {
+    lineItemId: opts?.lineItemId,
+    groupId: opts?.groupId,
+    actionLabel: opts?.actionLabel,
+  });
+  if (result.blocked) throw new Error(result.message);
 }

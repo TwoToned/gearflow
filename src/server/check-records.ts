@@ -14,6 +14,7 @@ import {
   syncLineItemRollup,
   returnLineUnits,
   checkinAccessoryChildren,
+  resolveAssetAccessories,
 } from "@/lib/line-item-fulfillment";
 import type { Prisma } from "@/generated/prisma/client";
 import {
@@ -225,12 +226,40 @@ export async function pullItem(projectId: string, lineItemId: string) {
 // Assigns the asset to the line item and sets prepStatus=PACKED without deploying.
 // Used in the Pick/Prep flow for items that have no check items assigned.
 
+/**
+ * The permanent accessories a specific asset carries (battery kit, mic clip, …),
+ * for the prep picker's per-accessory checkboxes. Each is keyed by its accessory
+ * identity — serialised accessory `assetId` or bulk accessory `bulkAssetId` —
+ * which is exactly what prep takes back in `includeAccessoryIds`.
+ */
+export async function getAssetAccessories(assetId: string) {
+  const { organizationId } = await getOrgContext();
+  const profile = await prisma.$transaction((tx) =>
+    resolveAssetAccessories(tx, organizationId, assetId)
+  );
+  return serialize({
+    serialised: profile.serialised.map((s) => ({
+      id: s.assetId,
+      name: s.modelName,
+    })),
+    bulk: profile.bulks.map((b) => ({
+      id: b.bulkAssetId,
+      name: b.modelName,
+      quantity: b.quantity,
+    })),
+  });
+}
+
 export async function prepItemDirect(
   projectId: string,
   lineItemId: string,
   assetId?: string,
   quantity?: number,
-  prepContainer?: string | null
+  prepContainer?: string | null,
+  /** Accessory identities (serialised assetId / bulk bulkAssetId) to pack with
+   *  this unit. Undefined = all of the asset's accessories. The prep picker
+   *  passes the ticked set so an operator can leave one off this handheld. */
+  includeAccessoryIds?: string[]
 ) {
   const { organizationId, userId, userName } = await requirePermission(
     "warehouse",
@@ -266,6 +295,7 @@ export async function prepItemDirect(
       bulkAssetId: assetId ? null : lineItem.bulkAssetId,
       quantity,
       prepContainer,
+      includeAccessoryIds: includeAccessoryIds ? new Set(includeAccessoryIds) : null,
     });
   });
 
@@ -347,10 +377,33 @@ export async function deprepItem(
       // first (preserves the lower ordinals for staff who already
       // pulled them physically; also natural LIFO).
       const removeCount = Math.min(quantity, preppedUnits.length);
+      const removedParentAssetIds: string[] = [];
       for (let i = 0; i < removeCount; i++) {
+        if (preppedUnits[i].assetId) removedParentAssetIds.push(preppedUnits[i].assetId as string);
         await tx.projectLineItemUnit.delete({
           where: { id: preppedUnits[i].id },
         });
+      }
+      // Cascade: the accessory units that rode with each removed handheld
+      // (parentUnitAssetId) come off too — else a battery/clip unit lingers on
+      // the deploy board with no parent. Mirrors how prep materialised them.
+      if (removedParentAssetIds.length > 0) {
+        const accChildren = await tx.projectLineItem.findMany({
+          where: { parentLineItemId: lineItemId, organizationId, childKind: "ACCESSORY" },
+          select: { id: true },
+        });
+        if (accChildren.length > 0) {
+          const accChildIds = accChildren.map((c) => c.id);
+          await tx.projectLineItemUnit.deleteMany({
+            where: {
+              lineItemId: { in: accChildIds },
+              organizationId,
+              parentUnitAssetId: { in: removedParentAssetIds },
+              status: { not: "CHECKED_OUT" },
+            },
+          });
+          for (const id of accChildIds) await syncLineItemRollup(tx, id);
+        }
       }
     }
 
@@ -491,6 +544,17 @@ export async function completeCheckAndDeprep(data: {
         ...(resolvedAssetId
           ? { OR: [{ asset: { parentAssetId: resolvedAssetId } }, { assetId: null }] }
           : {}),
+      },
+      data: { prepStatus: "PENDING" },
+    });
+    // Clear the per-parent-unit accessory units' stale PACKED prepStatus too
+    // (scoped to the returned handheld), so the line's derived prep state and
+    // the deploy-staging board don't show them as still packed.
+    await tx.projectLineItemUnit.updateMany({
+      where: {
+        organizationId,
+        lineItem: { parentLineItemId: data.lineItemId, childKind: "ACCESSORY" },
+        ...(resolvedAssetId ? { parentUnitAssetId: resolvedAssetId } : {}),
       },
       data: { prepStatus: "PENDING" },
     });
@@ -769,6 +833,7 @@ export async function completeCheckAndPack(data: CompleteCheckAndPackValues) {
       assetId: parsed.assetId ?? null,
       bulkAssetId: parsed.assetId ? null : lineItem.bulkAssetId,
       prepContainer: parsed.prepContainer,
+      includeAccessoryIds: parsed.includeAccessoryIds ? new Set(parsed.includeAccessoryIds) : null,
     });
 
     return { updatedItem, resolvedAssetId };

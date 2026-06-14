@@ -894,6 +894,7 @@ export default defineSchema({
     ordinal: v.number(),
     assetId: v.optional(v.string()),
     bulkAssetId: v.optional(v.string()),
+    parentUnitAssetId: v.optional(v.string()),
     quantity: v.optional(v.number()),
     returnedQuantity: v.optional(v.number()),
     status: v.optional(enums.LineItemStatus),

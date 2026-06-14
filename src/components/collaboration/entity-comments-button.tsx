@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../../convex/_generated/api";
 import { MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,7 @@ export function EntityCommentsButton({
   entityType: string;
   entityId: string;
 }) {
-  const counts = useQuery(api.collaboration.listThreadCommentCounts, {
+  const counts = useAuthedQuery(api.collaboration.listThreadCommentCounts, {
     orgId,
     entityType,
     entityId,

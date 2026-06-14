@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { useQuery } from "convex/react";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 
@@ -30,8 +30,8 @@ export function useModelCheckItems(
   orgId: string | undefined,
   modelId: string | undefined,
 ): ModelCheckItemWithCheck[] | undefined {
-  const assignments = useQuery(api.modelCheckItems.list, orgId ? { orgId } : "skip");
-  const checkItems = useQuery(api.checkItems.list, orgId ? { orgId } : "skip");
+  const assignments = useAuthedQuery(api.modelCheckItems.list, orgId ? { orgId } : "skip");
+  const checkItems = useAuthedQuery(api.checkItems.list, orgId ? { orgId } : "skip");
   return useMemo(() => {
     if (assignments === undefined || checkItems === undefined || !modelId) return undefined;
     const byId = new Map(checkItems.map((c) => [c.id, c]));
@@ -52,7 +52,7 @@ export function useModelCheckItems(
 export function useModelCheckItemUsageCounts(
   orgId: string | undefined,
 ): Map<string, number> | undefined {
-  const assignments = useQuery(api.modelCheckItems.list, orgId ? { orgId } : "skip");
+  const assignments = useAuthedQuery(api.modelCheckItems.list, orgId ? { orgId } : "skip");
   return useMemo(() => {
     if (assignments === undefined) return undefined;
     const counts = new Map<string, number>();
@@ -65,8 +65,8 @@ export function useKitCheckItems(
   orgId: string | undefined,
   kitId: string | undefined,
 ): KitCheckItemWithCheck[] | undefined {
-  const assignments = useQuery(api.kitCheckItems.list, orgId ? { orgId } : "skip");
-  const checkItems = useQuery(api.checkItems.list, orgId ? { orgId } : "skip");
+  const assignments = useAuthedQuery(api.kitCheckItems.list, orgId ? { orgId } : "skip");
+  const checkItems = useAuthedQuery(api.checkItems.list, orgId ? { orgId } : "skip");
   return useMemo(() => {
     if (assignments === undefined || checkItems === undefined || !kitId) return undefined;
     const byId = new Map(checkItems.map((c) => [c.id, c]));

@@ -108,6 +108,9 @@ export interface DocumentLineItem {
     asset: { assetTag: string } | null;
     bulkAsset: { assetTag: string } | null;
     status: string;
+    /** For an ACCESSORY-line unit: the parent unit's asset it travels with —
+     *  lets the docket nest each accessory under its specific parent unit. */
+    parentUnitAssetId?: string | null;
   }>;
   childLineItems?: DocumentLineItem[];
 }

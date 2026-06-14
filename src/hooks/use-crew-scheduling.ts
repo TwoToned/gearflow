@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 
@@ -29,7 +29,7 @@ export function useProjectCrewAssignments(
   projectId: string | undefined,
   orgId: string | undefined,
 ): CrewAssignmentDoc[] | undefined {
-  return useQuery(
+  return useAuthedQuery(
     api.crewAssignments.listByProject,
     projectId && orgId ? { projectId, orgId } : "skip",
   );
@@ -37,19 +37,19 @@ export function useProjectCrewAssignments(
 
 /** All crew assignments for an org (the planner signal). */
 export function useOrgCrewAssignments(orgId: string | undefined): CrewAssignmentDoc[] | undefined {
-  return useQuery(api.crewAssignments.list, orgId ? { orgId } : "skip");
+  return useAuthedQuery(api.crewAssignments.list, orgId ? { orgId } : "skip");
 }
 
 /** All time entries for an org (the timesheets signal). */
 export function useOrgTimeEntries(orgId: string | undefined): CrewTimeEntryDoc[] | undefined {
-  return useQuery(api.crewTimeEntries.list, orgId ? { orgId } : "skip");
+  return useAuthedQuery(api.crewTimeEntries.list, orgId ? { orgId } : "skip");
 }
 
 /** All availability blocks for an org (the planner availability signal).
  *  crewAvailabilities is org-scoped in Convex via a denormalized organizationId
  *  (the Prisma model scopes via crewMember), so the standard org `list` works. */
 export function useOrgAvailabilities(orgId: string | undefined): CrewAvailabilityDoc[] | undefined {
-  return useQuery(api.crewAvailabilities.list, orgId ? { orgId } : "skip");
+  return useAuthedQuery(api.crewAvailabilities.list, orgId ? { orgId } : "skip");
 }
 
 /**

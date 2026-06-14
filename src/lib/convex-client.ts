@@ -42,6 +42,31 @@ export async function getConvexClient(): Promise<ConvexHttpClient> {
 }
 
 /**
+ * Run a Convex READ with one retry on a transient failure.
+ *
+ * The cross-domain read helpers (clients / models / suppliers / categories) feed
+ * core pages — the projects list and detail — that used to be pure Prisma. Post-
+ * migration those pages hard-depend on a Convex round-trip with no fallback, so a
+ * single transient blip (self-hosted cold start, a momentary JWKS/network hiccup,
+ * a token-refresh boundary) would otherwise take the whole page down with the
+ * generic Convex "InternalServerError". Reads are idempotent, so one retry after a
+ * short backoff absorbs the blip. A PERSISTENT error still throws on the second
+ * attempt — the page still errors and you still find out; this only smooths the
+ * "random" ones. The thunk re-calls `getConvexClient()` so the retry also picks up
+ * a freshly-attached token if the first failure was a refresh-boundary race.
+ *
+ * READS ONLY. Never wrap a mutation — they are not safe to retry blindly.
+ */
+export async function withConvexReadRetry<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch {
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    return await run();
+  }
+}
+
+/**
  * Map a Prisma row to a Convex create payload: Date -> Unix ms, Prisma Decimal
  * -> number, and null -> undefined (Convex `v.optional()` rejects null — a field
  * is either present-with-a-value or absent). Use when backfilling or mirroring.

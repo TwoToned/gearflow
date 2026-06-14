@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 
@@ -21,9 +21,9 @@ import type { Doc } from "../../convex/_generated/dataModel";
 export type TestProfileDoc = Doc<"testProfiles">;
 
 export function useTestProfiles(orgId: string | undefined): TestProfileDoc[] | undefined {
-  return useQuery(api.testProfiles.list, orgId ? { orgId } : "skip");
+  return useAuthedQuery(api.testProfiles.list, orgId ? { orgId } : "skip");
 }
 
 export function useTestProfile(id: string | undefined): TestProfileDoc | null | undefined {
-  return useQuery(api.testProfiles.getById, id ? { id } : "skip");
+  return useAuthedQuery(api.testProfiles.getById, id ? { id } : "skip");
 }

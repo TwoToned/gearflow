@@ -91,6 +91,10 @@ export const completeCheckAndPackSchema = z.object({
   bulkAssetId: z.string().optional(),
   prepContainer: z.string().nullish(),
   checks: z.array(checkRecordSchema).min(1),
+  // Accessory identities to pack with this unit (serialised assetId / bulk
+  // bulkAssetId). Undefined = all; the prep picker passes the ticked set so an
+  // operator can leave an accessory off this handheld even on a checked prep.
+  includeAccessoryIds: z.array(z.string()).optional(),
 });
 
 export type CompleteCheckAndPackValues = z.input<

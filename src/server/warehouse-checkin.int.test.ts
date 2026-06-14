@@ -227,6 +227,60 @@ describe("checkInItems — fulfillment model round-trip", () => {
     expect(assets.every((a) => a.status === "AVAILABLE")).toBe(true);
   });
 
+  it("returning a multi-unit serialised line with quantity:1 returns only one unit", async () => {
+    // The bug: 4x of one model on a single order line, all deployed.
+    // The warehouse UI lets you tick ONE unit and sends
+    // { lineItemId, quantity: 1 } (no assetId — the asset lives on the
+    // unit, not the line). returnLineUnits used to ignore quantity in
+    // its whole-line branch and flip EVERY still-out unit, returning all
+    // four. It must flip exactly one.
+    const org = await createOrgFixture();
+    const user = await createUserFixture(org.id);
+    h.ctx = { organizationId: org.id, userId: user.id, userName: "Tester" };
+
+    const model = await createModelFixture(org.id);
+    const project = await createProjectFixture(org.id);
+    const line = await createLineItemFixture(org.id, project.id, model.id, {
+      quantity: 4,
+    });
+    const assets = await Promise.all(
+      [1, 2, 3, 4].map((n) =>
+        createAssetFixture(org.id, model.id, { assetTag: `Q1-${n}` }),
+      ),
+    );
+
+    // Deploy all four.
+    await checkOutItems(
+      project.id,
+      assets.map((a) => ({ lineItemId: line.id, assetId: a.id })),
+    );
+
+    // Tick exactly one unit (no assetId, quantity 1) — the UI's payload.
+    await checkInItems(project.id, [
+      { lineItemId: line.id, returnCondition: "GOOD", quantity: 1 },
+    ]);
+
+    const units = await testPrisma.projectLineItemUnit.findMany({
+      where: { lineItemId: line.id },
+    });
+    expect(units.filter((u) => u.status === "RETURNED")).toHaveLength(1);
+    expect(units.filter((u) => u.status === "CHECKED_OUT")).toHaveLength(3);
+
+    const refreshed = await testPrisma.projectLineItem.findUniqueOrThrow({
+      where: { id: line.id },
+    });
+    expect(refreshed.status).toBe("CHECKED_OUT");
+    expect(refreshed.returnedQuantity).toBe(1);
+    expect(refreshed.checkedOutQuantity).toBe(3);
+
+    // Exactly one physical asset came back available; three stay out.
+    const after = await testPrisma.asset.findMany({
+      where: { id: { in: assets.map((a) => a.id) } },
+    });
+    expect(after.filter((a) => a.status === "AVAILABLE")).toHaveLength(1);
+    expect(after.filter((a) => a.status === "CHECKED_OUT")).toHaveLength(3);
+  });
+
   it("checks in a kit-child line (asset on the line, no unit row)", async () => {
     const org = await createOrgFixture();
     const user = await createUserFixture(org.id);

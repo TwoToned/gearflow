@@ -33,6 +33,8 @@ export interface LineItem {
     ordinal: number;
     assetId: string | null;
     bulkAssetId: string | null;
+    /** For an ACCESSORY-line unit: the parent unit's asset it travels with. */
+    parentUnitAssetId?: string | null;
     quantity: number;
     status: string;
     prepStatus: string | null;

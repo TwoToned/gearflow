@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useCallback, useEffect } from "react";
-import { useQuery } from "convex/react";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../../convex/_generated/api";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
@@ -135,11 +135,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   // Passive section/group collaboration state: one lock subscription and one
   // comment-count subscription for the project, then row lookups by target key.
   // This avoids mounting active edit-lock hooks for every group row.
-  const sectionLocks = useQuery(
+  const sectionLocks = useAuthedQuery(
     api.collaboration.listLocksForEntity,
     orgId ? { orgId, entityType: "project", entityId: projectId } : "skip"
   );
-  const commentCounts = useQuery(
+  const commentCounts = useAuthedQuery(
     api.collaboration.listThreadCommentCounts,
     orgId ? { orgId, entityType: "project", entityId: projectId } : "skip"
   ) as Record<string, { open: number; total: number; blockingOpen: number }> | undefined;

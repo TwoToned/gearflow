@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { useQuery } from "convex/react";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 
@@ -20,11 +20,11 @@ import type { Doc } from "../../convex/_generated/dataModel";
 export type CategoryDoc = Doc<"categories">;
 
 export function useCategories(orgId: string | undefined): CategoryDoc[] | undefined {
-  return useQuery(api.categories.list, orgId ? { orgId } : "skip");
+  return useAuthedQuery(api.categories.list, orgId ? { orgId } : "skip");
 }
 
 export function useCategory(id: string | undefined): CategoryDoc | null | undefined {
-  return useQuery(api.categories.getById, id ? { id } : "skip");
+  return useAuthedQuery(api.categories.getById, id ? { id } : "skip");
 }
 
 export type CategoryWithParent = CategoryDoc & { parent: { name: string } | null };

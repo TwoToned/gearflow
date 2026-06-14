@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 
@@ -21,7 +21,7 @@ export type CustomFieldDefinitionDoc = Doc<"customFieldDefinitions">;
 export function useCustomFieldDefinitions(
   orgId: string | undefined,
 ): CustomFieldDefinitionDoc[] | undefined {
-  return useQuery(api.customFieldDefinitions.list, orgId ? { orgId } : "skip");
+  return useAuthedQuery(api.customFieldDefinitions.list, orgId ? { orgId } : "skip");
 }
 
 /**

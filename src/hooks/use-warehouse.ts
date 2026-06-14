@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../convex/_generated/api";
 
 /**
@@ -15,7 +15,7 @@ import { api } from "../../convex/_generated/api";
  * this React module. See FEATUREDOCS/54.
  */
 export function useWarehouseListVersion(orgId: string | undefined) {
-  return useQuery(api.warehouseDetail.listVersion, orgId ? { orgId } : "skip");
+  return useAuthedQuery(api.warehouseDetail.listVersion, orgId ? { orgId } : "skip");
 }
 
 /**
@@ -28,5 +28,5 @@ export function useWarehouseListVersion(orgId: string | undefined) {
  * so this never needs the "skip" sentinel in practice, but guard anyway.
  */
 export function useWarehouseProjectVersion(projectId: string | undefined) {
-  return useQuery(api.warehouseDetail.version, projectId ? { projectId } : "skip");
+  return useAuthedQuery(api.warehouseDetail.version, projectId ? { projectId } : "skip");
 }

@@ -4,6 +4,47 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.19.5.0] - 2026-06-14
+
+### Fixed
+- **The last of the random "couldn't complete your request" crashes on detail
+  pages are gone.** Opening or refreshing a warehouse project, asset, kit, or
+  stocktake page directly could crash it: the live-data connection sent its first
+  request before your login token had finished loading, so the server rejected it
+  as unauthenticated. Every live page now waits for the token before it asks for
+  data, and automatically reconnects the moment the token lands — so a cold load
+  or refresh no longer races into an error. This completes the fix started in
+  0.19.3.0 (which only covered a token dropping mid-session).
+
+## [0.19.4.0] - 2026-06-14
+
+### Added
+- Prep dialog now lets you include or exclude each accessory per item. When you assign an asset tag to a handheld, its accessories (battery kit, mic clip, etc.) appear as checkboxes, ticked by default — untick one to leave it off that specific unit so it never packs or ships.
+
+### Fixed
+- Warehouse check-in: returning one of several identical deployed units (e.g. 1 of 4 SM58s) now returns only the one you ticked, not all of them.
+- Warehouse prep: prepping one of several identical units now preps only that one. Serialised items reliably route to the asset picker even when the catalog mirror is missing the asset type.
+- Accessories are now tracked per individual parent unit. Prep, deploy, and return for each handheld handle its own battery/clip independently — fixing "prep three handhelds, only the first battery set ticks" and dockets that showed one real accessory row plus blank placeholders. Depreping a unit also removes just that unit's accessories.
+
+### Changed
+- Accessory prep/deploy/return cascades reworked onto a per-parent-unit model: each parent unit carries its own accessory units, linked by a new `ProjectLineItemUnit.parentUnitAssetId` (Prisma + Convex schema).
+
+## [0.19.3.0] - 2026-06-14
+
+### Fixed
+- **Random "couldn't complete your request" crashes on warehouse and project
+  pages are fixed.** A brief hiccup while fetching your login token (a momentary
+  server blip or cold start) would log you out of the live data connection, and
+  every page that updates in real time would error out until you refreshed. The
+  token fetch now retries through a transient blip instead of dropping the
+  connection, so those pages stay live.
+- **Server-side page loads survive a momentary data-layer blip.** The projects
+  list and detail now retry a one-off transient read failure instead of failing
+  the whole page.
+- **Underlying errors are no longer hidden.** When the data layer rejects a
+  request, the real reason is now reported instead of a generic "try again
+  later", so future issues are diagnosable from the logs.
+
 ## [0.19.2.1] - 2026-06-14
 
 ### Fixed

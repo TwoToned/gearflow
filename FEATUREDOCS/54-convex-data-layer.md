@@ -2233,45 +2233,66 @@ venue + 11 model lines + 1 sub-hire) and **TechCorp Annual Gala** (ON_SITE, 6 ch
   a `SMOKE-cdlm` asset to Main Warehouse → rendered, reverted); warehouse Close-Out + project pages render.
   `warehouse.ts` now has **zero** cross-domain model/category/supplier/location Prisma relation joins.
 
-**Non-document cross-domain reads — 🔄 IN PROGRESS (2026-06-12).** Decommissioning the remaining `model`/
-`category`/`supplier`/`location` relation joins on the non-document server surface, one file at a time (all
-shape-identical Convex-map grafts; sorts/filters stay on the fresh Prisma mirror; null-safe since the model FK
-was NOT NULL in Prisma; none feed the PDF pipeline). **Done + pushed:**
+**Non-document cross-domain reads — 🔄 IN PROGRESS.** Decommissioning the remaining `model`/
+`category`/`supplier`/`location`/`asset`/`bulkAsset`/`kit`/`project` relation joins on the non-document server
+surface, one file at a time. **Done + pushed (through 2026-06-15):**
 - `bulk-assets.ts` — `getBulkAssets` + `getBulkAsset` (model+category+location via `getModelWithCategoryMap`/
-  `getLocationMap`); `BulkAssetWithRelations` retyped. Live-verified (test-tag bulk picker renders model names).
-- `assets.ts` — `getAssets` list (model+category+location; the vestigial primary-photo media joins dropped —
-  its sole consumer, the test-tag form, reads model scalars only; the reactive registry table uses
-  `getAssetRegistryPhotos`/`useAssets`). `AssetWithRelations` retyped.
+  `getLocationMap`); `BulkAssetWithRelations` retyped.
+- `assets.ts` — `getAssets` list (model+category+location; vestigial primary-photo media joins dropped).
 - `maintenance.ts` — `getMaintenanceRecords` / `getWorkshopQueue` / `getMaintenanceRecord` /
   `getAssetsForMaintenanceSelect` (`asset.model` via `attachAssetModels` + `getModelMap`).
-- `damage.ts` — `listDamageEvents` / `getDamageEvent` (`asset.model` + `bulkAsset.model` via
-  `attachDamageModels`). Live-verified (damage list renders "L-Acoustics K2").
+- `damage.ts` — `listDamageEvents` / `getDamageEvent` (`asset.model` + `bulkAsset.model` via `attachDamageModels`).
 - `stocktake.ts` — `getStocktakes` / `getStocktakeById` / `scanStocktakeItem` / `getRecentScans` /
-  `searchStocktakeAssets` / `markStocktakeItemFound` (`asset.model` + `bulkAsset.model` via typed
-  `attachStocktakeModels`; stocktake `location` via `getLocationMap`; vestigial scan-lookup model includes
-  removed). Model-name search + category filters stay on the mirror.
-- `check-records.ts` — the prep/check write surface (pullItem / prepItemDirect / deprep* / unpackItem /
-  completeCheckAnd* / saveAdHocCheck / kit checks): line-item `model` joins dropped, grafted onto the returned
-  row via `attachLineItemModels` + `getModelMap` feeding each `logActivity` entityName. Two special cases:
-  auto-maintenance description → `getModelById`; `lookupAssetForAdHocCheck` model.name → `getModelById` and the
-  `model._count.modelCheckItems` → `getModelCheckItemCountMap` (verified old-vs-new parity). Kit joins
-  (`parentLi.kit`) left for the kit-domain decommission.
-- `kits.ts` — **dead `getKits` list deleted** (zero callers; the kit list page + kit-add-form both read the
-  Convex-reactive `useKits` list), dropping its category/location/media joins + orphaned helpers.
+  `searchStocktakeAssets` / `markStocktakeItemFound` (model+location via Convex maps; category filters stay mirror).
+- `check-records.ts` — prep/check write surface: line-item `model` joins grafted via `attachLineItemModels` +
+  `getModelMap`. Kit joins left for the kit-domain decommission.
+- `kits.ts` — **dead `getKits` list deleted**; category/location/media joins gone.
+- `warehouse-display.ts` — `prisma.project.findMany` replaced with `getProjectsByOrg` + JS date filters;
+  7-day warehouse dashboard loop is now Convex-sourced.
+- `sub-hires.ts` — `project` include in `getSubHires` / `getSubHire` / `updateSubHireStatus` /
+  `changeSubHireProject` replaced with `getProjectsByOrg` / `getProjectById` from Convex.
+- `kits-read.ts` — added `getKitByAssetTag` Convex helper.
+- `warehouse.ts` — scan path (`lookupAssetForScan`): all three domain lookups (asset/bulkAsset/kit) now
+  Convex via `getAssetByAssetTag` / `getBulkAssetByAssetTag` / `getKitByAssetTag`; parent-kit and
+  parent-asset lookups via `getKitById` / `getAssetById`; `forceReturnAsset` / `forceReturnKit` /
+  `bulkForceReturnAssets` / `getAvailableAssetsForModel` all off Convex (project conflict window now JS
+  filter over `getProjectsByOrg`).
+- `line-items.ts` — 13 cross-domain reads replaced: project conflict windows → `getProjectsByOrg` + JS
+  date-range filter; asset/kit header lookups → `getAssetById` / `getKitById`; location join →
+  `getLocationById`; kit sub-tables (serializedItems/bulkItems) remain Prisma but fetched separately and
+  merged. `addKitToProject` / `addLineItem` / `updateLineItem` / `addCustomLineItem` / `lookupAssetByTag` /
+  `checkKitAvailability` all converted.
+- `line-item-tree-read.ts` — added `attachAssetBulkAssetTree`: walks a lineItem tree (recursing into
+  `childLineItems` + `units`) and attaches `ConvexAsset` / `ConvexBulkAsset` from org-scoped maps; replaces
+  `asset: true` / `bulkAsset: true` Prisma joins at every tree level.
+- `warehouse.ts` `getProjectForWarehouse` + `getProjectPullSheet` — removed `asset: true` / `bulkAsset: true`
+  from the 3-level lineItem + units includes; calls `attachAssetBulkAssetTree` after the kit/model pipeline;
+  `graftAssetLocation` still works (ConvexAsset has `locationId`).
 
-**Detail-page reads — INTENTIONAL Prisma terminus (do NOT decommission).** `assets.ts:getAsset` and `kits.ts`
-`getKit` (+ their type-coupled `getAvailable*ForKit` pickers and `add*ToKit` writes) **stay on Prisma by
-design** — this is the documented decision in `media-read.ts` ("splitting a `media` include out of a
-non-reactive cross-domain query is gratuitous risk"). Independently re-confirmed by the type system this session:
-attempting the split forces the detail-page **media galleries** out of the cohesive query (they have no full-list
-Convex read — only `getPrimaryPhotoMaps`) AND breaks the consumers' **non-null `model` contract** + `MediaItem` /
-`AvailableAsset` types (the detail pages read `asset.model.name` unguarded and type their pickers against the
-Prisma model shape). Both attempts were reverted. These read-only detail pages keep their cohesive Prisma query;
-the model/category/location/media tables remain in Prisma as the FK anchors regardless, so this costs nothing.
+**Detail-page reads — INTENTIONAL Prisma terminus (do NOT decommission).** `assets.ts:getAsset` and
+`kits.ts:getKit` **stay on Prisma by design** — splitting the `*_media` gallery include is gratuitous risk
+(5-consumer PDF audit + non-null `model` type contract). These tables remain FK anchors regardless.
 
-**Still left** (genuinely out of scope):
-- The `*_media` joins themselves (detail galleries deliberately on Prisma — see above).
-- Kit-domain joins (`parentLi.kit`, getKit member items) — a separate domain cutover, coupled to the getKit terminus.
+**Post-mutation within-transaction reads — INTENTIONAL Prisma terminus.** The `include: { asset: true,
+bulkAsset: true }` on `tx.projectLineItem.findUnique/create` inside `checkOutItems` / `checkInItems` /
+`quickAddAndCheckOut` (warehouse.ts lines ~842, ~892, ~1129, ~1682, ~1748, ~1775) need fresh data
+immediately after the mutation — the Convex mirror is eventually consistent so these CANNOT use Convex.
+Same rationale as `maintenanceRecordAssets`.
+
+**Still remaining (as of 2026-06-15) — genuine decommission work left:**
+
+| File | What remains | Approach |
+|------|-------------|----------|
+| `build-document-data.ts` | `asset: true`, `bulkAsset: true`, `kit: true` in `lineItemInclude`; `asset/bulkAsset` in `unitInclude` | Remove joins; add `attachAssetBulkAssetTree` + `attachKitTree` to the build pipeline; `unitInclude` keeps `assetId`/`bulkAssetId` scalars for lookup |
+| `woocommerce.ts` | `location.findFirst` × 2, `location.findMany` × 1 (fuzzy match); `model.findFirst` × 4 (SKU/name/custom); `project.findFirst` × 1 (dupe project number check) | `getLocationsByOrg` + JS filter; `getModelsByOrg` + JS find; `getProjectsByOrg` + JS find |
+| `report-engine.ts` | `asset.groupBy` (model report counts); `project.findMany` (client report); `asset.count` (location report); `kit.count` (location report) | Pre-fetch `getAssetsByOrg` / `getBulkAssetsByOrg` / `getKitsByOrg` once before each loop; filter/count in JS |
+| `csv.ts` | `model.findMany` (export); `asset.findMany` (export); `bulkAsset.findMany` (export); `category.findMany` (import ref); `model.findFirst/findMany` × 4 (import mapping); `asset.findFirst` (import check) | Org-scoped Convex reads + JS find/filter; import dedup checks go JS |
+| `asset-accessories.ts` | `asset.findMany` (available accessories list); `asset.findUnique` × 3 (parent/child lookups); `bulkAsset.findUnique` × 1 | `getAssetsByOrg` + JS filter for list; `getAssetById` / `getBulkAssetById` for point lookups |
+| `model-accessories.ts` | `model.findUnique`; `bulkAsset.findUnique` | `getModelById` / `getBulkAssetById` |
+| `line-items.ts` | `asset.count` at line 1364 (child asset count in `checkAssetAvailability`); `project.findUniqueOrThrow` at line 1465 (`discountPercent`/`taxRate` for `recalculateProjectTotals`) | `getAssetsByOrg` + JS filter count; `getProjectById` |
+| `project-services.ts` | `project.findFirst` × 5 (org-scoping check before service ops) | `getProjectById` + org check |
+| `project-categories.ts` | `project.findUnique` × 1 (org-scoping check) | `getProjectById` + org check |
+| `warehouse.ts` scan log | `assetScanLog.findMany` with `project: true` at lines ~1592–1600 | `getProjectsByOrg` + map; keep `asset/bulkAsset` in scan log (in-domain read) |
 
 ## Remaining work & session sizing (post-central-graph)
 
@@ -2309,16 +2330,12 @@ mechanical dual-write, much slower for design/security/teardown work):
    sub-hire line-item rows. **Size: a sequence of scoped, independently-shippable
    sessions (one per subsystem).** Do NOT attempt in one pass.
 
-**What remains for the migration overall (with SSE + React Query gone, and the PDF
-/ document / report model+category+location reads now off the mirror):** the
-Prisma-decommission reads that are still deferred — the non-document
-`model.*`/`category`/`supplier`/`location` reads (asset/kit detail, check-records,
-stocktake, `warehouse.ts` hot path), and the `*_media` cross-domain joins — all on
-the dual-write-fresh Prisma mirror (never
-stale, but Prisma); the infra-only dual-write domains (brand/section/group/document/
-service templates, project grouping, file_upload) have no reactive reader yet; and a
-final truncate+backfill to clear the regenerate-orphaned sub-hire line-item rows
-before any FK/mirror drop.
+**What remains for the migration overall (as of 2026-06-15):** the table in
+"Still remaining" above covers the ~10 files with genuine cross-domain Prisma reads
+left. The two intentional Prisma terminus groups (detail-page media queries +
+post-mutation in-tx reads) stay forever. The infra-only dual-write domains
+(brand/section/group/document/service templates, project grouping, file_upload) have
+no reactive reader yet — not blocking decommission, just reactive gaps.
 Convex stays the reactive read layer; RBAC/`custom_role`/`activityLog` stay Prisma
 forever (Convex is never the authZ source of truth). **The client data-fetching
 stack is now Convex `useQuery` + the `useServerQuery`/`useServerMutation`/

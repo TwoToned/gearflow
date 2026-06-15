@@ -17,7 +17,7 @@ import {
   computeUtilizationSummary,
   type UtilizationSummaryRow,
 } from "@/lib/utilization";
-import { prisma } from "@/lib/prisma";
+import { getAssetsByOrg } from "@/lib/assets-read";
 import { getModelWithCategoryMap } from "@/lib/models-read";
 
 /** One asset's utilization — for the asset detail page tab. */
@@ -70,22 +70,10 @@ export async function getUtilizationSummary(options?: {
 
   if (rows.length === 0) return [];
 
-  // Fan out a single bulk lookup for the display columns rather than
-  // hitting prisma per row.
-  const assets = await prisma.asset.findMany({
-    where: {
-      id: { in: rows.map((r) => r.assetId) },
-      organizationId,
-    },
-    select: {
-      id: true,
-      assetTag: true,
-      customName: true,
-      status: true,
-      modelId: true,
-    },
-  });
-  const byId = new Map(assets.map((a) => [a.id, a]));
+  // Look up asset display columns from Convex.
+  const assetIds = new Set(rows.map((r) => r.assetId));
+  const allOrgAssets = await getAssetsByOrg(organizationId);
+  const byId = new Map(allOrgAssets.filter((a) => assetIds.has(a.id)).map((a) => [a.id, a]));
   // model (+ nested category) lives in Convex — resolve from the map.
   const modelMap = await getModelWithCategoryMap(organizationId);
 

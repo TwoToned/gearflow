@@ -17,6 +17,7 @@ import { syncSupplierOrderToConvex } from "@/lib/sub-hire-mirror";
 import { getSupplierById, getSupplierMap } from "@/lib/suppliers-read";
 import { getModelMap, getModelWithCategoryMap } from "@/lib/models-read";
 import { getLocationMap } from "@/lib/locations-read";
+import { getBulkAssetsByOrg } from "@/lib/assets-read";
 
 export interface ReorderCandidate {
   bulkAssetId: string;
@@ -43,22 +44,17 @@ export interface ReorderCandidate {
 export async function getReorderCandidatesCore(
   organizationId: string,
 ): Promise<ReorderCandidate[]> {
-  // model (+ nested category), preferredSupplier, and location all live in
-  // Convex — attached from the maps below, not Prisma joins.
-  const rows = await prisma.bulkAsset.findMany({
-    where: {
-      organizationId,
-      isActive: true,
-      reorderThreshold: { not: null, gt: 0 },
-    },
-    orderBy: { availableQuantity: "asc" },
-  });
-
-  const candidates = rows.filter(
-    (b) =>
-      b.reorderThreshold != null &&
-      b.availableQuantity <= b.reorderThreshold,
-  );
+  // All live in Convex — filter + sort in JS.
+  const allBulkAssets = await getBulkAssetsByOrg(organizationId);
+  const candidates = allBulkAssets
+    .filter(
+      (b) =>
+        b.isActive !== false &&
+        b.reorderThreshold != null &&
+        b.reorderThreshold > 0 &&
+        (b.availableQuantity ?? 0) <= b.reorderThreshold,
+    )
+    .sort((a, b) => (a.availableQuantity ?? 0) - (b.availableQuantity ?? 0));
 
   const [modelMap, supplierMap, locationMap] = await Promise.all([
     getModelWithCategoryMap(organizationId),
@@ -72,22 +68,21 @@ export async function getReorderCandidatesCore(
     const supplier = b.preferredSupplierId ? supplierMap.get(b.preferredSupplierId) : null;
     // Target stock = threshold × 1.5 (rounded up). Order the gap.
     const target = Math.ceil(threshold * 1.5);
-    const suggested = Math.max(1, target - b.availableQuantity);
+    const availQty = b.availableQuantity ?? 0;
+    const suggested = Math.max(1, target - availQty);
     return {
       bulkAssetId: b.id,
       assetTag: b.assetTag,
       modelId: b.modelId,
       modelName: model?.name ?? "",
       categoryName: model?.category?.name ?? null,
-      totalQuantity: b.totalQuantity,
-      availableQuantity: b.availableQuantity,
+      totalQuantity: b.totalQuantity ?? 0,
+      availableQuantity: availQty,
       reorderThreshold: threshold,
       suggestedOrderQuantity: suggested,
       preferredSupplier: supplier ? { id: supplier.id, name: supplier.name } : null,
-      purchasePricePerUnit: b.purchasePricePerUnit != null
-        ? Number(b.purchasePricePerUnit)
-        : null,
-      lastReorderedAt: b.lastReorderedAt,
+      purchasePricePerUnit: b.purchasePricePerUnit != null ? b.purchasePricePerUnit : null,
+      lastReorderedAt: b.lastReorderedAt != null ? new Date(b.lastReorderedAt as number) : null,
       locationName: (b.locationId ? locationMap.get(b.locationId)?.name : null) ?? null,
     };
   });
@@ -122,14 +117,10 @@ export async function createReorderDraftCore(
     throw new Error("Supplier not found");
   }
 
-  // Verify every bulk asset belongs to org. Fetch in one query to
-  // avoid N+1 + cross-org leak.
-  const bulks = await prisma.bulkAsset.findMany({
-    where: {
-      id: { in: lines.map((l) => l.bulkAssetId) },
-      organizationId,
-    },
-  });
+  // Verify every bulk asset belongs to org — lives in Convex.
+  const requestedIds = new Set(lines.map((l) => l.bulkAssetId));
+  const allBulks = await getBulkAssetsByOrg(organizationId);
+  const bulks = allBulks.filter((b) => requestedIds.has(b.id));
   if (bulks.length !== lines.length) {
     throw new Error("One or more items could not be found in this organization");
   }

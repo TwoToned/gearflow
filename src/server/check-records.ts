@@ -8,6 +8,7 @@ import { syncAssetsToConvex } from "@/lib/asset-mirror";
 import { upsertProjectLineItemsToConvex } from "@/lib/line-item-mirror";
 import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
 import { getModelMap, getModelById, type ConvexModel } from "@/lib/models-read";
+import { getAssetById, getAssetByAssetTag, getAssetsByOrg } from "@/lib/assets-read";
 import { getModelCheckItemCountMap } from "@/lib/line-item-tree-read";
 import {
   prepUnit,
@@ -115,10 +116,7 @@ async function checkPredictiveMaintenance(
     if (failCount >= 2) {
       // Get asset and check item details for the maintenance record
       const [asset, checkItem] = await Promise.all([
-        prisma.asset.findUnique({
-          where: { id: assetId },
-          select: { assetTag: true, modelId: true },
-        }),
+        getAssetById(assetId),
         prisma.checkItem.findUnique({
           where: { id: checkItemId },
           select: { label: true },
@@ -1145,16 +1143,14 @@ export async function saveAdHocCheck(data: SubmitChecksFormValues) {
 export async function lookupAssetForAdHocCheck(assetTag: string) {
   const { organizationId } = await getOrgContext();
 
-  const asset = await prisma.asset.findUnique({
-    where: { organizationId_assetTag: { organizationId, assetTag } },
-  });
+  const asset = await getAssetByAssetTag(organizationId, assetTag);
 
   if (!asset) {
     return serialize({ found: false as const, asset: null });
   }
 
-  // model name + check-item count live in Convex (dual-written) — resolve from
-  // the model map + the model-check-item count map, not a Prisma join/_count.
+  // model name + check-item count live in Convex — resolve from the model map
+  // + the model-check-item count map, not a Prisma join/_count.
   const [model, checkCounts] = await Promise.all([
     getModelById(asset.modelId),
     getModelCheckItemCountMap(organizationId),
@@ -1209,12 +1205,9 @@ export async function getModelFailureAnalytics(modelId: string) {
     orderBy: { sortOrder: "asc" },
   });
 
-  // Get all assets of this model
-  const assets = await prisma.asset.findMany({
-    where: { modelId, organizationId },
-    select: { id: true },
-  });
-  const assetIds = assets.map((a) => a.id);
+  // Get all assets of this model — lives in Convex.
+  const allOrgAssets = await getAssetsByOrg(organizationId);
+  const assetIds = allOrgAssets.filter((a) => a.modelId === modelId).map((a) => a.id);
 
   if (assetIds.length === 0 || modelCheckItems.length === 0) {
     return serialize([]);

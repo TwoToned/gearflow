@@ -34,6 +34,8 @@
 
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
+import { getAssetById, getAssetsByOrg } from "@/lib/assets-read";
+import { getModelMap } from "@/lib/models-read";
 
 export interface UtilizationPeriod {
   /** Inclusive start. Defaults to asset.createdAt. */
@@ -92,15 +94,14 @@ export async function computeAssetUtilization(
   organizationId: string,
   periodOverride?: Partial<UtilizationPeriod>,
 ): Promise<AssetUtilization | null> {
-  const asset = await prisma.asset.findUnique({
-    where: { id: assetId, organizationId },
-    select: { id: true, createdAt: true, purchaseDate: true },
-  });
-  if (!asset) return null;
+  const asset = await getAssetById(assetId);
+  if (!asset || asset.organizationId !== organizationId) return null;
 
   const now = new Date();
   const periodStart =
-    periodOverride?.start ?? asset.purchaseDate ?? asset.createdAt;
+    periodOverride?.start ??
+    (asset.purchaseDate != null ? new Date(asset.purchaseDate as number) : null) ??
+    new Date((asset.createdAt ?? asset._creationTime) as number);
   const periodEnd = periodOverride?.end ?? now;
   const period: UtilizationPeriod = { start: periodStart, end: periodEnd };
   const periodDays = daysBetween(period.start, period.end);
@@ -277,16 +278,16 @@ export async function computeUtilizationSummary(
     limit?: number;
   },
 ): Promise<AssetUtilization[]> {
-  const assets = await prisma.asset.findMany({
-    where: {
-      organizationId,
-      isActive: true,
-      ...(options?.modelId && { modelId: options.modelId }),
-      ...(options?.categoryId && { model: { categoryId: options.categoryId } }),
-    },
-    select: { id: true },
-    take: options?.limit,
-  });
+  const [allOrgAssets, modelMap] = await Promise.all([
+    getAssetsByOrg(organizationId),
+    options?.categoryId ? getModelMap(organizationId) : Promise.resolve(null),
+  ]);
+  let filtered = allOrgAssets.filter((a) => a.isActive !== false);
+  if (options?.modelId) filtered = filtered.filter((a) => a.modelId === options.modelId);
+  if (options?.categoryId && modelMap) {
+    filtered = filtered.filter((a) => modelMap.get(a.modelId)?.categoryId === options.categoryId);
+  }
+  const assets = options?.limit ? filtered.slice(0, options.limit) : filtered;
 
   const results: AssetUtilization[] = [];
   for (const a of assets) {

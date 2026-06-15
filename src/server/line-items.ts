@@ -24,7 +24,7 @@ import { computeStockBreakdown } from "@/lib/availability";
 import { isStaleRevision } from "@/lib/collaboration-conflict";
 import { writeCollabActivityEvent } from "@/lib/collaboration-activity";
 import { getModelById, getModelMap, getModelWithCategoryMap } from "@/lib/models-read";
-import { getActiveAssetsByModel, getActiveBulkAssetsByModel, getAssetById, getAssetByAssetTag, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
+import { getActiveAssetsByModel, getActiveBulkAssetsByModel, getAssetById, getAssetByAssetTag, getAssetsByOrg, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
 import { getProjectById, getProjectsByOrg } from "@/lib/projects-read";
 import { getKitById } from "@/lib/kits-read";
 import { getLocationById } from "@/lib/locations-read";
@@ -1360,11 +1360,16 @@ export async function lookupAssetByTag(
     }
   }
 
-  const [childAssetCount, childBulkCount, modelBulksCount] = await Promise.all([
-    prisma.asset.count({ where: { parentAssetId: asset.id } }),
+  // Serialized children live in Convex — count from the org asset mirror by
+  // parentAssetId (no dedicated by-parent index, so filter the org list).
+  // assetBulkChild / modelBulkAccessory are accessory join tables (not core
+  // domain) and stay on the fresh Prisma mirror.
+  const [orgAssetsForChildren, childBulkCount, modelBulksCount] = await Promise.all([
+    getAssetsByOrg(organizationId),
     prisma.assetBulkChild.count({ where: { parentAssetId: asset.id } }),
     prisma.modelBulkAccessory.count({ where: { modelId: asset.modelId, organizationId } }),
   ]);
+  const childAssetCount = orgAssetsForChildren.filter((a) => a.parentAssetId === asset.id).length;
   const hasAccessories = childAssetCount > 0 || childBulkCount > 0 || modelBulksCount > 0;
 
   return serialize({ found: true as const, asset: { ...asset, model }, available, conflictsWith, hasAccessories });
@@ -1462,14 +1467,11 @@ function calculateLineTotal(
  *   margin           = total - (serviceCostTotal + labourCostTotal + subHireCostTotal)
  */
 export async function recalculateProjectTotals(projectId: string) {
-  const project = await prisma.project.findUniqueOrThrow({
-    where: { id: projectId },
-    select: {
-      discountPercent: true,
-      taxRate: true,
-      organizationId: true,
-    },
-  });
+  // Project header lives in Convex — read discountPercent/taxRate/organizationId
+  // off the mirror (both money fields are wrapped in Number() below, so the
+  // Convex-number vs Prisma-Decimal shape difference is a no-op).
+  const project = await getProjectById(projectId);
+  if (!project) throw new Error(`Project ${projectId} not found`);
 
   // 1. Equipment revenue from groups: bundle price × quantity, PLUS any
   // custom items placed inside the group. Custom items live outside the

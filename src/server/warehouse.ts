@@ -1585,10 +1585,9 @@ export async function getScanLog(params?: {
     prisma.assetScanLog.findMany({
       where,
       include: {
-        // asset.model lives in Convex — attached after the query, not joined.
-        asset: true,
-        bulkAsset: true,
-        project: true,
+        // asset / bulkAsset / project all live in Convex — attached after the
+        // query from the org mirror, not joined. scannedBy is a Better Auth
+        // user (stays Prisma).
         scannedBy: true,
       },
       orderBy: { scannedAt: "desc" },
@@ -1598,13 +1597,28 @@ export async function getScanLog(params?: {
     prisma.assetScanLog.count({ where }),
   ]);
 
-  // Graft the Convex model doc onto each log's asset (replaces asset.model join).
-  const modelMap = await getModelMap(organizationId);
-  const logsWithModel = logs.map((log) =>
-    log.asset
-      ? { ...log, asset: { ...log.asset, model: log.asset.modelId ? modelMap.get(log.asset.modelId) ?? null : null } }
-      : log,
-  );
+  // Attach asset (+ grafted Convex model), bulkAsset, and project from the
+  // Convex mirror, replacing the dropped Prisma relation joins.
+  const [modelMap, allAssets, allBulkAssets, allProjects] = await Promise.all([
+    getModelMap(organizationId),
+    getAssetsByOrg(organizationId),
+    getBulkAssetsByOrg(organizationId),
+    getProjectsByOrg(organizationId),
+  ]);
+  const scanAssetMap = new Map(allAssets.map((a) => [a.id, a]));
+  const scanBulkAssetMap = new Map(allBulkAssets.map((b) => [b.id, b]));
+  const scanProjectMap = new Map(allProjects.map((p) => [p.id, p]));
+  const logsWithModel = logs.map((log) => {
+    const convexAsset = log.assetId ? scanAssetMap.get(log.assetId) ?? null : null;
+    return {
+      ...log,
+      asset: convexAsset
+        ? { ...convexAsset, model: convexAsset.modelId ? modelMap.get(convexAsset.modelId) ?? null : null }
+        : null,
+      bulkAsset: log.bulkAssetId ? scanBulkAssetMap.get(log.bulkAssetId) ?? null : null,
+      project: log.projectId ? scanProjectMap.get(log.projectId) ?? null : null,
+    };
+  });
 
   return serialize({
     logs: logsWithModel,

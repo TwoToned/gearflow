@@ -6,6 +6,7 @@ import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { syncAssetsToConvex } from "@/lib/asset-mirror";
 import { upsertProjectLineItemsToConvex } from "@/lib/line-item-mirror";
+import { getModelMap } from "@/lib/models-read";
 import {
   returnLineUnits,
   syncLineItemRollup,
@@ -85,34 +86,42 @@ async function loadDeployedItems(
   organizationId: string,
   projectId: string,
 ): Promise<DeployedItemRow[]> {
-  return prisma.projectLineItem.findMany({
-    where: {
-      organizationId,
-      projectId,
-      status: "CHECKED_OUT",
-      subHireGroupId: null,
-      OR: [
-        { isKitChild: false },
-        { isKitChild: true, childKind: "ACCESSORY" },
-      ],
-    },
-    orderBy: { sortOrder: "asc" },
-    select: {
-      id: true,
-      modelId: true,
-      sortOrder: true,
-      assetId: true,
-      bulkAssetId: true,
-      subHireId: true,
-      isCustomItem: true,
-      childKind: true,
-      checkedOutQuantity: true,
-      returnedQuantity: true,
-      status: true,
-      model: { select: { name: true, modelNumber: true } },
-      units: { select: UNIT_SELECT },
-    },
-  });
+  const [rows, modelMap] = await Promise.all([
+    prisma.projectLineItem.findMany({
+      where: {
+        organizationId,
+        projectId,
+        status: "CHECKED_OUT",
+        subHireGroupId: null,
+        OR: [
+          { isKitChild: false },
+          { isKitChild: true, childKind: "ACCESSORY" },
+        ],
+      },
+      orderBy: { sortOrder: "asc" },
+      select: {
+        id: true,
+        modelId: true,
+        sortOrder: true,
+        assetId: true,
+        bulkAssetId: true,
+        subHireId: true,
+        isCustomItem: true,
+        childKind: true,
+        checkedOutQuantity: true,
+        returnedQuantity: true,
+        status: true,
+        units: { select: UNIT_SELECT },
+      },
+    }),
+    getModelMap(organizationId),
+  ]);
+  return rows.map((r) => ({
+    ...r,
+    model: r.modelId
+      ? { name: modelMap.get(r.modelId)?.name ?? null, modelNumber: modelMap.get(r.modelId)?.modelNumber ?? null }
+      : null,
+  })) as DeployedItemRow[];
 }
 
 export async function getBulkCheckInTotals(
@@ -138,6 +147,10 @@ export async function checkInBulkTotals(
   if (wanted.length === 0) {
     return serialize({ returned: [] as Array<{ key: string; quantity: number }> });
   }
+
+  // Pre-fetch model map — model names are display-only, pre-fetching before
+  // the tx avoids a cross-domain read inside the Prisma transaction.
+  const modelMap = await getModelMap(organizationId);
 
   const allTouchedAssets = new Set<string>();
   const returned = await prisma.$transaction(async (tx) => {
@@ -171,9 +184,13 @@ export async function checkInBulkTotals(
         checkedOutQuantity: true,
         returnedQuantity: true,
         status: true,
-        model: { select: { name: true, modelNumber: true } },
         units: { select: UNIT_SELECT },
       },
+    })).map((r) => ({
+      ...r,
+      model: r.modelId
+        ? { name: modelMap.get(r.modelId)?.name ?? null, modelNumber: modelMap.get(r.modelId)?.modelNumber ?? null }
+        : null,
     })) as DeployedItemRow[];
 
     const byKey = new Map<string, CheckInItem[]>();

@@ -2279,20 +2279,42 @@ bulkAsset: true }` on `tx.projectLineItem.findUnique/create` inside `checkOutIte
 immediately after the mutation — the Convex mirror is eventually consistent so these CANNOT use Convex.
 Same rationale as `maintenanceRecordAssets`.
 
-**Still remaining (as of 2026-06-15) — genuine decommission work left:**
+**✅ Final non-document file sweep — DONE (2026-06-15/16).** The last 10 files with
+cross-domain Prisma reads on the non-document surface are now off the mirror. All
+converted shape-identically (org-scoped Convex prefetch + JS filter/find; null on
+a map miss, no Prisma fallback; Convex epoch-ms dates → `new Date(ms)` where a Date
+is needed). Build + 2280 tests + tsc all green.
 
-| File | What remains | Approach |
-|------|-------------|----------|
-| `build-document-data.ts` | `asset: true`, `bulkAsset: true`, `kit: true` in `lineItemInclude`; `asset/bulkAsset` in `unitInclude` | Remove joins; add `attachAssetBulkAssetTree` + `attachKitTree` to the build pipeline; `unitInclude` keeps `assetId`/`bulkAssetId` scalars for lookup |
-| `woocommerce.ts` | `location.findFirst` × 2, `location.findMany` × 1 (fuzzy match); `model.findFirst` × 4 (SKU/name/custom); `project.findFirst` × 1 (dupe project number check) | `getLocationsByOrg` + JS filter; `getModelsByOrg` + JS find; `getProjectsByOrg` + JS find |
-| `report-engine.ts` | `asset.groupBy` (model report counts); `project.findMany` (client report); `asset.count` (location report); `kit.count` (location report) | Pre-fetch `getAssetsByOrg` / `getBulkAssetsByOrg` / `getKitsByOrg` once before each loop; filter/count in JS |
-| `csv.ts` | `model.findMany` (export); `asset.findMany` (export); `bulkAsset.findMany` (export); `category.findMany` (import ref); `model.findFirst/findMany` × 4 (import mapping); `asset.findFirst` (import check) | Org-scoped Convex reads + JS find/filter; import dedup checks go JS |
-| `asset-accessories.ts` | `asset.findMany` (available accessories list); `asset.findUnique` × 3 (parent/child lookups); `bulkAsset.findUnique` × 1 | `getAssetsByOrg` + JS filter for list; `getAssetById` / `getBulkAssetById` for point lookups |
-| `model-accessories.ts` | `model.findUnique`; `bulkAsset.findUnique` | `getModelById` / `getBulkAssetById` |
-| `line-items.ts` | `asset.count` at line 1364 (child asset count in `checkAssetAvailability`); `project.findUniqueOrThrow` at line 1465 (`discountPercent`/`taxRate` for `recalculateProjectTotals`) | `getAssetsByOrg` + JS filter count; `getProjectById` |
-| `project-services.ts` | `project.findFirst` × 5 (org-scoping check before service ops) | `getProjectById` + org check |
-| `project-categories.ts` | `project.findUnique` × 1 (org-scoping check) | `getProjectById` + org check |
-| `warehouse.ts` scan log | `assetScanLog.findMany` with `project: true` at lines ~1592–1600 | `getProjectsByOrg` + map; keep `asset/bulkAsset` in scan log (in-domain read) |
+| File | What was converted |
+|------|-------------------|
+| `build-document-data.ts` | dropped `asset`/`bulkAsset`/`kit` joins (3 tree levels) + unit asset joins; attach via `attachLineItemTree` → `attachKitTree` → `attachAssetBulkAssetTree`; `unitInclude` now selects `assetId`/`bulkAssetId` scalars. All 5 DocumentLineItem consumers untouched (233 PDF tests green) |
+| `woocommerce.ts` | `resolveLocation` fuzzy-match over `getLocationsByOrg`; product matcher over `getModelsByOrg`; dup project-number check over `getProjectsByOrg` (writes `location.create`/`project.create` stay) |
+| `report-engine.ts` | per-row `asset.groupBy`/`asset.count`/`project.findMany`/`kit.count` → org-wide Convex prefetch + JS (one fetch per dataSource block; `projectLineItem.aggregate` stays Prisma — sub-table) |
+| `csv.ts` | model/asset/bulkAsset exports + category ref + import dedup maps off Convex (sorts → JS `localeCompare`; export dates wrapped `new Date(ms)`) |
+| `asset-accessories.ts` | available-accessory list via `getAssetsByOrg` + JS; parent/child point lookups via `getAssetById`/`getBulkAssetById`; childAssets/childBulkItems existence via org asset + `assetBulkChildren` Convex lists |
+| `model-accessories.ts` | `getModelById` + `getBulkAssetById` + org check |
+| `line-items.ts` | child serialized-asset count via `getAssetsByOrg` + JS filter; `recalculateProjectTotals` header via `getProjectById` |
+| `project-services.ts` | 5 project org-scope checks via `getProjectById`; location via `getLocationById` |
+| `project-categories.ts` | project header via `getProjectById`; lineItems split to a separate Prisma sub-table query |
+| `warehouse.ts` `getScanLog` | dropped asset/bulkAsset/project joins → Convex attach (asset gets grafted model); `scannedBy` Better-Auth join stays |
+
+**Plus two adjacent build-blockers fixed the same session** (both downstream of
+earlier decommission commits that shipped with errors):
+- `reservation-conflicts.ts` — a prior batch converted the model/asset reads but
+  left the `project: { … }` relation-filter joins, which broke tsc once project
+  rental dates became Convex numbers. Finished it: `overlappingProjectIds()` helper
+  (collect live-overlapping ids from `getProjectsByOrg` + JS window → `projectId: { in }`),
+  `toConflictProject()` shape map, asset tags from a Convex map, swap-candidate +
+  TOCTOU-recheck paths off the mirror.
+- `assets/registry/[id]/page.tsx`, `kits/[id]/page.tsx`, `equipment-add-form.tsx` —
+  null-guarded the now-nullable `asset.model`/`bulkAsset.model` (Convex map-miss →
+  null vs the old non-null Prisma relation); `asset-service.test.ts` now mocks
+  `getModelById` so the Discord lookup tests run offline.
+
+**Note:** `asset-service.ts` (Discord asset lookup) still has a `project: { isTemplate,
+status }` relation-filter on its `projectLineItem.findFirst` (line ~65) — a leftover
+cross-domain read from the model-only batch. Low priority (single point read, fresh
+Prisma mirror) but tracked for a future pass.
 
 ## Remaining work & session sizing (post-central-graph)
 

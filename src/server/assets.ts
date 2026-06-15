@@ -14,6 +14,10 @@ import {
   removeAssetFromConvex,
   syncAssetsToConvex,
 } from "@/lib/asset-mirror";
+import {
+  mirrorTestTagAssetCreate,
+  patchTestTagAssetInConvex,
+} from "@/lib/test-tag-mirror";
 import { getSupplierById } from "@/lib/suppliers-read";
 import { getModelById, getModelWithCategoryMap, type ModelWithCategory } from "@/lib/models-read";
 import { getLocationMap, type ConvexLocation } from "@/lib/locations-read";
@@ -321,7 +325,7 @@ export async function createAsset(data: AssetFormValues) {
       const intervalMonths = model.testAndTagIntervalDays
         ? Math.max(1, Math.round(model.testAndTagIntervalDays / 30))
         : (orgTT.defaultIntervalMonths || 3);
-      await prisma.testTagAsset.create({
+      const ttAsset = await prisma.testTagAsset.create({
         data: {
           organizationId,
           testTagId: parsed.assetTag,
@@ -336,6 +340,7 @@ export async function createAsset(data: AssetFormValues) {
           assetId: result.id,
         },
       });
+      await mirrorTestTagAssetCreate(ttAsset as unknown as Record<string, unknown>);
     }
 
     await logActivity({
@@ -421,7 +426,7 @@ export async function createAssets(
     const intervalMonths = model.testAndTagIntervalDays
       ? Math.max(1, Math.round(model.testAndTagIntervalDays / 30))
       : (orgTT.defaultIntervalMonths || 3);
-    await prisma.$transaction(
+    const ttAssets = await prisma.$transaction(
       results.map((asset) =>
         prisma.testTagAsset.create({
           data: {
@@ -440,6 +445,10 @@ export async function createAssets(
         })
       )
     );
+    // Mirror created T&T assets AFTER the tx commits.
+    for (const tt of ttAssets) {
+      await mirrorTestTagAssetCreate(tt as unknown as Record<string, unknown>);
+    }
   }
 
   for (const result of results) {
@@ -614,10 +623,11 @@ export async function deleteAsset(id: string) {
     where: { assetId: id, organizationId },
   });
   if (linkedTT) {
-    await prisma.testTagAsset.update({
+    const updatedTT = await prisma.testTagAsset.update({
       where: { id: linkedTT.id },
       data: { status: "RETIRED", isActive: false, assetId: null },
     });
+    await patchTestTagAssetInConvex(updatedTT.id, updatedTT as unknown as Record<string, unknown>);
   }
 
   await prisma.asset.delete({ where: { id, organizationId } });
@@ -656,6 +666,13 @@ export async function archiveAsset(id: string) {
     where: { assetId: id, organizationId },
     data: { status: "RETIRED", isActive: false },
   });
+  // Mirror the retired T&T rows to Convex after the updateMany commits.
+  const retiredTT = await prisma.testTagAsset.findMany({
+    where: { assetId: id, organizationId },
+  });
+  for (const tt of retiredTT) {
+    await patchTestTagAssetInConvex(tt.id, tt as unknown as Record<string, unknown>);
+  }
 
   const updated = await prisma.asset.update({
     where: { id, organizationId },

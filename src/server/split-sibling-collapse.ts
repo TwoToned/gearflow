@@ -21,6 +21,7 @@ import {
 } from "@/lib/split-sibling-collapse";
 import { nextOrdinal } from "@/lib/line-item-units";
 import { syncLineItemsToConvex } from "@/lib/line-item-mirror";
+import { patchCheckRecordInConvex } from "@/lib/check-record-mirror";
 import { syncLineItemRollup } from "@/lib/line-item-fulfillment";
 
 export interface CollapseRunStats {
@@ -159,6 +160,15 @@ export async function mergeGroup(
   runId: string,
   stats: CollapseRunStats,
 ): Promise<void> {
+  // Buffer of CheckRecord repoints to mirror to Convex AFTER the tx commits.
+  // updateMany returns only a count, so we capture the affected ids + their new
+  // scalar values inside the tx (before the update lands) and patch post-commit.
+  const checkRecordPatches: Array<{
+    id: string;
+    lineItemId: string;
+    lineItemUnitId: string | null;
+  }> = [];
+
   await prisma.$transaction(async (tx) => {
     const canonicalUnits = await tx.projectLineItemUnit.findMany({
       where: { lineItemId: plan.canonicalId },
@@ -212,23 +222,47 @@ export async function mergeGroup(
 
       // Repoint CheckRecord — first the matching-asset rows get
       // lineItemUnitId filled too; remaining rows just get the FK
-      // updated.
+      // updated. Capture the affected ids first (updateMany returns only a
+      // count) so the post-commit Convex mirror can patch each row.
       if (movedUnitId && (move.assetId || move.bulkAssetId)) {
+        const matchedWhere = {
+          lineItemId: move.siblingId,
+          ...(move.assetId
+            ? { assetId: move.assetId }
+            : { bulkAssetId: move.bulkAssetId }),
+        };
+        const matchedRows = await tx.checkRecord.findMany({
+          where: matchedWhere,
+          select: { id: true },
+        });
         const matched = await tx.checkRecord.updateMany({
-          where: {
-            lineItemId: move.siblingId,
-            ...(move.assetId
-              ? { assetId: move.assetId }
-              : { bulkAssetId: move.bulkAssetId }),
-          },
+          where: matchedWhere,
           data: { lineItemId: plan.canonicalId, lineItemUnitId: movedUnitId },
         });
+        for (const r of matchedRows) {
+          checkRecordPatches.push({
+            id: r.id,
+            lineItemId: plan.canonicalId,
+            lineItemUnitId: movedUnitId,
+          });
+        }
         stats.checkRecordsRepointed += matched.count;
       }
+      const remainingRows = await tx.checkRecord.findMany({
+        where: { lineItemId: move.siblingId },
+        select: { id: true },
+      });
       const remaining = await tx.checkRecord.updateMany({
         where: { lineItemId: move.siblingId },
         data: { lineItemId: plan.canonicalId },
       });
+      for (const r of remainingRows) {
+        checkRecordPatches.push({
+          id: r.id,
+          lineItemId: plan.canonicalId,
+          lineItemUnitId: null,
+        });
+      }
       stats.checkRecordsRepointed += remaining.count;
 
       if (movedUnitId && (move.assetId || move.bulkAssetId)) {
@@ -293,4 +327,12 @@ export async function mergeGroup(
   });
   // Mirror the canonical + deactivated sibling line items to Convex.
   await syncLineItemsToConvex([plan.canonicalId, ...plan.moves.map((m) => m.siblingId)]);
+  // Mirror the repointed CheckRecord rows to Convex (post-commit; updateMany
+  // gives no ids, so we captured them inside the tx above).
+  for (const p of checkRecordPatches) {
+    await patchCheckRecordInConvex(p.id, {
+      lineItemId: p.lineItemId,
+      lineItemUnitId: p.lineItemUnitId,
+    });
+  }
 }

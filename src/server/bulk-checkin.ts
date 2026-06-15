@@ -6,6 +6,7 @@ import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { syncAssetsToConvex } from "@/lib/asset-mirror";
 import { upsertProjectLineItemsToConvex } from "@/lib/line-item-mirror";
+import { mirrorAssetScanLogCreate } from "@/lib/asset-scan-log-mirror";
 import { getModelMap } from "@/lib/models-read";
 import {
   returnLineUnits,
@@ -153,6 +154,9 @@ export async function checkInBulkTotals(
   const modelMap = await getModelMap(organizationId);
 
   const allTouchedAssets = new Set<string>();
+  // Scan-log rows created in-tx; mirrored to Convex AFTER the tx commits
+  // (Convex calls can't run inside a Prisma tx).
+  const scanLogSink: Record<string, unknown>[] = [];
   const returned = await prisma.$transaction(async (tx) => {
     const defaultLocation = await tx.location.findFirst({
       where: { organizationId, isDefault: true },
@@ -267,7 +271,7 @@ export async function checkInBulkTotals(
       }
 
       for (const assetId of assetsTouched) {
-        await tx.assetScanLog.create({
+        scanLogSink.push(await tx.assetScanLog.create({
           data: {
             organizationId,
             assetId,
@@ -276,9 +280,9 @@ export async function checkInBulkTotals(
             scannedById: userId,
             notes: `Bulk check-in (${condition})`,
           },
-        });
+        }));
       }
-      await tx.assetScanLog.create({
+      scanLogSink.push(await tx.assetScanLog.create({
         data: {
           organizationId,
           projectId,
@@ -286,7 +290,7 @@ export async function checkInBulkTotals(
           scannedById: userId,
           notes: `Bulk check-in: ${distributed}x ${labelByKey.get(req.key) ?? req.key} (${condition})`,
         },
-      });
+      }));
 
       summary.push({ key: req.key, quantity: distributed, condition });
     }
@@ -298,6 +302,9 @@ export async function checkInBulkTotals(
   // project's line-item status flips to Convex.
   await syncAssetsToConvex([...allTouchedAssets]);
   await upsertProjectLineItemsToConvex(projectId);
+
+  // Mirror the append-only scan-log rows created inside the tx (post-commit).
+  for (const row of scanLogSink) await mirrorAssetScanLogCreate(row);
 
   for (const r of returned) {
     await logActivity({

@@ -13,6 +13,7 @@ import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { modelSchema, type ModelFormValues } from "@/lib/validations/model";
 import type { Prisma } from "@/generated/prisma/client";
 import { backfillTestTagAssets } from "@/server/test-tag-assets";
+import { patchTestTagAssetInConvex } from "@/lib/test-tag-mirror";
 import { getOrgTestTagSettings } from "@/server/settings";
 import { logActivity } from "@/lib/activity-log";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
@@ -290,18 +291,24 @@ export async function updateModel(id: string, data: ModelFormValues) {
     })).map((a) => a.id);
 
     if (assetIds.length > 0) {
+      const ttWhere = {
+        organizationId,
+        assetId: { in: assetIds },
+        isActive: true,
+      };
       await prisma.testTagAsset.updateMany({
-        where: {
-          organizationId,
-          assetId: { in: assetIds },
-          isActive: true,
-        },
+        where: ttWhere,
         data: {
           equipmentClass,
           applianceType,
           testIntervalMonths: intervalMonths,
         },
       });
+      // Mirror the updated T&T assets to Convex after the updateMany commits.
+      const updatedTT = await prisma.testTagAsset.findMany({ where: ttWhere });
+      for (const tt of updatedTT) {
+        await patchTestTagAssetInConvex(tt.id, tt as unknown as Record<string, unknown>);
+      }
     }
   }
 

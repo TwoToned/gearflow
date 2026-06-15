@@ -2,6 +2,11 @@
 
 import { prisma } from "@/lib/prisma";
 import { removeKitSerializedItemFromConvex, removeKitBulkItemFromConvex } from "@/lib/kit-mirror";
+import { removeAssetScanLogFromConvex } from "@/lib/asset-scan-log-mirror";
+import {
+  removeTestTagRecordFromConvex,
+  removeSubTestRecordFromConvex,
+} from "@/lib/test-tag-mirror";
 import { requireSession } from "@/lib/auth-server";
 import { serialize } from "@/lib/serialize";
 import { invalidatePlatformNameCache } from "@/lib/platform";
@@ -499,12 +504,24 @@ export async function adminDeleteUser(userId: string) {
     select: { name: true, email: true },
   });
 
-  // Capture the dual-written kit items this user added, so we can mirror their
-  // deletion to Convex after the transaction commits.
-  const [serializedItemsToRemove, bulkItemsToRemove] = await Promise.all([
-    prisma.kitSerializedItem.findMany({ where: { addedById: userId }, select: { id: true } }),
-    prisma.kitBulkItem.findMany({ where: { addedById: userId }, select: { id: true } }),
-  ]);
+  // Capture the dual-written rows this user owns, so we can mirror their
+  // deletion to Convex after the transaction commits (Convex calls cannot run
+  // inside a Prisma $transaction).
+  const [serializedItemsToRemove, bulkItemsToRemove, scanLogsToRemove, testTagRecordsToRemove] =
+    await Promise.all([
+      prisma.kitSerializedItem.findMany({ where: { addedById: userId }, select: { id: true } }),
+      prisma.kitBulkItem.findMany({ where: { addedById: userId }, select: { id: true } }),
+      prisma.assetScanLog.findMany({ where: { scannedById: userId }, select: { id: true } }),
+      prisma.testTagRecord.findMany({ where: { testedById: userId }, select: { id: true } }),
+    ]);
+  // SubTestRecords cascade-delete when their TestTagRecord is removed; capture
+  // them so their Convex mirrors are removed too.
+  const subTestRecordsToRemove = testTagRecordsToRemove.length
+    ? await prisma.subTestRecord.findMany({
+        where: { testTagRecordId: { in: testTagRecordsToRemove.map((r) => r.id) } },
+        select: { id: true },
+      })
+    : [];
 
   await prisma.$transaction(async (tx) => {
     // Null out nullable User FK references
@@ -524,9 +541,13 @@ export async function adminDeleteUser(userId: string) {
     await tx.user.delete({ where: { id: userId } });
   });
 
-  // Mirror the kit-item deletions to Convex (kit members are dual-written).
+  // Mirror the deletions to Convex (these rows are dual-written) — strictly
+  // post-commit, since Convex calls cannot run inside a $transaction.
   for (const item of serializedItemsToRemove) await removeKitSerializedItemFromConvex(item.id);
   for (const item of bulkItemsToRemove) await removeKitBulkItemFromConvex(item.id);
+  for (const item of scanLogsToRemove) await removeAssetScanLogFromConvex(item.id);
+  for (const item of subTestRecordsToRemove) await removeSubTestRecordFromConvex(item.id);
+  for (const item of testTagRecordsToRemove) await removeTestTagRecordFromConvex(item.id);
 
   const theOrg = await getTheOrg();
   if (theOrg) {

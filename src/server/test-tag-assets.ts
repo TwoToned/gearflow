@@ -8,6 +8,12 @@ import type { Prisma, TestTagStatus } from "@/generated/prisma/client";
 import { logActivity } from "@/lib/activity-log";
 import { getModelById, getModelMap } from "@/lib/models-read";
 import { getAssetById, getAssetsByOrg, getBulkAssetById } from "@/lib/assets-read";
+import {
+  mirrorTestTagAssetCreate,
+  patchTestTagAssetInConvex,
+  removeTestTagAssetFromConvex,
+  removeTestTagRecordFromConvex,
+} from "@/lib/test-tag-mirror";
 
 export async function getTestTagAssets(params?: {
   search?: string;
@@ -208,6 +214,8 @@ export async function createTestTagAsset(data: {
     },
   });
 
+  await mirrorTestTagAssetCreate(item as unknown as Record<string, unknown>);
+
   await logActivity({
     organizationId,
     userId,
@@ -260,6 +268,11 @@ export async function createTestTagAssetsFromBulk(data: {
       })
     )
   );
+
+  // Mirror AFTER tx commit (Convex calls cannot run inside a Prisma tx).
+  for (const item of items) {
+    await mirrorTestTagAssetCreate(item as unknown as Record<string, unknown>);
+  }
 
   await logActivity({
     organizationId,
@@ -317,6 +330,8 @@ export async function updateTestTagAsset(id: string, data: {
     },
   });
 
+  await patchTestTagAssetInConvex(item.id, item as unknown as Record<string, unknown>);
+
   return serialize(item);
 }
 
@@ -333,6 +348,8 @@ export async function retireTestTagAsset(id: string) {
     data: { status: "RETIRED", isActive: false },
   });
 
+  await patchTestTagAssetInConvex(item.id, item as unknown as Record<string, unknown>);
+
   return serialize(item);
 }
 
@@ -345,12 +362,25 @@ export async function deleteTestTagAsset(id: string) {
   if (!existing) throw new Error("Test tag asset not found");
   if (existing.status !== "RETIRED") throw new Error("Only retired items can be deleted");
 
+  // Capture record ids before deletion so we can mirror the removes.
+  const recordsToDelete = await prisma.testTagRecord.findMany({
+    where: { testTagAssetId: id, organizationId },
+    select: { id: true },
+  });
+
   // Delete all test records first
   await prisma.testTagRecord.deleteMany({
     where: { testTagAssetId: id, organizationId },
   });
 
   await prisma.testTagAsset.delete({ where: { id, organizationId } });
+
+  // Mirror removes AFTER the Prisma deletes commit.
+  for (const r of recordsToDelete) {
+    await removeTestTagRecordFromConvex(r.id);
+  }
+  await removeTestTagAssetFromConvex(id);
+
   return { id };
 }
 
@@ -484,12 +514,20 @@ export async function backfillTestTagAssets() {
       data: { status: "RETIRED", isActive: false },
     });
     retired = result.count;
+
+    // Mirror the retired rows after the updateMany commits.
+    const retiredRows = await prisma.testTagAsset.findMany({
+      where: { id: { in: retireIds } },
+    });
+    for (const row of retiredRows) {
+      await patchTestTagAssetInConvex(row.id, row as unknown as Record<string, unknown>);
+    }
   }
 
   if (unlinkedAssets.length === 0) return { created: 0, retired };
 
   const orgTT = await getOrgTestTagSettings();
-  await prisma.$transaction(
+  const createdItems = await prisma.$transaction(
     unlinkedAssets.map((asset) => {
       const intervalMonths = asset.model.testAndTagIntervalDays
         ? Math.max(1, Math.round(asset.model.testAndTagIntervalDays / 30))
@@ -513,6 +551,11 @@ export async function backfillTestTagAssets() {
     })
   );
 
+  // Mirror created rows AFTER the tx commits.
+  for (const item of createdItems) {
+    await mirrorTestTagAssetCreate(item as unknown as Record<string, unknown>);
+  }
+
   return { created: unlinkedAssets.length, retired };
 }
 
@@ -529,6 +572,8 @@ export async function reactivateTestTagAsset(id: string) {
     where: { id, organizationId },
     data: { status: "NOT_YET_TESTED", isActive: true },
   });
+
+  await patchTestTagAssetInConvex(item.id, item as unknown as Record<string, unknown>);
 
   await logActivity({
     organizationId,

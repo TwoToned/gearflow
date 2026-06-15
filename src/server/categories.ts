@@ -20,8 +20,8 @@ import { logActivity } from "@/lib/activity-log";
 /** Mirror a freshly written Prisma category row into Convex (create). */
 async function mirrorCategoryToConvex(row: Record<string, unknown>) {
   await (await getConvexClient()).mutation(
-    api.categories.create,
-    toConvexDoc(row) as FunctionArgs<typeof api.categories.create>,
+    api.categories.createIfMissing,
+    toConvexDoc(row) as FunctionArgs<typeof api.categories.createIfMissing>,
   );
 }
 

@@ -163,7 +163,10 @@ async function upsertIn(spec: MediaSpec, id: string, doc: Row) {
 
 /** Mirror a freshly written Prisma media row into Convex (targeted create). */
 export async function mirrorMediaCreate(kind: MediaKind, row: Row) {
-  await createIn(MEDIA_SPECS[kind].convex.create, mediaDoc(kind, row));
+  // createIfMissing guards against concurrent creates (e.g. two rapid uploads or
+  // a backfill running alongside a live create). Plain create would insert a
+  // duplicate id, then any subsequent .unique() lookup on by_cuid would throw.
+  await createIn(MEDIA_SPECS[kind].convex.createIfMissing, mediaDoc(kind, row));
 }
 
 /**

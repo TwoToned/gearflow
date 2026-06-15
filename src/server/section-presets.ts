@@ -18,8 +18,8 @@ import { templateSectionsSchema } from "@/lib/validations/template-section";
 /** Mirror a freshly written Prisma section-preset row into Convex (create). */
 async function mirrorSectionPresetToConvex(row: Record<string, unknown>) {
   await (await getConvexClient()).mutation(
-    api.sectionPresets.create,
-    toConvexDoc(row) as FunctionArgs<typeof api.sectionPresets.create>,
+    api.sectionPresets.createIfMissing,
+    toConvexDoc(row) as FunctionArgs<typeof api.sectionPresets.createIfMissing>,
   );
 }
 

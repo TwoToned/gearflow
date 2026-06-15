@@ -17,8 +17,8 @@ import { logActivity } from "@/lib/activity-log";
 // source) just like the Models server actions — see src/server/models.ts.
 async function mirrorModelCreate(row: Record<string, unknown>) {
   await (await getConvexClient()).mutation(
-    api.models.create,
-    toConvexDoc(row) as FunctionArgs<typeof api.models.create>,
+    api.models.createIfMissing,
+    toConvexDoc(row) as FunctionArgs<typeof api.models.createIfMissing>,
   );
 }
 async function mirrorModelPatch(id: string, row: Record<string, unknown>) {

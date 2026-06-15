@@ -33,8 +33,8 @@ import {
 /** Mirror a freshly written Prisma check-item row into Convex (create). */
 async function mirrorCheckItemToConvex(row: Record<string, unknown>) {
   await (await getConvexClient()).mutation(
-    api.checkItems.create,
-    toConvexDoc(row) as FunctionArgs<typeof api.checkItems.create>,
+    api.checkItems.createIfMissing,
+    toConvexDoc(row) as FunctionArgs<typeof api.checkItems.createIfMissing>,
   );
 }
 

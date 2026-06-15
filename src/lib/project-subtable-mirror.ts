@@ -74,7 +74,7 @@ export async function syncProjectServicesToConvex(orgId: string, projectId: stri
     {
       listByProject: api.projectServices.listByProject,
       getById: api.projectServices.getById,
-      create: api.projectServices.create,
+      create: api.projectServices.createIfMissing,
       update: api.projectServices.update,
       remove: api.projectServices.remove,
     },
@@ -90,7 +90,7 @@ export async function syncProjectTasksToConvex(orgId: string, projectId: string)
     {
       listByProject: api.projectTasks.listByProject,
       getById: api.projectTasks.getById,
-      create: api.projectTasks.create,
+      create: api.projectTasks.createIfMissing,
       update: api.projectTasks.update,
       remove: api.projectTasks.remove,
     },
@@ -106,7 +106,7 @@ export async function syncProjectManagersToConvex(orgId: string, projectId: stri
     {
       listByProject: api.projectManagers.listByProject,
       getById: api.projectManagers.getById,
-      create: api.projectManagers.create,
+      create: api.projectManagers.createIfMissing,
       update: api.projectManagers.update,
       remove: api.projectManagers.remove,
     },

@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireService } from "./lib/auth";
 import * as enums from "./lib/validators";
@@ -100,7 +100,7 @@ export const update = mutation({
   handler: async (ctx, { id, patch }) => {
     await requireService(ctx);
     const doc = await ctx.db.query("stocktakeItems").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    if (!doc) throw new Error("stocktakeItems not found: " + id);
+    if (!doc) throw new ConvexError("stocktakeItems not found: " + id);
     await ctx.db.patch(doc._id, patch);
     return doc._id;
   },
@@ -111,7 +111,7 @@ export const remove = mutation({
   handler: async (ctx, { id }) => {
     await requireService(ctx);
     const doc = await ctx.db.query("stocktakeItems").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    if (!doc) throw new Error("stocktakeItems not found: " + id);
+    if (!doc) throw new ConvexError("stocktakeItems not found: " + id);
     await ctx.db.delete(doc._id);
   },
 });

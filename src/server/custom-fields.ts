@@ -38,8 +38,8 @@ import { translatePrismaError, UserFacingError } from "@/lib/errors";
 /** Mirror a freshly written Prisma custom-field row into Convex (create). */
 async function mirrorCustomFieldToConvex(row: Record<string, unknown>) {
   await (await getConvexClient()).mutation(
-    api.customFieldDefinitions.create,
-    toConvexDoc(row) as FunctionArgs<typeof api.customFieldDefinitions.create>,
+    api.customFieldDefinitions.createIfMissing,
+    toConvexDoc(row) as FunctionArgs<typeof api.customFieldDefinitions.createIfMissing>,
   );
 }
 

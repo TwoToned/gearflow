@@ -245,7 +245,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
-    await (await getConvexClient()).mutation(api.categories.create, toConvexDoc(created) as any);
+    await (await getConvexClient()).mutation(api.categories.createIfMissing, toConvexDoc(created) as any);
   });
 
   // ── 3. Locations (hierarchical; dual-written: Prisma FK anchor + Convex doc) ──
@@ -260,7 +260,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
-    await (await getConvexClient()).mutation(api.locations.create, toConvexDoc(created) as any);
+    await (await getConvexClient()).mutation(api.locations.createIfMissing, toConvexDoc(created) as any);
   });
 
   // ── 4. Suppliers (dual-written: Prisma FK anchor + Convex reactive doc) ──
@@ -275,7 +275,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
-    await (await getConvexClient()).mutation(api.suppliers.create, toConvexDoc(created) as any);
+    await (await getConvexClient()).mutation(api.suppliers.createIfMissing, toConvexDoc(created) as any);
   }
 
   // ── 5. Models ────────────────────────────────────────────────────
@@ -291,7 +291,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
-    await (await getConvexClient()).mutation(api.models.create, toConvexDoc(created) as any);
+    await (await getConvexClient()).mutation(api.models.createIfMissing, toConvexDoc(created) as any);
   }
 
   // ── 6. Kits ──────────────────────────────────────────────────────
@@ -394,7 +394,7 @@ export async function importOrganization(
   // ── 11. Clients (live in Convex) ─────────────────────────────────
   for (const r of manifest.clients as Rec[]) {
     const id = newId("client", r.id);
-    await (await getConvexClient()).mutation(api.clients.create, {
+    await (await getConvexClient()).mutation(api.clients.createIfMissing, {
       id,
       organizationId: newOrgId,
       name: String(r.name),
@@ -676,7 +676,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
-    await (await getConvexClient()).mutation(api.fileUploads.create, toConvexDoc(createdFile) as any);
+    await (await getConvexClient()).mutation(api.fileUploads.createIfMissing, toConvexDoc(createdFile) as any);
   }
 
   // ── 19b. Update image URL references on models, assets, kits ────
@@ -785,7 +785,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
-    await (await getConvexClient()).mutation(api.groupTemplates.create, toConvexDoc(created) as any);
+    await (await getConvexClient()).mutation(api.groupTemplates.createIfMissing, toConvexDoc(created) as any);
   }
   for (const r of (manifest.groupTemplateItems ?? []) as Rec[]) {
     const templateId = remap("groupTemplate", r.templateId);
@@ -815,7 +815,7 @@ export async function importOrganization(
         organizationId: newOrgId,
       } as any,
     });
-    await (await getConvexClient()).mutation(api.crewRoles.create, toConvexDoc(created) as any);
+    await (await getConvexClient()).mutation(api.crewRoles.createIfMissing, toConvexDoc(created) as any);
   }
   for (const r of (manifest.crewSkills ?? []) as Rec[]) {
     const id = newId("crewSkill", r.id);
@@ -826,7 +826,7 @@ export async function importOrganization(
         organizationId: newOrgId,
       } as any,
     });
-    await (await getConvexClient()).mutation(api.crewSkills.create, toConvexDoc(created) as any);
+    await (await getConvexClient()).mutation(api.crewSkills.createIfMissing, toConvexDoc(created) as any);
   }
   for (const r of (manifest.crewMembers ?? []) as Rec[]) {
     const id = newId("crewMember", r.id);
@@ -845,7 +845,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
-    await (await getConvexClient()).mutation(api.crewMembers.create, toConvexDoc(created) as any);
+    await (await getConvexClient()).mutation(api.crewMembers.createIfMissing, toConvexDoc(created) as any);
   }
   // Re-link crew members <-> skills (implicit m:n join table)
   for (const link of (manifest.crewMemberSkills ?? []) as Array<{
@@ -963,7 +963,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
-    await (await getConvexClient()).mutation(api.checkItems.create, toConvexDoc(created) as any);
+    await (await getConvexClient()).mutation(api.checkItems.createIfMissing, toConvexDoc(created) as any);
   }
   for (const r of (manifest.modelCheckItems ?? []) as Rec[]) {
     const modelId = remap("model", r.modelId);

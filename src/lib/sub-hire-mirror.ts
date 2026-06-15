@@ -56,27 +56,27 @@ function strip(row: Record<string, unknown>): Record<string, unknown> {
 }
 
 // ─── Sub-hire ────────────────────────────────────────────────────────────────
-export const mirrorSubHireCreate = (row: Record<string, unknown>) => create(api.subHires.create, strip(row));
+export const mirrorSubHireCreate = (row: Record<string, unknown>) => create(api.subHires.createIfMissing, strip(row));
 export const patchSubHireInConvex = (id: string, row: Record<string, unknown>) => patch(api.subHires.update, id, strip(row));
 export const removeSubHireFromConvex = (id: string) => remove(api.subHires.remove, id);
 
 // ─── Sub-hire items ────────────────────────────────────────────────────────────
-export const mirrorSubHireItemCreate = (row: Record<string, unknown>) => create(api.subHireItems.create, strip(row));
+export const mirrorSubHireItemCreate = (row: Record<string, unknown>) => create(api.subHireItems.createIfMissing, strip(row));
 export const patchSubHireItemInConvex = (id: string, row: Record<string, unknown>) => patch(api.subHireItems.update, id, strip(row));
 export const removeSubHireItemFromConvex = (id: string) => remove(api.subHireItems.remove, id);
 
 // ─── Sub-hire groups ────────────────────────────────────────────────────────────
-export const mirrorSubHireGroupCreate = (row: Record<string, unknown>) => create(api.subHireGroups.create, strip(row));
+export const mirrorSubHireGroupCreate = (row: Record<string, unknown>) => create(api.subHireGroups.createIfMissing, strip(row));
 export const patchSubHireGroupInConvex = (id: string, row: Record<string, unknown>) => patch(api.subHireGroups.update, id, strip(row));
 export const removeSubHireGroupFromConvex = (id: string) => remove(api.subHireGroups.remove, id);
 
 // ─── Supplier orders ────────────────────────────────────────────────────────────
-export const mirrorSupplierOrderCreate = (row: Record<string, unknown>) => create(api.supplierOrders.create, strip(row));
+export const mirrorSupplierOrderCreate = (row: Record<string, unknown>) => create(api.supplierOrders.createIfMissing, strip(row));
 export const patchSupplierOrderInConvex = (id: string, row: Record<string, unknown>) => patch(api.supplierOrders.update, id, strip(row));
 export const removeSupplierOrderFromConvex = (id: string) => remove(api.supplierOrders.remove, id);
 
 // ─── Supplier order items ────────────────────────────────────────────────────────
-export const mirrorSupplierOrderItemCreate = (row: Record<string, unknown>) => create(api.supplierOrderItems.create, strip(row));
+export const mirrorSupplierOrderItemCreate = (row: Record<string, unknown>) => create(api.supplierOrderItems.createIfMissing, strip(row));
 export const patchSupplierOrderItemInConvex = (id: string, row: Record<string, unknown>) => patch(api.supplierOrderItems.update, id, strip(row));
 export const removeSupplierOrderItemFromConvex = (id: string) => remove(api.supplierOrderItems.remove, id);
 
@@ -90,9 +90,9 @@ export async function syncSubHireToConvex(subHireId: string | null | undefined) 
   });
   if (!sh) return;
   const { items, groups, ...head } = sh;
-  await upsert(api.subHires.getById, api.subHires.create, api.subHires.update, head as unknown as Record<string, unknown>);
-  for (const it of items) await upsert(api.subHireItems.getById, api.subHireItems.create, api.subHireItems.update, it as unknown as Record<string, unknown>);
-  for (const g of groups) await upsert(api.subHireGroups.getById, api.subHireGroups.create, api.subHireGroups.update, g as unknown as Record<string, unknown>);
+  await upsert(api.subHires.getById, api.subHires.createIfMissing, api.subHires.update, head as unknown as Record<string, unknown>);
+  for (const it of items) await upsert(api.subHireItems.getById, api.subHireItems.createIfMissing, api.subHireItems.update, it as unknown as Record<string, unknown>);
+  for (const g of groups) await upsert(api.subHireGroups.getById, api.subHireGroups.createIfMissing, api.subHireGroups.update, g as unknown as Record<string, unknown>);
 }
 
 /** Re-read a whole supplier_order (head + items) from Prisma and upsert each. */
@@ -104,8 +104,8 @@ export async function syncSupplierOrderToConvex(orderId: string | null | undefin
   });
   if (!order) return;
   const { items, ...head } = order;
-  await upsert(api.supplierOrders.getById, api.supplierOrders.create, api.supplierOrders.update, head as unknown as Record<string, unknown>);
-  for (const it of items) await upsert(api.supplierOrderItems.getById, api.supplierOrderItems.create, api.supplierOrderItems.update, it as unknown as Record<string, unknown>);
+  await upsert(api.supplierOrders.getById, api.supplierOrders.createIfMissing, api.supplierOrders.update, head as unknown as Record<string, unknown>);
+  for (const it of items) await upsert(api.supplierOrderItems.getById, api.supplierOrderItems.createIfMissing, api.supplierOrderItems.update, it as unknown as Record<string, unknown>);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

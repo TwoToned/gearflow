@@ -150,7 +150,7 @@ export async function createClient(data: ClientFormValues) {
 
   const id = createId();
   const now = Date.now();
-  await (await getConvexClient()).mutation(api.clients.create, {
+  await (await getConvexClient()).mutation(api.clients.createIfMissing, {
     id,
     organizationId,
     ...toClientFields(parsed),

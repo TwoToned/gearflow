@@ -40,11 +40,11 @@ async function remove(fn: AnyRef, id: string) {
 }
 
 // ─── Document templates ──────────────────────────────────────────────────────
-export const mirrorDocumentTemplateCreate = (row: Record<string, unknown>) => create(api.documentTemplates.create, row);
+export const mirrorDocumentTemplateCreate = (row: Record<string, unknown>) => create(api.documentTemplates.createIfMissing, row);
 export const patchDocumentTemplateInConvex = (id: string, row: Record<string, unknown>) => patch(api.documentTemplates.update, id, row);
 export const removeDocumentTemplateFromConvex = (id: string) => remove(api.documentTemplates.remove, id);
 
 // ─── Service templates ───────────────────────────────────────────────────────
-export const mirrorServiceTemplateCreate = (row: Record<string, unknown>) => create(api.serviceTemplates.create, row);
+export const mirrorServiceTemplateCreate = (row: Record<string, unknown>) => create(api.serviceTemplates.createIfMissing, row);
 export const patchServiceTemplateInConvex = (id: string, row: Record<string, unknown>) => patch(api.serviceTemplates.update, id, row);
 export const removeServiceTemplateFromConvex = (id: string) => remove(api.serviceTemplates.remove, id);

@@ -32,5 +32,5 @@ async function remove(fn: AnyRef, id: string) {
   await (await getConvexClient()).mutation(fn, { id } as any);
 }
 
-export const mirrorWarehouseCloseCreate = (row: Record<string, unknown>) => create(api.warehouseCloses.create, row);
+export const mirrorWarehouseCloseCreate = (row: Record<string, unknown>) => create(api.warehouseCloses.createIfMissing, row);
 export const removeWarehouseCloseFromConvex = (id: string) => remove(api.warehouseCloses.remove, id);

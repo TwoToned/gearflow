@@ -85,25 +85,25 @@ async function upsert(getRef: AnyQueryRef, createRef: AnyRef, updateRef: AnyRef,
 }
 
 // ─── Crew assignments ──────────────────────────────────────────────────────────
-export const mirrorCrewAssignmentCreate = (row: Record<string, unknown>) => create(api.crewAssignments.create, row);
+export const mirrorCrewAssignmentCreate = (row: Record<string, unknown>) => create(api.crewAssignments.createIfMissing, row);
 export const patchCrewAssignmentInConvex = (id: string, row: Record<string, unknown>) => patch(api.crewAssignments.update, id, row);
 export const removeCrewAssignmentFromConvex = (id: string) => removeSafe(api.crewAssignments.remove, id);
 
 // ─── Crew shifts ─────────────────────────────────────────────────────────────
-export const mirrorCrewShiftCreate = (row: Record<string, unknown>) => create(api.crewShifts.create, row);
+export const mirrorCrewShiftCreate = (row: Record<string, unknown>) => create(api.crewShifts.createIfMissing, row);
 export const patchCrewShiftInConvex = (id: string, row: Record<string, unknown>) => patch(api.crewShifts.update, id, row);
 export const removeCrewShiftFromConvex = (id: string) => removeSafe(api.crewShifts.remove, id);
 
 // ─── Crew availability ─────────────────────────────────────────────────────────
-export const mirrorCrewAvailabilityCreate = (row: Record<string, unknown>) => create(api.crewAvailabilities.create, row);
+export const mirrorCrewAvailabilityCreate = (row: Record<string, unknown>) => create(api.crewAvailabilities.createIfMissing, row);
 export const removeCrewAvailabilityFromConvex = (id: string) => removeSafe(api.crewAvailabilities.remove, id);
 
 // ─── Crew certifications ─────────────────────────────────────────────────────────
-export const mirrorCrewCertificationCreate = (row: Record<string, unknown>) => create(api.crewCertifications.create, row);
+export const mirrorCrewCertificationCreate = (row: Record<string, unknown>) => create(api.crewCertifications.createIfMissing, row);
 export const removeCrewCertificationFromConvex = (id: string) => removeSafe(api.crewCertifications.remove, id);
 
 // ─── Crew time entries ─────────────────────────────────────────────────────────
-export const mirrorCrewTimeEntryCreate = (row: Record<string, unknown>) => create(api.crewTimeEntries.create, row);
+export const mirrorCrewTimeEntryCreate = (row: Record<string, unknown>) => create(api.crewTimeEntries.createIfMissing, row);
 export const patchCrewTimeEntryInConvex = (id: string, row: Record<string, unknown>) => patch(api.crewTimeEntries.update, id, row);
 export const removeCrewTimeEntryFromConvex = (id: string) => removeSafe(api.crewTimeEntries.remove, id);
 
@@ -148,16 +148,16 @@ export async function syncCrewTimeEntriesToConvex(ids: Array<string | null | und
   if (unique.length === 0) return;
   const rows = await prisma.crewTimeEntry.findMany({ where: { id: { in: unique } } });
   for (const t of rows) {
-    await upsert(api.crewTimeEntries.getById, api.crewTimeEntries.create, api.crewTimeEntries.update, t as unknown as Record<string, unknown>);
+    await upsert(api.crewTimeEntries.getById, api.crewTimeEntries.createIfMissing, api.crewTimeEntries.update, t as unknown as Record<string, unknown>);
   }
 }
 
 async function upsertAssignmentWithChildren(row: Record<string, unknown>) {
   const shifts = (row.shifts as Array<Record<string, unknown>>) ?? [];
   const timeEntries = (row.timeEntries as Array<Record<string, unknown>>) ?? [];
-  await upsert(api.crewAssignments.getById, api.crewAssignments.create, api.crewAssignments.update, row);
-  for (const s of shifts) await upsert(api.crewShifts.getById, api.crewShifts.create, api.crewShifts.update, s);
-  for (const t of timeEntries) await upsert(api.crewTimeEntries.getById, api.crewTimeEntries.create, api.crewTimeEntries.update, t);
+  await upsert(api.crewAssignments.getById, api.crewAssignments.createIfMissing, api.crewAssignments.update, row);
+  for (const s of shifts) await upsert(api.crewShifts.getById, api.crewShifts.createIfMissing, api.crewShifts.update, s);
+  for (const t of timeEntries) await upsert(api.crewTimeEntries.getById, api.crewTimeEntries.createIfMissing, api.crewTimeEntries.update, t);
 }
 
 // ─── Cascade snapshots + removal ─────────────────────────────────────────────────

@@ -52,12 +52,12 @@ async function remove(fn: AnyRef, id: string) {
 }
 
 // ─── Project categories ────────────────────────────────────────────────────────
-export const mirrorProjectCategoryCreate = (row: Record<string, unknown>) => create(api.projectCategories.create, row);
+export const mirrorProjectCategoryCreate = (row: Record<string, unknown>) => create(api.projectCategories.createIfMissing, row);
 export const patchProjectCategoryInConvex = (id: string, row: Record<string, unknown>) => patch(api.projectCategories.update, id, row);
 export const removeProjectCategoryFromConvex = (id: string) => remove(api.projectCategories.remove, id);
 
 // ─── Project groups ────────────────────────────────────────────────────────────
-export const mirrorProjectGroupCreate = (row: Record<string, unknown>) => create(api.projectGroups.create, row);
+export const mirrorProjectGroupCreate = (row: Record<string, unknown>) => create(api.projectGroups.createIfMissing, row);
 export const patchProjectGroupInConvex = (id: string, row: Record<string, unknown>) => patch(api.projectGroups.update, id, row);
 export const removeProjectGroupFromConvex = (id: string) => remove(api.projectGroups.remove, id);
 

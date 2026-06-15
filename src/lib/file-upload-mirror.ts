@@ -20,8 +20,8 @@ import { api } from "../../convex/_generated/api";
 /** Mirror a freshly written Prisma fileUpload row into Convex (create). */
 export async function mirrorFileUploadCreate(row: Record<string, unknown>) {
   await (await getConvexClient()).mutation(
-    api.fileUploads.create,
-    toConvexDoc(row) as FunctionArgs<typeof api.fileUploads.create>,
+    api.fileUploads.createIfMissing,
+    toConvexDoc(row) as FunctionArgs<typeof api.fileUploads.createIfMissing>,
   );
 }
 

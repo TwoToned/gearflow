@@ -20,8 +20,8 @@ import { SEED_PROFILES } from "@/lib/test-profiles/seed-data";
 /** Mirror a freshly written Prisma test-profile row into Convex (create). */
 async function mirrorTestProfileToConvex(row: Record<string, unknown>) {
   await (await getConvexClient()).mutation(
-    api.testProfiles.create,
-    toConvexDoc(row) as FunctionArgs<typeof api.testProfiles.create>,
+    api.testProfiles.createIfMissing,
+    toConvexDoc(row) as FunctionArgs<typeof api.testProfiles.createIfMissing>,
   );
 }
 

@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { v, ConvexError } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { query, mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
@@ -427,7 +427,7 @@ export const addComment = mutation({
     const now = Date.now();
 
     const thread = await ctx.db.get(args.threadId as unknown as Id<"commentThreads">);
-    if (!thread || thread.orgId !== args.orgId) throw new Error("Thread not found");
+    if (!thread || thread.orgId !== args.orgId) throw new ConvexError("Thread not found");
 
     // Resolved threads are closed for replies: the reviewer must explicitly
     // reopen first (which requires project manage_line_items). This keeps the
@@ -491,7 +491,7 @@ export const setThreadBlocking = mutation({
   handler: async (ctx, { orgId, threadId, isBlocking, actorUserId, actorName, actorColor }) => {
     await requireService(ctx);
     const thread = await ctx.db.get(threadId as unknown as Id<"commentThreads">);
-    if (!thread || thread.orgId !== orgId) throw new Error("Thread not found");
+    if (!thread || thread.orgId !== orgId) throw new ConvexError("Thread not found");
     await ctx.db.patch(thread._id, { isBlocking, updatedAt: Date.now() });
     if (actorUserId && actorName && actorColor) {
       await recordActivity(ctx, {
@@ -524,7 +524,7 @@ export const resolveThread = mutation({
   handler: async (ctx, { orgId, threadId, resolvedBy, actorName, actorColor }) => {
     await requireService(ctx);
     const thread = await ctx.db.get(threadId as unknown as Id<"commentThreads">);
-    if (!thread || thread.orgId !== orgId) throw new Error("Thread not found");
+    if (!thread || thread.orgId !== orgId) throw new ConvexError("Thread not found");
     const now = Date.now();
     await ctx.db.patch(thread._id, {
       status: "resolved",
@@ -561,7 +561,7 @@ export const reopenThread = mutation({
   handler: async (ctx, { orgId, threadId, actorUserId, actorName, actorColor }) => {
     await requireService(ctx);
     const thread = await ctx.db.get(threadId as unknown as Id<"commentThreads">);
-    if (!thread || thread.orgId !== orgId) throw new Error("Thread not found");
+    if (!thread || thread.orgId !== orgId) throw new ConvexError("Thread not found");
     await ctx.db.patch(thread._id, {
       status: "open",
       resolvedBy: undefined,

@@ -23,6 +23,7 @@ import { UserFacingError } from "@/lib/errors";
 import { computeStockBreakdown } from "@/lib/availability";
 import { isStaleRevision } from "@/lib/collaboration-conflict";
 import { writeCollabActivityEvent } from "@/lib/collaboration-activity";
+import { getModelById, getModelMap, getModelWithCategoryMap } from "@/lib/models-read";
 
 /**
  * Expand a serialised asset's permanent accessories into child line items.
@@ -443,10 +444,8 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
       }
 
       if (billingTotalDays != null && billingTotalDays > 0) {
-        const model = await prisma.model.findUnique({
-          where: { id: parsed.modelId },
-          select: { dailyRate: true, weeklyRate: true, monthlyRate: true },
-        });
+        // Model lives in Convex — fetch for rate fields.
+        const model = await getModelById(parsed.modelId);
 
         if (model) {
           const dailyRate = model.dailyRate != null ? Number(model.dailyRate) : null;
@@ -790,8 +789,8 @@ export async function addKitLineItem(
   const kit = await prisma.kit.findUnique({
     where: { id: kitId, organizationId },
     include: {
-      serializedItems: { include: { asset: { include: { model: true } } }, orderBy: { sortOrder: "asc" } },
-      bulkItems: { include: { bulkAsset: { include: { model: true } } }, orderBy: { sortOrder: "asc" } },
+      serializedItems: { include: { asset: true }, orderBy: { sortOrder: "asc" } },
+      bulkItems: { include: { bulkAsset: true }, orderBy: { sortOrder: "asc" } },
     },
   });
   if (!kit) {
@@ -839,6 +838,9 @@ export async function addKitLineItem(
   const maxSort = await prisma.projectLineItem.aggregate({ where: { projectId, organizationId }, _max: { sortOrder: true } });
   let nextSort = (maxSort._max.sortOrder ?? -1) + 1;
 
+  // Model lives in Convex — load map before the transaction.
+  const modelMap = await getModelMap(organizationId);
+
   const result = await prisma.$transaction(async (tx) => {
     // Create parent kit line item — holds the kit-level pricing and serves
     // as the anchor for all child items. Each serialized and bulk item from
@@ -859,12 +861,13 @@ export async function addKitLineItem(
 
     // Create child line items for serialized items
     for (const si of kit.serializedItems) {
-      const childPrice = pricingMode === "ITEMIZED" ? (si.asset.model.defaultRentalPrice ? Number(si.asset.model.defaultRentalPrice) : null) : null;
+      const siModel = si.asset.modelId ? modelMap.get(si.asset.modelId) ?? null : null;
+      const childPrice = pricingMode === "ITEMIZED" ? (siModel?.defaultRentalPrice ? Number(siModel.defaultRentalPrice) : null) : null;
       await tx.projectLineItem.create({
         data: {
           organizationId, projectId, type: "EQUIPMENT",
           modelId: si.asset.modelId, assetId: si.assetId,
-          description: si.asset.model.name,
+          description: siModel?.name ?? si.asset.modelId ?? "",
           quantity: 1, unitPrice: childPrice, pricingType: "PER_DAY", duration: 1,
           lineTotal: childPrice, sortOrder: nextSort++,
           isKitChild: true, parentLineItemId: parentItem.id,
@@ -874,12 +877,13 @@ export async function addKitLineItem(
 
     // Create child line items for bulk items
     for (const bi of kit.bulkItems) {
-      const childPrice = pricingMode === "ITEMIZED" ? (bi.bulkAsset.model.defaultRentalPrice ? Number(bi.bulkAsset.model.defaultRentalPrice) * bi.quantity : null) : null;
+      const biModel = bi.bulkAsset.modelId ? modelMap.get(bi.bulkAsset.modelId) ?? null : null;
+      const childPrice = pricingMode === "ITEMIZED" ? (biModel?.defaultRentalPrice ? Number(biModel.defaultRentalPrice) * bi.quantity : null) : null;
       await tx.projectLineItem.create({
         data: {
           organizationId, projectId, type: "EQUIPMENT",
           modelId: bi.bulkAsset.modelId, bulkAssetId: bi.bulkAssetId,
-          description: `${bi.quantity}x ${bi.bulkAsset.model.name}`,
+          description: `${bi.quantity}x ${biModel?.name ?? bi.bulkAsset.modelId ?? ""}`,
           quantity: bi.quantity, unitPrice: childPrice ? childPrice / bi.quantity : null,
           pricingType: "PER_DAY", duration: 1, lineTotal: childPrice, sortOrder: nextSort++,
           isKitChild: true, parentLineItemId: parentItem.id,
@@ -1221,12 +1225,16 @@ export async function lookupAssetByTag(
 
   const asset = await prisma.asset.findUnique({
     where: { organizationId_assetTag: { organizationId, assetTag } },
-    include: { model: { include: { category: true } }, location: true },
+    include: { location: true },
   });
 
   if (!asset) {
     return serialize({ found: false as const, asset: null, available: false, conflictsWith: null, hasAccessories: false });
   }
+
+  // Model lives in Convex — fetch with category for the caller.
+  const modelWithCategoryMap = await getModelWithCategoryMap(organizationId);
+  const model = asset.modelId ? (modelWithCategoryMap.get(asset.modelId) ?? null) : null;
 
   // Check if this specific asset is booked in any overlapping project
   let available = true;
@@ -1272,7 +1280,7 @@ export async function lookupAssetByTag(
   ]);
   const hasAccessories = childAssetCount > 0 || childBulkCount > 0 || modelBulksCount > 0;
 
-  return serialize({ found: true as const, asset, available, conflictsWith, hasAccessories });
+  return serialize({ found: true as const, asset: { ...asset, model }, available, conflictsWith, hasAccessories });
 }
 
 export async function checkKitAvailability(

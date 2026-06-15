@@ -1,0 +1,5 @@
+providers = ["node"]
+
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+cmds = ["npm install -g pnpm@9"]

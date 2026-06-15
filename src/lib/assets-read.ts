@@ -34,6 +34,10 @@ export async function getAssetByAssetTag(orgId: string, assetTag: string): Promi
   return await (await getConvexClient()).query(api.assets.getByAssetTag, { organizationId: orgId, assetTag });
 }
 
+export async function getBulkAssetByAssetTag(orgId: string, assetTag: string): Promise<ConvexBulkAsset | null> {
+  return await (await getConvexClient()).query(api.bulkAssets.getByAssetTag, { organizationId: orgId, assetTag });
+}
+
 export async function getActiveAssetsByModel(modelId: string, orgId: string): Promise<ConvexAsset[]> {
   const all = (await (await getConvexClient()).query(api.assets.listByModel, { modelId, orgId })) as ConvexAsset[];
   return all.filter((a) => a.isActive !== false);

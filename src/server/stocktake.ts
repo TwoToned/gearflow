@@ -7,7 +7,8 @@ import { logActivity } from "@/lib/activity-log";
 import { syncAssetsToConvex, syncBulkAssetsToConvex } from "@/lib/asset-mirror";
 import { syncStocktakeToConvex } from "@/lib/stocktake-mirror";
 import { getModelMap, type ConvexModel } from "@/lib/models-read";
-import { getLocationMap } from "@/lib/locations-read";
+import { getLocationMap, getLocationById } from "@/lib/locations-read";
+import { getAssetsByOrg, getBulkAssetsByOrg, getAssetByAssetTag, getBulkAssetByAssetTag } from "@/lib/assets-read";
 import {
   createStocktakeSchema,
   type CreateStocktakeValues,
@@ -157,39 +158,28 @@ export async function createStocktake(data: CreateStocktakeValues) {
 
   const parsed = createStocktakeSchema.parse(data);
 
-  // Verify location belongs to org
-  const location = await prisma.location.findFirst({
-    where: { id: parsed.locationId, organizationId },
-  });
-  if (!location) throw new Error("Location not found");
+  // Verify location belongs to org — lives in Convex.
+  const location = await getLocationById(parsed.locationId);
+  if (!location || location.organizationId !== organizationId) throw new Error("Location not found");
 
-  // Build asset filter based on scope
-  const assetWhere: Record<string, unknown> = {
-    organizationId,
-    locationId: parsed.locationId,
-    status: { in: ["AVAILABLE", "IN_MAINTENANCE"] },
-    isActive: true,
-  };
-  const bulkWhere: Record<string, unknown> = {
-    organizationId,
-    locationId: parsed.locationId,
-    isActive: true,
-    status: { not: "RETIRED" },
-  };
-
-  if (parsed.scope === "CATEGORY" && parsed.categoryId) {
-    assetWhere.model = { categoryId: parsed.categoryId };
-    bulkWhere.model = { categoryId: parsed.categoryId };
-  }
-
-  // Query expected assets
-  const [assets, bulkAssets] = await Promise.all([
-    prisma.asset.findMany({ where: assetWhere, select: { id: true } }),
-    prisma.bulkAsset.findMany({
-      where: bulkWhere,
-      select: { id: true, availableQuantity: true },
-    }),
+  // Query expected assets from Convex, filter in JS.
+  const [allAssets, allBulkAssets, modelMap] = await Promise.all([
+    getAssetsByOrg(organizationId),
+    getBulkAssetsByOrg(organizationId),
+    parsed.scope === "CATEGORY" && parsed.categoryId ? getModelMap(organizationId) : Promise.resolve(null),
   ]);
+
+  const assetStatuses = new Set(["AVAILABLE", "IN_MAINTENANCE"]);
+  let assets = allAssets.filter(
+    (a) => a.locationId === parsed.locationId && assetStatuses.has(a.status ?? "") && a.isActive !== false,
+  );
+  let bulkAssets = allBulkAssets.filter(
+    (b) => b.locationId === parsed.locationId && b.isActive !== false && b.status !== "RETIRED",
+  );
+  if (parsed.scope === "CATEGORY" && parsed.categoryId && modelMap) {
+    assets = assets.filter((a) => modelMap.get(a.modelId)?.categoryId === parsed.categoryId);
+    bulkAssets = bulkAssets.filter((b) => modelMap.get(b.modelId)?.categoryId === parsed.categoryId);
+  }
 
   const expectedCount = assets.length + bulkAssets.length;
 
@@ -269,11 +259,9 @@ export async function updateStocktake(id: string, data: UpdateStocktakeValues) {
     throw new Error("Only draft or in-progress stocktakes can be edited");
   }
 
-  // Verify location belongs to org
-  const location = await prisma.location.findFirst({
-    where: { id: parsed.locationId, organizationId },
-  });
-  if (!location) throw new Error("Location not found");
+  // Verify location belongs to org — lives in Convex.
+  const location = await getLocationById(parsed.locationId);
+  if (!location || location.organizationId !== organizationId) throw new Error("Location not found");
 
   // Check if location/scope/category changed — need to regenerate items
   const needsRegenerate =
@@ -282,32 +270,23 @@ export async function updateStocktake(id: string, data: UpdateStocktakeValues) {
     existing.categoryId !== (parsed.categoryId ?? null);
 
   if (needsRegenerate) {
-    // Build asset filter based on scope
-    const assetWhere: Record<string, unknown> = {
-      organizationId,
-      locationId: parsed.locationId,
-      status: { in: ["AVAILABLE", "IN_MAINTENANCE"] },
-      isActive: true,
-    };
-    const bulkWhere: Record<string, unknown> = {
-      organizationId,
-      locationId: parsed.locationId,
-      isActive: true,
-      status: { not: "RETIRED" },
-    };
-
-    if (parsed.scope === "CATEGORY" && parsed.categoryId) {
-      assetWhere.model = { categoryId: parsed.categoryId };
-      bulkWhere.model = { categoryId: parsed.categoryId };
-    }
-
-    const [assets, bulkAssets] = await Promise.all([
-      prisma.asset.findMany({ where: assetWhere, select: { id: true } }),
-      prisma.bulkAsset.findMany({
-        where: bulkWhere,
-        select: { id: true, availableQuantity: true },
-      }),
+    const [allAssets, allBulkAssets, modelMap2] = await Promise.all([
+      getAssetsByOrg(organizationId),
+      getBulkAssetsByOrg(organizationId),
+      parsed.scope === "CATEGORY" && parsed.categoryId ? getModelMap(organizationId) : Promise.resolve(null),
     ]);
+
+    const assetStatuses2 = new Set(["AVAILABLE", "IN_MAINTENANCE"]);
+    let assets = allAssets.filter(
+      (a) => a.locationId === parsed.locationId && assetStatuses2.has(a.status ?? "") && a.isActive !== false,
+    );
+    let bulkAssets = allBulkAssets.filter(
+      (b) => b.locationId === parsed.locationId && b.isActive !== false && b.status !== "RETIRED",
+    );
+    if (parsed.scope === "CATEGORY" && parsed.categoryId && modelMap2) {
+      assets = assets.filter((a) => modelMap2.get(a.modelId)?.categoryId === parsed.categoryId);
+      bulkAssets = bulkAssets.filter((b) => modelMap2.get(b.modelId)?.categoryId === parsed.categoryId);
+    }
 
     const expectedCount = assets.length + bulkAssets.length;
 
@@ -447,14 +426,10 @@ export async function scanStocktakeItem(data: ScanItemValues) {
 
   const tag = parsed.assetTag.trim();
 
-  // Look up asset or bulk asset by tag (model not needed here — only id/location/status).
+  // Look up asset or bulk asset by tag — lives in Convex.
   const [asset, bulkAsset] = await Promise.all([
-    prisma.asset.findFirst({
-      where: { assetTag: tag, organizationId },
-    }),
-    prisma.bulkAsset.findFirst({
-      where: { assetTag: tag, organizationId },
-    }),
+    getAssetByAssetTag(organizationId, tag),
+    getBulkAssetByAssetTag(organizationId, tag),
   ]);
 
   if (!asset && !bulkAsset) {

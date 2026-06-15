@@ -37,14 +37,14 @@ export async function getClientMap(orgId: string): Promise<Map<string, ConvexCli
  * Attach a `client` field to rows that carry a `clientId`, replacing a Prisma
  * `include: { client }`. One Convex round-trip per call (the org client map).
  */
-export async function attachClient<T extends { clientId: string | null }>(
+export async function attachClient<T extends Record<string, unknown>>(
   orgId: string,
   rows: T[],
 ): Promise<Array<T & { client: ConvexClient | null }>> {
   if (rows.length === 0) return [];
   const map = await getClientMap(orgId);
-  return rows.map((r) => ({
-    ...r,
-    client: r.clientId ? map.get(r.clientId) ?? null : null,
-  }));
+  return rows.map((r) => {
+    const clientId = r.clientId as string | null | undefined;
+    return { ...r, client: clientId ? map.get(clientId) ?? null : null };
+  });
 }

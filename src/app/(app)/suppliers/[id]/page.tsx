@@ -286,7 +286,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                                 {asset.purchaseOrderNumber || "\u2014"}
                               </TableCell>
                               <TableCell>
-                                <Badge variant="outline">{assetStatusLabels[asset.status] || formatLabel(asset.status)}</Badge>
+                                <Badge variant="outline">{assetStatusLabels[asset.status ?? ""] || formatLabel(asset.status ?? "")}</Badge>
                               </TableCell>
                             </TableRow>
                           ))}

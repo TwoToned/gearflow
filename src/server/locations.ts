@@ -8,6 +8,8 @@ import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getClientMap } from "@/lib/clients-read";
 import { getModelMap } from "@/lib/models-read";
+import { getAssetsByOrg, getBulkAssetsByOrg } from "@/lib/assets-read";
+import { getKitsByOrg } from "@/lib/kits-read";
 import { locationSchema, type LocationFormValues } from "@/lib/validations/asset";
 import type { Prisma } from "@/generated/prisma/client";
 import { serialize } from "@/lib/serialize";
@@ -122,23 +124,20 @@ export async function getLocations(params?: {
 
 /**
  * Asset + bulk-asset + kit counts per location (locationId -> counts).
- * Cross-domain: assets / bulk assets / kits still live in Prisma, so this can't
- * come from Convex. Used by the reactive location table, which subscribes to the
- * location list via Convex and merges these (non-reactive) counts. (Children
- * counts are derived client-side from the reactive list itself.)
+ * All three domains live in Convex — aggregate in JS from the org-level lists.
  */
 export async function getLocationCounts(): Promise<Record<string, { assets: number; bulkAssets: number; kits: number }>> {
   const { organizationId } = await getOrgContext();
-  const [assetGroups, bulkGroups, kitGroups] = await Promise.all([
-    prisma.asset.groupBy({ by: ["locationId"], where: { organizationId, locationId: { not: null } }, _count: { _all: true } }),
-    prisma.bulkAsset.groupBy({ by: ["locationId"], where: { organizationId, locationId: { not: null } }, _count: { _all: true } }),
-    prisma.kit.groupBy({ by: ["locationId"], where: { organizationId, locationId: { not: null } }, _count: { _all: true } }),
+  const [allAssets, allBulkAssets, allKits] = await Promise.all([
+    getAssetsByOrg(organizationId),
+    getBulkAssetsByOrg(organizationId),
+    getKitsByOrg(organizationId),
   ]);
   const counts: Record<string, { assets: number; bulkAssets: number; kits: number }> = {};
   const ensure = (id: string) => (counts[id] ??= { assets: 0, bulkAssets: 0, kits: 0 });
-  for (const g of assetGroups) if (g.locationId) ensure(g.locationId).assets = g._count._all;
-  for (const g of bulkGroups) if (g.locationId) ensure(g.locationId).bulkAssets = g._count._all;
-  for (const g of kitGroups) if (g.locationId) ensure(g.locationId).kits = g._count._all;
+  for (const a of allAssets) if (a.locationId) ensure(a.locationId).assets++;
+  for (const b of allBulkAssets) if (b.locationId) ensure(b.locationId).bulkAssets++;
+  for (const k of allKits) if (k.locationId) ensure(k.locationId).kits++;
   return serialize(counts);
 }
 

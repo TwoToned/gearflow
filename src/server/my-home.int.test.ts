@@ -67,7 +67,7 @@ describe("getMyHomeData", () => {
     // Mine but completed → excluded
     await makeProject(org.id, { name: "Mine but done", pmId: me.id, status: "COMPLETED" });
 
-    const data = (await getMyHomeData()) as {
+    const data = (await getMyHomeData()) as unknown as {
       userName: string;
       myProjects: Array<{ id: string; name: string }>;
     };
@@ -85,7 +85,7 @@ describe("getMyHomeData", () => {
     const undated = await makeProject(org.id, { name: "Undated enquiry", pmId: me.id });
     const dated = await makeProject(org.id, { name: "Dated", pmId: me.id, start: new Date("2026-09-01") });
 
-    const data = (await getMyHomeData()) as { myProjects: Array<{ id: string }> };
+    const data = (await getMyHomeData()) as unknown as { myProjects: Array<{ id: string }> };
     // The dated project must come first even though it was created after the undated one.
     expect(data.myProjects.map((p) => p.id)).toEqual([dated.id, undated.id]);
   });

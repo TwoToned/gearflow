@@ -6,6 +6,7 @@ import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { removeAssetFromConvex, removeBulkAssetFromConvex } from "@/lib/asset-mirror";
 import { getPrimaryPhotoMap } from "@/lib/media-read";
 import { getModelMap } from "@/lib/models-read";
+import { getAssetsByOrg, getBulkAssetsByOrg } from "@/lib/assets-read";
 import { api } from "../../convex/_generated/api";
 import { serialize } from "@/lib/serialize";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
@@ -121,15 +122,15 @@ export async function getModelCounts(): Promise<
   Record<string, { assets: number; bulkAssets: number; media: { url: string | null; thumbnailUrl: string | null } | null }>
 > {
   const { organizationId } = await getOrgContext();
-  const [assetGroups, bulkGroups, photoMap] = await Promise.all([
-    prisma.asset.groupBy({ by: ["modelId"], where: { organizationId, isActive: true }, _count: { _all: true } }),
-    prisma.bulkAsset.groupBy({ by: ["modelId"], where: { organizationId, isActive: true }, _count: { _all: true } }),
+  const [allAssets, allBulkAssets, photoMap] = await Promise.all([
+    getAssetsByOrg(organizationId),
+    getBulkAssetsByOrg(organizationId),
     getPrimaryPhotoMap("model", organizationId),
   ]);
   const out: Record<string, { assets: number; bulkAssets: number; media: { url: string | null; thumbnailUrl: string | null } | null }> = {};
   const ensure = (id: string) => (out[id] ??= { assets: 0, bulkAssets: 0, media: null });
-  for (const g of assetGroups) if (g.modelId) ensure(g.modelId).assets = g._count._all;
-  for (const g of bulkGroups) if (g.modelId) ensure(g.modelId).bulkAssets = g._count._all;
+  for (const a of allAssets) if (a.isActive !== false) ensure(a.modelId).assets++;
+  for (const b of allBulkAssets) if (b.isActive !== false) ensure(b.modelId).bulkAssets++;
   for (const [modelId, meta] of Object.entries(photoMap)) ensure(modelId).media = meta;
   return serialize(out);
 }

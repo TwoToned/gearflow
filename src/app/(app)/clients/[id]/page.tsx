@@ -82,7 +82,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
   // Compute financial summary from projects
   const totalProjects = client.projects.length;
   const activeProjects = client.projects.filter(
-    (p: { status: string }) => !["CANCELLED", "COMPLETED", "INVOICED"].includes(p.status)
+    (p) => !["CANCELLED", "COMPLETED", "INVOICED"].includes(p.status ?? "")
   );
 
   return (
@@ -204,8 +204,8 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                                     category="project"
                                     value={project.status}
                                     label={
-                                      projectStatusLabels[project.status] ||
-                                      formatLabel(project.status)
+                                      projectStatusLabels[project.status ?? ""] ||
+                                      formatLabel(project.status ?? "")
                                     }
                                     variant="pill"
                                   />
@@ -214,7 +214,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                                   {project._count.lineItems}
                                 </TableCell>
                                 <TableCell className="text-fg-3">
-                                  {new Date(project.createdAt).toLocaleDateString()}
+                                  {new Date((project.createdAt ?? project._creationTime) as number).toLocaleDateString()}
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -380,10 +380,10 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                           </div>
                           <StatusIndicator
                             category="project"
-                            value={project.status}
+                            value={project.status ?? ""}
                             label={
-                              projectStatusLabels[project.status] ||
-                              formatLabel(project.status)
+                              projectStatusLabels[project.status ?? ""] ||
+                              formatLabel(project.status ?? "")
                             }
                             variant="pill"
                           />

@@ -1,0 +1,42 @@
+FROM node:22-slim
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g pnpm@9
+
+COPY package.json pnpm-lock.yaml ./
+RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
+
+COPY . .
+
+# Required at build time (next build prerender + prisma migrate)
+ARG DATABASE_URL
+ARG BETTER_AUTH_SECRET
+ARG BETTER_AUTH_URL
+ARG NEXT_PUBLIC_APP_URL
+
+# NEXT_PUBLIC_* vars are inlined into the JS bundle at build time
+ARG NEXT_PUBLIC_CONVEX_URL
+ARG NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+ARG NEXT_PUBLIC_GOOGLE_CONFIGURED
+ARG NEXT_PUBLIC_MICROSOFT_CONFIGURED
+ARG NEXT_PUBLIC_SENTRY_DSN
+ARG NEXT_PUBLIC_SITE_ADMIN_REG_ENABLED
+
+ENV DATABASE_URL=$DATABASE_URL \
+    BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET \
+    BETTER_AUTH_URL=$BETTER_AUTH_URL \
+    NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL \
+    NEXT_PUBLIC_CONVEX_URL=$NEXT_PUBLIC_CONVEX_URL \
+    NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=$NEXT_PUBLIC_GOOGLE_MAPS_API_KEY \
+    NEXT_PUBLIC_GOOGLE_CONFIGURED=$NEXT_PUBLIC_GOOGLE_CONFIGURED \
+    NEXT_PUBLIC_MICROSOFT_CONFIGURED=$NEXT_PUBLIC_MICROSOFT_CONFIGURED \
+    NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN \
+    NEXT_PUBLIC_SITE_ADMIN_REG_ENABLED=$NEXT_PUBLIC_SITE_ADMIN_REG_ENABLED
+
+RUN pnpm exec prisma generate && pnpm exec prisma migrate deploy && pnpm run build
+
+EXPOSE 3000
+CMD ["pnpm", "start"]

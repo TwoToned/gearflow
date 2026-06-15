@@ -53,6 +53,36 @@ npx prisma generate
 
 After this, `npm run dev`, `npm test`, and `npm run build` will all work.
 
+### Convex Dev in Worktrees
+
+**Always use `pnpm exec convex` — never `npx convex`.** `npx convex` runs a global
+CLI copy that can't resolve `convex/server` from local `node_modules`, causing an
+esbuild failure. `pnpm exec convex` uses the locally installed version.
+
+**When Claude Code edits `convex/*.ts` files**, push the changes immediately after:
+```bash
+pnpm exec convex dev --once
+```
+This is a one-shot push to the shared dev deployment — no watcher, no URL rewriting.
+Run it automatically after any Convex function change. `CONVEX_DEPLOY_KEY` must be
+in `.env`.
+
+**When a human dev wants a live watcher**, use a named preview deployment to avoid
+conflicting with other worktrees or the shared dev deployment:
+
+```bash
+# Start Convex watcher for this branch (creates/reuses a preview deployment)
+pnpm exec convex dev --preview-run $(git rev-parse --abbrev-ref HEAD)
+```
+
+This writes the preview deployment URL to `.env.local` as `NEXT_PUBLIC_CONVEX_URL`,
+which the dev server picks up automatically. Run it in a separate terminal alongside
+`npm run dev`. The preview deployment name must not contain `/` — for worktree branches
+like `feature/my-thing`, the branch name works fine as-is (Convex URL-encodes it).
+
+`CONVEX_DEPLOY_KEY` must be set in `.env` or `.env.local` pointing to your Convex
+Cloud project deploy key.
+
 ### DB Setup (first time)
 ```bash
 # Ensure DATABASE_URL is set in .env, then:
@@ -283,3 +313,48 @@ Convex agent skills for common tasks can be installed by running
 `npx convex ai-files install`.
 
 <!-- convex-ai-end -->
+
+## PR Preview Deployments (Coolify)
+
+Each PR automatically gets a preview deployment via `.github/workflows/preview-deploy.yml`.
+Cleanup runs on PR close via `.github/workflows/preview-cleanup.yml`.
+
+**What gets deployed per PR:**
+- Coolify app at `https://pr-<number>.preview.lab.rvlt.app`
+- Convex functions deployed to the **shared dev deployment** (not isolated per PR)
+- Shared dev Postgres (Prisma migrations applied by the workflow before triggering Coolify)
+
+**Auth bridge — "lying about the domain":**
+All PR preview apps set `BETTER_AUTH_URL=https://preview.lab.rvlt.app` regardless of their
+actual URL. The shared Convex dev deployment trusts that fixed issuer. Session cookies still
+scope to the real PR domain (Better Auth uses the request host, not `BETTER_AUTH_URL`). OAuth
+and passkeys don't work in previews — that's fine.
+
+**One-time Convex dev deployment setup** (set these in the Convex dashboard for the dev deployment):
+```
+CONVEX_AUTH_ISSUER   = https://preview.lab.rvlt.app
+CONVEX_AUTH_JWKS_URL = https://preview.lab.rvlt.app/api/auth/jwks
+```
+
+**One-time Coolify setup:**
+1. Always-on app at `preview.lab.rvlt.app` (main branch) — serves `/api/auth/jwks` as the JWKS host.
+   Must use the same `BETTER_AUTH_SECRET` as all PR previews (`PREVIEW_BETTER_AUTH_SECRET`).
+2. Create a "Previews" project in Coolify and note its UUID
+3. Connect GitHub repo as a source in Coolify (Sources → GitHub App or PAT)
+4. Wildcard DNS: `*.preview.lab.rvlt.app` → Coolify server IP
+5. Wildcard SSL cert in Coolify for `*.preview.lab.rvlt.app`
+6. Adjust the API endpoint in `preview-deploy.yml` (`private-github-app`, `private-github-token`,
+   or `public`) to match how your GitHub source is configured in Coolify
+
+**GitHub secrets required:**
+- `CONVEX_DEPLOY_KEY` — already set (same key used in main.yml)
+- `COOLIFY_TOKEN` — Coolify API bearer token (Coolify → Settings → API Keys)
+- `PREVIEW_DATABASE_URL` — Shared dev Postgres connection string (used by GitHub Actions for migrations)
+- `PREVIEW_DATABASE_URL_INTERNAL` — Same DB, internal Coolify network URL (used by the running app)
+- `PREVIEW_BETTER_AUTH_SECRET` — Must match the always-on `preview.lab.rvlt.app` app
+
+**GitHub variables required (Settings → Variables → Repository):**
+- `COOLIFY_BASE_URL` — Coolify instance URL, e.g. `https://coolify.yourserver.com`
+- `COOLIFY_SERVER_UUID` — Server UUID from Coolify
+- `COOLIFY_PROJECT_UUID` — UUID of the "Previews" project in Coolify
+- `CONVEX_DEV_URL` — Shared dev Convex URL, e.g. `https://groovy-koala-475.convex.cloud`

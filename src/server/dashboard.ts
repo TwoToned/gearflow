@@ -5,6 +5,7 @@ import { getOrgContext } from "@/lib/org-context";
 import { attachClient } from "@/lib/clients-read";
 import { serialize } from "@/lib/serialize";
 import { listOpenBlockingThreads } from "@/lib/blocking-comments-read";
+import { getModelMap } from "@/lib/models-read";
 
 export async function getDashboardStats() {
   const { organizationId } = await getOrgContext();
@@ -182,12 +183,12 @@ export async function getUpcomingProjects() {
 export async function getRecentActivity() {
   const { organizationId } = await getOrgContext();
 
-  const [logs, testRecords, maintenanceRecords] = await Promise.all([
+  const [logs, testRecords, maintenanceRecords, modelMap] = await Promise.all([
     prisma.assetScanLog.findMany({
       where: { organizationId },
       include: {
-        asset: { include: { model: true } },
-        bulkAsset: { include: { model: true } },
+        asset: true,
+        bulkAsset: true,
         project: true,
         scannedBy: true,
       },
@@ -207,7 +208,7 @@ export async function getRecentActivity() {
       where: { organizationId },
       include: {
         assets: {
-          include: { asset: { include: { model: true } } },
+          include: { asset: true },
           take: 3,
         },
         reportedBy: { select: { id: true, name: true } },
@@ -215,7 +216,24 @@ export async function getRecentActivity() {
       orderBy: { updatedAt: "desc" },
       take: 10,
     }),
+    getModelMap(organizationId),
   ]);
 
-  return serialize({ logs, testRecords, maintenanceRecords });
+  const withModels = {
+    logs: logs.map((l) => ({
+      ...l,
+      asset: l.asset ? { ...l.asset, model: l.asset.modelId ? modelMap.get(l.asset.modelId) ?? null : null } : null,
+      bulkAsset: l.bulkAsset ? { ...l.bulkAsset, model: l.bulkAsset.modelId ? modelMap.get(l.bulkAsset.modelId) ?? null : null } : null,
+    })),
+    testRecords,
+    maintenanceRecords: maintenanceRecords.map((m) => ({
+      ...m,
+      assets: m.assets.map((a) => ({
+        ...a,
+        asset: { ...a.asset, model: a.asset.modelId ? modelMap.get(a.asset.modelId) ?? null : null },
+      })),
+    })),
+  };
+
+  return serialize(withModels);
 }

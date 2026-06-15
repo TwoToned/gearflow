@@ -16,6 +16,7 @@ import {
   removeServiceTemplateFromConvex,
 } from "@/lib/template-mirror";
 import { roundCurrency } from "@/lib/formatters";
+import { getCategoriesByOrg } from "@/lib/categories-read";
 import { sendCrewOffer } from "@/server/crew-communication";
 import { recalculateProjectTotals } from "@/server/line-items";
 import { removeLineItemFromConvex } from "@/lib/line-item-mirror";
@@ -1167,13 +1168,12 @@ export async function getCrewSuggestionsForProject(projectId: string) {
     return serialize({ suggestedRoleIds: [], suggestedMembers: [] });
   }
 
-  // Get suggested crew roles from categories
-  const categories = await prisma.category.findMany({
-    where: { id: { in: categoryIds } },
-    select: { suggestedCrewRoles: true },
-  });
-
-  const suggestedRoleIds = [...new Set(categories.flatMap((c) => c.suggestedCrewRoles))];
+  // Get suggested crew roles from categories (Convex read)
+  const allCategories = await getCategoriesByOrg(organizationId);
+  const categorySet = new Set(categoryIds);
+  const suggestedRoleIds = [
+    ...new Set(allCategories.filter((c) => categorySet.has(c.id)).flatMap((c) => c.suggestedCrewRoles ?? [])),
+  ];
 
   if (suggestedRoleIds.length === 0) {
     return serialize({ suggestedRoleIds: [], suggestedMembers: [] });

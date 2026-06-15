@@ -3,6 +3,8 @@
 import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getClientsByOrg } from "@/lib/clients-read";
+import { getAssetsByOrg, getBulkAssetsByOrg } from "@/lib/assets-read";
+import { getProjectsByOrg } from "@/lib/projects-read";
 import { serialize } from "@/lib/serialize";
 import { executeReport, generateCSV } from "@/lib/report-engine";
 import { logActivity } from "@/lib/activity-log";
@@ -19,38 +21,12 @@ import type { Prisma } from "@/generated/prisma/client";
 export async function getReportsSummary() {
   const { organizationId } = await getOrgContext();
 
-  const [
-    totalSerializedAssets,
-    totalBulkAssets,
-    assetsByStatus,
-    projectsByStatus,
-    totalClients,
-    recentProjects,
-    maintenanceSummary,
-  ] = await Promise.all([
-    prisma.asset.count({ where: { organizationId, isActive: true } }),
-    prisma.bulkAsset.count({ where: { organizationId, isActive: true } }),
-    prisma.asset.groupBy({
-      by: ["status"],
-      where: { organizationId, isActive: true },
-      _count: { status: true },
-    }),
-    prisma.project.groupBy({
-      by: ["status"],
-      where: { organizationId, isTemplate: false },
-      _count: { status: true },
-    }),
+  const [allAssets, allBulkAssets, allProjects, totalClients, maintenanceSummary] = await Promise.all([
+    getAssetsByOrg(organizationId),
+    getBulkAssetsByOrg(organizationId),
+    getProjectsByOrg(organizationId),
     // Clients live in Convex now — count active ones there.
     getClientsByOrg(organizationId).then((cs) => cs.filter((c) => c.isActive ?? true).length),
-    prisma.project.findMany({
-      where: {
-        organizationId,
-        isTemplate: false,
-        status: { in: ["INVOICED", "COMPLETED"] },
-      },
-      select: { total: true, invoicedTotal: true },
-      orderBy: { createdAt: "desc" },
-    }),
     prisma.maintenanceRecord.groupBy({
       by: ["status"],
       where: { organizationId },
@@ -58,25 +34,37 @@ export async function getReportsSummary() {
     }),
   ]);
 
-  const totalRevenue = recentProjects.reduce(
-    (sum, p) => {
+  const activeAssets = allAssets.filter((a) => a.isActive !== false);
+  const activeBulkAssets = allBulkAssets.filter((ba) => ba.isActive !== false);
+  const orgProjects = allProjects.filter((p) => !p.isTemplate);
+
+  const totalSerializedAssets = activeAssets.length;
+  const totalBulkAssets = activeBulkAssets.length;
+
+  const assetStatusCounts = new Map<string, number>();
+  for (const a of activeAssets) {
+    const s = a.status ?? "AVAILABLE";
+    assetStatusCounts.set(s, (assetStatusCounts.get(s) ?? 0) + 1);
+  }
+
+  const projectStatusCounts = new Map<string, number>();
+  for (const p of orgProjects) {
+    const s = p.status ?? "ENQUIRY";
+    projectStatusCounts.set(s, (projectStatusCounts.get(s) ?? 0) + 1);
+  }
+
+  const totalRevenue = orgProjects
+    .filter((p) => p.status === "INVOICED" || p.status === "COMPLETED")
+    .reduce((sum, p) => {
       const amount = p.invoicedTotal != null ? Number(p.invoicedTotal) : (p.total ? Number(p.total) : 0);
       return sum + amount;
-    },
-    0
-  );
+    }, 0);
 
   return serialize({
     totalSerializedAssets,
     totalBulkAssets,
-    assetsByStatus: assetsByStatus.map((g) => ({
-      status: g.status,
-      count: g._count.status,
-    })),
-    projectsByStatus: projectsByStatus.map((g) => ({
-      status: g.status,
-      count: g._count.status,
-    })),
+    assetsByStatus: Array.from(assetStatusCounts.entries()).map(([status, count]) => ({ status, count })),
+    projectsByStatus: Array.from(projectStatusCounts.entries()).map(([status, count]) => ({ status, count })),
     totalClients,
     totalRevenue,
     maintenanceSummary: maintenanceSummary.map((g) => ({

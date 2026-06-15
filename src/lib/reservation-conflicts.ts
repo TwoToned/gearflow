@@ -21,6 +21,8 @@
 import { prisma } from "@/lib/prisma";
 import { syncLineItemsToConvex } from "@/lib/line-item-mirror";
 import { getModelMap } from "@/lib/models-read";
+import { getProjectById } from "@/lib/projects-read";
+import { getAssetsByOrg } from "@/lib/assets-read";
 
 /**
  * Project statuses where the booking is released — excluded from conflict
@@ -55,10 +57,8 @@ export async function findProjectConflictsCore(
   projectId: string,
   organizationId: string,
 ): Promise<ReservationConflict[]> {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId, organizationId },
-    select: { rentalStartDate: true, rentalEndDate: true },
-  });
+  const project = await getProjectById(projectId);
+  if (!project || project.organizationId !== organizationId) return [];
   if (!project?.rentalStartDate || !project.rentalEndDate) return [];
 
   const projectSelect = {
@@ -251,23 +251,16 @@ export async function findSwapCandidatesCore(
 
   const { rentalStartDate, rentalEndDate } = lineItem.project;
 
-  // All bookable assets of this model.
-  const assets = await prisma.asset.findMany({
-    where: {
-      organizationId,
-      modelId: lineItem.modelId,
-      isActive: true,
-      kitId: null,
-      status: { notIn: ["RETIRED", "LOST"] },
-    },
-    select: {
-      id: true,
-      assetTag: true,
-      serialNumber: true,
-      customName: true,
-      status: true,
-    },
-  });
+  // All bookable assets of this model (Convex read, filter in JS).
+  const allOrgAssets = await getAssetsByOrg(organizationId);
+  const assets = allOrgAssets.filter(
+    (a) =>
+      a.modelId === lineItem.modelId &&
+      a.isActive !== false &&
+      !a.kitId &&
+      a.status !== "RETIRED" &&
+      a.status !== "LOST",
+  );
   if (assets.length === 0) return [];
 
   // Which of those are booked in an overlapping live project? Bookings
@@ -346,10 +339,8 @@ export async function swapLineItemAssetCore(
   });
   if (!lineItem) throw new Error("Line item not found");
 
-  const newAsset = await prisma.asset.findUnique({
-    where: { id: newAssetId, organizationId },
-    select: { id: true, modelId: true, status: true, kitId: true, assetTag: true },
-  });
+  const allOrgAssetsForSwap = await getAssetsByOrg(organizationId);
+  const newAsset = allOrgAssetsForSwap.find((a) => a.id === newAssetId) ?? null;
   if (!newAsset) throw new Error("Target asset not found");
 
   if (lineItem.modelId && newAsset.modelId !== lineItem.modelId) {

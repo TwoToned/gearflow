@@ -3,6 +3,7 @@
 import { getOrgContext } from "@/lib/org-context";
 import { prisma } from "@/lib/prisma";
 import { getClientsByOrg } from "@/lib/clients-read";
+import { getModelsByOrg } from "@/lib/models-read";
 
 /**
  * Get all distinct tags used across the organization.
@@ -13,7 +14,8 @@ export async function getOrgTags(): Promise<string[]> {
 
   // Query tags from all entity types that have them
   const [models, assets, bulkAssets, kits, locations, categories, maintenance, projects, clients] = await Promise.all([
-    prisma.model.findMany({ where: { organizationId }, select: { tags: true } }),
+    // Model lives in Convex — fetch tags from Convex store.
+    getModelsByOrg(organizationId).then((ms) => ms.map((m) => ({ tags: m.tags ?? [] }))),
     prisma.asset.findMany({ where: { organizationId }, select: { tags: true } }),
     prisma.bulkAsset.findMany({ where: { organizationId }, select: { tags: true } }),
     prisma.kit.findMany({ where: { organizationId }, select: { tags: true } }),

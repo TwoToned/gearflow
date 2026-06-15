@@ -383,10 +383,13 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
               : parsed.notes
             : existing.notes,
         },
-        include: { model: true, asset: true, bulkAsset: true },
+        include: { asset: true, bulkAsset: true },
       });
 
       await recalculateProjectTotals(projectId);
+
+      // Model lives in Convex — enrich after update.
+      const mergedModel = result.modelId ? await getModelById(result.modelId) : null;
 
       await logActivity({
         organizationId,
@@ -401,7 +404,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
       });
 
       await upsertProjectLineItemsToConvex(projectId);
-      return serialize({ ...result, _merged: true, _newQuantity: newQuantity });
+      return serialize({ ...result, model: mergedModel, _merged: true, _newQuantity: newQuantity });
     }
   }
 

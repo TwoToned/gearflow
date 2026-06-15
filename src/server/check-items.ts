@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
-import { getModelById } from "@/lib/models-read";
+import { getModelById, getModelMap } from "@/lib/models-read";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import {
@@ -387,11 +387,9 @@ export async function bulkAddCheckItemsToModels(
   // affected models into Convex.
   await syncModelCheckItemsForModels(modelIds);
 
-  // Fetch model names for audit log
-  const models = await prisma.model.findMany({
-    where: { id: { in: modelIds }, organizationId },
-    select: { id: true, name: true },
-  });
+  // Model lives in Convex — fetch names for audit log via map.
+  const convexModelMap = await getModelMap(organizationId);
+  const models = modelIds.map((id) => ({ id, name: convexModelMap.get(id)?.name ?? id }));
   const checkItems = await prisma.checkItem.findMany({
     where: { id: { in: checkItemIds }, organizationId },
     select: { id: true, label: true },

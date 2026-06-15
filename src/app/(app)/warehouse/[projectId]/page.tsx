@@ -87,7 +87,7 @@ import { PickPrepTab } from "@/components/warehouse/pick-prep-tab";
 import { DeployTab } from "@/components/warehouse/deploy-tab";
 import { ReturnTab } from "@/components/warehouse/return-tab";
 import { StageItemsTab } from "@/components/warehouse/stage-items-tab";
-import { belongsInStage } from "@/lib/warehouse-stage";
+import { belongsInStage, describeStageSplit } from "@/lib/warehouse-stage";
 import type { LineItem, AvailableAsset, GroupEntry } from "@/components/warehouse/warehouse-types";
 import {
   isBulkItem,
@@ -2049,6 +2049,9 @@ function WarehouseProjectPage({
     const supplierName = entry.kind === "serialized-group"
       ? entry.items.find((i) => i.subHireId != null && i.supplier)?.supplier?.name
       : entry.item.supplier?.name;
+    // Partial-return split context for a bulk line straddling stages
+    // (empty for single-stage lines, so it only renders on real splits).
+    const split = entry.kind === "bulk-group" ? describeStageSplit(entry.item) : "";
 
     return (
       <TableRow
@@ -2073,6 +2076,9 @@ function WarehouseProjectPage({
               <span className="text-xs text-fg-3 ml-1">via {supplierName}</span>
             )}
           </div>
+          {split && (
+            <p className="text-xs text-fg-3 mt-0.5">{split}</p>
+          )}
         </TableCell>
         <TableCell className="font-mono text-sm text-fg-3">
           {entry.kind === "bulk-group" ? (entry.item.bulkAsset?.assetTag || "—") : ""}

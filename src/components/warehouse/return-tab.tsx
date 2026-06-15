@@ -29,6 +29,7 @@ import {
 
 import type { LineItem, GroupEntry } from "./warehouse-types";
 import { modelDisplayName, isBulkItem, collectAllVerifiableIds, bulkUnitKey } from "./warehouse-types";
+import { describeStageSplit } from "@/lib/warehouse-stage";
 import { KitChildRows } from "./kit-child-rows";
 import { AccessoryChildRows } from "./accessory-child-rows";
 
@@ -394,6 +395,9 @@ export function ReturnTab({
                   const item = entry.item;
                   const isBulk = isBulkItem(item);
                   const assetTag = item.asset?.assetTag || item.bulkAsset?.assetTag || null;
+                  // Non-empty only when this line is partially returned (some
+                  // units back, some still out) — links it to its Returned-tab row.
+                  const split = describeStageSplit(item);
                   return (
                     <Fragment key={item.id}>
                     <TableRow>
@@ -413,6 +417,9 @@ export function ReturnTab({
                         )}
                         {item.subHireId != null && item.supplier && (
                           <p className="text-xs text-fg-3 mt-0.5">via {item.supplier.name}</p>
+                        )}
+                        {split && (
+                          <p className="text-xs text-fg-3 mt-0.5">{split}</p>
                         )}
                       </TableCell>
                       <TableCell className="font-mono text-sm text-fg-3">

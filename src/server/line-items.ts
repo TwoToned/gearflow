@@ -24,7 +24,10 @@ import { computeStockBreakdown } from "@/lib/availability";
 import { isStaleRevision } from "@/lib/collaboration-conflict";
 import { writeCollabActivityEvent } from "@/lib/collaboration-activity";
 import { getModelById, getModelMap, getModelWithCategoryMap } from "@/lib/models-read";
-import { getActiveAssetsByModel, getActiveBulkAssetsByModel, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
+import { getActiveAssetsByModel, getActiveBulkAssetsByModel, getAssetById, getAssetByAssetTag, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
+import { getProjectById, getProjectsByOrg } from "@/lib/projects-read";
+import { getKitById } from "@/lib/kits-read";
+import { getLocationById } from "@/lib/locations-read";
 
 /**
  * Expand a serialised asset's permanent accessories into child line items.
@@ -174,12 +177,12 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
   // WHY: Prevent double-booking of owned equipment. Sub-hire items are third-party
   // stock (rented in to cover gaps) and don't consume our warehouse inventory.
   if (parsed.type === "EQUIPMENT" && parsed.modelId && !allowOverbook) {
-    const project = await prisma.project.findUnique({
-      where: { id: projectId, organizationId },
-      select: { rentalStartDate: true, rentalEndDate: true },
-    });
+    const convexProject = await getProjectById(projectId);
+    if (!convexProject || convexProject.organizationId !== organizationId) {
+      return serialize({ success: false });
+    }
 
-    const hasDates = !!project?.rentalStartDate && !!project?.rentalEndDate;
+    const hasDates = convexProject.rentalStartDate != null && convexProject.rentalEndDate != null;
 
     // Two-mode availability check: without dates (project still being quoted),
     // we only check conflicts within this project (the user is iterating on
@@ -189,12 +192,13 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
     // complete. Booking a kit asset directly would leave the kit missing a piece.
     if (parsed.assetId) {
       // Check if asset is in a kit
-      const assetCheck = await prisma.asset.findUnique({ where: { id: parsed.assetId }, include: { kit: { select: { assetTag: true } } } });
+      const assetCheck = await getAssetById(parsed.assetId);
       if (assetCheck?.kitId) {
+        const assetKit = await getKitById(assetCheck.kitId);
         throw new UserFacingError({
           code: "ASSET_IN_KIT",
           title: "Asset is in a kit",
-          message: `This asset belongs to Kit ${assetCheck.kit?.assetTag}.`,
+          message: `This asset belongs to Kit ${assetKit?.assetTag ?? assetCheck.kitId}.`,
           hint: "Add the Kit to the project instead, or remove the asset from the Kit first.",
         });
       }
@@ -207,22 +211,31 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
       // overlapping projects. Without dates (quoting phase), only check within
       // this project since the user is iterating on a draft quote.
       if (hasDates) {
-        const conflictWindow: Prisma.ProjectWhereInput = {
-          status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
-          isTemplate: false,
-          rentalStartDate: { lte: project!.rentalEndDate! },
-          rentalEndDate: { gte: project!.rentalStartDate! },
-          id: { not: projectId },
-        };
+        const projStartMs = convexProject.rentalStartDate as number;
+        const projEndMs = convexProject.rentalEndDate as number;
+        const allProjects = await getProjectsByOrg(organizationId);
+        const conflictProjectIds = allProjects
+          .filter(
+            (p) =>
+              !p.isTemplate &&
+              !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "") &&
+              p.rentalStartDate != null &&
+              p.rentalEndDate != null &&
+              (p.rentalStartDate as number) <= projEndMs &&
+              (p.rentalEndDate as number) >= projStartMs &&
+              p.id !== projectId,
+          )
+          .map((p) => p.id);
+        const projectMap = new Map(allProjects.map((p) => [p.id, p]));
         const [lineConflict, unitConflict] = await Promise.all([
           prisma.projectLineItem.findFirst({
             where: {
               organizationId,
               assetId: parsed.assetId,
               status: { not: "CANCELLED" },
-              project: conflictWindow,
+              projectId: { in: conflictProjectIds },
             },
-            select: { project: { select: { projectNumber: true, name: true } } },
+            select: { projectId: true },
           }),
           prisma.projectLineItemUnit.findFirst({
             where: {
@@ -231,20 +244,18 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
               status: { not: "RETURNED" },
               lineItem: {
                 status: { not: "CANCELLED" },
-                project: conflictWindow,
+                projectId: { in: conflictProjectIds },
               },
             },
             select: {
               lineItem: {
-                select: {
-                  project: { select: { projectNumber: true, name: true } },
-                },
+                select: { projectId: true },
               },
             },
           }),
         ]);
-        const conflictProject =
-          lineConflict?.project ?? unitConflict?.lineItem.project;
+        const conflictProjId = lineConflict?.projectId ?? unitConflict?.lineItem.projectId;
+        const conflictProject = conflictProjId ? projectMap.get(conflictProjId) : null;
         if (conflictProject) {
           throw new UserFacingError({
             code: "ASSET_DOUBLE_BOOKED",
@@ -259,7 +270,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
       // WHY: Retired and lost assets are permanently unavailable — booking them
       // would create unfulfillable commitments. Checked-out assets return before
       // the project starts, so they're still bookable.
-      const asset = await prisma.asset.findUnique({ where: { id: parsed.assetId } });
+      const asset = await getAssetById(parsed.assetId);
       if (asset && (asset.status === "RETIRED" || asset.status === "LOST")) {
         throw new UserFacingError({
           code: "ASSET_UNAVAILABLE",
@@ -291,29 +302,42 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         // When dates exist, check overlapping bookings across projects
         // When no dates, check only this project's existing bookings against stock
         // Sub-hire items don't consume our stock so they're excluded from the count.
-        const overlapping = hasDates
-          ? await prisma.projectLineItem.findMany({
-              where: {
-                organizationId,
-                modelId: parsed.modelId,
-                status: { not: "CANCELLED" },
-                subHireId: null,
-                project: {
-                  status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
-                  rentalStartDate: { lte: project!.rentalEndDate! },
-                  rentalEndDate: { gte: project!.rentalStartDate! },
-                },
-              },
-            })
-          : await prisma.projectLineItem.findMany({
-              where: {
-                organizationId,
-                modelId: parsed.modelId,
-                status: { not: "CANCELLED" },
-                subHireId: null,
-                projectId,
-              },
-            });
+        let overlapping;
+        if (hasDates) {
+          const projStartMs = convexProject.rentalStartDate as number;
+          const projEndMs = convexProject.rentalEndDate as number;
+          const modelAllProjects = await getProjectsByOrg(organizationId);
+          const modelConflictProjectIds = modelAllProjects
+            .filter(
+              (p) =>
+                !p.isTemplate &&
+                !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "") &&
+                p.rentalStartDate != null &&
+                p.rentalEndDate != null &&
+                (p.rentalStartDate as number) <= projEndMs &&
+                (p.rentalEndDate as number) >= projStartMs,
+            )
+            .map((p) => p.id);
+          overlapping = await prisma.projectLineItem.findMany({
+            where: {
+              organizationId,
+              modelId: parsed.modelId,
+              status: { not: "CANCELLED" },
+              subHireId: null,
+              projectId: { in: modelConflictProjectIds },
+            },
+          });
+        } else {
+          overlapping = await prisma.projectLineItem.findMany({
+            where: {
+              organizationId,
+              modelId: parsed.modelId,
+              status: { not: "CANCELLED" },
+              subHireId: null,
+              projectId,
+            },
+          });
+        }
 
         const booked = overlapping.reduce((sum, li) => sum + li.quantity, 0);
         // Enforce against effectiveStock — in-maintenance/lost/retired assets
@@ -440,10 +464,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
 
       if (billingTotalDays == null) {
         // Try project-level billing
-        const proj = await prisma.project.findUnique({
-          where: { id: projectId },
-          select: { billingMonths: true, billingWeeks: true, billingDays: true },
-        });
+        const proj = await getProjectById(projectId);
         if (proj && (proj.billingMonths != null || proj.billingWeeks != null || proj.billingDays != null)) {
           billingTotalDays = computeTotalDays(
             proj.billingMonths ?? 0,
@@ -643,11 +664,8 @@ export async function updateLineItem(
     !allowOverbook &&
     parsed.quantity > existing.quantity
   ) {
-    const project = await prisma.project.findUnique({
-      where: { id: existing.projectId, organizationId },
-      select: { rentalStartDate: true, rentalEndDate: true },
-    });
-    const hasDates = !!project?.rentalStartDate && !!project?.rentalEndDate;
+    const updateConvexProject = await getProjectById(existing.projectId);
+    const hasDates = updateConvexProject?.rentalStartDate != null && updateConvexProject?.rentalEndDate != null;
 
     // Model + active assets live in Convex — fetch in parallel.
     const [model, activeAssets, activeBulkAssets] = await Promise.all([
@@ -662,31 +680,44 @@ export async function updateLineItem(
         assets: activeAssets.map((a: ConvexAsset) => ({ status: a.status ?? "AVAILABLE" })),
         bulkAssets: activeBulkAssets.map((ba: ConvexBulkAsset) => ({ totalQuantity: ba.totalQuantity ?? 0 })),
       };
-      const overlapping = hasDates
-        ? await prisma.projectLineItem.findMany({
-            where: {
-              organizationId,
-              modelId: parsed.modelId,
-              status: { not: "CANCELLED" },
-              subHireId: null,
-              id: { not: id },
-              project: {
-                status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
-                rentalStartDate: { lte: project!.rentalEndDate! },
-                rentalEndDate: { gte: project!.rentalStartDate! },
-              },
-            },
-          })
-        : await prisma.projectLineItem.findMany({
-            where: {
-              organizationId,
-              modelId: parsed.modelId,
-              status: { not: "CANCELLED" },
-              subHireId: null,
-              id: { not: id },
-              projectId: existing.projectId,
-            },
-          });
+      let overlapping;
+      if (hasDates) {
+        const projStartMs = updateConvexProject!.rentalStartDate as number;
+        const projEndMs = updateConvexProject!.rentalEndDate as number;
+        const updateAllProjects = await getProjectsByOrg(organizationId);
+        const updateConflictProjectIds = updateAllProjects
+          .filter(
+            (p) =>
+              !p.isTemplate &&
+              !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "") &&
+              p.rentalStartDate != null &&
+              p.rentalEndDate != null &&
+              (p.rentalStartDate as number) <= projEndMs &&
+              (p.rentalEndDate as number) >= projStartMs,
+          )
+          .map((p) => p.id);
+        overlapping = await prisma.projectLineItem.findMany({
+          where: {
+            organizationId,
+            modelId: parsed.modelId,
+            status: { not: "CANCELLED" },
+            subHireId: null,
+            id: { not: id },
+            projectId: { in: updateConflictProjectIds },
+          },
+        });
+      } else {
+        overlapping = await prisma.projectLineItem.findMany({
+          where: {
+            organizationId,
+            modelId: parsed.modelId,
+            status: { not: "CANCELLED" },
+            subHireId: null,
+            id: { not: id },
+            projectId: existing.projectId,
+          },
+        });
+      }
 
       const booked = overlapping.reduce((sum, li) => sum + li.quantity, 0);
       // Enforce against effectiveStock — matches checkAvailability and the badge.
@@ -804,26 +835,33 @@ export async function addKitLineItem(
 ) {
   const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
 
-  const kit = await prisma.kit.findUnique({
-    where: { id: kitId, organizationId },
-    include: {
-      serializedItems: { include: { asset: true }, orderBy: { sortOrder: "asc" } },
-      bulkItems: { include: { bulkAsset: true }, orderBy: { sortOrder: "asc" } },
-    },
-  });
-  if (!kit) {
+  const convexKit = await getKitById(kitId);
+  if (!convexKit || convexKit.organizationId !== organizationId) {
     throw new UserFacingError({
       code: "NOT_FOUND",
       title: "Kit not found",
       message: "This kit was deleted or moved. Refresh and try again.",
     });
   }
+  const [serializedItems, bulkItems] = await Promise.all([
+    prisma.kitSerializedItem.findMany({
+      where: { kitId },
+      include: { asset: { select: { modelId: true } } },
+      orderBy: { sortOrder: "asc" },
+    }),
+    prisma.kitBulkItem.findMany({
+      where: { kitId },
+      include: { bulkAsset: { select: { modelId: true } } },
+      orderBy: { sortOrder: "asc" },
+    }),
+  ]);
+  const kit = { ...convexKit, serializedItems, bulkItems };
   // Block truly unavailable kits but allow checked-out ones — date overlap check below handles real conflicts
   if (kit.status === "IN_MAINTENANCE" || kit.status === "INCOMPLETE") {
     throw new UserFacingError({
       code: "KIT_UNAVAILABLE",
       title: "Kit cannot be added",
-      message: `Kit ${kit.assetTag} is ${kit.status.replace("_", " ").toLowerCase()}.`,
+      message: `Kit ${kit.assetTag} is ${(kit.status as string).replace("_", " ").toLowerCase()}.`,
       hint: kit.status === "IN_MAINTENANCE"
         ? "Wait for maintenance to finish, or pick a different kit."
         : "Complete the kit's missing items before booking it.",
@@ -831,23 +869,37 @@ export async function addKitLineItem(
   }
 
   // Check not already on an overlapping project
-  const project = await prisma.project.findUnique({
-    where: { id: projectId, organizationId },
-    select: { rentalStartDate: true, rentalEndDate: true },
-  });
-  if (project?.rentalStartDate && project?.rentalEndDate) {
+  const kitAddProject = await getProjectById(projectId);
+  if (kitAddProject?.rentalStartDate != null && kitAddProject?.rentalEndDate != null) {
+    const kitProjStartMs = kitAddProject.rentalStartDate as number;
+    const kitProjEndMs = kitAddProject.rentalEndDate as number;
+    const kitAddAllProjects = await getProjectsByOrg(organizationId);
+    const kitConflictProjectIds = kitAddAllProjects
+      .filter(
+        (p) =>
+          !p.isTemplate &&
+          !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "") &&
+          p.rentalStartDate != null &&
+          p.rentalEndDate != null &&
+          (p.rentalStartDate as number) <= kitProjEndMs &&
+          (p.rentalEndDate as number) >= kitProjStartMs &&
+          p.id !== projectId,
+      )
+      .map((p) => p.id);
+    const kitProjectMap = new Map(kitAddAllProjects.map((p) => [p.id, p]));
     const conflict = await prisma.projectLineItem.findFirst({
       where: {
         organizationId, kitId, isKitChild: false, status: { not: "CANCELLED" },
-        project: { status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] }, rentalStartDate: { lte: project.rentalEndDate }, rentalEndDate: { gte: project.rentalStartDate }, id: { not: projectId } },
+        projectId: { in: kitConflictProjectIds },
       },
-      include: { project: { select: { projectNumber: true, name: true } } },
+      select: { projectId: true },
     });
     if (conflict) {
+      const conflictKitProject = kitProjectMap.get(conflict.projectId);
       throw new UserFacingError({
         code: "KIT_DOUBLE_BOOKED",
         title: "Kit already booked",
-        message: `Kit ${kit.assetTag} is on ${conflict.project.projectNumber} — ${conflict.project.name} during those dates.`,
+        message: `Kit ${kit.assetTag} is on ${conflictKitProject?.projectNumber ?? conflict.projectId} — ${conflictKitProject?.name ?? ""} during those dates.`,
         hint: "Pick a different kit, adjust the rental dates, or remove it from the other project.",
       });
     }
@@ -938,8 +990,8 @@ export async function addCustomLineItem(projectId: string, data: CustomLineItemF
   const parsed = customLineItemSchema.parse(data);
 
   // Validate project belongs to this org before writing
-  const project = await prisma.project.findFirst({ where: { id: projectId, organizationId } });
-  if (!project) {
+  const customLineItemProject = await getProjectById(projectId);
+  if (!customLineItemProject || customLineItemProject.organizationId !== organizationId) {
     throw new UserFacingError({
       code: "NOT_FOUND",
       title: "Project not found",
@@ -1245,14 +1297,14 @@ export async function lookupAssetByTag(
 ) {
   const { organizationId } = await getOrgContext();
 
-  const asset = await prisma.asset.findUnique({
-    where: { organizationId_assetTag: { organizationId, assetTag } },
-    include: { location: true },
-  });
+  const convexTagAsset = await getAssetByAssetTag(organizationId, assetTag);
 
-  if (!asset) {
+  if (!convexTagAsset) {
     return serialize({ found: false as const, asset: null, available: false, conflictsWith: null, hasAccessories: false });
   }
+
+  const convexTagLocation = convexTagAsset.locationId ? await getLocationById(convexTagAsset.locationId) : null;
+  const asset = { ...convexTagAsset, location: convexTagLocation ?? null };
 
   // Model lives in Convex — fetch with category for the caller.
   const modelWithCategoryMap = await getModelWithCategoryMap(organizationId);
@@ -1266,24 +1318,37 @@ export async function lookupAssetByTag(
     const startDate = new Date(rentalStartDate);
     const endDate = new Date(rentalEndDate);
 
+    const lookupAllProjects = await getProjectsByOrg(organizationId);
+    const lookupConflictProjectIds = lookupAllProjects
+      .filter(
+        (p) =>
+          !p.isTemplate &&
+          !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "") &&
+          p.rentalStartDate != null &&
+          p.rentalEndDate != null &&
+          (p.rentalStartDate as number) <= endDate.getTime() &&
+          (p.rentalEndDate as number) >= startDate.getTime() &&
+          (excludeProjectId ? p.id !== excludeProjectId : true),
+      )
+      .map((p) => p.id);
+    const lookupProjectMap = new Map(lookupAllProjects.map((p) => [p.id, p]));
+
     const overlapping = await prisma.projectLineItem.findFirst({
       where: {
         organizationId,
         assetId: asset.id,
         status: { not: "CANCELLED" },
-        project: {
-          status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
-          rentalStartDate: { lte: endDate },
-          rentalEndDate: { gte: startDate },
-          ...(excludeProjectId ? { id: { not: excludeProjectId } } : {}),
-        },
+        projectId: { in: lookupConflictProjectIds },
       },
-      include: { project: { select: { projectNumber: true, name: true } } },
+      select: { projectId: true },
     });
 
     if (overlapping) {
       available = false;
-      conflictsWith = `${overlapping.project.projectNumber} - ${overlapping.project.name}`;
+      const overlapProject = lookupProjectMap.get(overlapping.projectId);
+      conflictsWith = overlapProject
+        ? `${overlapProject.projectNumber} - ${overlapProject.name}`
+        : overlapping.projectId;
     }
   }
 
@@ -1316,19 +1381,31 @@ export async function checkKitAvailability(
   const startDate = new Date(rentalStartDate);
   const endDate = new Date(rentalEndDate);
 
-  const kit = await prisma.kit.findUnique({
-    where: { id: kitId, organizationId },
-    select: { status: true },
-  });
+  const kitAvailConvexKit = await getKitById(kitId);
 
-  if (!kit) {
+  if (!kitAvailConvexKit || kitAvailConvexKit.organizationId !== organizationId) {
     return serialize({ available: false, conflictsWith: "Kit not found" });
   }
 
   // Only block truly unavailable kits — checked out kits can still be added to future projects
-  if (kit.status === "IN_MAINTENANCE" || kit.status === "INCOMPLETE") {
-    return serialize({ available: false, conflictsWith: `Kit status: ${kit.status.replace("_", " ")}` });
+  if (kitAvailConvexKit.status === "IN_MAINTENANCE" || kitAvailConvexKit.status === "INCOMPLETE") {
+    return serialize({ available: false, conflictsWith: `Kit status: ${(kitAvailConvexKit.status as string).replace("_", " ")}` });
   }
+
+  const kitAvailAllProjects = await getProjectsByOrg(organizationId);
+  const kitAvailConflictProjectIds = kitAvailAllProjects
+    .filter(
+      (p) =>
+        !p.isTemplate &&
+        !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "") &&
+        p.rentalStartDate != null &&
+        p.rentalEndDate != null &&
+        (p.rentalStartDate as number) <= endDate.getTime() &&
+        (p.rentalEndDate as number) >= startDate.getTime() &&
+        (excludeProjectId ? p.id !== excludeProjectId : true),
+    )
+    .map((p) => p.id);
+  const kitAvailProjectMap = new Map(kitAvailAllProjects.map((p) => [p.id, p]));
 
   const conflict = await prisma.projectLineItem.findFirst({
     where: {
@@ -1336,21 +1413,18 @@ export async function checkKitAvailability(
       kitId,
       isKitChild: false,
       status: { not: "CANCELLED" },
-      project: {
-        isTemplate: false,
-        status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
-        rentalStartDate: { lte: endDate },
-        rentalEndDate: { gte: startDate },
-        ...(excludeProjectId ? { id: { not: excludeProjectId } } : {}),
-      },
+      projectId: { in: kitAvailConflictProjectIds },
     },
-    include: { project: { select: { projectNumber: true, name: true } } },
+    select: { projectId: true },
   });
 
   if (conflict) {
+    const conflictKitAvailProject = kitAvailProjectMap.get(conflict.projectId);
     return serialize({
       available: false,
-      conflictsWith: `${conflict.project.projectNumber} - ${conflict.project.name}`,
+      conflictsWith: conflictKitAvailProject
+        ? `${conflictKitAvailProject.projectNumber} - ${conflictKitAvailProject.name}`
+        : conflict.projectId,
     });
   }
 

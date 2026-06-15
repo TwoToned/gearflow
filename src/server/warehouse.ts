@@ -36,7 +36,9 @@ import {
   getModelCheckItemCountMap,
   getKitCheckItemCountMap,
 } from "@/lib/line-item-tree-read";
-import { getKitMap } from "@/lib/kits-read";
+import { getKitById, getKitByAssetTag, getKitMap } from "@/lib/kits-read";
+import { getAssetById, getAssetByAssetTag, getAssetsByOrg, getBulkAssetByAssetTag } from "@/lib/assets-read";
+import { getProjectsByOrg } from "@/lib/projects-read";
 
 // ---------------------------------------------------------------------------
 // Kit bulk-content traversal
@@ -240,20 +242,12 @@ export async function lookupAssetForScan(
 ) {
   const { organizationId } = await getOrgContext();
 
-  // Look up the asset tag in all tables: serialized, bulk, kits. The `model`
-  // join is attached from the Convex mirror below (model is dual-written) — the
-  // scan path only reads `model.name`; the old `category` + `_count` includes
-  // here were vestigial (never consumed). No Prisma fallback on a mirror miss.
+  // Look up the asset tag in all tables: serialized, bulk, kits. All three
+  // domains live in Convex — read from the mirror helpers.
   const [rawAsset, rawBulkAsset, kit] = await Promise.all([
-    prisma.asset.findUnique({
-      where: { organizationId_assetTag: { organizationId, assetTag } },
-    }),
-    prisma.bulkAsset.findUnique({
-      where: { organizationId_assetTag: { organizationId, assetTag } },
-    }),
-    prisma.kit.findUnique({
-      where: { organizationId_assetTag: { organizationId, assetTag } },
-    }),
+    getAssetByAssetTag(organizationId, assetTag),
+    getBulkAssetByAssetTag(organizationId, assetTag),
+    getKitByAssetTag(organizationId, assetTag),
   ]);
   const [assetModel, bulkAssetModel] = await Promise.all([
     rawAsset ? getModelById(rawAsset.modelId) : Promise.resolve(null),
@@ -284,7 +278,7 @@ export async function lookupAssetForScan(
 
   // If this serialized asset is inside a Kit, prompt to scan the Kit instead
   if (asset && asset.kitId) {
-    const parentKit = await prisma.kit.findUnique({ where: { id: asset.kitId }, select: { id: true, assetTag: true, name: true } });
+    const parentKit = await getKitById(asset.kitId);
     return serialize({
       found: true as const, type: "kit_member" as const, lineItemId: null, assetId: asset.id,
       assetName: asset.model?.name ?? "", kitId: parentKit?.id || null, kitAssetTag: parentKit?.assetTag || null, reason: "asset_in_kit" as const,
@@ -294,10 +288,11 @@ export async function lookupAssetForScan(
   // If this serialized asset is a permanent accessory of another asset, prompt
   // to scan the parent instead — accessories move with their parent.
   if (asset && asset.parentAssetId) {
-    const parent = await prisma.asset.findFirst({ where: { id: asset.parentAssetId, organizationId }, select: { id: true, assetTag: true } });
+    const parent = await getAssetById(asset.parentAssetId);
+    const parentInOrg = parent?.organizationId === organizationId ? parent : null;
     return serialize({
       found: true as const, type: "asset_child" as const, lineItemId: null, assetId: asset.id,
-      assetName: asset.model?.name ?? "", parentAssetId: parent?.id || null, parentAssetTag: parent?.assetTag || null, reason: "asset_is_accessory" as const,
+      assetName: asset.model?.name ?? "", parentAssetId: parentInOrg?.id || null, parentAssetTag: parentInOrg?.assetTag || null, reason: "asset_is_accessory" as const,
     });
   }
 
@@ -1864,6 +1859,16 @@ export async function getAvailableAssetsForModel(modelId: string) {
   // An asset is "in use" if ANY line item on an active project:
   //   a) has a non-terminal status (not RETURNED/CANCELLED), OR
   //   b) has prepStatus = PACKED (belt-and-suspenders for re-prep edge cases)
+  // Active project IDs come from Convex (source of truth for project status).
+  const allProjects = await getProjectsByOrg(organizationId);
+  const activeProjectIds = allProjects
+    .filter(
+      (p) =>
+        !p.isTemplate &&
+        !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? ""),
+    )
+    .map((p) => p.id);
+
   const available = await prisma.asset.findMany({
     where: {
       organizationId,
@@ -1872,14 +1877,11 @@ export async function getAvailableAssetsForModel(modelId: string) {
       isActive: true,
       lineItems: {
         none: {
+          projectId: { in: activeProjectIds },
           OR: [
             { status: { notIn: ["RETURNED", "CANCELLED"] } },
             { prepStatus: "PACKED" },
           ],
-          project: {
-            isTemplate: false,
-            status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
-          },
         },
       },
     },
@@ -2019,12 +2021,8 @@ export async function getProjectPullSheet(projectId: string) {
 export async function forceReturnAsset(assetId: string) {
   const { organizationId, userId, userName } = await requirePermission("warehouse", "check_in");
 
-  const asset = await prisma.asset.findFirst({
-    where: { id: assetId, organizationId },
-    select: { id: true, assetTag: true, status: true },
-  });
-
-  if (!asset) throw new Error("Asset not found");
+  const asset = await getAssetById(assetId);
+  if (!asset || asset.organizationId !== organizationId) throw new Error("Asset not found");
   if (asset.status === "AVAILABLE") throw new Error("Asset is already available");
 
   const defaultLocation = await getDefaultLocation(organizationId);
@@ -2174,12 +2172,8 @@ async function restoreKitParentLineItem(
 export async function forceReturnKit(kitId: string) {
   const { organizationId, userId, userName } = await requirePermission("warehouse", "check_in");
 
-  const kit = await prisma.kit.findFirst({
-    where: { id: kitId, organizationId },
-    select: { id: true, assetTag: true, name: true, status: true },
-  });
-
-  if (!kit) throw new Error("Kit not found");
+  const kit = await getKitById(kitId);
+  if (!kit || kit.organizationId !== organizationId) throw new Error("Kit not found");
   if (kit.status === "AVAILABLE") throw new Error("Kit is already available");
 
   const defaultLocation = await getDefaultLocation(organizationId);
@@ -2271,10 +2265,10 @@ export async function bulkForceReturnAssets(assetIds: string[]) {
 
   if (assetIds.length === 0) throw new Error("No assets selected");
 
-  const assets = await prisma.asset.findMany({
-    where: { id: { in: assetIds }, organizationId, status: "CHECKED_OUT" },
-    select: { id: true, assetTag: true },
-  });
+  const allOrgAssets = await getAssetsByOrg(organizationId);
+  const assets = allOrgAssets
+    .filter((a) => assetIds.includes(a.id) && a.status === "CHECKED_OUT")
+    .map((a) => ({ id: a.id, assetTag: a.assetTag }));
 
   if (assets.length === 0) throw new Error("No checked-out assets found in selection");
 

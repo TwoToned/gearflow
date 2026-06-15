@@ -26,6 +26,7 @@ import { syncAssetsToConvex, syncBulkAssetsToConvex } from "@/lib/asset-mirror";
 import { removeKitCheckItemFromConvex } from "@/lib/check-item-assignment-mirror";
 import { syncMediaForParent } from "@/lib/media-mirror";
 import { getPrimaryPhotoMap } from "@/lib/media-read";
+import { getModelById, getModelMap } from "@/lib/models-read";
 
 /**
  * Per-kit member-item counts + primary photo (kitId -> meta).
@@ -57,39 +58,56 @@ export async function getKitCounts(): Promise<
 export async function getKit(id: string) {
   const { organizationId } = await getOrgContext();
 
-  return serialize(
-    await prisma.kit.findUnique({
-      where: { id, organizationId },
-      include: {
-        serializedItems: {
-          include: { asset: { include: { model: true } } },
-        },
-        bulkItems: {
-          include: { bulkAsset: { include: { model: true } } },
-        },
-        category: true,
-        location: true,
-        lineItems: {
-          take: 20,
-          orderBy: { createdAt: "desc" },
-          include: { project: true },
-        },
-        scanLogs: {
-          take: 20,
-          orderBy: { scannedAt: "desc" },
-          include: { scannedBy: true, project: true },
-        },
-        maintenanceRecords: {
-          take: 20,
-          orderBy: { createdAt: "desc" },
-        },
-        media: {
-          include: { file: true },
-          orderBy: { sortOrder: "asc" },
-        },
+  const kit = await prisma.kit.findUnique({
+    where: { id, organizationId },
+    include: {
+      serializedItems: {
+        include: { asset: true },
       },
-    }),
-  );
+      bulkItems: {
+        include: { bulkAsset: true },
+      },
+      category: true,
+      location: true,
+      lineItems: {
+        take: 20,
+        orderBy: { createdAt: "desc" },
+        include: { project: true },
+      },
+      scanLogs: {
+        take: 20,
+        orderBy: { scannedAt: "desc" },
+        include: { scannedBy: true, project: true },
+      },
+      maintenanceRecords: {
+        take: 20,
+        orderBy: { createdAt: "desc" },
+      },
+      media: {
+        include: { file: true },
+        orderBy: { sortOrder: "asc" },
+      },
+    },
+  });
+  if (!kit) return serialize(null);
+  const modelMap = await getModelMap(organizationId);
+  return serialize({
+    ...kit,
+    serializedItems: kit.serializedItems.map((si) => ({
+      ...si,
+      asset: {
+        ...si.asset,
+        model: si.asset.modelId ? modelMap.get(si.asset.modelId) ?? null : null,
+      },
+    })),
+    bulkItems: kit.bulkItems.map((bi) => ({
+      ...bi,
+      bulkAsset: {
+        ...bi.bulkAsset,
+        model: bi.bulkAsset.modelId ? modelMap.get(bi.bulkAsset.modelId) ?? null : null,
+      },
+    })),
+  });
 }
 
 export async function createKit(data: KitFormValues) {
@@ -444,7 +462,7 @@ export async function addSerializedItemToKit(
         notes: parsed.notes,
         addedById: userId,
       },
-      include: { asset: { include: { model: true } } },
+      include: { asset: true },
     });
 
     await tx.asset.update({
@@ -461,7 +479,8 @@ export async function addSerializedItemToKit(
   await mirrorKitSerializedItemCreate(itemRow);
   await syncAssetsToConvex([parsed.assetId]);
 
-  return serialize(item);
+  const assetModel = item.asset.modelId ? await getModelById(item.asset.modelId) : null;
+  return serialize({ ...item, asset: { ...item.asset, model: assetModel } });
 }
 
 // Batch add multiple serialized assets.
@@ -513,7 +532,7 @@ export async function addSerializedItemsToKit(
           position: item.position,
           addedById: userId,
         },
-        include: { asset: { include: { model: true } } },
+        include: { asset: true },
       });
       await tx.asset.update({
         where: { id: item.assetId },
@@ -532,7 +551,11 @@ export async function addSerializedItemsToKit(
   }
   await syncAssetsToConvex(items.map((i) => i.assetId));
 
-  return serialize(created);
+  const modelMap = await getModelMap(organizationId);
+  return serialize(created.map((r) => ({
+    ...r,
+    asset: { ...r.asset, model: r.asset.modelId ? modelMap.get(r.asset.modelId) ?? null : null },
+  })));
 }
 
 export async function removeSerializedItemFromKit(
@@ -604,7 +627,7 @@ export async function addBulkItemToKit(
         notes: parsed.notes,
         addedById: userId,
       },
-      include: { bulkAsset: { include: { model: true } } },
+      include: { bulkAsset: true },
     });
 
     await tx.bulkAsset.update({
@@ -621,7 +644,8 @@ export async function addBulkItemToKit(
   await mirrorKitBulkItemCreate(itemRow);
   await syncBulkAssetsToConvex([parsed.bulkAssetId]);
 
-  return serialize(item);
+  const bulkAssetModel = item.bulkAsset.modelId ? await getModelById(item.bulkAsset.modelId) : null;
+  return serialize({ ...item, bulkAsset: { ...item.bulkAsset, model: bulkAssetModel } });
 }
 
 export async function removeBulkItemFromKit(
@@ -665,37 +689,41 @@ export async function removeBulkItemFromKit(
 export async function getAvailableAssetsForKit(modelId?: string) {
   const { organizationId } = await getOrgContext();
 
-  return serialize(
-    await prisma.asset.findMany({
-      where: {
-        organizationId,
-        isActive: true,
-        status: "AVAILABLE",
-        kitId: null,
-        ...(modelId && { modelId }),
-      },
-      include: { model: true },
-      orderBy: { assetTag: "asc" },
-    }),
-  );
+  const assets = await prisma.asset.findMany({
+    where: {
+      organizationId,
+      isActive: true,
+      status: "AVAILABLE",
+      kitId: null,
+      ...(modelId && { modelId }),
+    },
+    orderBy: { assetTag: "asc" },
+  });
+  const modelMap = await getModelMap(organizationId);
+  return serialize(assets.map((a) => ({
+    ...a,
+    model: a.modelId ? modelMap.get(a.modelId) ?? null : null,
+  })));
 }
 
 // Bulk assets with available quantity.
 export async function getAvailableBulkAssetsForKit() {
   const { organizationId } = await getOrgContext();
 
-  return serialize(
-    await prisma.bulkAsset.findMany({
-      where: {
-        organizationId,
-        isActive: true,
-        status: "ACTIVE",
-        availableQuantity: { gt: 0 },
-      },
-      include: { model: true },
-      orderBy: { assetTag: "asc" },
-    }),
-  );
+  const bulkAssets = await prisma.bulkAsset.findMany({
+    where: {
+      organizationId,
+      isActive: true,
+      status: "ACTIVE",
+      availableQuantity: { gt: 0 },
+    },
+    orderBy: { assetTag: "asc" },
+  });
+  const modelMap = await getModelMap(organizationId);
+  return serialize(bulkAssets.map((b) => ({
+    ...b,
+    model: b.modelId ? modelMap.get(b.modelId) ?? null : null,
+  })));
 }
 
 

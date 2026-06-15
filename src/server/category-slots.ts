@@ -28,6 +28,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/org-context";
+import { getProjectById } from "@/lib/projects-read";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import {
@@ -570,11 +571,8 @@ export async function createCategoryAndPlaceGroup(input: CreateCategoryAndPlaceG
   );
 
   // Project must belong to this org.
-  const project = await prisma.project.findFirst({
-    where: { id: parsed.projectId, organizationId },
-    select: { id: true },
-  });
-  if (!project) {
+  const project = await getProjectById(parsed.projectId);
+  if (!project || project.organizationId !== organizationId) {
     throw new Error("Project not found");
   }
 

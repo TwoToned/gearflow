@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/org-context";
 import { getModelMap } from "@/lib/models-read";
+import { getProjectById } from "@/lib/projects-read";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { mirrorWarehouseCloseCreate } from "@/lib/warehouse-close-mirror";
@@ -16,17 +17,8 @@ import {
 export async function getCloseOutSummary(projectId: string) {
   const { organizationId } = await requirePermission("warehouse", "close");
 
-  const project = await prisma.project.findFirst({
-    where: { id: projectId, organizationId, isTemplate: false },
-    select: {
-      id: true,
-      name: true,
-      projectNumber: true,
-      status: true,
-    },
-  });
-
-  if (!project) {
+  const project = await getProjectById(projectId);
+  if (!project || project.organizationId !== organizationId || project.isTemplate) {
     throw new Error("Project not found");
   }
 
@@ -181,12 +173,8 @@ export async function closeOutProject(data: WarehouseCloseFormValues) {
   );
   const parsed = warehouseCloseSchema.parse(data);
 
-  const project = await prisma.project.findFirst({
-    where: { id: parsed.projectId, organizationId, isTemplate: false },
-    select: { id: true, name: true, projectNumber: true, status: true },
-  });
-
-  if (!project) {
+  const project = await getProjectById(parsed.projectId);
+  if (!project || project.organizationId !== organizationId || project.isTemplate) {
     throw new Error("Project not found");
   }
 
@@ -298,25 +286,15 @@ export async function batchCloseOut(projectIds: string[]) {
   }> = [];
 
   for (const projectId of projectIds) {
+    const projectForName = await getProjectById(projectId);
+    const projectName = projectForName?.name || projectId;
     try {
       await closeOutProject({ projectId });
-      const project = await prisma.project.findUnique({
-        where: { id: projectId },
-        select: { name: true },
-      });
-      results.push({
-        projectId,
-        projectName: project?.name || projectId,
-        success: true,
-      });
+      results.push({ projectId, projectName, success: true });
     } catch (error) {
-      const project = await prisma.project.findUnique({
-        where: { id: projectId },
-        select: { name: true },
-      });
       results.push({
         projectId,
-        projectName: project?.name || projectId,
+        projectName,
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
       });

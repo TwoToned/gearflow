@@ -6,6 +6,7 @@ import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { requirePermission } from "@/lib/org-context";
 import { getModelMap } from "@/lib/models-read";
+import { getProjectById } from "@/lib/projects-read";
 import {
   groupTemplateSchema,
   applyGroupTemplateSchema,
@@ -240,10 +241,8 @@ export async function applyGroupTemplate(
   });
 
   // Get project defaults for rental period
-  const project = await prisma.project.findUniqueOrThrow({
-    where: { id: projectId, organizationId },
-    select: { defaultRentalPeriod: true, defaultRentalQuantity: true },
-  });
+  const project = await getProjectById(projectId);
+  if (!project || project.organizationId !== organizationId) throw new Error("Project not found");
 
   // Split items by type — model items go in the same tx as the group create,
   // kit items get delegated to addKitLineItem *after* the tx commits so it can

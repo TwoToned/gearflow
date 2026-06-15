@@ -17,6 +17,7 @@ import {
 } from "@/lib/suppliers-read";
 import { getModelById, getModelMap } from "@/lib/models-read";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
+import { getProjectById } from "@/lib/projects-read";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { roundCurrency } from "@/lib/formatters";
@@ -1120,11 +1121,8 @@ export async function changeSubHireProject(subHireId: string, newProjectId: stri
   const oldProjectId = subHire.projectId;
 
   // Verify new project exists in same org
-  const newProject = await prisma.project.findUnique({
-    where: { id: newProjectId, organizationId },
-    select: { id: true, name: true, projectNumber: true },
-  });
-  if (!newProject) throw new Error("Project not found");
+  const newProject = await getProjectById(newProjectId);
+  if (!newProject || newProject.organizationId !== organizationId) throw new Error("Project not found");
 
   await prisma.$transaction(async (tx) => {
     // Delete old line items if they exist

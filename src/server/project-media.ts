@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { mirrorFileUploadDelete } from "@/lib/file-upload-mirror";
 import { mirrorMediaCreate, syncMediaForParent } from "@/lib/media-mirror";
 import { getOrgContext } from "@/lib/org-context";
+import { getProjectById } from "@/lib/projects-read";
 import { serialize } from "@/lib/serialize";
 import { deleteFromS3 } from "@/lib/storage";
 import type { ProjectMediaType } from "@/generated/prisma/client";
@@ -16,10 +17,8 @@ export async function addProjectMedia(data: {
 }) {
   const { organizationId } = await getOrgContext();
 
-  const project = await prisma.project.findFirst({
-    where: { id: data.projectId, organizationId },
-  });
-  if (!project) throw new Error("Project not found");
+  const project = await getProjectById(data.projectId);
+  if (!project || project.organizationId !== organizationId) throw new Error("Project not found");
 
   const file = await prisma.fileUpload.findFirst({
     where: { id: data.fileId, organizationId },

@@ -7,6 +7,7 @@ import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getClientMap } from "@/lib/clients-read";
+import { getModelMap } from "@/lib/models-read";
 import { locationSchema, type LocationFormValues } from "@/lib/validations/asset";
 import type { Prisma } from "@/generated/prisma/client";
 import { serialize } from "@/lib/serialize";
@@ -165,13 +166,11 @@ export async function getLocation(id: string) {
       },
       assets: {
         where: { isActive: true },
-        include: { model: true },
         orderBy: { assetTag: "asc" },
         take: 50,
       },
       bulkAssets: {
         where: { isActive: true },
-        include: { model: true },
         orderBy: { assetTag: "asc" },
         take: 50,
       },
@@ -193,16 +192,26 @@ export async function getLocation(id: string) {
   });
   if (!location) return null;
 
-  // Clients live in Convex — attach to each project instead of a Prisma join.
-  const clientMap = await getClientMap(organizationId);
-  const withClients = {
+  const [clientMap, modelMap] = await Promise.all([
+    getClientMap(organizationId),
+    getModelMap(organizationId),
+  ]);
+  const enriched = {
     ...location,
+    assets: location.assets.map((a) => ({
+      ...a,
+      model: a.modelId ? modelMap.get(a.modelId) ?? null : null,
+    })),
+    bulkAssets: location.bulkAssets.map((b) => ({
+      ...b,
+      model: b.modelId ? modelMap.get(b.modelId) ?? null : null,
+    })),
     projects: location.projects.map((p) => ({
       ...p,
       client: p.clientId ? clientMap.get(p.clientId) ?? null : null,
     })),
   };
-  return serialize(withClients);
+  return serialize(enriched);
 }
 
 export async function createLocation(data: LocationFormValues) {

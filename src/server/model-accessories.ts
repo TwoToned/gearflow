@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/org-context";
+import { getModelById } from "@/lib/models-read";
 import {
   modelBulkAccessorySchema,
   type ModelBulkAccessoryFormValues,
@@ -77,7 +78,7 @@ export async function addModelBulkAccessory(
         notes: parsed.notes,
         addedById: userId,
       },
-      include: { bulkAsset: { include: { model: { select: { name: true } } } } },
+      include: { bulkAsset: true },
     });
   } catch (e: unknown) {
     if (e instanceof Error && e.message.includes("Unique constraint")) {
@@ -89,6 +90,8 @@ export async function addModelBulkAccessory(
     }
     throw e;
   }
+
+  const bulkAssetModel = row.bulkAsset.modelId ? await getModelById(row.bulkAsset.modelId) : null;
 
   await logActivity({
     organizationId,
@@ -102,7 +105,7 @@ export async function addModelBulkAccessory(
     details: { accessory: { bulkAssetId: bulkAsset.id, quantity: parsed.quantity } },
   });
 
-  return serialize(row);
+  return serialize({ ...row, bulkAsset: { ...row.bulkAsset, model: bulkAssetModel } });
 }
 
 /** Detach a model-level bulk accessory. Past project expansions are
@@ -124,7 +127,6 @@ export async function removeModelBulkAccessory(
       modelId: true,
       quantity: true,
       bulkAsset: { select: { id: true, assetTag: true } },
-      model: { select: { name: true } },
     },
   });
   if (
@@ -141,6 +143,8 @@ export async function removeModelBulkAccessory(
 
   await prisma.modelBulkAccessory.delete({ where: { id: accessoryId } });
 
+  const parentModel = acc.modelId ? await getModelById(acc.modelId) : null;
+
   await logActivity({
     organizationId,
     userId,
@@ -148,7 +152,7 @@ export async function removeModelBulkAccessory(
     action: "UPDATE",
     entityType: "model",
     entityId: modelId,
-    entityName: acc.model.name,
+    entityName: parentModel?.name ?? modelId,
     summary: `Removed default accessory: ${acc.quantity}× ${acc.bulkAsset.assetTag}`,
     details: { accessory: { bulkAssetId: acc.bulkAsset.id, quantity: acc.quantity } },
   });

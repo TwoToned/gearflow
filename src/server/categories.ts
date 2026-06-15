@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
+import { getModelMap } from "@/lib/models-read";
 import { serialize } from "@/lib/serialize";
 import { categorySchema, type CategoryFormValues } from "@/lib/validations/category";
 import { logActivity } from "@/lib/activity-log";
@@ -195,18 +196,19 @@ export async function searchContainerAssets(query: string = "") {
       assetTag: true,
       customName: true,
       modelId: true,
-      model: { select: { name: true } },
     },
     orderBy: { assetTag: "asc" },
     take: 20,
   });
+
+  const modelMap = await getModelMap(organizationId);
 
   return serialize(
     assets.map((a) => ({
       value: a.customName || a.assetTag,
       label: a.customName
         ? `${a.customName} (${a.assetTag})`
-        : `${a.model?.name} — ${a.assetTag}`,
+        : `${a.modelId ? modelMap.get(a.modelId)?.name : undefined} — ${a.assetTag}`,
       assetId: a.id,
       assetTag: a.assetTag,
       modelId: a.modelId,

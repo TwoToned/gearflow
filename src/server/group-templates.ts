@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { requirePermission } from "@/lib/org-context";
+import { getModelMap } from "@/lib/models-read";
 import {
   groupTemplateSchema,
   applyGroupTemplateSchema,
@@ -221,11 +222,16 @@ export async function applyGroupTemplate(
     where: { id: parsed.templateId, organizationId },
     include: {
       items: {
-        include: { model: true, kit: true },
+        include: { kit: true },
         orderBy: { sortOrder: "asc" },
       },
     },
   });
+  const modelMap = await getModelMap(organizationId);
+  const itemsWithModels = template.items.map((i) => ({
+    ...i,
+    model: i.modelId ? modelMap.get(i.modelId) ?? null : null,
+  }));
 
   // Get next sort order for the group within category
   const maxSort = await prisma.projectGroup.aggregate({
@@ -242,8 +248,8 @@ export async function applyGroupTemplate(
   // Split items by type — model items go in the same tx as the group create,
   // kit items get delegated to addKitLineItem *after* the tx commits so it can
   // run its own transaction for the parent + children expansion.
-  const modelItems = template.items.filter((i) => i.modelId && i.model);
-  const kitItems = template.items.filter((i) => i.kitId && i.kit);
+  const modelItems = itemsWithModels.filter((i) => i.modelId && i.model);
+  const kitItems = itemsWithModels.filter((i) => i.kitId && i.kit);
 
   const group = await prisma.$transaction(async (tx) => {
     const newGroup = await tx.projectGroup.create({

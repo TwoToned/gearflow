@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { removeAssetFromConvex, removeBulkAssetFromConvex } from "@/lib/asset-mirror";
 import { getPrimaryPhotoMap } from "@/lib/media-read";
+import { getModelMap } from "@/lib/models-read";
 import { api } from "../../convex/_generated/api";
 import { serialize } from "@/lib/serialize";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
@@ -154,12 +155,24 @@ export async function getModel(id: string) {
         orderBy: { sortOrder: "asc" },
       },
       bulkAccessories: {
-        include: { bulkAsset: { include: { model: { select: { name: true } } } } },
+        include: { bulkAsset: true },
         orderBy: { sortOrder: "asc" },
       },
     },
   });
-  return serialize(model);
+  if (!model) return serialize(null);
+  const modelMap = await getModelMap(organizationId);
+  const enriched = {
+    ...model,
+    bulkAccessories: model.bulkAccessories.map((ba) => ({
+      ...ba,
+      bulkAsset: {
+        ...ba.bulkAsset,
+        model: ba.bulkAsset.modelId ? modelMap.get(ba.bulkAsset.modelId) ?? null : null,
+      },
+    })),
+  };
+  return serialize(enriched);
 }
 
 export async function createModel(data: ModelFormValues) {

@@ -24,6 +24,7 @@ import { computeStockBreakdown } from "@/lib/availability";
 import { isStaleRevision } from "@/lib/collaboration-conflict";
 import { writeCollabActivityEvent } from "@/lib/collaboration-activity";
 import { getModelById, getModelMap, getModelWithCategoryMap } from "@/lib/models-read";
+import { getActiveAssetsByModel, getActiveBulkAssetsByModel, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
 
 /**
  * Expand a serialised asset's permanent accessories into child line items.
@@ -268,18 +269,22 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
       }
     } else {
       // Model-level — check quantity against available stock
-      const model = await prisma.model.findUnique({
-        where: { id: parsed.modelId },
-        include: {
-          assets: { where: { isActive: true } },
-          bulkAssets: { where: { isActive: true } },
-        },
-      });
+      // Model + active assets live in Convex — fetch in parallel.
+      const [model, activeAssets, activeBulkAssets] = await Promise.all([
+        getModelById(parsed.modelId),
+        getActiveAssetsByModel(parsed.modelId, organizationId),
+        getActiveBulkAssetsByModel(parsed.modelId, organizationId),
+      ]);
 
       // WHY: For model-level (non-specific) adds, enforce against effective
       // stock. With dates, check across all overlapping projects; without dates,
       // only check this project's existing bookings since other quotes are drafts.
       if (model) {
+        const modelForBreakdown = {
+          assetType: (model.assetType ?? "SERIALIZED") as "SERIALIZED" | "BULK",
+          assets: activeAssets.map((a: ConvexAsset) => ({ status: a.status ?? "AVAILABLE" })),
+          bulkAssets: activeBulkAssets.map((ba: ConvexBulkAsset) => ({ totalQuantity: ba.totalQuantity ?? 0 })),
+        };
         // When dates exist, check overlapping bookings across projects
         // When no dates, check only this project's existing bookings against stock
         // Sub-hire items don't consume our stock so they're excluded from the count.
@@ -310,7 +315,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         const booked = overlapping.reduce((sum, li) => sum + li.quantity, 0);
         // Enforce against effectiveStock — in-maintenance/lost/retired assets
         // cannot be booked even though they still exist in the model.
-        const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(model);
+        const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(modelForBreakdown);
         const available = Math.max(0, effectiveStock - booked);
 
         // WHY: Compare against effective stock (total minus unavailable), not
@@ -637,15 +642,19 @@ export async function updateLineItem(
     });
     const hasDates = !!project?.rentalStartDate && !!project?.rentalEndDate;
 
-    const model = await prisma.model.findUnique({
-      where: { id: parsed.modelId },
-      include: {
-        assets: { where: { isActive: true } },
-        bulkAssets: { where: { isActive: true } },
-      },
-    });
+    // Model + active assets live in Convex — fetch in parallel.
+    const [model, activeAssets, activeBulkAssets] = await Promise.all([
+      getModelById(parsed.modelId),
+      getActiveAssetsByModel(parsed.modelId, organizationId),
+      getActiveBulkAssetsByModel(parsed.modelId, organizationId),
+    ]);
 
     if (model) {
+      const modelForBreakdown = {
+        assetType: (model.assetType ?? "SERIALIZED") as "SERIALIZED" | "BULK",
+        assets: activeAssets.map((a: ConvexAsset) => ({ status: a.status ?? "AVAILABLE" })),
+        bulkAssets: activeBulkAssets.map((ba: ConvexBulkAsset) => ({ totalQuantity: ba.totalQuantity ?? 0 })),
+      };
       const overlapping = hasDates
         ? await prisma.projectLineItem.findMany({
             where: {
@@ -674,7 +683,7 @@ export async function updateLineItem(
 
       const booked = overlapping.reduce((sum, li) => sum + li.quantity, 0);
       // Enforce against effectiveStock — matches checkAvailability and the badge.
-      const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(model);
+      const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(modelForBreakdown);
       const available = Math.max(0, effectiveStock - booked);
 
       if (parsed.quantity > available) {
@@ -1117,18 +1126,22 @@ export async function checkAvailability(
   const startDate = hasDates ? new Date(rentalStartDate) : null;
   const endDate = hasDates ? new Date(rentalEndDate) : null;
 
-  // Get the model with asset type info
-  const model = await prisma.model.findUnique({
-    where: { id: modelId, organizationId },
-    include: {
-      assets: { where: { isActive: true } },
-      bulkAssets: { where: { isActive: true } },
-    },
-  });
+  // Model + active assets live in Convex — fetch in parallel.
+  const [model, activeAssets, activeBulkAssets] = await Promise.all([
+    getModelById(modelId),
+    getActiveAssetsByModel(modelId, organizationId),
+    getActiveBulkAssetsByModel(modelId, organizationId),
+  ]);
 
   if (!model) {
     return serialize({ totalStock: 0, effectiveStock: 0, booked: 0, available: 0, bookedOnThisProject: 0, unavailable: 0, inMaintenance: 0, lost: 0, conflicts: [] as string[], dateless: !hasDates, hasAccessories: false });
   }
+
+  const modelForBreakdown = {
+    assetType: (model.assetType ?? "SERIALIZED") as "SERIALIZED" | "BULK",
+    assets: activeAssets.map((a: ConvexAsset) => ({ status: a.status ?? "AVAILABLE" })),
+    bulkAssets: activeBulkAssets.map((ba: ConvexBulkAsset) => ({ totalQuantity: ba.totalQuantity ?? 0 })),
+  };
 
   // Find overlapping projects (where the project rental period overlaps with the given dates)
   // Include both regular items AND kit children — they all consume stock
@@ -1193,10 +1206,10 @@ export async function checkAvailability(
 
   const bulkAccessoryCount = await prisma.modelBulkAccessory.count({ where: { modelId, organizationId } });
 
-  if (model.assetType === "SERIALIZED") {
-    const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(model);
-    const inMaintenance = model.assets.filter((a) => a.status === "IN_MAINTENANCE").length;
-    const lost = model.assets.filter((a) => a.status === "LOST").length;
+  if (modelForBreakdown.assetType === "SERIALIZED") {
+    const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(modelForBreakdown);
+    const inMaintenance = modelForBreakdown.assets.filter((a: { status: string }) => a.status === "IN_MAINTENANCE").length;
+    const lost = modelForBreakdown.assets.filter((a: { status: string }) => a.status === "LOST").length;
     const available = Math.max(0, effectiveStock - booked);
 
     return serialize({
@@ -1205,8 +1218,8 @@ export async function checkAvailability(
     });
   } else {
     // BULK: sum up total quantity across all bulk assets
-    const totalStock = model.bulkAssets.reduce(
-      (sum, ba) => sum + ba.totalQuantity,
+    const totalStock = modelForBreakdown.bulkAssets.reduce(
+      (sum: number, ba: { totalQuantity: number }) => sum + ba.totalQuantity,
       0
     );
     const available = Math.max(0, totalStock - booked);

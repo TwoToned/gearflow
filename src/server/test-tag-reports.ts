@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { getModelById } from "@/lib/models-read";
+import { getBulkAssetById } from "@/lib/assets-read";
 import type { Prisma } from "@/generated/prisma/client";
 
 // ─── TYPES ──────────────────────────────────────────────────────────────────
@@ -507,10 +508,8 @@ export async function exportFailedItemsCSV(filters: ReportFilters) {
 export async function getBulkSummaryReportData(bulkAssetId: string, filters: ReportFilters) {
   const { organizationId } = await getOrgContext();
 
-  const bulkAsset = await prisma.bulkAsset.findFirst({
-    where: { id: bulkAssetId, organizationId },
-  });
-  if (!bulkAsset) throw new Error("Bulk asset not found");
+  const bulkAsset = await getBulkAssetById(bulkAssetId);
+  if (!bulkAsset || bulkAsset.organizationId !== organizationId) throw new Error("Bulk asset not found");
   const bulkModel = await getModelById(bulkAsset.modelId);
 
   const baseWhere = buildAssetWhere({ ...filters }, organizationId);

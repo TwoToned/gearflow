@@ -7,6 +7,7 @@ import { reserveTestTagIds, peekNextTestTagIds, getOrgTestTagSettings } from "@/
 import type { Prisma, TestTagStatus } from "@/generated/prisma/client";
 import { logActivity } from "@/lib/activity-log";
 import { getModelById, getModelMap } from "@/lib/models-read";
+import { getAssetById, getAssetsByOrg, getBulkAssetById } from "@/lib/assets-read";
 
 export async function getTestTagAssets(params?: {
   search?: string;
@@ -170,11 +171,8 @@ export async function createTestTagAsset(data: {
   // If linking to a serialized asset, use the asset's tag as the test tag ID
   let testTagId = data.testTagId;
   if (data.assetId) {
-    const linkedAsset = await prisma.asset.findFirst({
-      where: { id: data.assetId, organizationId },
-      select: { assetTag: true },
-    });
-    if (linkedAsset) testTagId = linkedAsset.assetTag;
+    const linkedAsset = await getAssetById(data.assetId);
+    if (linkedAsset && linkedAsset.organizationId === organizationId) testTagId = linkedAsset.assetTag;
   }
 
   // Reserve or use provided test tag ID
@@ -237,11 +235,9 @@ export async function createTestTagAssetsFromBulk(data: {
 }) {
   const { organizationId, userId, userName } = await requirePermission("testTag", "create");
 
-  // Verify bulk asset exists
-  const bulkAsset = await prisma.bulkAsset.findFirst({
-    where: { id: data.bulkAssetId, organizationId },
-  });
-  if (!bulkAsset) throw new Error("Bulk asset not found");
+  // Verify bulk asset exists — lives in Convex.
+  const bulkAsset = await getBulkAssetById(data.bulkAssetId);
+  if (!bulkAsset || bulkAsset.organizationId !== organizationId) throw new Error("Bulk asset not found");
 
   const ids = await reserveTestTagIds(data.count);
 
@@ -429,17 +425,20 @@ export async function backfillTestTagAssets() {
   const { organizationId } = await getOrgContext();
 
   // Find all active serialized assets whose model requires T&T and that have no linked TestTagAsset
-  const unlinkedAssets = await prisma.asset.findMany({
-    where: {
-      organizationId,
-      isActive: true,
-      model: { requiresTestAndTag: true },
-      testTagAsset: null,
-    },
-    include: {
-      model: { select: { name: true, manufacturer: true, modelNumber: true, testAndTagIntervalDays: true, defaultEquipmentClass: true, defaultApplianceType: true, defaultTestProfileId: true } },
-    },
-  });
+  // Assets + models live in Convex. testTagAsset still lives in Prisma — get linked assetIds to exclude.
+  const [allOrgAssets, modelMap, existingTTAssets] = await Promise.all([
+    getAssetsByOrg(organizationId),
+    getModelMap(organizationId),
+    prisma.testTagAsset.findMany({
+      where: { organizationId, isActive: true, assetId: { not: null } },
+      select: { assetId: true },
+    }),
+  ]);
+  const linkedAssetIds = new Set(existingTTAssets.map((t) => t.assetId!));
+  const unlinkedAssets = allOrgAssets
+    .filter((a) => a.isActive !== false && modelMap.get(a.modelId)?.requiresTestAndTag === true && !linkedAssetIds.has(a.id))
+    .map((a) => ({ ...a, model: modelMap.get(a.modelId) ?? null }))
+    .filter((a): a is typeof a & { model: NonNullable<typeof a["model"]> } => a.model !== null);
 
   // Retire any active T&T entries whose linked asset no longer exists or is inactive
   const orphaned = await prisma.testTagAsset.findMany({
@@ -468,12 +467,8 @@ export async function backfillTestTagAssets() {
   // Filter dangling entries: only retire those whose testTagId doesn't belong to any existing asset
   const danglingToRetire: string[] = [];
   if (danglingEntries.length > 0) {
-    const existingAssetTags = new Set(
-      (await prisma.asset.findMany({
-        where: { organizationId, assetTag: { in: danglingEntries.map((e) => e.testTagId) } },
-        select: { assetTag: true },
-      })).map((a) => a.assetTag)
-    );
+    // All assets live in Convex — build assetTag set from the org-level list already fetched.
+    const existingAssetTags = new Set(allOrgAssets.map((a) => a.assetTag));
     for (const entry of danglingEntries) {
       if (!existingAssetTags.has(entry.testTagId)) {
         danglingToRetire.push(entry.id);

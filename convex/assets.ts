@@ -33,6 +33,17 @@ export const getById = query({
   },
 });
 
+export const listByModel = query({
+  args: { modelId: v.string(), orgId: v.string() },
+  handler: async (ctx, { modelId, orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    return await ctx.db
+      .query("assets")
+      .withIndex("by_modelId", (q) => q.eq("modelId", modelId))
+      .collect();
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

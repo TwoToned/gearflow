@@ -299,6 +299,7 @@ export async function prepItemDirect(
     });
   });
 
+  const prepModel = result.modelId ? await getModelById(result.modelId) : null;
   await logActivity({
     organizationId,
     userId,
@@ -306,7 +307,7 @@ export async function prepItemDirect(
     action: "UPDATE",
     entityType: "asset",
     entityId: lineItemId,
-    entityName: result.model?.name || "Line item",
+    entityName: prepModel?.name || "Line item",
     summary: "Prepped item (no checks required)",
     projectId,
     assetId: assetId || result.assetId || undefined,

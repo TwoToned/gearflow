@@ -15,7 +15,7 @@ import {
   syncAssetsToConvex,
 } from "@/lib/asset-mirror";
 import { getSupplierById } from "@/lib/suppliers-read";
-import { getModelWithCategoryMap, type ModelWithCategory } from "@/lib/models-read";
+import { getModelById, getModelWithCategoryMap, type ModelWithCategory } from "@/lib/models-read";
 import { getLocationMap, type ConvexLocation } from "@/lib/locations-read";
 import { getPrimaryPhotoMaps } from "@/lib/media-read";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
@@ -282,8 +282,8 @@ export async function createAsset(data: AssetFormValues) {
     parsed.customFieldValues,
   );
 
-  // Fetch the model to check T&T requirements
-  const model = await prisma.model.findUnique({ where: { id: parsed.modelId } });
+  // Model lives in Convex — fetch for T&T requirements check.
+  const model = await getModelById(parsed.modelId);
 
   try {
     const result = await prisma.asset.create({

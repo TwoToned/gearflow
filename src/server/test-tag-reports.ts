@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
+import { getModelById } from "@/lib/models-read";
 import type { Prisma } from "@/generated/prisma/client";
 
 // ─── TYPES ──────────────────────────────────────────────────────────────────
@@ -508,9 +509,9 @@ export async function getBulkSummaryReportData(bulkAssetId: string, filters: Rep
 
   const bulkAsset = await prisma.bulkAsset.findFirst({
     where: { id: bulkAssetId, organizationId },
-    include: { model: { select: { name: true, manufacturer: true } } },
   });
   if (!bulkAsset) throw new Error("Bulk asset not found");
+  const bulkModel = await getModelById(bulkAsset.modelId);
 
   const baseWhere = buildAssetWhere({ ...filters }, organizationId);
   const items = await prisma.testTagAsset.findMany({
@@ -527,7 +528,7 @@ export async function getBulkSummaryReportData(bulkAssetId: string, filters: Rep
   const complianceRate = items.length > 0 ? Math.round((compliant / items.length) * 100) : 0;
 
   return serialize({
-    bulkAsset: { assetTag: bulkAsset.assetTag, totalQuantity: bulkAsset.totalQuantity, modelName: bulkAsset.model.name, manufacturer: bulkAsset.model.manufacturer },
+    bulkAsset: { assetTag: bulkAsset.assetTag, totalQuantity: bulkAsset.totalQuantity, modelName: bulkModel?.name ?? "", manufacturer: bulkModel?.manufacturer ?? null },
     items,
     statusCounts,
     complianceRate,

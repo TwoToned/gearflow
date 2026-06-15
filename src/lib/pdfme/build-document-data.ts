@@ -6,9 +6,14 @@
 import { prisma } from "@/lib/prisma";
 import { getClientById } from "@/lib/clients-read";
 import { getLocationMap } from "@/lib/locations-read";
+import { getKitMap } from "@/lib/kits-read";
+import { getAssetsByOrg, getBulkAssetsByOrg } from "@/lib/assets-read";
 import {
   buildLineItemAttachMaps,
   attachLineItemTree,
+  attachKitTree,
+  attachAssetBulkAssetTree,
+  getKitCheckItemCountMap,
   resolveAttachedSupplier,
 } from "@/lib/line-item-tree-read";
 import { computeOverbookedStatus } from "@/lib/availability";
@@ -38,44 +43,40 @@ const unitInclude = {
     id: true,
     status: true,
     parentUnitAssetId: true,
-    asset: { select: { assetTag: true } },
-    bulkAsset: { select: { assetTag: true } },
+    // assetId / bulkAssetId scalars — the asset/bulkAsset relations are
+    // dual-written to Convex and attached in JS via attachAssetBulkAssetTree
+    // (which resolves each unit's tag from these ids), not Prisma-joined.
+    assetId: true,
+    bulkAssetId: true,
   },
 } as const;
 
 /**
  * Deep include for line items — 2 levels of children for nested kits.
  *
- * `model`, `supplier`, and `location` are NOT joined here — they're dual-written
- * to Convex and attached in JS (Phase 6 decommission): model/supplier via
- * `attachLineItemTree`, the asset/bulk `locationName` resolved from a Convex
- * location map by `locationId` (see `deriveLocationName` below). `asset: true` /
- * `bulkAsset: true` keep every asset scalar (incl. `assetTag` + `locationId`),
- * dropping only the former `location` relation. The physical-asset joins
- * (`kit` / `units`) and the project-grouping joins (`category` = project_category,
- * `group` = project_group) stay on Prisma. See `src/lib/line-item-tree-read.ts`.
+ * `model`, `supplier`, `location`, `asset`, `bulkAsset`, and `kit` are NOT joined
+ * here — they're all dual-written to Convex and attached in JS (Phase 6
+ * decommission): model/supplier via `attachLineItemTree`, kit via `attachKitTree`,
+ * asset/bulkAsset (incl. each unit's tag) via `attachAssetBulkAssetTree`, and the
+ * asset/bulk `locationName` resolved from a Convex location map by `locationId`
+ * (see `deriveLocationName` below). The project-grouping joins (`category` =
+ * project_category, `group` = project_group) stay on Prisma, and the `units`
+ * sub-table stays Prisma (its asset/bulk tags are Convex-attached). See
+ * `src/lib/line-item-tree-read.ts`.
  */
 const lineItemInclude = {
-  asset: true,
-  bulkAsset: true,
-  kit: true,
   units: unitInclude,
   category: { select: { id: true, name: true, sortOrder: true } },
   group: { select: { id: true, title: true, sortOrder: true, categoryId: true } },
   childLineItems: {
     orderBy: { sortOrder: "asc" as const },
     include: {
-      asset: true,
-      bulkAsset: true,
-      kit: true,
       units: unitInclude,
       category: { select: { id: true, name: true, sortOrder: true } },
       group: { select: { id: true, title: true, sortOrder: true, categoryId: true } },
       childLineItems: {
         orderBy: { sortOrder: "asc" as const },
         include: {
-          asset: true,
-          bulkAsset: true,
           units: unitInclude,
         },
       },
@@ -222,18 +223,30 @@ export async function buildDocumentData(
     throw new Error(`Project ${projectId} not found`);
   }
 
-  // model / supplier / client / location live in Convex — attach instead of a
-  // Prisma join. One maps round-trip serves the line-item tree + sub-hire shells;
-  // the location map serves the project venue + the per-asset packer locationName.
-  const [attachMaps, locationMap] = await Promise.all([
-    buildLineItemAttachMaps(organizationId),
-    getLocationMap(organizationId),
-  ]);
+  // model / supplier / kit / asset / bulkAsset / client / location all live in
+  // Convex — attach instead of a Prisma join. The line-item tree is attached in
+  // three passes: model+supplier (attachLineItemTree), kit (attachKitTree), then
+  // asset+bulkAsset incl. each unit's tag (attachAssetBulkAssetTree). The location
+  // map serves the project venue + the per-asset packer locationName.
+  const [attachMaps, locationMap, kitMap, kitCountMap, allAssets, allBulkAssets] =
+    await Promise.all([
+      buildLineItemAttachMaps(organizationId),
+      getLocationMap(organizationId),
+      getKitMap(organizationId),
+      getKitCheckItemCountMap(organizationId),
+      getAssetsByOrg(organizationId),
+      getBulkAssetsByOrg(organizationId),
+    ]);
+  const assetMap = new Map(allAssets.map((a) => [a.id, a]));
+  const bulkAssetMap = new Map(allBulkAssets.map((b) => [b.id, b]));
+  const withModelSupplier = attachLineItemTree(projectRow.lineItems, attachMaps);
+  const withKits = attachKitTree(withModelSupplier, kitMap, kitCountMap);
+  const withAssets = attachAssetBulkAssetTree(withKits, assetMap, bulkAssetMap);
   const project = {
     ...projectRow,
     client: projectRow.clientId ? await getClientById(projectRow.clientId) : null,
     location: projectRow.locationId ? locationMap.get(projectRow.locationId) ?? null : null,
-    lineItems: attachLineItemTree(projectRow.lineItems, attachMaps),
+    lineItems: withAssets,
     subHires: projectRow.subHires.map((sh) => ({
       ...sh,
       supplier: resolveAttachedSupplier(sh.supplierId, attachMaps),

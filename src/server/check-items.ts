@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
+import { getModelById } from "@/lib/models-read";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import {
@@ -89,18 +90,23 @@ export async function getCheckItem(id: string) {
     where: { id, organizationId },
     include: {
       _count: { select: { modelCheckItems: true, checkRecords: true } },
-      modelCheckItems: {
-        include: { model: { select: { id: true, name: true } } },
-        orderBy: { model: { name: "asc" } },
-      },
+      modelCheckItems: true,
     },
   });
-
   if (!item) {
     throw new Error("Check item not found");
   }
 
-  return serialize(item);
+  const models = await Promise.all(item.modelCheckItems.map((m) => getModelById(m.modelId)));
+  const modelNameMap = new Map(models.filter(Boolean).map((m) => [m!.id, { id: m!.id, name: m!.name }]));
+  const enriched = {
+    ...item,
+    modelCheckItems: item.modelCheckItems
+      .map((m) => ({ ...m, model: modelNameMap.get(m.modelId) ?? null }))
+      .sort((a, b) => (a.model?.name ?? "").localeCompare(b.model?.name ?? "")),
+  };
+
+  return serialize(enriched);
 }
 
 export async function createCheckItem(data: CheckItemFormValues) {
@@ -244,9 +250,13 @@ export async function addCheckItemToModel(
       checkItemId,
       sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
     },
-    include: { checkItem: true, model: { select: { name: true } } },
+    include: { checkItem: true },
   });
-  await mirrorModelCheckItemCreate(result);
+  const [, model] = await Promise.all([
+    mirrorModelCheckItemCreate(result),
+    getModelById(modelId),
+  ]);
+  const modelName = model?.name ?? modelId;
 
   await logActivity({
     organizationId,
@@ -255,8 +265,8 @@ export async function addCheckItemToModel(
     action: "UPDATE",
     entityType: "model",
     entityId: modelId,
-    entityName: result.model.name,
-    summary: `Added check item "${result.checkItem.label}" to model "${result.model.name}"`,
+    entityName: modelName,
+    summary: `Added check item "${result.checkItem.label}" to model "${modelName}"`,
   });
 
   return serialize(result);
@@ -273,17 +283,18 @@ export async function removeCheckItemFromModel(
 
   const record = await prisma.modelCheckItem.findFirst({
     where: { modelId, checkItemId, organizationId },
-    include: { checkItem: true, model: { select: { name: true } } },
+    include: { checkItem: true },
   });
 
   if (!record) {
     throw new Error("Check item not assigned to this model");
   }
 
-  await prisma.modelCheckItem.delete({
-    where: { id: record.id },
-  });
-  await removeModelCheckItemFromConvex(record.id);
+  const [, model] = await Promise.all([
+    prisma.modelCheckItem.delete({ where: { id: record.id } }).then(() => removeModelCheckItemFromConvex(record.id)),
+    getModelById(modelId),
+  ]);
+  const modelName = model?.name ?? modelId;
 
   await logActivity({
     organizationId,
@@ -292,8 +303,8 @@ export async function removeCheckItemFromModel(
     action: "UPDATE",
     entityType: "model",
     entityId: modelId,
-    entityName: record.model.name,
-    summary: `Removed check item "${record.checkItem.label}" from model "${record.model.name}"`,
+    entityName: modelName,
+    summary: `Removed check item "${record.checkItem.label}" from model "${modelName}"`,
   });
 
   return { success: true };

@@ -1,14 +1,14 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { requirePermission } from "@/lib/org-context";
+import { getOrgContext, requirePermission } from "@/lib/org-context";
+import { getModelById, getModelMap } from "@/lib/models-read";
 import {
   assetSerializedChildSchema,
   assetBulkChildSchema,
   type AssetSerializedChildFormValues,
   type AssetBulkChildFormValues,
 } from "@/lib/validations/asset";
-import { getOrgContext } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { adjustBulkAvailability } from "@/lib/inventory-mutations";
@@ -22,22 +22,21 @@ import { UserFacingError } from "@/lib/errors";
  */
 export async function getAvailableAccessoryAssets(parentAssetId: string) {
   const { organizationId } = await getOrgContext();
-  return serialize(
-    await prisma.asset.findMany({
-      where: {
-        organizationId,
-        isActive: true,
-        status: "AVAILABLE",
-        kitId: null,
-        parentAssetId: null,
-        id: { not: parentAssetId },
-        childAssets: { none: {} },
-        childBulkItems: { none: {} },
-      },
-      include: { model: { select: { name: true, manufacturer: true } } },
-      orderBy: { assetTag: "asc" },
-    }),
-  );
+  const assets = await prisma.asset.findMany({
+    where: {
+      organizationId,
+      isActive: true,
+      status: "AVAILABLE",
+      kitId: null,
+      parentAssetId: null,
+      id: { not: parentAssetId },
+      childAssets: { none: {} },
+      childBulkItems: { none: {} },
+    },
+    orderBy: { assetTag: "asc" },
+  });
+  const modelMap = await getModelMap(organizationId);
+  return serialize(assets.map((a) => ({ ...a, model: a.modelId ? modelMap.get(a.modelId) ?? null : null })));
 }
 
 /**
@@ -133,10 +132,12 @@ export async function addSerializedChildToAsset(
     if (guarded.count === 0) {
       throw new UserFacingError({ code: "ACCESSORY_TAKEN", title: "Already attached", message: `${child.assetTag} was just attached elsewhere. Refresh and try again.` });
     }
-    return tx.asset.findUniqueOrThrow({ where: { id: child.id }, include: { model: true } });
+    return tx.asset.findUniqueOrThrow({ where: { id: child.id } });
   });
-  // Mirror the child's new parentAssetId + inherited location to Convex.
-  await syncAssetsToConvex([child.id]);
+  const [, model] = await Promise.all([
+    syncAssetsToConvex([child.id]),
+    getModelById(result.modelId),
+  ]);
 
   await logActivity({
     organizationId,
@@ -151,7 +152,7 @@ export async function addSerializedChildToAsset(
     assetId: parent.id,
   });
 
-  return serialize(result);
+  return serialize({ ...result, model });
 }
 
 /**
@@ -214,11 +215,13 @@ export async function addBulkChildToAsset(
         notes: parsed.notes,
         addedById: userId,
       },
-      include: { bulkAsset: { include: { model: true } } },
+      include: { bulkAsset: true },
     });
   });
-  // DEDICATED allocation decremented the shared pool — mirror the bulk quantity.
-  if (parsed.allocationMode === "DEDICATED") await syncBulkAssetsToConvex([parsed.bulkAssetId]);
+  const [, bulkModel] = await Promise.all([
+    parsed.allocationMode === "DEDICATED" ? syncBulkAssetsToConvex([parsed.bulkAssetId]) : Promise.resolve(),
+    getModelById(result.bulkAsset.modelId),
+  ]);
 
   await logActivity({
     organizationId,
@@ -233,7 +236,7 @@ export async function addBulkChildToAsset(
     assetId: parent.id,
   });
 
-  return serialize(result);
+  return serialize({ ...result, bulkAsset: { ...result.bulkAsset, model: bulkModel } });
 }
 
 /** Detach a serialised accessory from its parent. */

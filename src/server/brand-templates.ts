@@ -23,8 +23,8 @@ import {
 /** Mirror a freshly written Prisma brand-template row into Convex (create). */
 async function mirrorBrandTemplateToConvex(row: Record<string, unknown>) {
   await (await getConvexClient()).mutation(
-    api.brandTemplates.create,
-    toConvexDoc(row) as FunctionArgs<typeof api.brandTemplates.create>,
+    api.brandTemplates.createIfMissing,
+    toConvexDoc(row) as FunctionArgs<typeof api.brandTemplates.createIfMissing>,
   );
 }
 

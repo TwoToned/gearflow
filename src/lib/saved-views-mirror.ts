@@ -39,7 +39,7 @@ async function upsert(row: Record<string, unknown>) {
     await convex.mutation(api.savedTableViews.update, { id, patch: rest } as any);
   } else {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await convex.mutation(api.savedTableViews.create, toConvexDoc(strip(row)) as any);
+    await convex.mutation(api.savedTableViews.createIfMissing, toConvexDoc(strip(row)) as any);
   }
 }
 

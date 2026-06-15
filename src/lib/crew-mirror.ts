@@ -50,15 +50,15 @@ async function remove(fn: AnyRef, id: string) {
 }
 
 // ─── Crew members ────────────────────────────────────────────────────────────
-export const mirrorCrewMemberCreate = (row: Record<string, unknown>) => create(api.crewMembers.create, row);
+export const mirrorCrewMemberCreate = (row: Record<string, unknown>) => create(api.crewMembers.createIfMissing, row);
 export const patchCrewMemberInConvex = (id: string, row: Record<string, unknown>) => patch(api.crewMembers.update, id, row);
 export const removeCrewMemberFromConvex = (id: string) => remove(api.crewMembers.remove, id);
 
 // ─── Crew roles ──────────────────────────────────────────────────────────────
-export const mirrorCrewRoleCreate = (row: Record<string, unknown>) => create(api.crewRoles.create, row);
+export const mirrorCrewRoleCreate = (row: Record<string, unknown>) => create(api.crewRoles.createIfMissing, row);
 export const patchCrewRoleInConvex = (id: string, row: Record<string, unknown>) => patch(api.crewRoles.update, id, row);
 export const removeCrewRoleFromConvex = (id: string) => remove(api.crewRoles.remove, id);
 
 // ─── Crew skills (m2m to members stays Prisma-only) ──────────────────────────
-export const mirrorCrewSkillCreate = (row: Record<string, unknown>) => create(api.crewSkills.create, row);
+export const mirrorCrewSkillCreate = (row: Record<string, unknown>) => create(api.crewSkills.createIfMissing, row);
 export const removeCrewSkillFromConvex = (id: string) => remove(api.crewSkills.remove, id);

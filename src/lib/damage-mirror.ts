@@ -45,7 +45,7 @@ async function remove(fn: AnyRef, id: string) {
   await (await getConvexClient()).mutation(fn, { id } as any);
 }
 
-export const mirrorDamageCreate = (row: Record<string, unknown>) => create(api.damageEvents.create, row);
+export const mirrorDamageCreate = (row: Record<string, unknown>) => create(api.damageEvents.createIfMissing, row);
 export const patchDamageInConvex = (id: string, row: Record<string, unknown>) => patch(api.damageEvents.update, id, row);
 export const removeDamageFromConvex = (id: string) => remove(api.damageEvents.remove, id);
 

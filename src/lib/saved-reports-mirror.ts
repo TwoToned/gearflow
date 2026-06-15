@@ -38,6 +38,6 @@ async function remove(fn: AnyRef, id: string) {
   await (await getConvexClient()).mutation(fn, { id } as any);
 }
 
-export const mirrorSavedReportCreate = (row: Record<string, unknown>) => create(api.savedReports.create, row);
+export const mirrorSavedReportCreate = (row: Record<string, unknown>) => create(api.savedReports.createIfMissing, row);
 export const patchSavedReportInConvex = (id: string, row: Record<string, unknown>) => patch(api.savedReports.update, id, row);
 export const removeSavedReportFromConvex = (id: string) => remove(api.savedReports.remove, id);

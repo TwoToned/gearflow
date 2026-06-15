@@ -49,7 +49,7 @@ async function remove(fn: AnyRef, id: string) {
   await (await getConvexClient()).mutation(fn, { id } as any);
 }
 
-export const mirrorMaintenanceCreate = (row: Record<string, unknown>) => create(api.maintenanceRecords.create, row);
+export const mirrorMaintenanceCreate = (row: Record<string, unknown>) => create(api.maintenanceRecords.createIfMissing, row);
 export const patchMaintenanceInConvex = (id: string, row: Record<string, unknown>) => patch(api.maintenanceRecords.update, id, row);
 export const removeMaintenanceFromConvex = (id: string) => remove(api.maintenanceRecords.remove, id);
 

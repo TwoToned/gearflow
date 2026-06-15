@@ -25,8 +25,8 @@ import type { ColumnDef } from "@/components/ui/data-table";
 /** Mirror a freshly written Prisma supplier row into Convex (create). */
 async function mirrorSupplierToConvex(row: Record<string, unknown>) {
   await (await getConvexClient()).mutation(
-    api.suppliers.create,
-    toConvexDoc(row) as FunctionArgs<typeof api.suppliers.create>,
+    api.suppliers.createIfMissing,
+    toConvexDoc(row) as FunctionArgs<typeof api.suppliers.createIfMissing>,
   );
 }
 

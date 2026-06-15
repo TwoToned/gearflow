@@ -100,7 +100,7 @@ async function upsertIn(
 // ─── model_check_item ──────────────────────────────────────────────────────────
 
 export const mirrorModelCheckItemCreate = (row: Row) =>
-  createIn(api.modelCheckItems.create, modelCheckItemDoc(row));
+  createIn(api.modelCheckItems.createIfMissing, modelCheckItemDoc(row));
 
 export const removeModelCheckItemFromConvex = (id: string) =>
   removeIn(api.modelCheckItems.remove, id);
@@ -117,7 +117,7 @@ export async function syncModelCheckItemsForModels(modelIds: Array<string | null
   const rows = await prisma.modelCheckItem.findMany({ where: { modelId: { in: unique } } });
   for (const row of rows as unknown as Row[]) {
     await upsertIn(
-      api.modelCheckItems.create,
+      api.modelCheckItems.createIfMissing,
       api.modelCheckItems.update,
       api.modelCheckItems.getById,
       row.id as string,
@@ -129,7 +129,7 @@ export async function syncModelCheckItemsForModels(modelIds: Array<string | null
 // ─── kit_check_item ──────────────────────────────────────────────────────────
 
 export const mirrorKitCheckItemCreate = (row: Row) =>
-  createIn(api.kitCheckItems.create, kitCheckItemDoc(row));
+  createIn(api.kitCheckItems.createIfMissing, kitCheckItemDoc(row));
 
 export const removeKitCheckItemFromConvex = (id: string) =>
   removeIn(api.kitCheckItems.remove, id);
@@ -143,7 +143,7 @@ export async function syncKitCheckItemsForKit(kitId: string) {
   const rows = await prisma.kitCheckItem.findMany({ where: { kitId } });
   for (const row of rows as unknown as Row[]) {
     await upsertIn(
-      api.kitCheckItems.create,
+      api.kitCheckItems.createIfMissing,
       api.kitCheckItems.update,
       api.kitCheckItems.getById,
       row.id as string,

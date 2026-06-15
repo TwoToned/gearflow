@@ -27,8 +27,8 @@ import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/
 /** Mirror a freshly written Prisma model row into Convex (create). */
 async function mirrorModelToConvex(row: Record<string, unknown>) {
   await (await getConvexClient()).mutation(
-    api.models.create,
-    toConvexDoc(row) as FunctionArgs<typeof api.models.create>,
+    api.models.createIfMissing,
+    toConvexDoc(row) as FunctionArgs<typeof api.models.createIfMissing>,
   );
 }
 

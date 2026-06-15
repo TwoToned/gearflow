@@ -51,16 +51,16 @@ async function remove(fn: AnyRef, id: string) {
 }
 
 // ─── Kit (parent) ─────────────────────────────────────────────────────────────
-export const mirrorKitCreate = (row: Record<string, unknown>) => create(api.kits.create, row);
+export const mirrorKitCreate = (row: Record<string, unknown>) => create(api.kits.createIfMissing, row);
 export const patchKitInConvex = (id: string, row: Record<string, unknown>) => patch(api.kits.update, id, row);
 export const removeKitFromConvex = (id: string) => remove(api.kits.remove, id);
 
 // ─── Kit serialized items ──────────────────────────────────────────────────────
-export const mirrorKitSerializedItemCreate = (row: Record<string, unknown>) => create(api.kitSerializedItems.create, row);
+export const mirrorKitSerializedItemCreate = (row: Record<string, unknown>) => create(api.kitSerializedItems.createIfMissing, row);
 export const removeKitSerializedItemFromConvex = (id: string) => remove(api.kitSerializedItems.remove, id);
 
 // ─── Kit bulk items ─────────────────────────────────────────────────────────────
-export const mirrorKitBulkItemCreate = (row: Record<string, unknown>) => create(api.kitBulkItems.create, row);
+export const mirrorKitBulkItemCreate = (row: Record<string, unknown>) => create(api.kitBulkItems.createIfMissing, row);
 export const removeKitBulkItemFromConvex = (id: string) => remove(api.kitBulkItems.remove, id);
 
 /**

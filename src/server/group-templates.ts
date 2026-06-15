@@ -28,8 +28,8 @@ import { addKitLineItem, recalculateProjectTotals } from "./line-items";
 async function mirrorGroupTemplateToConvex(row: Record<string, unknown>) {
   const { items: _items, ...scalar } = row;
   await (await getConvexClient()).mutation(
-    api.groupTemplates.create,
-    toConvexDoc(scalar) as FunctionArgs<typeof api.groupTemplates.create>,
+    api.groupTemplates.createIfMissing,
+    toConvexDoc(scalar) as FunctionArgs<typeof api.groupTemplates.createIfMissing>,
   );
 }
 

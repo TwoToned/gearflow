@@ -53,12 +53,12 @@ async function remove(fn: AnyRef, id: string) {
 }
 
 // ─── Serialized assets ─────────────────────────────────────────────────────────
-export const mirrorAssetCreate = (row: Record<string, unknown>) => create(api.assets.create, row);
+export const mirrorAssetCreate = (row: Record<string, unknown>) => create(api.assets.createIfMissing, row);
 export const patchAssetInConvex = (id: string, row: Record<string, unknown>) => patch(api.assets.update, id, row);
 export const removeAssetFromConvex = (id: string) => remove(api.assets.remove, id);
 
 // ─── Bulk assets ─────────────────────────────────────────────────────────────
-export const mirrorBulkAssetCreate = (row: Record<string, unknown>) => create(api.bulkAssets.create, row);
+export const mirrorBulkAssetCreate = (row: Record<string, unknown>) => create(api.bulkAssets.createIfMissing, row);
 export const patchBulkAssetInConvex = (id: string, row: Record<string, unknown>) => patch(api.bulkAssets.update, id, row);
 export const removeBulkAssetFromConvex = (id: string) => remove(api.bulkAssets.remove, id);
 

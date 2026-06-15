@@ -20,6 +20,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { syncLineItemsToConvex } from "@/lib/line-item-mirror";
+import { getModelMap } from "@/lib/models-read";
 
 /**
  * Project statuses where the booking is released — excluded from conflict
@@ -72,7 +73,7 @@ export async function findProjectConflictsCore(
   // This project's asset assignments — from legacy line.assetId rows AND
   // from ProjectLineItemUnit rows (the fulfillment model). Deployed assets
   // now live on units, so both sources must be checked.
-  const [assetLines, assetUnits] = await Promise.all([
+  const [assetLines, assetUnits, modelMap] = await Promise.all([
     prisma.projectLineItem.findMany({
       where: {
         projectId,
@@ -84,7 +85,7 @@ export async function findProjectConflictsCore(
         id: true,
         assetId: true,
         modelId: true,
-        asset: { select: { assetTag: true, model: { select: { name: true } } } },
+        asset: { select: { assetTag: true } },
       },
     }),
     prisma.projectLineItemUnit.findMany({
@@ -101,11 +102,11 @@ export async function findProjectConflictsCore(
           select: {
             assetTag: true,
             modelId: true,
-            model: { select: { name: true } },
           },
         },
       },
     }),
+    getModelMap(organizationId),
   ]);
 
   interface AssetRef {
@@ -123,7 +124,7 @@ export async function findProjectConflictsCore(
         assetId: l.assetId as string,
         modelId: l.modelId,
         assetTag: l.asset?.assetTag ?? "—",
-        modelName: l.asset?.model?.name ?? "—",
+        modelName: l.modelId ? (modelMap.get(l.modelId)?.name ?? "—") : "—",
       })),
     ...assetUnits
       .filter((u) => u.assetId)
@@ -132,7 +133,7 @@ export async function findProjectConflictsCore(
         assetId: u.assetId as string,
         modelId: u.asset?.modelId ?? null,
         assetTag: u.asset?.assetTag ?? "—",
-        modelName: u.asset?.model?.name ?? "—",
+        modelName: u.asset?.modelId ? (modelMap.get(u.asset.modelId)?.name ?? "—") : "—",
       })),
   ];
   if (here.length === 0) return [];

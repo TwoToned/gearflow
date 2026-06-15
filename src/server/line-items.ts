@@ -51,6 +51,7 @@ async function expandAccessoryChildren(
     duration: number;
     pricingType: import("@/generated/prisma/client").PricingType;
   },
+  modelMap: Map<string, { name: string }>,
 ) {
   const base = {
     organizationId,
@@ -74,14 +75,14 @@ async function expandAccessoryChildren(
       select: {
         modelId: true,
         childAssets: {
-          select: { id: true, modelId: true, model: { select: { name: true } } },
+          select: { id: true, modelId: true },
           orderBy: { assetTag: "asc" },
         },
         childBulkItems: {
           select: {
             bulkAssetId: true,
             quantity: true,
-            bulkAsset: { select: { modelId: true, model: { select: { name: true } } } },
+            bulkAsset: { select: { modelId: true } },
           },
           orderBy: { sortOrder: "asc" },
         },
@@ -95,7 +96,7 @@ async function expandAccessoryChildren(
       select: {
         bulkAssetId: true,
         quantity: true,
-        bulkAsset: { select: { modelId: true, model: { select: { name: true } } } },
+        bulkAsset: { select: { modelId: true } },
       },
       orderBy: { sortOrder: "asc" },
     });
@@ -108,17 +109,18 @@ async function expandAccessoryChildren(
     let sort = 0;
     for (const child of asset.childAssets) {
       await tx.projectLineItem.create({
-        data: { ...base, modelId: child.modelId, assetId: child.id, quantity: 1, description: child.model?.name ?? null, sortOrder: sort++ },
+        data: { ...base, modelId: child.modelId, assetId: child.id, quantity: 1, description: modelMap.get(child.modelId)?.name ?? null, sortOrder: sort++ },
       });
     }
     for (const bi of [...asset.childBulkItems, ...inheritedBulks]) {
+      const modelName = modelMap.get(bi.bulkAsset.modelId)?.name ?? null;
       await tx.projectLineItem.create({
         data: {
           ...base,
           modelId: bi.bulkAsset.modelId,
           bulkAssetId: bi.bulkAssetId,
           quantity: bi.quantity,
-          description: bi.bulkAsset.model?.name ? `${bi.quantity}x ${bi.bulkAsset.model.name}` : null,
+          description: modelName ? `${bi.quantity}x ${modelName}` : null,
           sortOrder: sort++,
         },
       });
@@ -138,7 +140,7 @@ async function expandAccessoryChildren(
       select: {
         bulkAssetId: true,
         quantity: true,
-        bulkAsset: { select: { modelId: true, model: { select: { name: true } } } },
+        bulkAsset: { select: { modelId: true } },
       },
       orderBy: { sortOrder: "asc" },
     });
@@ -147,13 +149,14 @@ async function expandAccessoryChildren(
     let sort = 0;
     for (const bi of modelBulks) {
       const qty = bi.quantity * Math.max(parentLine.quantity, 1);
+      const modelName = modelMap.get(bi.bulkAsset.modelId)?.name ?? null;
       await tx.projectLineItem.create({
         data: {
           ...base,
           modelId: bi.bulkAsset.modelId,
           bulkAssetId: bi.bulkAssetId,
           quantity: qty,
-          description: bi.bulkAsset.model?.name ? `${qty}x ${bi.bulkAsset.model.name}` : null,
+          description: modelName ? `${qty}x ${modelName}` : null,
           sortOrder: sort++,
         },
       });
@@ -481,11 +484,16 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
     parsed.discount
   );
 
-  const maxSort = await prisma.projectLineItem.aggregate({
-    where: { projectId, organizationId },
-    _max: { sortOrder: true },
-  });
-  const nextSort = (maxSort._max.sortOrder ?? -1) + 1;
+  const [maxSortAgg, accessoryModelMap] = await Promise.all([
+    prisma.projectLineItem.aggregate({
+      where: { projectId, organizationId },
+      _max: { sortOrder: true },
+    }),
+    // Model names for accessory description text — fetched before the transaction
+    // so we avoid a cross-domain Prisma join inside expandAccessoryChildren.
+    getModelMap(organizationId),
+  ]);
+  const nextSort = (maxSortAgg._max.sortOrder ?? -1) + 1;
 
   const result = await prisma.$transaction(async (tx) => {
     const line = await tx.projectLineItem.create({
@@ -516,7 +524,6 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         subhireOrderNumber: parsed.subhireOrderNumber || null,
       },
       include: {
-        model: true,
         asset: true,
         bulkAsset: true,
       },
@@ -531,7 +538,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
     // warehouse includes them during prep and the quote shows what's included.
     // includeAccessories=false lets callers suppress this (e.g. return-only flow).
     if (includeAccessories && !line.subHireId && line.type === "EQUIPMENT" && (line.assetId || line.modelId)) {
-      await expandAccessoryChildren(tx, organizationId, projectId, line);
+      await expandAccessoryChildren(tx, organizationId, projectId, line, accessoryModelMap);
     }
 
     return line;
@@ -742,7 +749,6 @@ export async function updateLineItem(
       }),
     },
     include: {
-      model: true,
       asset: true,
       bulkAsset: true,
     },

@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/org-context";
 import { getModelById } from "@/lib/models-read";
+import { getBulkAssetById } from "@/lib/assets-read";
 import {
   modelBulkAccessorySchema,
   type ModelBulkAccessoryFormValues,
@@ -35,11 +36,8 @@ export async function addModelBulkAccessory(
   );
   const parsed = modelBulkAccessorySchema.parse(data);
 
-  const model = await prisma.model.findUnique({
-    where: { id: modelId, organizationId },
-    select: { id: true, name: true },
-  });
-  if (!model) {
+  const model = await getModelById(modelId);
+  if (!model || model.organizationId !== organizationId) {
     throw new UserFacingError({
       code: "NOT_FOUND",
       title: "Model not found",
@@ -47,11 +45,8 @@ export async function addModelBulkAccessory(
     });
   }
 
-  const bulkAsset = await prisma.bulkAsset.findUnique({
-    where: { id: parsed.bulkAssetId, organizationId },
-    select: { id: true, assetTag: true },
-  });
-  if (!bulkAsset) {
+  const bulkAsset = await getBulkAssetById(parsed.bulkAssetId);
+  if (!bulkAsset || bulkAsset.organizationId !== organizationId) {
     throw new UserFacingError({
       code: "NOT_FOUND",
       title: "Bulk asset not found",

@@ -14,6 +14,7 @@ import {
   syncProjectCategoriesToConvex,
 } from "@/lib/project-grouping-mirror";
 import { computeOverbookedStatus } from "@/lib/availability";
+import { getProjectById } from "@/lib/projects-read";
 import {
   buildLineItemAttachMaps,
   attachLineItemTree,
@@ -327,35 +328,30 @@ export async function reorderProjectCategories(
 export async function getProjectOverbookedStatus(projectId: string) {
   const { organizationId } = await requirePermission("project", "read");
 
-  const project = await prisma.project.findUnique({
-    where: { id: projectId, organizationId },
+  const project = await getProjectById(projectId);
+  if (!project || project.organizationId !== organizationId) {
+    return serialize({});
+  }
+
+  const lineItems = await prisma.projectLineItem.findMany({
+    where: { projectId, status: { not: "CANCELLED" } },
     select: {
       id: true,
-      rentalStartDate: true,
-      rentalEndDate: true,
-      lineItems: {
-        where: { status: { not: "CANCELLED" } },
-        select: {
-          id: true,
-          modelId: true,
-          kitId: true,
-          quantity: true,
-          isKitChild: true,
-          parentLineItemId: true,
-          status: true,
-          subHireId: true,
-        },
-      },
+      modelId: true,
+      kitId: true,
+      quantity: true,
+      isKitChild: true,
+      parentLineItemId: true,
+      status: true,
+      subHireId: true,
     },
   });
 
-  if (!project) return serialize({});
-
   const overbookedMap = await computeOverbookedStatus(
     organizationId,
-    project.lineItems,
-    project.rentalStartDate,
-    project.rentalEndDate,
+    lineItems,
+    project.rentalStartDate != null ? new Date(project.rentalStartDate) : null,
+    project.rentalEndDate != null ? new Date(project.rentalEndDate) : null,
     project.id,
   );
 

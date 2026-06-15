@@ -9,6 +9,9 @@ import { getModelMap } from "@/lib/models-read";
 import { getCategoryMap } from "@/lib/categories-read";
 import { getSupplierMap } from "@/lib/suppliers-read";
 import { getLocationMap } from "@/lib/locations-read";
+import { getAssetsByOrg } from "@/lib/assets-read";
+import { getKitsByOrg } from "@/lib/kits-read";
+import { getProjectsByOrg } from "@/lib/projects-read";
 import type {
   ReportConfig,
   ReportResult,
@@ -592,25 +595,30 @@ async function addComputedFields(
   if (computedCols.length === 0) return;
 
   if (config.dataSource === "models") {
+    const needsAvailableAny = computedCols.some((c) => c.field === "_availableCount");
+    const needsCheckedOutAny = computedCols.some((c) => c.field === "_checkedOutCount");
+
+    // Pre-fetch org-wide assets ONCE; filter per-model in JS inside the loop.
+    const orgAssets =
+      needsAvailableAny || needsCheckedOutAny ? await getAssetsByOrg(organizationId) : [];
+
     for (const row of rows) {
       const modelId = (row as Record<string, unknown>)["id"] as string;
       if (!modelId) continue;
 
-      const needsAvailable = computedCols.some((c) => c.field === "_availableCount");
-      const needsCheckedOut = computedCols.some((c) => c.field === "_checkedOutCount");
+      const needsAvailable = needsAvailableAny;
+      const needsCheckedOut = needsCheckedOutAny;
       const needsRevenue = computedCols.some((c) => c.field === "_totalRevenue");
 
       if (needsAvailable || needsCheckedOut) {
-        const statusCounts = await prisma.asset.groupBy({
-          by: ["status"],
-          where: { organizationId, modelId, isActive: true },
-          _count: { status: true },
-        });
+        const modelAssets = orgAssets.filter(
+          (a) => a.modelId === modelId && a.isActive !== false,
+        );
         if (needsAvailable) {
-          row["_availableCount"] = statusCounts.find((s) => s.status === "AVAILABLE")?._count.status ?? 0;
+          row["_availableCount"] = modelAssets.filter((a) => a.status === "AVAILABLE").length;
         }
         if (needsCheckedOut) {
-          row["_checkedOutCount"] = statusCounts.find((s) => s.status === "CHECKED_OUT")?._count.status ?? 0;
+          row["_checkedOutCount"] = modelAssets.filter((a) => a.status === "CHECKED_OUT").length;
         }
       }
 
@@ -625,45 +633,55 @@ async function addComputedFields(
   }
 
   if (config.dataSource === "clients") {
+    const needsProjectsAny = computedCols.some((c) => c.field === "_totalProjects");
+    const needsRevenueAny = computedCols.some((c) => c.field === "_totalRevenue");
+
+    // Pre-fetch org-wide projects ONCE; filter per-client in JS inside the loop.
+    const orgProjects =
+      needsProjectsAny || needsRevenueAny ? await getProjectsByOrg(organizationId) : [];
+
     for (const row of rows) {
       const clientId = (row as Record<string, unknown>)["id"] as string;
       if (!clientId) continue;
 
-      const needsProjects = computedCols.some((c) => c.field === "_totalProjects");
-      const needsRevenue = computedCols.some((c) => c.field === "_totalRevenue");
-
-      if (needsProjects || needsRevenue) {
-        const projects = await prisma.project.findMany({
-          where: { organizationId, clientId, isTemplate: false },
-          select: { total: true },
-        });
-        if (needsProjects) {
-          row["_totalProjects"] = projects.length;
+      if (needsProjectsAny || needsRevenueAny) {
+        const clientProjects = orgProjects.filter(
+          (p) => p.clientId === clientId && !p.isTemplate,
+        );
+        if (needsProjectsAny) {
+          row["_totalProjects"] = clientProjects.length;
         }
-        if (needsRevenue) {
-          row["_totalRevenue"] = projects.reduce((sum, p) => sum + (p.total ? Number(p.total) : 0), 0);
+        if (needsRevenueAny) {
+          row["_totalRevenue"] = clientProjects.reduce(
+            (sum, p) => sum + (p.total ? Number(p.total) : 0),
+            0,
+          );
         }
       }
     }
   }
 
   if (config.dataSource === "locations") {
+    const needsAssetsAny = computedCols.some((c) => c.field === "_assetCount");
+    const needsKitsAny = computedCols.some((c) => c.field === "_kitCount");
+
+    // Pre-fetch org-wide assets + kits ONCE; filter per-location in JS in the loop.
+    const orgAssets = needsAssetsAny ? await getAssetsByOrg(organizationId) : [];
+    const orgKits = needsKitsAny ? await getKitsByOrg(organizationId) : [];
+
     for (const row of rows) {
       const locationId = (row as Record<string, unknown>)["id"] as string;
       if (!locationId) continue;
 
-      const needsAssets = computedCols.some((c) => c.field === "_assetCount");
-      const needsKits = computedCols.some((c) => c.field === "_kitCount");
-
-      if (needsAssets) {
-        row["_assetCount"] = await prisma.asset.count({
-          where: { organizationId, locationId, isActive: true },
-        });
+      if (needsAssetsAny) {
+        row["_assetCount"] = orgAssets.filter(
+          (a) => a.locationId === locationId && a.isActive !== false,
+        ).length;
       }
-      if (needsKits) {
-        row["_kitCount"] = await prisma.kit.count({
-          where: { organizationId, locationId, isActive: true },
-        });
+      if (needsKitsAny) {
+        row["_kitCount"] = orgKits.filter(
+          (k) => k.locationId === locationId && k.isActive !== false,
+        ).length;
       }
     }
   }

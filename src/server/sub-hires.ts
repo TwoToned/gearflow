@@ -15,6 +15,7 @@ import {
   getMatchingSupplierIds,
   getSupplierById,
 } from "@/lib/suppliers-read";
+import { getModelById, getModelMap } from "@/lib/models-read";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
@@ -116,7 +117,6 @@ export async function getSubHires(filters?: {
     ? {
         items: {
           include: {
-            model: { select: { id: true, name: true } },
             targetCategory: { select: { id: true, name: true } },
             targetGroup: { select: { id: true, title: true, categoryId: true } },
           },
@@ -127,7 +127,6 @@ export async function getSubHires(filters?: {
             targetCategory: { select: { id: true, name: true } },
             targetGroup: { select: { id: true, title: true, categoryId: true } },
             items: {
-              include: { model: { select: { id: true, name: true } } },
               orderBy: { sortOrder: "asc" as const },
             },
           },
@@ -145,6 +144,28 @@ export async function getSubHires(filters?: {
     },
     orderBy: { createdAt: "desc" },
   });
+
+  // Model lives in Convex — enrich items when fetched for a specific project.
+  if (filters?.projectId) {
+    const modelMap = await getModelMap(organizationId);
+    for (const sh of subHires as typeof subHires & { items?: { modelId: string | null }[]; groups?: { items: { modelId: string | null }[] }[] }[]) {
+      if ("items" in sh && sh.items) {
+        (sh as any).items = sh.items.map((item) => ({
+          ...item,
+          model: item.modelId ? (modelMap.get(item.modelId) ?? null) : null,
+        }));
+      }
+      if ("groups" in sh && sh.groups) {
+        (sh as any).groups = sh.groups.map((g) => ({
+          ...g,
+          items: (g as any).items.map((item: { modelId: string | null }) => ({
+            ...item,
+            model: item.modelId ? (modelMap.get(item.modelId) ?? null) : null,
+          })),
+        }));
+      }
+    }
+  }
 
   // Supplier lives in Convex — attach instead of a Prisma join.
   const subHiresWithSupplier = await attachSupplier(organizationId, subHires);
@@ -166,7 +187,6 @@ export async function getSubHire(id: string) {
           targetCategory: { select: { id: true, name: true } },
           targetGroup: { select: { id: true, title: true, categoryId: true } },
           items: {
-            include: { model: { select: { id: true, name: true } } },
             orderBy: { sortOrder: "asc" },
           },
         },
@@ -174,7 +194,6 @@ export async function getSubHire(id: string) {
       },
       items: {
         include: {
-          model: { select: { id: true, name: true } },
           targetCategory: { select: { id: true, name: true } },
           targetGroup: { select: { id: true, title: true, categoryId: true } },
         },
@@ -188,9 +207,23 @@ export async function getSubHire(id: string) {
   });
 
   if (!subHire) throw new Error("Sub-hire not found");
-  // Supplier lives in Convex — attach instead of a Prisma join.
-  const supplier = await getSupplierById(subHire.supplierId);
-  return serialize({ ...subHire, supplier });
+  // Model + supplier live in Convex — enrich after query.
+  const [modelMap, supplier] = await Promise.all([
+    getModelMap(organizationId),
+    getSupplierById(subHire.supplierId),
+  ]);
+  const enrichedGroups = subHire.groups.map((g) => ({
+    ...g,
+    items: g.items.map((item) => ({
+      ...item,
+      model: item.modelId ? (modelMap.get(item.modelId) ?? null) : null,
+    })),
+  }));
+  const enrichedItems = subHire.items.map((item) => ({
+    ...item,
+    model: item.modelId ? (modelMap.get(item.modelId) ?? null) : null,
+  }));
+  return serialize({ ...subHire, groups: enrichedGroups, items: enrichedItems, supplier });
 }
 
 export async function createSubHire(input: unknown) {
@@ -417,14 +450,21 @@ export async function updateSubHireStatus(id: string, newStatus: SubHireStatus) 
     include: {
       project: { select: { id: true, name: true, projectNumber: true } },
       items: {
-        include: { model: { select: { id: true, name: true } } },
         orderBy: { sortOrder: "asc" },
       },
     },
   });
-  // Supplier lives in Convex — attach instead of a Prisma join.
-  const supplier = updatedSubHire ? await getSupplierById(updatedSubHire.supplierId) : null;
-  return serialize(updatedSubHire ? { ...updatedSubHire, supplier } : updatedSubHire);
+  if (!updatedSubHire) return serialize(null);
+  // Model + supplier live in Convex — enrich after query.
+  const [modelMap, supplier] = await Promise.all([
+    getModelMap(organizationId),
+    getSupplierById(updatedSubHire.supplierId),
+  ]);
+  const enrichedItems = updatedSubHire.items.map((item) => ({
+    ...item,
+    model: item.modelId ? (modelMap.get(item.modelId) ?? null) : null,
+  }));
+  return serialize({ ...updatedSubHire, items: enrichedItems, supplier });
 }
 
 // ─── Item CRUD ───────────────────────────────────────────────────────────────
@@ -464,8 +504,9 @@ export async function addSubHireItem(subHireId: string, input: unknown) {
       targetGroupId: data.targetGroupId || null,
       sortOrder: nextSort,
     },
-    include: { model: { select: { id: true, name: true } } },
   });
+  // Model lives in Convex — attach after create.
+  const model = item.modelId ? await getModelById(item.modelId) : null;
 
   await recalculateSubHireTotals(subHireId);
 
@@ -490,7 +531,7 @@ export async function addSubHireItem(subHireId: string, input: unknown) {
     summary: `Added item "${data.description}" to ${subHire.orderNumber}`,
   });
 
-  return serialize(item);
+  return serialize({ ...item, model });
 }
 
 export async function updateSubHireItem(itemId: string, input: unknown) {
@@ -526,8 +567,9 @@ export async function updateSubHireItem(itemId: string, input: unknown) {
       targetCategoryId: data.targetCategoryId !== undefined ? (data.targetCategoryId || null) : undefined,
       targetGroupId: data.targetGroupId !== undefined ? (data.targetGroupId || null) : undefined,
     },
-    include: { model: { select: { id: true, name: true } } },
   });
+  // Model lives in Convex — attach after update.
+  const model = item.modelId ? await getModelById(item.modelId) : null;
 
   await recalculateSubHireTotals(existing.subHire.id);
 
@@ -552,7 +594,7 @@ export async function updateSubHireItem(itemId: string, input: unknown) {
     summary: `Updated item "${data.description}" on ${existing.subHire.orderNumber}`,
   });
 
-  return serialize(item);
+  return serialize({ ...item, model });
 }
 
 export async function removeSubHireItem(itemId: string) {
@@ -1173,7 +1215,6 @@ export async function createSubHireGroup(subHireId: string, input: unknown) {
     },
     include: {
       items: {
-        include: { model: { select: { id: true, name: true } } },
         orderBy: { sortOrder: "asc" },
       },
     },
@@ -1195,7 +1236,16 @@ export async function createSubHireGroup(subHireId: string, input: unknown) {
     summary: `Created group "${data.title}" on ${subHire.orderNumber}`,
   });
 
-  return serialize(group);
+  // Model lives in Convex — enrich group items after create.
+  const modelMap = await getModelMap(organizationId);
+  const enrichedGroup = {
+    ...group,
+    items: group.items.map((item) => ({
+      ...item,
+      model: item.modelId ? (modelMap.get(item.modelId) ?? null) : null,
+    })),
+  };
+  return serialize(enrichedGroup);
 }
 
 export async function updateSubHireGroup(groupId: string, input: unknown) {
@@ -1227,7 +1277,6 @@ export async function updateSubHireGroup(groupId: string, input: unknown) {
     },
     include: {
       items: {
-        include: { model: { select: { id: true, name: true } } },
         orderBy: { sortOrder: "asc" },
       },
     },
@@ -1252,7 +1301,16 @@ export async function updateSubHireGroup(groupId: string, input: unknown) {
     summary: `Updated group "${data.title}" on ${existing.subHire.orderNumber}`,
   });
 
-  return serialize(group);
+  // Model lives in Convex — enrich group items after update.
+  const modelMap = await getModelMap(organizationId);
+  const enrichedGroup = {
+    ...group,
+    items: group.items.map((item) => ({
+      ...item,
+      model: item.modelId ? (modelMap.get(item.modelId) ?? null) : null,
+    })),
+  };
+  return serialize(enrichedGroup);
 }
 
 export async function deleteSubHireGroup(groupId: string) {
@@ -1680,11 +1738,8 @@ export async function checkSubHireOpportunity(
     return serialize({ shortage: false as const });
   }
 
-  // Get model name for the dialog
-  const model = await prisma.model.findUnique({
-    where: { id: modelId, organizationId },
-    select: { name: true },
-  });
+  // Model lives in Convex — fetch by id for the dialog.
+  const model = await getModelById(modelId);
 
   return serialize({
     shortage: true as const,

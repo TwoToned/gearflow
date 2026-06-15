@@ -372,7 +372,8 @@ export async function createAssets(
     parsed.customFieldValues,
   );
 
-  const model = await prisma.model.findUnique({ where: { id: parsed.modelId } });
+  // Model lives in Convex — fetch for T&T requirements check.
+  const model = await getModelById(parsed.modelId);
 
   let results;
   try {
@@ -515,7 +516,8 @@ export async function updateAsset(id: string, data: AssetFormValues) {
   });
 
   // Register in T&T if model requires it and not already registered
-  const model = await prisma.model.findUnique({ where: { id: parsed.modelId } });
+  // Model lives in Convex — fetch for T&T requirements check.
+  const model = await getModelById(parsed.modelId);
   if (model?.requiresTestAndTag) {
     await backfillTestTagAssets();
   }

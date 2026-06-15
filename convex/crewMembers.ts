@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireOrgRead, requireOrgReadDoc, requireService, getAuthContext, redactFields } from "./lib/auth";
 import * as enums from "./lib/validators";
@@ -156,7 +156,7 @@ export const update = mutation({
   handler: async (ctx, { id, patch }) => {
     await requireService(ctx);
     const doc = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    if (!doc) throw new Error("crewMembers not found: " + id);
+    if (!doc) throw new ConvexError("crewMembers not found: " + id);
     const safePatch = { ...patch };
     delete safePatch.organizationId;
     await ctx.db.patch(doc._id, safePatch);
@@ -169,7 +169,7 @@ export const remove = mutation({
   handler: async (ctx, { id }) => {
     await requireService(ctx);
     const doc = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    if (!doc) throw new Error("crewMembers not found: " + id);
+    if (!doc) throw new ConvexError("crewMembers not found: " + id);
     await ctx.db.delete(doc._id);
   },
 });

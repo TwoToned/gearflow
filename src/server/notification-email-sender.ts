@@ -19,6 +19,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
+import { getModelMap } from "@/lib/models-read";
 import { env } from "@/env";
 import {
   expiringCertEmail,
@@ -116,6 +117,8 @@ async function buildOrgNotifications(ctx: BuildContext): Promise<NotificationToS
   const { organizationId, now, soon, certSoon } = ctx;
   const out: NotificationToSend[] = [];
 
+  const modelMap = await getModelMap(organizationId);
+
   // 1. Overdue maintenance
   const overdueMaintenance = await prisma.maintenanceRecord.findMany({
     where: {
@@ -123,16 +126,17 @@ async function buildOrgNotifications(ctx: BuildContext): Promise<NotificationToS
       status: { in: ["SCHEDULED", "IN_PROGRESS"] },
       scheduledDate: { lt: now },
     },
-    include: { assets: { include: { asset: { include: { model: true } } } } },
+    include: { assets: { include: { asset: true } } },
     take: 50,
   });
   for (const m of overdueMaintenance) {
     const first = m.assets[0]?.asset;
     const count = m.assets.length;
+    const firstModelName = first?.modelId ? modelMap.get(first.modelId)?.name : undefined;
     const desc = first
       ? count > 1
-        ? `${first.assetTag} — ${first.model.name} + ${count - 1} more overdue`
-        : `${first.assetTag} — ${first.model.name} is overdue`
+        ? `${first.assetTag} — ${firstModelName ?? first.assetTag} + ${count - 1} more overdue`
+        : `${first.assetTag} — ${firstModelName ?? first.assetTag} is overdue`
       : `${m.title} is overdue`;
     out.push({
       key: `maint-${m.id}`,
@@ -222,13 +226,13 @@ async function buildOrgNotifications(ctx: BuildContext): Promise<NotificationToS
       isActive: true,
       reorderThreshold: { not: null, gt: 0 },
     },
-    include: { model: true },
     take: 50,
   });
   const lowStock = lowStockCandidates.filter(
     (b) => b.reorderThreshold !== null && b.availableQuantity <= b.reorderThreshold,
   );
   for (const b of lowStock) {
+    const bulkModelName = modelMap.get(b.modelId)?.name ?? b.assetTag;
     out.push({
       key: `stock-${b.id}`,
       type: "low_stock",
@@ -239,7 +243,7 @@ async function buildOrgNotifications(ctx: BuildContext): Promise<NotificationToS
           appBaseUrl: c.appBaseUrl,
           href: `/assets/registry/${b.id}`,
           notificationKey: `stock-${b.id}`,
-          modelName: b.model.name,
+          modelName: bulkModelName,
           assetTag: b.assetTag,
           availableQuantity: b.availableQuantity,
           totalQuantity: b.totalQuantity,
@@ -328,14 +332,14 @@ async function buildOrgNotifications(ctx: BuildContext): Promise<NotificationToS
       prepStatus: { in: ["FLAGGED_FAULTY", "FLAGGED_TT_OVERDUE"] },
     },
     include: {
-      model: { select: { name: true } },
       asset: { select: { assetTag: true } },
       project: { select: { id: true, name: true, projectNumber: true } },
     },
     take: 50,
   });
   for (const li of flagged) {
-    const label = li.asset?.assetTag || li.model?.name || "Unknown";
+    const liModelName = li.modelId ? modelMap.get(li.modelId)?.name : undefined;
+    const label = li.asset?.assetTag || liModelName || "Unknown";
     const reason = li.prepStatus === "FLAGGED_TT_OVERDUE" ? "T&T overdue" : "faulty";
     out.push({
       key: `flagged-${li.id}`,

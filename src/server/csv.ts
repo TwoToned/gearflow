@@ -8,7 +8,7 @@ import { mirrorAssetCreate, patchAssetInConvex } from "@/lib/asset-mirror";
 import { attachSupplier, getSuppliersByOrg } from "@/lib/suppliers-read";
 import { getModelWithCategoryMap } from "@/lib/models-read";
 import { getCategoryMap } from "@/lib/categories-read";
-import { getLocationMap } from "@/lib/locations-read";
+import { getLocationMap, getLocationsByOrg } from "@/lib/locations-read";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
@@ -372,8 +372,8 @@ export async function importAssetsCSV(csvContent: string): Promise<ImportResult>
     if (m.modelNumber) modelByName.set(m.modelNumber.toLowerCase(), m);
   }
 
-  const locations = await prisma.location.findMany({ where: { organizationId } });
-  const locationMap = new Map(locations.map((l) => [l.name.toLowerCase(), l.id]));
+  const locationsByOrg = await getLocationsByOrg(organizationId);
+  const locationMap = new Map(locationsByOrg.map((l) => [l.name.toLowerCase(), l.id]));
 
   // Suppliers live in Convex — read the name→id map from there.
   const suppliers = await getSuppliersByOrg(organizationId);

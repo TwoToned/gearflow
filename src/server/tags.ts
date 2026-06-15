@@ -1,9 +1,14 @@
 "use server";
 
 import { getOrgContext } from "@/lib/org-context";
-import { prisma } from "@/lib/prisma";
 import { getClientsByOrg } from "@/lib/clients-read";
 import { getModelsByOrg } from "@/lib/models-read";
+import { getAssetsByOrg, getBulkAssetsByOrg } from "@/lib/assets-read";
+import { getKitsByOrg } from "@/lib/kits-read";
+import { getLocationsByOrg } from "@/lib/locations-read";
+import { getCategoriesByOrg } from "@/lib/categories-read";
+import { getProjectsByOrg } from "@/lib/projects-read";
+import { prisma } from "@/lib/prisma";
 
 /**
  * Get all distinct tags used across the organization.
@@ -16,13 +21,13 @@ export async function getOrgTags(): Promise<string[]> {
   const [models, assets, bulkAssets, kits, locations, categories, maintenance, projects, clients] = await Promise.all([
     // Model lives in Convex — fetch tags from Convex store.
     getModelsByOrg(organizationId).then((ms) => ms.map((m) => ({ tags: m.tags ?? [] }))),
-    prisma.asset.findMany({ where: { organizationId }, select: { tags: true } }),
-    prisma.bulkAsset.findMany({ where: { organizationId }, select: { tags: true } }),
-    prisma.kit.findMany({ where: { organizationId }, select: { tags: true } }),
-    prisma.location.findMany({ where: { organizationId }, select: { tags: true } }),
-    prisma.category.findMany({ where: { organizationId }, select: { tags: true } }),
+    getAssetsByOrg(organizationId).then((as) => as.map((a) => ({ tags: a.tags ?? [] }))),
+    getBulkAssetsByOrg(organizationId).then((bas) => bas.map((ba) => ({ tags: ba.tags ?? [] }))),
+    getKitsByOrg(organizationId).then((ks) => ks.map((k) => ({ tags: k.tags ?? [] }))),
+    getLocationsByOrg(organizationId).then((ls) => ls.map((l) => ({ tags: l.tags ?? [] }))),
+    getCategoriesByOrg(organizationId).then((cs) => cs.map((c) => ({ tags: c.tags ?? [] }))),
     prisma.maintenanceRecord.findMany({ where: { organizationId }, select: { tags: true } }),
-    prisma.project.findMany({ where: { organizationId }, select: { tags: true } }),
+    getProjectsByOrg(organizationId).then((ps) => ps.map((p) => ({ tags: p.tags ?? [] }))),
     // Clients live in Convex now — normalise to the same { tags } shape.
     getClientsByOrg(organizationId).then((cs) => cs.map((c) => ({ tags: c.tags ?? [] }))),
   ]);

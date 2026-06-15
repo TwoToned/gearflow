@@ -30,6 +30,12 @@ export async function getLocationsByOrg(orgId: string): Promise<ConvexLocation[]
   return await (await getConvexClient()).query(api.locations.list, { orgId });
 }
 
+/** The org's default location (isDefault: true), or null if none set. */
+export async function getDefaultLocation(orgId: string): Promise<ConvexLocation | null> {
+  const all = await getLocationsByOrg(orgId);
+  return all.find((l) => l.isDefault) ?? null;
+}
+
 /** All of an org's locations keyed by cuid `id`, for attaching to joined rows. */
 export async function getLocationMap(orgId: string): Promise<Map<string, ConvexLocation>> {
   const all = await getLocationsByOrg(orgId);

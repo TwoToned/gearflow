@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import { getLocationById } from "@/lib/locations-read";
 
 // ─── Token Management ────────────────────────────────────────────────────────
 
@@ -242,11 +243,7 @@ export async function getWarehouseDisplayData(
 
   let locationName: string | null = null;
   if (locationId) {
-    const loc = await prisma.location.findUnique({
-      where: { id: locationId },
-      select: { name: true },
-    });
-    locationName = loc?.name ?? null;
+    locationName = (await getLocationById(locationId))?.name ?? null;
   }
 
   const now = new Date();

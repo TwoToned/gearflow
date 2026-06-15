@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getClientById } from "@/lib/clients-read";
 import { getModelById, getModelMap } from "@/lib/models-read";
-import { getLocationMap } from "@/lib/locations-read";
+import { getLocationMap, getDefaultLocation } from "@/lib/locations-read";
 import { serialize } from "@/lib/serialize";
 import { computeOverbookedStatus } from "@/lib/availability";
 import type { Prisma } from "@/generated/prisma/client";
@@ -2027,10 +2027,7 @@ export async function forceReturnAsset(assetId: string) {
   if (!asset) throw new Error("Asset not found");
   if (asset.status === "AVAILABLE") throw new Error("Asset is already available");
 
-  const defaultLocation = await prisma.location.findFirst({
-    where: { organizationId, isDefault: true },
-    select: { id: true },
-  });
+  const defaultLocation = await getDefaultLocation(organizationId);
 
   await prisma.$transaction(async (tx) => {
     // Return all checked-out line items for this asset across all projects
@@ -2185,10 +2182,7 @@ export async function forceReturnKit(kitId: string) {
   if (!kit) throw new Error("Kit not found");
   if (kit.status === "AVAILABLE") throw new Error("Kit is already available");
 
-  const defaultLocation = await prisma.location.findFirst({
-    where: { organizationId, isDefault: true },
-    select: { id: true },
-  });
+  const defaultLocation = await getDefaultLocation(organizationId);
 
   const affectedKitIds = await prisma.$transaction(async (tx) => {
     const now = new Date();
@@ -2284,10 +2278,7 @@ export async function bulkForceReturnAssets(assetIds: string[]) {
 
   if (assets.length === 0) throw new Error("No checked-out assets found in selection");
 
-  const defaultLocation = await prisma.location.findFirst({
-    where: { organizationId, isDefault: true },
-    select: { id: true },
-  });
+  const defaultLocation = await getDefaultLocation(organizationId);
 
   const ids = assets.map((a) => a.id);
 

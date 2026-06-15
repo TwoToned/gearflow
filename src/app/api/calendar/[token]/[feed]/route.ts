@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientMap } from "@/lib/clients-read";
+import { getProjectsByOrg } from "@/lib/projects-read";
+import { getLocationsByOrg } from "@/lib/locations-read";
 import {
   generateVCalendar,
   buildDateTime,
@@ -51,21 +53,25 @@ async function buildProjectsFeed(
   orgName: string,
   tzid: string
 ): Promise<string> {
-  const projects = await prisma.project.findMany({
-    where: {
-      organizationId: orgId,
-      isTemplate: false,
-      status: { notIn: ["ENQUIRY", "CANCELLED"] },
-    },
-    include: {
-      location: { select: { name: true, address: true } },
-      projectManager: { select: { name: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  const [allProjects, allLocations, clientMap] = await Promise.all([
+    getProjectsByOrg(orgId),
+    getLocationsByOrg(orgId),
+    getClientMap(orgId),
+  ]);
 
-  // Clients live in Convex — resolve names by clientId.
-  const clientMap = await getClientMap(orgId);
+  const locationMap = new Map(allLocations.map((l) => [l.id, l]));
+
+  const projects = allProjects
+    .filter((p) => !p.isTemplate && p.status !== "ENQUIRY" && p.status !== "CANCELLED")
+    .sort((a, b) => (b.createdAt as number) - (a.createdAt as number));
+
+  // projectManager is a BetterAuth user — look up names via Prisma.
+  const pmIds = [...new Set(projects.map((p) => p.projectManagerId).filter((id): id is string => !!id))];
+  const pmUsers = pmIds.length > 0
+    ? await prisma.user.findMany({ where: { id: { in: pmIds } }, select: { id: true, name: true } })
+    : [];
+  const pmMap = new Map(pmUsers.map((u) => [u.id, u.name]));
+
   const events: ICalEvent[] = [];
 
   for (const p of projects) {
@@ -86,8 +92,9 @@ async function buildProjectsFeed(
         ? null
         : p.eventEndTime;
 
-    const dtstart = buildDateTime(startDate, startTime, tzid);
-    let dtend = buildDateTime(endDate || startDate, endTime, tzid);
+    // Convex dates are numbers (ms since epoch) — convert to Date for buildDateTime.
+    const dtstart = buildDateTime(new Date(startDate as number), startTime, tzid);
+    let dtend = buildDateTime(new Date((endDate || startDate) as number), endTime, tzid);
     // No times anywhere → treat as an all-day event in the org's tz.
     const allDay = !startTime && !endTime;
 
@@ -96,18 +103,17 @@ async function buildProjectsFeed(
       dtend = new Date(dtstart);
     }
 
-    const location = [p.location?.name, p.location?.address]
-      .filter(Boolean)
-      .join(", ");
+    const loc = p.locationId ? locationMap.get(p.locationId) : null;
+    const location = [loc?.name, loc?.address].filter(Boolean).join(", ");
 
     const descLines = [
       `Project: #${p.projectNumber} - ${p.name}`,
-      `Status: ${p.status.replace(/_/g, " ")}`,
+      `Status: ${(p.status ?? "").replace(/_/g, " ")}`,
     ];
     const clientName = p.clientId ? clientMap.get(p.clientId)?.name : null;
     if (clientName) descLines.push(`Client: ${clientName}`);
-    if (p.projectManager?.name)
-      descLines.push(`PM: ${p.projectManager.name}`);
+    const pmName = p.projectManagerId ? pmMap.get(p.projectManagerId) : null;
+    if (pmName) descLines.push(`PM: ${pmName}`);
     if (location) descLines.push(`Location: ${location}`);
     if (p.siteContactName) {
       descLines.push(
@@ -130,7 +136,7 @@ async function buildProjectsFeed(
       dtend,
       allDay,
       status: icalStatus,
-      categories: ["GearFlow", p.status.replace(/_/g, " ")],
+      categories: ["GearFlow", (p.status ?? "").replace(/_/g, " ")],
     });
   }
 
@@ -297,37 +303,37 @@ async function buildCrewOverviewFeed(
   orgName: string,
   tzid: string
 ): Promise<string> {
-  const assignments = await prisma.crewAssignment.findMany({
-    where: {
-      organizationId: orgId,
-      status: { in: ["CONFIRMED", "ACCEPTED"] },
-    },
-    include: {
-      crewMember: { select: { firstName: true, lastName: true } },
-      crewRole: { select: { name: true } },
-      project: {
-        select: {
-          name: true,
-          projectNumber: true,
-          location: { select: { name: true, address: true } },
-          siteContactName: true,
-          siteContactPhone: true,
+  const [allProjects, allLocations, assignments] = await Promise.all([
+    getProjectsByOrg(orgId),
+    getLocationsByOrg(orgId),
+    prisma.crewAssignment.findMany({
+      where: {
+        organizationId: orgId,
+        status: { in: ["CONFIRMED", "ACCEPTED"] },
+      },
+      include: {
+        crewMember: { select: { firstName: true, lastName: true } },
+        crewRole: { select: { name: true } },
+        shifts: {
+          where: { status: { not: "CANCELLED" } },
+          orderBy: { date: "asc" },
         },
       },
-      shifts: {
-        where: { status: { not: "CANCELLED" } },
-        orderBy: { date: "asc" },
-      },
-    },
-  });
+    }),
+  ]);
+
+  const projectMap = new Map(allProjects.map((p) => [p.id, p]));
+  const locationMap = new Map(allLocations.map((l) => [l.id, l]));
 
   const events: ICalEvent[] = [];
 
   for (const a of assignments) {
     const crewName = `${a.crewMember.firstName} ${a.crewMember.lastName}`;
     const roleName = a.crewRole?.name || "Crew";
-    const project = a.project;
-    const location = [project.location?.name, project.location?.address]
+    const project = projectMap.get(a.projectId);
+    if (!project) continue;
+    const loc = project.locationId ? locationMap.get(project.locationId) : null;
+    const location = [loc?.name, loc?.address]
       .filter(Boolean)
       .join(", ");
 

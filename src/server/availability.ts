@@ -5,6 +5,8 @@ import type { Prisma } from "@/generated/prisma/client";
 import { serialize } from "@/lib/serialize";
 import { getOrgContext } from "@/lib/org-context";
 import { getClientMap } from "@/lib/clients-read";
+import { getModelById } from "@/lib/models-read";
+import { getActiveAssetsByModel, getActiveBulkAssetsByModel, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
 
 export interface CalendarProject {
   id: string;
@@ -45,7 +47,8 @@ export async function getModelBookings(
   const start = new Date(params.startDate);
   const end = new Date(params.endDate);
 
-  const [lineItems, model] = await Promise.all([
+  // Model + active assets live in Convex — fetch in parallel with line items.
+  const [lineItems, model, activeAssets, activeBulkAssets] = await Promise.all([
     prisma.projectLineItem.findMany({
       where: {
         organizationId,
@@ -73,13 +76,9 @@ export async function getModelBookings(
       },
       orderBy: { project: { rentalStartDate: "asc" } },
     }),
-    prisma.model.findUnique({
-      where: { id: modelId, organizationId },
-      include: {
-        assets: { where: { isActive: true }, select: { status: true } },
-        bulkAssets: { where: { isActive: true }, select: { totalQuantity: true } },
-      },
-    }),
+    getModelById(modelId),
+    getActiveAssetsByModel(modelId, organizationId),
+    getActiveBulkAssetsByModel(modelId, organizationId),
   ]);
 
   // Clients live in Convex — resolve names by clientId.
@@ -110,14 +109,14 @@ export async function getModelBookings(
   let totalStock = 0;
   let effectiveStock = 0;
   if (model) {
-    if (model.assetType === "SERIALIZED") {
-      totalStock = model.assets.length;
-      const unavailable = model.assets.filter(
-        (a) => a.status === "IN_MAINTENANCE" || a.status === "LOST" || a.status === "RETIRED"
+    if ((model.assetType ?? "SERIALIZED") === "SERIALIZED") {
+      totalStock = activeAssets.length;
+      const unavailable = activeAssets.filter(
+        (a: ConvexAsset) => a.status === "IN_MAINTENANCE" || a.status === "LOST" || a.status === "RETIRED"
       ).length;
       effectiveStock = totalStock - unavailable;
     } else {
-      totalStock = model.bulkAssets.reduce((sum, ba) => sum + ba.totalQuantity, 0);
+      totalStock = activeBulkAssets.reduce((sum: number, ba: ConvexBulkAsset) => sum + (ba.totalQuantity ?? 0), 0);
       effectiveStock = totalStock;
     }
   }

@@ -8,6 +8,7 @@ import { BrandingProvider } from "@/components/providers/branding-provider";
 import MiraContextProvider from "@/components/providers/mira-context-provider";
 import { getSession } from "@/lib/auth-server";
 import { getTheOrg } from "@/lib/single-org";
+import { OrgActivator } from "@/components/providers/org-activator";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
@@ -27,6 +28,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <SidebarProvider className="min-h-0 flex-1 md:min-h-svh">
         <BrandingProvider>
           <MiraContextProvider>
+            <OrgActivator />
             <DynamicFavicon />
             <AppSidebar />
             <SidebarInset className="min-h-0">

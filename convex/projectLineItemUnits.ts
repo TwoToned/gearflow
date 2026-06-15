@@ -32,6 +32,17 @@ export const getById = query({
   },
 });
 
+export const listByLineItem = query({
+  args: { lineItemId: v.string() },
+  handler: async (ctx, { lineItemId }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("projectLineItemUnits")
+      .withIndex("by_lineItemId", (q) => q.eq("lineItemId", lineItemId))
+      .collect();
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

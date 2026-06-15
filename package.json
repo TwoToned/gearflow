@@ -44,6 +44,7 @@
     "convex:backfill:asset": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-asset.ts",
     "convex:backfill:project-grouping": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-project-grouping.ts",
     "convex:backfill:line-items": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-line-items.ts",
+    "convex:backfill:line-item-units": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-line-item-units.ts",
     "convex:backfill:sub-hires": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-sub-hires.ts",
     "convex:backfill:projects": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-projects.ts",
     "convex:backfill:stocktake": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-stocktake.ts",

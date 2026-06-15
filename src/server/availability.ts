@@ -7,6 +7,7 @@ import { getOrgContext } from "@/lib/org-context";
 import { getClientMap } from "@/lib/clients-read";
 import { getModelById } from "@/lib/models-read";
 import { getActiveAssetsByModel, getActiveBulkAssetsByModel, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
+import { getProjectsByOrg } from "@/lib/projects-read";
 
 export interface CalendarProject {
   id: string;
@@ -284,35 +285,43 @@ export async function getCalendarData(params: {
   const start = new Date(params.startDate);
   const end = new Date(params.endDate);
 
-  const projects = await prisma.project.findMany({
-    where: {
-      organizationId,
-      isTemplate: false,
-      status: { notIn: ["CANCELLED"] },
-      rentalStartDate: { lte: end },
-      rentalEndDate: { gte: start },
-    },
-    include: {
-      clientId: true,
-      _count: {
-        select: {
-          lineItems: { where: { status: { not: "CANCELLED" } } },
-        },
-      },
-    },
-    orderBy: { rentalStartDate: "asc" },
-  });
+  const [allOrgProjects, clientMap] = await Promise.all([
+    getProjectsByOrg(organizationId),
+    getClientMap(organizationId),
+  ]);
 
-  const clientMap = await getClientMap(organizationId);
-  const result: CalendarProject[] = projects.map((p) => ({
+  const calendarProjects = allOrgProjects
+    .filter(
+      (p) =>
+        !p.isTemplate &&
+        p.status !== "CANCELLED" &&
+        p.rentalStartDate != null &&
+        p.rentalEndDate != null &&
+        (p.rentalStartDate as number) <= end.getTime() &&
+        (p.rentalEndDate as number) >= start.getTime(),
+    )
+    .sort((a, b) => (a.rentalStartDate as number) - (b.rentalStartDate as number));
+
+  const calendarIds = calendarProjects.map((p) => p.id);
+  const lineItemCounts =
+    calendarIds.length > 0
+      ? await prisma.projectLineItem.groupBy({
+          by: ["projectId"],
+          where: { organizationId, projectId: { in: calendarIds }, status: { not: "CANCELLED" } },
+          _count: { _all: true },
+        })
+      : [];
+  const liCountMap = new Map(lineItemCounts.map((g) => [g.projectId, g._count._all]));
+
+  const result: CalendarProject[] = calendarProjects.map((p) => ({
     id: p.id,
     projectNumber: p.projectNumber,
     name: p.name,
     clientName: clientMap.get(p.clientId ?? "")?.name ?? null,
-    status: p.status,
-    rentalStartDate: p.rentalStartDate?.toISOString() || "",
-    rentalEndDate: p.rentalEndDate?.toISOString() || "",
-    lineItemCount: p._count.lineItems,
+    status: p.status ?? "ENQUIRY",
+    rentalStartDate: p.rentalStartDate ? new Date(p.rentalStartDate as number).toISOString() : "",
+    rentalEndDate: p.rentalEndDate ? new Date(p.rentalEndDate as number).toISOString() : "",
+    lineItemCount: liCountMap.get(p.id) ?? 0,
   }));
 
   return serialize(result) as CalendarProject[];

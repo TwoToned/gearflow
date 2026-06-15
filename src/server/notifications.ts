@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { getModelMap } from "@/lib/models-read";
+import { getProjectsByOrg } from "@/lib/projects-read";
+import { getBulkAssetsByOrg } from "@/lib/assets-read";
 
 export interface AppNotification {
   id: string;
@@ -124,43 +126,52 @@ export async function getNotifications(): Promise<AppNotification[]> {
   }
 
   // 2. Overdue returns (projects past rental end date with checked-out items)
-  const overdueProjects = await prisma.project.findMany({
-    where: {
-      organizationId,
-      isTemplate: false,
-      status: { in: ["CHECKED_OUT", "ON_SITE"] },
-      rentalEndDate: { lt: now },
-    },
-    include: {
-      _count: { select: { lineItems: { where: { status: "CHECKED_OUT" } } } },
-    },
-    take: 10,
-  });
+  const allProjects = await getProjectsByOrg(organizationId);
+  const overdueProjectCandidates = allProjects
+    .filter(
+      (p) =>
+        !p.isTemplate &&
+        (p.status === "CHECKED_OUT" || p.status === "ON_SITE") &&
+        p.rentalEndDate != null &&
+        (p.rentalEndDate as number) < now.getTime(),
+    )
+    .slice(0, 10);
 
-  for (const p of overdueProjects) {
-    if (p._count.lineItems > 0) {
-      notifications.push({
-        id: `return-${p.id}`,
-        type: "overdue_return",
-        title: `Overdue return: ${p.projectNumber}`,
-        description: `${p.name} — ${p._count.lineItems} items still deployed`,
-        href: `/projects/${p.id}`,
-        severity: "error",
-        timestamp: p.rentalEndDate?.toISOString() || p.updatedAt.toISOString(),
-      });
+  if (overdueProjectCandidates.length > 0) {
+    const overdueIds = overdueProjectCandidates.map((p) => p.id);
+    const checkedOutCounts = await prisma.projectLineItem.groupBy({
+      by: ["projectId"],
+      where: { organizationId, projectId: { in: overdueIds }, status: "CHECKED_OUT" },
+      _count: { _all: true },
+    });
+    const countMap = new Map(checkedOutCounts.map((g) => [g.projectId, g._count._all]));
+    for (const p of overdueProjectCandidates) {
+      const lineItemCount = countMap.get(p.id) ?? 0;
+      if (lineItemCount > 0) {
+        notifications.push({
+          id: `return-${p.id}`,
+          type: "overdue_return",
+          title: `Overdue return: ${p.projectNumber}`,
+          description: `${p.name} — ${lineItemCount} items still deployed`,
+          href: `/projects/${p.id}`,
+          severity: "error",
+          timestamp: p.rentalEndDate ? new Date(p.rentalEndDate as number).toISOString() : new Date(p.updatedAt as number).toISOString(),
+        });
+      }
     }
   }
 
   // 3. Upcoming projects starting within 3 days
-  const upcomingProjects = await prisma.project.findMany({
-    where: {
-      organizationId,
-      isTemplate: false,
-      status: { in: ["CONFIRMED", "PREPPING"] },
-      rentalStartDate: { gte: now, lte: soon },
-    },
-    take: 10,
-  });
+  const upcomingProjects = allProjects
+    .filter(
+      (p) =>
+        !p.isTemplate &&
+        (p.status === "CONFIRMED" || p.status === "PREPPING") &&
+        p.rentalStartDate != null &&
+        (p.rentalStartDate as number) >= now.getTime() &&
+        (p.rentalStartDate as number) <= soon.getTime(),
+    )
+    .slice(0, 10);
 
   for (const p of upcomingProjects) {
     notifications.push({
@@ -170,7 +181,7 @@ export async function getNotifications(): Promise<AppNotification[]> {
       description: p.name,
       href: `/projects/${p.id}`,
       severity: "info",
-      timestamp: p.rentalStartDate?.toISOString() || p.createdAt.toISOString(),
+      timestamp: p.rentalStartDate ? new Date(p.rentalStartDate as number).toISOString() : new Date(p.createdAt as number).toISOString(),
     });
   }
 
@@ -179,17 +190,16 @@ export async function getNotifications(): Promise<AppNotification[]> {
   // cached enum that can drift out of sync with actual quantities). An
   // asset is "low" iff it has a configured threshold AND current
   // availability is at-or-below it. No threshold → no alert.
-  const lowStockCandidates = await prisma.bulkAsset.findMany({
-    where: {
-      organizationId,
-      isActive: true,
-      reorderThreshold: { not: null, gt: 0 },
-    },
-    take: 50,
-  });
-  const lowStock = lowStockCandidates.filter(
-    (b) => b.reorderThreshold !== null && b.availableQuantity <= b.reorderThreshold,
-  );
+  const allBulkAssets = await getBulkAssetsByOrg(organizationId);
+  const lowStock = allBulkAssets
+    .filter(
+      (b) =>
+        b.isActive !== false &&
+        b.reorderThreshold != null &&
+        b.reorderThreshold > 0 &&
+        (b.availableQuantity ?? 0) <= b.reorderThreshold,
+    )
+    .slice(0, 50);
 
   for (const b of lowStock) {
     const bulkModelName = modelMap.get(b.modelId)?.name ?? b.assetTag;
@@ -197,10 +207,10 @@ export async function getNotifications(): Promise<AppNotification[]> {
       id: `stock-${b.id}`,
       type: "low_stock",
       title: `Low stock: ${bulkModelName}`,
-      description: `${b.assetTag} — ${b.availableQuantity} of ${b.totalQuantity} available (threshold ${b.reorderThreshold})`,
+      description: `${b.assetTag} — ${b.availableQuantity ?? 0} of ${b.totalQuantity ?? 0} available (threshold ${b.reorderThreshold})`,
       href: `/assets/registry/${b.id}`,
       severity: "warning",
-      timestamp: b.updatedAt.toISOString(),
+      timestamp: new Date(b.updatedAt as number).toISOString(),
     });
   }
 

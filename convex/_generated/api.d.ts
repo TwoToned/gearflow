@@ -8,7 +8,6 @@
  * @module
  */
 
-import type * as collaboration from "../collaboration.js";
 import type * as assetBulkChildren from "../assetBulkChildren.js";
 import type * as assetDetail from "../assetDetail.js";
 import type * as assetMedia from "../assetMedia.js";
@@ -22,6 +21,7 @@ import type * as checkItems from "../checkItems.js";
 import type * as checkRecords from "../checkRecords.js";
 import type * as clientMedia from "../clientMedia.js";
 import type * as clients from "../clients.js";
+import type * as collaboration from "../collaboration.js";
 import type * as crewAssignments from "../crewAssignments.js";
 import type * as crewAvailabilities from "../crewAvailabilities.js";
 import type * as crewCertifications from "../crewCertifications.js";
@@ -106,7 +106,6 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  collaboration: typeof collaboration;
   assetBulkChildren: typeof assetBulkChildren;
   assetDetail: typeof assetDetail;
   assetMedia: typeof assetMedia;
@@ -120,6 +119,7 @@ declare const fullApi: ApiFromModules<{
   checkRecords: typeof checkRecords;
   clientMedia: typeof clientMedia;
   clients: typeof clients;
+  collaboration: typeof collaboration;
   crewAssignments: typeof crewAssignments;
   crewAvailabilities: typeof crewAvailabilities;
   crewCertifications: typeof crewCertifications;

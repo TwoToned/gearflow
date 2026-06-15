@@ -6,6 +6,11 @@ import { serialize } from "@/lib/serialize";
 import type { OrgSettings } from "@/server/settings";
 import { logActivity } from "@/lib/activity-log";
 import { syncAssetsToConvex } from "@/lib/asset-mirror";
+import {
+  mirrorTestTagRecordCreate,
+  mirrorSubTestRecordCreate,
+  patchTestTagAssetInConvex,
+} from "@/lib/test-tag-mirror";
 
 /**
  * Recalculate and update a TestTagAsset's status based on its latest test record and dates.
@@ -264,6 +269,27 @@ export async function createTestTagRecord(data: {
 
     return created;
   });
+
+  // Mirror to Convex AFTER the tx commits (Convex calls cannot run inside a Prisma tx).
+  // Re-read the final state so the mirror reflects all in-tx mutations.
+  const [finalRecord, finalAsset, subRecords] = await Promise.all([
+    prisma.testTagRecord.findUnique({ where: { id: record.id } }),
+    prisma.testTagAsset.findUnique({ where: { id: data.testTagAssetId } }),
+    prisma.subTestRecord.findMany({ where: { testTagRecordId: record.id } }),
+  ]);
+  if (finalRecord) {
+    await mirrorTestTagRecordCreate(finalRecord as unknown as Record<string, unknown>);
+  }
+  for (const st of subRecords) {
+    await mirrorSubTestRecordCreate(st as unknown as Record<string, unknown>);
+  }
+  if (finalAsset) {
+    await patchTestTagAssetInConvex(
+      finalAsset.id,
+      finalAsset as unknown as Record<string, unknown>,
+    );
+  }
+
   // A FAIL referral may have flipped the linked asset to IN_MAINTENANCE — mirror it.
   if (testTagAsset.assetId) await syncAssetsToConvex([testTagAsset.assetId]);
 

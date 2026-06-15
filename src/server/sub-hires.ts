@@ -10,12 +10,15 @@ import {
   removeSubHireGroupFromConvex,
 } from "@/lib/sub-hire-mirror";
 import { upsertProjectLineItemsToConvex, removeLineItemFromConvex } from "@/lib/line-item-mirror";
+import { mirrorSupplierModelRateUpsert } from "@/lib/supplier-model-rate-mirror";
 import {
   attachSupplier,
   getMatchingSupplierIds,
   getSupplierById,
 } from "@/lib/suppliers-read";
+import { getModelById, getModelMap } from "@/lib/models-read";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
+import { getProjectById, getProjectsByOrg } from "@/lib/projects-read";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { roundCurrency } from "@/lib/formatters";
@@ -116,7 +119,6 @@ export async function getSubHires(filters?: {
     ? {
         items: {
           include: {
-            model: { select: { id: true, name: true } },
             targetCategory: { select: { id: true, name: true } },
             targetGroup: { select: { id: true, title: true, categoryId: true } },
           },
@@ -127,7 +129,6 @@ export async function getSubHires(filters?: {
             targetCategory: { select: { id: true, name: true } },
             targetGroup: { select: { id: true, title: true, categoryId: true } },
             items: {
-              include: { model: { select: { id: true, name: true } } },
               orderBy: { sortOrder: "asc" as const },
             },
           },
@@ -139,16 +140,57 @@ export async function getSubHires(filters?: {
   const subHires = await prisma.subHire.findMany({
     where,
     include: {
-      project: { select: { id: true, name: true, projectNumber: true } },
       _count: { select: { items: true } },
       ...itemsInclude,
     },
     orderBy: { createdAt: "desc" },
   });
 
+  // Model lives in Convex — enrich items when fetched for a specific project.
+  if (filters?.projectId) {
+    const modelMap = await getModelMap(organizationId);
+    for (const sh of subHires as typeof subHires & { items?: { modelId: string | null }[]; groups?: { items: { modelId: string | null }[] }[] }[]) {
+      if ("items" in sh && sh.items) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (sh as any).items = sh.items.map((item) => ({
+          ...item,
+          model: item.modelId ? (modelMap.get(item.modelId) ?? null) : null,
+        }));
+      }
+      if ("groups" in sh && sh.groups) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (sh as any).groups = sh.groups.map((g) => ({
+          ...g,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          items: (g as any).items.map((item: { modelId: string | null }) => ({
+            ...item,
+            model: item.modelId ? (modelMap.get(item.modelId) ?? null) : null,
+          })),
+        }));
+      }
+    }
+  }
+
   // Supplier lives in Convex — attach instead of a Prisma join.
   const subHiresWithSupplier = await attachSupplier(organizationId, subHires);
-  return serialize(subHiresWithSupplier);
+
+  // Project lives in Convex — attach instead of a Prisma join.
+  const uniqueProjectIds = [
+    ...new Set(subHires.map((s) => s.projectId).filter((id): id is string => id !== null)),
+  ];
+  const projectMap = new Map<string, { id: string; name: string; projectNumber: string }>();
+  if (uniqueProjectIds.length > 0) {
+    const allProjects = await getProjectsByOrg(organizationId);
+    for (const p of allProjects) {
+      projectMap.set(p.id, { id: p.id, name: p.name, projectNumber: p.projectNumber });
+    }
+  }
+  const result = subHiresWithSupplier.map((sh) => ({
+    ...sh,
+    project: sh.projectId ? (projectMap.get(sh.projectId) ?? null) : null,
+  }));
+
+  return serialize(result);
 }
 
 export async function getSubHire(id: string) {
@@ -157,7 +199,6 @@ export async function getSubHire(id: string) {
   const subHire = await prisma.subHire.findUnique({
     where: { id, organizationId },
     include: {
-      project: { select: { id: true, name: true, projectNumber: true } },
       createdBy: { select: { id: true, name: true } },
       defaultTargetCategory: { select: { id: true, name: true } },
       defaultTargetGroup: { select: { id: true, title: true, categoryId: true } },
@@ -166,7 +207,6 @@ export async function getSubHire(id: string) {
           targetCategory: { select: { id: true, name: true } },
           targetGroup: { select: { id: true, title: true, categoryId: true } },
           items: {
-            include: { model: { select: { id: true, name: true } } },
             orderBy: { sortOrder: "asc" },
           },
         },
@@ -174,7 +214,6 @@ export async function getSubHire(id: string) {
       },
       items: {
         include: {
-          model: { select: { id: true, name: true } },
           targetCategory: { select: { id: true, name: true } },
           targetGroup: { select: { id: true, title: true, categoryId: true } },
         },
@@ -188,9 +227,27 @@ export async function getSubHire(id: string) {
   });
 
   if (!subHire) throw new Error("Sub-hire not found");
-  // Supplier lives in Convex — attach instead of a Prisma join.
-  const supplier = await getSupplierById(subHire.supplierId);
-  return serialize({ ...subHire, supplier });
+  // Model + supplier + project live in Convex — enrich after query.
+  const [modelMap, supplier, convexProject] = await Promise.all([
+    getModelMap(organizationId),
+    getSupplierById(subHire.supplierId),
+    subHire.projectId ? getProjectById(subHire.projectId) : Promise.resolve(null),
+  ]);
+  const project = convexProject
+    ? { id: convexProject.id, name: convexProject.name, projectNumber: convexProject.projectNumber }
+    : null;
+  const enrichedGroups = subHire.groups.map((g) => ({
+    ...g,
+    items: g.items.map((item) => ({
+      ...item,
+      model: item.modelId ? (modelMap.get(item.modelId) ?? null) : null,
+    })),
+  }));
+  const enrichedItems = subHire.items.map((item) => ({
+    ...item,
+    model: item.modelId ? (modelMap.get(item.modelId) ?? null) : null,
+  }));
+  return serialize({ ...subHire, groups: enrichedGroups, items: enrichedItems, supplier, project });
 }
 
 export async function createSubHire(input: unknown) {
@@ -415,16 +472,26 @@ export async function updateSubHireStatus(id: string, newStatus: SubHireStatus) 
   const updatedSubHire = await prisma.subHire.findUnique({
     where: { id, organizationId },
     include: {
-      project: { select: { id: true, name: true, projectNumber: true } },
       items: {
-        include: { model: { select: { id: true, name: true } } },
         orderBy: { sortOrder: "asc" },
       },
     },
   });
-  // Supplier lives in Convex — attach instead of a Prisma join.
-  const supplier = updatedSubHire ? await getSupplierById(updatedSubHire.supplierId) : null;
-  return serialize(updatedSubHire ? { ...updatedSubHire, supplier } : updatedSubHire);
+  if (!updatedSubHire) return serialize(null);
+  // Model + supplier + project live in Convex — enrich after query.
+  const [modelMap, supplier, convexProject] = await Promise.all([
+    getModelMap(organizationId),
+    getSupplierById(updatedSubHire.supplierId),
+    updatedSubHire.projectId ? getProjectById(updatedSubHire.projectId) : Promise.resolve(null),
+  ]);
+  const project = convexProject
+    ? { id: convexProject.id, name: convexProject.name, projectNumber: convexProject.projectNumber }
+    : null;
+  const enrichedItems = updatedSubHire.items.map((item) => ({
+    ...item,
+    model: item.modelId ? (modelMap.get(item.modelId) ?? null) : null,
+  }));
+  return serialize({ ...updatedSubHire, items: enrichedItems, supplier, project });
 }
 
 // ─── Item CRUD ───────────────────────────────────────────────────────────────
@@ -464,8 +531,9 @@ export async function addSubHireItem(subHireId: string, input: unknown) {
       targetGroupId: data.targetGroupId || null,
       sortOrder: nextSort,
     },
-    include: { model: { select: { id: true, name: true } } },
   });
+  // Model lives in Convex — attach after create.
+  const model = item.modelId ? await getModelById(item.modelId) : null;
 
   await recalculateSubHireTotals(subHireId);
 
@@ -490,7 +558,7 @@ export async function addSubHireItem(subHireId: string, input: unknown) {
     summary: `Added item "${data.description}" to ${subHire.orderNumber}`,
   });
 
-  return serialize(item);
+  return serialize({ ...item, model });
 }
 
 export async function updateSubHireItem(itemId: string, input: unknown) {
@@ -526,8 +594,9 @@ export async function updateSubHireItem(itemId: string, input: unknown) {
       targetCategoryId: data.targetCategoryId !== undefined ? (data.targetCategoryId || null) : undefined,
       targetGroupId: data.targetGroupId !== undefined ? (data.targetGroupId || null) : undefined,
     },
-    include: { model: { select: { id: true, name: true } } },
   });
+  // Model lives in Convex — attach after update.
+  const model = item.modelId ? await getModelById(item.modelId) : null;
 
   await recalculateSubHireTotals(existing.subHire.id);
 
@@ -552,7 +621,7 @@ export async function updateSubHireItem(itemId: string, input: unknown) {
     summary: `Updated item "${data.description}" on ${existing.subHire.orderNumber}`,
   });
 
-  return serialize(item);
+  return serialize({ ...item, model });
 }
 
 export async function removeSubHireItem(itemId: string) {
@@ -1078,11 +1147,8 @@ export async function changeSubHireProject(subHireId: string, newProjectId: stri
   const oldProjectId = subHire.projectId;
 
   // Verify new project exists in same org
-  const newProject = await prisma.project.findUnique({
-    where: { id: newProjectId, organizationId },
-    select: { id: true, name: true, projectNumber: true },
-  });
-  if (!newProject) throw new Error("Project not found");
+  const newProject = await getProjectById(newProjectId);
+  if (!newProject || newProject.organizationId !== organizationId) throw new Error("Project not found");
 
   await prisma.$transaction(async (tx) => {
     // Delete old line items if they exist
@@ -1132,13 +1198,18 @@ export async function changeSubHireProject(subHireId: string, newProjectId: stri
 
   const movedSubHire = await prisma.subHire.findUnique({
     where: { id: subHireId },
-    include: {
-      project: { select: { id: true, name: true, projectNumber: true } },
-    },
   });
-  // Supplier lives in Convex — attach instead of a Prisma join.
-  const supplier = movedSubHire ? await getSupplierById(movedSubHire.supplierId) : null;
-  return serialize(movedSubHire ? { ...movedSubHire, supplier } : movedSubHire);
+  // Supplier + project live in Convex — attach instead of Prisma joins.
+  const [supplier, convexProject] = movedSubHire
+    ? await Promise.all([
+        getSupplierById(movedSubHire.supplierId),
+        movedSubHire.projectId ? getProjectById(movedSubHire.projectId) : Promise.resolve(null),
+      ])
+    : [null, null];
+  const project = convexProject
+    ? { id: convexProject.id, name: convexProject.name, projectNumber: convexProject.projectNumber }
+    : null;
+  return serialize(movedSubHire ? { ...movedSubHire, supplier, project } : movedSubHire);
 }
 
 // ─── Group CRUD ─────────────────────────────────────────────────────────────
@@ -1173,7 +1244,6 @@ export async function createSubHireGroup(subHireId: string, input: unknown) {
     },
     include: {
       items: {
-        include: { model: { select: { id: true, name: true } } },
         orderBy: { sortOrder: "asc" },
       },
     },
@@ -1195,7 +1265,16 @@ export async function createSubHireGroup(subHireId: string, input: unknown) {
     summary: `Created group "${data.title}" on ${subHire.orderNumber}`,
   });
 
-  return serialize(group);
+  // Model lives in Convex — enrich group items after create.
+  const modelMap = await getModelMap(organizationId);
+  const enrichedGroup = {
+    ...group,
+    items: group.items.map((item) => ({
+      ...item,
+      model: item.modelId ? (modelMap.get(item.modelId) ?? null) : null,
+    })),
+  };
+  return serialize(enrichedGroup);
 }
 
 export async function updateSubHireGroup(groupId: string, input: unknown) {
@@ -1227,7 +1306,6 @@ export async function updateSubHireGroup(groupId: string, input: unknown) {
     },
     include: {
       items: {
-        include: { model: { select: { id: true, name: true } } },
         orderBy: { sortOrder: "asc" },
       },
     },
@@ -1252,7 +1330,16 @@ export async function updateSubHireGroup(groupId: string, input: unknown) {
     summary: `Updated group "${data.title}" on ${existing.subHire.orderNumber}`,
   });
 
-  return serialize(group);
+  // Model lives in Convex — enrich group items after update.
+  const modelMap = await getModelMap(organizationId);
+  const enrichedGroup = {
+    ...group,
+    items: group.items.map((item) => ({
+      ...item,
+      model: item.modelId ? (modelMap.get(item.modelId) ?? null) : null,
+    })),
+  };
+  return serialize(enrichedGroup);
 }
 
 export async function deleteSubHireGroup(groupId: string) {
@@ -1470,7 +1557,7 @@ async function upsertSupplierModelRate(
   unitCost: number,
   pricingType: PricingType,
 ) {
-  await prisma.supplierModelRate.upsert({
+  const rate = await prisma.supplierModelRate.upsert({
     where: {
       organizationId_supplierId_modelId: {
         organizationId,
@@ -1491,6 +1578,9 @@ async function upsertSupplierModelRate(
       lastUsedAt: new Date(),
     },
   });
+  // Dual-write to Convex AFTER the upsert commits (captures the authoritative
+  // row + id whether it inserted or updated). Idempotent create-then-patch.
+  await mirrorSupplierModelRateUpsert(rate as unknown as Record<string, unknown>);
 }
 
 export async function getSupplierModelRate(supplierId: string, modelId: string) {
@@ -1680,11 +1770,8 @@ export async function checkSubHireOpportunity(
     return serialize({ shortage: false as const });
   }
 
-  // Get model name for the dialog
-  const model = await prisma.model.findUnique({
-    where: { id: modelId, organizationId },
-    select: { name: true },
-  });
+  // Model lives in Convex — fetch by id for the dialog.
+  const model = await getModelById(modelId);
 
   return serialize({
     shortage: true as const,

@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { DiscordApiError } from "@/lib/discord/api-errors";
 import { ACTIVE_PROJECT_STATUS_FILTER } from "@/lib/discord/project-statuses";
 import { requireActorPermission, type ServiceActor } from "./discord-actor";
+import { getModelById } from "@/lib/models-read";
 
 type Db = Prisma.TransactionClient;
 
@@ -50,7 +51,6 @@ export async function getAssetForDiscord(
       organizationId: actor.organizationId,
       assetTag: { equals: trimmed, mode: "insensitive" },
     },
-    include: { model: { select: { name: true } } },
   });
   if (!asset) {
     throw new DiscordApiError("ASSET_NOT_FOUND", "No asset matches that code.", {
@@ -58,17 +58,20 @@ export async function getAssetForDiscord(
     });
   }
 
-  const lineItem = await db.projectLineItem.findFirst({
-    where: {
-      assetId: asset.id,
-      project: { isTemplate: false, status: ACTIVE_PROJECT_STATUS_FILTER },
-    },
-    select: { project: { select: { projectNumber: true, name: true } } },
-  });
+  const [lineItem, model] = await Promise.all([
+    db.projectLineItem.findFirst({
+      where: {
+        assetId: asset.id,
+        project: { isTemplate: false, status: ACTIVE_PROJECT_STATUS_FILTER },
+      },
+      select: { project: { select: { projectNumber: true, name: true } } },
+    }),
+    getModelById(asset.modelId),
+  ]);
 
   return {
     assetTag: asset.assetTag,
-    description: asset.customName ?? asset.model.name,
+    description: asset.customName ?? model?.name ?? "",
     status: asset.status,
     testTagStatus: formatTestTagStatus(asset.nextTestAndTagDate, now),
     currentProject: lineItem?.project

@@ -21,6 +21,7 @@ import { roundCurrency } from "@/lib/formatters";
 import { recalculateProjectTotals } from "./line-items";
 import { optimizePrice, computeTotalDays } from "@/lib/pricing";
 import { getOrgDaysPerMonth } from "@/lib/org-pricing";
+import { getModelMap } from "@/lib/models-read";
 
 /**
  * Get the billing period for a group, falling back to project-level settings.
@@ -80,7 +81,6 @@ export async function calculateSuggestedPrice(groupId: string): Promise<number> 
         },
       },
       lineItems: {
-        include: { model: { select: { dailyRate: true, weeklyRate: true, monthlyRate: true } } },
         where: { isKitChild: false },
       },
     },
@@ -94,6 +94,7 @@ export async function calculateSuggestedPrice(groupId: string): Promise<number> 
     || (group.billingDays ?? group.project.billingDays) != null;
 
   let total = 0;
+  const modelMap = await getModelMap(group.organizationId);
 
   // Custom items intentionally excluded: the suggested price covers the
   // *equipment bundle* only. Custom items are always counted as extras on
@@ -105,10 +106,11 @@ export async function calculateSuggestedPrice(groupId: string): Promise<number> 
     const totalDays = computeTotalDays(months, weeks, days, daysPerMonth);
     for (const item of group.lineItems) {
       if (item.isCustomItem) continue;
+      const model = item.modelId ? modelMap.get(item.modelId) ?? null : null;
 
-      const dailyRate = item.model?.dailyRate != null ? Number(item.model.dailyRate) : null;
-      const weeklyRate = item.model?.weeklyRate != null ? Number(item.model.weeklyRate) : null;
-      const monthlyRate = item.model?.monthlyRate != null ? Number(item.model.monthlyRate) : null;
+      const dailyRate = model?.dailyRate != null ? Number(model.dailyRate) : null;
+      const weeklyRate = model?.weeklyRate != null ? Number(model.weeklyRate) : null;
+      const monthlyRate = model?.monthlyRate != null ? Number(model.monthlyRate) : null;
 
       const result = optimizePrice(dailyRate, weeklyRate, monthlyRate, totalDays, daysPerMonth);
       if (result) {
@@ -121,11 +123,12 @@ export async function calculateSuggestedPrice(groupId: string): Promise<number> 
     const rentalQuantity = group.rentalQuantity ?? group.project.defaultRentalQuantity ?? 1;
     for (const item of group.lineItems) {
       if (item.isCustomItem) continue;
+      const model = item.modelId ? modelMap.get(item.modelId) ?? null : null;
 
       const rate =
         rentalPeriod === "WEEKLY"
-          ? Number(item.model?.weeklyRate ?? item.model?.dailyRate ?? item.unitPrice ?? 0)
-          : Number(item.model?.dailyRate ?? item.unitPrice ?? 0);
+          ? Number(model?.weeklyRate ?? model?.dailyRate ?? item.unitPrice ?? 0)
+          : Number(model?.dailyRate ?? item.unitPrice ?? 0);
       total += rate * item.quantity * rentalQuantity;
     }
   }
@@ -150,7 +153,6 @@ export async function recalculateGroupPrices(groupId: string): Promise<number> {
       lineItems: {
         where: { priceOverridden: false },
         include: {
-          model: { select: { dailyRate: true, weeklyRate: true, monthlyRate: true } },
           parentLineItem: { select: { pricingMode: true } },
         },
       },
@@ -158,17 +160,21 @@ export async function recalculateGroupPrices(groupId: string): Promise<number> {
   });
 
   const updates: Array<ReturnType<typeof prisma.projectLineItem.update>> = [];
-  const daysPerMonth = await getOrgDaysPerMonth(organizationId);
+  const [daysPerMonth, modelMap] = await Promise.all([
+    getOrgDaysPerMonth(organizationId),
+    getModelMap(organizationId),
+  ]);
 
   for (const item of group.lineItems) {
     // Skip kit children when parent uses KIT_PRICE mode
     if (item.isKitChild && item.parentLineItem?.pricingMode === "KIT_PRICE") continue;
 
-    if (!item.model) continue;
+    const model = item.modelId ? modelMap.get(item.modelId) ?? null : null;
+    if (!model) continue;
 
-    const dailyRate = item.model.dailyRate != null ? Number(item.model.dailyRate) : null;
-    const weeklyRate = item.model.weeklyRate != null ? Number(item.model.weeklyRate) : null;
-    const monthlyRate = item.model.monthlyRate != null ? Number(item.model.monthlyRate) : null;
+    const dailyRate = model.dailyRate != null ? Number(model.dailyRate) : null;
+    const weeklyRate = model.weeklyRate != null ? Number(model.weeklyRate) : null;
+    const monthlyRate = model.monthlyRate != null ? Number(model.monthlyRate) : null;
 
     const result = optimizePrice(dailyRate, weeklyRate, monthlyRate, billingPeriod.totalDays, daysPerMonth);
     if (!result) continue;

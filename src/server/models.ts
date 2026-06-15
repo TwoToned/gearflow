@@ -5,12 +5,15 @@ import { prisma } from "@/lib/prisma";
 import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { removeAssetFromConvex, removeBulkAssetFromConvex } from "@/lib/asset-mirror";
 import { getPrimaryPhotoMap } from "@/lib/media-read";
+import { getModelMap } from "@/lib/models-read";
+import { getAssetsByOrg, getBulkAssetsByOrg } from "@/lib/assets-read";
 import { api } from "../../convex/_generated/api";
 import { serialize } from "@/lib/serialize";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { modelSchema, type ModelFormValues } from "@/lib/validations/model";
 import type { Prisma } from "@/generated/prisma/client";
 import { backfillTestTagAssets } from "@/server/test-tag-assets";
+import { patchTestTagAssetInConvex } from "@/lib/test-tag-mirror";
 import { getOrgTestTagSettings } from "@/server/settings";
 import { logActivity } from "@/lib/activity-log";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
@@ -120,15 +123,15 @@ export async function getModelCounts(): Promise<
   Record<string, { assets: number; bulkAssets: number; media: { url: string | null; thumbnailUrl: string | null } | null }>
 > {
   const { organizationId } = await getOrgContext();
-  const [assetGroups, bulkGroups, photoMap] = await Promise.all([
-    prisma.asset.groupBy({ by: ["modelId"], where: { organizationId, isActive: true }, _count: { _all: true } }),
-    prisma.bulkAsset.groupBy({ by: ["modelId"], where: { organizationId, isActive: true }, _count: { _all: true } }),
+  const [allAssets, allBulkAssets, photoMap] = await Promise.all([
+    getAssetsByOrg(organizationId),
+    getBulkAssetsByOrg(organizationId),
     getPrimaryPhotoMap("model", organizationId),
   ]);
   const out: Record<string, { assets: number; bulkAssets: number; media: { url: string | null; thumbnailUrl: string | null } | null }> = {};
   const ensure = (id: string) => (out[id] ??= { assets: 0, bulkAssets: 0, media: null });
-  for (const g of assetGroups) if (g.modelId) ensure(g.modelId).assets = g._count._all;
-  for (const g of bulkGroups) if (g.modelId) ensure(g.modelId).bulkAssets = g._count._all;
+  for (const a of allAssets) if (a.isActive !== false) ensure(a.modelId).assets++;
+  for (const b of allBulkAssets) if (b.isActive !== false) ensure(b.modelId).bulkAssets++;
   for (const [modelId, meta] of Object.entries(photoMap)) ensure(modelId).media = meta;
   return serialize(out);
 }
@@ -154,12 +157,24 @@ export async function getModel(id: string) {
         orderBy: { sortOrder: "asc" },
       },
       bulkAccessories: {
-        include: { bulkAsset: { include: { model: { select: { name: true } } } } },
+        include: { bulkAsset: true },
         orderBy: { sortOrder: "asc" },
       },
     },
   });
-  return serialize(model);
+  if (!model) return serialize(null);
+  const modelMap = await getModelMap(organizationId);
+  const enriched = {
+    ...model,
+    bulkAccessories: model.bulkAccessories.map((ba) => ({
+      ...ba,
+      bulkAsset: {
+        ...ba.bulkAsset,
+        model: ba.bulkAsset.modelId ? modelMap.get(ba.bulkAsset.modelId) ?? null : null,
+      },
+    })),
+  };
+  return serialize(enriched);
 }
 
 export async function createModel(data: ModelFormValues) {
@@ -276,18 +291,24 @@ export async function updateModel(id: string, data: ModelFormValues) {
     })).map((a) => a.id);
 
     if (assetIds.length > 0) {
+      const ttWhere = {
+        organizationId,
+        assetId: { in: assetIds },
+        isActive: true,
+      };
       await prisma.testTagAsset.updateMany({
-        where: {
-          organizationId,
-          assetId: { in: assetIds },
-          isActive: true,
-        },
+        where: ttWhere,
         data: {
           equipmentClass,
           applianceType,
           testIntervalMonths: intervalMonths,
         },
       });
+      // Mirror the updated T&T assets to Convex after the updateMany commits.
+      const updatedTT = await prisma.testTagAsset.findMany({ where: ttWhere });
+      for (const tt of updatedTT) {
+        await patchTestTagAssetInConvex(tt.id, tt as unknown as Record<string, unknown>);
+      }
     }
   }
 

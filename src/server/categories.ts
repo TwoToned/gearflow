@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
+import { getModelMap, getModelsByOrg } from "@/lib/models-read";
 import { serialize } from "@/lib/serialize";
 import { categorySchema, type CategoryFormValues } from "@/lib/validations/category";
 import { logActivity } from "@/lib/activity-log";
@@ -90,13 +91,14 @@ export async function getCategory(id: string) {
  */
 export async function getCategoryCounts(): Promise<Record<string, { models: number; kits: number }>> {
   const { organizationId } = await getOrgContext();
-  const [modelGroups, kitGroups] = await Promise.all([
-    prisma.model.groupBy({ by: ["categoryId"], where: { organizationId, categoryId: { not: null } }, _count: { _all: true } }),
+  // Models live in Convex — count by categoryId in JS instead of a Prisma groupBy.
+  const [allModels, kitGroups] = await Promise.all([
+    getModelsByOrg(organizationId),
     prisma.kit.groupBy({ by: ["categoryId"], where: { organizationId, categoryId: { not: null } }, _count: { _all: true } }),
   ]);
   const counts: Record<string, { models: number; kits: number }> = {};
   const ensure = (id: string) => (counts[id] ??= { models: 0, kits: 0 });
-  for (const g of modelGroups) if (g.categoryId) ensure(g.categoryId).models = g._count._all;
+  for (const m of allModels) if (m.categoryId) ensure(m.categoryId).models++;
   for (const g of kitGroups) if (g.categoryId) ensure(g.categoryId).kits = g._count._all;
   return serialize(counts);
 }
@@ -195,18 +197,19 @@ export async function searchContainerAssets(query: string = "") {
       assetTag: true,
       customName: true,
       modelId: true,
-      model: { select: { name: true } },
     },
     orderBy: { assetTag: "asc" },
     take: 20,
   });
+
+  const modelMap = await getModelMap(organizationId);
 
   return serialize(
     assets.map((a) => ({
       value: a.customName || a.assetTag,
       label: a.customName
         ? `${a.customName} (${a.assetTag})`
-        : `${a.model?.name} — ${a.assetTag}`,
+        : `${a.modelId ? modelMap.get(a.modelId)?.name : undefined} — ${a.assetTag}`,
       assetId: a.id,
       assetTag: a.assetTag,
       modelId: a.modelId,

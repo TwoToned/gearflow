@@ -5,6 +5,9 @@ import type { Prisma } from "@/generated/prisma/client";
 import { serialize } from "@/lib/serialize";
 import { getOrgContext } from "@/lib/org-context";
 import { getClientMap } from "@/lib/clients-read";
+import { getModelById } from "@/lib/models-read";
+import { getActiveAssetsByModel, getActiveBulkAssetsByModel, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
+import { getProjectsByOrg } from "@/lib/projects-read";
 
 export interface CalendarProject {
   id: string;
@@ -45,7 +48,8 @@ export async function getModelBookings(
   const start = new Date(params.startDate);
   const end = new Date(params.endDate);
 
-  const [lineItems, model] = await Promise.all([
+  // Model + active assets live in Convex — fetch in parallel with line items.
+  const [lineItems, model, activeAssets, activeBulkAssets] = await Promise.all([
     prisma.projectLineItem.findMany({
       where: {
         organizationId,
@@ -73,13 +77,9 @@ export async function getModelBookings(
       },
       orderBy: { project: { rentalStartDate: "asc" } },
     }),
-    prisma.model.findUnique({
-      where: { id: modelId, organizationId },
-      include: {
-        assets: { where: { isActive: true }, select: { status: true } },
-        bulkAssets: { where: { isActive: true }, select: { totalQuantity: true } },
-      },
-    }),
+    getModelById(modelId),
+    getActiveAssetsByModel(modelId, organizationId),
+    getActiveBulkAssetsByModel(modelId, organizationId),
   ]);
 
   // Clients live in Convex — resolve names by clientId.
@@ -110,14 +110,14 @@ export async function getModelBookings(
   let totalStock = 0;
   let effectiveStock = 0;
   if (model) {
-    if (model.assetType === "SERIALIZED") {
-      totalStock = model.assets.length;
-      const unavailable = model.assets.filter(
-        (a) => a.status === "IN_MAINTENANCE" || a.status === "LOST" || a.status === "RETIRED"
+    if ((model.assetType ?? "SERIALIZED") === "SERIALIZED") {
+      totalStock = activeAssets.length;
+      const unavailable = activeAssets.filter(
+        (a: ConvexAsset) => a.status === "IN_MAINTENANCE" || a.status === "LOST" || a.status === "RETIRED"
       ).length;
       effectiveStock = totalStock - unavailable;
     } else {
-      totalStock = model.bulkAssets.reduce((sum, ba) => sum + ba.totalQuantity, 0);
+      totalStock = activeBulkAssets.reduce((sum: number, ba: ConvexBulkAsset) => sum + (ba.totalQuantity ?? 0), 0);
       effectiveStock = totalStock;
     }
   }
@@ -285,35 +285,43 @@ export async function getCalendarData(params: {
   const start = new Date(params.startDate);
   const end = new Date(params.endDate);
 
-  const projects = await prisma.project.findMany({
-    where: {
-      organizationId,
-      isTemplate: false,
-      status: { notIn: ["CANCELLED"] },
-      rentalStartDate: { lte: end },
-      rentalEndDate: { gte: start },
-    },
-    include: {
-      clientId: true,
-      _count: {
-        select: {
-          lineItems: { where: { status: { not: "CANCELLED" } } },
-        },
-      },
-    },
-    orderBy: { rentalStartDate: "asc" },
-  });
+  const [allOrgProjects, clientMap] = await Promise.all([
+    getProjectsByOrg(organizationId),
+    getClientMap(organizationId),
+  ]);
 
-  const clientMap = await getClientMap(organizationId);
-  const result: CalendarProject[] = projects.map((p) => ({
+  const calendarProjects = allOrgProjects
+    .filter(
+      (p) =>
+        !p.isTemplate &&
+        p.status !== "CANCELLED" &&
+        p.rentalStartDate != null &&
+        p.rentalEndDate != null &&
+        (p.rentalStartDate as number) <= end.getTime() &&
+        (p.rentalEndDate as number) >= start.getTime(),
+    )
+    .sort((a, b) => (a.rentalStartDate as number) - (b.rentalStartDate as number));
+
+  const calendarIds = calendarProjects.map((p) => p.id);
+  const lineItemCounts =
+    calendarIds.length > 0
+      ? await prisma.projectLineItem.groupBy({
+          by: ["projectId"],
+          where: { organizationId, projectId: { in: calendarIds }, status: { not: "CANCELLED" } },
+          _count: { _all: true },
+        })
+      : [];
+  const liCountMap = new Map(lineItemCounts.map((g) => [g.projectId, g._count._all]));
+
+  const result: CalendarProject[] = calendarProjects.map((p) => ({
     id: p.id,
     projectNumber: p.projectNumber,
     name: p.name,
     clientName: clientMap.get(p.clientId ?? "")?.name ?? null,
-    status: p.status,
-    rentalStartDate: p.rentalStartDate?.toISOString() || "",
-    rentalEndDate: p.rentalEndDate?.toISOString() || "",
-    lineItemCount: p._count.lineItems,
+    status: p.status ?? "ENQUIRY",
+    rentalStartDate: p.rentalStartDate ? new Date(p.rentalStartDate as number).toISOString() : "",
+    rentalEndDate: p.rentalEndDate ? new Date(p.rentalEndDate as number).toISOString() : "",
+    lineItemCount: liCountMap.get(p.id) ?? 0,
   }));
 
   return serialize(result) as CalendarProject[];

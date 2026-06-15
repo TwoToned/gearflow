@@ -16,6 +16,9 @@ import {
   removeServiceTemplateFromConvex,
 } from "@/lib/template-mirror";
 import { roundCurrency } from "@/lib/formatters";
+import { getCategoriesByOrg } from "@/lib/categories-read";
+import { getProjectById } from "@/lib/projects-read";
+import { getLocationById } from "@/lib/locations-read";
 import { sendCrewOffer } from "@/server/crew-communication";
 import { recalculateProjectTotals } from "@/server/line-items";
 import { removeLineItemFromConvex } from "@/lib/line-item-mirror";
@@ -178,11 +181,10 @@ export async function createProjectService(
   );
   const parsed = projectServiceSchema.parse(data);
 
-  const project = await prisma.project.findFirst({
-    where: { id: projectId, organizationId },
-    select: { id: true, name: true, projectNumber: true },
-  });
-  if (!project) throw new Error("Project not found");
+  const project = await getProjectById(projectId);
+  if (!project || project.organizationId !== organizationId) {
+    throw new Error("Project not found");
+  }
 
   const { fields, serviceDate, serviceEndDate } = buildServiceData(parsed);
 
@@ -619,22 +621,29 @@ export async function generateProjectServices(projectId: string) {
     "update",
   );
 
-  const project = await prisma.project.findFirst({
-    where: { id: projectId, organizationId },
-    select: {
-      id: true,
-      name: true,
-      projectNumber: true,
-      loadInDate: true,
-      loadOutDate: true,
-      eventStartDate: true,
-      eventEndDate: true,
-      location: {
-        select: { address: true, latitude: true, longitude: true },
-      },
-    },
-  });
-  if (!project) throw new Error("Project not found");
+  const convexProject = await getProjectById(projectId);
+  if (!convexProject || convexProject.organizationId !== organizationId) {
+    throw new Error("Project not found");
+  }
+  const convexLocation = convexProject.locationId
+    ? await getLocationById(convexProject.locationId)
+    : null;
+  const project = {
+    id: convexProject.id,
+    name: convexProject.name,
+    projectNumber: convexProject.projectNumber,
+    loadInDate: convexProject.loadInDate != null ? new Date(convexProject.loadInDate) : null,
+    loadOutDate: convexProject.loadOutDate != null ? new Date(convexProject.loadOutDate) : null,
+    eventStartDate: convexProject.eventStartDate != null ? new Date(convexProject.eventStartDate) : null,
+    eventEndDate: convexProject.eventEndDate != null ? new Date(convexProject.eventEndDate) : null,
+    location: convexLocation
+      ? {
+          address: convexLocation.address ?? null,
+          latitude: convexLocation.latitude ?? null,
+          longitude: convexLocation.longitude ?? null,
+        }
+      : null,
+  };
 
   // Need at least one date to generate
   if (!project.loadInDate && !project.loadOutDate && !project.eventStartDate) {
@@ -870,24 +879,29 @@ export async function cloneServicesFromProject(
   );
 
   // Verify both projects belong to the same org
-  const [target, source] = await Promise.all([
-    prisma.project.findFirst({
-      where: { id: targetProjectId, organizationId },
-      select: {
-        id: true, name: true, projectNumber: true,
-        loadInDate: true, loadOutDate: true, eventStartDate: true, eventEndDate: true,
-      },
-    }),
-    prisma.project.findFirst({
-      where: { id: sourceProjectId, organizationId },
-      select: {
-        id: true, projectNumber: true,
-        loadInDate: true, loadOutDate: true, eventStartDate: true, eventEndDate: true,
-      },
-    }),
+  const [convexTarget, convexSource] = await Promise.all([
+    getProjectById(targetProjectId),
+    getProjectById(sourceProjectId),
   ]);
-  if (!target) throw new Error("Target project not found");
-  if (!source) throw new Error("Source project not found");
+  if (!convexTarget || convexTarget.organizationId !== organizationId) {
+    throw new Error("Target project not found");
+  }
+  if (!convexSource || convexSource.organizationId !== organizationId) {
+    throw new Error("Source project not found");
+  }
+  const target = {
+    id: convexTarget.id,
+    name: convexTarget.name,
+    projectNumber: convexTarget.projectNumber,
+    loadInDate: convexTarget.loadInDate != null ? new Date(convexTarget.loadInDate) : null,
+    eventStartDate: convexTarget.eventStartDate != null ? new Date(convexTarget.eventStartDate) : null,
+  };
+  const source = {
+    id: convexSource.id,
+    projectNumber: convexSource.projectNumber,
+    loadInDate: convexSource.loadInDate != null ? new Date(convexSource.loadInDate) : null,
+    eventStartDate: convexSource.eventStartDate != null ? new Date(convexSource.eventStartDate) : null,
+  };
 
   const sourceServices = await prisma.projectService.findMany({
     where: { projectId: sourceProjectId, status: { not: "CANCELLED" } },
@@ -1167,13 +1181,12 @@ export async function getCrewSuggestionsForProject(projectId: string) {
     return serialize({ suggestedRoleIds: [], suggestedMembers: [] });
   }
 
-  // Get suggested crew roles from categories
-  const categories = await prisma.category.findMany({
-    where: { id: { in: categoryIds } },
-    select: { suggestedCrewRoles: true },
-  });
-
-  const suggestedRoleIds = [...new Set(categories.flatMap((c) => c.suggestedCrewRoles))];
+  // Get suggested crew roles from categories (Convex read)
+  const allCategories = await getCategoriesByOrg(organizationId);
+  const categorySet = new Set(categoryIds);
+  const suggestedRoleIds = [
+    ...new Set(allCategories.filter((c) => categorySet.has(c.id)).flatMap((c) => c.suggestedCrewRoles ?? [])),
+  ];
 
   if (suggestedRoleIds.length === 0) {
     return serialize({ suggestedRoleIds: [], suggestedMembers: [] });
@@ -1209,21 +1222,20 @@ export async function generateCrewMessage(
 ) {
   const { organizationId } = await getOrgContext();
 
-  const project = await prisma.project.findFirst({
-    where: { id: projectId, organizationId },
-    select: {
-      name: true,
-      projectNumber: true,
-      location: { select: { address: true } },
-      eventStartDate: true,
-      eventEndDate: true,
-      loadInDate: true,
-      loadOutDate: true,
-      siteContactName: true,
-      siteContactPhone: true,
-    },
-  });
-  if (!project) throw new Error("Project not found");
+  const convexProject = await getProjectById(projectId);
+  if (!convexProject || convexProject.organizationId !== organizationId) {
+    throw new Error("Project not found");
+  }
+  const convexLocation = convexProject.locationId
+    ? await getLocationById(convexProject.locationId)
+    : null;
+  const project = {
+    name: convexProject.name,
+    projectNumber: convexProject.projectNumber,
+    location: convexLocation ? { address: convexLocation.address ?? null } : null,
+    siteContactName: convexProject.siteContactName ?? null,
+    siteContactPhone: convexProject.siteContactPhone ?? null,
+  };
 
   const member = await prisma.crewMember.findFirst({
     where: { id: crewMemberId, organizationId },

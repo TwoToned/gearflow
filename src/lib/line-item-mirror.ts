@@ -2,6 +2,7 @@ import { type FunctionReference } from "convex/server";
 import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { prisma } from "@/lib/prisma";
 import { api } from "../../convex/_generated/api";
+import { reconcileUnitsForLineItems, reconcileUnitsForProject } from "@/lib/line-item-unit-mirror";
 
 /**
  * `project_line_item` — the equipment-tab spine — is DUAL-WRITTEN **infra-only**:
@@ -53,7 +54,13 @@ async function remove(fn: AnyRef, id: string) {
 
 export const mirrorLineItemCreate = (row: Record<string, unknown>) => create(api.projectLineItems.createIfMissing, row);
 export const patchLineItemInConvex = (id: string, row: Record<string, unknown>) => patch(api.projectLineItems.update, id, row);
-export const removeLineItemFromConvex = (id: string) => remove(api.projectLineItems.remove, id);
+/** Remove a line item from Convex AND clear its units (Prisma cascade-deletes
+ *  the units; this mirrors that so no orphan unit rows linger). Call AFTER the
+ *  Prisma delete so the reconcile sees zero desired units for this line item. */
+export const removeLineItemFromConvex = async (id: string) => {
+  await reconcileUnitsForLineItems([id]);
+  await remove(api.projectLineItems.remove, id);
+};
 
 /** Relation keys a line-item read may include — stripped before mirroring so the
  *  Convex create/update arg validators (scalars only) don't reject extra fields. */
@@ -98,6 +105,9 @@ export async function upsertProjectLineItemsToConvex(projectId: string | null | 
   for (const row of rows) {
     await upsertOne(row as unknown as Record<string, unknown>);
   }
+  // Units hang off these line items and are deleted as well as created by the
+  // status paths, so reconcile them authoritatively (upsert present + remove stale).
+  await reconcileUnitsForProject(projectId);
 }
 
 /** Upsert specific line items by id (for non-project-scoped multi-row writes). */
@@ -108,4 +118,6 @@ export async function syncLineItemsToConvex(ids: Array<string | null | undefined
   for (const row of rows) {
     await upsertOne(row as unknown as Record<string, unknown>);
   }
+  // Reconcile units for exactly these line items.
+  await reconcileUnitsForLineItems(unique);
 }

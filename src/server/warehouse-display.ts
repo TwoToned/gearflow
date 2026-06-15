@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
+import { getLocationById } from "@/lib/locations-read";
+import { getProjectsByOrg } from "@/lib/projects-read";
 
 // ─── Token Management ────────────────────────────────────────────────────────
 
@@ -242,284 +244,295 @@ export async function getWarehouseDisplayData(
 
   let locationName: string | null = null;
   if (locationId) {
-    const loc = await prisma.location.findUnique({
-      where: { id: locationId },
-      select: { name: true },
-    });
-    locationName = loc?.name ?? null;
+    locationName = (await getLocationById(locationId))?.name ?? null;
   }
 
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const todayEnd = new Date(todayStart);
   todayEnd.setDate(todayEnd.getDate() + 1);
+  const todayMs = todayStart.getTime();
+  const tomorrowMs = todayEnd.getTime();
 
-  // Active project statuses for warehouse
-  const activeStatuses = [
-    "CONFIRMED",
-    "PREPPING",
-    "CHECKED_OUT",
-    "ON_SITE",
-  ] as const;
+  const activeStatusSet = new Set<string>(["CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE"]);
+  const returnStatusSet = new Set<string>(["CHECKED_OUT", "ON_SITE", "RETURNED"]);
+  const returnOrActiveStatusSet = new Set<string>([...returnStatusSet, ...activeStatusSet]);
+
+  // Fetch all Convex projects once — source of truth for all project filtering below
+  const allProjects = await getProjectsByOrg(organizationId);
+  const projectMap = new Map(allProjects.map((p) => [p.id, p]));
+
+  const matchesLocation = (p: (typeof allProjects)[0]): boolean =>
+    !locationId || p.locationId === locationId;
+
+  // Date-based dispatch projects: loadInDate or rentalStartDate falls today
+  const dispatchByDate = allProjects.filter((p) => {
+    if (p.isTemplate || !activeStatusSet.has(p.status ?? "") || !matchesLocation(p)) return false;
+    const inDate = p.loadInDate as number | undefined;
+    const startDate = p.rentalStartDate as number | undefined;
+    return (
+      (inDate != null && inDate >= todayMs && inDate < tomorrowMs) ||
+      (startDate != null && startDate >= todayMs && startDate < tomorrowMs)
+    );
+  });
+
+  // Date-based return projects: loadOutDate or rentalEndDate falls today
+  const returnsByDate = allProjects.filter((p) => {
+    if (p.isTemplate || !returnStatusSet.has(p.status ?? "") || !matchesLocation(p)) return false;
+    const outDate = p.loadOutDate as number | undefined;
+    const endDate = p.rentalEndDate as number | undefined;
+    return (
+      (outDate != null && outDate >= todayMs && outDate < tomorrowMs) ||
+      (endDate != null && endDate >= todayMs && endDate < tomorrowMs)
+    );
+  });
+
+  // Prepping projects (CONFIRMED/PREPPING), sorted by loadInDate asc, limit 12
+  const preppingRaw = allProjects
+    .filter((p) => {
+      if (p.isTemplate || !matchesLocation(p)) return false;
+      return p.status === "CONFIRMED" || p.status === "PREPPING";
+    })
+    .sort((a, b) => {
+      const aMs = (a.loadInDate as number | undefined) ?? Infinity;
+      const bMs = (b.loadInDate as number | undefined) ?? Infinity;
+      return aMs - bMs;
+    })
+    .slice(0, 12);
+
+  // Overdue returns: CHECKED_OUT or ON_SITE with past-due loadOutDate/rentalEndDate
+  const overdueRaw = allProjects
+    .filter((p) => {
+      if (p.isTemplate || !matchesLocation(p)) return false;
+      if (p.status !== "CHECKED_OUT" && p.status !== "ON_SITE") return false;
+      const outDate = p.loadOutDate as number | undefined;
+      const endDate = p.rentalEndDate as number | undefined;
+      return (outDate != null && outDate < todayMs) || (endDate != null && endDate < todayMs);
+    })
+    .slice(0, 5);
+
+  // Fetch today's and upcoming services without project filter — cross-ref via Convex projectMap
+  const sevenDaysEnd = new Date(todayStart);
+  sevenDaysEnd.setDate(sevenDaysEnd.getDate() + 8);
+
+  const [deliveryServices, pickupServices, upcomingDeliverySvcs, upcomingPickupSvcs] =
+    await Promise.all([
+      prisma.projectService.findMany({
+        where: {
+          organizationId,
+          type: "DELIVERY",
+          status: { not: "CANCELLED" },
+          date: { gte: todayStart, lt: todayEnd },
+        },
+        select: {
+          projectId: true,
+          scheduledTime: true,
+          startTime: true,
+          address: true,
+          vehicleDescription: true,
+        },
+      }),
+      prisma.projectService.findMany({
+        where: {
+          organizationId,
+          type: "PICKUP",
+          status: { not: "CANCELLED" },
+          date: { gte: todayStart, lt: todayEnd },
+        },
+        select: { projectId: true, scheduledTime: true, startTime: true },
+      }),
+      prisma.projectService.findMany({
+        where: {
+          organizationId,
+          type: "DELIVERY",
+          status: { not: "CANCELLED" },
+          date: { gte: todayEnd, lt: sevenDaysEnd },
+        },
+        select: { projectId: true, date: true },
+      }),
+      prisma.projectService.findMany({
+        where: {
+          organizationId,
+          type: "PICKUP",
+          status: { not: "CANCELLED" },
+          date: { gte: todayEnd, lt: sevenDaysEnd },
+        },
+        select: { projectId: true, date: true },
+      }),
+    ]);
+
+  // Filter today's services to only projects that are active in Convex
+  const activeDeliveries = deliveryServices.filter((s) => {
+    const p = projectMap.get(s.projectId);
+    return p && !p.isTemplate && activeStatusSet.has(p.status ?? "") && matchesLocation(p);
+  });
+  const activePickups = pickupServices.filter((s) => {
+    const p = projectMap.get(s.projectId);
+    return p && !p.isTemplate && returnStatusSet.has(p.status ?? "") && matchesLocation(p);
+  });
+
+  const serviceDispatchIds = new Set(activeDeliveries.map((s) => s.projectId));
+  const serviceReturnIds = new Set(activePickups.map((s) => s.projectId));
+
+  // Build dayStart-ms → Set<projectId> maps for upcoming services
+  const deliverySvcByDayMs = new Map<number, Set<string>>();
+  for (const s of upcomingDeliverySvcs) {
+    if (!s.date) continue;
+    const ms = new Date(s.date.getFullYear(), s.date.getMonth(), s.date.getDate()).getTime();
+    if (!deliverySvcByDayMs.has(ms)) deliverySvcByDayMs.set(ms, new Set());
+    deliverySvcByDayMs.get(ms)!.add(s.projectId);
+  }
+  const pickupSvcByDayMs = new Map<number, Set<string>>();
+  for (const s of upcomingPickupSvcs) {
+    if (!s.date) continue;
+    const ms = new Date(s.date.getFullYear(), s.date.getMonth(), s.date.getDate()).getTime();
+    if (!pickupSvcByDayMs.has(ms)) pickupSvcByDayMs.set(ms, new Set());
+    pickupSvcByDayMs.get(ms)!.add(s.projectId);
+  }
+
+  // Batch-fetch line item counts for all projects that need them
+  const allNeededIds = [
+    ...new Set([
+      ...activeDeliveries.map((s) => s.projectId),
+      ...dispatchByDate.filter((p) => !serviceDispatchIds.has(p.id)).map((p) => p.id),
+      ...activePickups.map((s) => s.projectId),
+      ...returnsByDate.filter((p) => !serviceReturnIds.has(p.id)).map((p) => p.id),
+      ...preppingRaw.map((p) => p.id),
+    ]),
+  ];
+
+  const [totalCountsRows, checkedOutCountsRows] =
+    allNeededIds.length > 0
+      ? await Promise.all([
+          prisma.projectLineItem.groupBy({
+            by: ["projectId"],
+            where: {
+              projectId: { in: allNeededIds },
+              isKitChild: false,
+              status: { not: "CANCELLED" },
+            },
+            _count: { id: true },
+          }),
+          prisma.projectLineItem.groupBy({
+            by: ["projectId"],
+            where: {
+              projectId: { in: allNeededIds },
+              isKitChild: false,
+              status: "CHECKED_OUT",
+            },
+            _count: { id: true },
+          }),
+        ])
+      : [[], []];
+
+  const totalCountMap = new Map(totalCountsRows.map((r) => [r.projectId, r._count.id]));
+  const checkedOutCountMap = new Map(checkedOutCountsRows.map((r) => [r.projectId, r._count.id]));
 
   // ─── Today's Dispatch ──────────────────────────────────────────────────────
-  // Projects with delivery services today, or loadInDate/rentalStartDate today
-  const deliveryServices = await prisma.projectService.findMany({
-    where: {
-      organizationId,
-      type: "DELIVERY",
-      status: { not: "CANCELLED" },
-      date: { gte: todayStart, lt: todayEnd },
-      project: {
-        isTemplate: false,
-        status: { in: [...activeStatuses] },
-        ...(locationId ? { locationId } : {}),
-      },
-    },
-    include: {
-      project: {
-        select: {
-          id: true,
-          projectNumber: true,
-          name: true,
-          status: true,
-          _count: {
-            select: { lineItems: { where: { isKitChild: false, status: { not: "CANCELLED" } } } },
-          },
-          lineItems: {
-            where: { isKitChild: false, status: "CHECKED_OUT" },
-            select: { id: true },
-          },
-        },
-      },
-    },
-  });
-
-  // Also check projects by loadInDate if no delivery service
-  const projectsByDate = await prisma.project.findMany({
-    where: {
-      organizationId,
-      isTemplate: false,
-      status: { in: [...activeStatuses] },
-      ...(locationId ? { locationId } : {}),
-      OR: [
-        { loadInDate: { gte: todayStart, lt: todayEnd } },
-        { rentalStartDate: { gte: todayStart, lt: todayEnd } },
-      ],
-    },
-    select: {
-      id: true,
-      projectNumber: true,
-      name: true,
-      status: true,
-      loadInTime: true,
-      _count: {
-        select: { lineItems: { where: { isKitChild: false, status: { not: "CANCELLED" } } } },
-      },
-      lineItems: {
-        where: { isKitChild: false, status: "CHECKED_OUT" },
-        select: { id: true },
-      },
-    },
-  });
-
-  // Merge: prefer service-based dispatch
-  const serviceProjectIds = new Set(deliveryServices.map((s) => s.projectId));
   const todaysDispatch: DispatchProject[] = [];
 
-  for (const svc of deliveryServices) {
+  for (const svc of activeDeliveries) {
+    const p = projectMap.get(svc.projectId)!;
     todaysDispatch.push({
-      id: svc.project.id,
-      projectNumber: svc.project.projectNumber,
-      name: svc.project.name,
+      id: p.id,
+      projectNumber: p.projectNumber,
+      name: p.name,
       deliveryTime: svc.scheduledTime || svc.startTime || null,
       destination: svc.address || null,
       vehicle: svc.vehicleDescription || null,
-      status: svc.project.status,
-      totalItems: svc.project._count.lineItems,
-      checkedOutItems: svc.project.lineItems.length,
+      status: p.status ?? "",
+      totalItems: totalCountMap.get(p.id) ?? 0,
+      checkedOutItems: checkedOutCountMap.get(p.id) ?? 0,
     });
   }
 
-  for (const p of projectsByDate) {
-    if (!serviceProjectIds.has(p.id)) {
+  for (const p of dispatchByDate) {
+    if (!serviceDispatchIds.has(p.id)) {
       todaysDispatch.push({
         id: p.id,
         projectNumber: p.projectNumber,
         name: p.name,
-        deliveryTime: p.loadInTime || null,
+        deliveryTime: (p.loadInTime as string | undefined) || null,
         destination: null,
         vehicle: null,
-        status: p.status,
-        totalItems: p._count.lineItems,
-        checkedOutItems: p.lineItems.length,
+        status: p.status ?? "",
+        totalItems: totalCountMap.get(p.id) ?? 0,
+        checkedOutItems: checkedOutCountMap.get(p.id) ?? 0,
       });
     }
   }
 
   // ─── Today's Returns ───────────────────────────────────────────────────────
-  const pickupServices = await prisma.projectService.findMany({
-    where: {
-      organizationId,
-      type: "PICKUP",
-      status: { not: "CANCELLED" },
-      date: { gte: todayStart, lt: todayEnd },
-      project: {
-        isTemplate: false,
-        status: { in: ["CHECKED_OUT", "ON_SITE", "RETURNED"] },
-        ...(locationId ? { locationId } : {}),
-      },
-    },
-    include: {
-      project: {
-        select: {
-          id: true,
-          projectNumber: true,
-          name: true,
-          lineItems: {
-            where: { isKitChild: false, status: "CHECKED_OUT" },
-            select: { id: true },
-          },
-        },
-      },
-    },
-  });
-
-  const returnProjectsByDate = await prisma.project.findMany({
-    where: {
-      organizationId,
-      isTemplate: false,
-      status: { in: ["CHECKED_OUT", "ON_SITE", "RETURNED"] },
-      ...(locationId ? { locationId } : {}),
-      OR: [
-        { loadOutDate: { gte: todayStart, lt: todayEnd } },
-        { rentalEndDate: { gte: todayStart, lt: todayEnd } },
-      ],
-    },
-    select: {
-      id: true,
-      projectNumber: true,
-      name: true,
-      loadOutTime: true,
-      lineItems: {
-        where: { isKitChild: false, status: "CHECKED_OUT" },
-        select: { id: true },
-      },
-    },
-  });
-
-  const pickupProjectIds = new Set(pickupServices.map((s) => s.projectId));
   const todaysReturns: ReturnProject[] = [];
 
-  for (const svc of pickupServices) {
+  for (const svc of activePickups) {
+    const p = projectMap.get(svc.projectId)!;
     todaysReturns.push({
-      id: svc.project.id,
-      projectNumber: svc.project.projectNumber,
-      name: svc.project.name,
+      id: p.id,
+      projectNumber: p.projectNumber,
+      name: p.name,
       dueTime: svc.scheduledTime || svc.startTime || null,
-      expectedItems: svc.project.lineItems.length,
+      expectedItems: checkedOutCountMap.get(p.id) ?? 0,
     });
   }
 
-  for (const p of returnProjectsByDate) {
-    if (!pickupProjectIds.has(p.id)) {
+  for (const p of returnsByDate) {
+    if (!serviceReturnIds.has(p.id)) {
       todaysReturns.push({
         id: p.id,
         projectNumber: p.projectNumber,
         name: p.name,
-        dueTime: p.loadOutTime || null,
-        expectedItems: p.lineItems.length,
+        dueTime: (p.loadOutTime as string | undefined) || null,
+        expectedItems: checkedOutCountMap.get(p.id) ?? 0,
       });
     }
   }
 
   // ─── Prep Status ───────────────────────────────────────────────────────────
-  // Projects actively being prepped — show line item checkout progress
-  const preppingProjects = await prisma.project.findMany({
-    where: {
-      organizationId,
-      isTemplate: false,
-      status: { in: ["CONFIRMED", "PREPPING"] },
-      ...(locationId ? { locationId } : {}),
-    },
-    select: {
-      id: true,
-      projectNumber: true,
-      name: true,
-      _count: {
-        select: { lineItems: { where: { isKitChild: false, status: { not: "CANCELLED" } } } },
-      },
-      lineItems: {
-        where: { isKitChild: false, status: "CHECKED_OUT" },
-        select: { id: true },
-      },
-    },
-    orderBy: { loadInDate: "asc" },
-    take: 12,
-  });
-
-  const prepStatus: PrepCard[] = preppingProjects.map((p) => ({
+  const prepStatus: PrepCard[] = preppingRaw.map((p) => ({
     projectId: p.id,
     projectNumber: p.projectNumber,
     projectName: p.name,
-    packedItems: p.lineItems.length,
-    totalItems: p._count.lineItems,
+    packedItems: checkedOutCountMap.get(p.id) ?? 0,
+    totalItems: totalCountMap.get(p.id) ?? 0,
   }));
 
   // ─── Upcoming 7 Days ──────────────────────────────────────────────────────
   const upcoming: UpcomingDay[] = [];
+
   for (let i = 1; i <= 7; i++) {
     const dayStart = new Date(todayStart);
     dayStart.setDate(dayStart.getDate() + i);
     const dayEnd = new Date(dayStart);
     dayEnd.setDate(dayEnd.getDate() + 1);
+    const dayStartMs = dayStart.getTime();
+    const dayEndMs = dayEnd.getTime();
 
-    const locationFilter = locationId ? { locationId } : {};
+    const daySvcDispatch = deliverySvcByDayMs.get(dayStartMs) ?? new Set<string>();
+    const daySvcPickup = pickupSvcByDayMs.get(dayStartMs) ?? new Set<string>();
 
-    const [dispatchCount, returnCount] = await Promise.all([
-      prisma.project.count({
-        where: {
-          organizationId,
-          isTemplate: false,
-          status: { in: [...activeStatuses] },
-          ...locationFilter,
-          OR: [
-            { loadInDate: { gte: dayStart, lt: dayEnd } },
-            { rentalStartDate: { gte: dayStart, lt: dayEnd } },
-            {
-              services: {
-                some: {
-                  type: "DELIVERY",
-                  status: { not: "CANCELLED" },
-                  date: { gte: dayStart, lt: dayEnd },
-                },
-              },
-            },
-          ],
-        },
-      }),
-      prisma.project.count({
-        where: {
-          organizationId,
-          isTemplate: false,
-          status: { in: ["CHECKED_OUT", "ON_SITE", "RETURNED", ...activeStatuses] },
-          ...locationFilter,
-          OR: [
-            { loadOutDate: { gte: dayStart, lt: dayEnd } },
-            { rentalEndDate: { gte: dayStart, lt: dayEnd } },
-            {
-              services: {
-                some: {
-                  type: "PICKUP",
-                  status: { not: "CANCELLED" },
-                  date: { gte: dayStart, lt: dayEnd },
-                },
-              },
-            },
-          ],
-        },
-      }),
-    ]);
+    const dispatchCount = allProjects.filter((p) => {
+      if (p.isTemplate || !activeStatusSet.has(p.status ?? "") || !matchesLocation(p)) return false;
+      const inDate = p.loadInDate as number | undefined;
+      const startDate = p.rentalStartDate as number | undefined;
+      return (
+        (inDate != null && inDate >= dayStartMs && inDate < dayEndMs) ||
+        (startDate != null && startDate >= dayStartMs && startDate < dayEndMs) ||
+        daySvcDispatch.has(p.id)
+      );
+    }).length;
+
+    const returnCount = allProjects.filter((p) => {
+      if (p.isTemplate || !returnOrActiveStatusSet.has(p.status ?? "") || !matchesLocation(p))
+        return false;
+      const outDate = p.loadOutDate as number | undefined;
+      const endDate = p.rentalEndDate as number | undefined;
+      return (
+        (outDate != null && outDate >= dayStartMs && outDate < dayEndMs) ||
+        (endDate != null && endDate >= dayStartMs && endDate < dayEndMs) ||
+        daySvcPickup.has(p.id)
+      );
+    }).length;
 
     upcoming.push({
       date: dayStart.toISOString(),
@@ -531,7 +544,6 @@ export async function getWarehouseDisplayData(
   // ─── Alerts ────────────────────────────────────────────────────────────────
   const alerts: Alert[] = [];
 
-  // Unprepped dispatches for today
   for (const d of todaysDispatch) {
     if (d.totalItems > 0 && d.checkedOutItems === 0) {
       alerts.push({
@@ -546,23 +558,7 @@ export async function getWarehouseDisplayData(
     }
   }
 
-  // Overdue returns (projects that should have returned before today)
-  const overdueReturns = await prisma.project.findMany({
-    where: {
-      organizationId,
-      isTemplate: false,
-      status: { in: ["CHECKED_OUT", "ON_SITE"] },
-      ...(locationId ? { locationId } : {}),
-      OR: [
-        { loadOutDate: { lt: todayStart } },
-        { rentalEndDate: { lt: todayStart } },
-      ],
-    },
-    select: { projectNumber: true, name: true },
-    take: 5,
-  });
-
-  for (const p of overdueReturns) {
+  for (const p of overdueRaw) {
     alerts.push({
       type: "error",
       message: `#${p.projectNumber} ${p.name} — overdue return`,

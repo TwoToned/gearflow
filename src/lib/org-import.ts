@@ -29,6 +29,12 @@ import {
   mirrorCrewAvailabilityCreate,
   mirrorCrewTimeEntryCreate,
 } from "@/lib/crew-scheduling-mirror";
+import {
+  mirrorTestTagAssetCreate,
+  mirrorTestTagRecordCreate,
+} from "@/lib/test-tag-mirror";
+import { mirrorAssetScanLogCreate } from "@/lib/asset-scan-log-mirror";
+import { mirrorCheckRecordCreate } from "@/lib/check-record-mirror";
 import { MANIFEST_VERSION, type OrgExportManifest } from "./org-transfer-types";
 import { createId } from "@paralleldrive/cuid2";
 import unzipper from "unzipper";
@@ -516,7 +522,7 @@ export async function importOrganization(
     const scannedById = remapUser(r.scannedById);
     if (!scannedById) continue;
     const id = newId("assetScanLog", r.id);
-    await prisma.assetScanLog.create({
+    const createdScanLog = await prisma.assetScanLog.create({
       data: {
         ...stripRelations(r),
         id,
@@ -529,6 +535,7 @@ export async function importOrganization(
         scannedAt: safeDate(r.scannedAt),
       } as any,
     });
+    await mirrorAssetScanLogCreate(createdScanLog as unknown as Record<string, unknown>);
   }
 
   // ── 15. Maintenance Records ──────────────────────────────────────
@@ -567,7 +574,7 @@ export async function importOrganization(
   // ── 17. Test Tag Assets ──────────────────────────────────────────
   for (const r of manifest.testTagAssets as Rec[]) {
     const id = newId("testTagAsset", r.id);
-    await prisma.testTagAsset.create({
+    const createdTestTagAsset = await prisma.testTagAsset.create({
       data: {
         ...stripRelations(r),
         id,
@@ -580,6 +587,7 @@ export async function importOrganization(
         updatedAt: safeDate(r.updatedAt),
       } as any,
     });
+    await mirrorTestTagAssetCreate(createdTestTagAsset as unknown as Record<string, unknown>);
   }
 
   // ── 18. Test Tag Records ─────────────────────────────────────────
@@ -588,7 +596,7 @@ export async function importOrganization(
     const testedById = remapUser(r.testedById);
     if (!testTagAssetId || !testedById) continue;
     const id = newId("testTagRecord", r.id);
-    await prisma.testTagRecord.create({
+    const createdTestTagRecord = await prisma.testTagRecord.create({
       data: {
         ...stripRelations(r),
         id,
@@ -600,6 +608,7 @@ export async function importOrganization(
         createdAt: safeDate(r.createdAt),
       } as any,
     });
+    await mirrorTestTagRecordCreate(createdTestTagRecord as unknown as Record<string, unknown>);
   }
 
   // ── 19. Activity Logs ───────────────────────────────────────────
@@ -1004,7 +1013,7 @@ export async function importOrganization(
     // resolve the original user — preserving every check record is less
     // important than keeping the import idempotent.
     if (!checkItemId || !performedById) continue;
-    await prisma.checkRecord.create({
+    const createdCheckRecord = await prisma.checkRecord.create({
       data: {
         ...stripRelations(r),
         id: createId(),
@@ -1018,6 +1027,7 @@ export async function importOrganization(
         performedAt: safeDate(r.performedAt),
       } as any,
     });
+    await mirrorCheckRecordCreate(createdCheckRecord as unknown as Record<string, unknown>);
   }
 
   // ── 21. Add members ──────────────────────────────────────────────

@@ -30,6 +30,7 @@ import { snapshotProjectCrew, removeCrewAssignmentCascadeFromConvex } from "@/li
 import { emitIfDiscordEnabled } from "@/lib/services/outbox-service";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
+import { getDefaultLocation } from "@/lib/locations-read";
 import { createId } from "@paralleldrive/cuid2";
 import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
 import {
@@ -1250,11 +1251,8 @@ export async function deleteProject(id: string) {
     }
   }
 
-  // Get org default location
-  const defaultLocation = await prisma.location.findFirst({
-    where: { organizationId, isDefault: true },
-    select: { id: true },
-  });
+  // Get org default location from Convex.
+  const defaultLocation = await getDefaultLocation(organizationId);
 
   // Capture the project's crew cascade (assignments → shifts/time-entries) before
   // the project delete cascades them away, so they can be dropped from Convex.

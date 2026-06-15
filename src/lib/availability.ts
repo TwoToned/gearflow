@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import { getModelMap } from "@/lib/models-read";
+import { getActiveAssetsByModel, getActiveBulkAssetsByModel } from "@/lib/assets-read";
 
 /**
  * Canonical stock breakdown for a model.
@@ -134,24 +136,31 @@ export async function computeOverbookedStatus(
     }
   }
 
-  // Batch query: total stock per model (including asset status breakdown for serialized)
-  const models = await prisma.model.findMany({
-    where: { id: { in: modelIds }, organizationId },
-    include: {
-      assets: { where: { isActive: true }, select: { id: true, status: true } },
-      bulkAssets: { where: { isActive: true }, select: { totalQuantity: true } },
-    },
-  });
+  // Batch fetch model metadata + active assets/bulkAssets from Convex in parallel.
+  const convexModelMap = await getModelMap(organizationId);
+  const [assetsByModel, bulksByModel] = await Promise.all([
+    Promise.all(modelIds.map(async (id) => [id, await getActiveAssetsByModel(id, organizationId)] as const)),
+    Promise.all(modelIds.map(async (id) => [id, await getActiveBulkAssetsByModel(id, organizationId)] as const)),
+  ]);
+  const assetMap = new Map(assetsByModel);
+  const bulkMap = new Map(bulksByModel);
 
   const stockByModel = new Map<string, number>();
   const effectiveStockByModel = new Map<string, number>();
   const unavailableByModel = new Map<string, number>();
 
-  for (const model of models) {
-    const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(model);
-    stockByModel.set(model.id, totalStock);
-    effectiveStockByModel.set(model.id, effectiveStock);
-    unavailableByModel.set(model.id, unavailable);
+  for (const modelId of modelIds) {
+    const m = convexModelMap.get(modelId);
+    if (!m) continue;
+    const modelForBreakdown = {
+      assetType: (m.assetType ?? "SERIALIZED") as "SERIALIZED" | "BULK",
+      assets: (assetMap.get(modelId) ?? []).map((a) => ({ status: a.status ?? "AVAILABLE" })),
+      bulkAssets: (bulkMap.get(modelId) ?? []).map((ba) => ({ totalQuantity: ba.totalQuantity ?? 0 })),
+    };
+    const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(modelForBreakdown);
+    stockByModel.set(modelId, totalStock);
+    effectiveStockByModel.set(modelId, effectiveStock);
+    unavailableByModel.set(modelId, unavailable);
   }
 
   // For each model, check if this project's total booking exceeds available

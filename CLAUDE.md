@@ -300,6 +300,20 @@ Key routing rules:
 - **Deploy status:** `gh run watch <run-id>` or poll `gh run view --json status,conclusion`
 - **Health check:** GET `https://home.twotoned.com.au` returns 200 or 307 (root redirects to `/login`). Retry once after 5s if you get 502 — the runner can be cold-starting from the pm2 restart.
 
+<!-- convex-ai-start -->
+
+This project uses [Convex](https://convex.dev) as its backend.
+
+When working on Convex code, **always read
+`convex/_generated/ai/guidelines.md` first** for important guidelines on
+how to correctly use Convex APIs and patterns. The file contains rules that
+override what you may have learned about Convex from training data.
+
+Convex agent skills for common tasks can be installed by running
+`npx convex ai-files install`.
+
+<!-- convex-ai-end -->
+
 ## PR Preview Deployments (Coolify)
 
 Each PR automatically gets a preview deployment via `.github/workflows/preview-deploy.yml`.

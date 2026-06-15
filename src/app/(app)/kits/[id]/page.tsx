@@ -354,7 +354,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                               {item.asset.assetTag}
                             </Link>
                           </TableCell>
-                          <TableCell>{item.asset.model.name}</TableCell>
+                          <TableCell>{item.asset.model?.name || "—"}</TableCell>
                           <TableCell className="text-fg-3">
                             {item.position || "\u2014"}
                           </TableCell>
@@ -408,7 +408,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     <TableBody>
                       {kit.bulkItems.map((item) => (
                         <TableRow key={item.id}>
-                          <TableCell>{item.bulkAsset.model.name}</TableCell>
+                          <TableCell>{item.bulkAsset.model?.name || "—"}</TableCell>
                           <TableCell className="text-right font-medium t-data">
                             {item.quantity}
                           </TableCell>
@@ -735,7 +735,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
           onAdd={(asset) => {
             setStagedItems((prev) => [
               ...prev,
-              { assetId: asset.id, assetTag: asset.assetTag, modelName: asset.model.name },
+              { assetId: asset.id, assetTag: asset.assetTag, modelName: asset.model?.name || "—" },
             ]);
           }}
         />
@@ -788,7 +788,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
               options={availableBulkAssets.map((a) => ({
                 value: a.id,
                 label: a.assetTag,
-                description: `${a.model.name} (${a.availableQuantity} available)`,
+                description: `${a.model?.name || "—"} (${a.availableQuantity} available)`,
               }))}
               placeholder="Select a bulk asset..."
               searchPlaceholder="Search available bulk assets..."
@@ -844,7 +844,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
 interface AvailableAsset {
   id: string;
   assetTag: string;
-  model: { name: string };
+  model: { name: string } | null;
 }
 
 function ScanInput({
@@ -869,7 +869,7 @@ function ScanInput({
     return remaining.filter(
       (a) =>
         a.assetTag.toLowerCase().includes(lower) ||
-        a.model.name.toLowerCase().includes(lower),
+        (a.model?.name.toLowerCase().includes(lower) ?? false),
     );
   }, [availableAssets, stagedIds, search]);
 
@@ -909,7 +909,7 @@ function ScanInput({
       const lower = value.toLowerCase();
       const exact = remaining.find((a) => a.assetTag.toLowerCase() === lower);
       const partial = remaining.find(
-        (a) => a.assetTag.toLowerCase().includes(lower) || a.model.name.toLowerCase().includes(lower),
+        (a) => a.assetTag.toLowerCase().includes(lower) || (a.model?.name.toLowerCase().includes(lower) ?? false),
       );
       const match = exact || partial;
       if (match) {
@@ -968,7 +968,7 @@ function ScanInput({
                   className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground text-left"
                 >
                   <span className="font-mono font-medium">{asset.assetTag}</span>
-                  <span className="text-fg-3">{asset.model.name}</span>
+                  <span className="text-fg-3">{asset.model?.name || "—"}</span>
                 </button>
               ))
             )}

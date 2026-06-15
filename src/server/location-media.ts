@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { mirrorFileUploadDelete } from "@/lib/file-upload-mirror";
 import { mirrorMediaCreate, syncMediaForParent } from "@/lib/media-mirror";
 import { getOrgContext } from "@/lib/org-context";
+import { getLocationById } from "@/lib/locations-read";
 import { serialize } from "@/lib/serialize";
 import { deleteFromS3 } from "@/lib/storage";
 import type { MediaType } from "@/generated/prisma/client";
@@ -16,10 +17,8 @@ export async function addLocationMedia(data: {
 }) {
   const { organizationId } = await getOrgContext();
 
-  const location = await prisma.location.findFirst({
-    where: { id: data.locationId, organizationId },
-  });
-  if (!location) throw new Error("Location not found");
+  const location = await getLocationById(data.locationId);
+  if (!location || location.organizationId !== organizationId) throw new Error("Location not found");
 
   const file = await prisma.fileUpload.findFirst({
     where: { id: data.fileId, organizationId },

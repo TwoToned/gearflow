@@ -1,6 +1,6 @@
 {
   "name": "gearflow-init",
-  "version": "0.19.5.0",
+  "version": "0.19.6.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -44,6 +44,15 @@
     "convex:backfill:asset": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-asset.ts",
     "convex:backfill:project-grouping": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-project-grouping.ts",
     "convex:backfill:line-items": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-line-items.ts",
+    "convex:backfill:line-item-units": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-line-item-units.ts",
+    "convex:backfill:asset-bulk-children": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-asset-bulk-children.ts",
+    "convex:backfill:model-bulk-accessories": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-model-bulk-accessories.ts",
+    "convex:backfill:supplier-model-rates": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-supplier-model-rates.ts",
+    "convex:backfill:test-tag-assets": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-test-tag-assets.ts",
+    "convex:backfill:test-tag-records": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-test-tag-records.ts",
+    "convex:backfill:sub-test-records": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-sub-test-records.ts",
+    "convex:backfill:asset-scan-logs": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-asset-scan-logs.ts",
+    "convex:backfill:check-records": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-check-records.ts",
     "convex:backfill:sub-hires": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-sub-hires.ts",
     "convex:backfill:projects": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-projects.ts",
     "convex:backfill:stocktake": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-stocktake.ts",

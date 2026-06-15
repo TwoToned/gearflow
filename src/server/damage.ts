@@ -37,6 +37,7 @@ import { mirrorDamageCreate, patchDamageInConvex } from "@/lib/damage-mirror";
 import { syncMaintenanceToConvex } from "@/lib/maintenance-mirror";
 import { UserFacingError } from "@/lib/errors";
 import { getModelMap } from "@/lib/models-read";
+import { getAssetById, getBulkAssetById } from "@/lib/assets-read";
 import type { Prisma } from "@/generated/prisma/client";
 
 /** Graft the Convex model doc onto a damage event's asset + bulkAsset. */
@@ -61,17 +62,11 @@ export async function createDamageEvent(input: DamageEventCreateInput) {
   // Resolve the entity tag for activity-log summary.
   let entityLabel = "an item";
   if (parsed.assetId) {
-    const asset = await prisma.asset.findUnique({
-      where: { id: parsed.assetId, organizationId },
-      select: { assetTag: true },
-    });
-    if (asset) entityLabel = `asset ${asset.assetTag}`;
+    const asset = await getAssetById(parsed.assetId);
+    if (asset && asset.organizationId === organizationId) entityLabel = `asset ${asset.assetTag}`;
   } else if (parsed.bulkAssetId) {
-    const bulk = await prisma.bulkAsset.findUnique({
-      where: { id: parsed.bulkAssetId, organizationId },
-      select: { assetTag: true },
-    });
-    if (bulk) entityLabel = `bulk asset ${bulk.assetTag}`;
+    const bulk = await getBulkAssetById(parsed.bulkAssetId);
+    if (bulk && bulk.organizationId === organizationId) entityLabel = `bulk asset ${bulk.assetTag}`;
   } else if (parsed.lineItemId) {
     entityLabel = "a line item";
   }

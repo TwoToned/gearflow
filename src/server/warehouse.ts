@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getClientById } from "@/lib/clients-read";
 import { getModelById, getModelMap } from "@/lib/models-read";
-import { getLocationMap } from "@/lib/locations-read";
+import { getLocationMap, getDefaultLocation } from "@/lib/locations-read";
 import { serialize } from "@/lib/serialize";
 import { computeOverbookedStatus } from "@/lib/availability";
 import type { Prisma } from "@/generated/prisma/client";
@@ -27,16 +27,20 @@ import { TestTagBlockError } from "@/lib/errors/test-tag-block-error";
 import { syncKitsToConvex } from "@/lib/kit-mirror";
 import { syncAssetsToConvex, syncBulkAssetsToConvex } from "@/lib/asset-mirror";
 import { upsertProjectLineItemsToConvex, syncLineItemsToConvex } from "@/lib/line-item-mirror";
+import { mirrorAssetScanLogCreate } from "@/lib/asset-scan-log-mirror";
 import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
 import {
   buildLineItemAttachMaps,
   attachLineItemTree,
   attachModelCheckItemCounts,
   attachKitTree,
+  attachAssetBulkAssetTree,
   getModelCheckItemCountMap,
   getKitCheckItemCountMap,
 } from "@/lib/line-item-tree-read";
-import { getKitMap } from "@/lib/kits-read";
+import { getKitById, getKitByAssetTag, getKitMap } from "@/lib/kits-read";
+import { getAssetById, getAssetByAssetTag, getAssetsByOrg, getBulkAssetsByOrg, getBulkAssetByAssetTag } from "@/lib/assets-read";
+import { getProjectsByOrg } from "@/lib/projects-read";
 
 // ---------------------------------------------------------------------------
 // Kit bulk-content traversal
@@ -118,7 +122,10 @@ async function assertTestTagAllowsCheckout(
 
   if (blocked.length === 0) return;
 
-  // Log every blocked scan so the audit trail is complete
+  // Log every blocked scan so the audit trail is complete.
+  // NOTE: these SCAN_VERIFY rows are created and then immediately rolled back
+  // by the TestTagBlockError throw below (it aborts the enclosing tx), so they
+  // never commit to Prisma — intentionally NOT mirrored to Convex.
   for (const b of blocked) {
     await tx.assetScanLog.create({
       data: {
@@ -158,42 +165,28 @@ export async function getProjectForWarehouse(projectId: string) {
         where: { type: "EQUIPMENT" },
         orderBy: { sortOrder: "asc" },
         include: {
-          asset: true,
-          bulkAsset: true,
+          // asset/bulkAsset are dual-written to Convex — attached below via
+          // attachAssetBulkAssetTree; not joined here.
           // Per-unit assignments (post-cutover, the source of truth for
           // which physical assets the warehouse is preparing / deploying
           // / returning on this line).
           units: {
             orderBy: { ordinal: "asc" },
             where: { status: { not: "CANCELLED" } },
-            include: {
-              asset: { select: { id: true, assetTag: true } },
-              bulkAsset: { select: { id: true, assetTag: true } },
-            },
           },
           childLineItems: {
             orderBy: { sortOrder: "asc" },
             include: {
-              asset: true, bulkAsset: true,
               units: {
                 orderBy: { ordinal: "asc" },
                 where: { status: { not: "CANCELLED" } },
-                include: {
-                  asset: { select: { id: true, assetTag: true } },
-                  bulkAsset: { select: { id: true, assetTag: true } },
-                },
               },
               childLineItems: {
                 orderBy: { sortOrder: "asc" },
                 include: {
-                  asset: true, bulkAsset: true,
                   units: {
                     orderBy: { ordinal: "asc" },
                     where: { status: { not: "CANCELLED" } },
-                    include: {
-                      asset: { select: { id: true, assetTag: true } },
-                      bulkAsset: { select: { id: true, assetTag: true } },
-                    },
                   },
                 },
               },
@@ -212,18 +205,24 @@ export async function getProjectForWarehouse(projectId: string) {
     throw new Error("Cannot perform warehouse operations on a template");
   }
 
-  // Attach model (+ equipment category) + supplier + kit from the Convex mirror,
-  // grafting model._count.modelCheckItems + kit._count.kitCheckItems from the
-  // mirror too, so the warehouse payload keeps its exact shape.
-  const [attachMaps, kitMap, modelCheckCounts, kitCheckCounts] = await Promise.all([
-    buildLineItemAttachMaps(organizationId),
-    getKitMap(organizationId),
-    getModelCheckItemCountMap(organizationId),
-    getKitCheckItemCountMap(organizationId),
-  ]);
+  // Attach model/supplier/kit/asset/bulkAsset from the Convex mirror.
+  // asset/bulkAsset are dual-written to Convex — attached via attachAssetBulkAssetTree
+  // (replaces `asset: true` / `bulkAsset: true` Prisma joins + unit sub-joins).
+  const [attachMaps, kitMap, modelCheckCounts, kitCheckCounts, allAssets, allBulkAssets] =
+    await Promise.all([
+      buildLineItemAttachMaps(organizationId),
+      getKitMap(organizationId),
+      getModelCheckItemCountMap(organizationId),
+      getKitCheckItemCountMap(organizationId),
+      getAssetsByOrg(organizationId),
+      getBulkAssetsByOrg(organizationId),
+    ]);
+  const assetMap = new Map(allAssets.map((a) => [a.id, a]));
+  const bulkAssetMap = new Map(allBulkAssets.map((b) => [b.id, b]));
   const withModelSupplier = attachLineItemTree(project.lineItems, attachMaps);
   const withModelCount = attachModelCheckItemCounts(withModelSupplier, modelCheckCounts);
-  const lineItems = attachKitTree(withModelCount, kitMap, kitCheckCounts);
+  const withKits = attachKitTree(withModelCount, kitMap, kitCheckCounts);
+  const lineItems = attachAssetBulkAssetTree(withKits, assetMap, bulkAssetMap);
 
   // Clients + location live in Convex — attach instead of a Prisma join.
   const client = project.clientId ? await getClientById(project.clientId) : null;
@@ -240,20 +239,12 @@ export async function lookupAssetForScan(
 ) {
   const { organizationId } = await getOrgContext();
 
-  // Look up the asset tag in all tables: serialized, bulk, kits. The `model`
-  // join is attached from the Convex mirror below (model is dual-written) — the
-  // scan path only reads `model.name`; the old `category` + `_count` includes
-  // here were vestigial (never consumed). No Prisma fallback on a mirror miss.
+  // Look up the asset tag in all tables: serialized, bulk, kits. All three
+  // domains live in Convex — read from the mirror helpers.
   const [rawAsset, rawBulkAsset, kit] = await Promise.all([
-    prisma.asset.findUnique({
-      where: { organizationId_assetTag: { organizationId, assetTag } },
-    }),
-    prisma.bulkAsset.findUnique({
-      where: { organizationId_assetTag: { organizationId, assetTag } },
-    }),
-    prisma.kit.findUnique({
-      where: { organizationId_assetTag: { organizationId, assetTag } },
-    }),
+    getAssetByAssetTag(organizationId, assetTag),
+    getBulkAssetByAssetTag(organizationId, assetTag),
+    getKitByAssetTag(organizationId, assetTag),
   ]);
   const [assetModel, bulkAssetModel] = await Promise.all([
     rawAsset ? getModelById(rawAsset.modelId) : Promise.resolve(null),
@@ -284,7 +275,7 @@ export async function lookupAssetForScan(
 
   // If this serialized asset is inside a Kit, prompt to scan the Kit instead
   if (asset && asset.kitId) {
-    const parentKit = await prisma.kit.findUnique({ where: { id: asset.kitId }, select: { id: true, assetTag: true, name: true } });
+    const parentKit = await getKitById(asset.kitId);
     return serialize({
       found: true as const, type: "kit_member" as const, lineItemId: null, assetId: asset.id,
       assetName: asset.model?.name ?? "", kitId: parentKit?.id || null, kitAssetTag: parentKit?.assetTag || null, reason: "asset_in_kit" as const,
@@ -294,10 +285,11 @@ export async function lookupAssetForScan(
   // If this serialized asset is a permanent accessory of another asset, prompt
   // to scan the parent instead — accessories move with their parent.
   if (asset && asset.parentAssetId) {
-    const parent = await prisma.asset.findFirst({ where: { id: asset.parentAssetId, organizationId }, select: { id: true, assetTag: true } });
+    const parent = await getAssetById(asset.parentAssetId);
+    const parentInOrg = parent?.organizationId === organizationId ? parent : null;
     return serialize({
       found: true as const, type: "asset_child" as const, lineItemId: null, assetId: asset.id,
-      assetName: asset.model?.name ?? "", parentAssetId: parent?.id || null, parentAssetTag: parent?.assetTag || null, reason: "asset_is_accessory" as const,
+      assetName: asset.model?.name ?? "", parentAssetId: parentInOrg?.id || null, parentAssetTag: parentInOrg?.assetTag || null, reason: "asset_is_accessory" as const,
     });
   }
 
@@ -518,6 +510,9 @@ async function checkoutAccessoryChildren(
     userId: string;
     projectLocationId: string | null;
   },
+  // Collects created scan-log rows so the caller can mirror them to Convex
+  // AFTER the tx commits (Convex calls can't run inside a Prisma tx).
+  scanLogSink: Record<string, unknown>[],
 ) {
   const { organizationId, projectId, parentLineItemId, userId, projectLocationId } = args;
   const parentUnitAssetId = args.parentUnitAssetId ?? null;
@@ -566,13 +561,13 @@ async function checkoutAccessoryChildren(
         data: { status: "CHECKED_OUT", ...(projectLocationId && { locationId: projectLocationId }) },
       });
       assetsTouched.push(u.assetId);
-      await tx.assetScanLog.create({
+      scanLogSink.push(await tx.assetScanLog.create({
         data: { organizationId, assetId: u.assetId, projectId, action: "CHECK_OUT", scannedById: userId, notes: "Accessory — moved with parent" },
-      });
+      }));
     } else if (u.bulkAssetId) {
-      await tx.assetScanLog.create({
+      scanLogSink.push(await tx.assetScanLog.create({
         data: { organizationId, bulkAssetId: u.bulkAssetId, projectId, action: "CHECK_OUT", scannedById: userId, notes: "Accessory — moved with parent" },
-      });
+      }));
     }
   }
   for (const id of childIds) await syncLineItemRollup(tx, id);
@@ -699,6 +694,7 @@ async function checkOutSerializedItem(
     projectId: string;
     notes?: string;
   },
+  scanLogSink: Record<string, unknown>[],
 ): Promise<CheckoutItemResult> {
   const { organizationId, lineItemId, targetAssetId, userId, projectLocationId, projectId, notes } = params;
 
@@ -755,7 +751,7 @@ async function checkOutSerializedItem(
       ...(projectLocationId && { locationId: projectLocationId }),
     },
   });
-  await tx.assetScanLog.create({
+  scanLogSink.push(await tx.assetScanLog.create({
     data: {
       organizationId,
       assetId: targetAssetId,
@@ -764,7 +760,7 @@ async function checkOutSerializedItem(
       scannedById: userId,
       notes: notes || null,
     },
-  });
+  }));
   return { kind: "done" };
 }
 
@@ -784,6 +780,7 @@ async function checkOutBulkItem(
     projectId: string;
     notes?: string;
   },
+  scanLogSink: Record<string, unknown>[],
 ): Promise<void> {
   const { organizationId, lineItemId, lineItemQuantity, bulkAssetId, checkoutQty, userId, projectId, notes } = params;
 
@@ -802,7 +799,7 @@ async function checkOutBulkItem(
       checkedOutById: userId,
     },
   });
-  await tx.assetScanLog.create({
+  scanLogSink.push(await tx.assetScanLog.create({
     data: {
       organizationId,
       bulkAssetId,
@@ -813,7 +810,7 @@ async function checkOutBulkItem(
         notes ||
         `Checked out ${checkoutQty} of ${lineItemQuantity}`,
     },
-  });
+  }));
 }
 
 /**
@@ -866,6 +863,7 @@ async function finalizeCheckoutItem(
     includeAccessories?: boolean;
   },
   updated: unknown[],
+  scanLogSink: Record<string, unknown>[],
 ): Promise<{ assetsTouched: string[] }> {
   const { organizationId, lineItemId, targetAssetId, projectId, userId, projectLocationId, includeAccessories } = params;
 
@@ -884,7 +882,7 @@ async function finalizeCheckoutItem(
       parentUnitAssetId: targetAssetId,
       userId,
       projectLocationId,
-    });
+    }, scanLogSink);
     assetsTouched = r.assetsTouched;
   }
 
@@ -941,6 +939,8 @@ export async function checkOutItems(
   });
 
   const touchedAssetIds = new Set<string>();
+  // Scan-log rows created in-tx; mirrored to Convex AFTER the tx commits.
+  const scanLogSink: Record<string, unknown>[] = [];
   const results = await prisma.$transaction(async (tx) => {
     const updated: unknown[] = [];
 
@@ -986,7 +986,7 @@ export async function checkOutItems(
           projectLocationId,
           projectId,
           notes: item.notes,
-        });
+        }, scanLogSink);
         if (result.kind === "continue") continue;
         touchedAssetIds.add(targetAssetId);
       } else if (lineItem.bulkAssetId) {
@@ -1000,7 +1000,7 @@ export async function checkOutItems(
           userId,
           projectId,
           notes: item.notes,
-        });
+        }, scanLogSink);
       } else {
         await checkOutDeployWholeLine(tx, {
           lineItemId: lineItem.id,
@@ -1018,7 +1018,7 @@ export async function checkOutItems(
         userId,
         projectLocationId,
         includeAccessories,
-      }, updated);
+      }, updated, scanLogSink);
       for (const id of fin.assetsTouched) touchedAssetIds.add(id);
     }
 
@@ -1030,6 +1030,9 @@ export async function checkOutItems(
   // accessory expansions to Convex.
   await syncAssetsToConvex([...touchedAssetIds]);
   await upsertProjectLineItemsToConvex(projectId);
+
+  // Mirror the append-only scan-log rows created inside the tx (post-commit).
+  for (const row of scanLogSink) await mirrorAssetScanLogCreate(row);
 
   for (const item of items) {
     await logActivity({
@@ -1073,6 +1076,7 @@ async function processItemCheckIn(
     notes?: string;
   },
   updated: unknown[],
+  scanLogSink: Record<string, unknown>[],
 ): Promise<{ assetsTouched: string[] }> {
   const { organizationId, projectId, userId, defaultLocationId } = params;
 
@@ -1089,7 +1093,7 @@ async function processItemCheckIn(
   });
 
   if (assetsTouched.length === 1) {
-    await tx.assetScanLog.create({
+    scanLogSink.push(await tx.assetScanLog.create({
       data: {
         organizationId,
         assetId: assetsTouched[0],
@@ -1098,9 +1102,9 @@ async function processItemCheckIn(
         scannedById: userId,
         notes: item.notes || null,
       },
-    });
+    }));
   } else if (unitsFlipped > 0 || assetsTouched.length > 0) {
-    await tx.assetScanLog.create({
+    scanLogSink.push(await tx.assetScanLog.create({
       data: {
         organizationId,
         projectId,
@@ -1108,7 +1112,7 @@ async function processItemCheckIn(
         scannedById: userId,
         notes: item.notes || `Returned ${unitsFlipped} unit(s)`,
       },
-    });
+    }));
   }
 
   await syncLineItemRollup(tx, item.lineItemId);
@@ -1153,6 +1157,8 @@ export async function checkInItems(
   const { organizationId, userId, userName } = await requirePermission("warehouse", "check_in");
 
   const touchedAssetIds = new Set<string>();
+  // Scan-log rows created in-tx; mirrored to Convex AFTER the tx commits.
+  const scanLogSink: Record<string, unknown>[] = [];
   const results = await prisma.$transaction(async (tx) => {
     const updated: unknown[] = [];
 
@@ -1169,7 +1175,7 @@ export async function checkInItems(
         projectId,
         userId,
         defaultLocationId,
-      }, item, updated);
+      }, item, updated, scanLogSink);
       for (const id of r.assetsTouched) touchedAssetIds.add(id);
     }
 
@@ -1180,6 +1186,9 @@ export async function checkInItems(
   // status flips to Convex.
   await syncAssetsToConvex([...touchedAssetIds]);
   await upsertProjectLineItemsToConvex(projectId);
+
+  // Mirror the append-only scan-log rows created inside the tx (post-commit).
+  for (const row of scanLogSink) await mirrorAssetScanLogCreate(row);
 
   for (const item of items) {
     await logActivity({
@@ -1377,7 +1386,7 @@ export async function checkOutKit(projectId: string, kitId: string) {
     }
 
     // Create scan log for the kit
-    await tx.assetScanLog.create({
+    const scanLog = await tx.assetScanLog.create({
       data: { organizationId, kitId, projectId, action: "CHECK_OUT", scannedById: userId, notes: "Kit deployed with all contents" },
     });
 
@@ -1387,6 +1396,7 @@ export async function checkOutKit(projectId: string, kitId: string) {
       affectedKitIds: [kitId, ...nestedKitChildren.map((c) => c.kitId!)],
       touchedAssets: [...txTouchedAssets],
       touchedBulk: [...txTouchedBulk],
+      scanLog: scanLog as unknown as Record<string, unknown>,
     };
   });
 
@@ -1396,6 +1406,9 @@ export async function checkOutKit(projectId: string, kitId: string) {
   await syncAssetsToConvex(result.touchedAssets);
   await syncBulkAssetsToConvex(result.touchedBulk);
   await upsertProjectLineItemsToConvex(projectId);
+
+  // Mirror the append-only scan-log row created inside the tx (post-commit).
+  await mirrorAssetScanLogCreate(result.scanLog);
 
   await logActivity({
     organizationId,
@@ -1410,7 +1423,8 @@ export async function checkOutKit(projectId: string, kitId: string) {
     kitId,
   });
 
-  return serialize(result);
+  const { scanLog: _scanLog, ...resultOut } = result;
+  return serialize(resultOut);
 }
 
 export async function checkInKit(
@@ -1542,7 +1556,7 @@ export async function checkInKit(
     }
 
     // Create scan log
-    await tx.assetScanLog.create({
+    const scanLog = await tx.assetScanLog.create({
       data: { organizationId, kitId, projectId, action: "CHECK_IN", scannedById: userId, notes: `Kit returned — condition: ${returnCondition}` },
     });
 
@@ -1552,6 +1566,7 @@ export async function checkInKit(
       affectedKitIds: [kitId, ...nestedKitChildren.map((c) => c.kitId!)],
       touchedAssets: [...txTouchedAssets],
       touchedBulk: [...txTouchedBulk],
+      scanLog: scanLog as unknown as Record<string, unknown>,
     };
   });
 
@@ -1561,6 +1576,9 @@ export async function checkInKit(
   await syncAssetsToConvex(result.touchedAssets);
   await syncBulkAssetsToConvex(result.touchedBulk);
   await upsertProjectLineItemsToConvex(projectId);
+
+  // Mirror the append-only scan-log row created inside the tx (post-commit).
+  await mirrorAssetScanLogCreate(result.scanLog);
 
   await logActivity({
     organizationId,
@@ -1575,7 +1593,8 @@ export async function checkInKit(
     kitId,
   });
 
-  return serialize(result);
+  const { scanLog: _scanLog, ...resultOut } = result;
+  return serialize(resultOut);
 }
 
 export async function getScanLog(params?: {
@@ -1597,10 +1616,9 @@ export async function getScanLog(params?: {
     prisma.assetScanLog.findMany({
       where,
       include: {
-        // asset.model lives in Convex — attached after the query, not joined.
-        asset: true,
-        bulkAsset: true,
-        project: true,
+        // asset / bulkAsset / project all live in Convex — attached after the
+        // query from the org mirror, not joined. scannedBy is a Better Auth
+        // user (stays Prisma).
         scannedBy: true,
       },
       orderBy: { scannedAt: "desc" },
@@ -1610,13 +1628,28 @@ export async function getScanLog(params?: {
     prisma.assetScanLog.count({ where }),
   ]);
 
-  // Graft the Convex model doc onto each log's asset (replaces asset.model join).
-  const modelMap = await getModelMap(organizationId);
-  const logsWithModel = logs.map((log) =>
-    log.asset
-      ? { ...log, asset: { ...log.asset, model: log.asset.modelId ? modelMap.get(log.asset.modelId) ?? null : null } }
-      : log,
-  );
+  // Attach asset (+ grafted Convex model), bulkAsset, and project from the
+  // Convex mirror, replacing the dropped Prisma relation joins.
+  const [modelMap, allAssets, allBulkAssets, allProjects] = await Promise.all([
+    getModelMap(organizationId),
+    getAssetsByOrg(organizationId),
+    getBulkAssetsByOrg(organizationId),
+    getProjectsByOrg(organizationId),
+  ]);
+  const scanAssetMap = new Map(allAssets.map((a) => [a.id, a]));
+  const scanBulkAssetMap = new Map(allBulkAssets.map((b) => [b.id, b]));
+  const scanProjectMap = new Map(allProjects.map((p) => [p.id, p]));
+  const logsWithModel = logs.map((log) => {
+    const convexAsset = log.assetId ? scanAssetMap.get(log.assetId) ?? null : null;
+    return {
+      ...log,
+      asset: convexAsset
+        ? { ...convexAsset, model: convexAsset.modelId ? modelMap.get(convexAsset.modelId) ?? null : null }
+        : null,
+      bulkAsset: log.bulkAssetId ? scanBulkAssetMap.get(log.bulkAssetId) ?? null : null,
+      project: log.projectId ? scanProjectMap.get(log.projectId) ?? null : null,
+    };
+  });
 
   return serialize({
     logs: logsWithModel,
@@ -1690,7 +1723,7 @@ export async function quickAddAndCheckOut(
     });
 
     // Create scan log
-    await tx.assetScanLog.create({
+    const scanLog = await tx.assetScanLog.create({
       data: {
         organizationId,
         assetId: data.assetId || null,
@@ -1702,7 +1735,7 @@ export async function quickAddAndCheckOut(
       },
     });
 
-    return lineItem;
+    return { lineItem, scanLog: scanLog as unknown as Record<string, unknown> };
   });
 
   // Mirror the newly-created line item to Convex (dual-write — this scan-add path
@@ -1710,20 +1743,25 @@ export async function quickAddAndCheckOut(
   // until a resync).
   await upsertProjectLineItemsToConvex(projectId);
 
+  // Mirror the append-only scan-log row created inside the tx (post-commit).
+  await mirrorAssetScanLogCreate(result.scanLog);
+
+  const lineItem = result.lineItem;
+
   // Attach `model` + `_count.modelCheckItems` from the Convex mirror, matching
   // the old `model: { include: { _count: { modelCheckItems } } }` include shape
   // (model scalars + the check-item count — no category/supplier). The client
   // routes the line through the check queue when the count is non-zero. No Prisma
   // fallback on a mirror miss.
   const [model, modelCheckCounts] = await Promise.all([
-    result.modelId ? getModelById(result.modelId) : Promise.resolve(null),
+    lineItem.modelId ? getModelById(lineItem.modelId) : Promise.resolve(null),
     getModelCheckItemCountMap(organizationId),
   ]);
   const modelWithCount = model
     ? { ...model, _count: { modelCheckItems: modelCheckCounts.get(model.id) ?? 0 } }
     : null;
 
-  return serialize({ ...result, model: modelWithCount });
+  return serialize({ ...lineItem, model: modelWithCount });
 }
 
 export async function clearPrepContainer(projectId: string, containerName: string) {
@@ -1864,6 +1902,16 @@ export async function getAvailableAssetsForModel(modelId: string) {
   // An asset is "in use" if ANY line item on an active project:
   //   a) has a non-terminal status (not RETURNED/CANCELLED), OR
   //   b) has prepStatus = PACKED (belt-and-suspenders for re-prep edge cases)
+  // Active project IDs come from Convex (source of truth for project status).
+  const allProjects = await getProjectsByOrg(organizationId);
+  const activeProjectIds = allProjects
+    .filter(
+      (p) =>
+        !p.isTemplate &&
+        !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? ""),
+    )
+    .map((p) => p.id);
+
   const available = await prisma.asset.findMany({
     where: {
       organizationId,
@@ -1872,14 +1920,11 @@ export async function getAvailableAssetsForModel(modelId: string) {
       isActive: true,
       lineItems: {
         none: {
+          projectId: { in: activeProjectIds },
           OR: [
             { status: { notIn: ["RETURNED", "CANCELLED"] } },
             { prepStatus: "PACKED" },
           ],
-          project: {
-            isTemplate: false,
-            status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
-          },
         },
       },
     },
@@ -1906,21 +1951,15 @@ export async function getProjectPullSheet(projectId: string) {
         },
         orderBy: { sortOrder: "asc" },
         include: {
-          asset: true,
-          bulkAsset: true,
+          // asset/bulkAsset are dual-written to Convex — attached below via
+          // attachAssetBulkAssetTree; not joined here.
           childLineItems: {
             where: { status: { not: "CANCELLED" } },
             orderBy: { sortOrder: "asc" },
             include: {
-              asset: true,
-              bulkAsset: true,
               childLineItems: {
                 where: { status: { not: "CANCELLED" } },
                 orderBy: { sortOrder: "asc" },
-                include: {
-                  asset: true,
-                  bulkAsset: true,
-                },
               },
             },
           },
@@ -1933,24 +1972,29 @@ export async function getProjectPullSheet(projectId: string) {
     throw new Error("Project not found");
   }
 
-  // Attach model (+ equipment category) + supplier + kit from the Convex mirror,
-  // grafting model._count.modelCheckItems + kit._count.kitCheckItems off the
-  // mirror too. Done before overbooked/enrichment so downstream sees the same
-  // shape the old Prisma include produced.
-  const [attachMaps, kitMap, modelCheckCounts, kitCheckCounts] = await Promise.all([
-    buildLineItemAttachMaps(organizationId),
-    getKitMap(organizationId),
-    getModelCheckItemCountMap(organizationId),
-    getKitCheckItemCountMap(organizationId),
-  ]);
+  // Attach model/supplier/kit/asset/bulkAsset from the Convex mirror.
+  // asset/bulkAsset are dual-written to Convex — attachAssetBulkAssetTree replaces
+  // the `asset: true` / `bulkAsset: true` Prisma joins. graftAssetLocation then
+  // adds the resolved location object onto each asset (shape-identical to the old
+  // nested `asset: { include: { location } }` join).
+  const [attachMaps, kitMap, modelCheckCounts, kitCheckCounts, allAssets, allBulkAssets, locationMap] =
+    await Promise.all([
+      buildLineItemAttachMaps(organizationId),
+      getKitMap(organizationId),
+      getModelCheckItemCountMap(organizationId),
+      getKitCheckItemCountMap(organizationId),
+      getAssetsByOrg(organizationId),
+      getBulkAssetsByOrg(organizationId),
+      getLocationMap(organizationId),
+    ]);
+  const assetMap = new Map(allAssets.map((a) => [a.id, a]));
+  const bulkAssetMap = new Map(allBulkAssets.map((b) => [b.id, b]));
   const attachedTree = attachLineItemTree(project.lineItems, attachMaps);
   const withModelCount = attachModelCheckItemCounts(attachedTree, modelCheckCounts);
   const attachedKitTree = attachKitTree(withModelCount, kitMap, kitCheckCounts);
+  const withAssets = attachAssetBulkAssetTree(attachedKitTree, assetMap, bulkAssetMap);
 
-  // asset.location lives in Convex — graft it onto every line item's asset across
-  // the tree (replaces the nested `asset: { include: { location } }` join). Flat
-  // location doc, shape-identical to the old include.
-  const locationMap = await getLocationMap(organizationId);
+  // Graft the resolved location object onto each asset's `location` field.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const graftAssetLocation = (items: any[]): any[] =>
     items.map((li) => ({
@@ -1960,7 +2004,7 @@ export async function getProjectPullSheet(projectId: string) {
         : li.asset,
       childLineItems: li.childLineItems ? graftAssetLocation(li.childLineItems) : li.childLineItems,
     }));
-  const attachedLineItems = graftAssetLocation(attachedKitTree);
+  const attachedLineItems = graftAssetLocation(withAssets);
 
   // Compute overbooked status
   const overbookedMap = await computeOverbookedStatus(
@@ -2019,18 +2063,11 @@ export async function getProjectPullSheet(projectId: string) {
 export async function forceReturnAsset(assetId: string) {
   const { organizationId, userId, userName } = await requirePermission("warehouse", "check_in");
 
-  const asset = await prisma.asset.findFirst({
-    where: { id: assetId, organizationId },
-    select: { id: true, assetTag: true, status: true },
-  });
-
-  if (!asset) throw new Error("Asset not found");
+  const asset = await getAssetById(assetId);
+  if (!asset || asset.organizationId !== organizationId) throw new Error("Asset not found");
   if (asset.status === "AVAILABLE") throw new Error("Asset is already available");
 
-  const defaultLocation = await prisma.location.findFirst({
-    where: { organizationId, isDefault: true },
-    select: { id: true },
-  });
+  const defaultLocation = await getDefaultLocation(organizationId);
 
   await prisma.$transaction(async (tx) => {
     // Return all checked-out line items for this asset across all projects
@@ -2177,18 +2214,11 @@ async function restoreKitParentLineItem(
 export async function forceReturnKit(kitId: string) {
   const { organizationId, userId, userName } = await requirePermission("warehouse", "check_in");
 
-  const kit = await prisma.kit.findFirst({
-    where: { id: kitId, organizationId },
-    select: { id: true, assetTag: true, name: true, status: true },
-  });
-
-  if (!kit) throw new Error("Kit not found");
+  const kit = await getKitById(kitId);
+  if (!kit || kit.organizationId !== organizationId) throw new Error("Kit not found");
   if (kit.status === "AVAILABLE") throw new Error("Kit is already available");
 
-  const defaultLocation = await prisma.location.findFirst({
-    where: { organizationId, isDefault: true },
-    select: { id: true },
-  });
+  const defaultLocation = await getDefaultLocation(organizationId);
 
   const affectedKitIds = await prisma.$transaction(async (tx) => {
     const now = new Date();
@@ -2277,17 +2307,14 @@ export async function bulkForceReturnAssets(assetIds: string[]) {
 
   if (assetIds.length === 0) throw new Error("No assets selected");
 
-  const assets = await prisma.asset.findMany({
-    where: { id: { in: assetIds }, organizationId, status: "CHECKED_OUT" },
-    select: { id: true, assetTag: true },
-  });
+  const allOrgAssets = await getAssetsByOrg(organizationId);
+  const assets = allOrgAssets
+    .filter((a) => assetIds.includes(a.id) && a.status === "CHECKED_OUT")
+    .map((a) => ({ id: a.id, assetTag: a.assetTag }));
 
   if (assets.length === 0) throw new Error("No checked-out assets found in selection");
 
-  const defaultLocation = await prisma.location.findFirst({
-    where: { organizationId, isDefault: true },
-    select: { id: true },
-  });
+  const defaultLocation = await getDefaultLocation(organizationId);
 
   const ids = assets.map((a) => a.id);
 

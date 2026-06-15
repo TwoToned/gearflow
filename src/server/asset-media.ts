@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { mirrorFileUploadDelete } from "@/lib/file-upload-mirror";
 import { mirrorMediaCreate, syncMediaForParent } from "@/lib/media-mirror";
 import { getOrgContext } from "@/lib/org-context";
+import { getAssetById } from "@/lib/assets-read";
 import { serialize } from "@/lib/serialize";
 import { deleteFromS3 } from "@/lib/storage";
 import type { MediaType } from "@/generated/prisma/client";
@@ -16,10 +17,8 @@ export async function addAssetMedia(data: {
 }) {
   const { organizationId } = await getOrgContext();
 
-  const asset = await prisma.asset.findFirst({
-    where: { id: data.assetId, organizationId },
-  });
-  if (!asset) throw new Error("Asset not found");
+  const asset = await getAssetById(data.assetId);
+  if (!asset || asset.organizationId !== organizationId) throw new Error("Asset not found");
 
   const file = await prisma.fileUpload.findFirst({
     where: { id: data.fileId, organizationId },

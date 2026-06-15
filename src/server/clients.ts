@@ -4,6 +4,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import { getConvexClient } from "@/lib/convex-client";
 import { getClientById, getClientsByOrg, type ConvexClient } from "@/lib/clients-read";
+import { getProjectsByOrg } from "@/lib/projects-read";
 import { api } from "../../convex/_generated/api";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { clientSchema, type ClientFormValues } from "@/lib/validations/client";
@@ -87,16 +88,18 @@ export async function getClients(params?: {
   clients.sort(compareBy(sortBy, sortOrder));
   const pageItems = clients.slice((page - 1) * pageSize, page * pageSize);
 
-  // Project counts per client (projects still live in Prisma).
+  // Project counts per client (from Convex).
   const ids = pageItems.map((c) => c.id);
-  const counts = ids.length
-    ? await prisma.project.groupBy({
-        by: ["clientId"],
-        where: { organizationId, clientId: { in: ids } },
-        _count: { _all: true },
-      })
-    : [];
-  const countByClient = new Map(counts.map((g) => [g.clientId, g._count._all]));
+  const countByClient = new Map<string, number>();
+  if (ids.length) {
+    const idSet = new Set(ids);
+    const allProjects = await getProjectsByOrg(organizationId);
+    for (const p of allProjects) {
+      if (p.clientId && idSet.has(p.clientId)) {
+        countByClient.set(p.clientId, (countByClient.get(p.clientId) ?? 0) + 1);
+      }
+    }
+  }
   const withCounts = pageItems.map((c) => ({
     ...c,
     _count: { projects: countByClient.get(c.id) ?? 0 },
@@ -106,19 +109,13 @@ export async function getClients(params?: {
 }
 
 /**
- * Project counts per client (clientId -> count). Cross-domain: projects still
- * live in Prisma, so this can't come from Convex. Used by the reactive client
- * table, which subscribes to the client list via Convex and merges these counts.
+ * Project counts per client (clientId -> count). From Convex.
  */
 export async function getClientProjectCounts(): Promise<Record<string, number>> {
   const { organizationId } = await getOrgContext();
-  const groups = await prisma.project.groupBy({
-    by: ["clientId"],
-    where: { organizationId, clientId: { not: null } },
-    _count: { _all: true },
-  });
+  const allProjects = await getProjectsByOrg(organizationId);
   const counts: Record<string, number> = {};
-  for (const g of groups) if (g.clientId) counts[g.clientId] = g._count._all;
+  for (const p of allProjects) if (p.clientId) counts[p.clientId] = (counts[p.clientId] ?? 0) + 1;
   return serialize(counts);
 }
 
@@ -127,12 +124,12 @@ export async function getClient(id: string) {
   const client = await getClientById(id);
   if (!client || client.organizationId !== organizationId) return serialize(null);
 
-  const [projects, media] = await Promise.all([
-    prisma.project.findMany({
-      where: { clientId: id, organizationId },
-      orderBy: { createdAt: "desc" },
-      take: 20,
-      include: { _count: { select: { lineItems: true } } },
+  const [allOrgProjects, lineItemCounts, media] = await Promise.all([
+    getProjectsByOrg(organizationId),
+    prisma.projectLineItem.groupBy({
+      by: ["projectId"],
+      where: { organizationId, project: { clientId: id } },
+      _count: { _all: true },
     }),
     prisma.clientMedia.findMany({
       where: { clientId: id },
@@ -140,6 +137,13 @@ export async function getClient(id: string) {
       orderBy: { sortOrder: "asc" },
     }),
   ]);
+
+  const lineItemCountMap = new Map(lineItemCounts.map((g) => [g.projectId, g._count._all]));
+  const projects = allOrgProjects
+    .filter((p) => p.clientId === id)
+    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+    .slice(0, 20)
+    .map((p) => ({ ...p, _count: { lineItems: lineItemCountMap.get(p.id) ?? 0 } }));
 
   return serialize({ ...client, projects, media });
 }

@@ -2,6 +2,8 @@
 
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/org-context";
+import { getModelById } from "@/lib/models-read";
+import { getBulkAssetById } from "@/lib/assets-read";
 import {
   modelBulkAccessorySchema,
   type ModelBulkAccessoryFormValues,
@@ -9,6 +11,10 @@ import {
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { UserFacingError } from "@/lib/errors";
+import {
+  mirrorModelBulkAccessoryCreate,
+  removeModelBulkAccessoryFromConvex,
+} from "@/lib/model-bulk-accessory-mirror";
 
 /**
  * Model-level bulk accessories — "every asset of this model ships with N of
@@ -34,11 +40,8 @@ export async function addModelBulkAccessory(
   );
   const parsed = modelBulkAccessorySchema.parse(data);
 
-  const model = await prisma.model.findUnique({
-    where: { id: modelId, organizationId },
-    select: { id: true, name: true },
-  });
-  if (!model) {
+  const model = await getModelById(modelId);
+  if (!model || model.organizationId !== organizationId) {
     throw new UserFacingError({
       code: "NOT_FOUND",
       title: "Model not found",
@@ -46,11 +49,8 @@ export async function addModelBulkAccessory(
     });
   }
 
-  const bulkAsset = await prisma.bulkAsset.findUnique({
-    where: { id: parsed.bulkAssetId, organizationId },
-    select: { id: true, assetTag: true },
-  });
-  if (!bulkAsset) {
+  const bulkAsset = await getBulkAssetById(parsed.bulkAssetId);
+  if (!bulkAsset || bulkAsset.organizationId !== organizationId) {
     throw new UserFacingError({
       code: "NOT_FOUND",
       title: "Bulk asset not found",
@@ -77,7 +77,7 @@ export async function addModelBulkAccessory(
         notes: parsed.notes,
         addedById: userId,
       },
-      include: { bulkAsset: { include: { model: { select: { name: true } } } } },
+      include: { bulkAsset: true },
     });
   } catch (e: unknown) {
     if (e instanceof Error && e.message.includes("Unique constraint")) {
@@ -89,6 +89,12 @@ export async function addModelBulkAccessory(
     }
     throw e;
   }
+
+  // Mirror to Convex (infra-only dual-write). The create above is a single
+  // statement (no $transaction), so the row is committed by the time we get here.
+  await mirrorModelBulkAccessoryCreate(row as unknown as Record<string, unknown>);
+
+  const bulkAssetModel = row.bulkAsset.modelId ? await getModelById(row.bulkAsset.modelId) : null;
 
   await logActivity({
     organizationId,
@@ -102,7 +108,7 @@ export async function addModelBulkAccessory(
     details: { accessory: { bulkAssetId: bulkAsset.id, quantity: parsed.quantity } },
   });
 
-  return serialize(row);
+  return serialize({ ...row, bulkAsset: { ...row.bulkAsset, model: bulkAssetModel } });
 }
 
 /** Detach a model-level bulk accessory. Past project expansions are
@@ -124,7 +130,6 @@ export async function removeModelBulkAccessory(
       modelId: true,
       quantity: true,
       bulkAsset: { select: { id: true, assetTag: true } },
-      model: { select: { name: true } },
     },
   });
   if (
@@ -141,6 +146,11 @@ export async function removeModelBulkAccessory(
 
   await prisma.modelBulkAccessory.delete({ where: { id: accessoryId } });
 
+  // Mirror the delete to Convex AFTER the Prisma delete commits.
+  await removeModelBulkAccessoryFromConvex(accessoryId);
+
+  const parentModel = acc.modelId ? await getModelById(acc.modelId) : null;
+
   await logActivity({
     organizationId,
     userId,
@@ -148,7 +158,7 @@ export async function removeModelBulkAccessory(
     action: "UPDATE",
     entityType: "model",
     entityId: modelId,
-    entityName: acc.model.name,
+    entityName: parentModel?.name ?? modelId,
     summary: `Removed default accessory: ${acc.quantity}× ${acc.bulkAsset.assetTag}`,
     details: { accessory: { bulkAssetId: acc.bulkAsset.id, quantity: acc.quantity } },
   });

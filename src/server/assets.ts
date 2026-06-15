@@ -14,8 +14,12 @@ import {
   removeAssetFromConvex,
   syncAssetsToConvex,
 } from "@/lib/asset-mirror";
+import {
+  mirrorTestTagAssetCreate,
+  patchTestTagAssetInConvex,
+} from "@/lib/test-tag-mirror";
 import { getSupplierById } from "@/lib/suppliers-read";
-import { getModelWithCategoryMap, type ModelWithCategory } from "@/lib/models-read";
+import { getModelById, getModelWithCategoryMap, type ModelWithCategory } from "@/lib/models-read";
 import { getLocationMap, type ConvexLocation } from "@/lib/locations-read";
 import { getPrimaryPhotoMaps } from "@/lib/media-read";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
@@ -149,19 +153,6 @@ export async function getAsset(id: string) {
   const asset = await prisma.asset.findUnique({
     where: { id, organizationId },
     include: {
-      model: {
-        include: {
-          category: true,
-          media: {
-            include: { file: true },
-            orderBy: { sortOrder: "asc" },
-          },
-          bulkAccessories: {
-            include: { bulkAsset: { include: { model: { select: { name: true } } } } },
-            orderBy: { sortOrder: "asc" },
-          },
-        },
-      },
       location: true,
       media: {
         include: { file: true },
@@ -194,19 +185,74 @@ export async function getAsset(id: string) {
       },
       // Child assets / accessories
       parentAsset: { select: { id: true, assetTag: true, customName: true } },
-      childAssets: {
-        include: { model: { select: { name: true, manufacturer: true } } },
-        orderBy: { assetTag: "asc" },
-      },
+      childAssets: { orderBy: { assetTag: "asc" } },
       childBulkItems: {
-        include: { bulkAsset: { include: { model: { select: { name: true } } } } },
+        include: { bulkAsset: true },
         orderBy: { sortOrder: "asc" },
       },
     },
   });
-  // Supplier lives in Convex — attach instead of a Prisma join.
-  const supplier = asset?.supplierId ? await getSupplierById(asset.supplierId) : null;
-  return serialize(asset ? { ...asset, supplier } : asset);
+
+  if (!asset) return serialize(asset);
+
+  // Model (+ category) + supplier live in Convex — attach instead of Prisma joins.
+  // Model media + bulkAccessories are intra-domain Prisma queries (no cross-domain hop).
+  const modelMediaPromise: Promise<Prisma.ModelMediaGetPayload<{ include: { file: true } }>[]> = asset.modelId
+    ? prisma.modelMedia.findMany({
+        where: { modelId: asset.modelId },
+        include: { file: true },
+        orderBy: { sortOrder: "asc" },
+      })
+    : Promise.resolve([]);
+
+  const modelBulkAccessoriesPromise: Promise<Prisma.ModelBulkAccessoryGetPayload<{ include: { bulkAsset: true } }>[]> = asset.modelId
+    ? prisma.modelBulkAccessory.findMany({
+        where: { modelId: asset.modelId },
+        include: { bulkAsset: true },
+        orderBy: { sortOrder: "asc" },
+      })
+    : Promise.resolve([]);
+
+  const [modelMap, modelMediaRows, supplier] = await Promise.all([
+    getModelWithCategoryMap(organizationId),
+    modelMediaPromise,
+    asset.supplierId ? getSupplierById(asset.supplierId) : null,
+  ]);
+  // Awaited separately to preserve explicit Prisma payload type for .map() inference.
+  const modelBulkAccessories = await modelBulkAccessoriesPromise;
+
+  const assetModel = asset.modelId ? modelMap.get(asset.modelId) ?? null : null;
+
+  const childAssetsWithModel = asset.childAssets.map((child) => ({
+    ...child,
+    model: child.modelId ? modelMap.get(child.modelId) ?? null : null,
+  }));
+
+  const childBulkItemsWithModel = asset.childBulkItems.map((item) => ({
+    ...item,
+    bulkAsset: {
+      ...item.bulkAsset,
+      model: item.bulkAsset.modelId ? modelMap.get(item.bulkAsset.modelId) ?? null : null,
+    },
+  }));
+
+  const bulkAccessoriesWithModel = modelBulkAccessories.map((acc) => ({
+    ...acc,
+    bulkAsset: {
+      ...acc.bulkAsset,
+      model: acc.bulkAsset.modelId ? modelMap.get(acc.bulkAsset.modelId) ?? null : null,
+    },
+  }));
+
+  return serialize({
+    ...asset,
+    model: assetModel
+      ? { ...assetModel, media: modelMediaRows, bulkAccessories: bulkAccessoriesWithModel }
+      : null,
+    childAssets: childAssetsWithModel,
+    childBulkItems: childBulkItemsWithModel,
+    supplier,
+  });
 }
 
 /**
@@ -240,8 +286,8 @@ export async function createAsset(data: AssetFormValues) {
     parsed.customFieldValues,
   );
 
-  // Fetch the model to check T&T requirements
-  const model = await prisma.model.findUnique({ where: { id: parsed.modelId } });
+  // Model lives in Convex — fetch for T&T requirements check.
+  const model = await getModelById(parsed.modelId);
 
   try {
     const result = await prisma.asset.create({
@@ -279,7 +325,7 @@ export async function createAsset(data: AssetFormValues) {
       const intervalMonths = model.testAndTagIntervalDays
         ? Math.max(1, Math.round(model.testAndTagIntervalDays / 30))
         : (orgTT.defaultIntervalMonths || 3);
-      await prisma.testTagAsset.create({
+      const ttAsset = await prisma.testTagAsset.create({
         data: {
           organizationId,
           testTagId: parsed.assetTag,
@@ -294,6 +340,7 @@ export async function createAsset(data: AssetFormValues) {
           assetId: result.id,
         },
       });
+      await mirrorTestTagAssetCreate(ttAsset as unknown as Record<string, unknown>);
     }
 
     await logActivity({
@@ -330,7 +377,8 @@ export async function createAssets(
     parsed.customFieldValues,
   );
 
-  const model = await prisma.model.findUnique({ where: { id: parsed.modelId } });
+  // Model lives in Convex — fetch for T&T requirements check.
+  const model = await getModelById(parsed.modelId);
 
   let results;
   try {
@@ -378,7 +426,7 @@ export async function createAssets(
     const intervalMonths = model.testAndTagIntervalDays
       ? Math.max(1, Math.round(model.testAndTagIntervalDays / 30))
       : (orgTT.defaultIntervalMonths || 3);
-    await prisma.$transaction(
+    const ttAssets = await prisma.$transaction(
       results.map((asset) =>
         prisma.testTagAsset.create({
           data: {
@@ -397,6 +445,10 @@ export async function createAssets(
         })
       )
     );
+    // Mirror created T&T assets AFTER the tx commits.
+    for (const tt of ttAssets) {
+      await mirrorTestTagAssetCreate(tt as unknown as Record<string, unknown>);
+    }
   }
 
   for (const result of results) {
@@ -473,7 +525,8 @@ export async function updateAsset(id: string, data: AssetFormValues) {
   });
 
   // Register in T&T if model requires it and not already registered
-  const model = await prisma.model.findUnique({ where: { id: parsed.modelId } });
+  // Model lives in Convex — fetch for T&T requirements check.
+  const model = await getModelById(parsed.modelId);
   if (model?.requiresTestAndTag) {
     await backfillTestTagAssets();
   }
@@ -570,10 +623,11 @@ export async function deleteAsset(id: string) {
     where: { assetId: id, organizationId },
   });
   if (linkedTT) {
-    await prisma.testTagAsset.update({
+    const updatedTT = await prisma.testTagAsset.update({
       where: { id: linkedTT.id },
       data: { status: "RETIRED", isActive: false, assetId: null },
     });
+    await patchTestTagAssetInConvex(updatedTT.id, updatedTT as unknown as Record<string, unknown>);
   }
 
   await prisma.asset.delete({ where: { id, organizationId } });
@@ -612,6 +666,13 @@ export async function archiveAsset(id: string) {
     where: { assetId: id, organizationId },
     data: { status: "RETIRED", isActive: false },
   });
+  // Mirror the retired T&T rows to Convex after the updateMany commits.
+  const retiredTT = await prisma.testTagAsset.findMany({
+    where: { assetId: id, organizationId },
+  });
+  for (const tt of retiredTT) {
+    await patchTestTagAssetInConvex(tt.id, tt as unknown as Record<string, unknown>);
+  }
 
   const updated = await prisma.asset.update({
     where: { id, organizationId },

@@ -2,6 +2,12 @@ import { describe, it, expect, vi } from "vitest";
 import { getAssetForDiscord } from "./asset-service";
 import type { ServiceActor } from "./discord-actor";
 
+// Model now lives in Convex — asset-service reads it via getModelById, not a
+// Prisma join. Mock the Convex read so the test stays offline.
+vi.mock("@/lib/models-read", () => ({
+  getModelById: vi.fn(async () => ({ name: "Shure SM58" })),
+}));
+
 const viewer: ServiceActor = {
   organizationId: "org1",
   crewMemberId: "cm1",
@@ -27,7 +33,7 @@ const baseAsset = {
   customName: null,
   status: "AVAILABLE",
   nextTestAndTagDate: null,
-  model: { name: "Shure SM58" },
+  modelId: "m1",
 };
 
 describe("getAssetForDiscord", () => {

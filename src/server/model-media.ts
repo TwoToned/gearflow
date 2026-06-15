@@ -7,6 +7,7 @@ import { getOrgContext } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { deleteFromS3 } from "@/lib/storage";
 import type { MediaType } from "@/generated/prisma/client";
+import { getModelById } from "@/lib/models-read";
 
 export async function addModelMedia(data: {
   modelId: string;
@@ -16,11 +17,9 @@ export async function addModelMedia(data: {
 }) {
   const { organizationId } = await getOrgContext();
 
-  // Verify model belongs to org
-  const model = await prisma.model.findFirst({
-    where: { id: data.modelId, organizationId },
-  });
-  if (!model) throw new Error("Model not found");
+  // Verify model belongs to org — lives in Convex.
+  const model = await getModelById(data.modelId);
+  if (!model || model.organizationId !== organizationId) throw new Error("Model not found");
 
   // Verify file belongs to org
   const file = await prisma.fileUpload.findFirst({
@@ -135,11 +134,9 @@ export async function setModelPrimaryPhoto(modelId: string, mediaId: string) {
 export async function reorderModelMedia(modelId: string, orderedIds: string[]) {
   const { organizationId } = await getOrgContext();
 
-  // Verify model ownership
-  const model = await prisma.model.findFirst({
-    where: { id: modelId, organizationId },
-  });
-  if (!model) throw new Error("Model not found");
+  // Verify model ownership — lives in Convex.
+  const model = await getModelById(modelId);
+  if (!model || model.organizationId !== organizationId) throw new Error("Model not found");
 
   await prisma.$transaction(
     orderedIds.map((id, index) =>

@@ -6,6 +6,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { getProjectById } from "@/lib/projects-read";
 
 export interface ProjectOperationalCosts {
   equipmentRevenue: number;
@@ -29,18 +30,8 @@ export async function computeProjectOperationalCosts(
   projectId: string,
   organizationId: string,
 ): Promise<ProjectOperationalCosts> {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId, organizationId },
-    select: {
-      equipmentRevenue: true,
-      serviceCostTotal: true,
-      labourCostTotal: true,
-      subHireCostTotal: true,
-      total: true,
-    },
-  });
-
-  if (!project) return emptyResult();
+  const project = await getProjectById(projectId);
+  if (!project || project.organizationId !== organizationId) return emptyResult();
 
   const serviceRevenueAgg = await prisma.projectService.aggregate({
     where: { projectId, organizationId, status: { not: "CANCELLED" }, showOnDocuments: true },

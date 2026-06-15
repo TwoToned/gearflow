@@ -17,6 +17,7 @@ import {
   deriveOrderLinePrepStatus,
   nextOrdinal,
 } from "@/lib/line-item-units";
+import { getModelMap } from "@/lib/models-read";
 
 /** Columns the rollup needs off each unit row. */
 const UNIT_ROLLUP_SELECT = {
@@ -480,15 +481,16 @@ export async function resolveAssetAccessories(
   tx: Prisma.TransactionClient,
   organizationId: string,
   assetId: string,
+  modelMap?: Map<string, { name: string }>,
 ): Promise<AccessoryProfile> {
   // org-scoped read (defense-in-depth — assetId can originate from a scan value).
   const asset = await tx.asset.findFirst({
     where: { id: assetId, organizationId },
     select: {
       modelId: true,
-      childAssets: { select: { id: true, modelId: true, model: { select: { name: true } } } },
+      childAssets: { select: { id: true, modelId: true } },
       childBulkItems: {
-        select: { bulkAssetId: true, quantity: true, bulkAsset: { select: { modelId: true, model: { select: { name: true } } } } },
+        select: { bulkAssetId: true, quantity: true, bulkAsset: { select: { modelId: true } } },
       },
     },
   });
@@ -497,16 +499,20 @@ export async function resolveAssetAccessories(
   const assetBulkIds = new Set(asset.childBulkItems.map((b) => b.bulkAssetId));
   const modelBulks = await tx.modelBulkAccessory.findMany({
     where: { modelId: asset.modelId, organizationId },
-    select: { bulkAssetId: true, quantity: true, bulkAsset: { select: { modelId: true, model: { select: { name: true } } } } },
+    select: { bulkAssetId: true, quantity: true, bulkAsset: { select: { modelId: true } } },
     orderBy: { sortOrder: "asc" },
   });
+
+  // Resolve model names from Convex (pre-fetched map preferred; fallback to per-org fetch).
+  const nameMap = modelMap ?? await getModelMap(organizationId);
+
   const bulks = [
-    ...asset.childBulkItems.map((b) => ({ bulkAssetId: b.bulkAssetId, quantity: b.quantity, modelId: b.bulkAsset.modelId, modelName: b.bulkAsset.model?.name ?? null })),
+    ...asset.childBulkItems.map((b) => ({ bulkAssetId: b.bulkAssetId, quantity: b.quantity, modelId: b.bulkAsset.modelId, modelName: nameMap.get(b.bulkAsset.modelId)?.name ?? null })),
     ...modelBulks
       .filter((m) => !assetBulkIds.has(m.bulkAssetId))
-      .map((m) => ({ bulkAssetId: m.bulkAssetId, quantity: m.quantity, modelId: m.bulkAsset.modelId, modelName: m.bulkAsset.model?.name ?? null })),
+      .map((m) => ({ bulkAssetId: m.bulkAssetId, quantity: m.quantity, modelId: m.bulkAsset.modelId, modelName: nameMap.get(m.bulkAsset.modelId)?.name ?? null })),
   ];
-  const serialised = asset.childAssets.map((c) => ({ assetId: c.id, modelId: c.modelId, modelName: c.model?.name ?? null }));
+  const serialised = asset.childAssets.map((c) => ({ assetId: c.id, modelId: c.modelId, modelName: nameMap.get(c.modelId)?.name ?? null }));
   return { serialised, bulks };
 }
 
@@ -834,6 +840,6 @@ export async function prepUnit(
   await syncLineItemRollup(tx, args.lineItemId);
   return tx.projectLineItem.findUniqueOrThrow({
     where: { id: args.lineItemId },
-    include: { model: true, asset: true, bulkAsset: true },
+    include: { asset: true, bulkAsset: true },
   });
 }

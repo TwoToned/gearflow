@@ -4,6 +4,28 @@ All notable changes to GearFlow will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.19.6.0] - 2026-06-16
+
+### Changed
+- **Equipment, asset, kit, project, supplier, location and category data now reads
+  from the reactive Convex layer across the server surface** (warehouse, line items,
+  sub-hires, the PDF/document pipeline, reports, CSV import/export, WooCommerce order
+  ingest, and the warehouse display board). This is a behavior-preserving refactor —
+  the same data, sourced from the always-fresh reactive mirror instead of cross-domain
+  Postgres joins — continuing the Prisma→Convex migration. No user-facing behavior change.
+
+### Added
+- **Dual-write groundwork for the remaining sub-tables** so their reads can move to
+  Convex next: project line-item units (the fulfillment source of truth), asset/model
+  accessory links, supplier model rates, the Test & Tag domain (assets, records, sub
+  records), asset scan logs, and check records now mirror to Convex on every write,
+  each with an idempotent backfill script. Reads stay on Postgres until the backfills
+  run in production.
+
+### Fixed
+- Hardened nullable-model handling on the asset registry, kit detail, and equipment-add
+  views so a missing equipment model renders a placeholder instead of erroring.
+
 ## [0.19.5.0] - 2026-06-14
 
 ### Fixed

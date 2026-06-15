@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { formatDate } from "@/lib/formatters";
 import type { OrgSettings } from "@/server/settings";
+import { patchTestTagAssetInConvex } from "@/lib/test-tag-mirror";
 
 const EMAIL_BODY_FONT_SIZE = "14px";
 
@@ -16,14 +17,28 @@ export async function recalculateAllTestTagStatuses(): Promise<number> {
   const now = new Date();
 
   // Move CURRENT/DUE_SOON assets past their due date to OVERDUE
+  const overdueWhere = {
+    isActive: true,
+    status: { in: ["CURRENT", "DUE_SOON"] as ("CURRENT" | "DUE_SOON")[] },
+    nextDueDate: { lt: now },
+  };
+  // Capture affected ids before the update — the where no longer matches once flipped to OVERDUE.
+  const overdueIds = (
+    await prisma.testTagAsset.findMany({ where: overdueWhere, select: { id: true } })
+  ).map((a) => a.id);
   const overdue = await prisma.testTagAsset.updateMany({
-    where: {
-      isActive: true,
-      status: { in: ["CURRENT", "DUE_SOON"] },
-      nextDueDate: { lt: now },
-    },
+    where: overdueWhere,
     data: { status: "OVERDUE" },
   });
+  // Mirror the flipped rows to Convex after the updateMany commits.
+  if (overdueIds.length > 0) {
+    const overdueRows = await prisma.testTagAsset.findMany({
+      where: { id: { in: overdueIds } },
+    });
+    for (const row of overdueRows) {
+      await patchTestTagAssetInConvex(row.id, row as unknown as Record<string, unknown>);
+    }
+  }
 
   // For DUE_SOON: we need per-org threshold, so fetch all orgs with test-tag assets
   const orgs = await prisma.organization.findMany({
@@ -44,16 +59,30 @@ export async function recalculateAllTestTagStatuses(): Promise<number> {
     const threshold = new Date(now);
     threshold.setDate(threshold.getDate() + dueSoonDays);
 
+    const dueSoonWhere = {
+      organizationId: org.id,
+      isActive: true,
+      status: "CURRENT" as const,
+      nextDueDate: { lte: threshold },
+    };
+    // Capture affected ids before the update — the where no longer matches once flipped to DUE_SOON.
+    const dueSoonIds = (
+      await prisma.testTagAsset.findMany({ where: dueSoonWhere, select: { id: true } })
+    ).map((a) => a.id);
     const result = await prisma.testTagAsset.updateMany({
-      where: {
-        organizationId: org.id,
-        isActive: true,
-        status: "CURRENT",
-        nextDueDate: { lte: threshold },
-      },
+      where: dueSoonWhere,
       data: { status: "DUE_SOON" },
     });
     dueSoonCount += result.count;
+    // Mirror the flipped rows to Convex after the updateMany commits.
+    if (dueSoonIds.length > 0) {
+      const dueSoonRows = await prisma.testTagAsset.findMany({
+        where: { id: { in: dueSoonIds } },
+      });
+      for (const row of dueSoonRows) {
+        await patchTestTagAssetInConvex(row.id, row as unknown as Record<string, unknown>);
+      }
+    }
   }
 
   return overdue.count + dueSoonCount;

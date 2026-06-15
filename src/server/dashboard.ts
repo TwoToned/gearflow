@@ -5,67 +5,56 @@ import { getOrgContext } from "@/lib/org-context";
 import { attachClient } from "@/lib/clients-read";
 import { serialize } from "@/lib/serialize";
 import { listOpenBlockingThreads } from "@/lib/blocking-comments-read";
+import { getModelMap } from "@/lib/models-read";
+import { getAssetsByOrg, getBulkAssetsByOrg } from "@/lib/assets-read";
+import { getProjectsByOrg, getProjectIdsForManager } from "@/lib/projects-read";
 
 export async function getDashboardStats() {
   const { organizationId } = await getOrgContext();
 
   const now = new Date();
 
-  const [
-    totalAssets,
-    totalBulkAssets,
-    checkedOutAssets,
-    activeProjects,
-    maintenanceDue,
-    overdueReturns,
-    activeCrew,
-    pendingCrewOffers,
-  ] = await Promise.all([
-    prisma.asset.count({
-      where: { organizationId, isActive: true },
-    }),
-    prisma.bulkAsset.aggregate({
-      where: { organizationId, isActive: true },
-      _sum: { totalQuantity: true },
-    }),
-    prisma.asset.count({
-      where: { organizationId, isActive: true, status: "CHECKED_OUT" },
-    }),
-    prisma.project.count({
-      where: {
-        organizationId,
-        isTemplate: false,
-        status: { in: ["CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE"] },
-      },
-    }),
-    prisma.maintenanceRecord.count({
-      where: {
-        organizationId,
-        status: { in: ["SCHEDULED", "IN_PROGRESS"] },
-        scheduledDate: { lte: now },
-      },
-    }),
-    prisma.projectLineItem.count({
-      where: {
-        organizationId,
-        status: "CHECKED_OUT",
-        project: {
-          isTemplate: false,
-          rentalEndDate: { lt: now },
-          status: { notIn: ["RETURNED", "COMPLETED", "INVOICED", "CANCELLED"] },
+  const [allAssets, allBulkAssets, allProjects, maintenanceDue, overdueReturns, activeCrew, pendingCrewOffers] =
+    await Promise.all([
+      getAssetsByOrg(organizationId),
+      getBulkAssetsByOrg(organizationId),
+      getProjectsByOrg(organizationId),
+      prisma.maintenanceRecord.count({
+        where: {
+          organizationId,
+          status: { in: ["SCHEDULED", "IN_PROGRESS"] },
+          scheduledDate: { lte: now },
         },
-      },
-    }),
-    prisma.crewMember.count({
-      where: { organizationId, status: "ACTIVE" },
-    }),
-    prisma.crewAssignment.count({
-      where: { organizationId, status: { in: ["OFFERED", "PENDING"] } },
-    }),
-  ]);
+      }),
+      prisma.projectLineItem.count({
+        where: {
+          organizationId,
+          status: "CHECKED_OUT",
+          project: {
+            isTemplate: false,
+            rentalEndDate: { lt: now },
+            status: { notIn: ["RETURNED", "COMPLETED", "INVOICED", "CANCELLED"] },
+          },
+        },
+      }),
+      prisma.crewMember.count({
+        where: { organizationId, status: "ACTIVE" },
+      }),
+      prisma.crewAssignment.count({
+        where: { organizationId, status: { in: ["OFFERED", "PENDING"] } },
+      }),
+    ]);
+
+  const activeAssets = allAssets.filter((a) => a.isActive !== false);
+  const activeBulkAssets = allBulkAssets.filter((ba) => ba.isActive !== false);
+  const totalAssets = activeAssets.length;
+  const totalBulkQuantity = activeBulkAssets.reduce((sum, ba) => sum + (ba.totalQuantity ?? 0), 0);
+  const checkedOutAssets = activeAssets.filter((a) => a.status === "CHECKED_OUT").length;
+  const ACTIVE_PROJECT_STATUSES = new Set(["CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE"]);
+  const activeProjects = allProjects.filter((p) => !p.isTemplate && ACTIVE_PROJECT_STATUSES.has(p.status ?? "")).length;
 
   return {
-    totalAssets: totalAssets + (totalBulkAssets._sum.totalQuantity || 0),
+    totalAssets: totalAssets + totalBulkQuantity,
     checkedOutAssets,
     activeProjects,
     maintenanceDue,
@@ -83,21 +72,38 @@ export async function getDashboardStats() {
 export async function getMyHomeData() {
   const { organizationId, userId, userName } = await getOrgContext();
 
-  const myProjects = await prisma.project.findMany({
-    where: {
-      organizationId,
-      isTemplate: false,
-      status: { notIn: ["COMPLETED", "INVOICED", "CANCELLED"] },
-      OR: [{ projectManagerId: userId }, { projectManagers: { some: { userId } } }],
-    },
-    include: {
-      _count: { select: { lineItems: { where: { type: "EQUIPMENT" } } } },
-    },
-    // Soonest first; undated projects (enquiries/drafts) sort last so they can't
-    // hide real upcoming work or push it past the take limit.
-    orderBy: [{ rentalStartDate: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
-    take: 24,
-  });
+  const INACTIVE_STATUSES = new Set(["COMPLETED", "INVOICED", "CANCELLED"]);
+  const [allProjects, pmProjectIds] = await Promise.all([
+    getProjectsByOrg(organizationId),
+    getProjectIdsForManager(organizationId, userId),
+  ]);
+
+  const candidateProjects = allProjects
+    .filter(
+      (p) =>
+        !p.isTemplate &&
+        !INACTIVE_STATUSES.has(p.status ?? "") &&
+        (p.projectManagerId === userId || pmProjectIds.has(p.id)),
+    )
+    .sort((a, b) => {
+      if (a.rentalStartDate && b.rentalStartDate) return (a.rentalStartDate as number) - (b.rentalStartDate as number);
+      if (a.rentalStartDate) return -1;
+      if (b.rentalStartDate) return 1;
+      return (b.createdAt ?? 0) - (a.createdAt ?? 0);
+    })
+    .slice(0, 24);
+
+  const projectIds = candidateProjects.map((p) => p.id);
+  const lineItemCounts =
+    projectIds.length > 0
+      ? await prisma.projectLineItem.groupBy({
+          by: ["projectId"],
+          where: { organizationId, projectId: { in: projectIds }, type: "EQUIPMENT" },
+          _count: { _all: true },
+        })
+      : [];
+  const liCountMap = new Map(lineItemCounts.map((g) => [g.projectId, g._count._all]));
+  const myProjects = candidateProjects.map((p) => ({ ...p, _count: { lineItems: liCountMap.get(p.id) ?? 0 } }));
 
   // Clients live in Convex — attach instead of a Prisma join.
   const withClients = await attachClient(organizationId, myProjects);
@@ -116,25 +122,18 @@ export async function getMyBlockingComments() {
   if (threads.length === 0) return serialize([]);
 
   const projectIds = Array.from(new Set(threads.map((t) => t.projectId).filter(Boolean)));
-  const projects = await prisma.project.findMany({
-    where: { organizationId, id: { in: projectIds } },
-    select: {
-      id: true,
-      name: true,
-      projectNumber: true,
-      projectManagerId: true,
-      projectManagers: { select: { userId: true } },
-    },
-  });
-  const projectMap = new Map(projects.map((p) => [p.id, p]));
+  const [allOrgProjects, pmProjectIds] = await Promise.all([
+    getProjectsByOrg(organizationId),
+    getProjectIdsForManager(organizationId, userId),
+  ]);
+  const idSet = new Set(projectIds);
+  const projectMap = new Map(allOrgProjects.filter((p) => idSet.has(p.id)).map((p) => [p.id, p]));
 
   const surfaced = threads
     .map((t) => {
       const project = projectMap.get(t.projectId);
       if (!project) return null;
-      const isPM =
-        project.projectManagerId === userId ||
-        project.projectManagers.some((pm) => pm.userId === userId);
+      const isPM = project.projectManagerId === userId || pmProjectIds.has(project.id);
       const isMentioned = t.mentionUserIds.includes(userId);
       if (!isPM && !isMentioned) return null;
       return {
@@ -161,19 +160,30 @@ export async function getUpcomingProjects() {
 
   const now = new Date();
 
-  const projects = await prisma.project.findMany({
-    where: {
-      organizationId,
-      isTemplate: false,
-      status: { in: ["CONFIRMED", "PREPPING", "QUOTED"] },
-      rentalStartDate: { gte: now },
-    },
-    include: {
-      _count: { select: { lineItems: { where: { type: "EQUIPMENT" } } } },
-    },
-    orderBy: { rentalStartDate: "asc" },
-    take: 8,
-  });
+  const UPCOMING_STATUSES = new Set(["CONFIRMED", "PREPPING", "QUOTED"]);
+  const allOrgProjects = await getProjectsByOrg(organizationId);
+  const candidateUpcoming = allOrgProjects
+    .filter(
+      (p) =>
+        !p.isTemplate &&
+        UPCOMING_STATUSES.has(p.status ?? "") &&
+        p.rentalStartDate != null &&
+        (p.rentalStartDate as number) >= now.getTime(),
+    )
+    .sort((a, b) => (a.rentalStartDate as number) - (b.rentalStartDate as number))
+    .slice(0, 8);
+
+  const upcomingIds = candidateUpcoming.map((p) => p.id);
+  const upcomingLiCounts =
+    upcomingIds.length > 0
+      ? await prisma.projectLineItem.groupBy({
+          by: ["projectId"],
+          where: { organizationId, projectId: { in: upcomingIds }, type: "EQUIPMENT" },
+          _count: { _all: true },
+        })
+      : [];
+  const upcomingLiMap = new Map(upcomingLiCounts.map((g) => [g.projectId, g._count._all]));
+  const projects = candidateUpcoming.map((p) => ({ ...p, _count: { lineItems: upcomingLiMap.get(p.id) ?? 0 } }));
 
   // Clients live in Convex — attach instead of a Prisma join.
   return serialize(await attachClient(organizationId, projects));
@@ -182,12 +192,12 @@ export async function getUpcomingProjects() {
 export async function getRecentActivity() {
   const { organizationId } = await getOrgContext();
 
-  const [logs, testRecords, maintenanceRecords] = await Promise.all([
+  const [logs, testRecords, maintenanceRecords, modelMap] = await Promise.all([
     prisma.assetScanLog.findMany({
       where: { organizationId },
       include: {
-        asset: { include: { model: true } },
-        bulkAsset: { include: { model: true } },
+        asset: true,
+        bulkAsset: true,
         project: true,
         scannedBy: true,
       },
@@ -207,7 +217,7 @@ export async function getRecentActivity() {
       where: { organizationId },
       include: {
         assets: {
-          include: { asset: { include: { model: true } } },
+          include: { asset: true },
           take: 3,
         },
         reportedBy: { select: { id: true, name: true } },
@@ -215,7 +225,24 @@ export async function getRecentActivity() {
       orderBy: { updatedAt: "desc" },
       take: 10,
     }),
+    getModelMap(organizationId),
   ]);
 
-  return serialize({ logs, testRecords, maintenanceRecords });
+  const withModels = {
+    logs: logs.map((l) => ({
+      ...l,
+      asset: l.asset ? { ...l.asset, model: l.asset.modelId ? modelMap.get(l.asset.modelId) ?? null : null } : null,
+      bulkAsset: l.bulkAsset ? { ...l.bulkAsset, model: l.bulkAsset.modelId ? modelMap.get(l.bulkAsset.modelId) ?? null : null } : null,
+    })),
+    testRecords,
+    maintenanceRecords: maintenanceRecords.map((m) => ({
+      ...m,
+      assets: m.assets.map((a) => ({
+        ...a,
+        asset: { ...a.asset, model: a.asset.modelId ? modelMap.get(a.asset.modelId) ?? null : null },
+      })),
+    })),
+  };
+
+  return serialize(withModels);
 }

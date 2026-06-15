@@ -5,6 +5,9 @@ import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import { getConvexClient } from "@/lib/convex-client";
 import { getClientsByOrg, getClientById, type ConvexClient } from "@/lib/clients-read";
+import { getLocationsByOrg } from "@/lib/locations-read";
+import { getModelsByOrg } from "@/lib/models-read";
+import { getProjectsByOrg } from "@/lib/projects-read";
 import { api } from "../../convex/_generated/api";
 import { requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
@@ -540,33 +543,25 @@ async function resolveLocation(
 
     if (metaValue?.trim()) {
       const locationName = metaValue.trim();
+      const lowerName = locationName.toLowerCase();
+
+      // Fetch all org locations once (reactive Convex read); the exact-name,
+      // exact-address, and fuzzy steps below all match in JS over this array.
+      const candidates = await getLocationsByOrg(orgId);
 
       // 1. Exact name match (case-insensitive)
-      const exactName = await prisma.location.findFirst({
-        where: {
-          organizationId: orgId,
-          name: { equals: locationName, mode: "insensitive" },
-        },
-        select: { id: true },
-      });
+      const exactName = candidates.find(
+        (c) => c.name.toLowerCase() === lowerName,
+      );
       if (exactName) return exactName.id;
 
       // 2. Address match (case-insensitive)
-      const addressMatch = await prisma.location.findFirst({
-        where: {
-          organizationId: orgId,
-          address: { equals: locationName, mode: "insensitive" },
-        },
-        select: { id: true },
-      });
+      const addressMatch = candidates.find(
+        (c) => (c.address?.toLowerCase() ?? "") === lowerName && !!c.address,
+      );
       if (addressMatch) return addressMatch.id;
 
       // 3. Fuzzy match against all locations (name + address)
-      const candidates = await prisma.location.findMany({
-        where: { organizationId: orgId },
-        select: { id: true, name: true, address: true },
-      });
-
       const normalizedInput = locationName.toLowerCase().trim();
       let bestMatch: { id: string; score: number } | null = null;
 
@@ -712,6 +707,10 @@ async function matchProducts(
   lineItems: WooOrder["line_items"],
   integration: WooCommerceIntegrationConfig,
 ): Promise<MatchResult[]> {
+  // Fetch all org models once (reactive Convex read); each line item matches in
+  // JS over this array, preserving the per-field switch logic and isActive filters.
+  const models = await getModelsByOrg(orgId);
+
   return Promise.all(
     lineItems.map(async (item): Promise<MatchResult> => {
       let model = null;
@@ -719,14 +718,14 @@ async function matchProducts(
       switch (integration.productMatchField) {
         case "sku":
           if (item.sku) {
-            model = await prisma.model.findFirst({
-              where: { organizationId: orgId, sku: item.sku, isActive: true },
-            });
+            model =
+              models.find((m) => m.sku === item.sku && m.isActive !== false) ?? null;
             // Fallback to modelNumber if no SKU match
             if (!model) {
-              model = await prisma.model.findFirst({
-                where: { organizationId: orgId, modelNumber: item.sku, isActive: true },
-              });
+              model =
+                models.find(
+                  (m) => m.modelNumber === item.sku && m.isActive !== false,
+                ) ?? null;
             }
           }
           break;
@@ -736,20 +735,17 @@ async function matchProducts(
               (m) => m.key === integration.customFieldKey,
             )?.value;
             if (gearflowId) {
-              model = await prisma.model.findFirst({
-                where: { organizationId: orgId, id: gearflowId },
-              });
+              model = models.find((m) => m.id === gearflowId) ?? null;
             }
           }
           break;
         case "name":
-          model = await prisma.model.findFirst({
-            where: {
-              organizationId: orgId,
-              name: { contains: item.name, mode: "insensitive" },
-              isActive: true,
-            },
-          });
+          model =
+            models.find(
+              (m) =>
+                m.name?.toLowerCase().includes(item.name.toLowerCase()) &&
+                m.isActive !== false,
+            ) ?? null;
           break;
       }
 
@@ -768,10 +764,9 @@ async function matchProducts(
 
 async function generateWebOrderProjectNumber(orgId: string, order: WooOrder): Promise<string> {
   const prefix = `WEB-${order.number || order.id}`;
-  // Check if this project number already exists
-  const existing = await prisma.project.findFirst({
-    where: { organizationId: orgId, projectNumber: prefix },
-  });
+  // Check if this project number already exists (header read from Convex)
+  const projects = await getProjectsByOrg(orgId);
+  const existing = projects.find((p) => p.projectNumber === prefix);
   if (!existing) return prefix;
   // Append suffix if duplicate
   return `${prefix}-${Date.now().toString(36).slice(-4)}`;

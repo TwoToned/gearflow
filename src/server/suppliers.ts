@@ -11,6 +11,8 @@ import { supplierSchema, type SupplierFormValues } from "@/lib/validations/suppl
 import { logActivity, buildChanges } from "@/lib/activity-log";
 import { buildFilterWhere, type FilterValue } from "@/lib/table-utils";
 import type { ColumnDef } from "@/components/ui/data-table";
+import { attachModel } from "@/lib/models-read";
+import { getAssetsByOrg } from "@/lib/assets-read";
 
 // Suppliers are DUAL-WRITTEN: every create/update/delete writes the Prisma
 // `supplier` row (the durable FK anchor — asset/bulk_asset/project_line_item/
@@ -108,12 +110,8 @@ export async function getSuppliersPaginated(params: {
  */
 export async function getSupplierCounts(): Promise<Record<string, { assets: number; orders: number }>> {
   const { organizationId } = await getOrgContext();
-  const [assetGroups, orderGroups] = await Promise.all([
-    prisma.asset.groupBy({
-      by: ["supplierId"],
-      where: { organizationId, supplierId: { not: null } },
-      _count: { _all: true },
-    }),
+  const [allAssets, orderGroups] = await Promise.all([
+    getAssetsByOrg(organizationId),
     prisma.supplierOrder.groupBy({
       by: ["supplierId"],
       where: { organizationId },
@@ -121,8 +119,8 @@ export async function getSupplierCounts(): Promise<Record<string, { assets: numb
     }),
   ]);
   const counts: Record<string, { assets: number; orders: number }> = {};
-  for (const g of assetGroups) {
-    if (g.supplierId) (counts[g.supplierId] ??= { assets: 0, orders: 0 }).assets = g._count._all;
+  for (const a of allAssets) {
+    if (a.supplierId) (counts[a.supplierId] ??= { assets: 0, orders: 0 }).assets++;
   }
   for (const g of orderGroups) {
     if (g.supplierId) (counts[g.supplierId] ??= { assets: 0, orders: 0 }).orders = g._count._all;
@@ -157,21 +155,14 @@ export async function getSupplierAssets(supplierId: string, params: {
   const { organizationId } = await getOrgContext();
   const { page = 1, pageSize = 25 } = params;
 
-  const where = { organizationId, supplierId, isActive: true };
+  const allOrgAssets = await getAssetsByOrg(organizationId);
+  const filtered = allOrgAssets
+    .filter((a) => a.supplierId === supplierId && a.isActive !== false)
+    .sort((a, b) => a.assetTag.localeCompare(b.assetTag));
+  const total = filtered.length;
+  const rawAssets = filtered.slice((page - 1) * pageSize, page * pageSize);
 
-  const [assets, total] = await Promise.all([
-    prisma.asset.findMany({
-      where,
-      include: {
-        model: { select: { id: true, name: true, manufacturer: true } },
-      },
-      orderBy: { assetTag: "asc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    prisma.asset.count({ where }),
-  ]);
-
+  const assets = await attachModel(organizationId, rawAssets);
   return serialize({ assets, total });
 }
 
@@ -185,12 +176,11 @@ export async function getSupplierSubhires(supplierId: string, params: {
   // Sub-hire line items now identified by `subHireId != null` (Wave 2).
   const where = { organizationId, supplierId, subHireId: { not: null } };
 
-  const [lineItems, total] = await Promise.all([
+  const [rawLineItems, total] = await Promise.all([
     prisma.projectLineItem.findMany({
       where,
       include: {
         project: { select: { id: true, name: true, projectNumber: true, status: true } },
-        model: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * pageSize,
@@ -199,6 +189,7 @@ export async function getSupplierSubhires(supplierId: string, params: {
     prisma.projectLineItem.count({ where }),
   ]);
 
+  const lineItems = await attachModel(organizationId, rawLineItems);
   return serialize({ lineItems, total });
 }
 

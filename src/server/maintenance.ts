@@ -17,6 +17,7 @@ import {
 } from "@/lib/maintenance-mirror";
 import { UserFacingError } from "@/lib/errors";
 import { getModelMap } from "@/lib/models-read";
+import { getAssetsByOrg } from "@/lib/assets-read";
 
 // asset.model lives in Convex — `asset: true` keeps the asset scalars (incl.
 // modelId); the model doc is grafted onto each record's assets[].asset below.
@@ -540,12 +541,9 @@ export async function deleteMaintenanceRecord(id: string) {
 export async function getAssetsForMaintenanceSelect() {
   const { organizationId } = await getOrgContext();
 
-  const assets = await prisma.asset.findMany({
-    where: { organizationId, isActive: true },
-    orderBy: { assetTag: "asc" },
-  });
+  const allAssets = await getAssetsByOrg(organizationId);
+  const assets = allAssets.filter((a) => a.isActive !== false).sort((a, b) => a.assetTag.localeCompare(b.assetTag));
 
-  // asset.model lives in Convex — resolve the name from the model map.
   const modelMap = await getModelMap(organizationId);
   return serialize(
     assets.map((a) => ({

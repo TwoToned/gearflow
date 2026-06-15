@@ -6,6 +6,14 @@ import { serialize } from "@/lib/serialize";
 import { reserveTestTagIds, peekNextTestTagIds, getOrgTestTagSettings } from "@/server/settings";
 import type { Prisma, TestTagStatus } from "@/generated/prisma/client";
 import { logActivity } from "@/lib/activity-log";
+import { getModelById, getModelMap } from "@/lib/models-read";
+import { getAssetById, getAssetsByOrg, getBulkAssetById } from "@/lib/assets-read";
+import {
+  mirrorTestTagAssetCreate,
+  patchTestTagAssetInConvex,
+  removeTestTagAssetFromConvex,
+  removeTestTagRecordFromConvex,
+} from "@/lib/test-tag-mirror";
 
 export async function getTestTagAssets(params?: {
   search?: string;
@@ -79,14 +87,12 @@ export async function getTestTagAsset(id: string) {
     include: {
       asset: {
         select: {
-          id: true, assetTag: true, customName: true, serialNumber: true,
-          model: { select: { name: true, manufacturer: true, modelNumber: true } },
+          id: true, assetTag: true, customName: true, serialNumber: true, modelId: true,
         },
       },
       bulkAsset: {
         select: {
-          id: true, assetTag: true, totalQuantity: true,
-          model: { select: { name: true, manufacturer: true } },
+          id: true, assetTag: true, totalQuantity: true, modelId: true,
         },
       },
       testProfile: { select: { id: true, name: true } },
@@ -104,7 +110,17 @@ export async function getTestTagAsset(id: string) {
   });
 
   if (!item) throw new Error("Test tag asset not found");
-  return serialize(item);
+
+  const modelMap = await getModelMap(organizationId);
+  return serialize({
+    ...item,
+    asset: item.asset
+      ? { ...item.asset, model: item.asset.modelId ? modelMap.get(item.asset.modelId) ?? null : null }
+      : null,
+    bulkAsset: item.bulkAsset
+      ? { ...item.bulkAsset, model: item.bulkAsset.modelId ? modelMap.get(item.bulkAsset.modelId) ?? null : null }
+      : null,
+  });
 }
 
 export async function lookupTestTagAsset(testTagId: string) {
@@ -116,8 +132,7 @@ export async function lookupTestTagAsset(testTagId: string) {
     include: {
       asset: {
         select: {
-          id: true, assetTag: true, customName: true,
-          model: { select: { id: true, name: true, defaultTestProfileId: true } },
+          id: true, assetTag: true, customName: true, modelId: true,
         },
       },
       bulkAsset: { select: { id: true, assetTag: true } },
@@ -133,7 +148,12 @@ export async function lookupTestTagAsset(testTagId: string) {
     },
   });
 
-  return item ? serialize(item) : null;
+  if (!item) return null;
+  const assetModel = item.asset?.modelId ? await getModelById(item.asset.modelId) : null;
+  return serialize({
+    ...item,
+    asset: item.asset ? { ...item.asset, model: assetModel } : null,
+  });
 }
 
 export async function createTestTagAsset(data: {
@@ -157,11 +177,8 @@ export async function createTestTagAsset(data: {
   // If linking to a serialized asset, use the asset's tag as the test tag ID
   let testTagId = data.testTagId;
   if (data.assetId) {
-    const linkedAsset = await prisma.asset.findFirst({
-      where: { id: data.assetId, organizationId },
-      select: { assetTag: true },
-    });
-    if (linkedAsset) testTagId = linkedAsset.assetTag;
+    const linkedAsset = await getAssetById(data.assetId);
+    if (linkedAsset && linkedAsset.organizationId === organizationId) testTagId = linkedAsset.assetTag;
   }
 
   // Reserve or use provided test tag ID
@@ -197,6 +214,8 @@ export async function createTestTagAsset(data: {
     },
   });
 
+  await mirrorTestTagAssetCreate(item as unknown as Record<string, unknown>);
+
   await logActivity({
     organizationId,
     userId,
@@ -224,11 +243,9 @@ export async function createTestTagAssetsFromBulk(data: {
 }) {
   const { organizationId, userId, userName } = await requirePermission("testTag", "create");
 
-  // Verify bulk asset exists
-  const bulkAsset = await prisma.bulkAsset.findFirst({
-    where: { id: data.bulkAssetId, organizationId },
-  });
-  if (!bulkAsset) throw new Error("Bulk asset not found");
+  // Verify bulk asset exists — lives in Convex.
+  const bulkAsset = await getBulkAssetById(data.bulkAssetId);
+  if (!bulkAsset || bulkAsset.organizationId !== organizationId) throw new Error("Bulk asset not found");
 
   const ids = await reserveTestTagIds(data.count);
 
@@ -251,6 +268,11 @@ export async function createTestTagAssetsFromBulk(data: {
       })
     )
   );
+
+  // Mirror AFTER tx commit (Convex calls cannot run inside a Prisma tx).
+  for (const item of items) {
+    await mirrorTestTagAssetCreate(item as unknown as Record<string, unknown>);
+  }
 
   await logActivity({
     organizationId,
@@ -308,6 +330,8 @@ export async function updateTestTagAsset(id: string, data: {
     },
   });
 
+  await patchTestTagAssetInConvex(item.id, item as unknown as Record<string, unknown>);
+
   return serialize(item);
 }
 
@@ -324,6 +348,8 @@ export async function retireTestTagAsset(id: string) {
     data: { status: "RETIRED", isActive: false },
   });
 
+  await patchTestTagAssetInConvex(item.id, item as unknown as Record<string, unknown>);
+
   return serialize(item);
 }
 
@@ -336,12 +362,25 @@ export async function deleteTestTagAsset(id: string) {
   if (!existing) throw new Error("Test tag asset not found");
   if (existing.status !== "RETIRED") throw new Error("Only retired items can be deleted");
 
+  // Capture record ids before deletion so we can mirror the removes.
+  const recordsToDelete = await prisma.testTagRecord.findMany({
+    where: { testTagAssetId: id, organizationId },
+    select: { id: true },
+  });
+
   // Delete all test records first
   await prisma.testTagRecord.deleteMany({
     where: { testTagAssetId: id, organizationId },
   });
 
   await prisma.testTagAsset.delete({ where: { id, organizationId } });
+
+  // Mirror removes AFTER the Prisma deletes commit.
+  for (const r of recordsToDelete) {
+    await removeTestTagRecordFromConvex(r.id);
+  }
+  await removeTestTagAssetFromConvex(id);
+
   return { id };
 }
 
@@ -416,17 +455,20 @@ export async function backfillTestTagAssets() {
   const { organizationId } = await getOrgContext();
 
   // Find all active serialized assets whose model requires T&T and that have no linked TestTagAsset
-  const unlinkedAssets = await prisma.asset.findMany({
-    where: {
-      organizationId,
-      isActive: true,
-      model: { requiresTestAndTag: true },
-      testTagAsset: null,
-    },
-    include: {
-      model: { select: { name: true, manufacturer: true, modelNumber: true, testAndTagIntervalDays: true, defaultEquipmentClass: true, defaultApplianceType: true, defaultTestProfileId: true } },
-    },
-  });
+  // Assets + models live in Convex. testTagAsset still lives in Prisma — get linked assetIds to exclude.
+  const [allOrgAssets, modelMap, existingTTAssets] = await Promise.all([
+    getAssetsByOrg(organizationId),
+    getModelMap(organizationId),
+    prisma.testTagAsset.findMany({
+      where: { organizationId, isActive: true, assetId: { not: null } },
+      select: { assetId: true },
+    }),
+  ]);
+  const linkedAssetIds = new Set(existingTTAssets.map((t) => t.assetId!));
+  const unlinkedAssets = allOrgAssets
+    .filter((a) => a.isActive !== false && modelMap.get(a.modelId)?.requiresTestAndTag === true && !linkedAssetIds.has(a.id))
+    .map((a) => ({ ...a, model: modelMap.get(a.modelId) ?? null }))
+    .filter((a): a is typeof a & { model: NonNullable<typeof a["model"]> } => a.model !== null);
 
   // Retire any active T&T entries whose linked asset no longer exists or is inactive
   const orphaned = await prisma.testTagAsset.findMany({
@@ -455,12 +497,8 @@ export async function backfillTestTagAssets() {
   // Filter dangling entries: only retire those whose testTagId doesn't belong to any existing asset
   const danglingToRetire: string[] = [];
   if (danglingEntries.length > 0) {
-    const existingAssetTags = new Set(
-      (await prisma.asset.findMany({
-        where: { organizationId, assetTag: { in: danglingEntries.map((e) => e.testTagId) } },
-        select: { assetTag: true },
-      })).map((a) => a.assetTag)
-    );
+    // All assets live in Convex — build assetTag set from the org-level list already fetched.
+    const existingAssetTags = new Set(allOrgAssets.map((a) => a.assetTag));
     for (const entry of danglingEntries) {
       if (!existingAssetTags.has(entry.testTagId)) {
         danglingToRetire.push(entry.id);
@@ -476,12 +514,20 @@ export async function backfillTestTagAssets() {
       data: { status: "RETIRED", isActive: false },
     });
     retired = result.count;
+
+    // Mirror the retired rows after the updateMany commits.
+    const retiredRows = await prisma.testTagAsset.findMany({
+      where: { id: { in: retireIds } },
+    });
+    for (const row of retiredRows) {
+      await patchTestTagAssetInConvex(row.id, row as unknown as Record<string, unknown>);
+    }
   }
 
   if (unlinkedAssets.length === 0) return { created: 0, retired };
 
   const orgTT = await getOrgTestTagSettings();
-  await prisma.$transaction(
+  const createdItems = await prisma.$transaction(
     unlinkedAssets.map((asset) => {
       const intervalMonths = asset.model.testAndTagIntervalDays
         ? Math.max(1, Math.round(asset.model.testAndTagIntervalDays / 30))
@@ -505,6 +551,11 @@ export async function backfillTestTagAssets() {
     })
   );
 
+  // Mirror created rows AFTER the tx commits.
+  for (const item of createdItems) {
+    await mirrorTestTagAssetCreate(item as unknown as Record<string, unknown>);
+  }
+
   return { created: unlinkedAssets.length, retired };
 }
 
@@ -521,6 +572,8 @@ export async function reactivateTestTagAsset(id: string) {
     where: { id, organizationId },
     data: { status: "NOT_YET_TESTED", isActive: true },
   });
+
+  await patchTestTagAssetInConvex(item.id, item as unknown as Record<string, unknown>);
 
   await logActivity({
     organizationId,

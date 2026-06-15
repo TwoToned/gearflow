@@ -6,6 +6,8 @@ import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { syncAssetsToConvex } from "@/lib/asset-mirror";
 import { upsertProjectLineItemsToConvex } from "@/lib/line-item-mirror";
+import { mirrorAssetScanLogCreate } from "@/lib/asset-scan-log-mirror";
+import { getModelMap } from "@/lib/models-read";
 import {
   returnLineUnits,
   syncLineItemRollup,
@@ -85,34 +87,42 @@ async function loadDeployedItems(
   organizationId: string,
   projectId: string,
 ): Promise<DeployedItemRow[]> {
-  return prisma.projectLineItem.findMany({
-    where: {
-      organizationId,
-      projectId,
-      status: "CHECKED_OUT",
-      subHireGroupId: null,
-      OR: [
-        { isKitChild: false },
-        { isKitChild: true, childKind: "ACCESSORY" },
-      ],
-    },
-    orderBy: { sortOrder: "asc" },
-    select: {
-      id: true,
-      modelId: true,
-      sortOrder: true,
-      assetId: true,
-      bulkAssetId: true,
-      subHireId: true,
-      isCustomItem: true,
-      childKind: true,
-      checkedOutQuantity: true,
-      returnedQuantity: true,
-      status: true,
-      model: { select: { name: true, modelNumber: true } },
-      units: { select: UNIT_SELECT },
-    },
-  });
+  const [rows, modelMap] = await Promise.all([
+    prisma.projectLineItem.findMany({
+      where: {
+        organizationId,
+        projectId,
+        status: "CHECKED_OUT",
+        subHireGroupId: null,
+        OR: [
+          { isKitChild: false },
+          { isKitChild: true, childKind: "ACCESSORY" },
+        ],
+      },
+      orderBy: { sortOrder: "asc" },
+      select: {
+        id: true,
+        modelId: true,
+        sortOrder: true,
+        assetId: true,
+        bulkAssetId: true,
+        subHireId: true,
+        isCustomItem: true,
+        childKind: true,
+        checkedOutQuantity: true,
+        returnedQuantity: true,
+        status: true,
+        units: { select: UNIT_SELECT },
+      },
+    }),
+    getModelMap(organizationId),
+  ]);
+  return rows.map((r) => ({
+    ...r,
+    model: r.modelId
+      ? { name: modelMap.get(r.modelId)?.name ?? null, modelNumber: modelMap.get(r.modelId)?.modelNumber ?? null }
+      : null,
+  })) as DeployedItemRow[];
 }
 
 export async function getBulkCheckInTotals(
@@ -139,7 +149,14 @@ export async function checkInBulkTotals(
     return serialize({ returned: [] as Array<{ key: string; quantity: number }> });
   }
 
+  // Pre-fetch model map — model names are display-only, pre-fetching before
+  // the tx avoids a cross-domain read inside the Prisma transaction.
+  const modelMap = await getModelMap(organizationId);
+
   const allTouchedAssets = new Set<string>();
+  // Scan-log rows created in-tx; mirrored to Convex AFTER the tx commits
+  // (Convex calls can't run inside a Prisma tx).
+  const scanLogSink: Record<string, unknown>[] = [];
   const returned = await prisma.$transaction(async (tx) => {
     const defaultLocation = await tx.location.findFirst({
       where: { organizationId, isDefault: true },
@@ -171,9 +188,13 @@ export async function checkInBulkTotals(
         checkedOutQuantity: true,
         returnedQuantity: true,
         status: true,
-        model: { select: { name: true, modelNumber: true } },
         units: { select: UNIT_SELECT },
       },
+    })).map((r) => ({
+      ...r,
+      model: r.modelId
+        ? { name: modelMap.get(r.modelId)?.name ?? null, modelNumber: modelMap.get(r.modelId)?.modelNumber ?? null }
+        : null,
     })) as DeployedItemRow[];
 
     const byKey = new Map<string, CheckInItem[]>();
@@ -250,7 +271,7 @@ export async function checkInBulkTotals(
       }
 
       for (const assetId of assetsTouched) {
-        await tx.assetScanLog.create({
+        scanLogSink.push(await tx.assetScanLog.create({
           data: {
             organizationId,
             assetId,
@@ -259,9 +280,9 @@ export async function checkInBulkTotals(
             scannedById: userId,
             notes: `Bulk check-in (${condition})`,
           },
-        });
+        }));
       }
-      await tx.assetScanLog.create({
+      scanLogSink.push(await tx.assetScanLog.create({
         data: {
           organizationId,
           projectId,
@@ -269,7 +290,7 @@ export async function checkInBulkTotals(
           scannedById: userId,
           notes: `Bulk check-in: ${distributed}x ${labelByKey.get(req.key) ?? req.key} (${condition})`,
         },
-      });
+      }));
 
       summary.push({ key: req.key, quantity: distributed, condition });
     }
@@ -281,6 +302,9 @@ export async function checkInBulkTotals(
   // project's line-item status flips to Convex.
   await syncAssetsToConvex([...allTouchedAssets]);
   await upsertProjectLineItemsToConvex(projectId);
+
+  // Mirror the append-only scan-log rows created inside the tx (post-commit).
+  for (const row of scanLogSink) await mirrorAssetScanLogCreate(row);
 
   for (const r of returned) {
     await logActivity({

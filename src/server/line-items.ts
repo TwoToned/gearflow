@@ -23,6 +23,11 @@ import { UserFacingError } from "@/lib/errors";
 import { computeStockBreakdown } from "@/lib/availability";
 import { isStaleRevision } from "@/lib/collaboration-conflict";
 import { writeCollabActivityEvent } from "@/lib/collaboration-activity";
+import { getModelById, getModelMap, getModelWithCategoryMap } from "@/lib/models-read";
+import { getActiveAssetsByModel, getActiveBulkAssetsByModel, getAssetById, getAssetByAssetTag, getAssetsByOrg, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
+import { getProjectById, getProjectsByOrg } from "@/lib/projects-read";
+import { getKitById } from "@/lib/kits-read";
+import { getLocationById } from "@/lib/locations-read";
 
 /**
  * Expand a serialised asset's permanent accessories into child line items.
@@ -49,6 +54,7 @@ async function expandAccessoryChildren(
     duration: number;
     pricingType: import("@/generated/prisma/client").PricingType;
   },
+  modelMap: Map<string, { name: string }>,
 ) {
   const base = {
     organizationId,
@@ -72,14 +78,14 @@ async function expandAccessoryChildren(
       select: {
         modelId: true,
         childAssets: {
-          select: { id: true, modelId: true, model: { select: { name: true } } },
+          select: { id: true, modelId: true },
           orderBy: { assetTag: "asc" },
         },
         childBulkItems: {
           select: {
             bulkAssetId: true,
             quantity: true,
-            bulkAsset: { select: { modelId: true, model: { select: { name: true } } } },
+            bulkAsset: { select: { modelId: true } },
           },
           orderBy: { sortOrder: "asc" },
         },
@@ -93,7 +99,7 @@ async function expandAccessoryChildren(
       select: {
         bulkAssetId: true,
         quantity: true,
-        bulkAsset: { select: { modelId: true, model: { select: { name: true } } } },
+        bulkAsset: { select: { modelId: true } },
       },
       orderBy: { sortOrder: "asc" },
     });
@@ -106,17 +112,18 @@ async function expandAccessoryChildren(
     let sort = 0;
     for (const child of asset.childAssets) {
       await tx.projectLineItem.create({
-        data: { ...base, modelId: child.modelId, assetId: child.id, quantity: 1, description: child.model?.name ?? null, sortOrder: sort++ },
+        data: { ...base, modelId: child.modelId, assetId: child.id, quantity: 1, description: modelMap.get(child.modelId)?.name ?? null, sortOrder: sort++ },
       });
     }
     for (const bi of [...asset.childBulkItems, ...inheritedBulks]) {
+      const modelName = modelMap.get(bi.bulkAsset.modelId)?.name ?? null;
       await tx.projectLineItem.create({
         data: {
           ...base,
           modelId: bi.bulkAsset.modelId,
           bulkAssetId: bi.bulkAssetId,
           quantity: bi.quantity,
-          description: bi.bulkAsset.model?.name ? `${bi.quantity}x ${bi.bulkAsset.model.name}` : null,
+          description: modelName ? `${bi.quantity}x ${modelName}` : null,
           sortOrder: sort++,
         },
       });
@@ -136,7 +143,7 @@ async function expandAccessoryChildren(
       select: {
         bulkAssetId: true,
         quantity: true,
-        bulkAsset: { select: { modelId: true, model: { select: { name: true } } } },
+        bulkAsset: { select: { modelId: true } },
       },
       orderBy: { sortOrder: "asc" },
     });
@@ -145,13 +152,14 @@ async function expandAccessoryChildren(
     let sort = 0;
     for (const bi of modelBulks) {
       const qty = bi.quantity * Math.max(parentLine.quantity, 1);
+      const modelName = modelMap.get(bi.bulkAsset.modelId)?.name ?? null;
       await tx.projectLineItem.create({
         data: {
           ...base,
           modelId: bi.bulkAsset.modelId,
           bulkAssetId: bi.bulkAssetId,
           quantity: qty,
-          description: bi.bulkAsset.model?.name ? `${qty}x ${bi.bulkAsset.model.name}` : null,
+          description: modelName ? `${qty}x ${modelName}` : null,
           sortOrder: sort++,
         },
       });
@@ -169,12 +177,12 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
   // WHY: Prevent double-booking of owned equipment. Sub-hire items are third-party
   // stock (rented in to cover gaps) and don't consume our warehouse inventory.
   if (parsed.type === "EQUIPMENT" && parsed.modelId && !allowOverbook) {
-    const project = await prisma.project.findUnique({
-      where: { id: projectId, organizationId },
-      select: { rentalStartDate: true, rentalEndDate: true },
-    });
+    const convexProject = await getProjectById(projectId);
+    if (!convexProject || convexProject.organizationId !== organizationId) {
+      return serialize({ success: false });
+    }
 
-    const hasDates = !!project?.rentalStartDate && !!project?.rentalEndDate;
+    const hasDates = convexProject.rentalStartDate != null && convexProject.rentalEndDate != null;
 
     // Two-mode availability check: without dates (project still being quoted),
     // we only check conflicts within this project (the user is iterating on
@@ -184,12 +192,13 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
     // complete. Booking a kit asset directly would leave the kit missing a piece.
     if (parsed.assetId) {
       // Check if asset is in a kit
-      const assetCheck = await prisma.asset.findUnique({ where: { id: parsed.assetId }, include: { kit: { select: { assetTag: true } } } });
+      const assetCheck = await getAssetById(parsed.assetId);
       if (assetCheck?.kitId) {
+        const assetKit = await getKitById(assetCheck.kitId);
         throw new UserFacingError({
           code: "ASSET_IN_KIT",
           title: "Asset is in a kit",
-          message: `This asset belongs to Kit ${assetCheck.kit?.assetTag}.`,
+          message: `This asset belongs to Kit ${assetKit?.assetTag ?? assetCheck.kitId}.`,
           hint: "Add the Kit to the project instead, or remove the asset from the Kit first.",
         });
       }
@@ -202,22 +211,31 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
       // overlapping projects. Without dates (quoting phase), only check within
       // this project since the user is iterating on a draft quote.
       if (hasDates) {
-        const conflictWindow: Prisma.ProjectWhereInput = {
-          status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
-          isTemplate: false,
-          rentalStartDate: { lte: project!.rentalEndDate! },
-          rentalEndDate: { gte: project!.rentalStartDate! },
-          id: { not: projectId },
-        };
+        const projStartMs = convexProject.rentalStartDate as number;
+        const projEndMs = convexProject.rentalEndDate as number;
+        const allProjects = await getProjectsByOrg(organizationId);
+        const conflictProjectIds = allProjects
+          .filter(
+            (p) =>
+              !p.isTemplate &&
+              !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "") &&
+              p.rentalStartDate != null &&
+              p.rentalEndDate != null &&
+              (p.rentalStartDate as number) <= projEndMs &&
+              (p.rentalEndDate as number) >= projStartMs &&
+              p.id !== projectId,
+          )
+          .map((p) => p.id);
+        const projectMap = new Map(allProjects.map((p) => [p.id, p]));
         const [lineConflict, unitConflict] = await Promise.all([
           prisma.projectLineItem.findFirst({
             where: {
               organizationId,
               assetId: parsed.assetId,
               status: { not: "CANCELLED" },
-              project: conflictWindow,
+              projectId: { in: conflictProjectIds },
             },
-            select: { project: { select: { projectNumber: true, name: true } } },
+            select: { projectId: true },
           }),
           prisma.projectLineItemUnit.findFirst({
             where: {
@@ -226,20 +244,18 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
               status: { not: "RETURNED" },
               lineItem: {
                 status: { not: "CANCELLED" },
-                project: conflictWindow,
+                projectId: { in: conflictProjectIds },
               },
             },
             select: {
               lineItem: {
-                select: {
-                  project: { select: { projectNumber: true, name: true } },
-                },
+                select: { projectId: true },
               },
             },
           }),
         ]);
-        const conflictProject =
-          lineConflict?.project ?? unitConflict?.lineItem.project;
+        const conflictProjId = lineConflict?.projectId ?? unitConflict?.lineItem.projectId;
+        const conflictProject = conflictProjId ? projectMap.get(conflictProjId) : null;
         if (conflictProject) {
           throw new UserFacingError({
             code: "ASSET_DOUBLE_BOOKED",
@@ -254,7 +270,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
       // WHY: Retired and lost assets are permanently unavailable — booking them
       // would create unfulfillable commitments. Checked-out assets return before
       // the project starts, so they're still bookable.
-      const asset = await prisma.asset.findUnique({ where: { id: parsed.assetId } });
+      const asset = await getAssetById(parsed.assetId);
       if (asset && (asset.status === "RETIRED" || asset.status === "LOST")) {
         throw new UserFacingError({
           code: "ASSET_UNAVAILABLE",
@@ -267,49 +283,66 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
       }
     } else {
       // Model-level — check quantity against available stock
-      const model = await prisma.model.findUnique({
-        where: { id: parsed.modelId },
-        include: {
-          assets: { where: { isActive: true } },
-          bulkAssets: { where: { isActive: true } },
-        },
-      });
+      // Model + active assets live in Convex — fetch in parallel.
+      const [model, activeAssets, activeBulkAssets] = await Promise.all([
+        getModelById(parsed.modelId),
+        getActiveAssetsByModel(parsed.modelId, organizationId),
+        getActiveBulkAssetsByModel(parsed.modelId, organizationId),
+      ]);
 
       // WHY: For model-level (non-specific) adds, enforce against effective
       // stock. With dates, check across all overlapping projects; without dates,
       // only check this project's existing bookings since other quotes are drafts.
       if (model) {
+        const modelForBreakdown = {
+          assetType: (model.assetType ?? "SERIALIZED") as "SERIALIZED" | "BULK",
+          assets: activeAssets.map((a: ConvexAsset) => ({ status: a.status ?? "AVAILABLE" })),
+          bulkAssets: activeBulkAssets.map((ba: ConvexBulkAsset) => ({ totalQuantity: ba.totalQuantity ?? 0 })),
+        };
         // When dates exist, check overlapping bookings across projects
         // When no dates, check only this project's existing bookings against stock
         // Sub-hire items don't consume our stock so they're excluded from the count.
-        const overlapping = hasDates
-          ? await prisma.projectLineItem.findMany({
-              where: {
-                organizationId,
-                modelId: parsed.modelId,
-                status: { not: "CANCELLED" },
-                subHireId: null,
-                project: {
-                  status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
-                  rentalStartDate: { lte: project!.rentalEndDate! },
-                  rentalEndDate: { gte: project!.rentalStartDate! },
-                },
-              },
-            })
-          : await prisma.projectLineItem.findMany({
-              where: {
-                organizationId,
-                modelId: parsed.modelId,
-                status: { not: "CANCELLED" },
-                subHireId: null,
-                projectId,
-              },
-            });
+        let overlapping;
+        if (hasDates) {
+          const projStartMs = convexProject.rentalStartDate as number;
+          const projEndMs = convexProject.rentalEndDate as number;
+          const modelAllProjects = await getProjectsByOrg(organizationId);
+          const modelConflictProjectIds = modelAllProjects
+            .filter(
+              (p) =>
+                !p.isTemplate &&
+                !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "") &&
+                p.rentalStartDate != null &&
+                p.rentalEndDate != null &&
+                (p.rentalStartDate as number) <= projEndMs &&
+                (p.rentalEndDate as number) >= projStartMs,
+            )
+            .map((p) => p.id);
+          overlapping = await prisma.projectLineItem.findMany({
+            where: {
+              organizationId,
+              modelId: parsed.modelId,
+              status: { not: "CANCELLED" },
+              subHireId: null,
+              projectId: { in: modelConflictProjectIds },
+            },
+          });
+        } else {
+          overlapping = await prisma.projectLineItem.findMany({
+            where: {
+              organizationId,
+              modelId: parsed.modelId,
+              status: { not: "CANCELLED" },
+              subHireId: null,
+              projectId,
+            },
+          });
+        }
 
         const booked = overlapping.reduce((sum, li) => sum + li.quantity, 0);
         // Enforce against effectiveStock — in-maintenance/lost/retired assets
         // cannot be booked even though they still exist in the model.
-        const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(model);
+        const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(modelForBreakdown);
         const available = Math.max(0, effectiveStock - booked);
 
         // WHY: Compare against effective stock (total minus unavailable), not
@@ -382,10 +415,13 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
               : parsed.notes
             : existing.notes,
         },
-        include: { model: true, asset: true, bulkAsset: true },
+        include: { asset: true, bulkAsset: true },
       });
 
       await recalculateProjectTotals(projectId);
+
+      // Model lives in Convex — enrich after update.
+      const mergedModel = result.modelId ? await getModelById(result.modelId) : null;
 
       await logActivity({
         organizationId,
@@ -400,7 +436,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
       });
 
       await upsertProjectLineItemsToConvex(projectId);
-      return serialize({ ...result, _merged: true, _newQuantity: newQuantity });
+      return serialize({ ...result, model: mergedModel, _merged: true, _newQuantity: newQuantity });
     }
   }
 
@@ -428,10 +464,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
 
       if (billingTotalDays == null) {
         // Try project-level billing
-        const proj = await prisma.project.findUnique({
-          where: { id: projectId },
-          select: { billingMonths: true, billingWeeks: true, billingDays: true },
-        });
+        const proj = await getProjectById(projectId);
         if (proj && (proj.billingMonths != null || proj.billingWeeks != null || proj.billingDays != null)) {
           billingTotalDays = computeTotalDays(
             proj.billingMonths ?? 0,
@@ -443,10 +476,8 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
       }
 
       if (billingTotalDays != null && billingTotalDays > 0) {
-        const model = await prisma.model.findUnique({
-          where: { id: parsed.modelId },
-          select: { dailyRate: true, weeklyRate: true, monthlyRate: true },
-        });
+        // Model lives in Convex — fetch for rate fields.
+        const model = await getModelById(parsed.modelId);
 
         if (model) {
           const dailyRate = model.dailyRate != null ? Number(model.dailyRate) : null;
@@ -474,11 +505,16 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
     parsed.discount
   );
 
-  const maxSort = await prisma.projectLineItem.aggregate({
-    where: { projectId, organizationId },
-    _max: { sortOrder: true },
-  });
-  const nextSort = (maxSort._max.sortOrder ?? -1) + 1;
+  const [maxSortAgg, accessoryModelMap] = await Promise.all([
+    prisma.projectLineItem.aggregate({
+      where: { projectId, organizationId },
+      _max: { sortOrder: true },
+    }),
+    // Model names for accessory description text — fetched before the transaction
+    // so we avoid a cross-domain Prisma join inside expandAccessoryChildren.
+    getModelMap(organizationId),
+  ]);
+  const nextSort = (maxSortAgg._max.sortOrder ?? -1) + 1;
 
   const result = await prisma.$transaction(async (tx) => {
     const line = await tx.projectLineItem.create({
@@ -509,7 +545,6 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
         subhireOrderNumber: parsed.subhireOrderNumber || null,
       },
       include: {
-        model: true,
         asset: true,
         bulkAsset: true,
       },
@@ -524,7 +559,7 @@ export async function addLineItem(projectId: string, data: LineItemFormValues, a
     // warehouse includes them during prep and the quote shows what's included.
     // includeAccessories=false lets callers suppress this (e.g. return-only flow).
     if (includeAccessories && !line.subHireId && line.type === "EQUIPMENT" && (line.assetId || line.modelId)) {
-      await expandAccessoryChildren(tx, organizationId, projectId, line);
+      await expandAccessoryChildren(tx, organizationId, projectId, line, accessoryModelMap);
     }
 
     return line;
@@ -629,50 +664,64 @@ export async function updateLineItem(
     !allowOverbook &&
     parsed.quantity > existing.quantity
   ) {
-    const project = await prisma.project.findUnique({
-      where: { id: existing.projectId, organizationId },
-      select: { rentalStartDate: true, rentalEndDate: true },
-    });
-    const hasDates = !!project?.rentalStartDate && !!project?.rentalEndDate;
+    const updateConvexProject = await getProjectById(existing.projectId);
+    const hasDates = updateConvexProject?.rentalStartDate != null && updateConvexProject?.rentalEndDate != null;
 
-    const model = await prisma.model.findUnique({
-      where: { id: parsed.modelId },
-      include: {
-        assets: { where: { isActive: true } },
-        bulkAssets: { where: { isActive: true } },
-      },
-    });
+    // Model + active assets live in Convex — fetch in parallel.
+    const [model, activeAssets, activeBulkAssets] = await Promise.all([
+      getModelById(parsed.modelId),
+      getActiveAssetsByModel(parsed.modelId, organizationId),
+      getActiveBulkAssetsByModel(parsed.modelId, organizationId),
+    ]);
 
     if (model) {
-      const overlapping = hasDates
-        ? await prisma.projectLineItem.findMany({
-            where: {
-              organizationId,
-              modelId: parsed.modelId,
-              status: { not: "CANCELLED" },
-              subHireId: null,
-              id: { not: id },
-              project: {
-                status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
-                rentalStartDate: { lte: project!.rentalEndDate! },
-                rentalEndDate: { gte: project!.rentalStartDate! },
-              },
-            },
-          })
-        : await prisma.projectLineItem.findMany({
-            where: {
-              organizationId,
-              modelId: parsed.modelId,
-              status: { not: "CANCELLED" },
-              subHireId: null,
-              id: { not: id },
-              projectId: existing.projectId,
-            },
-          });
+      const modelForBreakdown = {
+        assetType: (model.assetType ?? "SERIALIZED") as "SERIALIZED" | "BULK",
+        assets: activeAssets.map((a: ConvexAsset) => ({ status: a.status ?? "AVAILABLE" })),
+        bulkAssets: activeBulkAssets.map((ba: ConvexBulkAsset) => ({ totalQuantity: ba.totalQuantity ?? 0 })),
+      };
+      let overlapping;
+      if (hasDates) {
+        const projStartMs = updateConvexProject!.rentalStartDate as number;
+        const projEndMs = updateConvexProject!.rentalEndDate as number;
+        const updateAllProjects = await getProjectsByOrg(organizationId);
+        const updateConflictProjectIds = updateAllProjects
+          .filter(
+            (p) =>
+              !p.isTemplate &&
+              !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "") &&
+              p.rentalStartDate != null &&
+              p.rentalEndDate != null &&
+              (p.rentalStartDate as number) <= projEndMs &&
+              (p.rentalEndDate as number) >= projStartMs,
+          )
+          .map((p) => p.id);
+        overlapping = await prisma.projectLineItem.findMany({
+          where: {
+            organizationId,
+            modelId: parsed.modelId,
+            status: { not: "CANCELLED" },
+            subHireId: null,
+            id: { not: id },
+            projectId: { in: updateConflictProjectIds },
+          },
+        });
+      } else {
+        overlapping = await prisma.projectLineItem.findMany({
+          where: {
+            organizationId,
+            modelId: parsed.modelId,
+            status: { not: "CANCELLED" },
+            subHireId: null,
+            id: { not: id },
+            projectId: existing.projectId,
+          },
+        });
+      }
 
       const booked = overlapping.reduce((sum, li) => sum + li.quantity, 0);
       // Enforce against effectiveStock — matches checkAvailability and the badge.
-      const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(model);
+      const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(modelForBreakdown);
       const available = Math.max(0, effectiveStock - booked);
 
       if (parsed.quantity > available) {
@@ -731,7 +780,6 @@ export async function updateLineItem(
       }),
     },
     include: {
-      model: true,
       asset: true,
       bulkAsset: true,
     },
@@ -787,26 +835,33 @@ export async function addKitLineItem(
 ) {
   const { organizationId, userId, userName } = await requirePermission("project", "manage_line_items");
 
-  const kit = await prisma.kit.findUnique({
-    where: { id: kitId, organizationId },
-    include: {
-      serializedItems: { include: { asset: { include: { model: true } } }, orderBy: { sortOrder: "asc" } },
-      bulkItems: { include: { bulkAsset: { include: { model: true } } }, orderBy: { sortOrder: "asc" } },
-    },
-  });
-  if (!kit) {
+  const convexKit = await getKitById(kitId);
+  if (!convexKit || convexKit.organizationId !== organizationId) {
     throw new UserFacingError({
       code: "NOT_FOUND",
       title: "Kit not found",
       message: "This kit was deleted or moved. Refresh and try again.",
     });
   }
+  const [serializedItems, bulkItems] = await Promise.all([
+    prisma.kitSerializedItem.findMany({
+      where: { kitId },
+      include: { asset: { select: { modelId: true } } },
+      orderBy: { sortOrder: "asc" },
+    }),
+    prisma.kitBulkItem.findMany({
+      where: { kitId },
+      include: { bulkAsset: { select: { modelId: true } } },
+      orderBy: { sortOrder: "asc" },
+    }),
+  ]);
+  const kit = { ...convexKit, serializedItems, bulkItems };
   // Block truly unavailable kits but allow checked-out ones — date overlap check below handles real conflicts
   if (kit.status === "IN_MAINTENANCE" || kit.status === "INCOMPLETE") {
     throw new UserFacingError({
       code: "KIT_UNAVAILABLE",
       title: "Kit cannot be added",
-      message: `Kit ${kit.assetTag} is ${kit.status.replace("_", " ").toLowerCase()}.`,
+      message: `Kit ${kit.assetTag} is ${(kit.status as string).replace("_", " ").toLowerCase()}.`,
       hint: kit.status === "IN_MAINTENANCE"
         ? "Wait for maintenance to finish, or pick a different kit."
         : "Complete the kit's missing items before booking it.",
@@ -814,23 +869,37 @@ export async function addKitLineItem(
   }
 
   // Check not already on an overlapping project
-  const project = await prisma.project.findUnique({
-    where: { id: projectId, organizationId },
-    select: { rentalStartDate: true, rentalEndDate: true },
-  });
-  if (project?.rentalStartDate && project?.rentalEndDate) {
+  const kitAddProject = await getProjectById(projectId);
+  if (kitAddProject?.rentalStartDate != null && kitAddProject?.rentalEndDate != null) {
+    const kitProjStartMs = kitAddProject.rentalStartDate as number;
+    const kitProjEndMs = kitAddProject.rentalEndDate as number;
+    const kitAddAllProjects = await getProjectsByOrg(organizationId);
+    const kitConflictProjectIds = kitAddAllProjects
+      .filter(
+        (p) =>
+          !p.isTemplate &&
+          !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "") &&
+          p.rentalStartDate != null &&
+          p.rentalEndDate != null &&
+          (p.rentalStartDate as number) <= kitProjEndMs &&
+          (p.rentalEndDate as number) >= kitProjStartMs &&
+          p.id !== projectId,
+      )
+      .map((p) => p.id);
+    const kitProjectMap = new Map(kitAddAllProjects.map((p) => [p.id, p]));
     const conflict = await prisma.projectLineItem.findFirst({
       where: {
         organizationId, kitId, isKitChild: false, status: { not: "CANCELLED" },
-        project: { status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] }, rentalStartDate: { lte: project.rentalEndDate }, rentalEndDate: { gte: project.rentalStartDate }, id: { not: projectId } },
+        projectId: { in: kitConflictProjectIds },
       },
-      include: { project: { select: { projectNumber: true, name: true } } },
+      select: { projectId: true },
     });
     if (conflict) {
+      const conflictKitProject = kitProjectMap.get(conflict.projectId);
       throw new UserFacingError({
         code: "KIT_DOUBLE_BOOKED",
         title: "Kit already booked",
-        message: `Kit ${kit.assetTag} is on ${conflict.project.projectNumber} — ${conflict.project.name} during those dates.`,
+        message: `Kit ${kit.assetTag} is on ${conflictKitProject?.projectNumber ?? conflict.projectId} — ${conflictKitProject?.name ?? ""} during those dates.`,
         hint: "Pick a different kit, adjust the rental dates, or remove it from the other project.",
       });
     }
@@ -838,6 +907,9 @@ export async function addKitLineItem(
 
   const maxSort = await prisma.projectLineItem.aggregate({ where: { projectId, organizationId }, _max: { sortOrder: true } });
   let nextSort = (maxSort._max.sortOrder ?? -1) + 1;
+
+  // Model lives in Convex — load map before the transaction.
+  const modelMap = await getModelMap(organizationId);
 
   const result = await prisma.$transaction(async (tx) => {
     // Create parent kit line item — holds the kit-level pricing and serves
@@ -859,12 +931,13 @@ export async function addKitLineItem(
 
     // Create child line items for serialized items
     for (const si of kit.serializedItems) {
-      const childPrice = pricingMode === "ITEMIZED" ? (si.asset.model.defaultRentalPrice ? Number(si.asset.model.defaultRentalPrice) : null) : null;
+      const siModel = si.asset.modelId ? modelMap.get(si.asset.modelId) ?? null : null;
+      const childPrice = pricingMode === "ITEMIZED" ? (siModel?.defaultRentalPrice ? Number(siModel.defaultRentalPrice) : null) : null;
       await tx.projectLineItem.create({
         data: {
           organizationId, projectId, type: "EQUIPMENT",
           modelId: si.asset.modelId, assetId: si.assetId,
-          description: si.asset.model.name,
+          description: siModel?.name ?? si.asset.modelId ?? "",
           quantity: 1, unitPrice: childPrice, pricingType: "PER_DAY", duration: 1,
           lineTotal: childPrice, sortOrder: nextSort++,
           isKitChild: true, parentLineItemId: parentItem.id,
@@ -874,12 +947,13 @@ export async function addKitLineItem(
 
     // Create child line items for bulk items
     for (const bi of kit.bulkItems) {
-      const childPrice = pricingMode === "ITEMIZED" ? (bi.bulkAsset.model.defaultRentalPrice ? Number(bi.bulkAsset.model.defaultRentalPrice) * bi.quantity : null) : null;
+      const biModel = bi.bulkAsset.modelId ? modelMap.get(bi.bulkAsset.modelId) ?? null : null;
+      const childPrice = pricingMode === "ITEMIZED" ? (biModel?.defaultRentalPrice ? Number(biModel.defaultRentalPrice) * bi.quantity : null) : null;
       await tx.projectLineItem.create({
         data: {
           organizationId, projectId, type: "EQUIPMENT",
           modelId: bi.bulkAsset.modelId, bulkAssetId: bi.bulkAssetId,
-          description: `${bi.quantity}x ${bi.bulkAsset.model.name}`,
+          description: `${bi.quantity}x ${biModel?.name ?? bi.bulkAsset.modelId ?? ""}`,
           quantity: bi.quantity, unitPrice: childPrice ? childPrice / bi.quantity : null,
           pricingType: "PER_DAY", duration: 1, lineTotal: childPrice, sortOrder: nextSort++,
           isKitChild: true, parentLineItemId: parentItem.id,
@@ -916,8 +990,8 @@ export async function addCustomLineItem(projectId: string, data: CustomLineItemF
   const parsed = customLineItemSchema.parse(data);
 
   // Validate project belongs to this org before writing
-  const project = await prisma.project.findFirst({ where: { id: projectId, organizationId } });
-  if (!project) {
+  const customLineItemProject = await getProjectById(projectId);
+  if (!customLineItemProject || customLineItemProject.organizationId !== organizationId) {
     throw new UserFacingError({
       code: "NOT_FOUND",
       title: "Project not found",
@@ -1110,18 +1184,22 @@ export async function checkAvailability(
   const startDate = hasDates ? new Date(rentalStartDate) : null;
   const endDate = hasDates ? new Date(rentalEndDate) : null;
 
-  // Get the model with asset type info
-  const model = await prisma.model.findUnique({
-    where: { id: modelId, organizationId },
-    include: {
-      assets: { where: { isActive: true } },
-      bulkAssets: { where: { isActive: true } },
-    },
-  });
+  // Model + active assets live in Convex — fetch in parallel.
+  const [model, activeAssets, activeBulkAssets] = await Promise.all([
+    getModelById(modelId),
+    getActiveAssetsByModel(modelId, organizationId),
+    getActiveBulkAssetsByModel(modelId, organizationId),
+  ]);
 
   if (!model) {
     return serialize({ totalStock: 0, effectiveStock: 0, booked: 0, available: 0, bookedOnThisProject: 0, unavailable: 0, inMaintenance: 0, lost: 0, conflicts: [] as string[], dateless: !hasDates, hasAccessories: false });
   }
+
+  const modelForBreakdown = {
+    assetType: (model.assetType ?? "SERIALIZED") as "SERIALIZED" | "BULK",
+    assets: activeAssets.map((a: ConvexAsset) => ({ status: a.status ?? "AVAILABLE" })),
+    bulkAssets: activeBulkAssets.map((ba: ConvexBulkAsset) => ({ totalQuantity: ba.totalQuantity ?? 0 })),
+  };
 
   // Find overlapping projects (where the project rental period overlaps with the given dates)
   // Include both regular items AND kit children — they all consume stock
@@ -1186,10 +1264,10 @@ export async function checkAvailability(
 
   const bulkAccessoryCount = await prisma.modelBulkAccessory.count({ where: { modelId, organizationId } });
 
-  if (model.assetType === "SERIALIZED") {
-    const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(model);
-    const inMaintenance = model.assets.filter((a) => a.status === "IN_MAINTENANCE").length;
-    const lost = model.assets.filter((a) => a.status === "LOST").length;
+  if (modelForBreakdown.assetType === "SERIALIZED") {
+    const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(modelForBreakdown);
+    const inMaintenance = modelForBreakdown.assets.filter((a: { status: string }) => a.status === "IN_MAINTENANCE").length;
+    const lost = modelForBreakdown.assets.filter((a: { status: string }) => a.status === "LOST").length;
     const available = Math.max(0, effectiveStock - booked);
 
     return serialize({
@@ -1198,8 +1276,8 @@ export async function checkAvailability(
     });
   } else {
     // BULK: sum up total quantity across all bulk assets
-    const totalStock = model.bulkAssets.reduce(
-      (sum, ba) => sum + ba.totalQuantity,
+    const totalStock = modelForBreakdown.bulkAssets.reduce(
+      (sum: number, ba: { totalQuantity: number }) => sum + ba.totalQuantity,
       0
     );
     const available = Math.max(0, totalStock - booked);
@@ -1219,14 +1297,18 @@ export async function lookupAssetByTag(
 ) {
   const { organizationId } = await getOrgContext();
 
-  const asset = await prisma.asset.findUnique({
-    where: { organizationId_assetTag: { organizationId, assetTag } },
-    include: { model: { include: { category: true } }, location: true },
-  });
+  const convexTagAsset = await getAssetByAssetTag(organizationId, assetTag);
 
-  if (!asset) {
+  if (!convexTagAsset) {
     return serialize({ found: false as const, asset: null, available: false, conflictsWith: null, hasAccessories: false });
   }
+
+  const convexTagLocation = convexTagAsset.locationId ? await getLocationById(convexTagAsset.locationId) : null;
+  const asset = { ...convexTagAsset, location: convexTagLocation ?? null };
+
+  // Model lives in Convex — fetch with category for the caller.
+  const modelWithCategoryMap = await getModelWithCategoryMap(organizationId);
+  const model = asset.modelId ? (modelWithCategoryMap.get(asset.modelId) ?? null) : null;
 
   // Check if this specific asset is booked in any overlapping project
   let available = true;
@@ -1236,24 +1318,37 @@ export async function lookupAssetByTag(
     const startDate = new Date(rentalStartDate);
     const endDate = new Date(rentalEndDate);
 
+    const lookupAllProjects = await getProjectsByOrg(organizationId);
+    const lookupConflictProjectIds = lookupAllProjects
+      .filter(
+        (p) =>
+          !p.isTemplate &&
+          !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "") &&
+          p.rentalStartDate != null &&
+          p.rentalEndDate != null &&
+          (p.rentalStartDate as number) <= endDate.getTime() &&
+          (p.rentalEndDate as number) >= startDate.getTime() &&
+          (excludeProjectId ? p.id !== excludeProjectId : true),
+      )
+      .map((p) => p.id);
+    const lookupProjectMap = new Map(lookupAllProjects.map((p) => [p.id, p]));
+
     const overlapping = await prisma.projectLineItem.findFirst({
       where: {
         organizationId,
         assetId: asset.id,
         status: { not: "CANCELLED" },
-        project: {
-          status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
-          rentalStartDate: { lte: endDate },
-          rentalEndDate: { gte: startDate },
-          ...(excludeProjectId ? { id: { not: excludeProjectId } } : {}),
-        },
+        projectId: { in: lookupConflictProjectIds },
       },
-      include: { project: { select: { projectNumber: true, name: true } } },
+      select: { projectId: true },
     });
 
     if (overlapping) {
       available = false;
-      conflictsWith = `${overlapping.project.projectNumber} - ${overlapping.project.name}`;
+      const overlapProject = lookupProjectMap.get(overlapping.projectId);
+      conflictsWith = overlapProject
+        ? `${overlapProject.projectNumber} - ${overlapProject.name}`
+        : overlapping.projectId;
     }
   }
 
@@ -1265,14 +1360,19 @@ export async function lookupAssetByTag(
     }
   }
 
-  const [childAssetCount, childBulkCount, modelBulksCount] = await Promise.all([
-    prisma.asset.count({ where: { parentAssetId: asset.id } }),
+  // Serialized children live in Convex — count from the org asset mirror by
+  // parentAssetId (no dedicated by-parent index, so filter the org list).
+  // assetBulkChild / modelBulkAccessory are accessory join tables (not core
+  // domain) and stay on the fresh Prisma mirror.
+  const [orgAssetsForChildren, childBulkCount, modelBulksCount] = await Promise.all([
+    getAssetsByOrg(organizationId),
     prisma.assetBulkChild.count({ where: { parentAssetId: asset.id } }),
     prisma.modelBulkAccessory.count({ where: { modelId: asset.modelId, organizationId } }),
   ]);
+  const childAssetCount = orgAssetsForChildren.filter((a) => a.parentAssetId === asset.id).length;
   const hasAccessories = childAssetCount > 0 || childBulkCount > 0 || modelBulksCount > 0;
 
-  return serialize({ found: true as const, asset, available, conflictsWith, hasAccessories });
+  return serialize({ found: true as const, asset: { ...asset, model }, available, conflictsWith, hasAccessories });
 }
 
 export async function checkKitAvailability(
@@ -1286,19 +1386,31 @@ export async function checkKitAvailability(
   const startDate = new Date(rentalStartDate);
   const endDate = new Date(rentalEndDate);
 
-  const kit = await prisma.kit.findUnique({
-    where: { id: kitId, organizationId },
-    select: { status: true },
-  });
+  const kitAvailConvexKit = await getKitById(kitId);
 
-  if (!kit) {
+  if (!kitAvailConvexKit || kitAvailConvexKit.organizationId !== organizationId) {
     return serialize({ available: false, conflictsWith: "Kit not found" });
   }
 
   // Only block truly unavailable kits — checked out kits can still be added to future projects
-  if (kit.status === "IN_MAINTENANCE" || kit.status === "INCOMPLETE") {
-    return serialize({ available: false, conflictsWith: `Kit status: ${kit.status.replace("_", " ")}` });
+  if (kitAvailConvexKit.status === "IN_MAINTENANCE" || kitAvailConvexKit.status === "INCOMPLETE") {
+    return serialize({ available: false, conflictsWith: `Kit status: ${(kitAvailConvexKit.status as string).replace("_", " ")}` });
   }
+
+  const kitAvailAllProjects = await getProjectsByOrg(organizationId);
+  const kitAvailConflictProjectIds = kitAvailAllProjects
+    .filter(
+      (p) =>
+        !p.isTemplate &&
+        !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "") &&
+        p.rentalStartDate != null &&
+        p.rentalEndDate != null &&
+        (p.rentalStartDate as number) <= endDate.getTime() &&
+        (p.rentalEndDate as number) >= startDate.getTime() &&
+        (excludeProjectId ? p.id !== excludeProjectId : true),
+    )
+    .map((p) => p.id);
+  const kitAvailProjectMap = new Map(kitAvailAllProjects.map((p) => [p.id, p]));
 
   const conflict = await prisma.projectLineItem.findFirst({
     where: {
@@ -1306,21 +1418,18 @@ export async function checkKitAvailability(
       kitId,
       isKitChild: false,
       status: { not: "CANCELLED" },
-      project: {
-        isTemplate: false,
-        status: { notIn: ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] },
-        rentalStartDate: { lte: endDate },
-        rentalEndDate: { gte: startDate },
-        ...(excludeProjectId ? { id: { not: excludeProjectId } } : {}),
-      },
+      projectId: { in: kitAvailConflictProjectIds },
     },
-    include: { project: { select: { projectNumber: true, name: true } } },
+    select: { projectId: true },
   });
 
   if (conflict) {
+    const conflictKitAvailProject = kitAvailProjectMap.get(conflict.projectId);
     return serialize({
       available: false,
-      conflictsWith: `${conflict.project.projectNumber} - ${conflict.project.name}`,
+      conflictsWith: conflictKitAvailProject
+        ? `${conflictKitAvailProject.projectNumber} - ${conflictKitAvailProject.name}`
+        : conflict.projectId,
     });
   }
 
@@ -1358,14 +1467,11 @@ function calculateLineTotal(
  *   margin           = total - (serviceCostTotal + labourCostTotal + subHireCostTotal)
  */
 export async function recalculateProjectTotals(projectId: string) {
-  const project = await prisma.project.findUniqueOrThrow({
-    where: { id: projectId },
-    select: {
-      discountPercent: true,
-      taxRate: true,
-      organizationId: true,
-    },
-  });
+  // Project header lives in Convex — read discountPercent/taxRate/organizationId
+  // off the mirror (both money fields are wrapped in Number() below, so the
+  // Convex-number vs Prisma-Decimal shape difference is a no-op).
+  const project = await getProjectById(projectId);
+  if (!project) throw new Error(`Project ${projectId} not found`);
 
   // 1. Equipment revenue from groups: bundle price × quantity, PLUS any
   // custom items placed inside the group. Custom items live outside the

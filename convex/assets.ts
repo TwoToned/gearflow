@@ -33,6 +33,28 @@ export const getById = query({
   },
 });
 
+export const getByAssetTag = query({
+  args: { organizationId: v.string(), assetTag: v.string() },
+  handler: async (ctx, { organizationId, assetTag }) => {
+    await requireOrgRead(ctx, organizationId);
+    return await ctx.db
+      .query("assets")
+      .withIndex("by_organizationId_assetTag", (q) => q.eq("organizationId", organizationId).eq("assetTag", assetTag))
+      .unique();
+  },
+});
+
+export const listByModel = query({
+  args: { modelId: v.string(), orgId: v.string() },
+  handler: async (ctx, { modelId, orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    return await ctx.db
+      .query("assets")
+      .withIndex("by_modelId", (q) => q.eq("modelId", modelId))
+      .collect();
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

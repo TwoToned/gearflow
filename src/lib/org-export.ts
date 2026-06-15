@@ -2,6 +2,12 @@ import { prisma } from "@/lib/prisma";
 import { getFromS3 } from "@/lib/storage";
 import { getClientsByOrg } from "@/lib/clients-read";
 import { getSuppliersByOrg } from "@/lib/suppliers-read";
+import { getCategoriesByOrg } from "@/lib/categories-read";
+import { getLocationsByOrg } from "@/lib/locations-read";
+import { getModelsByOrg } from "@/lib/models-read";
+import { getAssetsByOrg, getBulkAssetsByOrg } from "@/lib/assets-read";
+import { getKitsByOrg } from "@/lib/kits-read";
+import { getProjectsByOrg } from "@/lib/projects-read";
 import { MANIFEST_VERSION, type OrgExportManifest } from "./org-transfer-types";
 import { ZipArchive } from "archiver";
 import { PassThrough } from "stream";
@@ -77,23 +83,23 @@ export async function exportOrganization(orgId: string) {
     groupTemplateItems,
   ] = await Promise.all([
     prisma.customRole.findMany({ where: { organizationId: orgId } }),
-    prisma.category.findMany({ where: { organizationId: orgId } }),
-    prisma.location.findMany({ where: { organizationId: orgId } }),
+    getCategoriesByOrg(orgId).then((cs) => cs.map(({ _id, _creationTime, ...c }) => { void _id; void _creationTime; return c; })),
+    getLocationsByOrg(orgId).then((ls) => ls.map(({ _id, _creationTime, ...l }) => { void _id; void _creationTime; return l; })),
     // Suppliers live in Convex now — strip the Convex meta fields (_id/_creationTime).
     getSuppliersByOrg(orgId).then((ss) =>
       ss.map(({ _id, _creationTime, ...s }) => { void _id; void _creationTime; return s; }),
     ),
-    prisma.model.findMany({ where: { organizationId: orgId } }),
-    prisma.asset.findMany({ where: { organizationId: orgId } }),
-    prisma.bulkAsset.findMany({ where: { organizationId: orgId } }),
-    prisma.kit.findMany({ where: { organizationId: orgId } }),
+    getModelsByOrg(orgId).then((ms) => ms.map(({ _id, _creationTime, ...m }) => { void _id; void _creationTime; return m; })),
+    getAssetsByOrg(orgId).then((as) => as.map(({ _id, _creationTime, ...a }) => { void _id; void _creationTime; return a; })),
+    getBulkAssetsByOrg(orgId).then((bas) => bas.map(({ _id, _creationTime, ...ba }) => { void _id; void _creationTime; return ba; })),
+    getKitsByOrg(orgId).then((ks) => ks.map(({ _id, _creationTime, ...k }) => { void _id; void _creationTime; return k; })),
     prisma.kitSerializedItem.findMany({ where: { organizationId: orgId } }),
     prisma.kitBulkItem.findMany({ where: { organizationId: orgId } }),
     // Clients live in Convex now — strip the Convex meta fields (_id/_creationTime).
     getClientsByOrg(orgId).then((cs) =>
       cs.map(({ _id, _creationTime, ...c }) => { void _id; void _creationTime; return c; }),
     ),
-    prisma.project.findMany({ where: { organizationId: orgId } }),
+    getProjectsByOrg(orgId).then((ps) => ps.map(({ _id, _creationTime, ...p }) => { void _id; void _creationTime; return p; })),
     prisma.projectLineItem.findMany({ where: { organizationId: orgId } }),
     prisma.assetScanLog.findMany({ where: { organizationId: orgId } }),
     prisma.maintenanceRecord.findMany({ where: { organizationId: orgId } }),

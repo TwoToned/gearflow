@@ -32,3 +32,7 @@ export async function getKitMap(orgId: string): Promise<Map<string, ConvexKit>> 
   const all = await getKitsByOrg(orgId);
   return new Map(all.map((k) => [k.id, k]));
 }
+
+export async function getKitByAssetTag(orgId: string, assetTag: string): Promise<ConvexKit | null> {
+  return await (await getConvexClient()).query(api.kits.getByAssetTag, { organizationId: orgId, assetTag });
+}

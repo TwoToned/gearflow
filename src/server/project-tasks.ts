@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/org-context";
+import { getProjectById } from "@/lib/projects-read";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { syncProjectTasksToConvex } from "@/lib/project-subtable-mirror";
@@ -104,11 +105,8 @@ export async function createProjectTask(data: {
   if (!title) throw new Error("Task title is required");
 
   // Project must belong to the caller's org.
-  const project = await prisma.project.findFirst({
-    where: { id: data.projectId, organizationId },
-    select: { id: true, name: true },
-  });
-  if (!project) throw new Error("Project not found");
+  const project = await getProjectById(data.projectId);
+  if (!project || project.organizationId !== organizationId) throw new Error("Project not found");
 
   await assertAssigneeInOrg(organizationId, data.assigneeUserId, data.assigneeCrewId);
 

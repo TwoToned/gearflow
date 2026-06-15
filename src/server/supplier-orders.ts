@@ -17,6 +17,7 @@ import {
   getMatchingSupplierIds,
   getSupplierById,
 } from "@/lib/suppliers-read";
+import { attachModel } from "@/lib/models-read";
 import type { FilterValue } from "@/lib/table-utils";
 
 export async function getSupplierOrders(params: {
@@ -79,16 +80,18 @@ export async function getSupplierOrderById(id: string) {
       items: {
         orderBy: { sortOrder: "asc" },
         include: {
-          model: { select: { id: true, name: true } },
           asset: { select: { id: true, assetTag: true } },
         },
       },
     },
   });
   if (!order) throw new Error("Order not found");
-  // Supplier lives in Convex — attach instead of a Prisma join.
-  const supplier = await getSupplierById(order.supplierId);
-  return serialize({ ...order, supplier });
+  // Model + supplier live in Convex — attach instead of Prisma joins.
+  const [supplier, enrichedItems] = await Promise.all([
+    getSupplierById(order.supplierId),
+    attachModel(organizationId, order.items),
+  ]);
+  return serialize({ ...order, items: enrichedItems, supplier });
 }
 
 export async function createSupplierOrder(data: SupplierOrderFormValues) {

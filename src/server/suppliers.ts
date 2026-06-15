@@ -11,6 +11,7 @@ import { supplierSchema, type SupplierFormValues } from "@/lib/validations/suppl
 import { logActivity, buildChanges } from "@/lib/activity-log";
 import { buildFilterWhere, type FilterValue } from "@/lib/table-utils";
 import type { ColumnDef } from "@/components/ui/data-table";
+import { attachModel } from "@/lib/models-read";
 
 // Suppliers are DUAL-WRITTEN: every create/update/delete writes the Prisma
 // `supplier` row (the durable FK anchor — asset/bulk_asset/project_line_item/
@@ -159,12 +160,9 @@ export async function getSupplierAssets(supplierId: string, params: {
 
   const where = { organizationId, supplierId, isActive: true };
 
-  const [assets, total] = await Promise.all([
+  const [rawAssets, total] = await Promise.all([
     prisma.asset.findMany({
       where,
-      include: {
-        model: { select: { id: true, name: true, manufacturer: true } },
-      },
       orderBy: { assetTag: "asc" },
       skip: (page - 1) * pageSize,
       take: pageSize,
@@ -172,6 +170,7 @@ export async function getSupplierAssets(supplierId: string, params: {
     prisma.asset.count({ where }),
   ]);
 
+  const assets = await attachModel(organizationId, rawAssets);
   return serialize({ assets, total });
 }
 
@@ -185,12 +184,11 @@ export async function getSupplierSubhires(supplierId: string, params: {
   // Sub-hire line items now identified by `subHireId != null` (Wave 2).
   const where = { organizationId, supplierId, subHireId: { not: null } };
 
-  const [lineItems, total] = await Promise.all([
+  const [rawLineItems, total] = await Promise.all([
     prisma.projectLineItem.findMany({
       where,
       include: {
         project: { select: { id: true, name: true, projectNumber: true, status: true } },
-        model: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * pageSize,
@@ -199,6 +197,7 @@ export async function getSupplierSubhires(supplierId: string, params: {
     prisma.projectLineItem.count({ where }),
   ]);
 
+  const lineItems = await attachModel(organizationId, rawLineItems);
   return serialize({ lineItems, total });
 }
 

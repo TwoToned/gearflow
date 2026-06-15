@@ -98,7 +98,8 @@ export async function getCheckItem(id: string) {
   }
 
   const models = await Promise.all(item.modelCheckItems.map((m) => getModelById(m.modelId)));
-  const modelNameMap = new Map(models.filter(Boolean).map((m) => [m!.id, { id: m!.id, name: m!.name }]));
+  const modelNameMap = new Map<string, { id: string; name: string }>();
+  for (const m of models) if (m) modelNameMap.set(m.id, { id: m.id, name: m.name });
   const enriched = {
     ...item,
     modelCheckItems: item.modelCheckItems

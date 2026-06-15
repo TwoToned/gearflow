@@ -2,6 +2,7 @@ import { getModelsByOrg, type ConvexModel } from "@/lib/models-read";
 import { getSuppliersByOrg, type ConvexSupplier } from "@/lib/suppliers-read";
 import { getCategoriesByOrg, type ConvexCategory } from "@/lib/categories-read";
 import { type ConvexKit } from "@/lib/kits-read";
+import { type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 
@@ -234,6 +235,64 @@ export function attachModelCheckItemCounts<T extends AttachedNode>(
 /** A Convex kit doc with the check-item count grafted on, matching the old
  * `kit: { ..., _count: { kitCheckItems } }` include. */
 export type KitWithCheckCount = ConvexKit & { _count: { kitCheckItems: number } };
+
+/** A line-item node carrying optional `assetId`/`bulkAssetId`, optional `units`,
+ * and a recursive subtree. Used by {@link attachAssetBulkAssetTree}. */
+type AssetLineItemNode = {
+  assetId?: string | null;
+  bulkAssetId?: string | null;
+  units?: Array<{ assetId?: string | null; bulkAssetId?: string | null }>;
+  childLineItems?: unknown;
+};
+
+/**
+ * Walk a line-item tree and attach `asset` (ConvexAsset) + `bulkAsset`
+ * (ConvexBulkAsset) onto every node from org-scoped Convex maps, recursing into
+ * `childLineItems`. Also walks each node's `units` and attaches `asset`/`bulkAsset`
+ * onto each unit using the same maps. Replaces the Prisma `asset: true` /
+ * `bulkAsset: true` join that used to hang off `lineItems` and their `units`.
+ *
+ * A miss in the map returns `null` — same as a Prisma join against a deleted row,
+ * with NO Prisma fallback. Run AFTER {@link attachKitTree} or any other tree
+ * attach pass; input rows are not mutated.
+ */
+export function attachAssetBulkAssetTree<T extends AssetLineItemNode>(
+  rows: T[],
+  assetMap: Map<string, ConvexAsset>,
+  bulkAssetMap: Map<string, ConvexBulkAsset>,
+): Array<Omit<T, "asset" | "bulkAsset" | "units"> & {
+  asset: ConvexAsset | null;
+  bulkAsset: ConvexBulkAsset | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  units: any[];
+}> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (rows as any[]).map((row: any) => {
+    const children = row.childLineItems;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const units = ((row.units ?? []) as any[]).map((u: any) => ({
+      ...u,
+      asset: u.assetId ? assetMap.get(u.assetId) ?? null : null,
+      bulkAsset: u.bulkAssetId ? bulkAssetMap.get(u.bulkAssetId) ?? null : null,
+    }));
+    return {
+      ...row,
+      asset: row.assetId ? assetMap.get(row.assetId) ?? null : null,
+      bulkAsset: row.bulkAssetId ? bulkAssetMap.get(row.bulkAssetId) ?? null : null,
+      units,
+      ...(Array.isArray(children)
+        ? {
+            childLineItems: attachAssetBulkAssetTree(
+              children as AssetLineItemNode[],
+              assetMap,
+              bulkAssetMap,
+            ),
+          }
+        : {}),
+    };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  }) as any;
+}
 
 /** A line-item node carrying an optional `kitId` and a recursive subtree. */
 type KitLineItemNode = { kitId?: string | null; childLineItems?: unknown };

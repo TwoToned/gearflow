@@ -33,11 +33,12 @@ import {
   attachLineItemTree,
   attachModelCheckItemCounts,
   attachKitTree,
+  attachAssetBulkAssetTree,
   getModelCheckItemCountMap,
   getKitCheckItemCountMap,
 } from "@/lib/line-item-tree-read";
 import { getKitById, getKitByAssetTag, getKitMap } from "@/lib/kits-read";
-import { getAssetById, getAssetByAssetTag, getAssetsByOrg, getBulkAssetByAssetTag } from "@/lib/assets-read";
+import { getAssetById, getAssetByAssetTag, getAssetsByOrg, getBulkAssetsByOrg, getBulkAssetByAssetTag } from "@/lib/assets-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
 
 // ---------------------------------------------------------------------------
@@ -160,42 +161,28 @@ export async function getProjectForWarehouse(projectId: string) {
         where: { type: "EQUIPMENT" },
         orderBy: { sortOrder: "asc" },
         include: {
-          asset: true,
-          bulkAsset: true,
+          // asset/bulkAsset are dual-written to Convex — attached below via
+          // attachAssetBulkAssetTree; not joined here.
           // Per-unit assignments (post-cutover, the source of truth for
           // which physical assets the warehouse is preparing / deploying
           // / returning on this line).
           units: {
             orderBy: { ordinal: "asc" },
             where: { status: { not: "CANCELLED" } },
-            include: {
-              asset: { select: { id: true, assetTag: true } },
-              bulkAsset: { select: { id: true, assetTag: true } },
-            },
           },
           childLineItems: {
             orderBy: { sortOrder: "asc" },
             include: {
-              asset: true, bulkAsset: true,
               units: {
                 orderBy: { ordinal: "asc" },
                 where: { status: { not: "CANCELLED" } },
-                include: {
-                  asset: { select: { id: true, assetTag: true } },
-                  bulkAsset: { select: { id: true, assetTag: true } },
-                },
               },
               childLineItems: {
                 orderBy: { sortOrder: "asc" },
                 include: {
-                  asset: true, bulkAsset: true,
                   units: {
                     orderBy: { ordinal: "asc" },
                     where: { status: { not: "CANCELLED" } },
-                    include: {
-                      asset: { select: { id: true, assetTag: true } },
-                      bulkAsset: { select: { id: true, assetTag: true } },
-                    },
                   },
                 },
               },
@@ -214,18 +201,24 @@ export async function getProjectForWarehouse(projectId: string) {
     throw new Error("Cannot perform warehouse operations on a template");
   }
 
-  // Attach model (+ equipment category) + supplier + kit from the Convex mirror,
-  // grafting model._count.modelCheckItems + kit._count.kitCheckItems from the
-  // mirror too, so the warehouse payload keeps its exact shape.
-  const [attachMaps, kitMap, modelCheckCounts, kitCheckCounts] = await Promise.all([
-    buildLineItemAttachMaps(organizationId),
-    getKitMap(organizationId),
-    getModelCheckItemCountMap(organizationId),
-    getKitCheckItemCountMap(organizationId),
-  ]);
+  // Attach model/supplier/kit/asset/bulkAsset from the Convex mirror.
+  // asset/bulkAsset are dual-written to Convex — attached via attachAssetBulkAssetTree
+  // (replaces `asset: true` / `bulkAsset: true` Prisma joins + unit sub-joins).
+  const [attachMaps, kitMap, modelCheckCounts, kitCheckCounts, allAssets, allBulkAssets] =
+    await Promise.all([
+      buildLineItemAttachMaps(organizationId),
+      getKitMap(organizationId),
+      getModelCheckItemCountMap(organizationId),
+      getKitCheckItemCountMap(organizationId),
+      getAssetsByOrg(organizationId),
+      getBulkAssetsByOrg(organizationId),
+    ]);
+  const assetMap = new Map(allAssets.map((a) => [a.id, a]));
+  const bulkAssetMap = new Map(allBulkAssets.map((b) => [b.id, b]));
   const withModelSupplier = attachLineItemTree(project.lineItems, attachMaps);
   const withModelCount = attachModelCheckItemCounts(withModelSupplier, modelCheckCounts);
-  const lineItems = attachKitTree(withModelCount, kitMap, kitCheckCounts);
+  const withKits = attachKitTree(withModelCount, kitMap, kitCheckCounts);
+  const lineItems = attachAssetBulkAssetTree(withKits, assetMap, bulkAssetMap);
 
   // Clients + location live in Convex — attach instead of a Prisma join.
   const client = project.clientId ? await getClientById(project.clientId) : null;
@@ -1908,21 +1901,15 @@ export async function getProjectPullSheet(projectId: string) {
         },
         orderBy: { sortOrder: "asc" },
         include: {
-          asset: true,
-          bulkAsset: true,
+          // asset/bulkAsset are dual-written to Convex — attached below via
+          // attachAssetBulkAssetTree; not joined here.
           childLineItems: {
             where: { status: { not: "CANCELLED" } },
             orderBy: { sortOrder: "asc" },
             include: {
-              asset: true,
-              bulkAsset: true,
               childLineItems: {
                 where: { status: { not: "CANCELLED" } },
                 orderBy: { sortOrder: "asc" },
-                include: {
-                  asset: true,
-                  bulkAsset: true,
-                },
               },
             },
           },
@@ -1935,24 +1922,29 @@ export async function getProjectPullSheet(projectId: string) {
     throw new Error("Project not found");
   }
 
-  // Attach model (+ equipment category) + supplier + kit from the Convex mirror,
-  // grafting model._count.modelCheckItems + kit._count.kitCheckItems off the
-  // mirror too. Done before overbooked/enrichment so downstream sees the same
-  // shape the old Prisma include produced.
-  const [attachMaps, kitMap, modelCheckCounts, kitCheckCounts] = await Promise.all([
-    buildLineItemAttachMaps(organizationId),
-    getKitMap(organizationId),
-    getModelCheckItemCountMap(organizationId),
-    getKitCheckItemCountMap(organizationId),
-  ]);
+  // Attach model/supplier/kit/asset/bulkAsset from the Convex mirror.
+  // asset/bulkAsset are dual-written to Convex — attachAssetBulkAssetTree replaces
+  // the `asset: true` / `bulkAsset: true` Prisma joins. graftAssetLocation then
+  // adds the resolved location object onto each asset (shape-identical to the old
+  // nested `asset: { include: { location } }` join).
+  const [attachMaps, kitMap, modelCheckCounts, kitCheckCounts, allAssets, allBulkAssets, locationMap] =
+    await Promise.all([
+      buildLineItemAttachMaps(organizationId),
+      getKitMap(organizationId),
+      getModelCheckItemCountMap(organizationId),
+      getKitCheckItemCountMap(organizationId),
+      getAssetsByOrg(organizationId),
+      getBulkAssetsByOrg(organizationId),
+      getLocationMap(organizationId),
+    ]);
+  const assetMap = new Map(allAssets.map((a) => [a.id, a]));
+  const bulkAssetMap = new Map(allBulkAssets.map((b) => [b.id, b]));
   const attachedTree = attachLineItemTree(project.lineItems, attachMaps);
   const withModelCount = attachModelCheckItemCounts(attachedTree, modelCheckCounts);
   const attachedKitTree = attachKitTree(withModelCount, kitMap, kitCheckCounts);
+  const withAssets = attachAssetBulkAssetTree(attachedKitTree, assetMap, bulkAssetMap);
 
-  // asset.location lives in Convex — graft it onto every line item's asset across
-  // the tree (replaces the nested `asset: { include: { location } }` join). Flat
-  // location doc, shape-identical to the old include.
-  const locationMap = await getLocationMap(organizationId);
+  // Graft the resolved location object onto each asset's `location` field.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const graftAssetLocation = (items: any[]): any[] =>
     items.map((li) => ({
@@ -1962,7 +1954,7 @@ export async function getProjectPullSheet(projectId: string) {
         : li.asset,
       childLineItems: li.childLineItems ? graftAssetLocation(li.childLineItems) : li.childLineItems,
     }));
-  const attachedLineItems = graftAssetLocation(attachedKitTree);
+  const attachedLineItems = graftAssetLocation(withAssets);
 
   // Compute overbooked status
   const overbookedMap = await computeOverbookedStatus(

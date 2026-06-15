@@ -16,6 +16,10 @@ import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { adjustBulkAvailability } from "@/lib/inventory-mutations";
 import { syncAssetsToConvex, syncBulkAssetsToConvex } from "@/lib/asset-mirror";
+import {
+  mirrorAssetBulkChildCreate,
+  removeAssetBulkChildFromConvex,
+} from "@/lib/asset-bulk-child-mirror";
 import { UserFacingError } from "@/lib/errors";
 
 /**
@@ -236,6 +240,10 @@ export async function addBulkChildToAsset(
       include: { bulkAsset: true },
     });
   });
+  // Mirror the created bulk child into Convex AFTER the Prisma tx commits
+  // (Convex calls cannot run inside a Prisma $transaction). strip() drops the
+  // nested bulkAsset relation — only scalar columns are sent.
+  await mirrorAssetBulkChildCreate(result as unknown as Record<string, unknown>);
   const [, bulkModel] = await Promise.all([
     parsed.allocationMode === "DEDICATED" ? syncBulkAssetsToConvex([parsed.bulkAssetId]) : Promise.resolve(),
     getModelById(result.bulkAsset.modelId),
@@ -345,6 +353,9 @@ export async function removeBulkChildFromAsset(
     }
     await tx.assetBulkChild.delete({ where: { id: bulkChildId } });
   });
+  // Mirror the deletion into Convex AFTER the Prisma tx commits (Convex calls
+  // cannot run inside a Prisma $transaction). id was captured before the tx.
+  await removeAssetBulkChildFromConvex(bulkChildId);
   // DEDICATED allocation returned stock to the shared pool — mirror the quantity.
   if (bulkChild.allocationMode === "DEDICATED") await syncBulkAssetsToConvex([bulkChild.bulkAssetId]);
 

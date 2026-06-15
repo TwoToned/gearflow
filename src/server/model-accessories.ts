@@ -11,6 +11,10 @@ import {
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { UserFacingError } from "@/lib/errors";
+import {
+  mirrorModelBulkAccessoryCreate,
+  removeModelBulkAccessoryFromConvex,
+} from "@/lib/model-bulk-accessory-mirror";
 
 /**
  * Model-level bulk accessories — "every asset of this model ships with N of
@@ -86,6 +90,10 @@ export async function addModelBulkAccessory(
     throw e;
   }
 
+  // Mirror to Convex (infra-only dual-write). The create above is a single
+  // statement (no $transaction), so the row is committed by the time we get here.
+  await mirrorModelBulkAccessoryCreate(row as unknown as Record<string, unknown>);
+
   const bulkAssetModel = row.bulkAsset.modelId ? await getModelById(row.bulkAsset.modelId) : null;
 
   await logActivity({
@@ -137,6 +145,9 @@ export async function removeModelBulkAccessory(
   }
 
   await prisma.modelBulkAccessory.delete({ where: { id: accessoryId } });
+
+  // Mirror the delete to Convex AFTER the Prisma delete commits.
+  await removeModelBulkAccessoryFromConvex(accessoryId);
 
   const parentModel = acc.modelId ? await getModelById(acc.modelId) : null;
 

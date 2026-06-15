@@ -10,6 +10,7 @@ import {
   removeSubHireGroupFromConvex,
 } from "@/lib/sub-hire-mirror";
 import { upsertProjectLineItemsToConvex, removeLineItemFromConvex } from "@/lib/line-item-mirror";
+import { mirrorSupplierModelRateUpsert } from "@/lib/supplier-model-rate-mirror";
 import {
   attachSupplier,
   getMatchingSupplierIds,
@@ -1553,7 +1554,7 @@ async function upsertSupplierModelRate(
   unitCost: number,
   pricingType: PricingType,
 ) {
-  await prisma.supplierModelRate.upsert({
+  const rate = await prisma.supplierModelRate.upsert({
     where: {
       organizationId_supplierId_modelId: {
         organizationId,
@@ -1574,6 +1575,9 @@ async function upsertSupplierModelRate(
       lastUsedAt: new Date(),
     },
   });
+  // Dual-write to Convex AFTER the upsert commits (captures the authoritative
+  // row + id whether it inserted or updated). Idempotent create-then-patch.
+  await mirrorSupplierModelRateUpsert(rate as unknown as Record<string, unknown>);
 }
 
 export async function getSupplierModelRate(supplierId: string, modelId: string) {

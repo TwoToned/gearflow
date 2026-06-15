@@ -2279,6 +2279,55 @@ bulkAsset: true }` on `tx.projectLineItem.findUnique/create` inside `checkOutIte
 immediately after the mutation — the Convex mirror is eventually consistent so these CANNOT use Convex.
 Same rationale as `maintenanceRecordAssets`.
 
+## Sub-table dual-write groundwork — DONE 2026-06-16 (reads pending, gated on backfill)
+
+To let the remaining point-2 sub-table READS move off Prisma, the tables that were
+not yet dual-written got mirrors + idempotent backfills this session. **Dual-write
+(writes) is complete and safe to ship now; the READ rewiring is a separate, later
+deploy** — see the deploy-ordering gate below.
+
+**Tier 2 — Convex table existed, no write path → wired dual-write:**
+- `projectLineItemUnit` — `src/lib/line-item-unit-mirror.ts`, an AUTHORITATIVE
+  per-line-item reconcile (upsert present + remove stale; units are deleted as
+  well as created). Folded into `upsertProjectLineItemsToConvex` /
+  `syncLineItemsToConvex` / `removeLineItemFromConvex`, so all ~50 post-commit
+  line-item mirror sites cover units for free. New Convex query `listByLineItem`.
+- `assetBulkChild` (`asset-bulk-child-mirror.ts` → asset-accessories.ts),
+  `modelBulkAccessory` (`model-bulk-accessory-mirror.ts` → model-accessories.ts),
+  `supplierModelRate` (`supplier-model-rate-mirror.ts` → sub-hires.ts upsert path).
+
+**Tier 3 — no Convex mirror existed → built from scratch:**
+- T&T: `test-tag-mirror.ts` (testTagAsset/testTagRecord/subTestRecord) wired into
+  test-tag-assets/records/reminders, models, assets, org-import, site-admin
+  (cascade-aware: subTestRecord children removed before parent).
+- `asset-scan-log-mirror.ts` (append-only) → warehouse, bulk-checkin, check-records,
+  org-import. SCAN_VERIFY logs that roll back on `TestTagBlockError` are NOT mirrored
+  (never commit).
+- `check-record-mirror.ts` → check-records (saveCheckRecords sink through all 7
+  callers), split-sibling-collapse, org-import.
+
+All in-`$transaction` writes mirror strictly POST-COMMIT (Convex calls can't run
+inside a Prisma tx). Backfill scripts: `npm run convex:backfill:{line-item-units,
+asset-bulk-children,model-bulk-accessories,supplier-model-rates,test-tag-assets,
+test-tag-records,sub-test-records,asset-scan-logs,check-records}`.
+
+**SKIPPED (user decision — no safe read payoff; would be overhead + a footgun):**
+`notificationEmailLog` (1 read = read-then-write dedup → moving risks duplicate
+emails), `wooCommerceOrderLog` (2 reads = webhook idempotency → double-processing),
+`maintenanceRecordAsset` (export-only read; writer `damage-core.ts` must stay
+Convex-free). These stay Prisma.
+
+### ⚠️ DEPLOY-ORDERING GATE for the read rewiring
+
+The dual-write keeps Convex fresh for NEW changes only; EXISTING rows live in
+Convex only after the backfill runs. Therefore the read-rewiring deploy (task 4)
+MUST land **after** the backfills have run against **prod Convex** — otherwise
+existing projects' line items / units / kit composition / T&T history read empty.
+Safe sequence: (1) ship the dual-write commits, (2) run the backfills against prod
+Convex, (3) ship the read rewiring. The read rewiring could NOT be verified in the
+dev worktree (local DB lacks better-auth migrations → backfills can't run there;
+Convex tables are empty), so it is deliberately deferred to its own gated change.
+
 **✅ Final non-document file sweep — DONE (2026-06-15/16).** The last 10 files with
 cross-domain Prisma reads on the non-document surface are now off the mirror. All
 converted shape-identically (org-scoped Convex prefetch + JS filter/find; null on

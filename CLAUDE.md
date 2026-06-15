@@ -171,6 +171,24 @@ The PDF pipeline has **five independent consumers** of the `DocumentLineItem` sh
 
 History: v0.8.1.0 added group-as-kit rendering. v0.8.1.1 fixed the height-calc miss (tail items dropped). v0.8.1.2 fixed the status-filter miss (groups invisible on dockets). Each was a separate user-impacting deploy that an upfront cross-cutting audit would have caught.
 
+### Convex Mutation Rules
+
+**Always `throw new ConvexError(...)`, never `throw new Error(...)`** inside `convex/*.ts` mutation files.
+
+Convex masks plain `Error` to a generic `InternalServerError` in production. The mirror helpers (`media-mirror.ts`, `crew-scheduling-mirror.ts`, `check-item-assignment-mirror.ts`, etc.) use a `removeIn`/`removeSafe` tolerance pattern that catches `/not found/i` — this only works if the thrown error is a `ConvexError`, whose payload passes through the production boundary intact.
+
+```ts
+import { v, ConvexError } from "convex/values";
+// ...
+if (!doc) throw new ConvexError("myTable not found: " + id);
+```
+
+**Always use `createIfMissing`, never `create`** when mirroring rows into Convex from `src/`.
+
+Concurrent mirror calls or backfill overlap can produce two rows with the same `id`. The `by_cuid` index is non-unique, so both insert; then `.unique()` on that index throws a Convex system error → `InternalServerError`. `createIfMissing` is idempotent and safe.
+
+This applies everywhere a Prisma row is first written to Convex: `src/lib/*-mirror.ts`, `src/server/*.ts`, `src/lib/org-import.ts`.
+
 ### Key Gotchas
 - No `AlertDialog` — use `Dialog` with confirm/cancel buttons
 - `DropdownMenuLabel` must be inside `DropdownMenuGroup`

@@ -149,19 +149,6 @@ export async function getAsset(id: string) {
   const asset = await prisma.asset.findUnique({
     where: { id, organizationId },
     include: {
-      model: {
-        include: {
-          category: true,
-          media: {
-            include: { file: true },
-            orderBy: { sortOrder: "asc" },
-          },
-          bulkAccessories: {
-            include: { bulkAsset: { include: { model: { select: { name: true } } } } },
-            orderBy: { sortOrder: "asc" },
-          },
-        },
-      },
       location: true,
       media: {
         include: { file: true },
@@ -194,19 +181,74 @@ export async function getAsset(id: string) {
       },
       // Child assets / accessories
       parentAsset: { select: { id: true, assetTag: true, customName: true } },
-      childAssets: {
-        include: { model: { select: { name: true, manufacturer: true } } },
-        orderBy: { assetTag: "asc" },
-      },
+      childAssets: { orderBy: { assetTag: "asc" } },
       childBulkItems: {
-        include: { bulkAsset: { include: { model: { select: { name: true } } } } },
+        include: { bulkAsset: true },
         orderBy: { sortOrder: "asc" },
       },
     },
   });
-  // Supplier lives in Convex — attach instead of a Prisma join.
-  const supplier = asset?.supplierId ? await getSupplierById(asset.supplierId) : null;
-  return serialize(asset ? { ...asset, supplier } : asset);
+
+  if (!asset) return serialize(asset);
+
+  // Model (+ category) + supplier live in Convex — attach instead of Prisma joins.
+  // Model media + bulkAccessories are intra-domain Prisma queries (no cross-domain hop).
+  const modelMediaPromise: Promise<Prisma.ModelMediaGetPayload<{ include: { file: true } }>[]> = asset.modelId
+    ? prisma.modelMedia.findMany({
+        where: { modelId: asset.modelId },
+        include: { file: true },
+        orderBy: { sortOrder: "asc" },
+      })
+    : Promise.resolve([]);
+
+  const modelBulkAccessoriesPromise: Promise<Prisma.ModelBulkAccessoryGetPayload<{ include: { bulkAsset: true } }>[]> = asset.modelId
+    ? prisma.modelBulkAccessory.findMany({
+        where: { modelId: asset.modelId },
+        include: { bulkAsset: true },
+        orderBy: { sortOrder: "asc" },
+      })
+    : Promise.resolve([]);
+
+  const [modelMap, modelMediaRows, supplier] = await Promise.all([
+    getModelWithCategoryMap(organizationId),
+    modelMediaPromise,
+    asset.supplierId ? getSupplierById(asset.supplierId) : null,
+  ]);
+  // Awaited separately to preserve explicit Prisma payload type for .map() inference.
+  const modelBulkAccessories = await modelBulkAccessoriesPromise;
+
+  const assetModel = asset.modelId ? modelMap.get(asset.modelId) ?? null : null;
+
+  const childAssetsWithModel = asset.childAssets.map((child) => ({
+    ...child,
+    model: child.modelId ? modelMap.get(child.modelId) ?? null : null,
+  }));
+
+  const childBulkItemsWithModel = asset.childBulkItems.map((item) => ({
+    ...item,
+    bulkAsset: {
+      ...item.bulkAsset,
+      model: item.bulkAsset.modelId ? modelMap.get(item.bulkAsset.modelId) ?? null : null,
+    },
+  }));
+
+  const bulkAccessoriesWithModel = modelBulkAccessories.map((acc) => ({
+    ...acc,
+    bulkAsset: {
+      ...acc.bulkAsset,
+      model: acc.bulkAsset.modelId ? modelMap.get(acc.bulkAsset.modelId) ?? null : null,
+    },
+  }));
+
+  return serialize({
+    ...asset,
+    model: assetModel
+      ? { ...assetModel, media: modelMediaRows, bulkAccessories: bulkAccessoriesWithModel }
+      : null,
+    childAssets: childAssetsWithModel,
+    childBulkItems: childBulkItemsWithModel,
+    supplier,
+  });
 }
 
 /**

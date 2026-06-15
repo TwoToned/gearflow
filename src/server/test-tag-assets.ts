@@ -6,6 +6,7 @@ import { serialize } from "@/lib/serialize";
 import { reserveTestTagIds, peekNextTestTagIds, getOrgTestTagSettings } from "@/server/settings";
 import type { Prisma, TestTagStatus } from "@/generated/prisma/client";
 import { logActivity } from "@/lib/activity-log";
+import { getModelById, getModelMap } from "@/lib/models-read";
 
 export async function getTestTagAssets(params?: {
   search?: string;
@@ -79,14 +80,12 @@ export async function getTestTagAsset(id: string) {
     include: {
       asset: {
         select: {
-          id: true, assetTag: true, customName: true, serialNumber: true,
-          model: { select: { name: true, manufacturer: true, modelNumber: true } },
+          id: true, assetTag: true, customName: true, serialNumber: true, modelId: true,
         },
       },
       bulkAsset: {
         select: {
-          id: true, assetTag: true, totalQuantity: true,
-          model: { select: { name: true, manufacturer: true } },
+          id: true, assetTag: true, totalQuantity: true, modelId: true,
         },
       },
       testProfile: { select: { id: true, name: true } },
@@ -104,7 +103,17 @@ export async function getTestTagAsset(id: string) {
   });
 
   if (!item) throw new Error("Test tag asset not found");
-  return serialize(item);
+
+  const modelMap = await getModelMap(organizationId);
+  return serialize({
+    ...item,
+    asset: item.asset
+      ? { ...item.asset, model: item.asset.modelId ? modelMap.get(item.asset.modelId) ?? null : null }
+      : null,
+    bulkAsset: item.bulkAsset
+      ? { ...item.bulkAsset, model: item.bulkAsset.modelId ? modelMap.get(item.bulkAsset.modelId) ?? null : null }
+      : null,
+  });
 }
 
 export async function lookupTestTagAsset(testTagId: string) {
@@ -116,8 +125,7 @@ export async function lookupTestTagAsset(testTagId: string) {
     include: {
       asset: {
         select: {
-          id: true, assetTag: true, customName: true,
-          model: { select: { id: true, name: true, defaultTestProfileId: true } },
+          id: true, assetTag: true, customName: true, modelId: true,
         },
       },
       bulkAsset: { select: { id: true, assetTag: true } },
@@ -133,7 +141,12 @@ export async function lookupTestTagAsset(testTagId: string) {
     },
   });
 
-  return item ? serialize(item) : null;
+  if (!item) return null;
+  const assetModel = item.asset?.modelId ? await getModelById(item.asset.modelId) : null;
+  return serialize({
+    ...item,
+    asset: item.asset ? { ...item.asset, model: assetModel } : null,
+  });
 }
 
 export async function createTestTagAsset(data: {

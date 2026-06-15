@@ -590,7 +590,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     (() => {
                       const ownBulkIds = new Set(asset.childBulkItems.map((c) => c.bulkAssetId));
                       const inherited = (asset.model?.bulkAccessories ?? []).filter(
-                        (m) => !ownBulkIds.has(m.bulkAssetId),
+                        (m: { bulkAssetId: string }) => !ownBulkIds.has(m.bulkAssetId),
                       );
                       const total =
                         asset.childAssets.length + asset.childBulkItems.length + inherited.length;
@@ -610,7 +610,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                               <span className="font-medium">{c.quantity}× {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}</span>
                             </li>
                           ))}
-                          {inherited.map((c) => (
+                          {inherited.map((c: { id: string; quantity: number; bulkAsset: { model: { name: string } | null; assetTag: string } | null }) => (
                             <li key={c.id} className="flex items-center gap-2">
                               <span className="text-fg-3 select-none">└─</span>
                               <span className="font-medium">{c.quantity}× {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}</span>

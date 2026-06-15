@@ -1,12 +1,13 @@
 # Warehouse Linear Flow — Pick/Prep → Prepped → Deployed → Returned → Depreped
 
-> Status: IN PROGRESS — v1 code-complete (PR #184). Landed: stage model
-> (`src/lib/warehouse-stage.ts` + tests), deprep-preserves-returned-units fix
-> (+ regression test), Returned/Depreped tabs + leak removal, and partial-return
-> split context (`describeStageSplit` → "6 deployed · 4 returned") on **all** the
-> relevant surfaces (Returned, Depreped, and Deployed tabs). Pending: **visual
-> QA** (this worktree can't run the dev server); Kanban board (fast-follow).
-> (Originally: APPROVED via /autoplan — ready to implement.)
+> Status: CODE-COMPLETE (PR #184) — both v1 tabs AND the Kanban board landed.
+> Landed: stage model (`src/lib/warehouse-stage.ts` + tests),
+> deprep-preserves-returned-units fix (+ regression test), Returned/Depreped tabs
+> + leak removal, partial-return split context on all surfaces, and the
+> **Tabs ⇆ Board toggle** (`warehouse-board.tsx`, reduced-overview cards,
+> click-through to a stage's tab, desktop-only with mobile tab fallback, view
+> persisted per-device). Only **visual QA** remains (this worktree can't run the
+> dev server). (Originally: APPROVED via /autoplan — ready to implement.)
 > Branch: worktree-bridge-cse_013eDwEAQ9UkG61zX5gBcp98
 > Owner: Jayden
 >

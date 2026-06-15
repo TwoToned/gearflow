@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   → Deployed → Returned → Depreped.** Returned gear gets its own "Returned" stage
   (and a "Depreped" stage once it's put away), so you can tell at a glance what
   has actually come back versus what never went out.
+- **New Kanban board view** for the warehouse project board — a Tabs/Board toggle
+  (desktop) that shows all five stages as columns at once. Click any card to jump
+  to that stage's tab to work. Partially-returned lines show their split (e.g.
+  "6 deployed · 4 returned") so you can see it's one line, not two.
 
 ### Fixed
 - **Returned gear no longer reappears in Pick/Prep looking like it never shipped.**

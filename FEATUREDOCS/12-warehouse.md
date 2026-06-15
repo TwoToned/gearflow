@@ -30,7 +30,23 @@ units (the return record): `deprepItem` excludes RETURNED units from its unit
 deletion and `completeCheckAndDeprep` resets the returned units' stale PACKED
 prepStatus so a later rollup can't bounce the line back to Returned. The unit
 deletion in `deprepItem` is reserved for the backward "packed by mistake" undo on
-the Prepped tab. (Kanban board view: deferred fast-follow.)
+the Prepped tab.
+
+**Partial-return context.** A line straddling stages (e.g. a bulk line 6-out-4-
+back) shows `describeStageSplit` → "6 deployed · 4 returned" on the Deployed,
+Returned and Depreped surfaces so the fragments read as one line.
+
+### Tabs ⇆ Board view toggle (`warehouse-board.tsx`)
+
+A desktop-only toggle (top-right of the board) switches between the **Tabs** view
+(full scan/deploy/return machinery per stage) and a **Kanban Board** that shows
+all five lifecycle columns at once. The board is a deliberately **reduced
+overview** — compact read-only cards (model, asset tag, in-stage qty, split
+context) over the same `stagesForItem` model — NOT a clone of the tab controls.
+Clicking a card or column header opens that stage's tab for the actual work (the
+`Tabs` are controlled so the board can target a stage). The chosen view persists
+per-device in `localStorage` (`warehouse-view`, default Tabs). **Mobile always
+falls back to Tabs** — a five-column board is unusable on a handheld.
 
 ## Three-Phase Warehouse Flow
 

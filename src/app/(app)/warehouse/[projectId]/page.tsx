@@ -87,6 +87,7 @@ import { PickPrepTab } from "@/components/warehouse/pick-prep-tab";
 import { DeployTab } from "@/components/warehouse/deploy-tab";
 import { ReturnTab } from "@/components/warehouse/return-tab";
 import { StageItemsTab } from "@/components/warehouse/stage-items-tab";
+import { WarehouseBoard, type BoardColumn } from "@/components/warehouse/warehouse-board";
 import { belongsInStage, describeStageSplit } from "@/lib/warehouse-stage";
 import type { LineItem, AvailableAsset, GroupEntry } from "@/components/warehouse/warehouse-types";
 import {
@@ -300,6 +301,23 @@ function WarehouseProjectPage({
   // left-to-right stage names. New stages add their own keys.
   const VALID_TABS = ["pick-prep", "check-out", "check-in", "returned", "depreped", "bulk-checkin", "close-out"];
   const initialTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : "pick-prep";
+  // Controlled tab so the board can open a specific stage on card click.
+  const [activeTab, setActiveTab] = useState(initialTab);
+
+  // Tabs vs Kanban board view, persisted per-device (default tabs). Lazy
+  // initializer is safe here — the page is client-rendered under Suspense
+  // (useSearchParams), so there's no server HTML to mismatch. Board is
+  // desktop-only; mobile always falls back to tabs (see effectiveView below).
+  const [view, setView] = useState<"tabs" | "board">(() =>
+    typeof window !== "undefined" && window.localStorage.getItem("warehouse-view") === "board"
+      ? "board"
+      : "tabs"
+  );
+  const chooseView = (v: "tabs" | "board") => {
+    setView(v);
+    if (typeof window !== "undefined") window.localStorage.setItem("warehouse-view", v);
+  };
+
   const scanInputRef = useRef<HTMLInputElement>(null);
   const deployScanInputRef = useRef<HTMLInputElement>(null);
   const returnScanInputRef = useRef<HTMLInputElement>(null);
@@ -1334,6 +1352,18 @@ function WarehouseProjectPage({
   // Depreped: returned gear put away (prepStatus PENDING). Terminal per-item stage.
   const deprepedItems = equipmentItems.filter((item) => belongsInStage(item, "DEPREPED"));
 
+  // The 5 lifecycle columns for the Kanban board view. tabValue maps each column
+  // to the tab that opens for deep work when a card is clicked.
+  const boardColumns: BoardColumn[] = [
+    { stage: "PICK_PREP", label: "Pick/Prep", tabValue: "pick-prep", items: pickPrepItems },
+    { stage: "PREPPED", label: "Prepped", tabValue: "check-out", items: preppedItems },
+    { stage: "DEPLOYED", label: "Deployed", tabValue: "check-in", items: checkedOutItems },
+    { stage: "RETURNED", label: "Returned", tabValue: "returned", items: returnedItems },
+    { stage: "DEPREPED", label: "Depreped", tabValue: "depreped", items: deprepedItems },
+  ];
+  // Mobile always falls back to tabs (a 5-column board is unusable on a handheld).
+  const effectiveView = isMobile ? "tabs" : view;
+
   const groupedPrep = groupItems(pickPrepItems);
   const groupedOut = groupItems(checkOutItemsList, "deploy");
 
@@ -2179,7 +2209,38 @@ function WarehouseProjectPage({
         </DialogContent>
       </Dialog>
 
-      <Tabs defaultValue={initialTab}>
+      {/* Tabs ⇆ Board view toggle (desktop only). */}
+      {!isMobile && (
+        <div className="flex justify-end pt-2">
+          <div className="inline-flex rounded-md border border-border p-0.5">
+            {(["tabs", "board"] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => chooseView(v)}
+                className={`px-3 py-1 text-sm rounded ${
+                  effectiveView === v
+                    ? "bg-bg-inset font-medium text-fg"
+                    : "text-fg-3 hover:text-fg"
+                }`}
+              >
+                {v === "tabs" ? "Tabs" : "Board"}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {effectiveView === "board" ? (
+        <WarehouseBoard
+          columns={boardColumns}
+          onOpenStage={(tab) => {
+            setActiveTab(tab);
+            chooseView("tabs");
+          }}
+        />
+      ) : (
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="pick-prep">
             <ScanBarcode className="mr-1.5 h-4 w-4" />
@@ -2336,6 +2397,7 @@ function WarehouseProjectPage({
           <CloseOutTab projectId={projectId} onChanged={refetchProject} />
         </TabsContent>
       </Tabs>
+      )}
 
       {/* Kit Verification Confirmation */}
       {kitConfirm && (

@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
+import { getProjectById } from "@/lib/projects-read";
 import { serialize } from "@/lib/serialize";
 import {
   crewAssignmentSchema,
@@ -69,11 +70,8 @@ export async function getProjectCrew(projectId: string) {
   const { organizationId } = await getOrgContext();
 
   // Verify project belongs to org
-  const project = await prisma.project.findUnique({
-    where: { id: projectId, organizationId },
-    select: { id: true },
-  });
-  if (!project) throw new Error("Project not found");
+  const project = await getProjectById(projectId);
+  if (!project || project.organizationId !== organizationId) throw new Error("Project not found");
 
   const assignments = await prisma.crewAssignment.findMany({
     where: { projectId, organizationId },
@@ -109,11 +107,8 @@ export async function createAssignment(projectId: string, data: CrewAssignmentFo
   const parsed = crewAssignmentSchema.parse(data);
 
   // Verify project
-  const project = await prisma.project.findUnique({
-    where: { id: projectId, organizationId },
-    select: { id: true, name: true, projectNumber: true, loadInDate: true, loadOutDate: true },
-  });
-  if (!project) throw new Error("Project not found");
+  const project = await getProjectById(projectId);
+  if (!project || project.organizationId !== organizationId) throw new Error("Project not found");
 
   // Get crew member and role for rate cascade
   const crewMember = await prisma.crewMember.findUnique({

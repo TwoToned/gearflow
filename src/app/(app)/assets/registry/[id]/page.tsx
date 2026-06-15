@@ -153,7 +153,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
   if (!asset) return <div className="text-fg-3 py-12 text-center">Asset not found.</div>;
 
   const assetPhotos = ((asset.media || []) as MediaItem[]).filter((m) => m.type === "PHOTO");
-  const photoUrl = resolveAssetPhotoUrl(asset, false);
+  const photoUrl = resolveAssetPhotoUrl({ ...asset, model: asset.model ?? undefined }, false);
   const hasCustomPhoto = isAssetPhotoCustom(asset);
 
   // Gather specs from model
@@ -189,7 +189,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="t-title text-fg">
-                    {asset.customName || asset.model.name}
+                    {asset.customName || asset.model?.name || "—"}
                   </h1>
                   <StatusIndicator category="asset" value={asset.status} label={assetStatusLabels[asset.status] || formatLabel(asset.status)} />
                   <StatusIndicator category="condition" value={asset.condition} label={conditionLabels[asset.condition] || asset.condition} />
@@ -199,9 +199,9 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   {asset.customName && <> &middot; {asset.customName}</>}
                   {" "}&middot;{" "}
                   <Link href={`/assets/models/${asset.modelId}`} className="hover:underline">
-                    {asset.model.name}
+                    {asset.model?.name || "—"}
                   </Link>
-                  {asset.model.category && <> &middot; {asset.model.category.name}</>}
+                  {asset.model?.category && <> &middot; {asset.model.category.name}</>}
                 </p>
               </div>
             </div>
@@ -425,7 +425,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   <h3 className="t-heading text-fg mb-4">
                     Model Documents
                     <span className="ml-2 text-xs font-normal text-fg-3">
-                      From {asset.model.name} — manage on the model page
+                      From {asset.model?.name || "this model"} — manage on the model page
                     </span>
                   </h3>
                   {(() => {
@@ -521,10 +521,10 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   <div className="flex justify-between">
                     <span className="text-fg-3">Model</span>
                     <Link href={`/assets/models/${asset.modelId}`} className="font-medium hover:underline truncate ml-2 text-right">
-                      {asset.model.name}
+                      {asset.model?.name || "—"}
                     </Link>
                   </div>
-                  {asset.model.category && (
+                  {asset.model?.category && (
                     <div className="flex justify-between">
                       <span className="text-fg-3">Category</span>
                       <span className="font-medium">{asset.model.category.name}</span>

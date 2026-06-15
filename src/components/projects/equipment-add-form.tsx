@@ -172,7 +172,7 @@ export function EquipmentAddForm({
       form.setValue("quantity", 1);
       form.setValue(
         "description",
-        `${asset.model.name}${asset.customName ? ` (${asset.customName})` : ""} [${asset.assetTag}]`
+        `${asset.model?.name ?? "—"}${asset.customName ? ` (${asset.customName})` : ""} [${asset.assetTag}]`
       );
     }
   }, [assetLookup, form]);
@@ -471,7 +471,7 @@ export function EquipmentAddForm({
                 ) : assetLookup?.found && assetLookup.asset ? (
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium">{assetLookup.asset.model.name}</span>
+                      <span className="font-medium">{assetLookup.asset.model?.name ?? "—"}</span>
                       <span className="font-mono text-xs text-fg-3">{assetLookup.asset.assetTag}</span>
                     </div>
                     {assetLookup.asset.customName && (

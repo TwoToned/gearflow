@@ -151,14 +151,17 @@ export async function getSubHires(filters?: {
     const modelMap = await getModelMap(organizationId);
     for (const sh of subHires as typeof subHires & { items?: { modelId: string | null }[]; groups?: { items: { modelId: string | null }[] }[] }[]) {
       if ("items" in sh && sh.items) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (sh as any).items = sh.items.map((item) => ({
           ...item,
           model: item.modelId ? (modelMap.get(item.modelId) ?? null) : null,
         }));
       }
       if ("groups" in sh && sh.groups) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (sh as any).groups = sh.groups.map((g) => ({
           ...g,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           items: (g as any).items.map((item: { modelId: string | null }) => ({
             ...item,
             model: item.modelId ? (modelMap.get(item.modelId) ?? null) : null,

@@ -35,6 +35,7 @@ yarn-error.log*
 # ...but commit the example/template files (no secrets in these)
 !.env.example
 !.env.convex.example
+!.env.local.example
 
 # vercel
 .vercel

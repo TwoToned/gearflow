@@ -6,8 +6,11 @@
 > (see [`FEATUREDOCS/54`](../../FEATUREDOCS/54-convex-data-layer.md) and
 > [`convex-hybrid-migration.md`](./convex-hybrid-migration.md)).
 
-> **Status: PAUSED before Phase A.** Everything below Phase 0 ("Done") is shipped
-> and stable. Phases A/B/C are not started. Tracked as tasks #4 (Phase A), #5
+> **Status: Phase A IN PROGRESS.** The leaf + keystone + the six named
+> follow-on surfaces are read-rewired (PRs open, preview-gated — see the
+> [Phase A progress log](#phase-a--progress-log-2026-06-16) below). A large
+> remainder of read-only domain reads is still on Prisma (inventory + gates in
+> the progress log). Phases B/C not started. Tracked as tasks #4 (Phase A), #5
 > (Phase B), #6 (Phase C).
 
 ---
@@ -148,7 +151,146 @@ integration test, not just plugin-level tests.
 
 ---
 
+## Phase A — Progress log (2026-06-16)
+
+Phase A is being shipped one surface per PR, each validated by `tsc + vitest +
+eslint` (and CI `Build/Lint/Tests/Type Check` on the base-`main` PRs) by the
+agent; **data-correctness is human-gated on the Coolify preview before merge**
+(hard constraint #1). Live golden-diff was deferred to unit tests + preview for
+this batch (the shared dev Convex is volatile/contended and not the merge gate).
+
+### Shipped this program (PRs open, not merged — merge order matters)
+
+**Earlier batch (leaf + cluster + keystone):**
+- `#194` test-tag-reports (first leaf) → `src/lib/test-tag-read.ts`
+- `#195` ← `#196` ← `#197` crew cluster (dashboard / time / project-crew tab) →
+  `crew-scheduling-read.ts`, `users-read.ts` (stacked)
+- `#198` supplier-orders → `supplier-order-read.ts`
+- `#199` keystone reconstruction primitive → `project-line-item-tree-read.ts`
+- `#200` ← `#201` ← `#202` ← `#203` keystone consumers (getProject →
+  getProjectForWarehouse → getProjectPullSheet → build-document-data/PDF),
+  shared `project-line-item-read.ts` (stacked on `#199`)
+- `#204` stocktake → `stocktake-read.ts`
+
+**This session (the six named follow-on surfaces):**
+
+| PR | Surface | Base | New `*-read.ts` | New Convex queries | Gate |
+|----|---------|------|-----------------|--------------------|------|
+| `#205` | check-records (`getCheckHistory`, `getModelFailureAnalytics`) | main (CI green) | `check-record-read.ts` | `checkRecords.listByOrgAndAsset`, `modelCheckItems.listByModel`, `projectLineItems.listByIds` | checkRecord/projectLineItem/modelCheckItem backfilled in prod |
+| `#206` | project-services (`getProjectServices`, `…ById`, `getServiceTemplates`, `…Summary`) | main (CI green) | `project-service-read.ts` | `crewAssignments.listByServiceIds` | projectService + serviceTemplate backfilled |
+| `#207` | document-templates (5 real-DB reads; virtual system-default synthesis untouched) | main (CI green) | `document-template-read.ts` | none (reused list/getById) | documentTemplate + brandTemplate backfilled |
+| `#208` | warehouse-display (`getWarehouseDisplayData` services + line-item counts) | main (CI green) | `warehouse-display-read.ts` | `projectLineItems.listByProjectIds` | projectService + projectLineItem backfilled (done) |
+| `#210` | test-tag-assets (`getTestTagAssets`, `…Asset`, `lookup…`, `…DashboardStats`) | `#194` (stacked) | extends `test-tag-read.ts` | `testTagRecords.listByAssetId`, `testTagAssets.getByTestTagId` | testTagAsset/Record/subTest backfilled |
+| `#209` | crew `getCrewMembersForAssignment` (the last deferred crew read) | `#197` (stacked) | extends `crew-scheduling-read.ts` | `crewAvailabilities.listByCrewMemberIds` | **crew-scheduling NOT confirmed backfilled in prod — run `convex:backfill:crew-scheduling` + `:crew` BEFORE merging the crew stack** |
+
+Pattern held across all six: thin Convex fetchers + mappers (epoch-ms→Date,
+Decimal→number, absent→null, strip `_id`/`_creationTime`), pure JS
+filter/sort/attach replicating Prisma `where`/`orderBy`/`include` (Postgres
+null-ordering and enum **declared-order** rank maps where applicable), Auth-`User`
+joins kept on Prisma via a batched `prisma.user.findMany` (not a violation), and
+**no Prisma fallback on a Convex miss** (→ `null`/empty). New Convex queries were
+added only to **existing** module files, so `convex/_generated` needs no regen
+(`api.d.ts` types each module via `typeof import("../<module>.js")`) and no
+shared-dev push was required.
+
+### Confirmed terminuses (do NOT convert — would read empty / break invariants)
+
+- **`category_slot`** — in the Convex schema but **never dual-written** (zero
+  `api.categorySlots.*` calls in `src/`) AND every read of it is inside a
+  `$transaction` (read-then-write, project-grouping). Double terminus.
+- **`warehouseDashboardToken`** — **not dual-written** (no `api.warehouseDashboardTokens.*`
+  in `src/`; Convex table empty). All token CRUD + `validateDisplayToken` stay
+  Prisma until Phase B adds a dual-write + backfill. (Documented in `#208`.)
+- **`organization`** (warehouse-display org name, T&T dashboard `metadata`) — a
+  Better Auth table; auth/RBAC domain, Prisma forever.
+- Standing terminuses unchanged: auth/RBAC/`activityLog`; read-then-write
+  (`aggregate(_max sortOrder)`-before-`$transaction` in line-items/sub-hires;
+  `checkPredictiveMaintenance` over freshly-written rows); mirror-source
+  (`*-mirror.ts` + backfills); detail-page media composites
+  (`getAsset`/`getKit`/`getModel` galleries); `org-export` (reads the Prisma
+  anchor by design); `maintenanceRecordAsset`/`notificationEmailLog`/
+  `wooCommerceOrderLog` write-path idempotency reads.
+
+### Remaining Phase A scope (NOT yet done — the honest inventory)
+
+A full `prisma.<table>.{findMany,findFirst,findUnique,count,aggregate,groupBy}`
+sweep of `src/server` + `src/lib` (incl. the `db.<table>.*` alias used by the
+Discord `src/lib/services/` cluster, which a `prisma.`-only grep misses) shows
+**~80 read-only domain reads across ~30 files still on Prisma** beyond the
+surfaces above. They were intentionally deferred in prior sessions (the live UIs
+already read Convex via `useQuery` hooks; the server actions were left on the
+dual-write-fresh Prisma mirror "until decommission"). They split into four
+buckets by gate:
+
+1. **Keystone-blocked** (need the unmerged `project-line-item-read.ts` /
+   `project-line-item-tree-read.ts` from `#199`–`#203`): the many
+   `projectLineItem`/`projectGroup`/`projectCategory` readers —
+   `project-categories.ts` (`getProjectCategories`, `getUncategorizedLineItems`,
+   `getProjectOverbookedStatus`), `category-slots.ts` (`getUncategorizedSubHireGroups`,
+   `getUncategorizedProjectGroups`), `project-groups.ts`, `availability.ts`
+   (model/asset/kit/calendar bookings), `lib/reservation-conflicts.ts`,
+   `lib/utilization.ts`, `lib/report-engine.ts`, `lib/availability.ts`,
+   `warehouse-close.ts`, `bulk-checkin.ts`, `dashboard.ts` line-item counts,
+   `clients.ts` line-item count, `suppliers.ts` sub-hires, `projects.ts`
+   `getProjectIssueFlags`. Convert each once the keystone chain merges.
+2. **Dual-write-blocked** (table not dual-written → must add mirror + backfill
+   first): `notificationDismissal` (`notifications.ts:getDismissedKeys`),
+   `warehouseDashboardToken` (token CRUD). These straddle Phase A/B.
+3. **Crew-backfill-gated** (run `convex:backfill:crew-scheduling` + `:crew` in
+   prod first): `crew-availability.ts`, `crew-calendar.ts`, plus the merge of
+   `#209`/the crew stack.
+4. **Ungated, ready-to-convert leaf surfaces** (domain dual-written + backfilled,
+   reactive hook already live; the server read is the only Prisma holdout) — the
+   bulk of the remainder, each a tidy one-surface PR off main:
+   `models.ts`, `categories.ts`, `locations.ts`, `suppliers.ts`, `assets.ts`,
+   `bulk-assets.ts`, `kits.ts`, `projects.ts` (list/detail/counts),
+   `maintenance.ts`, `damage.ts`, `check-items.ts`, `brand-templates.ts`,
+   `group-templates.ts`, `section-presets.ts`, `saved-views.ts`, `reports.ts`
+   (saved reports), `scheduled-reports.ts`, `project-tasks.ts`,
+   `project-managers.ts`, `custom-fields.ts`, `tags.ts` (`getOrgTags` — last
+   Prisma read in the file), `scan-lookup.ts` (stale "no Convex mirror" comment —
+   testTagAsset now mirrored), `woocommerce.ts` (`getWooCommerceOrderLogs`
+   read-only **viewer** — distinct from the write-path idempotency terminus),
+   `dashboard.ts`/`notifications.ts` non-line-item composites,
+   `lib/project-costs.ts`, `lib/services/asset-service.ts` +
+   `channel-sync-service.ts` (the `db.*`-alias Discord reads).
+
+**Phase A is therefore NOT complete.** The named work-list (the six surfaces +
+the prior batch) is done and preview-gated; bucket 4 is the next tranche of
+clean leaf PRs, buckets 1–3 unblock as their gates clear (keystone merge / new
+dual-writes / crew backfill).
+
+---
+
 ## Phase B — Write inversion (task #5, blocked by A)
+
+### Readiness (as of 2026-06-16): NOT READY — Phase A must finish first
+
+Phase B is **blocked by the remaining Phase A inventory above.** Inverting a
+mutation to Convex-only is only safe once *every* read of that domain (across all
+surfaces) is already on Convex — otherwise a still-Prisma reader would observe a
+row the Convex-only write never created. Concretely, before Phase B can start:
+
+1. **Finish Phase A bucket 4** (the ungated leaf reads) and **merge the keystone
+   chain** to unblock bucket 1. Until the `projectLineItem` family of readers is
+   fully on Convex, the highest-value mutations (checkout/checkin, line-item
+   fulfilment, kit composition) cannot invert.
+2. **Add dual-write + backfill for the two Phase-A/B straddlers**
+   (`notificationDismissal`, `warehouseDashboardToken`) so they have a Convex
+   copy to read *and* a safety-net mirror to drop later.
+3. **Run the crew-scheduling backfill in prod** and merge the crew stack
+   (`#195`–`#197`, `#209`).
+
+What Phase B then entails (unchanged): flip each mutation from Prisma-first+mirror
+to Convex-only, re-implementing the cross-table invariants Prisma `$transaction` +
+FK cascades enforce (warehouse checkout/checkin, line-item fulfilment, kit
+composition, sub-hire regeneration, accessory expand/collapse, the
+`maxSort`-then-insert ordering races, cascade deletes) inside Convex
+single-document-atomic mutations (idempotency + ordering + conflict handling by
+design); then delete the ~19 `src/lib/*-mirror.ts` + the now-dead mirror-source
+reads. Keep the dual-write as a per-surface safety net until each mutation is
+proven on preview, dropping the mirror only after. auth/RBAC/`activityLog` writes
+stay Prisma.
 
 The hard, high-risk half. After all domain reads are on Convex:
 

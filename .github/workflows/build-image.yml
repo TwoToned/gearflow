@@ -1,0 +1,89 @@
+name: Build & Deploy (GHCR + Coolify)
+
+# Replaces the self-hosted main.yml deploy. Builds the production image on
+# GitHub's runners (16GB — the 1-2GB prod droplet OOMs on `next build`), pushes
+# it to GHCR, then pings Coolify to pull + run it. Migrations run at container
+# start (docker-entrypoint.sh), NOT here — the runner can't reach the prod DB.
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  # Never run two prod deploys at once; let an in-flight one finish.
+  group: deploy-prod
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }} # e.g. twotoned/gearflow
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # push to GHCR with the built-in GITHUB_TOKEN
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies (for Convex CLI)
+        run: pnpm install --frozen-lockfile
+
+      # GATE: push Convex functions + schema to the PROD Cloud deployment. A
+      # broken schema/function fails here, before we build or ship any image.
+      # CONVEX_DEPLOY_KEY is a prod deploy key (Convex dashboard → Settings).
+      - name: Deploy Convex functions
+        run: pnpm exec convex deploy -y
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          # Persist layer cache between runs (GitHub Actions cache backend).
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # NEXT_PUBLIC_* are inlined into the client bundle — they MUST be the
+          # real prod values here. Server secrets are NOT passed (the Dockerfile
+          # uses build-only placeholders; real values come from Coolify at runtime).
+          build-args: |
+            NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL }}
+            NEXT_PUBLIC_CONVEX_URL=${{ vars.NEXT_PUBLIC_CONVEX_URL }}
+            NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }}
+            NEXT_PUBLIC_GOOGLE_CONFIGURED=${{ vars.NEXT_PUBLIC_GOOGLE_CONFIGURED }}
+            NEXT_PUBLIC_MICROSOFT_CONFIGURED=${{ vars.NEXT_PUBLIC_MICROSOFT_CONFIGURED }}
+            NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
+            NEXT_PUBLIC_SITE_ADMIN_REG_ENABLED=${{ vars.NEXT_PUBLIC_SITE_ADMIN_REG_ENABLED }}
+
+      # Tell Coolify to pull the new image and redeploy. This is Coolify's
+      # "Deploy Webhook (auth required)" API endpoint (app → Webhooks):
+      #   COOLIFY_DEPLOY_WEBHOOK = https://coolify.rvlt.app/api/v1/deploy?uuid=...&force=false
+      #   COOLIFY_TOKEN          = a Coolify API token (Coolify → Keys & Tokens → API)
+      - name: Trigger Coolify deploy
+        run: |
+          curl -fsSL --retry 3 -X GET "${{ secrets.COOLIFY_DEPLOY_WEBHOOK }}" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}"

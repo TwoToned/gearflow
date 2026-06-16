@@ -52,7 +52,6 @@ Detailed docs for each system are in the [`FEATUREDOCS/`](./FEATUREDOCS/) folder
 | 18 | [Media & Storage](./FEATUREDOCS/18-media-storage.md) | File uploads, S3 proxy, photo cascade |
 | 19 | [Mobile & PWA](./FEATUREDOCS/19-mobile-pwa.md) | PWA config, safe areas, barcode scanning |
 | 20 | [CSV Import/Export](./FEATUREDOCS/20-csv-import-export.md) | Bulk data operations |
-| 21 | [Org Transfer](./FEATUREDOCS/21-org-transfer.md) | Organization export/import (site admin) |
 | 22 | [Suppliers](./FEATUREDOCS/22-suppliers.md) | Supplier CRUD, purchase orders |
 | 24 | [Activity Log](./FEATUREDOCS/24-activity-log.md) | Audit trail, change tracking |
 | 25 | [DataTable](./FEATUREDOCS/25-datatable.md) | Shared table component, filters, column visibility |

@@ -27,6 +27,10 @@ jobs:
       packages: write # push to GHCR with the built-in GITHUB_TOKEN
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history so generate-build-info.mjs can read the commit log +
+          # count (the image has no .git, so this is baked in instead).
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
         with:
@@ -38,6 +42,11 @@ jobs:
 
       - name: Install dependencies (for Convex CLI)
         run: pnpm install --frozen-lockfile
+
+      # Bake the changelog + version into the build context (changelog.ts reads
+      # build-info.json at runtime since the container has no git history).
+      - name: Generate build info
+        run: node scripts/generate-build-info.mjs
 
       # GATE: push Convex functions + schema to the PROD Cloud deployment. A
       # broken schema/function fails here, before we build or ship any image.

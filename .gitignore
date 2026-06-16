@@ -56,3 +56,6 @@ public/fallback-*.js
 .gstack/
 .claude/worktrees/
 pnpm-workspace.yaml
+
+# Generated at CI image-build time (scripts/generate-build-info.mjs)
+build-info.json

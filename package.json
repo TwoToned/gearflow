@@ -66,7 +66,8 @@
     "convex:backfill:all": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-all.ts",
     "convex:parity": "tsx --env-file=.env --env-file=.env.local scripts/convex-parity-check.ts",
     "convex:resync:line-items": "tsx --env-file=.env --env-file=.env.local scripts/convex-resync-line-items.ts",
-    "convex:auth:roundtrip": "tsx --env-file=.env --env-file=.env.local scripts/convex-auth-roundtrip.ts"
+    "convex:auth:roundtrip": "tsx --env-file=.env --env-file=.env.local scripts/convex-auth-roundtrip.ts",
+    "convex:purge:removed": "tsx scripts/convex-purge-removed-tables.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1063.0",

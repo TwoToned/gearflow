@@ -163,6 +163,12 @@ integration test, not just plugin-level tests.
   member/project lists + CSV export) → Convex via `crew-scheduling-read.ts`
   (time-entry row extended to full) + new `src/lib/users-read.ts` for `approvedBy`.
   Same crew deploy gate. Writes stay Prisma-first + mirror.
+- **`crew-assignments.ts` — DONE (getProjectCrew + getProjectLabourCost).** Full
+  assignment rows + crewMember/crewRole/service/shifts/confirmedBy via
+  `crew-scheduling-read.ts` (+ `getAssignmentsByProject` / `getProjectServiceMap`).
+  `phase: "asc"` replicates Postgres enum (declared-order) sort. Deferred:
+  `getCrewMembersForAssignment` (cross-project conflict + availability) stays
+  Prisma. Same crew deploy gate.
 
 **Env note for validators.** The dev worktree *can* run live Convex reads/backfills
 against the shared dev deployment by overriding the service-token issuer to match

@@ -2688,6 +2688,18 @@ auth stays Prisma). The write/status-transition actions (create/update/delete/
 submit/approve/dispute) stay Prisma-first + mirror (read-then-write). Same crew
 deploy gate as the dashboard.
 
+### Crew assignments (project crew tab) — DONE
+
+`src/server/crew-assignments.ts`: `getProjectCrew` (the project Crew tab — full
+assignment rows + crewMember/crewRole/service/shifts/confirmedBy) and
+`getProjectLabourCost` (sum estimatedCost + count) → Convex. `CrewAssignmentRow`
++ `CrewShiftRow` extended to full rows; added `getAssignmentsByProject` +
+`getProjectServiceMap`. `confirmedBy` (User) via `users-read`. **`phase: "asc"`
+replicates Postgres enum ordering** (declared order, not alphabetical) via a
+`PHASE_ORDER` rank map. `getCrewMembersForAssignment` (cross-project conflict +
+availability scan) is **deferred** — stays on Prisma until the availability
+surface converts. Writes stay Prisma-first + mirror. Same crew deploy gate.
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

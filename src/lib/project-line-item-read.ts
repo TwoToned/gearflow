@@ -8,6 +8,7 @@ import {
   getBulkAssetsByOrg,
 } from "@/lib/assets-read";
 import { type ConvexKit, getKitsByOrg, getKitMap } from "@/lib/kits-read";
+import { type ConvexLocation, getLocationMap } from "@/lib/locations-read";
 import {
   buildLineItemAttachMaps,
   attachLineItemTree,
@@ -527,4 +528,65 @@ export async function buildWarehouseLineItems(projectId: string, organizationId:
   return attachAssetBulkAssetTree(withKits, assetMap, bulkAssetMap);
 }
 
-export type { LineItemAttachMaps };
+/**
+ * Reconstruct getProjectPullSheet's line items from Convex. Like the warehouse
+ * read it's a FLAT `type === "EQUIPMENT"` list with the full attach pipeline, but
+ * (matching the pull-sheet Prisma include) it **drops CANCELLED** line items +
+ * children, fetches **no units** (the pull sheet doesn't use them; the attach
+ * pipeline still produces `units: []`), and grafts each asset's resolved
+ * `location` object (`attachAssetBulkAssetTree` then a location graft —
+ * shape-identical to the old `asset: { include: { location } }`). Returns the
+ * grafted line items + the `locationMap` so the caller can resolve
+ * `project.location` from the same round-trip.
+ */
+export async function buildPullSheetLineItems(projectId: string, organizationId: string) {
+  const convex = await getConvexClient();
+  const liDocs = await convex.query(api.projectLineItems.listByProject, {
+    projectId,
+    orgId: organizationId,
+  });
+  const lineItems = liDocs.map(mapLineItemDoc);
+
+  const [attachMaps, kitMap, modelCheckCounts, kitCheckCounts, assetArr, bulkArr, locationMap] =
+    await Promise.all([
+      buildLineItemAttachMaps(organizationId),
+      getKitMap(organizationId),
+      getModelCheckItemCountMap(organizationId),
+      getKitCheckItemCountMap(organizationId),
+      getAssetsByOrg(organizationId),
+      getBulkAssetsByOrg(organizationId),
+      getLocationMap(organizationId),
+    ]);
+
+  const assetMap = new Map(assetArr.map((a) => [a.id, a]));
+  const bulkAssetMap = new Map(bulkArr.map((b) => [b.id, b]));
+
+  // No units on the pull sheet; CANCELLED line items + children dropped (default).
+  const byParent = indexChildren(lineItems);
+  const scope = lineItems.filter((li) => li.type === "EQUIPMENT");
+  const tree = reconstructScope(scope, byParent, {
+    unitsByLineItem: new Map<string, MappedUnit[]>(),
+    depth: 2,
+  });
+
+  const withModelSupplier = attachLineItemTree(tree, attachMaps);
+  const withModelCount = attachModelCheckItemCounts(withModelSupplier, modelCheckCounts);
+  const withKits = attachKitTree(withModelCount, kitMap, kitCheckCounts);
+  const withAssets = attachAssetBulkAssetTree(withKits, assetMap, bulkAssetMap);
+
+  // Graft the resolved location object onto each asset (and recurse children),
+  // matching the old `asset: { include: { location } }` join.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const graftAssetLocation = (items: any[]): any[] =>
+    items.map((li) => ({
+      ...li,
+      asset: li.asset
+        ? { ...li.asset, location: li.asset.locationId ? locationMap.get(li.asset.locationId) ?? null : null }
+        : li.asset,
+      childLineItems: li.childLineItems ? graftAssetLocation(li.childLineItems) : li.childLineItems,
+    }));
+
+  return { lineItems: graftAssetLocation(withAssets), locationMap };
+}
+
+export type { LineItemAttachMaps, ConvexLocation };

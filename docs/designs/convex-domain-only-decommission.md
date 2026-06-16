@@ -6,9 +6,10 @@
 > (see [`FEATUREDOCS/54`](../../FEATUREDOCS/54-convex-data-layer.md) and
 > [`convex-hybrid-migration.md`](./convex-hybrid-migration.md)).
 
-> **Status: PAUSED before Phase A.** Everything below Phase 0 ("Done") is shipped
-> and stable. Phases A/B/C are not started. Tracked as tasks #4 (Phase A), #5
-> (Phase B), #6 (Phase C).
+> **Status: Phase A IN PROGRESS (2026-06-16).** Everything below Phase 0 ("Done")
+> is shipped and stable. Phase A read-rewiring underway — leaf surfaces converting
+> one PR at a time (test-tag reports, crew cluster, supplier orders, …). Phases
+> B/C not started. Tracked as tasks #4 (Phase A), #5 (Phase B), #6 (Phase C).
 
 ---
 
@@ -145,6 +146,25 @@ integration test, not just plugin-level tests.
    (`org-export`, `test-tag-reports`), `document-templates`, stocktake lists.
 2. Mid: crew cluster, test-tag cluster, sub-hire detail/list, supplier-orders.
 3. Keystone: line-item-tree reader → getProject → warehouse → pull-sheet → PDF.
+
+### Phase A progress log
+
+- **`test-tag-reports.ts` — DONE (PR #194).**
+- **Crew cluster — DONE (stacked PRs #195 dashboard → #196 time → #197 assignments).**
+  Helpers `crew-scheduling-read.ts` + `users-read.ts`; org-scoped `crewShifts.listByOrg`
+  / `crewCertifications.listByOrg`. Deferred: `getCrewMembersForAssignment`. Crew
+  deploy gate: backfill crew + crew-scheduling in prod before merge.
+- **`supplier-orders.ts` — DONE.** `getSupplierOrders` + `getSupplierOrderById` →
+  Convex via `supplier-order-read.ts`; new `supplierOrderItems.listByOrderIds`.
+  Independent PR off main. supplierOrder/item backfilled in prod with the sub-hire
+  family (gate already satisfied).
+
+**Env note for validators.** The dev worktree can run live Convex reads/backfills
+against the shared dev deployment by prefixing `BETTER_AUTH_URL="https://preview.lab.rvlt.app"`
+(issuer match; local secret matches the dev JWKS). Seed (`npm run seed` +
+`seed:test-tag` / `seed:crew` / `seed:supplier-orders`), then
+`BETTER_AUTH_URL=… npx tsx … scripts/convex-backfill-all.ts`, then parity. The
+shared dev backend is volatile — re-run the relevant backfill right before validating.
 
 ---
 

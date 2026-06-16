@@ -2371,6 +2371,48 @@ status }` relation-filter on its `projectLineItem.findFirst` (line ~65) — a le
 cross-domain read from the model-only batch. Low priority (single point read, fresh
 Prisma mirror) but tracked for a future pass.
 
+## Phase A read-rewiring — surfaces (per-surface gated PRs)
+
+Each leaf surface moves its read-only Prisma reads to the dual-written Convex copy
+behind a thin `src/lib/<x>-read.ts` (mappers epoch-ms→Date, absent→null, Prisma
+defaults coerced) + pure JS filter/sort/attach (unit-tested) + JS joins. No Prisma
+fallback on a Convex miss → null/empty. Writes + read-then-write paths stay Prisma.
+Merge gate = human preview validation (correctness can't be golden-diffed in the
+dev worktree). The deploy-ordering gate above applies: backfills must have run
+against prod Convex before each read-rewiring PR merges.
+
+### project-services.ts — read-rewired (PR `feat/convex-read-project-services`)
+
+New `src/lib/project-service-read.ts`. Converted the 4 read-only server actions:
+- `getProjectServices(projectId)` → `projectServices.listByProject` +
+  **new** `crewAssignments.listByServiceIds({serviceIds, orgId})` (loops the
+  `by_serviceId` index, `requireOrgRead`) + `getCrewRoleMap`/`getCrewMemberMap`
+  (crew-read.ts). Attaches crewRole + crewAssignments (grouped by serviceId; each
+  carries estimatedCost). Sorted by a pure null-aware comparator: date ASC NULLS
+  LAST, tie-break sortOrder ASC.
+- `getProjectServiceById(id)` → `projectServices.getById` (org-check in JS, throws
+  "Service not found" on null/org mismatch) + same crew attach, but assignments
+  carry **no** estimatedCost (mirrors the narrower Prisma select).
+- `getServiceTemplates()` → `serviceTemplates.list`, sorted sortOrder ASC.
+- `getProjectServicesSummary(projectId)` → `listByProject`, JS filter
+  `status !== "CANCELLED"`, sum lineTotal/costTotal + count.
+
+**KEPT Prisma** (this PR): all writes + read-then-write (create/update/delete
+service, status mutations, generate/clone/convert, template CRUD) and the
+cross-surface readers `getCrewSuggestionsForProject` + `generateCrewMessage` (they
+read crewMember/crewAssignment/projectLineItem belonging to other surfaces).
+**DEFERRED:** `getServiceCostHistory` (no UI consumer — left on Prisma).
+
+Pure functions unit-tested in `src/lib/project-service-read.test.ts` (date/sortOrder
+comparator incl. NULLS-LAST + tie-break, not-CANCELLED filter, mappers' default
+coercion, crew attach incl. role/member map-miss → null and the estimatedCost
+on/off projections). Three weakly-typed consumer casts
+(`as Record<string, unknown>[]`) widened to `as unknown as Record<…>` now that the
+helpers return precise row interfaces (runsheet page, settings/services page,
+services-panel) — behaviour unchanged. **GATE:** projectService + serviceTemplate
+already dual-written (`syncProjectServicesToConvex`, template-mirror); confirm both
+backfilled in prod before merge.
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort

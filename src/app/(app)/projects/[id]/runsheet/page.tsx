@@ -118,7 +118,9 @@ export default function RunsheetPage({
 
   const { data: services, isLoading } = useProjectServices(id);
 
-  const dateGroups = services ? groupByDate(services) : [];
+  const dateGroups = services
+    ? groupByDate(services as unknown as Record<string, unknown>[])
+    : [];
   const today = new Date().toISOString().slice(0, 10);
 
   return (

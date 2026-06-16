@@ -17,6 +17,12 @@ import {
 } from "@/lib/template-mirror";
 import { roundCurrency } from "@/lib/formatters";
 import { getCategoriesByOrg } from "@/lib/categories-read";
+import {
+  getProjectServicesFromConvex,
+  getProjectServiceByIdFromConvex,
+  getServiceTemplatesFromConvex,
+  getProjectServicesSummaryFromConvex,
+} from "@/lib/project-service-read";
 import { getProjectById } from "@/lib/projects-read";
 import { getLocationById } from "@/lib/locations-read";
 import { sendCrewOffer } from "@/server/crew-communication";
@@ -124,50 +130,13 @@ function buildServiceData(parsed: ReturnType<typeof projectServiceSchema.parse>)
 
 export async function getProjectServices(projectId: string) {
   const { organizationId } = await getOrgContext();
-
-  const services = await prisma.projectService.findMany({
-    where: { organizationId, projectId },
-    include: {
-      crewRole: {
-        select: { id: true, name: true, color: true },
-      },
-      crewAssignments: {
-        select: {
-          id: true,
-          status: true,
-          estimatedCost: true,
-          crewMember: {
-            select: { id: true, firstName: true, lastName: true, image: true },
-          },
-        },
-      },
-    },
-    orderBy: [{ date: "asc" }, { sortOrder: "asc" }],
-  });
-
+  const services = await getProjectServicesFromConvex(organizationId, projectId);
   return serialize(services);
 }
 
 export async function getProjectServiceById(id: string) {
   const { organizationId } = await getOrgContext();
-
-  const service = await prisma.projectService.findFirst({
-    where: { id, organizationId },
-    include: {
-      crewRole: { select: { id: true, name: true, color: true } },
-      crewAssignments: {
-        select: {
-          id: true,
-          status: true,
-          crewMember: {
-            select: { id: true, firstName: true, lastName: true, image: true },
-          },
-        },
-      },
-    },
-  });
-
-  if (!service) throw new Error("Service not found");
+  const service = await getProjectServiceByIdFromConvex(organizationId, id);
   return serialize(service);
 }
 
@@ -1310,12 +1279,7 @@ export async function generateCrewMessage(
 
 export async function getServiceTemplates() {
   const { organizationId } = await getOrgContext();
-
-  const templates = await prisma.serviceTemplate.findMany({
-    where: { organizationId },
-    orderBy: { sortOrder: "asc" },
-  });
-
+  const templates = await getServiceTemplatesFromConvex(organizationId);
   return serialize(templates);
 }
 
@@ -1444,18 +1408,8 @@ export async function deleteServiceTemplate(id: string) {
 export async function getProjectServicesSummary(projectId: string) {
   const { organizationId } = await getOrgContext();
 
-  const services = await prisma.projectService.findMany({
-    where: { organizationId, projectId, status: { not: "CANCELLED" } },
-    select: { showOnDocuments: true, lineTotal: true, costTotal: true },
-  });
-
-  let chargeTotal = 0; // What we charge clients (lineTotal)
-  let costTotal = 0;   // What it costs us (costTotal)
-
-  for (const s of services) {
-    chargeTotal += s.lineTotal ? Number(s.lineTotal) : 0;
-    costTotal += s.costTotal ? Number(s.costTotal) : 0;
-  }
+  const { chargeTotal, costTotal, serviceCount } =
+    await getProjectServicesSummaryFromConvex(organizationId, projectId);
 
   return serialize({
     chargeTotal: roundCurrency(chargeTotal),
@@ -1464,6 +1418,6 @@ export async function getProjectServicesSummary(projectId: string) {
     totalCost: roundCurrency(costTotal),
     onDocumentsTotal: roundCurrency(chargeTotal),
     internalTotal: roundCurrency(costTotal),
-    serviceCount: services.length,
+    serviceCount,
   });
 }

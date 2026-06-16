@@ -171,6 +171,15 @@ model/supplier/asset/kit ids) all match. **2/4–4/4 (warehouse → pull-sheet �
 reuse these fetchers + mappers; only the attach shape differs (warehouse needs
 `attachKitTree` `_count` + full asset on units).**
 
+**Consumer 2/4 — `getProjectForWarehouse` DONE** (PR `feat/convex-read-warehouse-tree`,
+stacked on consumer 1). `buildWarehouseLineItems` reuses the mappers; the
+reconstruction primitive gained a backward-compatible `keepCancelled` option
+(warehouse keeps every status, getProject drops CANCELLED tombstones). Flat
+EQUIPMENT scope, full asset on units (`attachAssetBulkAssetTree`), model/kit
+`_count` grafts. Golden-diffed vs the old Prisma include + attach pipeline (SERVICE
+line excluded, CANCELLED EQUIPMENT line included, CANCELLED unit excluded): id-set
++ per-node structure match.
+
 ### New read helpers needed (priority by MOVE-read frequency)
 
 1. `projectLineItem-read.ts` (+ `projectLineItemUnit`) — biggest

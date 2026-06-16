@@ -2684,6 +2684,29 @@ now). The line-item-tree Prisma `include` + `PROJECT_UNIT_INCLUDE` are deleted.
   as a set, every per-node structure (units, depth truncation, CANCELLED
   exclusion, resolved model/supplier/asset/kit ids) matches.
 
+### Keystone consumer 2/4: `getProjectForWarehouse` — DONE
+
+`server/warehouse.ts:getProjectForWarehouse` now reconstructs its EQUIPMENT
+line-item list from Convex via `buildWarehouseLineItems`. Prisma there supplies
+only the project scalars (even `location` is attached from Convex). It differs
+from getProject in three ways, all reproduced exactly:
+
+- **Flat list, no grouping** — scope is `type === "EQUIPMENT"` (children appear at
+  top level too, the dual projection), `childLineItems` 2 deep.
+- **Keeps every status** — no CANCELLED filter on line items / children (only
+  units are non-CANCELLED). The reconstruction primitive gained a backward-compatible
+  `keepCancelled` option on `indexChildren` + `reconstructScope` for this; getProject
+  keeps the default (drop CANCELLED tombstones).
+- **Full asset on units + check counts** — `attachAssetBulkAssetTree` (full
+  `asset`/`bulkAsset` on lines AND units), `model._count.modelCheckItems` +
+  `kit._count.kitCheckItems` grafted via `attachKitTree`. Same attach pipeline the
+  old inline code ran, just over the reconstructed tree.
+
+Validated by a structural golden-diff vs the old Prisma include + attach pipeline
+on an enriched project (incl. a SERVICE line correctly excluded, a CANCELLED
+EQUIPMENT line correctly included, a CANCELLED unit excluded): id-set + every
+per-node structure (units, resolved model/kit ids, check counts) match.
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

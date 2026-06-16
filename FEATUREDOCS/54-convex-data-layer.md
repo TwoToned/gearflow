@@ -2334,6 +2334,37 @@ Convex, (3) ship the read rewiring. The read rewiring could NOT be verified in t
 dev worktree (local DB lacks better-auth migrations → backfills can't run there;
 Convex tables are empty), so it is deliberately deferred to its own gated change.
 
+### Phase A read-rewiring surfaces (per-surface, preview-gated PRs)
+
+Each leaf surface moves its read-only domain Prisma queries to Convex behind a
+thin `src/lib/<x>-read.ts` (mappers: epoch-ms → Date, Decimal → number, absent →
+null) plus pure, unit-tested filter/sort/count predicates; no Prisma fallback on a
+Convex miss; human-gated on a Coolify preview before merge.
+
+- **`warehouse-display.ts` — PARTIAL (PR `feat/convex-read-warehouse-display`).**
+  Inside `getWarehouseDisplayData`, the 4 `projectService.findMany` reads and the 2
+  `projectLineItem.groupBy` count reads moved to Convex via
+  `src/lib/warehouse-display-read.ts`:
+  - Services: one `api.projectServices.list({orgId})` round trip, then 4 pure JS
+    filters (`filterDeliveryServices`/`filterPickupServices` over today + upcoming
+    millisecond windows; `status !== "CANCELLED"`). Mapper keeps `date` a real
+    `Date` — the upcoming-day bucketing calls `date.getFullYear()`.
+  - Line items: new narrow Convex query **`api.projectLineItems.listByProjectIds`**
+    ({orgId, projectIds} over `by_projectId`, `requireOrgRead`) — avoids a full-org
+    line-item scan on a public endpoint; then JS group-count via
+    `buildLineItemCountMaps`. GOTCHA replicated: Convex `isKitChild` is optional →
+    `!== true` (NOT `=== false`) so absent-flag rows still count, matching Prisma
+    `isKitChild: false`.
+  - **BLOCKED TERMINUS — stays Prisma:** `warehouseDashboardToken` is **NOT
+    dual-written to Convex** (no `api.warehouseDashboardTokens.*` exists anywhere in
+    `src/`; its Convex table is empty). So ALL token functions —
+    `getDisplayTokens` / `createDisplayToken` / `revokeDisplayToken` /
+    `updateDisplayToken` / `regenerateDisplayToken` / `validateDisplayToken` (incl.
+    its fire-and-forget `lastAccessedAt` write) — remain Prisma until Phase B adds a
+    dual-write + backfill for `warehouseDashboardToken`. The `organization` org-name
+    read also stays Prisma (Better Auth table, auth domain forever). The file still
+    imports `prisma` by design.
+
 **✅ Final non-document file sweep — DONE (2026-06-15/16).** The last 10 files with
 cross-domain Prisma reads on the non-document surface are now off the mirror. All
 converted shape-identically (org-scoped Convex prefetch + JS filter/find; null on

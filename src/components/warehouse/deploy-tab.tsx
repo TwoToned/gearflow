@@ -27,7 +27,6 @@ import {
 import type { LineItem, GroupEntry } from "./warehouse-types";
 import { modelDisplayName, collectAllVerifiableIds, bulkUnitKey } from "./warehouse-types";
 import { KitChildRows } from "./kit-child-rows";
-import { AccessoryChildRows } from "./accessory-child-rows";
 import { PrepStatusBadge } from "./prep-status-badge";
 
 export interface DeployTabProps {
@@ -244,7 +243,6 @@ export function DeployTab({
                                 <PrepStatusBadge item={item} />
                               </TableCell>
                             </TableRow>
-                            <AccessoryChildRows parent={item} mode="deploy" />
                           </Fragment>
                         ))}
                       </Fragment>
@@ -299,10 +297,6 @@ export function DeployTab({
                             </TableRow>
                           );
                         })}
-                        {/* Accessories on a multi-qty serialised model line (classified
-                            bulk-group) still travel with the parent. Gated on
-                            isExpanded so they hide with the group's unit rows. */}
-                        {isExpanded && <AccessoryChildRows parent={entry.item} mode="deploy" />}
                       </Fragment>
                     );
                   }
@@ -417,7 +411,6 @@ export function DeployTab({
                         <PrepStatusBadge item={item} />
                       </TableCell>
                     </TableRow>
-                    <AccessoryChildRows parent={item} mode="deploy" />
                     </Fragment>
                   );
                 })}

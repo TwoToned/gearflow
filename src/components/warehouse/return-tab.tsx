@@ -30,7 +30,6 @@ import {
 import type { LineItem, GroupEntry } from "./warehouse-types";
 import { modelDisplayName, isBulkItem, collectAllVerifiableIds, bulkUnitKey } from "./warehouse-types";
 import { KitChildRows } from "./kit-child-rows";
-import { AccessoryChildRows } from "./accessory-child-rows";
 
 export interface ReturnTabProps {
   // Scan state
@@ -247,7 +246,6 @@ export function ReturnTab({
                                 <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
                               </TableCell>
                             </TableRow>
-                            <AccessoryChildRows parent={item} mode="return" />
                           </Fragment>
                         ))}
                       </Fragment>
@@ -303,10 +301,6 @@ export function ReturnTab({
                             </TableRow>
                           );
                         })}
-                        {/* Accessories on a multi-qty serialised model line (classified
-                            bulk-group) still travel with the parent. Gated on
-                            isExpanded so they hide with the group's unit rows. */}
-                        {isExpanded && <AccessoryChildRows parent={entry.item} mode="return" />}
                       </Fragment>
                     );
                   }
@@ -434,7 +428,6 @@ export function ReturnTab({
                         <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
                       </TableCell>
                     </TableRow>
-                    <AccessoryChildRows parent={item} mode="return" />
                     </Fragment>
                   );
                 })}

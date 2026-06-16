@@ -98,48 +98,6 @@ export async function getMaintenanceRecords(params?: {
   });
 }
 
-/**
- * Returns every non-terminal maintenance record grouped by status — the
- * source for the workshop kanban. Terminal statuses (COMPLETED, CANCELLED)
- * are excluded; if you want to see history, use the existing
- * /maintenance list with a status filter.
- */
-export async function getWorkshopQueue(params?: {
-  search?: string;
-  assignedToId?: string;
-  projectId?: string;
-}) {
-  const { organizationId } = await getOrgContext();
-  const { search, assignedToId, projectId } = params || {};
-
-  const where: Prisma.MaintenanceRecordWhereInput = {
-    organizationId,
-    status: { notIn: ["COMPLETED", "CANCELLED"] },
-    ...(assignedToId && { assignedToId }),
-    ...(projectId && { projectId }),
-    ...(search && {
-      OR: [
-        { title: { contains: search, mode: "insensitive" } },
-        { description: { contains: search, mode: "insensitive" } },
-        { assets: { some: { asset: { assetTag: { contains: search, mode: "insensitive" } } } } },
-      ],
-    }),
-  };
-
-  const records = await prisma.maintenanceRecord.findMany({
-    where,
-    include: {
-      // asset.model grafted from Convex below; select modelId for the lookup.
-      assets: { include: { asset: { select: { id: true, assetTag: true, modelId: true } } } },
-      assignedTo: { select: { id: true, name: true, image: true } },
-      project: { select: { id: true, projectNumber: true, name: true } },
-    },
-    orderBy: [{ scheduledDate: "asc" }, { createdAt: "asc" }],
-  });
-
-  return serialize(await attachAssetModels(organizationId, records));
-}
-
 export async function getMaintenanceRecord(id: string) {
   const { organizationId } = await getOrgContext();
 
@@ -413,85 +371,6 @@ export async function updateMaintenanceRecord(
   });
 
   return serialize(record);
-}
-
-/**
- * Lightweight status-only update used by the workshop kanban — moving
- * a card between columns is a high-frequency interaction that shouldn't
- * pay the cost of re-validating + re-writing every field on the record.
- *
- * Applies the same state-machine guards as updateMaintenanceRecord.
- * `result` is required when transitioning to COMPLETED (PASS or FAIL
- * decides whether the asset releases). Defaults to PASS when omitted.
- */
-export async function setMaintenanceStatus(
-  id: string,
-  nextStatus: MaintenanceStatus,
-  result?: "PASS" | "FAIL",
-) {
-  const { organizationId, userId, userName } = await requirePermission(
-    "maintenance",
-    "update",
-  );
-
-  const existing = await prisma.maintenanceRecord.findUnique({
-    where: { id, organizationId },
-    include: { assets: { select: { assetId: true } } },
-  });
-  if (!existing) {
-    throw new UserFacingError({
-      code: "NOT_FOUND",
-      title: "Maintenance record not found",
-      message: "This record was deleted or moved. Refresh the page.",
-    });
-  }
-
-  const assetIds = existing.assets.map((a) => a.assetId);
-  const wasHolding = isHoldingStatus(existing.status);
-  const isHolding = isHoldingStatus(nextStatus);
-  const completedResult = nextStatus === "COMPLETED" ? result ?? "PASS" : existing.result;
-
-  const updated = await prisma.$transaction(async (tx) => {
-    const u = await tx.maintenanceRecord.update({
-      where: { id, organizationId },
-      data: {
-        status: nextStatus,
-        result: completedResult,
-        completedDate: nextStatus === "COMPLETED" ? new Date() : existing.completedDate,
-      },
-    });
-
-    if (assetIds.length > 0) {
-      if (isHolding && !wasHolding) {
-        await holdAssets(tx, assetIds);
-      } else if (
-        wasHolding &&
-        ((nextStatus === "COMPLETED" && completedResult !== "FAIL") ||
-          nextStatus === "CANCELLED")
-      ) {
-        await releaseAssets(tx, assetIds, id);
-      }
-    }
-    return u;
-  });
-  // Mirror any asset status flips (hold/release) to Convex.
-  await syncAssetsToConvex(assetIds);
-  await patchMaintenanceInConvex(id, updated as unknown as Record<string, unknown>);
-
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "UPDATE",
-    entityType: "maintenance",
-    entityId: id,
-    entityName: existing.title,
-    summary: `Status ${existing.status} → ${nextStatus}${
-      completedResult && nextStatus === "COMPLETED" ? ` (${completedResult})` : ""
-    }`,
-  });
-
-  return serialize(updated);
 }
 
 export async function deleteMaintenanceRecord(id: string) {

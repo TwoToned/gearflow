@@ -71,7 +71,6 @@ Detailed docs for each system are in the [`FEATUREDOCS/`](./FEATUREDOCS/) folder
 | 38 | [Pricing Optimization](./FEATUREDOCS/38-pricing-optimization.md) | Auto min-cost pricing from daily/weekly/monthly rates + billing periods |
 | 39 | [Sub-Hires](./FEATUREDOCS/39-sub-hires.md) | First-class sub-hire orders with dual pricing, margin analysis, and supplier rate memory |
 | 40 | [Damage Capture](./FEATUREDOCS/40-damage-capture.md) | Camera-first damage reporting at checkin, severity, charge-back, auto workshop ticket |
-| 41 | [Workshop Kanban](./FEATUREDOCS/41-workshop-kanban.md) | Repair queue board, extended maintenance state machine (Awaiting Parts, QA) |
 | 42 | [Asset Utilization](./FEATUREDOCS/42-asset-utilization.md) | Booking rate, revenue, cost, net contribution per asset; idle/lossy filters |
 | 43 | [Stocktake](./FEATUREDOCS/43-stocktake.md) | Scan-driven inventory counts, discrepancy resolution, state machine |
 | 44 | [Reorder Dashboard](./FEATUREDOCS/44-reorder.md) | Low-stock items grouped by preferred supplier, one-click draft supplier orders |

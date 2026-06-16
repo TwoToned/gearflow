@@ -277,17 +277,6 @@ export const AccessoryAllocationMode = v.union(
   v.literal("SHIPS_WITH"),
   v.literal("DEDICATED"),
 );
-export const DamageSeverity = v.union(
-  v.literal("MINOR"),
-  v.literal("MAJOR"),
-  v.literal("TOTAL"),
-);
-export const DamageStatus = v.union(
-  v.literal("OPEN"),
-  v.literal("UNDER_REPAIR"),
-  v.literal("RESOLVED"),
-  v.literal("CHARGED_BACK"),
-);
 export const CrewMemberType = v.union(
   v.literal("EMPLOYEE"),
   v.literal("FREELANCER"),

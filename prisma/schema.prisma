@@ -65,7 +65,6 @@ model User {
   notificationDismissals    NotificationDismissal[]
   notificationPreference    UserNotificationPreference?
   notificationEmailLogs     NotificationEmailLog[]
-  damageEventsCreated       DamageEvent[]               @relation("DamageEventCreatedBy")
   assignedProjectTasks      ProjectTask[]               @relation("ProjectTaskAssignee")
   createdProjectTasks       ProjectTask[]               @relation("ProjectTaskCreatedBy")
   savedTableViews           SavedTableView[]
@@ -155,7 +154,6 @@ model Organization {
   bulkAssets               BulkAsset[]
   locations                Location[]
   maintenanceRecords       MaintenanceRecord[]
-  damageEvents             DamageEvent[]
   clients                  Client[]
   projects                 Project[]
   projectLineItems         ProjectLineItem[]
@@ -1078,7 +1076,6 @@ model Asset {
   testTagAsset       TestTagAsset?
   supplierOrderItems SupplierOrderItem[]
   checkRecords       CheckRecord[]
-  damageEvents       DamageEvent[]
   stocktakeItems     StocktakeItem[]
 
   @@unique([organizationId, assetTag])
@@ -1136,7 +1133,6 @@ model BulkAsset {
   scanLogs        AssetScanLog[]
   testTagAssets   TestTagAsset[]
   checkRecords    CheckRecord[]
-  damageEvents    DamageEvent[]
   stocktakeItems  StocktakeItem[]
 
   @@unique([organizationId, assetTag])
@@ -1274,9 +1270,8 @@ model MaintenanceRecord {
   partsUsed      String?
   attachments    String[]           @default([])
   /**
-   * Before/after photos uploaded during repair. Mirrors DamageEvent.photos
-   * shape — string URLs from /api/uploads. Workshop kanban cards render
-   * up to 4 thumbnails.
+   * Before/after photos uploaded during repair — string URLs from
+   * /api/uploads. Workshop kanban cards render up to 4 thumbnails.
    */
   photos         String[]           @default([])
   result         MaintenanceResult?
@@ -1286,75 +1281,12 @@ model MaintenanceRecord {
   updatedAt      DateTime           @updatedAt
 
   assets       MaintenanceRecordAsset[]
-  damageEvents DamageEvent[]
 
   @@index([organizationId])
   @@index([status])
   @@index([scheduledDate])
   @@index([projectId])
   @@map("maintenance_record")
-}
-
-/// Damage incident captured at warehouse check-in (or recorded later).
-/// Promoted from `ProjectLineItem.returnCondition` so we can attach photos,
-/// record severity, capture notes, and track repair lifecycle. The line-item
-/// enum stays as a fast filter; this row is source of truth for the damage
-/// event itself. UI to capture damage events is Wave 3 (damage-capture flow).
-model DamageEvent {
-  id                  String               @id @default(cuid())
-  organizationId      String
-  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  projectId           String?
-  project             Project?             @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  lineItemId          String?
-  lineItem            ProjectLineItem?     @relation(fields: [lineItemId], references: [id], onDelete: SetNull)
-  lineItemUnitId      String?
-  lineItemUnit        ProjectLineItemUnit? @relation(fields: [lineItemUnitId], references: [id], onDelete: SetNull)
-  assetId             String?
-  asset               Asset?               @relation(fields: [assetId], references: [id], onDelete: SetNull)
-  bulkAssetId         String?
-  bulkAsset           BulkAsset?           @relation(fields: [bulkAssetId], references: [id], onDelete: SetNull)
-  severity            DamageSeverity
-  status              DamageStatus         @default(OPEN)
-  notes               String?
-  photos              String[]             @default([])
-  estimatedCost       Decimal?             @db.Decimal(10, 2)
-  actualCost          Decimal?             @db.Decimal(10, 2)
-  chargedBack         Boolean              @default(false)
-  maintenanceRecordId String?
-  maintenanceRecord   MaintenanceRecord?   @relation(fields: [maintenanceRecordId], references: [id], onDelete: SetNull)
-  createdById         String
-  createdBy           User                 @relation("DamageEventCreatedBy", fields: [createdById], references: [id])
-  // True reporter when a fault is logged from Discord by a (possibly non-User)
-  // crew member. createdById still holds a real User (the reporter's linked User,
-  // else a system actor) to satisfy the required FK — see discord fault service.
-  reportedByCrewMemberId String?
-  reportedByCrewMember   CrewMember? @relation("DamageReportedBy", fields: [reportedByCrewMemberId], references: [id], onDelete: SetNull)
-  // Discord interaction id — makes the bot→API fault POST idempotent on retry.
-  discordIdempotencyKey String? @unique
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
-
-  @@index([organizationId, status])
-  @@index([projectId])
-  @@index([assetId])
-  @@index([bulkAssetId])
-  @@index([lineItemUnitId])
-  @@index([reportedByCrewMemberId])
-  @@map("damage_event")
-}
-
-enum DamageSeverity {
-  MINOR
-  MAJOR
-  TOTAL
-}
-
-enum DamageStatus {
-  OPEN
-  UNDER_REPAIR
-  RESOLVED
-  CHARGED_BACK
 }
 
 model MaintenanceRecordAsset {
@@ -1478,7 +1410,6 @@ model Project {
   groups               ProjectGroup[]
   projectManagers      ProjectManager[]
   maintenanceRecords   MaintenanceRecord[]
-  damageEvents         DamageEvent[]
   tasks                ProjectTask[]
 
   @@unique([organizationId, projectNumber])
@@ -1578,7 +1509,6 @@ model ProjectLineItem {
   subHireGroup        SubHireGroup?         @relation(fields: [subHireGroupId], references: [id], onDelete: SetNull)
   service             ProjectService?
   checkRecords        CheckRecord[]
-  damageEvents        DamageEvent[]
   units               ProjectLineItemUnit[]
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
@@ -1637,7 +1567,6 @@ model ProjectLineItemUnit {
   returnStatus     ReturnStatus?
   returnNotes      String?
   checkRecords     CheckRecord[]
-  damageEvents     DamageEvent[]
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 
@@ -1655,7 +1584,7 @@ model ProjectLineItemUnit {
 /// When the historic data has lines that splitLineItem fragmented into
 /// per-asset siblings, the collapse migration merges them back onto one
 /// canonical order line — moving each sibling's ProjectLineItemUnit, its
-/// CheckRecord / DamageEvent rows, and its ProjectService onto the
+/// CheckRecord rows, and its ProjectService onto the
 /// canonical, then deactivating the old row. This table records the
 /// mapping so the merge can be audited and (if needed) reversed.
 ///
@@ -1675,7 +1604,6 @@ model LineItemMergeMap {
   /// pre-Phase-2a rows or kit children).
   movedUnitId           String?
   checkRecordsRepointed Int          @default(0)
-  damageEventsRepointed Int          @default(0)
   serviceRepointed      Boolean      @default(false)
   /// Free-form notes captured at merge time (eg. the equivalence-key
   /// snapshot, dry-run vs. apply, the run id).
@@ -2373,7 +2301,6 @@ model CrewMember {
   // Discord integration
   discordLink       DiscordAccountLink?
   discordLinkTokens DiscordLinkToken[]
-  reportedDamageEvents DamageEvent[] @relation("DamageReportedBy")
   assignedProjectTasks ProjectTask[] @relation("ProjectTaskCrewAssignee")
 
   createdAt DateTime @default(now())

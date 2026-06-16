@@ -48,7 +48,6 @@ const ORDER: string[] = [
   // transactional
   "sub-hires",
   "stocktake",
-  "damage",
   "maintenance",
   "warehouse-close",
   "saved-reports",

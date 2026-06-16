@@ -31,7 +31,6 @@ import type * as crewShifts from "../crewShifts.js";
 import type * as crewSkills from "../crewSkills.js";
 import type * as crewTimeEntries from "../crewTimeEntries.js";
 import type * as customFieldDefinitions from "../customFieldDefinitions.js";
-import type * as damageEvents from "../damageEvents.js";
 import type * as discordAccountLinks from "../discordAccountLinks.js";
 import type * as discordIntegrations from "../discordIntegrations.js";
 import type * as discordLinkTokens from "../discordLinkTokens.js";
@@ -129,7 +128,6 @@ declare const fullApi: ApiFromModules<{
   crewSkills: typeof crewSkills;
   crewTimeEntries: typeof crewTimeEntries;
   customFieldDefinitions: typeof customFieldDefinitions;
-  damageEvents: typeof damageEvents;
   discordAccountLinks: typeof discordAccountLinks;
   discordIntegrations: typeof discordIntegrations;
   discordLinkTokens: typeof discordLinkTokens;

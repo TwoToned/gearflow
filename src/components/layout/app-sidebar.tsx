@@ -26,7 +26,6 @@ import {
   HardHat,
   Clock,
   Plus,
-  AlertTriangle,
   Hammer,
   Activity,
   ClipboardList,
@@ -145,7 +144,6 @@ const navSections: NavSection[] = [
       { title: "Reorder", url: "/warehouse/reorder", icon: ShoppingCart, resource: "bulkAsset" },
       { title: "Workshop", url: "/workshop", icon: Hammer, resource: "maintenance" },
       { title: "Maintenance", url: "/maintenance", icon: Wrench, resource: "maintenance" },
-      { title: "Damage", url: "/damage", icon: AlertTriangle, resource: "maintenance" },
       {
         title: "Test & Tag",
         url: "/test-and-tag",

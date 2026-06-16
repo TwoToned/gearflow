@@ -218,21 +218,6 @@ function UtilizationContent() {
         ),
     },
     {
-      id: "damageCost",
-      header: "Damage",
-      accessorKey: "damageCost",
-      responsiveHide: "lg",
-      cell: (r) => {
-        const our = r.damageCost - r.damageChargedBackTotal;
-        if (our <= 0) return <span className="text-xs text-fg-4">—</span>;
-        return (
-          <span className="text-sm tabular-nums text-[oklch(0.58_0.22_27)]">
-            -{formatCurrency(our)}
-          </span>
-        );
-      },
-    },
-    {
       id: "netContribution",
       header: "Net",
       accessorKey: "netContribution",

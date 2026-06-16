@@ -21,10 +21,8 @@
  * Cost model:
  *   maintenanceCost = SUM(MaintenanceRecord.cost) via MaintenanceRecordAsset
  *     where assetId = X and the record's createdAt is in the period.
- *   damageCost = SUM(actualCost ?? estimatedCost) per DamageEvent where
- *     assetId = X, minus charged-back damage (client paid for it).
  *
- * Net contribution = revenue − maintenanceCost − ourDamageCost.
+ * Net contribution = revenue − maintenanceCost.
  *
  * Period:
  *   Defaults to "since asset was created". Pass periodStart / periodEnd
@@ -51,8 +49,6 @@ export interface AssetUtilization {
   utilizationRate: number; // 0..1
   revenue: number;
   maintenanceCost: number;
-  damageCost: number;
-  damageChargedBackTotal: number;
   netContribution: number;
   projectCount: number;
   lastBookingEnd: Date | null;
@@ -224,29 +220,7 @@ export async function computeAssetUtilization(
   });
   const maintenanceCost = Number(maintenanceAgg._sum.cost ?? 0);
 
-  // Damage cost: prefer actualCost, fall back to estimatedCost.
-  const damageRows = await prisma.damageEvent.findMany({
-    where: {
-      assetId,
-      organizationId,
-      createdAt: { gte: period.start, lte: period.end },
-    },
-    select: { actualCost: true, estimatedCost: true, chargedBack: true },
-  });
-  let damageCost = 0;
-  let damageChargedBackTotal = 0;
-  for (const d of damageRows) {
-    const cost = d.actualCost != null
-      ? Number(d.actualCost)
-      : d.estimatedCost != null
-        ? Number(d.estimatedCost)
-        : 0;
-    damageCost += cost;
-    if (d.chargedBack) damageChargedBackTotal += cost;
-  }
-
-  const ourDamageCost = damageCost - damageChargedBackTotal;
-  const netContribution = revenue - maintenanceCost - ourDamageCost;
+  const netContribution = revenue - maintenanceCost;
 
   const utilizationRate = periodDays > 0
     ? Math.max(0, Math.min(1, bookingDays / periodDays))
@@ -259,8 +233,6 @@ export async function computeAssetUtilization(
     utilizationRate,
     revenue,
     maintenanceCost,
-    damageCost,
-    damageChargedBackTotal,
     netContribution,
     projectCount: projectIds.size,
     lastBookingEnd,

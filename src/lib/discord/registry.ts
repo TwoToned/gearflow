@@ -5,11 +5,10 @@
  */
 import type { BotCommand } from "./bot-types";
 import { command as assetLookup } from "./commands/asset-lookup";
-import { command as fault } from "./commands/fault";
 import { command as link } from "./commands/link";
 
 /** The canonical command set, registered in deterministic order. */
-export const ALL_COMMANDS: BotCommand[] = [assetLookup, fault, link];
+export const ALL_COMMANDS: BotCommand[] = [assetLookup, link];
 
 export function buildRegistry(commands: BotCommand[]): Map<string, BotCommand> {
   const map = new Map<string, BotCommand>();

@@ -89,32 +89,6 @@ async function createMaintenance(
   });
 }
 
-async function createDamage(
-  orgId: string,
-  assetId: string,
-  userId: string,
-  options: {
-    actualCost?: number;
-    estimatedCost?: number;
-    chargedBack?: boolean;
-    createdAt?: Date;
-  },
-) {
-  return testPrisma.damageEvent.create({
-    data: {
-      organizationId: orgId,
-      assetId,
-      createdById: userId,
-      severity: "MAJOR",
-      status: "OPEN",
-      actualCost: options.actualCost ?? null,
-      estimatedCost: options.estimatedCost ?? null,
-      chargedBack: options.chargedBack ?? false,
-      createdAt: options.createdAt,
-    },
-  });
-}
-
 describe("computeAssetUtilization", () => {
   beforeEach(async () => {
     await setupIntegrationTest();
@@ -282,38 +256,9 @@ describe("computeAssetUtilization", () => {
     expect(result!.maintenanceCost).toBe(150);
   });
 
-  it("damage prefers actualCost; chargedBack reduces our share", async () => {
+  it("netContribution = revenue − maintenance", async () => {
     const org = await createOrgFixture();
-    const user = await createUserFixture(org.id);
-    const model = await createModelFixture(org.id);
-    const asset = await createAssetFixture(org.id, model.id, {
-      assetTag: `T-${createId().slice(0, 8)}`,
-    });
-    await createDamage(org.id, asset.id, user.id, {
-      actualCost: 100,
-      estimatedCost: 50, // ignored — actual wins
-      chargedBack: false,
-      createdAt: new Date("2026-04-10"),
-    });
-    await createDamage(org.id, asset.id, user.id, {
-      actualCost: 300,
-      chargedBack: true, // client paid — doesn't count against us
-      createdAt: new Date("2026-04-15"),
-    });
-
-    const result = await computeAssetUtilization(asset.id, org.id, {
-      start: new Date("2026-04-01"),
-      end: new Date("2026-04-30"),
-    });
-    expect(result!.damageCost).toBe(400); // gross
-    expect(result!.damageChargedBackTotal).toBe(300);
-    // netContribution = 0 revenue − 0 maintenance − (400 - 300) ourDamage = -100
-    expect(result!.netContribution).toBe(-100);
-  });
-
-  it("netContribution = revenue − maintenance − ourDamage", async () => {
-    const org = await createOrgFixture();
-    const user = await createUserFixture(org.id);
+    await createUserFixture(org.id);
     const model = await createModelFixture(org.id);
     const asset = await createAssetFixture(org.id, model.id, {
       assetTag: `T-${createId().slice(0, 8)}`,
@@ -329,10 +274,6 @@ describe("computeAssetUtilization", () => {
       lineTotal: 1000,
     });
     await createMaintenance(org.id, asset.id, { cost: 200, createdAt: new Date("2026-04-15") });
-    await createDamage(org.id, asset.id, user.id, {
-      actualCost: 100,
-      createdAt: new Date("2026-04-20"),
-    });
 
     const result = await computeAssetUtilization(asset.id, org.id, {
       start: new Date("2026-04-01"),
@@ -340,8 +281,7 @@ describe("computeAssetUtilization", () => {
     });
     expect(result!.revenue).toBe(1000);
     expect(result!.maintenanceCost).toBe(200);
-    expect(result!.damageCost).toBe(100);
-    expect(result!.netContribution).toBe(700); // 1000 − 200 − 100
+    expect(result!.netContribution).toBe(800); // 1000 − 200
   });
 
   it("returns null for missing / cross-org asset", async () => {

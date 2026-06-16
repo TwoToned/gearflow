@@ -44,13 +44,15 @@ function strip(row: Record<string, unknown>): Record<string, unknown> {
 }
 
 async function main() {
-  const convex = await getConvexClient();
   let created = 0;
   let skipped = 0;
 
   const records = await prisma.checkRecord.findMany();
   for (const r of records) {
     const doc = strip(toConvexDoc(r as unknown as Record<string, unknown>));
+    // Re-fetch the client each iteration so the 5-min service token refreshes
+    // mid-loop (this table can be high-volume and the loop can exceed the TTL).
+    const convex = await getConvexClient();
     const __res = await convex.mutation(
       api.checkRecords.createIfMissing,
       doc as FunctionArgs<typeof api.checkRecords.createIfMissing>,

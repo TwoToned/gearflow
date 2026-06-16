@@ -19,12 +19,14 @@ import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { api } from "../convex/_generated/api";
 
 async function main() {
-  const convex = await getConvexClient();
   let created = 0;
   let skipped = 0;
 
   const rows = await prisma.assetScanLog.findMany();
   for (const row of rows) {
+    // Re-fetch the client each iteration so the 5-min service token refreshes
+    // mid-loop (this table is high-volume and the loop can exceed the TTL).
+    const convex = await getConvexClient();
     const __res = await convex.mutation(
       api.assetScanLogs.createIfMissing,
       toConvexDoc(row) as FunctionArgs<typeof api.assetScanLogs.createIfMissing>,

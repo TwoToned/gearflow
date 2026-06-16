@@ -273,32 +273,33 @@ Key routing rules:
 - Visual audit, design polish → invoke design-review
 - Architecture review → invoke plan-eng-review
 
-## Deploy Configuration (configured by /setup-deploy)
+## Deploy Configuration
 
-- **Platform:** Self-hosted (GitHub Actions on a self-hosted runner)
-- **Production URL:** https://home.twotoned.com.au
-- **Deploy workflow:** `.github/workflows/main.yml` ("Deploy GearFlow") — triggers on push to `main`
-- **Deploy status command:** poll the GitHub Actions run via `gh run list --workflow main.yml --branch main --limit 1 --json status,conclusion,headSha`
+**Full details: [FEATUREDOCS/56-deployment.md](./FEATUREDOCS/56-deployment.md).**
+
+- **Platform:** DigitalOcean droplet managed by Coolify, serving a prebuilt
+  container image. The image is built on GitHub Actions (16GB runners — the
+  droplet OOM-kills `next build`, exit 137) and pushed to GHCR; Coolify pulls it.
+- **Production URL:** https://gearflow.prod.rvlt.app
+- **Build/deploy workflow:** `.github/workflows/build-image.yml` — triggers on push to `main`
+- **Image:** `ghcr.io/twotoned/gearflow:latest` (+ a `:<sha>` tag per build)
+- **Deploy status command:** `gh run list --workflow build-image.yml --branch main --limit 1 --json status,conclusion,headSha`
 - **Merge method:** merge commit (matches existing git history; not squash)
-- **Project type:** Next.js 16 web app with PostgreSQL + Prisma
-- **Post-deploy health check:** `curl -s https://home.twotoned.com.au -o /dev/null -w "%{http_code}"` — expect 200 or 307 (root redirects to login). 502 on first hit can be a cold-start; retry after 5s before treating as a failure.
+- **Project type:** Next.js 16 web app with PostgreSQL + Prisma + Convex Cloud
+- **Post-deploy health check:** `curl -s https://gearflow.prod.rvlt.app -o /dev/null -w "%{http_code}"` — expect 200 or 307 (root redirects to login). A 503 means Coolify couldn't pull/start the image (often missing GHCR registry creds).
 
-### Deploy pipeline (self-hosted, sequential)
-1. `git pull origin main` in `$APP_DIR`
-2. `npm ci --ignore-scripts --legacy-peer-deps`
-3. `npx prisma generate`
-4. `npm test` (full vitest suite runs again on the runner)
-5. `npx prisma migrate deploy`
-6. `npm run build`
-7. `pm2 restart gearflow` then `pm2 startOrReload ecosystem.config.js --only gearflow-discord-bot` + `pm2 save` (the Discord bot runs as its own pm2 process — see `docs/operations/discord-bot.md`)
+### Deploy pipeline (`build-image.yml`, on push to `main`)
+1. Checkout (`fetch-depth: 0`) + `node scripts/generate-build-info.mjs` (bakes changelog/version, since the image has no `.git`)
+2. `convex deploy` — push functions + schema to **prod** Convex Cloud (gate: a broken schema fails the deploy before any image ships)
+3. `docker build` + push to GHCR (real `NEXT_PUBLIC_*` as build args; server secrets are build-only placeholders, real values come from Coolify at runtime)
+4. `GET` the authed Coolify deploy webhook → Coolify pulls + runs the image
+5. **Migrations run at container start** via `docker-entrypoint.sh` (`prisma migrate deploy`), NOT at build time — the CI runner can't reach the internal prod DB
 
-15-minute total timeout. Typical green run is ~5-8 minutes; longer means a migration or build hiccup. A failed `pm2 restart` leaves the previous build serving — rolling back means reverting the merge commit and letting the workflow redeploy.
-
-### Custom deploy hooks
-- **Pre-merge:** none (CI handles lint + typecheck + tests on the PR)
-- **Deploy trigger:** automatic on push to `main` (no manual step)
-- **Deploy status:** `gh run watch <run-id>` or poll `gh run view --json status,conclusion`
-- **Health check:** GET `https://home.twotoned.com.au` returns 200 or 307 (root redirects to `/login`). Retry once after 5s if you get 502 — the runner can be cold-starting from the pm2 restart.
+### Gotchas
+- **GHCR images are private** → Coolify needs registry creds (`docker login ghcr.io` on the droplet). Missing creds = 503 (image won't pull).
+- **Convex prod auth bridge:** the prod Convex deployment's `CONVEX_AUTH_ISSUER` must EXACTLY equal Coolify's `BETTER_AUTH_URL` (else `NoAuthProvider` on every authed query). Changing it requires a Convex redeploy.
+- **Manual data migrations** run from the Coolify container terminal (`pnpm exec tsx scripts/<name>.ts [--apply]`) — the old `migrate.yml` self-hosted workflow was retired.
+- **Deploy status:** `gh run watch <run-id>` or poll `gh run view --json status,conclusion`.
 
 <!-- convex-ai-start -->
 
@@ -347,7 +348,7 @@ CONVEX_AUTH_JWKS_URL = https://preview.lab.rvlt.app/api/auth/jwks
    or `public`) to match how your GitHub source is configured in Coolify
 
 **GitHub secrets required:**
-- `CONVEX_DEPLOY_KEY` — already set (same key used in main.yml)
+- `CONVEX_DEPLOY_KEY` — already set (same key used in build-image.yml)
 - `COOLIFY_TOKEN` — Coolify API bearer token (Coolify → Settings → API Keys)
 - `PREVIEW_DATABASE_URL` — Shared dev Postgres connection string (used by GitHub Actions for migrations)
 - `PREVIEW_DATABASE_URL_INTERNAL` — Same DB, internal Coolify network URL (used by the running app)

@@ -19,7 +19,7 @@ import { useLocations } from "@/hooks/use-locations";
 import { useSuppliers } from "@/hooks/use-suppliers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScanInput } from "@/components/ui/scan-input";
+import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { FormSection } from "@/components/layout/page-layouts";
@@ -124,7 +124,7 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
           </div>
           <div className="space-y-2">
             <Label htmlFor="assetTag">Asset Tag *</Label>
-            <ScanInput id="assetTag" {...form.register("assetTag")} onScan={(v) => form.setValue("assetTag", v)} scannerTitle="Scan asset tag" placeholder="e.g. AV-SM57" />
+            <AssetTagInput id="assetTag" {...form.register("assetTag")} onScan={(v) => form.setValue("assetTag", v)} placeholder="e.g. AV-SM57" />
             {form.formState.errors.assetTag && (
               <p className="text-xs text-destructive">{form.formState.errors.assetTag.message}</p>
             )}

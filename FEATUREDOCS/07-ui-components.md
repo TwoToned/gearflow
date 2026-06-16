@@ -9,9 +9,8 @@ shadcn/ui v4 uses Base UI, which uses `render` prop for composition (NOT Radix's
 ```
 
 ## Key Custom Components
-- **BarcodeScanner** (`src/components/ui/barcode-scanner.tsx`) — Camera scanner with Web Audio chime, ref-based callbacks, continuous mode
 - **ComboboxPicker** (`src/components/ui/combobox-picker.tsx`) — Searchable select with `creatable` mode for new entries
-- **ScanInput** (`src/components/ui/scan-input.tsx`) — Text input optimized for barcode scanner focus
+- **AssetTagInput** (`src/components/ui/asset-tag-input.tsx`) — Plain text input for entering asset/test tags. Drop-in replacement for the removed `ScanInput`; the in-app camera scanner was deleted (it never worked on iPhone). Manual typing and external HID barcode wedges (which act like a keyboard) still work everywhere. Accepts and ignores the old camera-only props (`onScan`/`scannerTitle`/`showScanButton`/`continuous`) for compatibility.
 - **DataTable** (`src/components/ui/data-table.tsx`) — Shared table with server-side pagination, sorting, column visibility, enum filters
 - **DynamicIcon** (`src/components/ui/dynamic-icon.tsx`) — Renders Lucide icon by string name
 - **TagInput** (`src/components/ui/tag-input.tsx`) — Tag input with autocomplete from org-wide suggestions

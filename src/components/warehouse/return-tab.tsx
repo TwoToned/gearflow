@@ -11,7 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
-import { ScanInput } from "@/components/ui/scan-input";
+import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -118,7 +118,7 @@ export function ReturnTab({
               <ScanBarcode className="h-5 w-5 text-fg-3 shrink-0 hidden sm:block" />
               <div className="flex-1">
                 <Label htmlFor="scan-checkin" className="sr-only">Scan asset tag</Label>
-                <ScanInput
+                <AssetTagInput
                   ref={returnScanInputRef}
                   id="scan-checkin"
                   placeholder="Scan or enter asset tag to return..."
@@ -126,8 +126,6 @@ export function ReturnTab({
                   onChange={(e) => setReturnScanValue(e.target.value)}
                   onKeyDown={handleReturnScanKeyDown}
                   onScan={(value) => returnScanMutationMutate(value)}
-                  scannerTitle="Scan asset to return"
-                  continuous
                   disabled={returnScanMutationIsPending || checkInIsPending}
                 />
               </div>

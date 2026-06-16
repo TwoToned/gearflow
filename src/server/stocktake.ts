@@ -10,6 +10,13 @@ import { getModelMap, type ConvexModel } from "@/lib/models-read";
 import { getLocationMap, getLocationById } from "@/lib/locations-read";
 import { getAssetsByOrg, getBulkAssetsByOrg, getAssetByAssetTag, getBulkAssetByAssetTag } from "@/lib/assets-read";
 import {
+  getStocktakesByOrg,
+  getStocktakeByIdConvex,
+  getStocktakeItemsConvex,
+  attachStocktakeItemAssets,
+  type MappedStocktake,
+} from "@/lib/stocktake-read";
+import {
   createStocktakeSchema,
   type CreateStocktakeValues,
   updateStocktakeSchema,
@@ -52,6 +59,40 @@ async function attachStocktakeModels<T extends { asset?: unknown; bulkAsset?: un
 // (or a lib module) invoked from an already-authenticated server action that
 // derives organizationId from the session, never from caller input.
 
+/** Batch-load Better Auth Users by id. `startedBy` / `reviewedBy` are auth rows
+ *  and stay Prisma (not a domain-read violation). */
+async function getStocktakeUserMap(ids: Array<string | null | undefined>) {
+  const unique = [...new Set(ids.filter((x): x is string => !!x))];
+  if (unique.length === 0) return new Map<string, Awaited<ReturnType<typeof prisma.user.findFirst>>>();
+  const users = await prisma.user.findMany({ where: { id: { in: unique } } });
+  return new Map(users.map((u) => [u.id, u]));
+}
+
+/** Comparator for a mapped-stocktake sort field — Date/number/string aware,
+ *  nulls last (mirrors Postgres `ORDER BY ... ASC NULLS LAST`). */
+function compareStocktake(field: string, dir: "asc" | "desc") {
+  const sign = dir === "asc" ? 1 : -1;
+  return (ra: MappedStocktake, rb: MappedStocktake) => {
+    const av = (ra as unknown as Record<string, unknown>)[field];
+    const bv = (rb as unknown as Record<string, unknown>)[field];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    if (av instanceof Date && bv instanceof Date) return (av.getTime() - bv.getTime()) * sign;
+    if (typeof av === "number" && typeof bv === "number") return (av - bv) * sign;
+    return String(av).localeCompare(String(bv)) * sign;
+  };
+}
+
+// StocktakeItemResult sorts by Postgres DECLARED order (not alphabetical).
+const STOCKTAKE_RESULT_RANK: Record<string, number> = {
+  MATCH: 0,
+  MISSING: 1,
+  UNEXPECTED: 2,
+  QUANTITY_MISMATCH: 3,
+  WRONG_LOCATION: 4,
+};
+
 export async function getStocktakes(params?: {
   page?: number;
   pageSize?: number;
@@ -66,35 +107,28 @@ export async function getStocktakes(params?: {
   const pageSize = params?.pageSize ?? 25;
   const skip = (page - 1) * pageSize;
 
-  const where: Record<string, unknown> = { organizationId };
-  if (params?.status) where.status = params.status;
+  // stocktake rows come from Convex; filter / sort / paginate in JS.
+  let items = await getStocktakesByOrg(organizationId);
+  if (params?.status) items = items.filter((s) => s.status === params.status);
   if (params?.search) {
-    where.name = { contains: params.search, mode: "insensitive" };
+    const q = params.search.toLowerCase();
+    items = items.filter((s) => s.name.toLowerCase().includes(q));
   }
+  const sortField = params?.sortField ?? "createdAt";
+  const sortDir = params?.sortField ? params.sortDirection ?? "desc" : "desc";
+  items = [...items].sort(compareStocktake(sortField, sortDir));
 
-  const orderBy: Record<string, string> = {};
-  if (params?.sortField) {
-    orderBy[params.sortField] = params.sortDirection ?? "desc";
-  } else {
-    orderBy.createdAt = "desc";
-  }
+  const total = items.length;
+  const pageItems = items.slice(skip, skip + pageSize);
 
-  const [items, total] = await Promise.all([
-    prisma.stocktake.findMany({
-      where,
-      // location lives in Convex — attached below, not joined.
-      include: { startedBy: true },
-      orderBy,
-      skip,
-      take: pageSize,
-    }),
-    prisma.stocktake.count({ where }),
+  const [locationMap, userMap] = await Promise.all([
+    getLocationMap(organizationId),
+    getStocktakeUserMap(pageItems.map((s) => s.startedById)),
   ]);
-
-  const locationMap = await getLocationMap(organizationId);
-  const withLocation = items.map((s) => ({
+  const withLocation = pageItems.map((s) => ({
     ...s,
     location: s.locationId ? locationMap.get(s.locationId) ?? null : null,
+    startedBy: s.startedById ? userMap.get(s.startedById) ?? null : null,
   }));
 
   return serialize({ items: withLocation, total, page, pageSize });
@@ -103,49 +137,39 @@ export async function getStocktakes(params?: {
 export async function getStocktakeById(id: string) {
   const { organizationId } = await requirePermission("stocktake", "read");
 
-  const stocktake = await prisma.stocktake.findUnique({
-    where: { id, organizationId },
-    include: {
-      // location + items[].asset.model + items[].bulkAsset.model live in Convex.
-      startedBy: true,
-      reviewedBy: true,
-      items: {
-        include: {
-          asset: true,
-          bulkAsset: true,
-        },
-        orderBy: { result: "asc" },
-      },
-    },
-  });
+  // stocktake + items come from Convex; asset/bulkAsset (+ model) attached from
+  // the mirrors; location + startedBy/reviewedBy attached below.
+  const stocktake = await getStocktakeByIdConvex(id);
+  if (!stocktake || stocktake.organizationId !== organizationId) throw new Error("Stocktake not found");
 
-  if (!stocktake) throw new Error("Stocktake not found");
-  const locationMap = await getLocationMap(organizationId);
+  const rawItems = await getStocktakeItemsConvex(id);
+  const items = (await attachStocktakeItemAssets(organizationId, rawItems)).sort(
+    (a, b) => (STOCKTAKE_RESULT_RANK[a.result] ?? 99) - (STOCKTAKE_RESULT_RANK[b.result] ?? 99),
+  );
+
+  const [locationMap, userMap] = await Promise.all([
+    getLocationMap(organizationId),
+    getStocktakeUserMap([stocktake.startedById, stocktake.reviewedById]),
+  ]);
   return serialize({
     ...stocktake,
     location: stocktake.locationId ? locationMap.get(stocktake.locationId) ?? null : null,
-    items: await attachStocktakeModels(organizationId, stocktake.items),
+    startedBy: stocktake.startedById ? userMap.get(stocktake.startedById) ?? null : null,
+    reviewedBy: stocktake.reviewedById ? userMap.get(stocktake.reviewedById) ?? null : null,
+    items,
   });
 }
 
 export async function getStocktakeProgress(id: string) {
   const { organizationId } = await requirePermission("stocktake", "read");
 
-  const stocktake = await prisma.stocktake.findUnique({
-    where: { id, organizationId },
-    select: {
-      id: true,
-      status: true,
-      expectedCount: true,
-      _count: { select: { items: { where: { found: true } } } },
-    },
-  });
-
-  if (!stocktake) throw new Error("Stocktake not found");
+  const stocktake = await getStocktakeByIdConvex(id);
+  if (!stocktake || stocktake.organizationId !== organizationId) throw new Error("Stocktake not found");
+  const items = await getStocktakeItemsConvex(id);
 
   return serialize({
     expectedCount: stocktake.expectedCount,
-    foundCount: stocktake._count.items,
+    foundCount: items.filter((i) => i.found).length,
     status: stocktake.status,
   });
 }
@@ -973,27 +997,15 @@ export async function cancelStocktake(id: string) {
 export async function getRecentScans(stocktakeId: string, limit = 10) {
   const { organizationId } = await requirePermission("stocktake", "read");
 
-  const stocktake = await prisma.stocktake.findUnique({
-    where: { id: stocktakeId, organizationId },
-    select: { id: true },
-  });
-  if (!stocktake) throw new Error("Stocktake not found");
+  const stocktake = await getStocktakeByIdConvex(stocktakeId);
+  if (!stocktake || stocktake.organizationId !== organizationId) throw new Error("Stocktake not found");
 
-  const items = await prisma.stocktakeItem.findMany({
-    where: {
-      stocktakeId,
-      found: true,
-      scannedAt: { not: null },
-    },
-    include: {
-      asset: true,
-      bulkAsset: true,
-    },
-    orderBy: { scannedAt: "desc" },
-    take: limit,
-  });
+  const found = (await getStocktakeItemsConvex(stocktakeId))
+    .filter((i) => i.found && i.scannedAt != null)
+    .sort((a, b) => (b.scannedAt?.getTime() ?? 0) - (a.scannedAt?.getTime() ?? 0))
+    .slice(0, limit);
 
-  return serialize(await attachStocktakeModels(organizationId, items));
+  return serialize(await attachStocktakeItemAssets(organizationId, found));
 }
 
 export async function searchStocktakeAssets(
@@ -1002,56 +1014,30 @@ export async function searchStocktakeAssets(
 ) {
   const { organizationId } = await requirePermission("stocktake", "read");
 
-  const stocktake = await prisma.stocktake.findUnique({
-    where: { id: stocktakeId, organizationId },
-    select: { id: true },
-  });
-  if (!stocktake) throw new Error("Stocktake not found");
+  const stocktake = await getStocktakeByIdConvex(stocktakeId);
+  if (!stocktake || stocktake.organizationId !== organizationId) throw new Error("Stocktake not found");
 
   const search = query.trim();
   if (!search) return serialize([]);
+  const q = search.toLowerCase();
 
-  // Search stocktake items where asset tag or model name matches
-  const items = await prisma.stocktakeItem.findMany({
-    where: {
-      stocktakeId,
-      OR: [
-        { asset: { assetTag: { contains: search, mode: "insensitive" } } },
-        {
-          asset: {
-            model: { name: { contains: search, mode: "insensitive" } },
-          },
-        },
-        {
-          asset: {
-            serialNumber: { contains: search, mode: "insensitive" },
-          },
-        },
-        {
-          asset: {
-            customName: { contains: search, mode: "insensitive" },
-          },
-        },
-        {
-          bulkAsset: {
-            assetTag: { contains: search, mode: "insensitive" },
-          },
-        },
-        {
-          bulkAsset: {
-            model: { name: { contains: search, mode: "insensitive" } },
-          },
-        },
-      ],
-    },
-    include: {
-      asset: true,
-      bulkAsset: true,
-    },
-    take: 30,
-  });
+  // Attach asset/bulkAsset (+ model) from Convex, then filter in JS — replicating
+  // the old relational OR (asset tag / serial / customName / model name, bulk tag /
+  // model name), case-insensitive.
+  const all = await attachStocktakeItemAssets(organizationId, await getStocktakeItemsConvex(stocktakeId));
+  const has = (v: string | null | undefined) => !!v && v.toLowerCase().includes(q);
+  const items = all
+    .filter((it) =>
+      has(it.asset?.assetTag) ||
+      has(it.asset?.model?.name) ||
+      has((it.asset as { serialNumber?: string | null } | null)?.serialNumber) ||
+      has((it.asset as { customName?: string | null } | null)?.customName) ||
+      has(it.bulkAsset?.assetTag) ||
+      has(it.bulkAsset?.model?.name),
+    )
+    .slice(0, 30);
 
-  return serialize(await attachStocktakeModels(organizationId, items));
+  return serialize(items);
 }
 
 export async function markStocktakeItemFound(itemId: string) {

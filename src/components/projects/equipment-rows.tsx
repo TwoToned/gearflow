@@ -109,9 +109,6 @@ export interface GroupData {
   suggestedPrice: unknown;
   rentalPeriod: string | null;
   rentalQuantity: number | null;
-  billingMonths: number | null;
-  billingWeeks: number | null;
-  billingDays: number | null;
   sortOrder: number;
   lineItems?: LineItemData[];
 }
@@ -376,7 +373,6 @@ export function GroupRow({
   onAddEquipment,
   onAddKit,
   onMove,
-  onRecalculate,
   onSaveAsTemplate,
   orgId,
   projectId,
@@ -409,7 +405,6 @@ export function GroupRow({
   /** Open the move-to-category dialog. Optional so callers that don't
    *  want the affordance (e.g. read-only views) can omit it. */
   onMove?: () => void;
-  onRecalculate?: () => void;
   onSaveAsTemplate?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -541,12 +536,6 @@ export function GroupRow({
                   <Package className="mr-2 h-3.5 w-3.5" />
                   Add Kit
                 </DropdownMenuItem>
-                {onRecalculate && (
-                  <DropdownMenuItem onClick={onRecalculate}>
-                    <RefreshCw className="mr-2 h-3.5 w-3.5" />
-                    Recalculate Prices
-                  </DropdownMenuItem>
-                )}
                 {onSaveAsTemplate && (
                   <DropdownMenuItem onClick={onSaveAsTemplate}>
                     <BookmarkPlus className="mr-2 h-3.5 w-3.5" />
@@ -1104,18 +1093,10 @@ export function LineItemRow({
       <TableCell className="text-right hidden md:table-cell t-data">
         <div className="flex items-center justify-end gap-1">
           {formatCurrency(item.unitPrice != null ? Number(item.unitPrice) : null)}
-          {item.pricingType === "OPTIMIZED" && !item.priceOverridden && (
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0" title="Auto-priced from rates" />
-          )}
           {item.priceOverridden && (
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" title="Manually set price" />
           )}
         </div>
-        {item.priceBreakdown && !item.priceOverridden && (
-          <p className="text-[11px] text-fg-3 truncate max-w-[140px]" title={item.priceBreakdown}>
-            {item.priceBreakdown}
-          </p>
-        )}
         {item.discount != null && Number(item.discount) > 0 && (
           <p className="text-[11px] text-green-500">-{formatCurrency(Number(item.discount))} disc.</p>
         )}

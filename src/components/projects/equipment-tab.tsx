@@ -47,7 +47,6 @@ import {
   deleteProjectGroup,
   reorderProjectGroups,
   moveLineItemToGroup,
-  recalculateGroupPrices,
   updateGroupPrice,
 } from "@/server/project-groups";
 import {
@@ -443,7 +442,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
   });
 
   const updateGroupMut = useServerMutation({
-    mutationFn: ({ groupId, data }: { groupId: string; data: Partial<{ title: string; description: string; quantity: number; billingMonths: number; billingWeeks: number; billingDays: number }> }) =>
+    mutationFn: ({ groupId, data }: { groupId: string; data: Partial<{ title: string; description: string; quantity: number }> }) =>
       updateProjectGroup(groupId, data),
     onSuccess: () => {
       invalidate();
@@ -1100,19 +1099,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                 setUnifiedAddTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
                                 setUnifiedAddKind("kit");
                                 setShowUnifiedAdd(true);
-                              }}
-                              onRecalculate={async () => {
-                                try {
-                                  const count = await recalculateGroupPrices(group.id);
-                                  if (count === 0) {
-                                    toast.info("No items to recalculate");
-                                  } else {
-                                    toast.success(`Prices updated for ${count} item${count !== 1 ? "s" : ""}`);
-                                  }
-                                  refreshProjectCategories(projectId);
-                                } catch (e) {
-                                  toast.error(e instanceof Error ? e.message : "Failed to recalculate");
-                                }
                               }}
                               onSaveAsTemplate={() => setSaveAsTemplateGroup({ id: group.id, title: group.title })}
                               onMove={() => setMoveProjectGroup({ id: group.id, title: group.title })}

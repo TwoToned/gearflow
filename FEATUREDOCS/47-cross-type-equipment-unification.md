@@ -98,7 +98,7 @@ primitives:
   orders don't carry a categoryId at the order level (their groups
   do), so use the toolbar Add for sub-hires.
 - **`GroupRow`** — ProjectGroup. Drag id `grp-<id>`. Kebab: Edit price /
-  Add Equipment / Add Kit / Move to category / Recalculate Prices /
+  Add Equipment / Add Kit / Move to category /
   Save as Template / Delete. "Move to category" uses the same
   `ArrowRightLeft` icon as the line-item and sub-hire-group Moves.
 - **`SubHireGroupRow`** — SubHireGroup. Drag id `shg-<id>`. Handshake icon,

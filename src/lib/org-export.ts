@@ -61,7 +61,6 @@ export async function exportOrganization(orgId: string) {
     projectMedia,
     clientMedia,
     locationMedia,
-    savedReports,
     members,
     // Crew (FEATUREDOCS/31)
     crewMembers,
@@ -120,7 +119,6 @@ export async function exportOrganization(orgId: string) {
     prisma.projectMedia.findMany({ where: { organizationId: orgId } }),
     prisma.clientMedia.findMany({ where: { organizationId: orgId } }),
     prisma.locationMedia.findMany({ where: { organizationId: orgId } }),
-    prisma.savedReport.findMany({ where: { organizationId: orgId } }),
     prisma.member.findMany({
       where: { organizationId: orgId },
       include: { user: { select: { id: true, email: true, name: true } } },
@@ -188,7 +186,6 @@ export async function exportOrganization(orgId: string) {
   collectUserIds(supplierOrders as unknown as Record<string, unknown>[], ["createdById"]);
   collectUserIds(activityLogs as unknown as Record<string, unknown>[], ["userId"]);
   collectUserIds(fileUploads as unknown as Record<string, unknown>[], ["uploadedById"]);
-  collectUserIds(savedReports as unknown as Record<string, unknown>[], ["createdById"]);
   collectUserIds(crewMembers as unknown as Record<string, unknown>[], ["userId"]);
   collectUserIds(crewAssignments as unknown as Record<string, unknown>[], ["confirmedById"]);
   collectUserIds(crewTimeEntries as unknown as Record<string, unknown>[], ["approvedById"]);
@@ -238,7 +235,6 @@ export async function exportOrganization(orgId: string) {
     projectMedia: clean(projectMedia) as Record<string, unknown>[],
     clientMedia: clean(clientMedia) as Record<string, unknown>[],
     locationMedia: clean(locationMedia) as Record<string, unknown>[],
-    savedReports: clean(savedReports) as Record<string, unknown>[],
 
     crewMembers: clean(crewMembers) as Record<string, unknown>[],
     crewRoles: clean(crewRoles) as Record<string, unknown>[],

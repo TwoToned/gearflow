@@ -139,17 +139,6 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     action: { type: "navigate", path: "/availability" },
   },
   {
-    id: "global-reports",
-    label: "Reports",
-    command: "reports",
-    aliases: ["analytics", "stats"],
-    description: "View reports and analytics",
-    icon: "BarChart3",
-    pages: ["*"],
-    action: { type: "navigate", path: "/reports" },
-    requiredPermission: ["reports", "read"],
-  },
-  {
     id: "global-activity",
     label: "Activity Log",
     command: "activity",

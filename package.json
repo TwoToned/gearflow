@@ -60,7 +60,6 @@
     "convex:backfill:maintenance": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-maintenance.ts",
     "convex:backfill:crew-availability-org": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-crew-availability-org.ts",
     "convex:backfill:warehouse-close": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-warehouse-close.ts",
-    "convex:backfill:saved-reports": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-saved-reports.ts",
     "convex:backfill:saved-views": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-saved-views.ts",
     "convex:backfill:project-subtables": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-project-subtables.ts",
     "convex:backfill:all": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-all.ts",

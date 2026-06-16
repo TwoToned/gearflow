@@ -630,21 +630,6 @@ export async function importOrganization(
     });
   }
 
-  // ── 19c. Saved Reports ──────────────────────────────────────────
-  for (const r of (manifest.savedReports ?? []) as Rec[]) {
-    const id = newId("savedReport", r.id);
-    await prisma.savedReport.create({
-      data: {
-        ...stripRelations(r),
-        id,
-        organizationId: newOrgId,
-        createdById: remapUser(r.createdById),
-        createdAt: safeDate(r.createdAt),
-        updatedAt: safeDate(r.updatedAt),
-      } as any,
-    });
-  }
-
   // ── 20. File Uploads (re-upload to S3) ───────────────────────────
   const urlMap = new Map<string, string>(); // old URL -> new URL
   if (files.size > 0) {
@@ -1068,7 +1053,6 @@ export async function importOrganization(
       clients: manifest.clients.length,
       files: manifest.fileUploads.length,
       members: manifest.members.length,
-      savedReports: (manifest.savedReports ?? []).length,
       crewMembers: (manifest.crewMembers ?? []).length,
       crewRoles: (manifest.crewRoles ?? []).length,
       crewSkills: (manifest.crewSkills ?? []).length,

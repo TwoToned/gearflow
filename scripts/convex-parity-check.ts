@@ -72,7 +72,6 @@ const PAIRS: Array<[string, string]> = [
   ["stocktake", "stocktakes"],
   ["stocktakeItem", "stocktakeItems"],
   ["warehouseClose", "warehouseCloses"],
-  ["savedReport", "savedReports"],
   ["savedTableView", "savedTableViews"],
   // media
   ["assetMedia", "assetMedia"],

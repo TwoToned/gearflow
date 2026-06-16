@@ -1890,33 +1890,6 @@ export default defineSchema({
     .index("by_tokenHash", ["tokenHash"])
     .index("by_expiresAt", ["expiresAt"]),
 
-  // SavedReport
-  savedReports: defineTable({
-    id: v.string(),
-    organizationId: v.string(),
-    name: v.string(),
-    description: v.optional(v.string()),
-    dataSource: v.string(),
-    config: v.any(),
-    createdById: v.optional(v.string()),
-    isShared: v.optional(v.boolean()),
-    isPinned: v.optional(v.boolean()),
-    scheduleFrequency: v.optional(enums.ScheduleFrequency),
-    scheduleHour: v.optional(v.number()),
-    scheduleDayOfWeek: v.optional(v.number()),
-    scheduleDayOfMonth: v.optional(v.number()),
-    scheduleRecipients: v.optional(v.array(v.string())),
-    scheduleLastRunAt: v.optional(v.number()),
-    lastRunAt: v.optional(v.number()),
-    createdAt: v.optional(v.number()),
-    updatedAt: v.optional(v.number()),
-  })
-    .index("by_cuid", ["id"])
-    .index("by_organizationId", ["organizationId"])
-    .index("by_createdById", ["createdById"])
-    .index("by_organizationId_createdById", ["organizationId", "createdById"])
-    .index("by_scheduleFrequency_scheduleLastRunAt", ["scheduleFrequency", "scheduleLastRunAt"]),
-
   // CheckItem
   checkItems: defineTable({
     id: v.string(),

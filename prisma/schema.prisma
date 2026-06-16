@@ -56,7 +56,6 @@ model User {
   reviewedSSOApprovals      PendingSSOApproval[]        @relation("SSOReviewer")
   warehouseDashboardTokens  WarehouseDashboardToken[]
   testTagAuditorTokens      TestTagAuditorToken[]
-  savedReports              SavedReport[]
   checkItems                CheckItem[]
   checkRecords              CheckRecord[]               @relation("CheckRecordPerformedBy")
   warehouseCloses           WarehouseClose[]            @relation("WarehouseClosedBy")
@@ -201,7 +200,6 @@ model Organization {
   discordOutbox            DiscordOutbox[]
   discordAccountLinks      DiscordAccountLink[]
   discordLinkTokens        DiscordLinkToken[]
-  savedReports             SavedReport[]
   checkItems               CheckItem[]
   modelCheckItems          ModelCheckItem[]
   kitCheckItems            KitCheckItem[]
@@ -3106,46 +3104,6 @@ model DiscordLinkToken {
   @@index([organizationId])
   @@index([expiresAt])
   @@map("discord_link_token")
-}
-
-// ─── Saved Reports ──────────────────────────────────────────────────────────
-
-model SavedReport {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  name        String
-  description String?
-  dataSource  String // "assets", "models", "projects", "kits", "lineItems", "clients", "locations", "maintenance", "activityLog", "crew", "crewAssignments"
-  config      Json // Full ReportConfig JSON
-  createdById String?
-  createdBy   User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  isShared    Boolean @default(false)
-  isPinned    Boolean @default(false)
-
-  // Scheduling — nullable when scheduleFrequency is null (report runs ad-hoc).
-  scheduleFrequency  ScheduleFrequency?
-  scheduleHour       Int? // 0-23, UTC
-  scheduleDayOfWeek  Int? // 0 = Sunday … 6 = Saturday, for WEEKLY
-  scheduleDayOfMonth Int? // 1-28, for MONTHLY (capped at 28 to avoid Feb edge case)
-  scheduleRecipients String[]           @default([]) // user emails that receive each scheduled run
-  scheduleLastRunAt  DateTime?
-
-  lastRunAt DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-
-  @@index([organizationId])
-  @@index([organizationId, createdById])
-  @@index([scheduleFrequency, scheduleLastRunAt])
-  @@map("saved_report")
-}
-
-enum ScheduleFrequency {
-  DAILY
-  WEEKLY
-  MONTHLY
 }
 
 // ─── Check Item System ───────────────────────────────────────────────────────

@@ -7,7 +7,9 @@
 > for Better Auth + RBAC + activityLog. Full phased plan (A read-rewiring →
 > B write-inversion → C drop tables), scope, and ground rules:
 > [`docs/designs/convex-domain-only-decommission.md`](../docs/designs/convex-domain-only-decommission.md).
-> Currently PAUSED before Phase A; all dual-write groundwork is shipped + backfilled.
+> **Phase A read-rewiring STARTED (2026-06-16):** first leaf surface — the Test &
+> Tag reports (`src/server/test-tag-reports.ts`) — now reads Convex. See
+> [Phase A — read-rewiring](#phase-a--read-rewiring-domain-only-decommission) below.
 
 ## Overview
 
@@ -2634,6 +2636,46 @@ hidden — this only smooths the "random" single-shot failures. This does NOT
 re-introduce a Prisma fallback: a *map miss* still yields `null` (mirror-freshness
 invariant preserved); only a *thrown* transient error is retried. Regression tests:
 `src/lib/convex-client.test.ts`, `src/lib/convex-auth-guards.test.ts`.
+
+## Phase A — read-rewiring (domain-only decommission)
+
+The endgame's first phase: move every remaining Prisma **domain read** to Convex.
+Full plan + ground rules in
+[`docs/designs/convex-domain-only-decommission.md`](../docs/designs/convex-domain-only-decommission.md).
+One leaf surface per PR, validated before merge.
+
+### Test & Tag reports — DONE (first leaf surface, 2026-06-16)
+
+`src/server/test-tag-reports.ts` (10 report builders + CSV exports + preview
+counts — all read-only) moved off Prisma. It read `testTagAsset` / `testTagRecord`
+/ `subTestRecord` (all dual-written) plus cross-domain joins.
+
+- **Read helper:** [`src/lib/test-tag-read.ts`](../src/lib/test-tag-read.ts) —
+  fetchers + mappers (Convex epoch-ms → `Date`, absent optionals → `null`,
+  Prisma-required-but-Convex-optional fields coerced) + the pure filter
+  predicates `assetMatchesFilters` / `recordMatchesFilters` (re-implementing the
+  old Prisma `where` builders) + `getTestProfileMap` + `getUserNameMap`.
+- **Tester names stay on Prisma forever.** `testTagRecord.testedBy` is a Better
+  Auth `User` (auth domain). Resolve via `getUserNameMap` (Prisma) — not a
+  decommission violation; auth/RBAC/audit are out of scope by design.
+- **Joins:** `asset`/`bulkAsset` from `assets-read`, `testProfile` from Convex
+  `testProfiles.list`, attached in JS to match each old `select`. Prisma
+  `orderBy` became JS sorts with Postgres null-ordering semantics
+  (ASC = NULLS LAST, DESC = NULLS FIRST).
+- **New Convex query:** `subTestRecords.listByRecordIds` (sub-records are
+  parent-scoped, no org column — one round trip for a whole result set).
+- **Type move:** `ReportFilters` moved to
+  [`src/lib/test-tag-report-types.ts`](../src/lib/test-tag-report-types.ts) (a
+  plain module — never re-export a type from a `"use server"` file).
+- **Validation:** pure-function unit tests (`src/lib/test-tag-read.test.ts`,
+  CI-safe) + a local golden-diff (Prisma reference vs Convex path, row-for-row,
+  against seeded dev data — all checks passed) + manual preview validation. Dev
+  data seeded via `npm run seed:test-tag` (`scripts/seed-test-tag-dev.ts`).
+- **Tooling fix:** `scripts/convex-backfill-all.ts` ORDER was missing the 9
+  Phase-6 sub-table backfills (line-item-units, asset-bulk-children,
+  model-bulk-accessories, supplier-model-rates, test-tag-assets/-records,
+  sub-test-records, asset-scan-logs, check-records) — added so "the one command"
+  is actually complete. (Prod ran them individually, so prod was unaffected.)
 
 ## Conventions
 

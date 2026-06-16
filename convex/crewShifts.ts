@@ -32,6 +32,31 @@ export const getById = query({
   },
 });
 
+/**
+ * All shifts for an org. crewShift has no org column (it's scoped to its
+ * assignment), so join via crewAssignments.by_organizationId.
+ * HAND-ADDED for the Phase A crew-dashboard read-rewiring.
+ */
+export const listByOrg = query({
+  args: { orgId: v.string() },
+  handler: async (ctx, { orgId }) => {
+    await requireService(ctx);
+    const assignments = await ctx.db
+      .query("crewAssignments")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .collect();
+    const out = [];
+    for (const a of assignments) {
+      const shifts = await ctx.db
+        .query("crewShifts")
+        .withIndex("by_assignmentId", (q) => q.eq("assignmentId", a.id))
+        .collect();
+      out.push(...shifts);
+    }
+    return out;
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

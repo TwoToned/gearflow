@@ -32,6 +32,31 @@ export const getById = query({
   },
 });
 
+/**
+ * All certifications for an org. crewCertification has no org column (it's
+ * scoped to its crew member), so join via crewMembers.by_organizationId.
+ * HAND-ADDED for the Phase A crew-dashboard read-rewiring.
+ */
+export const listByOrg = query({
+  args: { orgId: v.string() },
+  handler: async (ctx, { orgId }) => {
+    await requireService(ctx);
+    const members = await ctx.db
+      .query("crewMembers")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .collect();
+    const out = [];
+    for (const m of members) {
+      const certs = await ctx.db
+        .query("crewCertifications")
+        .withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", m.id))
+        .collect();
+      out.push(...certs);
+    }
+    return out;
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

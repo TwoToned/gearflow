@@ -74,7 +74,6 @@ Detailed docs for each system are in the [`FEATUREDOCS/`](./FEATUREDOCS/) folder
 | 41 | [Workshop Kanban](./FEATUREDOCS/41-workshop-kanban.md) | Repair queue board, extended maintenance state machine (Awaiting Parts, QA) |
 | 42 | [Asset Utilization](./FEATUREDOCS/42-asset-utilization.md) | Booking rate, revenue, cost, net contribution per asset; idle/lossy filters |
 | 43 | [Stocktake](./FEATUREDOCS/43-stocktake.md) | Scan-driven inventory counts, discrepancy resolution, state machine |
-| 44 | [Reorder Dashboard](./FEATUREDOCS/44-reorder.md) | Low-stock items grouped by preferred supplier, one-click draft supplier orders |
 | 45 | [Error UX](./FEATUREDOCS/45-error-ux.md) | UserFacingError, Prisma-error translator, showError client helper |
 | 46 | [Custom Fields](./FEATUREDOCS/46-custom-fields.md) | Operator-defined entity attributes, definition CRUD, form rendering |
 | 47 | [Cross-Type Equipment Unification](./FEATUREDOCS/47-cross-type-equipment-unification.md) | CategorySlot, mixedGroups query, UnifiedAddDialog, SubHireGroupRow, PriceEditDialog, Drop Matrix 8C |

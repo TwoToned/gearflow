@@ -2,15 +2,23 @@
 
 import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
-import { getProjectById } from "@/lib/projects-read";
-import { getCrewMembersByOrg, getCrewRolesByOrg } from "@/lib/crew-read";
+import { getProjectById, getProjectsByOrg } from "@/lib/projects-read";
+import { getCrewMembersByOrg, getCrewRolesByOrg, getCrewRoleMap } from "@/lib/crew-read";
 import { getUserMap } from "@/lib/users-read";
 import {
   getAssignmentsByProject,
+  getAssignmentsByOrg,
+  getAvailabilitiesByCrewMemberIds,
   getProjectServiceMap,
   getShiftsByOrg,
   type CrewShiftRow,
 } from "@/lib/crew-scheduling-read";
+import {
+  isAssignableMember,
+  compareByLastName,
+  isConflictingAssignment,
+  isUnavailableBlock,
+} from "@/lib/crew-assignment-availability";
 import { serialize } from "@/lib/serialize";
 import {
   crewAssignmentSchema,
@@ -546,6 +554,14 @@ export async function getProjectLabourCost(projectId: string) {
  * more intricate than the leaf reads converted in this pass; convert it with the
  * rest of the crew availability surface. The dual-write mirror keeps it fresh.
  */
+type AssignmentConflict = {
+  crewMemberId: string;
+  projectId: string;
+  project: { projectNumber: string; name: string } | null;
+  startDate: Date | null;
+  endDate: Date | null;
+};
+
 export async function getCrewMembersForAssignment(
   projectId: string,
   search?: string,
@@ -553,93 +569,80 @@ export async function getCrewMembersForAssignment(
 ) {
   const { organizationId } = await getOrgContext();
 
-  const where = {
-    organizationId,
-    isActive: true,
-    status: "ACTIVE" as const,
-    ...(search
-      ? {
-          OR: [
-            { firstName: { contains: search, mode: "insensitive" as const } },
-            { lastName: { contains: search, mode: "insensitive" as const } },
-            { email: { contains: search, mode: "insensitive" as const } },
-            { department: { contains: search, mode: "insensitive" as const } },
-          ],
-        }
-      : {}),
-  };
+  // Read A — members + on-project assignments (Convex).
+  const [allMembers, roleMap, projectAssignments] = await Promise.all([
+    getCrewMembersByOrg(organizationId),
+    getCrewRoleMap(organizationId),
+    getAssignmentsByProject(projectId, organizationId),
+  ]);
 
-  const members = await prisma.crewMember.findMany({
-    where,
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      email: true,
-      phone: true,
-      image: true,
-      department: true,
-      defaultDayRate: true,
-      defaultHourlyRate: true,
-      crewRole: { select: { id: true, name: true } },
-      // Assignments on this project
-      assignments: {
-        where: { projectId },
-        select: { id: true, phase: true, status: true, serviceId: true },
-      },
-    },
-    orderBy: { lastName: "asc" },
-    take: 50,
-  });
+  const members = allMembers
+    .filter((m) => isAssignableMember(m, search))
+    .sort(compareByLastName)
+    .slice(0, 50)
+    .map((m) => {
+      const role = m.crewRoleId ? roleMap.get(m.crewRoleId) : undefined;
+      return {
+        id: m.id,
+        firstName: m.firstName,
+        lastName: m.lastName,
+        email: m.email ?? null,
+        phone: m.phone ?? null,
+        image: m.image ?? null,
+        department: m.department ?? null,
+        defaultDayRate: m.defaultDayRate ?? null,
+        defaultHourlyRate: m.defaultHourlyRate ?? null,
+        crewRole: role ? { id: role.id, name: role.name } : null,
+        assignments: projectAssignments
+          .filter((a) => a.crewMemberId === m.id)
+          .map((a) => ({ id: a.id, phase: a.phase, status: a.status, serviceId: a.serviceId })),
+      };
+    });
 
-  // Cross-project availability check (Arch fix #2)
+  // Cross-project availability check (Arch fix #2). Both call sites pass only
+  // projectId today, so this branch is currently dead — converted for parity.
   if (dateRange) {
     const rangeStart = new Date(dateRange.start);
     const rangeEnd = new Date(dateRange.end);
-    const memberIds = members.map((m) => m.id);
+    const memberIds = new Set(members.map((m) => m.id));
 
-    // Single query for all overlapping assignments across all projects
-    const conflicts = await prisma.crewAssignment.findMany({
-      where: {
-        crewMemberId: { in: memberIds },
-        projectId: { not: projectId }, // Other projects only
-        status: { notIn: ["CANCELLED", "DECLINED"] },
-        startDate: { lte: rangeEnd },
-        endDate: { gte: rangeStart },
-      },
-      select: {
-        crewMemberId: true,
-        projectId: true,
-        project: { select: { projectNumber: true, name: true } },
-        startDate: true,
-        endDate: true,
-      },
-    });
+    // Read B — cross-project conflicts (Convex).
+    const [orgAssignments, orgProjects, availabilities] = await Promise.all([
+      getAssignmentsByOrg(organizationId),
+      getProjectsByOrg(organizationId),
+      getAvailabilitiesByCrewMemberIds([...memberIds], organizationId),
+    ]);
 
-    // Build conflict map
-    const conflictMap = new Map<string, typeof conflicts>();
-    for (const c of conflicts) {
-      const existing = conflictMap.get(c.crewMemberId) || [];
-      existing.push(c);
-      conflictMap.set(c.crewMemberId, existing);
+    const projMap = new Map(
+      orgProjects.map((p) => [p.id, { projectNumber: p.projectNumber, name: p.name }]),
+    );
+
+    const conflictMap = new Map<string, AssignmentConflict[]>();
+    for (const a of orgAssignments) {
+      if (!memberIds.has(a.crewMemberId)) continue;
+      if (!isConflictingAssignment(a, projectId, rangeStart, rangeEnd)) continue;
+      const existing = conflictMap.get(a.crewMemberId) ?? [];
+      existing.push({
+        crewMemberId: a.crewMemberId,
+        projectId: a.projectId,
+        project: projMap.get(a.projectId) ?? null,
+        startDate: a.startDate,
+        endDate: a.endDate,
+      });
+      conflictMap.set(a.crewMemberId, existing);
     }
 
-    // Also check crew availability blocks
-    const unavailable = await prisma.crewAvailability.findMany({
-      where: {
-        crewMemberId: { in: memberIds },
-        type: "UNAVAILABLE",
-        startDate: { lte: rangeEnd },
-        endDate: { gte: rangeStart },
-      },
-      select: { crewMemberId: true },
-    });
-    const unavailableSet = new Set(unavailable.map((u) => u.crewMemberId));
+    // Read C — UNAVAILABLE blocks overlapping the range (Convex).
+    const unavailableSet = new Set(
+      availabilities
+        .filter((b) => isUnavailableBlock(b, rangeStart, rangeEnd))
+        .map((b) => b.crewMemberId),
+    );
 
     return serialize(
       members.map((m) => ({
         ...m,
-        conflicts: conflictMap.get(m.id) || [],
+        conflicts: conflictMap.get(m.id) ?? [],
         isUnavailable: unavailableSet.has(m.id),
       })),
     );
@@ -648,7 +651,7 @@ export async function getCrewMembersForAssignment(
   return serialize(
     members.map((m) => ({
       ...m,
-      conflicts: [],
+      conflicts: [] as AssignmentConflict[],
       isUnavailable: false,
     })),
   );

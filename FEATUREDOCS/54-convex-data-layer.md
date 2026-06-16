@@ -2635,6 +2635,25 @@ re-introduce a Prisma fallback: a *map miss* still yields `null` (mirror-freshne
 invariant preserved); only a *thrown* transient error is retried. Regression tests:
 `src/lib/convex-client.test.ts`, `src/lib/convex-auth-guards.test.ts`.
 
+## Phase A — read-rewiring (domain-only decommission)
+
+Moving every remaining Prisma **domain read** to Convex, one surface per PR. Full
+plan + per-surface progress + the keystone semantics:
+[`docs/designs/convex-domain-only-decommission.md`](../docs/designs/convex-domain-only-decommission.md).
+
+### Keystone line-item-tree reconstruction — primitive DONE
+
+`src/lib/project-line-item-tree-read.ts` rebuilds the `project → category → group
+→ lineItem (parent/child) → units` tree from FLAT dual-written Convex rows — the
+exact nested shape the four consumers (getProject / getProjectForWarehouse /
+getProjectPullSheet / build-document-data) used to get from Prisma `include`s, so
+the existing attach helpers in `line-item-tree-read.ts` keep working. Pure (caller
+maps docs → rows) + fixture-unit-tested + structurally golden-diffed vs Prisma on
+the seeded project. Wiring the four consumers (each its own golden-diffed PR over
+an enriched seed; PDF gets the full-pipeline test) is the next step. See the
+design doc's Keystone section for the load-bearing semantics (dual projection,
+explicit include depth, non-deterministic flat tie-order).
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

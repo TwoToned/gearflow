@@ -23,7 +23,6 @@ import {
   mirrorKitCheckItemCreate,
 } from "@/lib/check-item-assignment-mirror";
 import {
-  mirrorCrewCertificationCreate,
   mirrorCrewAssignmentCreate,
   mirrorCrewShiftCreate,
   mirrorCrewAvailabilityCreate,
@@ -812,31 +811,10 @@ export async function importOrganization(
   }
 
   // ── 20b. Crew (FEATUREDOCS/31, Track B) ─────────────────────────
-  // Roles + skills first (no dependencies), then members (which can reference
-  // a role and a linked platform user), then certifications, assignments,
+  // Crew roles & skills are read-only lookups (managed elsewhere) and are NOT
+  // created on import — so a member's crewRoleId simply remaps to nothing (null).
+  // Members first (can reference a linked platform user), then assignments,
   // shifts, availability, and time entries.
-  for (const r of (manifest.crewRoles ?? []) as Rec[]) {
-    const id = newId("crewRole", r.id);
-    const created = await prisma.crewRole.create({
-      data: {
-        ...stripRelations(r),
-        id,
-        organizationId: newOrgId,
-      } as any,
-    });
-    await (await getConvexClient()).mutation(api.crewRoles.createIfMissing, toConvexDoc(created) as any);
-  }
-  for (const r of (manifest.crewSkills ?? []) as Rec[]) {
-    const id = newId("crewSkill", r.id);
-    const created = await prisma.crewSkill.create({
-      data: {
-        ...stripRelations(r),
-        id,
-        organizationId: newOrgId,
-      } as any,
-    });
-    await (await getConvexClient()).mutation(api.crewSkills.createIfMissing, toConvexDoc(created) as any);
-  }
   for (const r of (manifest.crewMembers ?? []) as Rec[]) {
     const id = newId("crewMember", r.id);
     const created = await prisma.crewMember.create({
@@ -855,33 +833,6 @@ export async function importOrganization(
       } as any,
     });
     await (await getConvexClient()).mutation(api.crewMembers.createIfMissing, toConvexDoc(created) as any);
-  }
-  // Re-link crew members <-> skills (implicit m:n join table)
-  for (const link of (manifest.crewMemberSkills ?? []) as Array<{
-    crewMemberId: string;
-    skillId: string;
-  }>) {
-    const memberId = remap("crewMember", link.crewMemberId);
-    const skillId = remap("crewSkill", link.skillId);
-    if (!memberId || !skillId) continue;
-    await prisma.crewMember.update({
-      where: { id: memberId },
-      data: { skills: { connect: { id: skillId } } },
-    });
-  }
-  for (const r of (manifest.crewCertifications ?? []) as Rec[]) {
-    const crewMemberId = remap("crewMember", r.crewMemberId);
-    if (!crewMemberId) continue;
-    const createdCert = await prisma.crewCertification.create({
-      data: {
-        ...stripRelations(r),
-        id: createId(),
-        crewMemberId,
-        issuedDate: safeDateOpt(r.issuedDate),
-        expiryDate: safeDateOpt(r.expiryDate),
-      } as any,
-    });
-    await mirrorCrewCertificationCreate(createdCert as unknown as Record<string, unknown>);
   }
   for (const r of (manifest.crewAssignments ?? []) as Rec[]) {
     const projectId = remap("project", r.projectId);

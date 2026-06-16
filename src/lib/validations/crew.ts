@@ -26,7 +26,6 @@ export const crewMemberSchema = z.object({
   abnOrGst: z.string().max(50).optional(),
   notes: z.string().max(2000).optional(),
   tags: z.array(z.string()).default([]),
-  skillIds: z.array(z.string()).default([]),
   userId: z.string().optional().or(z.literal("")),
   isActive: z.boolean().default(true),
 }).refine(
@@ -35,39 +34,6 @@ export const crewMemberSchema = z.object({
 );
 
 export type CrewMemberFormValues = z.input<typeof crewMemberSchema>;
-
-export const crewRoleSchema = z.object({
-  name: z.string().min(1, "Name is required").max(200),
-  description: z.string().max(500).optional(),
-  department: z.string().max(100).optional(),
-  color: z.string().max(20).optional(),
-  defaultRate: z.union([z.literal(""), z.coerce.number().min(0)]).optional()
-    .transform(v => v === "" ? undefined : v),
-  rateType: z.enum(["HOURLY", "DAILY", "FLAT"]).optional().or(z.literal("")),
-  isActive: z.boolean().default(true),
-});
-
-export type CrewRoleFormValues = z.input<typeof crewRoleSchema>;
-
-export const crewSkillSchema = z.object({
-  name: z.string().min(1, "Name is required").max(200),
-  category: z.string().max(100).optional(),
-});
-
-export type CrewSkillFormValues = z.input<typeof crewSkillSchema>;
-
-export const crewCertificationSchema = z.object({
-  name: z.string().min(1, "Name is required").max(200),
-  issuedBy: z.string().max(200).optional(),
-  certificateNumber: z.string().max(100).optional(),
-  issuedDate: z.union([z.literal(""), z.coerce.date()]).optional()
-    .transform(v => v === "" ? undefined : v),
-  expiryDate: z.union([z.literal(""), z.coerce.date()]).optional()
-    .transform(v => v === "" ? undefined : v),
-  status: z.enum(["CURRENT", "EXPIRING_SOON", "EXPIRED", "NOT_VERIFIED"]).default("NOT_VERIFIED"),
-});
-
-export type CrewCertificationFormValues = z.input<typeof crewCertificationSchema>;
 
 export const crewAssignmentSchema = z.object({
   crewMemberId: z.string().min(1, "Crew member is required"),

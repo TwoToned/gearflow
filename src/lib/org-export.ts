@@ -68,7 +68,6 @@ export async function exportOrganization(orgId: string) {
     crewRoles,
     crewSkills,
     crewMemberSkillRows,
-    crewCertifications,
     crewAssignments,
     crewShifts,
     crewAvailability,
@@ -144,9 +143,6 @@ export async function exportOrganization(orgId: string) {
           r.skills.map((s) => ({ crewMemberId: r.id, skillId: s.id })),
         ),
       ),
-    prisma.crewCertification.findMany({
-      where: { crewMember: { organizationId: orgId } },
-    }),
     prisma.crewAssignment.findMany({ where: { organizationId: orgId } }),
     prisma.crewShift.findMany({
       where: { assignment: { organizationId: orgId } },
@@ -244,7 +240,6 @@ export async function exportOrganization(orgId: string) {
     crewRoles: clean(crewRoles) as Record<string, unknown>[],
     crewSkills: clean(crewSkills) as Record<string, unknown>[],
     crewMemberSkills: crewMemberSkillRows,
-    crewCertifications: clean(crewCertifications) as Record<string, unknown>[],
     crewAssignments: clean(crewAssignments) as Record<string, unknown>[],
     crewShifts: clean(crewShifts) as Record<string, unknown>[],
     crewAvailability: clean(crewAvailability) as Record<string, unknown>[],

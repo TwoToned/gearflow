@@ -171,7 +171,6 @@ const navSections: NavSection[] = [
         items: [
           { title: "Planner", url: "/crew/planner", icon: CalendarRange, resource: "crew" },
           { title: "Timesheets", url: "/crew/timesheets", icon: Clock, resource: "crew" },
-          { title: "Roles & Skills", url: "/crew/settings", icon: Settings, resource: "crew" },
         ],
       },
       { title: "Suppliers", url: "/suppliers", icon: Truck, resource: "supplier" },

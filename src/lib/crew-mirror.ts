@@ -17,8 +17,8 @@ import { api } from "../../convex/_generated/api";
  * FEATUREDOCS/54.
  *
  * SCOPE: only the roster trio is mirrored. The project-coupled scheduling/timesheet
- * sub-tables (crew_assignment, crew_shift, crew_availability, crew_certification,
- * crew_time_entry) stay Prisma-only for now — they are leaf/child tables with
+ * sub-tables (crew_assignment, crew_shift, crew_availability, crew_time_entry)
+ * stay Prisma-only for now — they are leaf/child tables with
  * cascade-delete semantics Convex can't cheaply replicate, and they are only ever
  * composed inside project-joining or member-detail views that stay on the Prisma
  * mirror. Their Convex CRUD + schema already exist (Phase 2); they get dual-written
@@ -53,12 +53,3 @@ async function remove(fn: AnyRef, id: string) {
 export const mirrorCrewMemberCreate = (row: Record<string, unknown>) => create(api.crewMembers.createIfMissing, row);
 export const patchCrewMemberInConvex = (id: string, row: Record<string, unknown>) => patch(api.crewMembers.update, id, row);
 export const removeCrewMemberFromConvex = (id: string) => remove(api.crewMembers.remove, id);
-
-// ─── Crew roles ──────────────────────────────────────────────────────────────
-export const mirrorCrewRoleCreate = (row: Record<string, unknown>) => create(api.crewRoles.createIfMissing, row);
-export const patchCrewRoleInConvex = (id: string, row: Record<string, unknown>) => patch(api.crewRoles.update, id, row);
-export const removeCrewRoleFromConvex = (id: string) => remove(api.crewRoles.remove, id);
-
-// ─── Crew skills (m2m to members stays Prisma-only) ──────────────────────────
-export const mirrorCrewSkillCreate = (row: Record<string, unknown>) => create(api.crewSkills.createIfMissing, row);
-export const removeCrewSkillFromConvex = (id: string) => remove(api.crewSkills.remove, id);

@@ -18,8 +18,10 @@ import type { ReportFilters } from "@/lib/test-tag-report-types";
  * come from Convex (their own read helpers), and `testedBy` (a Better Auth
  * `User`) stays on Prisma forever — resolve tester names via `getUserNameMap`.
  *
- * The filter predicates (`assetMatchesFilters` / `recordMatchesFilters`) are pure
- * re-implementations of the old Prisma `where` builders, unit-tested with fixtures.
+ * The filter predicates (`assetMatchesFilters` / `recordMatchesFilters` for the
+ * reports; `listAssetMatchesFilters` + `compareTestTagAssets` for the paginated
+ * registry list) are pure re-implementations of the old Prisma `where` / `orderBy`
+ * builders, unit-tested with fixtures.
  */
 
 type RawTTAsset = Doc<"testTagAssets">;
@@ -225,6 +227,26 @@ export async function getTestTagRecordsByOrg(orgId: string): Promise<TTRecord[]>
   return rows.map(mapTTRecord);
 }
 
+/** All test records for a single test tag asset (unsorted — callers sort). */
+export async function getTestTagRecordsByAssetId(testTagAssetId: string): Promise<TTRecord[]> {
+  const rows = (await (await getConvexClient()).query(api.testTagRecords.listByAssetId, {
+    testTagAssetId,
+  })) as RawTTRecord[];
+  return rows.map(mapTTRecord);
+}
+
+/** Look up a test tag asset by org + human testTagId (includes retired). */
+export async function getTestTagAssetByTestTagId(
+  orgId: string,
+  testTagId: string,
+): Promise<TTAsset | null> {
+  const row = (await (await getConvexClient()).query(api.testTagAssets.getByTestTagId, {
+    orgId,
+    testTagId,
+  })) as RawTTAsset | null;
+  return row ? mapTTAsset(row) : null;
+}
+
 /** Sub-test records for a set of test records, in one round trip, sorted by sortOrder. */
 export async function getSubTestRecordsByRecordIds(recordIds: string[]): Promise<SubTestRecord[]> {
   if (recordIds.length === 0) return [];
@@ -301,6 +323,188 @@ export async function getTestProfileMap(orgId: string): Promise<Map<string, { id
     name: string;
   }>;
   return new Map(rows.map((p) => [p.id, { id: p.id, name: p.name }]));
+}
+
+// ─── Full TestProfile (the `testProfile: true` include in lookupTestTagAsset) ──
+
+type RawTestProfile = Doc<"testProfiles">;
+
+export interface TestProfile {
+  id: string;
+  organizationId: string;
+  name: string;
+  equipmentClass: string;
+  applianceType: string;
+  visualChecks: unknown;
+  electricalTests: unknown;
+  thresholds: unknown;
+  requiresSubTests: boolean;
+  defaultSubTestCount: number;
+  subTestLabel: string;
+  isDefault: boolean;
+  isActive: boolean;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+}
+
+export function mapTestProfile(d: RawTestProfile): TestProfile {
+  return {
+    id: d.id,
+    organizationId: d.organizationId,
+    name: d.name,
+    equipmentClass: req(d.equipmentClass),
+    applianceType: req(d.applianceType),
+    visualChecks: d.visualChecks,
+    electricalTests: d.electricalTests,
+    thresholds: d.thresholds,
+    requiresSubTests: d.requiresSubTests ?? false,
+    defaultSubTestCount: req(d.defaultSubTestCount),
+    subTestLabel: req(d.subTestLabel),
+    isDefault: d.isDefault ?? false,
+    isActive: d.isActive ?? true,
+    createdAt: toDate(d.createdAt),
+    updatedAt: toDate(d.updatedAt),
+  };
+}
+
+/** Full TestProfile by id (replaces Prisma `testProfile: true`). Null if absent. */
+export async function getFullTestProfileById(id: string): Promise<TestProfile | null> {
+  const row = (await (await getConvexClient()).query(api.testProfiles.getById, { id })) as RawTestProfile | null;
+  return row ? mapTestProfile(row) : null;
+}
+
+// ─── List filter + sort (replicate getTestTagAssets `where` + `orderBy`) ──────
+
+/** Filters accepted by `getTestTagAssets` (the paginated registry list). */
+export interface TestTagListFilters {
+  search?: string;
+  status?: string;
+  equipmentClass?: string;
+  applianceType?: string;
+  assetLinkType?: "all" | "serialized" | "bulk" | "standalone";
+  /** `isActive` is a list PARAMETER (defaults to true at the call site). */
+  isActive: boolean;
+}
+
+/**
+ * Pure re-implementation of the `getTestTagAssets` Prisma `where`. Org scoping is
+ * applied at fetch. Unlike the report-level `assetMatchesFilters`, `isActive` is a
+ * PARAMETER here (it can be `false` to list retired items), and status / class /
+ * type are single EXACT matches (not IN). Search is a case-insensitive OR over
+ * testTagId / description / serialNumber / make / modelName. Pure → unit-tested.
+ */
+export function listAssetMatchesFilters(item: TTAsset, filters: TestTagListFilters): boolean {
+  if (item.isActive !== filters.isActive) return false;
+  if (filters.status && item.status !== filters.status) return false;
+  if (filters.equipmentClass && item.equipmentClass !== filters.equipmentClass) return false;
+  if (filters.applianceType && item.applianceType !== filters.applianceType) return false;
+
+  if (filters.assetLinkType === "serialized") {
+    if (item.assetId == null) return false;
+  } else if (filters.assetLinkType === "bulk") {
+    if (item.bulkAssetId == null) return false;
+    if (item.assetId != null) return false;
+  } else if (filters.assetLinkType === "standalone") {
+    if (item.assetId != null) return false;
+    if (item.bulkAssetId != null) return false;
+  }
+
+  if (filters.search) {
+    const q = filters.search;
+    const hit =
+      insIncludes(item.testTagId, q) ||
+      insIncludes(item.description, q) ||
+      insIncludes(item.serialNumber, q) ||
+      insIncludes(item.make, q) ||
+      insIncludes(item.modelName, q);
+    if (!hit) return false;
+  }
+
+  return true;
+}
+
+// Postgres enums sort by DECLARED order (NOT alphabetical). Replicate via rank
+// maps built from prisma/schema.prisma declaration order.
+const STATUS_RANK: Record<string, number> = {
+  NOT_YET_TESTED: 0, CURRENT: 1, DUE_SOON: 2, OVERDUE: 3, FAILED: 4, RETIRED: 5,
+};
+const EQUIPMENT_CLASS_RANK: Record<string, number> = {
+  CLASS_I: 0, CLASS_II: 1, CLASS_II_DOUBLE_INSULATED: 2, LEAD_CORD_ASSEMBLY: 3,
+};
+const APPLIANCE_TYPE_RANK: Record<string, number> = {
+  APPLIANCE: 0, CORD_SET: 1, EXTENSION_LEAD: 2, POWER_BOARD: 3,
+  RCD_PORTABLE: 4, RCD_FIXED: 5, THREE_PHASE: 6, MICROWAVE: 7, OTHER: 8,
+};
+
+const ENUM_RANK: Record<string, Record<string, number>> = {
+  status: STATUS_RANK,
+  equipmentClass: EQUIPMENT_CLASS_RANK,
+  applianceType: APPLIANCE_TYPE_RANK,
+};
+
+// Columns that are nullable in Prisma — these honour Postgres NULL ordering.
+const NULLABLE_KEYS = new Set([
+  "make", "modelName", "serialNumber", "location", "nextDueDate", "lastTestDate",
+]);
+
+// Sort keys we actually support (others fall back to testTagId asc). Mirrors the
+// scalar columns the registry UI exposes as sortBy.
+const SORTABLE_KEYS = new Set<keyof TTAsset>([
+  "testTagId", "description", "status", "equipmentClass", "applianceType",
+  "make", "modelName", "serialNumber", "location", "testIntervalMonths",
+  "nextDueDate", "lastTestDate", "outletCount", "createdAt", "updatedAt",
+]);
+
+function compareValues(a: unknown, b: unknown, key: string, order: "asc" | "desc"): number {
+  const dir = order === "desc" ? -1 : 1;
+
+  const aNull = a === null || a === undefined;
+  const bNull = b === null || b === undefined;
+  if (aNull || bNull) {
+    if (aNull && bNull) return 0;
+    if (NULLABLE_KEYS.has(key)) {
+      // Postgres: ASC = NULLS LAST, DESC = NULLS FIRST.
+      if (order === "asc") return aNull ? 1 : -1;
+      return aNull ? -1 : 1;
+    }
+    // Non-nullable column with an (unexpected) null — keep it deterministic.
+    return aNull ? 1 : -1;
+  }
+
+  const rank = ENUM_RANK[key];
+  if (rank) {
+    const ar = rank[a as string] ?? Number.MAX_SAFE_INTEGER;
+    const br = rank[b as string] ?? Number.MAX_SAFE_INTEGER;
+    return (ar - br) * dir;
+  }
+
+  if (a instanceof Date && b instanceof Date) {
+    return (a.getTime() - b.getTime()) * dir;
+  }
+  if (typeof a === "number" && typeof b === "number") {
+    return (a - b) * dir;
+  }
+  return String(a).localeCompare(String(b)) * dir;
+}
+
+/**
+ * Pure comparator replicating `orderBy: { [sortBy]: sortOrder }`, default
+ * `testTagId` asc. Handles Postgres NULL ordering for nullable columns, enum
+ * DECLARED-order for status / equipmentClass / applianceType, and falls back to
+ * `testTagId` asc for unknown sort keys. Pure → unit-tested.
+ */
+export function compareTestTagAssets(
+  a: TTAsset,
+  b: TTAsset,
+  sortBy: string,
+  sortOrder: "asc" | "desc",
+): number {
+  const key = (SORTABLE_KEYS.has(sortBy as keyof TTAsset) ? sortBy : "testTagId") as keyof TTAsset;
+  const primary = compareValues(a[key], b[key], key, sortOrder);
+  if (primary !== 0) return primary;
+  // Stable tiebreak on testTagId asc (deterministic ordering for the page slice).
+  if (key !== "testTagId") return compareValues(a.testTagId, b.testTagId, "testTagId", "asc");
+  return 0;
 }
 
 // ─── Tester (Better Auth User) name resolution — stays on Prisma forever ──────

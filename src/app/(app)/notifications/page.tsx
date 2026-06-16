@@ -11,7 +11,6 @@ import {
   Wrench,
   Mail,
   CheckCheck,
-  ShieldAlert,
   Clock,
   Users,
 } from "lucide-react";
@@ -47,7 +46,6 @@ const typeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   upcoming_project: CalendarClock,
   low_stock: AlertTriangle,
   pending_invitation: Mail,
-  expiring_cert: ShieldAlert,
   pending_offers: Users,
   pending_timesheets: Clock,
 };
@@ -58,7 +56,6 @@ const typeLabels: Record<string, string> = {
   upcoming_project: "Upcoming",
   low_stock: "Low Stock",
   pending_invitation: "Invitation",
-  expiring_cert: "Certification",
   pending_offers: "Crew",
   pending_timesheets: "Timesheets",
 };

@@ -305,12 +305,6 @@ export const CrewRateType = v.union(
   v.literal("DAILY"),
   v.literal("FLAT"),
 );
-export const CrewCertStatus = v.union(
-  v.literal("CURRENT"),
-  v.literal("EXPIRING_SOON"),
-  v.literal("EXPIRED"),
-  v.literal("NOT_VERIFIED"),
-);
 export const AssignmentStatus = v.union(
   v.literal("PENDING"),
   v.literal("OFFERED"),

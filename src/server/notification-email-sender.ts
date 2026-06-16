@@ -24,7 +24,6 @@ import { getProjectsByOrg } from "@/lib/projects-read";
 import { getBulkAssetsByOrg } from "@/lib/assets-read";
 import { env } from "@/env";
 import {
-  expiringCertEmail,
   flaggedAssetEmail,
   lowStockEmail,
   overdueMaintenanceEmail,
@@ -53,8 +52,6 @@ interface BuildContext {
   now: Date;
   /** 3-day-out cutoff for upcoming projects. */
   soon: Date;
-  /** 30-day-out cutoff for expiring certifications. */
-  certSoon: Date;
 }
 
 interface NotificationToSend {
@@ -82,7 +79,6 @@ function resolvePreferences(
     upcomingProject: raw.upcomingProject,
     lowStock: raw.lowStock,
     pendingInvitation: raw.pendingInvitation,
-    expiringCert: raw.expiringCert,
     pendingOffers: raw.pendingOffers,
     pendingTimesheets: raw.pendingTimesheets,
     flaggedAsset: raw.flaggedAsset,
@@ -116,7 +112,7 @@ async function loadOrgRecipients(organizationId: string): Promise<OrgRecipient[]
 }
 
 async function buildOrgNotifications(ctx: BuildContext): Promise<NotificationToSend[]> {
-  const { organizationId, now, soon, certSoon } = ctx;
+  const { organizationId, now, soon } = ctx;
   const out: NotificationToSend[] = [];
 
   const modelMap = await getModelMap(organizationId);
@@ -260,39 +256,7 @@ async function buildOrgNotifications(ctx: BuildContext): Promise<NotificationToS
     });
   }
 
-  // 5. Expiring certs
-  const expiringCerts = await prisma.crewCertification.findMany({
-    where: {
-      crewMember: { organizationId },
-      expiryDate: { gte: now, lte: certSoon },
-      status: { in: ["CURRENT", "EXPIRING_SOON"] },
-    },
-    include: { crewMember: { select: { id: true, firstName: true, lastName: true } } },
-    take: 50,
-  });
-  for (const cert of expiringCerts) {
-    const daysLeft = Math.ceil(
-      (new Date(cert.expiryDate!).getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
-    );
-    out.push({
-      key: `cert-${cert.id}`,
-      type: "expiring_cert",
-      build: (recipient, c) =>
-        expiringCertEmail({
-          recipientName: recipient.name,
-          orgName: c.organizationName,
-          appBaseUrl: c.appBaseUrl,
-          href: `/crew/${cert.crewMember.id}`,
-          notificationKey: `cert-${cert.id}`,
-          certName: cert.name,
-          crewName: `${cert.crewMember.firstName} ${cert.crewMember.lastName}`,
-          expiryDate: cert.expiryDate?.toISOString() ?? null,
-          daysLeft,
-        }),
-    });
-  }
-
-  // 6. Pending crew offers — aggregate, one email per day-bucket.
+  // 5. Pending crew offers — aggregate, one email per day-bucket.
   const pendingOffers = await prisma.crewAssignment.count({
     where: { organizationId, status: "OFFERED" },
   });
@@ -388,7 +352,6 @@ export async function sendNotificationEmails(): Promise<SendNotificationEmailsRe
 
   const now = new Date();
   const soon = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
-  const certSoon = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
   const orgs = await prisma.organization.findMany({
     select: { id: true, name: true },
@@ -402,7 +365,6 @@ export async function sendNotificationEmails(): Promise<SendNotificationEmailsRe
       appBaseUrl: env.NEXT_PUBLIC_APP_URL,
       now,
       soon,
-      certSoon,
     };
 
     const [notifications, recipients] = await Promise.all([

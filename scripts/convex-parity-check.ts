@@ -45,7 +45,6 @@ const PAIRS: Array<[string, string]> = [
   ["crewAssignment", "crewAssignments"],
   ["crewShift", "crewShifts"],
   ["crewAvailability", "crewAvailabilities"],
-  ["crewCertification", "crewCertifications"],
   ["crewTimeEntry", "crewTimeEntries"],
   // central graph
   ["project", "projects"],

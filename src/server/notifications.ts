@@ -9,7 +9,7 @@ import { getBulkAssetsByOrg } from "@/lib/assets-read";
 
 export interface AppNotification {
   id: string;
-  type: "overdue_maintenance" | "overdue_return" | "upcoming_project" | "low_stock" | "pending_invitation" | "expiring_cert" | "pending_offers" | "pending_timesheets" | "flagged_asset";
+  type: "overdue_maintenance" | "overdue_return" | "upcoming_project" | "low_stock" | "pending_invitation" | "pending_offers" | "pending_timesheets" | "flagged_asset";
   title: string;
   description: string;
   href: string;
@@ -245,36 +245,7 @@ export async function getNotifications(): Promise<AppNotification[]> {
     }
   }
 
-  // 6. Expiring crew certifications (within 30 days)
-  const certSoon = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-  const expiringCerts = await prisma.crewCertification.findMany({
-    where: {
-      crewMember: { organizationId },
-      expiryDate: { gte: now, lte: certSoon },
-      status: { in: ["CURRENT", "EXPIRING_SOON"] },
-    },
-    include: {
-      crewMember: { select: { id: true, firstName: true, lastName: true } },
-    },
-    take: 10,
-  });
-
-  for (const cert of expiringCerts) {
-    const daysLeft = Math.ceil(
-      (new Date(cert.expiryDate!).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-    );
-    notifications.push({
-      id: `cert-${cert.id}`,
-      type: "expiring_cert",
-      title: `Expiring: ${cert.name}`,
-      description: `${cert.crewMember.firstName} ${cert.crewMember.lastName} — expires in ${daysLeft} day${daysLeft !== 1 ? "s" : ""}`,
-      href: `/crew/${cert.crewMember.id}`,
-      severity: daysLeft <= 7 ? "error" : "warning",
-      timestamp: cert.expiryDate!.toISOString(),
-    });
-  }
-
-  // 7. Pending crew offers (assignments in OFFERED status)
+  // 6. Pending crew offers (assignments in OFFERED status)
   const pendingOffers = await prisma.crewAssignment.count({
     where: { organizationId, status: "OFFERED" },
   });

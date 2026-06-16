@@ -12,7 +12,6 @@ export const notificationPreferenceSchema = z.object({
   upcomingProject: z.boolean(),
   lowStock: z.boolean(),
   pendingInvitation: z.boolean(),
-  expiringCert: z.boolean(),
   pendingOffers: z.boolean(),
   pendingTimesheets: z.boolean(),
   flaggedAsset: z.boolean(),
@@ -28,7 +27,6 @@ export const NOTIFICATION_PREFERENCE_DEFAULTS: NotificationPreferenceValues = {
   upcomingProject: false,
   lowStock: true,
   pendingInvitation: true,
-  expiringCert: true,
   pendingOffers: false,
   pendingTimesheets: false,
   flaggedAsset: true,
@@ -41,7 +39,6 @@ export const NOTIFICATION_TYPE_TO_PREFERENCE: Record<string, keyof NotificationP
   upcoming_project: "upcomingProject",
   low_stock: "lowStock",
   pending_invitation: "pendingInvitation",
-  expiring_cert: "expiringCert",
   pending_offers: "pendingOffers",
   pending_timesheets: "pendingTimesheets",
   flagged_asset: "flaggedAsset",
@@ -68,10 +65,6 @@ export const NOTIFICATION_PREFERENCE_LABELS: Record<keyof NotificationPreference
   pendingInvitation: {
     label: "Invitations",
     description: "Email me when I have a pending organization invitation.",
-  },
-  expiringCert: {
-    label: "Expiring certifications",
-    description: "Email me when a crew certification expires within 30 days.",
   },
   pendingOffers: {
     label: "Crew offers awaiting response",

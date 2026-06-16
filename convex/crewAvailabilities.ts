@@ -33,6 +33,29 @@ export const getById = query({
   },
 });
 
+/**
+ * Availability blocks for a set of crew members. `orgId` ONLY gates auth — we do
+ * NOT filter rows by `organizationId`: that column is OPTIONAL on this table (late
+ * addition) and the original Prisma read never org-scoped availability, so an
+ * org-index scan would silently drop un-backfilled rows and yield a false
+ * "available". We fan out over the by_crewMemberId membership index instead.
+ */
+export const listByCrewMemberIds = query({
+  args: { crewMemberIds: v.array(v.string()), orgId: v.string() },
+  handler: async (ctx, { crewMemberIds, orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    const out = [];
+    for (const crewMemberId of crewMemberIds) {
+      const rows = await ctx.db
+        .query("crewAvailabilities")
+        .withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", crewMemberId))
+        .collect();
+      out.push(...rows);
+    }
+    return out;
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

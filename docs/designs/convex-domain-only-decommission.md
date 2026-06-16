@@ -186,6 +186,18 @@ CANCELLED (default), no units, full asset attach + per-asset `location` graft;
 returns `{ lineItems, locationMap }` so the caller resolves `project.location` too.
 Golden-diffed vs the old include + attach + graft.
 
+**Consumer 4/4 — `build-document-data` (PDF) DONE** (PR `feat/convex-read-pdf-data`,
+stacked on consumer 3). `buildDocumentLineItemData` — no type filter, drops
+CANCELLED, depth 2, per-line category/group selects, units in the PDF SELECT shape,
+model/supplier/kit/asset attach; returns `{ lineItems, categories }`. subHire
+supplier now via `getSupplierMap`. Validated by (1) a live full-pipeline golden-diff
+(reconstructed tree + categories + `structureLineItems` output match the old Prisma
+path) and (2) a new `document-data-reconstruction.test.ts` running flat Convex docs
+through the whole pipeline (reconstruction → structure → filter → height → render).
+**Keystone done — all four consumers reconstruct from Convex.** Remaining Phase A:
+stocktake, check-records, project-services, category-slots, warehouse-display,
+test-tag-assets, document-templates, crew availability, + a final sweep.
+
 ### New read helpers needed (priority by MOVE-read frequency)
 
 1. `projectLineItem-read.ts` (+ `projectLineItemUnit`) — biggest

@@ -215,10 +215,11 @@ covers this in two layers:
   cancels the child (qty 0, `assetId` null). `syncLineItemRollup` then promotes
   the canonical to `CHECKED_OUT` when the folded units are checked out.
 
-This runs from the GitHub Actions **Run migration** workflow
-(`.github/workflows/migrate.yml`) — `canonical_id` + `children_ids` inputs —
-because the prod SSH session freezes on long-running scripts. Dry-run by
-default; `apply` is a separate, human-gated checkbox.
+This runs from the **Coolify container terminal** (the old
+`.github/workflows/migrate.yml` self-hosted workflow was retired with the
+self-hosted box — see [FEATUREDOCS/56](../../FEATUREDOCS/56-deployment.md)):
+`pnpm exec tsx scripts/collapse-historic-splits.ts --merge-into <canonical_id> --children <ids>`.
+Dry-run by default; pass `--apply` to mutate.
 
 ### Merge tombstones are hidden, not deleted
 

@@ -2696,9 +2696,37 @@ assignment rows + crewMember/crewRole/service/shifts/confirmedBy) and
 + `CrewShiftRow` extended to full rows; added `getAssignmentsByProject` +
 `getProjectServiceMap`. `confirmedBy` (User) via `users-read`. **`phase: "asc"`
 replicates Postgres enum ordering** (declared order, not alphabetical) via a
-`PHASE_ORDER` rank map. `getCrewMembersForAssignment` (cross-project conflict +
-availability scan) is **deferred** — stays on Prisma until the availability
-surface converts. Writes stay Prisma-first + mirror. Same crew deploy gate.
+`PHASE_ORDER` rank map. Writes stay Prisma-first + mirror. Same crew deploy gate.
+
+### Crew availability / assignment picker — DONE
+
+`src/server/crew-assignments.ts`: `getCrewMembersForAssignment(projectId, search?,
+dateRange?)` — the assignment-dialog crew picker — read-rewired to Convex (this was
+the **last deferred crew read**). Three pure read-only reads, no read-then-write:
+
+- **Read A (members + on-project assignments):** `getCrewMembersByOrg` +
+  `getCrewRoleMap` + `getAssignmentsByProject`; member `where`/search/sort/`take 50`
+  reproduced by pure predicates in **`src/lib/crew-assignment-availability.ts`**
+  (`isAssignableMember` — `isActive ?? true && status==="ACTIVE"` + case-insensitive
+  search over firstName/lastName/email/department with null guards; `compareByLastName`
+  localeCompare; `.slice(0,50)` after filter+sort). On-project assignments attached by
+  `crewMemberId` equality.
+- **Read B (cross-project conflicts):** `getAssignmentsByOrg` filtered by
+  `isConflictingAssignment` (other-project, status ∉ {CANCELLED,DECLINED}, inclusive
+  date overlap, null start/end excluded — Prisma lte/gte over NULL is false); project
+  names joined via `getProjectsByOrg`.
+- **Read C (UNAVAILABLE blocks):** new convex query
+  **`crewAvailabilities.listByCrewMemberIds({crewMemberIds, orgId})`** — fans out over
+  the `by_crewMemberId` membership index (orgId gates auth ONLY; `organizationId` is an
+  optional late-addition column on `crewAvailabilities`, so an org-index scan would
+  silently drop un-backfilled rows → false "available"). `getAvailabilitiesByCrewMemberIds`
+  + `mapAvailability` added to crew-scheduling-read.ts (`type` absent → `UNAVAILABLE`,
+  the Prisma default); `isUnavailableBlock` predicate applies the type+overlap filter.
+
+Reads B and C only run when `dateRange` is provided — **both call sites currently pass
+only `projectId`, so those paths are dead today** (converted for signature parity).
+Writes stay Prisma-first + mirror. Same crew deploy gate (assignment/shift/cert/
+timeEntry **and availability** backfilled in prod Convex before merge).
 
 ## Conventions
 

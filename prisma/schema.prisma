@@ -2363,7 +2363,6 @@ model CrewMember {
 
   // Relations
   skills         CrewSkill[]
-  certifications CrewCertification[]
   assignments    CrewAssignment[]
   availability   CrewAvailability[]
   timeEntries    CrewTimeEntry[]
@@ -2443,29 +2442,6 @@ model CrewSkill {
   @@unique([organizationId, name])
   @@index([organizationId])
   @@map("crew_skill")
-}
-
-model CrewCertification {
-  id           String     @id @default(cuid())
-  crewMemberId String
-  crewMember   CrewMember @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
-
-  name              String
-  issuedBy          String?
-  certificateNumber String?
-  issuedDate        DateTime?
-  expiryDate        DateTime?
-  status            CrewCertStatus @default(NOT_VERIFIED)
-
-  @@index([crewMemberId])
-  @@map("crew_certification")
-}
-
-enum CrewCertStatus {
-  CURRENT
-  EXPIRING_SOON
-  EXPIRED
-  NOT_VERIFIED
 }
 
 model CrewAssignment {

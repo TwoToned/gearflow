@@ -47,7 +47,11 @@ async function main() {
   let created = 0;
   let skipped = 0;
 
+  console.log("Querying Postgres for check_record rows…");
   const records = await prisma.checkRecord.findMany();
+  console.log(`Fetched ${records.length} rows. Mirroring to Convex…`);
+
+  let i = 0;
   for (const r of records) {
     const doc = strip(toConvexDoc(r as unknown as Record<string, unknown>));
     // Re-fetch the client each iteration so the 5-min service token refreshes
@@ -59,6 +63,9 @@ async function main() {
     );
     if (__res.created) created++;
     else skipped++;
+    if (++i % 25 === 0 || i === records.length) {
+      console.log(`  ${i}/${records.length} (created ${created}, present ${skipped})`);
+    }
   }
 
   console.log(

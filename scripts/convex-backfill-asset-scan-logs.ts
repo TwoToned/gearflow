@@ -22,7 +22,11 @@ async function main() {
   let created = 0;
   let skipped = 0;
 
+  console.log("Querying Postgres for asset_scan_log rows…");
   const rows = await prisma.assetScanLog.findMany();
+  console.log(`Fetched ${rows.length} rows. Mirroring to Convex…`);
+
+  let i = 0;
   for (const row of rows) {
     // Re-fetch the client each iteration so the 5-min service token refreshes
     // mid-loop (this table is high-volume and the loop can exceed the TTL).
@@ -33,6 +37,9 @@ async function main() {
     );
     if (__res.created) created++;
     else skipped++;
+    if (++i % 25 === 0 || i === rows.length) {
+      console.log(`  ${i}/${rows.length} (created ${created}, present ${skipped})`);
+    }
   }
 
   console.log(

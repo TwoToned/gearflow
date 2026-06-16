@@ -386,25 +386,6 @@ export const ScheduleFrequency = v.union(
   v.literal("WEEKLY"),
   v.literal("MONTHLY"),
 );
-export const StocktakeScope = v.union(
-  v.literal("FULL"),
-  v.literal("CATEGORY"),
-  v.literal("SPOT_CHECK"),
-);
-export const StocktakeStatus = v.union(
-  v.literal("DRAFT"),
-  v.literal("IN_PROGRESS"),
-  v.literal("REVIEWING"),
-  v.literal("COMPLETED"),
-  v.literal("CANCELLED"),
-);
-export const StocktakeItemResult = v.union(
-  v.literal("MATCH"),
-  v.literal("MISSING"),
-  v.literal("UNEXPECTED"),
-  v.literal("QUANTITY_MISMATCH"),
-  v.literal("WRONG_LOCATION"),
-);
 export const CustomFieldEntity = v.union(
   v.literal("ASSET"),
   v.literal("BULK_ASSET"),

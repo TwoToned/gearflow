@@ -3,7 +3,7 @@
 /**
  * Reorder dashboard (Wave 3).
  *
- * Closes the supply-chain loop: stocktake / damage / consumption surfaces
+ * Closes the supply-chain loop: damage / consumption surfaces
  * low stock here. Operator picks items, the page generates one DRAFT
  * SupplierOrder per supplier with the items pre-filled. Edit the draft
  * in /suppliers/orders/[id] to finalise + send.

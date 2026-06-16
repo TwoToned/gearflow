@@ -55,7 +55,6 @@
     "convex:backfill:check-records": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-check-records.ts",
     "convex:backfill:sub-hires": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-sub-hires.ts",
     "convex:backfill:projects": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-projects.ts",
-    "convex:backfill:stocktake": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-stocktake.ts",
     "convex:backfill:damage": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-damage.ts",
     "convex:backfill:maintenance": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-maintenance.ts",
     "convex:backfill:crew-availability-org": "tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-crew-availability-org.ts",

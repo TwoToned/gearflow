@@ -29,7 +29,6 @@ import {
   AlertTriangle,
   Hammer,
   Activity,
-  ClipboardList,
   ShoppingCart,
   type LucideIcon,
 } from "lucide-react";
@@ -141,7 +140,6 @@ const navSections: NavSection[] = [
     label: "OPERATIONS",
     items: [
       { title: "Warehouse", url: "/warehouse", icon: Warehouse, resource: "warehouse" },
-      { title: "Stocktake", url: "/warehouse/stocktake", icon: ClipboardList, resource: "stocktake" },
       { title: "Reorder", url: "/warehouse/reorder", icon: ShoppingCart, resource: "bulkAsset" },
       { title: "Workshop", url: "/workshop", icon: Hammer, resource: "maintenance" },
       { title: "Maintenance", url: "/maintenance", icon: Wrench, resource: "maintenance" },

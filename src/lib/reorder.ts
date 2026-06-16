@@ -1,8 +1,8 @@
 /**
  * Reorder candidate logic (Wave 3).
  *
- * Closes the supply-chain loop. Stocktake reveals you're short, damage
- * destroys some bulk items, projects consume stock — all of that needs to
+ * Closes the supply-chain loop. Damage destroys some bulk items and
+ * projects consume stock — all of that needs to
  * trigger a reorder. We already have `BulkAsset.reorderThreshold` and the
  * `SupplierOrder` model. This module pulls them together.
  *

@@ -69,8 +69,6 @@ const PAIRS: Array<[string, string]> = [
   ["supplierOrderItem", "supplierOrderItems"],
   ["damageEvent", "damageEvents"],
   ["maintenanceRecord", "maintenanceRecords"],
-  ["stocktake", "stocktakes"],
-  ["stocktakeItem", "stocktakeItems"],
   ["warehouseClose", "warehouseCloses"],
   ["savedReport", "savedReports"],
   ["savedTableView", "savedTableViews"],

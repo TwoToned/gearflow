@@ -2,6 +2,12 @@
 
 > **Status: Phase 0 complete (infrastructure).** This is a long-running, multi-phase
 > migration. Full plan: [`docs/designs/convex-hybrid-migration.md`](../docs/designs/convex-hybrid-migration.md).
+>
+> **Endgame plan (decided 2026-06-16):** "domain data Convex-only" — keep Postgres
+> for Better Auth + RBAC + activityLog. Full phased plan (A read-rewiring →
+> B write-inversion → C drop tables), scope, and ground rules:
+> [`docs/designs/convex-domain-only-decommission.md`](../docs/designs/convex-domain-only-decommission.md).
+> Currently PAUSED before Phase A; all dual-write groundwork is shipped + backfilled.
 
 ## Overview
 

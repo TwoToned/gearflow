@@ -6,9 +6,10 @@
 > (see [`FEATUREDOCS/54`](../../FEATUREDOCS/54-convex-data-layer.md) and
 > [`convex-hybrid-migration.md`](./convex-hybrid-migration.md)).
 
-> **Status: PAUSED before Phase A.** Everything below Phase 0 ("Done") is shipped
-> and stable. Phases A/B/C are not started. Tracked as tasks #4 (Phase A), #5
-> (Phase B), #6 (Phase C).
+> **Status: Phase A IN PROGRESS (2026-06-16).** Everything below Phase 0 ("Done")
+> is shipped and stable. Phase A read-rewiring underway — leaf surfaces converting
+> one PR at a time (see the Phase A progress log below). Phases B/C not started.
+> Tracked as tasks #4 (Phase A), #5 (Phase B), #6 (Phase C).
 
 ---
 
@@ -145,6 +146,28 @@ integration test, not just plugin-level tests.
    (`org-export`, `test-tag-reports`), `document-templates`, stocktake lists.
 2. Mid: crew cluster, test-tag cluster, sub-hire detail/list, supplier-orders.
 3. Keystone: line-item-tree reader → getProject → warehouse → pull-sheet → PDF.
+
+### Phase A progress log
+
+- **`test-tag-reports.ts` — DONE (PR #194).** Read-only reports/CSV/counts →
+  Convex via `src/lib/test-tag-read.ts`. `testedBy` (User) stays Prisma. Fixed
+  `convex-backfill-all.ts` to include the 9 Phase-6 sub-table backfills.
+- **`crew-dashboard.ts` — DONE.** 6 read-only dashboard widgets → Convex via
+  `src/lib/crew-scheduling-read.ts` (assignment/timeEntry/shift/cert) + crew-read +
+  projects-read. Added org-scoped `crewShifts.listByOrg` / `crewCertifications.listByOrg`
+  (parent-join, no org column). **Pre-merge deploy gate: backfill the crew
+  scheduling tables in prod Convex first** (`convex:backfill:crew-scheduling`),
+  else the widgets read empty. Validated with unit tests + golden-diff on
+  `npm run seed:crew` data.
+
+**Env note for validators.** The dev worktree *can* run live Convex reads/backfills
+against the shared dev deployment by overriding the service-token issuer to match
+it: prefix commands with `BETTER_AUTH_URL="https://preview.lab.rvlt.app"` (the
+local `BETTER_AUTH_SECRET` already matches the dev JWKS). The shared dev DB starts
+empty — seed (`npm run seed` + `seed:test-tag` + `seed:crew`), then
+`BETTER_AUTH_URL=… npx tsx … scripts/convex-backfill-all.ts`, then the parity
+check. Caveat: the shared dev backend is volatile (other worktrees/previews mutate
+it) — re-run the relevant backfill right before validating.
 
 ---
 

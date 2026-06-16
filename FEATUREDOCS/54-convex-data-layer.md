@@ -7,7 +7,9 @@
 > for Better Auth + RBAC + activityLog. Full phased plan (A read-rewiring →
 > B write-inversion → C drop tables), scope, and ground rules:
 > [`docs/designs/convex-domain-only-decommission.md`](../docs/designs/convex-domain-only-decommission.md).
-> Currently PAUSED before Phase A; all dual-write groundwork is shipped + backfilled.
+> **Phase A read-rewiring IN PROGRESS (2026-06-16):** leaf surfaces converting one
+> PR at a time — Test & Tag reports (PR #194) + crew dashboard done. See
+> [Phase A — read-rewiring](#phase-a--read-rewiring-domain-only-decommission) below.
 
 ## Overview
 
@@ -2634,6 +2636,46 @@ hidden — this only smooths the "random" single-shot failures. This does NOT
 re-introduce a Prisma fallback: a *map miss* still yields `null` (mirror-freshness
 invariant preserved); only a *thrown* transient error is retried. Regression tests:
 `src/lib/convex-client.test.ts`, `src/lib/convex-auth-guards.test.ts`.
+
+## Phase A — read-rewiring (domain-only decommission)
+
+The endgame's first phase: move every remaining Prisma **domain read** to Convex,
+one leaf surface per PR, validated before merge. Full plan + ground rules in
+[`docs/designs/convex-domain-only-decommission.md`](../docs/designs/convex-domain-only-decommission.md).
+
+**Pattern (proven on the leaves below):** a thin `src/lib/<x>-read.ts` with
+Convex fetchers + mappers (epoch-ms → `Date`, absent optionals → `null`,
+Decimal → `number`, Prisma-required-but-Convex-optional fields coerced) + pure,
+unit-tested filter predicates that re-implement the old Prisma `where`; the server
+action keeps its shape (still called via `useServerQuery`) but reads Convex and
+does `orderBy`/`include` as JS sort/attach. Postgres null-ordering replicated
+(ASC = NULLS LAST, DESC = NULLS FIRST). No Prisma fallback — a map miss is `null`.
+Auth-owned joins (`User`: `testedBy`/`approvedBy`/etc.) stay on Prisma forever.
+Validation: pure unit tests (CI) + a local row-for-row golden-diff vs Prisma on
+seeded dev data (see the design doc's "Env note for validators").
+
+### Test & Tag reports — DONE (PR #194)
+
+`src/server/test-tag-reports.ts` (10 builders + CSV + counts) → Convex via
+`src/lib/test-tag-read.ts`. New `subTestRecords.listByRecordIds` query;
+`ReportFilters` moved to `src/lib/test-tag-report-types.ts`. Also fixed
+`convex-backfill-all.ts` to include the 9 Phase-6 sub-table backfills.
+
+### Crew dashboard — DONE
+
+`src/server/crew-dashboard.ts` (6 read-only widgets: picker list, stat counts,
+pending timesheets, active assignments, pending offers, upcoming shifts) → Convex
+via `src/lib/crew-scheduling-read.ts` (assignments / time entries / shifts /
+certifications). Members+roles from `crew-read.ts`, projects from
+`projects-read.ts`. `crew_shift` / `crew_certification` have no org column
+(parent-scoped) → hand-added `crewShifts.listByOrg` / `crewCertifications.listByOrg`
+that join via assignments / members. Counts + the `_sum(totalHours)` aggregate
+computed in JS over the org-scoped lists. Dev data: `npm run seed:crew`.
+
+> **Deploy gate (crew):** the crew **scheduling** tables (assignment / shift /
+> certification / time entry) must be backfilled in **prod** Convex before this
+> merges, else the dashboard reads empty. Run `convex:backfill:crew-scheduling`
+> (and `:crew`) in prod first if not already done.
 
 ## Conventions
 

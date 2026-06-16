@@ -38,6 +38,7 @@ import {
   getModelCheckItemCountMap,
   getKitCheckItemCountMap,
 } from "@/lib/line-item-tree-read";
+import { buildWarehouseLineItems } from "@/lib/project-line-item-read";
 import { getKitById, getKitByAssetTag, getKitMap } from "@/lib/kits-read";
 import { getAssetById, getAssetByAssetTag, getAssetsByOrg, getBulkAssetsByOrg, getBulkAssetByAssetTag } from "@/lib/assets-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
@@ -153,48 +154,13 @@ async function assertTestTagAllowsCheckout(
 export async function getProjectForWarehouse(projectId: string) {
   const { organizationId } = await getOrgContext();
 
-  // model + supplier + kit are all dual-written to Convex and attached in JS
-  // below (Phase 6 decommission) — not joined here. Their check-item counts
-  // (`model._count.modelCheckItems` / `kit._count.kitCheckItems`) also come off
-  // the Convex mirror now that both junction tables are dual-written.
+  // The whole EQUIPMENT line-item tree (lineItems → childLineItems → units, with
+  // model/supplier/kit/asset/bulkAsset + check-item counts) is reconstructed from
+  // the dual-written Convex tables in JS — see buildWarehouseLineItems (Phase A
+  // keystone consumer 2/4). Prisma here only supplies the project scalars; even
+  // location is attached from Convex below.
   const project = await prisma.project.findUnique({
     where: { id: projectId, organizationId },
-    include: {
-      // location lives in Convex — attached below, not joined.
-      lineItems: {
-        where: { type: "EQUIPMENT" },
-        orderBy: { sortOrder: "asc" },
-        include: {
-          // asset/bulkAsset are dual-written to Convex — attached below via
-          // attachAssetBulkAssetTree; not joined here.
-          // Per-unit assignments (post-cutover, the source of truth for
-          // which physical assets the warehouse is preparing / deploying
-          // / returning on this line).
-          units: {
-            orderBy: { ordinal: "asc" },
-            where: { status: { not: "CANCELLED" } },
-          },
-          childLineItems: {
-            orderBy: { sortOrder: "asc" },
-            include: {
-              units: {
-                orderBy: { ordinal: "asc" },
-                where: { status: { not: "CANCELLED" } },
-              },
-              childLineItems: {
-                orderBy: { sortOrder: "asc" },
-                include: {
-                  units: {
-                    orderBy: { ordinal: "asc" },
-                    where: { status: { not: "CANCELLED" } },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
   });
 
   if (!project) {
@@ -205,24 +171,7 @@ export async function getProjectForWarehouse(projectId: string) {
     throw new Error("Cannot perform warehouse operations on a template");
   }
 
-  // Attach model/supplier/kit/asset/bulkAsset from the Convex mirror.
-  // asset/bulkAsset are dual-written to Convex — attached via attachAssetBulkAssetTree
-  // (replaces `asset: true` / `bulkAsset: true` Prisma joins + unit sub-joins).
-  const [attachMaps, kitMap, modelCheckCounts, kitCheckCounts, allAssets, allBulkAssets] =
-    await Promise.all([
-      buildLineItemAttachMaps(organizationId),
-      getKitMap(organizationId),
-      getModelCheckItemCountMap(organizationId),
-      getKitCheckItemCountMap(organizationId),
-      getAssetsByOrg(organizationId),
-      getBulkAssetsByOrg(organizationId),
-    ]);
-  const assetMap = new Map(allAssets.map((a) => [a.id, a]));
-  const bulkAssetMap = new Map(allBulkAssets.map((b) => [b.id, b]));
-  const withModelSupplier = attachLineItemTree(project.lineItems, attachMaps);
-  const withModelCount = attachModelCheckItemCounts(withModelSupplier, modelCheckCounts);
-  const withKits = attachKitTree(withModelCount, kitMap, kitCheckCounts);
-  const lineItems = attachAssetBulkAssetTree(withKits, assetMap, bulkAssetMap);
+  const lineItems = await buildWarehouseLineItems(projectId, organizationId);
 
   // Clients + location live in Convex — attach instead of a Prisma join.
   const client = project.clientId ? await getClientById(project.clientId) : null;

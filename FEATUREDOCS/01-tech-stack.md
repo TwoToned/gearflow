@@ -31,10 +31,6 @@ S3_BUCKET                 # Default: gearflow-uploads
 RESEND_API_KEY            # Email provider
 SITE_ADMIN_REGISTRATION_ENABLED  # "true" to enable admin signup
 SITE_ADMIN_SECRET_TOKEN   # Token for /register/admin?token=...
-GOOGLE_CLIENT_ID          # Google OAuth (optional)
-GOOGLE_CLIENT_SECRET      # Google OAuth (optional)
-MICROSOFT_CLIENT_ID       # Microsoft OAuth (optional)
-MICROSOFT_CLIENT_SECRET   # Microsoft OAuth (optional)
 PASSKEY_RP_ID             # WebAuthn relying party ID (e.g. localhost, gearflow.com)
 ```
 

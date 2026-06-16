@@ -106,10 +106,6 @@ npx prisma migrate dev   # Apply all migrations + generate client
 - `S3_BUCKET` (default: `gearflow-uploads`)
 - `S3_ENDPOINT` — Custom endpoint (optional, for S3-compatible providers)
 
-**OAuth (optional, enabled when set):**
-- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
-- `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`
-
 **Google Maps:**
 - `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` — API key with Maps JavaScript API + Places API (New) enabled
 

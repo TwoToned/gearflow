@@ -589,4 +589,130 @@ export async function buildPullSheetLineItems(projectId: string, organizationId:
   return { lineItems: graftAssetLocation(withAssets), locationMap };
 }
 
+/** Per-line `category` select the PDF builder's `lineItemInclude` produced. */
+export interface DocCategorySelect {
+  id: string;
+  name: string;
+  sortOrder: number;
+}
+/** Per-line `group` select the PDF builder's `lineItemInclude` produced. */
+export interface DocGroupSelect {
+  id: string;
+  title: string;
+  sortOrder: number;
+  categoryId: string | null;
+}
+
+/** A `category` (with nested `groups`) for `structureLineItems`. */
+export interface DocCategoryWithGroups {
+  id: string;
+  name: string;
+  sortOrder: number;
+  groups: MappedGroup[];
+}
+
+/**
+ * Reconstruct the line-item tree + categories the PDF data builder
+ * (`build-document-data.ts`) needs. Differs from the other consumers:
+ * - **No `type` filter** — scope is ALL non-CANCELLED line items (parents AND
+ *   children — dual projection), `childLineItems` 2 deep.
+ * - Each line item (top + first child level, matching the Prisma include depth)
+ *   carries a `category` `{id,name,sortOrder}` + `group` `{id,title,sortOrder,categoryId}`
+ *   select, resolved from the Convex project category/group rows.
+ * - Units are the PDF SELECT shape (`{id,status,parentUnitAssetId,assetId,bulkAssetId}`,
+ *   ordinal-sorted) — `attachAssetBulkAssetTree` then adds full `asset`/`bulkAsset`.
+ * - Attach pipeline: model/supplier → kit (+ `_count`) → asset/bulkAsset (no model
+ *   check-count graft; the PDF doesn't use it).
+ * Returns `{ lineItems, categories }` (categories = the cat+groups array for
+ * `structureLineItems`).
+ */
+export async function buildDocumentLineItemData(projectId: string, organizationId: string) {
+  const convex = await getConvexClient();
+  const [liDocs, catDocs, grpDocs] = await Promise.all([
+    convex.query(api.projectLineItems.listByProject, { projectId, orgId: organizationId }),
+    convex.query(api.projectCategories.listByProject, { projectId, orgId: organizationId }),
+    convex.query(api.projectGroups.listByProject, { projectId, orgId: organizationId }),
+  ]);
+
+  const lineItems = liDocs.map(mapLineItemDoc);
+  const lineItemIds = lineItems.map((li) => li.id);
+  const mappedCategories = catDocs.map(mapCategoryDoc);
+  const mappedGroups = grpDocs.map(mapGroupDoc);
+
+  const [unitDocs, attachMaps, kitMap, kitCountMap, assetArr, bulkArr] = await Promise.all([
+    lineItemIds.length
+      ? convex.query(api.projectLineItemUnits.listByLineItemIds, { lineItemIds })
+      : Promise.resolve([] as UnitDoc[]),
+    buildLineItemAttachMaps(organizationId),
+    getKitMap(organizationId),
+    getKitCheckItemCountMap(organizationId),
+    getAssetsByOrg(organizationId),
+    getBulkAssetsByOrg(organizationId),
+  ]);
+
+  const assetMap = new Map(assetArr.map((a) => [a.id, a]));
+  const bulkAssetMap = new Map(bulkArr.map((b) => [b.id, b]));
+
+  // Units in the PDF SELECT shape, ordinal-sorted (the Prisma include selects
+  // exactly these fields, ordered by ordinal).
+  const docUnits = unitDocs
+    .map((u) => mapUnitDoc(u))
+    .map((u) => ({
+      id: u.id,
+      status: u.status,
+      parentUnitAssetId: u.parentUnitAssetId,
+      assetId: u.assetId,
+      bulkAssetId: u.bulkAssetId,
+      // lineItemId + ordinal drive indexUnits (bucket + sort); harmless extras on output.
+      lineItemId: u.lineItemId,
+      ordinal: u.ordinal,
+    }));
+  const unitsByLineItem = indexUnits(docUnits);
+
+  const byParent = indexChildren(lineItems); // default: drop CANCELLED
+  const tree = reconstructScope(lineItems, byParent, { unitsByLineItem, depth: 2 });
+
+  // Attach category/group selects at levels 0 + 1 (matching the include depth).
+  const catSelect = new Map(mappedCategories.map((c) => [c.id, { id: c.id, name: c.name, sortOrder: c.sortOrder }]));
+  const grpSelect = new Map(
+    mappedGroups.map((g) => [g.id, { id: g.id, title: g.title, sortOrder: g.sortOrder, categoryId: g.categoryId }]),
+  );
+  const attachCatGroup = <
+    T extends { categoryId: string | null; groupId: string | null; childLineItems?: unknown },
+  >(
+    rows: T[],
+    level: number,
+  ): T[] =>
+    rows.map((row) => ({
+      ...row,
+      ...(level <= 1
+        ? {
+            category: row.categoryId ? catSelect.get(row.categoryId) ?? null : null,
+            group: row.groupId ? grpSelect.get(row.groupId) ?? null : null,
+          }
+        : {}),
+      ...(Array.isArray(row.childLineItems)
+        ? { childLineItems: attachCatGroup(row.childLineItems as T[], level + 1) }
+        : {}),
+    })) as T[];
+  const withCatGroup = attachCatGroup(tree, 0);
+
+  const withModelSupplier = attachLineItemTree(withCatGroup, attachMaps);
+  const withKits = attachKitTree(withModelSupplier, kitMap, kitCountMap);
+  const withAssets = attachAssetBulkAssetTree(withKits, assetMap, bulkAssetMap);
+
+  const categories: DocCategoryWithGroups[] = [...mappedCategories]
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      sortOrder: c.sortOrder,
+      groups: mappedGroups
+        .filter((g) => g.categoryId === c.id)
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    }));
+
+  return { lineItems: withAssets, categories };
+}
+
 export type { LineItemAttachMaps, ConvexLocation };

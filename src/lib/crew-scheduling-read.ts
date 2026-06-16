@@ -33,12 +33,28 @@ export interface CrewAssignmentRow {
   projectId: string;
   crewMemberId: string;
   crewRoleId: string | null;
+  serviceId: string | null;
   status: string;
   phase: string | null;
   isProjectManager: boolean;
   startDate: Date | null;
+  startTime: string | null;
   endDate: Date | null;
+  endTime: string | null;
+  rateOverride: number | null;
+  rateType: string | null;
+  estimatedHours: number | null;
+  estimatedCost: number | null;
+  notes: string | null;
+  internalNotes: string | null;
+  responseToken: string | null;
+  offeredAt: Date | null;
+  respondedAt: Date | null;
+  responseNote: string | null;
+  confirmedAt: Date | null;
+  confirmedById: string | null;
   createdAt: Date | null;
+  updatedAt: Date | null;
 }
 
 export interface CrewTimeEntryRow {
@@ -66,6 +82,9 @@ export interface CrewShiftRow {
   date: Date;
   callTime: string | null;
   endTime: string | null;
+  breakMinutes: number | null;
+  location: string | null;
+  notes: string | null;
   status: string;
 }
 
@@ -82,12 +101,28 @@ export function mapAssignment(d: RawAssignment): CrewAssignmentRow {
     projectId: req(d.projectId),
     crewMemberId: req(d.crewMemberId),
     crewRoleId: orNull(d.crewRoleId),
+    serviceId: orNull(d.serviceId),
     status: req(d.status),
     phase: orNull(d.phase),
     isProjectManager: d.isProjectManager ?? false,
     startDate: toDate(d.startDate),
+    startTime: orNull(d.startTime),
     endDate: toDate(d.endDate),
+    endTime: orNull(d.endTime),
+    rateOverride: orNull(d.rateOverride),
+    rateType: orNull(d.rateType),
+    estimatedHours: orNull(d.estimatedHours),
+    estimatedCost: orNull(d.estimatedCost),
+    notes: orNull(d.notes),
+    internalNotes: orNull(d.internalNotes),
+    responseToken: orNull(d.responseToken),
+    offeredAt: toDate(d.offeredAt),
+    respondedAt: toDate(d.respondedAt),
+    responseNote: orNull(d.responseNote),
+    confirmedAt: toDate(d.confirmedAt),
+    confirmedById: orNull(d.confirmedById),
     createdAt: toDate(d.createdAt),
+    updatedAt: toDate(d.updatedAt),
   };
 }
 
@@ -119,6 +154,9 @@ export function mapShift(d: RawShift): CrewShiftRow {
     date: new Date(req(d.date)),
     callTime: orNull(d.callTime),
     endTime: orNull(d.endTime),
+    breakMinutes: orNull(d.breakMinutes),
+    location: orNull(d.location),
+    notes: orNull(d.notes),
     status: req(d.status),
   };
 }
@@ -147,4 +185,22 @@ export async function getShiftsByOrg(orgId: string): Promise<CrewShiftRow[]> {
 export async function getCertificationsByOrg(orgId: string): Promise<CrewCertificationRow[]> {
   const rows = (await (await getConvexClient()).query(api.crewCertifications.listByOrg, { orgId })) as RawCertification[];
   return rows.map(mapCertification);
+}
+
+export async function getAssignmentsByProject(projectId: string, orgId: string): Promise<CrewAssignmentRow[]> {
+  const rows = (await (await getConvexClient()).query(api.crewAssignments.listByProject, {
+    projectId,
+    orgId,
+  })) as RawAssignment[];
+  return rows.map(mapAssignment);
+}
+
+/** Project services keyed by cuid, reduced to `{ id, title, type }` for attach. */
+export async function getProjectServiceMap(orgId: string): Promise<Map<string, { id: string; title: string; type: string }>> {
+  const rows = (await (await getConvexClient()).query(api.projectServices.list, { orgId })) as Array<{
+    id: string;
+    title: string;
+    type: string;
+  }>;
+  return new Map(rows.map((s) => [s.id, { id: s.id, title: s.title, type: s.type }]));
 }

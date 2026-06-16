@@ -3,6 +3,14 @@
 import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getProjectById } from "@/lib/projects-read";
+import { getCrewMembersByOrg, getCrewRolesByOrg } from "@/lib/crew-read";
+import { getUserMap } from "@/lib/users-read";
+import {
+  getAssignmentsByProject,
+  getProjectServiceMap,
+  getShiftsByOrg,
+  type CrewShiftRow,
+} from "@/lib/crew-scheduling-read";
 import { serialize } from "@/lib/serialize";
 import {
   crewAssignmentSchema,
@@ -66,6 +74,13 @@ function calculateEstimatedCost(
 
 // ─── Assignments ─────────────────────────────────────────────────────────────
 
+// ProjectPhase enum declaration order — Postgres sorts enum columns by declared
+// order, not alphabetically, so replicate the order for the `phase: "asc"` sort.
+const PHASE_ORDER: Record<string, number> = {
+  BUMP_IN: 0, EVENT: 1, BUMP_OUT: 2, DELIVERY: 3, PICKUP: 4, SETUP: 5, REHEARSAL: 6, FULL_DURATION: 7,
+};
+const phaseRank = (p: string | null) => (p == null ? Number.POSITIVE_INFINITY : PHASE_ORDER[p] ?? Number.POSITIVE_INFINITY);
+
 export async function getProjectCrew(projectId: string) {
   const { organizationId } = await getOrgContext();
 
@@ -73,33 +88,61 @@ export async function getProjectCrew(projectId: string) {
   const project = await getProjectById(projectId);
   if (!project || project.organizationId !== organizationId) throw new Error("Project not found");
 
-  const assignments = await prisma.crewAssignment.findMany({
-    where: { projectId, organizationId },
-    include: {
-      crewMember: {
-        select: {
-          id: true, firstName: true, lastName: true,
-          email: true, phone: true, image: true,
-          defaultDayRate: true, defaultHourlyRate: true,
-        },
-      },
-      crewRole: {
-        select: { id: true, name: true, color: true, defaultRate: true, rateType: true },
-      },
-      service: {
-        select: { id: true, title: true, type: true },
-      },
-      shifts: { orderBy: { date: "asc" } },
-      confirmedBy: { select: { id: true, name: true } },
-    },
-    orderBy: [
-      { isProjectManager: "desc" },
-      { phase: "asc" },
-      { crewMember: { lastName: "asc" } },
-    ],
+  // Project crew read moved off Prisma to Convex (Phase A). Assignments + shifts
+  // from Convex; members/roles from crew-read; service from projectServices;
+  // confirmedBy (User) from users-read (auth stays Prisma).
+  const [assignments, members, roles, serviceMap, shifts] = await Promise.all([
+    getAssignmentsByProject(projectId, organizationId),
+    getCrewMembersByOrg(organizationId),
+    getCrewRolesByOrg(organizationId),
+    getProjectServiceMap(organizationId),
+    getShiftsByOrg(organizationId),
+  ]);
+  const memberMap = new Map(members.map((m) => [m.id, m]));
+  const roleMap = new Map(roles.map((r) => [r.id, r]));
+  const userMap = await getUserMap(assignments.map((a) => a.confirmedById));
+
+  const shiftsByAssignment = new Map<string, CrewShiftRow[]>();
+  for (const s of shifts) {
+    const arr = shiftsByAssignment.get(s.assignmentId);
+    if (arr) arr.push(s);
+    else shiftsByAssignment.set(s.assignmentId, [s]);
+  }
+  for (const arr of shiftsByAssignment.values()) arr.sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  const sorted = [...assignments].sort((a, b) => {
+    if (a.isProjectManager !== b.isProjectManager) return a.isProjectManager ? -1 : 1; // desc
+    const pr = phaseRank(a.phase) - phaseRank(b.phase); // phase asc (enum order, nulls last)
+    if (pr !== 0) return pr;
+    const al = memberMap.get(a.crewMemberId)?.lastName ?? "";
+    const bl = memberMap.get(b.crewMemberId)?.lastName ?? "";
+    return al.localeCompare(bl);
   });
 
-  return serialize(assignments);
+  const result = sorted
+    // crewMember is a required relation (Prisma inner-joined it); a missing member
+    // means mirror drift, not a real row — drop it (don't fabricate / crash).
+    .filter((a) => memberMap.has(a.crewMemberId))
+    .map((a) => {
+    const m = memberMap.get(a.crewMemberId)!;
+    const r = a.crewRoleId ? roleMap.get(a.crewRoleId) : undefined;
+    return {
+      ...a,
+      crewMember: {
+        id: m.id, firstName: m.firstName, lastName: m.lastName,
+        email: m.email ?? null, phone: m.phone ?? null, image: m.image ?? null,
+        defaultDayRate: m.defaultDayRate ?? null, defaultHourlyRate: m.defaultHourlyRate ?? null,
+      },
+      crewRole: r
+        ? { id: r.id, name: r.name, color: r.color ?? null, defaultRate: r.defaultRate ?? null, rateType: r.rateType ?? null }
+        : null,
+      service: a.serviceId ? serviceMap.get(a.serviceId) ?? null : null,
+      shifts: shiftsByAssignment.get(a.id) ?? [],
+      confirmedBy: a.confirmedById ? userMap.get(a.confirmedById) ?? null : null,
+    };
+  });
+
+  return serialize(result);
 }
 
 export async function createAssignment(projectId: string, data: CrewAssignmentFormValues) {
@@ -483,24 +526,26 @@ export async function deleteShift(shiftId: string) {
 export async function getProjectLabourCost(projectId: string) {
   const { organizationId } = await getOrgContext();
 
-  const result = await prisma.crewAssignment.aggregate({
-    where: {
-      projectId,
-      organizationId,
-      status: { notIn: ["CANCELLED", "DECLINED"] },
-    },
-    _sum: { estimatedCost: true },
-    _count: true,
-  });
+  // Labour cost read moved to Convex (Phase A): sum estimatedCost + count of
+  // non-cancelled/declined assignments, in JS over the Convex rows.
+  const assignments = await getAssignmentsByProject(projectId, organizationId);
+  const active = assignments.filter((a) => a.status !== "CANCELLED" && a.status !== "DECLINED");
+  const totalLabourCost = active.reduce((sum, a) => sum + (a.estimatedCost ?? 0), 0);
 
   return serialize({
-    totalLabourCost: result._sum.estimatedCost || 0,
-    assignmentCount: result._count,
+    totalLabourCost,
+    assignmentCount: active.length,
   });
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+/**
+ * DEFERRED (Phase A): this assignment-picker read stays on Prisma for now. It does
+ * a cross-project date-overlap conflict scan + crew-availability check that is
+ * more intricate than the leaf reads converted in this pass; convert it with the
+ * rest of the crew availability surface. The dual-write mirror keeps it fresh.
+ */
 export async function getCrewMembersForAssignment(
   projectId: string,
   search?: string,

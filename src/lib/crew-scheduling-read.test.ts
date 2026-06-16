@@ -15,6 +15,19 @@ describe("crew-scheduling-read mappers", () => {
     expect(m.phase).toBeNull();
     expect(m.isProjectManager).toBe(true);
     expect(m.status).toBe("CONFIRMED");
+    expect(m.estimatedCost).toBeNull();
+    expect(m.serviceId).toBeNull();
+    expect(m.confirmedAt).toBeNull();
+  });
+
+  it("mapAssignment keeps Decimal estimatedCost as number and confirmedAt as Date", () => {
+    const m = mapAssignment({
+      id: "a", organizationId: "o", projectId: "p", crewMemberId: "m", status: "CONFIRMED",
+      isProjectManager: false, estimatedCost: 1234.5, confirmedAt: 1_700_000_000_000, confirmedById: "u",
+    } as never);
+    expect(m.estimatedCost).toBe(1234.5);
+    expect(m.confirmedAt?.getTime()).toBe(1_700_000_000_000);
+    expect(m.confirmedById).toBe("u");
   });
 
   it("mapAssignment defaults isProjectManager to false when absent", () => {

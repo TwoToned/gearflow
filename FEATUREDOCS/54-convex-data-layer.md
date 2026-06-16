@@ -2635,6 +2635,26 @@ re-introduce a Prisma fallback: a *map miss* still yields `null` (mirror-freshne
 invariant preserved); only a *thrown* transient error is retried. Regression tests:
 `src/lib/convex-client.test.ts`, `src/lib/convex-auth-guards.test.ts`.
 
+## Phase A — read-rewiring: Stocktake reads (DONE)
+
+> Full Phase A plan + the keystone line-item-tree work:
+> [`docs/designs/convex-domain-only-decommission.md`](../docs/designs/convex-domain-only-decommission.md).
+
+`server/stocktake.ts` read functions (`getStocktakes` / `getStocktakeById` /
+`getStocktakeProgress` / `getRecentScans` / `searchStocktakeAssets`) now read the
+`stocktake` + `stocktakeItem` rows from Convex via
+[`src/lib/stocktake-read.ts`](../src/lib/stocktake-read.ts) instead of Prisma.
+`asset` / `bulkAsset` (+ each one's `model`) attach from the Convex mirrors;
+`location` from the location map; `startedBy` / `reviewedBy` are Better Auth Users
+and stay Prisma (batched `prisma.user.findMany` in the server action — auth
+terminus, not a violation). List filter/sort/paginate + the search OR (asset tag /
+serial / customName / model name; bulk tag / model name) run in JS; the `result`
+ordering replicates the Postgres enum DECLARED order (MATCH → MISSING → UNEXPECTED
+→ QUANTITY_MISMATCH → WRONG_LOCATION) via a rank map. The write paths
+(`markStocktakeItemFound`, bulk count, resolve) keep `attachStocktakeModels` over
+their freshly-written Prisma rows (read-then-write — Phase B). Golden-diffed at the
+lib level vs the old Prisma reads on a created stocktake + items.
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

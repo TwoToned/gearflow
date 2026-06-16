@@ -50,8 +50,14 @@ export interface CrewTimeEntryRow {
   date: Date;
   startTime: string;
   endTime: string;
+  breakMinutes: number;
   totalHours: number | null;
   status: string;
+  approvedById: string | null;
+  approvedAt: Date | null;
+  notes: string | null;
+  createdAt: Date | null;
+  updatedAt: Date | null;
 }
 
 export interface CrewShiftRow {
@@ -95,8 +101,14 @@ export function mapTimeEntry(d: RawTimeEntry): CrewTimeEntryRow {
     date: new Date(req(d.date)),
     startTime: req(d.startTime),
     endTime: req(d.endTime),
+    breakMinutes: d.breakMinutes ?? 0,
     totalHours: orNull(d.totalHours),
     status: req(d.status),
+    approvedById: orNull(d.approvedById),
+    approvedAt: toDate(d.approvedAt),
+    notes: orNull(d.notes),
+    createdAt: toDate(d.createdAt),
+    updatedAt: toDate(d.updatedAt),
   };
 }
 

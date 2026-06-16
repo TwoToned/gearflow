@@ -8,6 +8,14 @@ import {
   type CrewTimeEntryFormValues,
 } from "@/lib/validations/crew";
 import { logActivity } from "@/lib/activity-log";
+import { getCrewMembersByOrg, getCrewRoleMap } from "@/lib/crew-read";
+import { getProjectsByOrg } from "@/lib/projects-read";
+import { getUserMap } from "@/lib/users-read";
+import {
+  getTimeEntriesByOrg,
+  getAssignmentsByOrg,
+  type CrewTimeEntryRow,
+} from "@/lib/crew-scheduling-read";
 import {
   mirrorCrewTimeEntryCreate,
   patchCrewTimeEntryInConvex,
@@ -30,6 +38,44 @@ function calculateTotalHours(
   return Math.max(0, Math.round(worked * 100 / 60) / 100);
 }
 
+// Crew time-entry READS moved off Prisma to Convex (Phase A read-rewiring). The
+// time entries + assignments come from Convex; members/roles via crew-read,
+// projects via projects-read, `approvedBy` (Better Auth User) via users-read
+// (auth stays Prisma). The old Prisma where/orderBy/include become JS
+// filter/sort/attach. Writes below stay Prisma-first + mirror (read-then-write).
+
+const cmpStr = (a: string, b: string, dir: 1 | -1) => (a < b ? -dir : a > b ? dir : 0);
+
+/** Load the maps needed to attach member / assignment→project / role to entries. */
+async function loadAttachMaps(organizationId: string) {
+  const [members, roleMap, assignments, projects] = await Promise.all([
+    getCrewMembersByOrg(organizationId),
+    getCrewRoleMap(organizationId),
+    getAssignmentsByOrg(organizationId),
+    getProjectsByOrg(organizationId),
+  ]);
+  return {
+    memberMap: new Map(members.map((m) => [m.id, m])),
+    roleMap,
+    asgMap: new Map(assignments.map((a) => [a.id, a])),
+    projMap: new Map(projects.map((p) => [p.id, p])),
+  };
+}
+
+type AttachMaps = Awaited<ReturnType<typeof loadAttachMaps>>;
+
+/** assignment → { project, crewRole } as the old `include` produced (or null). */
+function attachAssignment(entry: CrewTimeEntryRow, maps: AttachMaps) {
+  if (!entry.assignmentId) return null;
+  const a = maps.asgMap.get(entry.assignmentId);
+  if (!a) return null;
+  const proj = maps.projMap.get(a.projectId);
+  return {
+    project: proj ? { id: proj.id, name: proj.name, projectNumber: proj.projectNumber } : null,
+    crewRole: a.crewRoleId ? { name: maps.roleMap.get(a.crewRoleId)?.name ?? null } : null,
+  };
+}
+
 // ─── Queries ────────────────────────────────────────────────────────────────
 
 export async function getAllTimeEntries(params?: {
@@ -45,57 +91,72 @@ export async function getAllTimeEntries(params?: {
   const page = params?.page || 1;
   const pageSize = params?.pageSize || 25;
   const sortBy = params?.sortBy || "date";
-  const sortOrder = params?.sortOrder || "desc";
+  const sortOrder: "asc" | "desc" = params?.sortOrder || "desc";
+  const dir = sortOrder === "asc" ? 1 : -1;
 
-  const where: Record<string, unknown> = { organizationId };
-
-  // Search
-  if (params?.search) {
-    where.OR = [
-      { crewMember: { firstName: { contains: params.search, mode: "insensitive" } } },
-      { crewMember: { lastName: { contains: params.search, mode: "insensitive" } } },
-      { description: { contains: params.search, mode: "insensitive" } },
-      { assignment: { project: { name: { contains: params.search, mode: "insensitive" } } } },
-      { assignment: { project: { projectNumber: { contains: params.search, mode: "insensitive" } } } },
-    ];
-  }
+  const [all, maps] = await Promise.all([getTimeEntriesByOrg(organizationId), loadAttachMaps(organizationId)]);
 
   // Filters
-  if (params?.filters) {
-    const f = params.filters as Record<string, string[]>;
-    if (f.status?.length) where.status = { in: f.status };
-    if (f.crewMemberId?.length) where.crewMemberId = { in: f.crewMemberId };
+  const f = (params?.filters as Record<string, string[]>) ?? {};
+  let rows = all.filter((t) => {
+    if (f.status?.length && !f.status.includes(t.status)) return false;
+    if (f.crewMemberId?.length && !f.crewMemberId.includes(t.crewMemberId)) return false;
+    return true;
+  });
+
+  // Search across member name, description, project name/number
+  if (params?.search) {
+    const q = params.search.toLowerCase();
+    rows = rows.filter((t) => {
+      const m = maps.memberMap.get(t.crewMemberId);
+      const a = t.assignmentId ? maps.asgMap.get(t.assignmentId) : undefined;
+      const proj = a ? maps.projMap.get(a.projectId) : undefined;
+      return (
+        (m?.firstName ?? "").toLowerCase().includes(q) ||
+        (m?.lastName ?? "").toLowerCase().includes(q) ||
+        (t.description ?? "").toLowerCase().includes(q) ||
+        (proj?.name ?? "").toLowerCase().includes(q) ||
+        (proj?.projectNumber ?? "").toLowerCase().includes(q)
+      );
+    });
   }
 
-  // Sort mapping
-  const orderByMap: Record<string, unknown> = {
-    date: { date: sortOrder },
-    crewMember: { crewMember: { lastName: sortOrder } },
-    startTime: { startTime: sortOrder },
-    totalHours: { totalHours: sortOrder },
-    status: { status: sortOrder },
-  };
-  const orderBy = orderByMap[sortBy] || { date: sortOrder };
+  const total = rows.length;
 
-  const [entries, total] = await Promise.all([
-    prisma.crewTimeEntry.findMany({
-      where,
-      include: {
-        crewMember: { select: { id: true, firstName: true, lastName: true } },
-        assignment: {
-          include: {
-            project: { select: { id: true, name: true, projectNumber: true } },
-            crewRole: { select: { name: true } },
-          },
-        },
-        approvedBy: { select: { name: true } },
-      },
-      orderBy: sortBy === "date" ? [orderBy as Record<string, string>, { startTime: "desc" }] : [orderBy as Record<string, string>],
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    prisma.crewTimeEntry.count({ where }),
-  ]);
+  // Sort
+  const lastName = (t: CrewTimeEntryRow) => maps.memberMap.get(t.crewMemberId)?.lastName ?? "";
+  rows.sort((a, b) => {
+    switch (sortBy) {
+      case "crewMember": return cmpStr(lastName(a), lastName(b), dir);
+      case "startTime": return cmpStr(a.startTime, b.startTime, dir);
+      case "status": return cmpStr(a.status, b.status, dir);
+      case "totalHours": {
+        const av = a.totalHours, bv = b.totalHours;
+        if (av == null && bv == null) return 0;
+        if (av == null) return dir;   // asc → NULLS LAST; desc → NULLS FIRST
+        if (bv == null) return -dir;
+        return dir * (av - bv);
+      }
+      default: {
+        // date, with startTime desc tiebreak (matches the old query)
+        const d = dir * (a.date.getTime() - b.date.getTime());
+        return d !== 0 ? d : cmpStr(a.startTime, b.startTime, -1);
+      }
+    }
+  });
+
+  const pageRows = rows.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
+  const userMap = await getUserMap(pageRows.map((t) => t.approvedById));
+
+  const entries = pageRows.map((t) => {
+    const m = maps.memberMap.get(t.crewMemberId);
+    return {
+      ...t,
+      crewMember: m ? { id: m.id, firstName: m.firstName, lastName: m.lastName } : null,
+      assignment: attachAssignment(t, maps),
+      approvedBy: t.approvedById ? { name: userMap.get(t.approvedById)?.name ?? null } : null,
+    };
+  });
 
   return serialize({ entries, total });
 }
@@ -103,25 +164,20 @@ export async function getAllTimeEntries(params?: {
 export async function getTimeEntriesForMember(crewMemberId: string) {
   const { organizationId } = await getOrgContext();
 
-  const member = await prisma.crewMember.findUnique({
-    where: { id: crewMemberId, organizationId },
-    select: { id: true },
-  });
-  if (!member) throw new Error("Crew member not found");
+  const members = await getCrewMembersByOrg(organizationId);
+  if (!members.some((m) => m.id === crewMemberId)) throw new Error("Crew member not found");
 
-  const entries = await prisma.crewTimeEntry.findMany({
-    where: { crewMemberId, organizationId },
-    include: {
-      assignment: {
-        include: {
-          project: { select: { name: true, projectNumber: true } },
-          crewRole: { select: { name: true } },
-        },
-      },
-      approvedBy: { select: { name: true } },
-    },
-    orderBy: [{ date: "desc" }, { startTime: "desc" }],
-  });
+  const [all, maps] = await Promise.all([getTimeEntriesByOrg(organizationId), loadAttachMaps(organizationId)]);
+  const rows = all
+    .filter((t) => t.crewMemberId === crewMemberId)
+    .sort((a, b) => b.date.getTime() - a.date.getTime() || cmpStr(a.startTime, b.startTime, -1));
+  const userMap = await getUserMap(rows.map((t) => t.approvedById));
+
+  const entries = rows.map((t) => ({
+    ...t,
+    assignment: attachAssignment(t, maps),
+    approvedBy: t.approvedById ? { name: userMap.get(t.approvedById)?.name ?? null } : null,
+  }));
 
   return serialize(entries);
 }
@@ -129,21 +185,24 @@ export async function getTimeEntriesForMember(crewMemberId: string) {
 export async function getTimeEntriesForProject(projectId: string) {
   const { organizationId } = await getOrgContext();
 
-  const entries = await prisma.crewTimeEntry.findMany({
-    where: {
-      organizationId,
-      assignment: { projectId },
-    },
-    include: {
-      crewMember: { select: { firstName: true, lastName: true } },
-      assignment: {
-        include: {
-          crewRole: { select: { name: true } },
-        },
-      },
-      approvedBy: { select: { name: true } },
-    },
-    orderBy: [{ date: "desc" }, { startTime: "desc" }],
+  const [all, maps] = await Promise.all([getTimeEntriesByOrg(organizationId), loadAttachMaps(organizationId)]);
+  const rows = all
+    .filter((t) => {
+      const a = t.assignmentId ? maps.asgMap.get(t.assignmentId) : undefined;
+      return a?.projectId === projectId;
+    })
+    .sort((a, b) => b.date.getTime() - a.date.getTime() || cmpStr(a.startTime, b.startTime, -1));
+  const userMap = await getUserMap(rows.map((t) => t.approvedById));
+
+  const entries = rows.map((t) => {
+    const m = maps.memberMap.get(t.crewMemberId);
+    const a = t.assignmentId ? maps.asgMap.get(t.assignmentId) : undefined;
+    return {
+      ...t,
+      crewMember: m ? { firstName: m.firstName, lastName: m.lastName } : null,
+      assignment: a ? { crewRole: a.crewRoleId ? { name: maps.roleMap.get(a.crewRoleId)?.name ?? null } : null } : null,
+      approvedBy: t.approvedById ? { name: userMap.get(t.approvedById)?.name ?? null } : null,
+    };
   });
 
   return serialize(entries);
@@ -463,33 +522,24 @@ export async function exportTimesheetCSV(filters?: {
 }) {
   const { organizationId } = await requirePermission("crew", "read");
 
-  const where: Record<string, unknown> = { organizationId };
+  const [all, maps] = await Promise.all([getTimeEntriesByOrg(organizationId), loadAttachMaps(organizationId)]);
 
-  if (filters?.crewMemberId) where.crewMemberId = filters.crewMemberId;
-  if (filters?.status) where.status = filters.status;
-  if (filters?.projectId) {
-    where.assignment = { projectId: filters.projectId };
-  }
-  if (filters?.dateFrom || filters?.dateTo) {
-    where.date = {
-      ...(filters.dateFrom ? { gte: new Date(filters.dateFrom) } : {}),
-      ...(filters.dateTo ? { lte: new Date(filters.dateTo) } : {}),
-    };
-  }
+  const fromMs = filters?.dateFrom ? new Date(filters.dateFrom).getTime() : null;
+  const toMs = filters?.dateTo ? new Date(filters.dateTo).getTime() : null;
 
-  const entries = await prisma.crewTimeEntry.findMany({
-    where,
-    include: {
-      crewMember: { select: { firstName: true, lastName: true, email: true } },
-      assignment: {
-        include: {
-          project: { select: { name: true, projectNumber: true } },
-          crewRole: { select: { name: true } },
-        },
-      },
-    },
-    orderBy: [{ date: "asc" }, { crewMemberId: "asc" }],
-  });
+  const rows = all
+    .filter((t) => {
+      if (filters?.crewMemberId && t.crewMemberId !== filters.crewMemberId) return false;
+      if (filters?.status && t.status !== filters.status) return false;
+      if (filters?.projectId) {
+        const a = t.assignmentId ? maps.asgMap.get(t.assignmentId) : undefined;
+        if (a?.projectId !== filters.projectId) return false;
+      }
+      if (fromMs != null && t.date.getTime() < fromMs) return false;
+      if (toMs != null && t.date.getTime() > toMs) return false;
+      return true;
+    })
+    .sort((a, b) => a.date.getTime() - b.date.getTime() || cmpStr(a.crewMemberId, b.crewMemberId, 1));
 
   const escapeCSV = (val: string) => {
     if (val.includes(",") || val.includes('"') || val.includes("\n")) {
@@ -500,15 +550,19 @@ export async function exportTimesheetCSV(filters?: {
 
   const header =
     "Crew Member,Email,Project Number,Project Name,Role,Description,Date,Start Time,End Time,Break (min),Total Hours,Status";
-  const rows = entries.map((e) => {
-    const name = `${e.crewMember.firstName} ${e.crewMember.lastName}`;
-    const date = new Date(e.date).toISOString().split("T")[0];
+  const lines = rows.map((e) => {
+    const m = maps.memberMap.get(e.crewMemberId);
+    const a = e.assignmentId ? maps.asgMap.get(e.assignmentId) : undefined;
+    const proj = a ? maps.projMap.get(a.projectId) : undefined;
+    const roleName = a?.crewRoleId ? maps.roleMap.get(a.crewRoleId)?.name ?? "" : "";
+    const name = `${m?.firstName ?? ""} ${m?.lastName ?? ""}`;
+    const date = e.date.toISOString().split("T")[0];
     return [
       escapeCSV(name),
-      escapeCSV(e.crewMember.email || ""),
-      escapeCSV(e.assignment?.project?.projectNumber || ""),
-      escapeCSV(e.assignment?.project?.name || ""),
-      escapeCSV(e.assignment?.crewRole?.name || ""),
+      escapeCSV(m?.email || ""),
+      escapeCSV(proj?.projectNumber || ""),
+      escapeCSV(proj?.name || ""),
+      escapeCSV(roleName),
       escapeCSV(e.description || ""),
       date,
       e.startTime,
@@ -519,5 +573,5 @@ export async function exportTimesheetCSV(filters?: {
     ].join(",");
   });
 
-  return [header, ...rows].join("\n");
+  return [header, ...lines].join("\n");
 }

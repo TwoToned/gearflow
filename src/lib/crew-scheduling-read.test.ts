@@ -30,6 +30,9 @@ describe("crew-scheduling-read mappers", () => {
     expect(withHours.date).toBeInstanceOf(Date);
     expect(withHours.totalHours).toBe(7.5);
     expect(withHours.assignmentId).toBe("a");
+    expect(withHours.breakMinutes).toBe(0); // absent → default 0
+    expect(withHours.approvedAt).toBeNull();
+    expect(withHours.approvedById).toBeNull();
 
     const noHours = mapTimeEntry({
       id: "t2", organizationId: "o", crewMemberId: "m", date: 1, startTime: "08:00", endTime: "16:00", status: "SUBMITTED",

@@ -159,6 +159,10 @@ integration test, not just plugin-level tests.
   scheduling tables in prod Convex first** (`convex:backfill:crew-scheduling`),
   else the widgets read empty. Validated with unit tests + golden-diff on
   `npm run seed:crew` data.
+- **`crew-time.ts` — DONE.** Timesheet reads (`getAllTimeEntries` list +
+  member/project lists + CSV export) → Convex via `crew-scheduling-read.ts`
+  (time-entry row extended to full) + new `src/lib/users-read.ts` for `approvedBy`.
+  Same crew deploy gate. Writes stay Prisma-first + mirror.
 
 **Env note for validators.** The dev worktree *can* run live Convex reads/backfills
 against the shared dev deployment by overriding the service-token issuer to match

@@ -2677,6 +2677,17 @@ computed in JS over the org-scoped lists. Dev data: `npm run seed:crew`.
 > merges, else the dashboard reads empty. Run `convex:backfill:crew-scheduling`
 > (and `:crew`) in prod first if not already done.
 
+### Crew time entries — DONE
+
+`src/server/crew-time.ts` read surface (`getAllTimeEntries` list with
+search/filter/sort/paginate, `getTimeEntriesForMember`, `getTimeEntriesForProject`,
+`exportTimesheetCSV`) → Convex. Time entries via `crew-scheduling-read.ts`
+(`CrewTimeEntryRow` extended to the full row); member/role/project attach as
+before; `approvedBy` (User) via the new `src/lib/users-read.ts` (`getUserMap`,
+auth stays Prisma). The write/status-transition actions (create/update/delete/
+submit/approve/dispute) stay Prisma-first + mirror (read-then-write). Same crew
+deploy gate as the dashboard.
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

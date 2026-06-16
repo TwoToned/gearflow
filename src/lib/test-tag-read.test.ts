@@ -2,9 +2,12 @@ import { describe, it, expect } from "vitest";
 import {
   assetMatchesFilters,
   recordMatchesFilters,
+  listAssetMatchesFilters,
+  compareTestTagAssets,
   mapTTAsset,
   mapTTRecord,
   mapSubTest,
+  mapTestProfile,
   type TTAsset,
   type TTRecord,
 } from "@/lib/test-tag-read";
@@ -208,5 +211,166 @@ describe("mappers", () => {
     expect(m.earthContinuityReading).toBe(2.5);
     expect(m.insulationReading).toBeNull();
     expect(m.notes).toBeNull();
+  });
+
+  it("mapTestProfile passes JSON through, converts dates, coerces required scalars", () => {
+    const m = mapTestProfile({
+      id: "p", organizationId: "o", name: "Class I",
+      equipmentClass: "CLASS_I", applianceType: "APPLIANCE",
+      visualChecks: [{ key: "cord", enabled: true }],
+      electricalTests: [{ key: "earth" }],
+      thresholds: { earthMax: 1 },
+      requiresSubTests: true, defaultSubTestCount: 4, subTestLabel: "Outlet",
+      createdAt: 1_700_000_000_000,
+      // isDefault / isActive / updatedAt absent
+    } as never);
+    expect(m.requiresSubTests).toBe(true);
+    expect(m.defaultSubTestCount).toBe(4);
+    expect(m.subTestLabel).toBe("Outlet");
+    expect(m.isDefault).toBe(false);
+    expect(m.isActive).toBe(true);
+    expect(m.createdAt).toBeInstanceOf(Date);
+    expect(m.updatedAt).toBeNull();
+    expect(m.visualChecks).toEqual([{ key: "cord", enabled: true }]);
+    expect(m.thresholds).toEqual({ earthMax: 1 });
+  });
+});
+
+// ─── listAssetMatchesFilters (paginated registry list) ────────────────────────
+
+describe("listAssetMatchesFilters", () => {
+  it("isActive is a PARAMETER (not hardcoded true) — both directions", () => {
+    expect(listAssetMatchesFilters(asset({ isActive: true }), { isActive: true })).toBe(true);
+    expect(listAssetMatchesFilters(asset({ isActive: false }), { isActive: true })).toBe(false);
+    // listing retired/inactive items
+    expect(listAssetMatchesFilters(asset({ isActive: false }), { isActive: false })).toBe(true);
+    expect(listAssetMatchesFilters(asset({ isActive: true }), { isActive: false })).toBe(false);
+  });
+
+  it("status / equipmentClass / applianceType are EXACT single matches", () => {
+    expect(listAssetMatchesFilters(asset({ status: "OVERDUE" }), { isActive: true, status: "OVERDUE" })).toBe(true);
+    expect(listAssetMatchesFilters(asset({ status: "CURRENT" }), { isActive: true, status: "OVERDUE" })).toBe(false);
+    expect(listAssetMatchesFilters(asset({ equipmentClass: "CLASS_II" }), { isActive: true, equipmentClass: "CLASS_II" })).toBe(true);
+    expect(listAssetMatchesFilters(asset({ equipmentClass: "CLASS_I" }), { isActive: true, equipmentClass: "CLASS_II" })).toBe(false);
+    expect(listAssetMatchesFilters(asset({ applianceType: "POWER_BOARD" }), { isActive: true, applianceType: "POWER_BOARD" })).toBe(true);
+    expect(listAssetMatchesFilters(asset({ applianceType: "APPLIANCE" }), { isActive: true, applianceType: "POWER_BOARD" })).toBe(false);
+  });
+
+  it("assetLinkType serialized/bulk/standalone semantics", () => {
+    expect(listAssetMatchesFilters(asset({ assetId: "a1" }), { isActive: true, assetLinkType: "serialized" })).toBe(true);
+    expect(listAssetMatchesFilters(asset({ assetId: null }), { isActive: true, assetLinkType: "serialized" })).toBe(false);
+    expect(listAssetMatchesFilters(asset({ bulkAssetId: "b1", assetId: null }), { isActive: true, assetLinkType: "bulk" })).toBe(true);
+    expect(listAssetMatchesFilters(asset({ bulkAssetId: "b1", assetId: "a1" }), { isActive: true, assetLinkType: "bulk" })).toBe(false);
+    expect(listAssetMatchesFilters(asset({ assetId: null, bulkAssetId: null }), { isActive: true, assetLinkType: "standalone" })).toBe(true);
+    expect(listAssetMatchesFilters(asset({ assetId: "a1" }), { isActive: true, assetLinkType: "standalone" })).toBe(false);
+    // "all" (or undefined) applies no link filter
+    expect(listAssetMatchesFilters(asset({ assetId: "a1" }), { isActive: true, assetLinkType: "all" })).toBe(true);
+  });
+
+  it("search is case-insensitive OR over testTagId/description/serialNumber/make/modelName", () => {
+    expect(listAssetMatchesFilters(asset({ description: "Powered Speaker" }), { isActive: true, search: "speaker" })).toBe(true);
+    expect(listAssetMatchesFilters(asset({ serialNumber: "ABC123" }), { isActive: true, search: "abc1" })).toBe(true);
+    expect(listAssetMatchesFilters(asset({ make: "Yamaha" }), { isActive: true, search: "yam" })).toBe(true);
+    expect(listAssetMatchesFilters(
+      asset({ make: null, modelName: null, serialNumber: null, description: "x", testTagId: "y" }),
+      { isActive: true, search: "zzz" },
+    )).toBe(false);
+  });
+
+  it("combines filters with AND", () => {
+    const item = asset({ status: "CURRENT", assetId: "a1", make: "Yamaha", isActive: true });
+    expect(listAssetMatchesFilters(item, { isActive: true, status: "CURRENT", assetLinkType: "serialized", search: "yam" })).toBe(true);
+    expect(listAssetMatchesFilters(item, { isActive: true, status: "OVERDUE" })).toBe(false);
+  });
+});
+
+// ─── compareTestTagAssets (null-aware + enum-declared-order sort) ──────────────
+
+function sortBy(items: TTAsset[], key: string, order: "asc" | "desc"): string[] {
+  return [...items].sort((a, b) => compareTestTagAssets(a, b, key, order)).map((i) => i.testTagId);
+}
+
+describe("compareTestTagAssets", () => {
+  it("defaults to testTagId asc and falls back to it for unknown sort keys", () => {
+    const items = [asset({ testTagId: "TT-003" }), asset({ testTagId: "TT-001" }), asset({ testTagId: "TT-002" })];
+    expect(sortBy(items, "testTagId", "asc")).toEqual(["TT-001", "TT-002", "TT-003"]);
+    // unknown key → falls back to testTagId, honouring the requested direction
+    expect(sortBy(items, "bogusColumn", "asc")).toEqual(["TT-001", "TT-002", "TT-003"]);
+    expect(sortBy(items, "bogusColumn", "desc")).toEqual(["TT-003", "TT-002", "TT-001"]);
+  });
+
+  it("string column desc reverses order", () => {
+    const items = [asset({ testTagId: "A", description: "alpha" }), asset({ testTagId: "B", description: "zeta" })];
+    expect(sortBy(items, "description", "asc")).toEqual(["A", "B"]);
+    expect(sortBy(items, "description", "desc")).toEqual(["B", "A"]);
+  });
+
+  it("nullable column: ASC = NULLS LAST", () => {
+    const items = [
+      asset({ testTagId: "HAS", make: "Acme" }),
+      asset({ testTagId: "NULL", make: null }),
+      asset({ testTagId: "ZZZ", make: "Zen" }),
+    ];
+    expect(sortBy(items, "make", "asc")).toEqual(["HAS", "ZZZ", "NULL"]);
+  });
+
+  it("nullable column: DESC = NULLS FIRST", () => {
+    const items = [
+      asset({ testTagId: "HAS", make: "Acme" }),
+      asset({ testTagId: "NULL", make: null }),
+      asset({ testTagId: "ZZZ", make: "Zen" }),
+    ];
+    expect(sortBy(items, "make", "desc")).toEqual(["NULL", "ZZZ", "HAS"]);
+  });
+
+  it("nullable date column honours NULLS LAST/FIRST", () => {
+    const items = [
+      asset({ testTagId: "EARLY", nextDueDate: new Date("2026-01-01") }),
+      asset({ testTagId: "NONE", nextDueDate: null }),
+      asset({ testTagId: "LATE", nextDueDate: new Date("2027-01-01") }),
+    ];
+    expect(sortBy(items, "nextDueDate", "asc")).toEqual(["EARLY", "LATE", "NONE"]);
+    expect(sortBy(items, "nextDueDate", "desc")).toEqual(["NONE", "LATE", "EARLY"]);
+  });
+
+  it("enum status sorts by DECLARED order (not alphabetical) asc", () => {
+    // declared: NOT_YET_TESTED, CURRENT, DUE_SOON, OVERDUE, FAILED, RETIRED
+    const items = [
+      asset({ testTagId: "f", status: "FAILED" }),
+      asset({ testTagId: "n", status: "NOT_YET_TESTED" }),
+      asset({ testTagId: "o", status: "OVERDUE" }),
+      asset({ testTagId: "c", status: "CURRENT" }),
+    ];
+    expect(sortBy(items, "status", "asc")).toEqual(["n", "c", "o", "f"]);
+    expect(sortBy(items, "status", "desc")).toEqual(["f", "o", "c", "n"]);
+  });
+
+  it("enum applianceType sorts by DECLARED order", () => {
+    // declared: APPLIANCE(0), CORD_SET(1), ..., MICROWAVE(7), OTHER(8)
+    const items = [
+      asset({ testTagId: "other", applianceType: "OTHER" }),
+      asset({ testTagId: "app", applianceType: "APPLIANCE" }),
+      asset({ testTagId: "micro", applianceType: "MICROWAVE" }),
+    ];
+    expect(sortBy(items, "applianceType", "asc")).toEqual(["app", "micro", "other"]);
+  });
+
+  it("numeric column sorts numerically", () => {
+    const items = [
+      asset({ testTagId: "a", testIntervalMonths: 12 }),
+      asset({ testTagId: "b", testIntervalMonths: 3 }),
+      asset({ testTagId: "c", testIntervalMonths: 6 }),
+    ];
+    expect(sortBy(items, "testIntervalMonths", "asc")).toEqual(["b", "c", "a"]);
+  });
+
+  it("ties on the sort key break deterministically on testTagId asc", () => {
+    const items = [
+      asset({ testTagId: "TT-002", status: "CURRENT" }),
+      asset({ testTagId: "TT-001", status: "CURRENT" }),
+    ];
+    expect(sortBy(items, "status", "asc")).toEqual(["TT-001", "TT-002"]);
+    // even when sorting desc on the enum, the tiebreak stays testTagId asc
+    expect(sortBy(items, "status", "desc")).toEqual(["TT-001", "TT-002"]);
   });
 });

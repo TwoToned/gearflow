@@ -3,10 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getClientById, getClientMap, attachClient } from "@/lib/clients-read";
-import {
-  buildLineItemAttachMaps,
-  attachLineItemTree,
-} from "@/lib/line-item-tree-read";
+import { buildProjectEquipmentTree } from "@/lib/project-line-item-read";
 import {
   projectSchema,
   type ProjectFormValues,
@@ -185,22 +182,6 @@ const projectFilterColumns: FilterColumnDef[] = [
   { id: "status", filterType: "enum" },
   { id: "type", filterType: "enum" },
 ];
-
-/**
- * Per-unit fulfillment rows to thread through every line-item include
- * on `getProject`. The project view's equipment tab uses these to show
- * each physical asset assigned to a multi-quantity line (post-cutover
- * `line.asset` is null for those — the assignments live on units).
- * CANCELLED units are filtered out at the query layer.
- */
-const PROJECT_UNIT_INCLUDE = {
-  orderBy: { ordinal: "asc" as const },
-  where: { status: { not: "CANCELLED" as const } },
-  include: {
-    asset: { select: { id: true, assetTag: true } },
-    bulkAsset: { select: { id: true, assetTag: true } },
-  },
-} as const;
 
 async function generateTemplateCode(organizationId: string): Promise<string> {
   const count = await prisma.project.count({
@@ -383,6 +364,12 @@ export async function getProjectIssueFlags(projectIds: string[]) {
 
 export async function getProject(id: string) {
   const { organizationId } = await getOrgContext();
+  // The equipment line-item tree (categories → groups → lineItems →
+  // childLineItems → units, with asset/bulkAsset/kit/model/supplier) now comes
+  // from the dual-written Convex tables, reconstructed in JS — see
+  // src/lib/project-line-item-read.ts (Phase A keystone). Prisma here only
+  // supplies the project scalars + location + projectManagers + media, which stay
+  // Prisma reads for now.
   const project = await prisma.project.findUnique({
     where: { id, organizationId },
     include: {
@@ -392,75 +379,6 @@ export async function getProject(id: string) {
           user: { select: { id: true, name: true, email: true, image: true } },
         },
         orderBy: { addedAt: "asc" },
-      },
-      // model + supplier are dual-written to Convex and attached in JS via
-      // attachLineItemTree below (Phase 6 decommission) — not joined here.
-      categories: {
-        include: {
-          groups: {
-            include: {
-              lineItems: {
-                // Hide merge tombstones (status CANCELLED, qty 0) left by
-                // the split-collapse migrations. Normal removal hard-deletes,
-                // so CANCELLED line items are only ever inert merge residue.
-                where: { status: { not: "CANCELLED" } },
-                include: {
-                  asset: true, bulkAsset: true, kit: true,
-                  units: PROJECT_UNIT_INCLUDE,
-                  childLineItems: {
-                    include: {
-                      asset: true, bulkAsset: true, kit: true,
-                      units: PROJECT_UNIT_INCLUDE,
-                    },
-                    orderBy: { sortOrder: "asc" },
-                  },
-                },
-                orderBy: { sortOrder: "asc" },
-              },
-            },
-            orderBy: { sortOrder: "asc" },
-          },
-          lineItems: {
-            where: { groupId: null, status: { not: "CANCELLED" } },
-            include: {
-              asset: true, bulkAsset: true, kit: true,
-              units: PROJECT_UNIT_INCLUDE,
-              childLineItems: {
-                include: {
-                  asset: true, bulkAsset: true, kit: true,
-                  units: PROJECT_UNIT_INCLUDE,
-                },
-                orderBy: { sortOrder: "asc" },
-              },
-            },
-            orderBy: { sortOrder: "asc" },
-          },
-        },
-        orderBy: { sortOrder: "asc" },
-      },
-      lineItems: {
-        where: { status: { not: "CANCELLED" } },
-        include: {
-          asset: true,
-          bulkAsset: true,
-          kit: true,
-          units: PROJECT_UNIT_INCLUDE,
-          childLineItems: {
-            include: {
-              asset: true, bulkAsset: true, kit: true,
-              units: PROJECT_UNIT_INCLUDE,
-              childLineItems: {
-                include: {
-                  asset: true, bulkAsset: true,
-                  units: PROJECT_UNIT_INCLUDE,
-                },
-                orderBy: { sortOrder: "asc" },
-              },
-            },
-            orderBy: { sortOrder: "asc" },
-          },
-        },
-        orderBy: { sortOrder: "asc" },
       },
       media: {
         include: { file: true },
@@ -483,19 +401,13 @@ export async function getProject(id: string) {
     }
   }
 
-  // model + supplier live in Convex — attach across every line-item tree in the
-  // equipment composition (the two grouped trees under each category and the
-  // top-level list). One maps round-trip serves them all.
-  const attachMaps = await buildLineItemAttachMaps(organizationId);
-  const categories = project.categories.map((cat) => ({
-    ...cat,
-    groups: cat.groups.map((g) => ({
-      ...g,
-      lineItems: attachLineItemTree(g.lineItems, attachMaps),
-    })),
-    lineItems: attachLineItemTree(cat.lineItems, attachMaps),
-  }));
-  const topLineItems = attachLineItemTree(project.lineItems, attachMaps);
+  // The whole equipment composition (categories → groups → lineItems →
+  // childLineItems → units, with model/supplier/asset/bulkAsset/kit attached) is
+  // reconstructed from the dual-written Convex tables in JS — keystone reader.
+  const { categories, lineItems: topLineItems } = await buildProjectEquipmentTree(
+    project.id,
+    organizationId,
+  );
 
   const overbookedMap = await computeOverbookedStatus(
     organizationId,

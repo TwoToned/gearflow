@@ -16,7 +16,8 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }} # e.g. twotoned/gearflow
+  # GHCR requires a lowercase path; github.repository is "TwoToned/gearflow".
+  IMAGE_NAME: twotoned/gearflow
 
 jobs:
   build-and-deploy:

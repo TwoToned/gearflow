@@ -22,6 +22,7 @@ type RawAssignment = Doc<"crewAssignments">;
 type RawTimeEntry = Doc<"crewTimeEntries">;
 type RawShift = Doc<"crewShifts">;
 type RawCertification = Doc<"crewCertifications">;
+type RawAvailability = Doc<"crewAvailabilities">;
 
 const toDate = (v: number | undefined): Date | null => (typeof v === "number" ? new Date(v) : null);
 const orNull = <T>(v: T | undefined): T | null => (v === undefined ? null : v);
@@ -92,6 +93,14 @@ export interface CrewCertificationRow {
   id: string;
   crewMemberId: string;
   status: string;
+}
+
+export interface CrewAvailabilityRow {
+  id: string;
+  crewMemberId: string;
+  type: string;
+  startDate: Date;
+  endDate: Date;
 }
 
 export function mapAssignment(d: RawAssignment): CrewAssignmentRow {
@@ -165,6 +174,18 @@ export function mapCertification(d: RawCertification): CrewCertificationRow {
   return { id: d.id, crewMemberId: req(d.crewMemberId), status: req(d.status) };
 }
 
+export function mapAvailability(d: RawAvailability): CrewAvailabilityRow {
+  return {
+    id: d.id,
+    crewMemberId: req(d.crewMemberId),
+    // `type` is optional in Convex; Prisma defaults it to UNAVAILABLE, so an
+    // absent value means UNAVAILABLE (don't drop it — the filter compares on it).
+    type: d.type ?? "UNAVAILABLE",
+    startDate: new Date(req(d.startDate)),
+    endDate: new Date(req(d.endDate)),
+  };
+}
+
 // ─── Fetchers ─────────────────────────────────────────────────────────────────
 
 export async function getAssignmentsByOrg(orgId: string): Promise<CrewAssignmentRow[]> {
@@ -185,6 +206,23 @@ export async function getShiftsByOrg(orgId: string): Promise<CrewShiftRow[]> {
 export async function getCertificationsByOrg(orgId: string): Promise<CrewCertificationRow[]> {
   const rows = (await (await getConvexClient()).query(api.crewCertifications.listByOrg, { orgId })) as RawCertification[];
   return rows.map(mapCertification);
+}
+
+/**
+ * Availability blocks for a set of crew members. `orgId` only gates Convex auth;
+ * rows are NOT org-filtered (organizationId is optional on the table — see the
+ * `crewAvailabilities.listByCrewMemberIds` query). Empty input short-circuits.
+ */
+export async function getAvailabilitiesByCrewMemberIds(
+  crewMemberIds: string[],
+  orgId: string,
+): Promise<CrewAvailabilityRow[]> {
+  if (crewMemberIds.length === 0) return [];
+  const rows = (await (await getConvexClient()).query(api.crewAvailabilities.listByCrewMemberIds, {
+    crewMemberIds,
+    orgId,
+  })) as RawAvailability[];
+  return rows.map(mapAvailability);
 }
 
 export async function getAssignmentsByProject(projectId: string, orgId: string): Promise<CrewAssignmentRow[]> {

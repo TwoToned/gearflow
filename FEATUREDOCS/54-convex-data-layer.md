@@ -2677,6 +2677,52 @@ counts — all read-only) moved off Prisma. It read `testTagAsset` / `testTagRec
   sub-test-records, asset-scan-logs, check-records) — added so "the one command"
   is actually complete. (Prod ran them individually, so prod was unaffected.)
 
+### Test & Tag assets — DONE (read surface, 2026-06-16)
+
+`src/server/test-tag-assets.ts` — the 4 read-only functions moved off Prisma
+(writes / read-then-write / mirrors stay Prisma, as does the re-export
+`peekNextTestTagIds`):
+
+- **`getTestTagAssets`** (paginated/filtered registry list). Convex
+  `getTestTagAssetsByOrg` + per-asset `_count.testRecords` counted in JS from
+  `getTestTagRecordsByOrg`; `asset`/`bulkAsset` joins from `assets-read`
+  (`getAssetsByOrg` / `getBulkAssetsByOrg`), `testProfile` from `getTestProfileMap`.
+  Filter + sort + slice are pure JS:
+  - `listAssetMatchesFilters` — list-specific predicate. **`isActive` is a
+    PARAMETER here** (can be `false` to list retired items), unlike the report
+    predicate which hardcodes `isActive === true`. status / equipmentClass /
+    applianceType are EXACT single matches (not IN).
+  - `compareTestTagAssets` — null-aware + enum-declared-order comparator
+    replicating `orderBy: { [sortBy]: sortOrder }`. Postgres NULL ordering
+    (ASC = NULLS LAST, DESC = NULLS FIRST) for nullable columns; **enum columns
+    (status / equipmentClass / applianceType) sort by Postgres DECLARED order,
+    not alphabetical**, via rank maps mirroring `prisma/schema.prisma`. Unknown
+    `sortBy` keys fall back to `testTagId`. Stable tiebreak on `testTagId` asc.
+- **`getTestTagAsset`** (detail). `getTestTagAssetById` + org guard in JS; recent
+  10 records (testDate desc) with sub-tests (`getSubTestRecordsByRecordIds`),
+  `testProfile {id,name}`, `testedBy {id,name}` (Prisma `getUserNameMap`); linked
+  asset/bulkAsset with `.model` attached via `getModelMap`.
+- **`lookupTestTagAsset`** (scan; returns `null` if absent, includes retired).
+  `getTestTagAssetByTestTagId` + 1 most-recent record + sub-tests + testedBy.
+  `testProfile` is the FULL profile (`getFullTestProfileById`, mapped
+  `mapTestProfile` with JSON passthrough) to preserve the old `testProfile: true`
+  shape — though the scan UI resolves its wizard profile via `resolveTestProfile`,
+  not this field.
+- **`getTestTagDashboardStats`**. Keeps the `prisma.organization.findUnique`
+  metadata read (Organization = auth table; the parsed `dueSoonDays` stays dead
+  code, behaviour preserved). 7 counts + `recentTests` (20) + `overdueItems` /
+  `dueSoonItems` (50, nextDueDate asc NULLS LAST) derived in JS from the Convex
+  org lists. `retired` counts `status === "RETIRED"` regardless of `isActive`.
+- **New Convex queries:** `testTagRecords.listByAssetId` (by `by_testTagAssetId`)
+  and `testTagAssets.getByTestTagId` (by `by_organizationId_testTagId`,
+  `.first()` — index is non-unique). Both service-only.
+- **DEPLOY GATE:** `testTagAsset` / `testTagRecord` / `subTestRecord` must be
+  backfilled in prod Convex before this merges, else existing rows read empty.
+- **Validation:** pure-function unit tests extended in
+  `src/lib/test-tag-read.test.ts` (list predicate + the null/enum-aware
+  comparator, both directions + unknown-key fallback). Golden-diff deferred to
+  preview validation.
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

@@ -2707,6 +2707,20 @@ on an enriched project (incl. a SERVICE line correctly excluded, a CANCELLED
 EQUIPMENT line correctly included, a CANCELLED unit excluded): id-set + every
 per-node structure (units, resolved model/kit ids, check counts) match.
 
+### Keystone consumer 3/4: `getProjectPullSheet` — DONE
+
+`server/warehouse.ts:getProjectPullSheet` now reconstructs its line items from
+Convex via `buildPullSheetLineItems`. Like the warehouse read it's a flat
+`type === "EQUIPMENT"` list with the full attach pipeline, but (matching the
+pull-sheet Prisma include) it **drops CANCELLED** line items + children (default
+`keepCancelled`), fetches **no units** (the attach pipeline still yields
+`units: []`), and grafts each asset's resolved `location` object — shape-identical
+to the old `asset: { include: { location } }`. The helper returns the grafted line
+items + the `locationMap` so the caller resolves `project.location` from the same
+round-trip; the overbooked/filter/group logic stays in warehouse.ts. Golden-diffed
+vs the old Prisma include + attach + location graft (CANCELLED + SERVICE lines
+excluded, asset location grafted): id-set + per-node structure match.
+
 ## Conventions
 
 See [`convex/README.md`](../convex/README.md) for the authoritative coding

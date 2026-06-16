@@ -82,6 +82,12 @@ const PAIRS: Array<[string, string]> = [
   ["clientMedia", "clientMedia"],
   ["locationMedia", "locationMedia"],
   ["subHireMedia", "subHireMedia"],
+  // accessory joins + supplier rates + event tables (Phase 6 sub-table dual-write)
+  ["assetBulkChild", "assetBulkChildren"],
+  ["modelBulkAccessory", "modelBulkAccessories"],
+  ["supplierModelRate", "supplierModelRates"],
+  ["assetScanLog", "assetScanLogs"],
+  ["checkRecord", "checkRecords"],
 ];
 
 async function convexCount(table: string): Promise<number> {

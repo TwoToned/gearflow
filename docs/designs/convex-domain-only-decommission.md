@@ -155,6 +155,22 @@ Date, Decimal → number across the ~50-field ProjectLineItem; units carry
 (attachLineItemTree → attachKitTree → attachAssetBulkAssetTree [+ check-counts for
 warehouse]).
 
+**Consumer 1/4 — `getProject` DONE** (PR `feat/convex-read-get-project`, stacked
+on the primitive PR). The full-row mapper + fetch + attach live in
+`src/lib/project-line-item-read.ts` (`buildProjectEquipmentTree`); getProject now
+reconstructs categories/groups/lineItems/units from Convex and keeps Prisma only
+for the project scalars + location + projectManagers + media. New batch Convex
+query `projectLineItemUnits.listByLineItemIds`. Per-consumer shape pinned: units =
+`{id,assetTag}` selects, line item = plain `kit` (no `_count`), asset/bulkAsset/kit
+via a new `attachAssetBulkKitPlain` (raw docs, dates → Date). Validated by mapper
+unit tests + a live structural golden-diff vs the old Prisma include on an enriched
+project (kit→child→grandchild, accessory parent+children, units incl. CANCELLED, a
+CANCELLED top-level line): grouped tree byte-matches, flat list matches as a set,
+per-node structure (depth truncation, CANCELLED exclusion, resolved
+model/supplier/asset/kit ids) all match. **2/4–4/4 (warehouse → pull-sheet → PDF)
+reuse these fetchers + mappers; only the attach shape differs (warehouse needs
+`attachKitTree` `_count` + full asset on units).**
+
 ### New read helpers needed (priority by MOVE-read frequency)
 
 1. `projectLineItem-read.ts` (+ `projectLineItemUnit`) — biggest

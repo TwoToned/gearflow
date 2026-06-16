@@ -18,7 +18,30 @@ import {
   getSupplierById,
 } from "@/lib/suppliers-read";
 import { attachModel } from "@/lib/models-read";
+import { getAssetsByOrg } from "@/lib/assets-read";
+import { getProjectsByOrg } from "@/lib/projects-read";
+import {
+  getSupplierOrdersByOrg,
+  getSupplierOrderById as fetchSupplierOrderById,
+  getSupplierOrderItems,
+  getSupplierOrderItemCounts,
+  type SupplierOrderRow,
+} from "@/lib/supplier-order-read";
 import type { FilterValue } from "@/lib/table-utils";
+
+// Postgres ASC = NULLS LAST, DESC = NULLS FIRST; Dates compared by epoch.
+function compareOrders(a: SupplierOrderRow, b: SupplierOrderRow, key: string, dir: 1 | -1): number {
+  const raw = (o: SupplierOrderRow) => (o as unknown as Record<string, unknown>)[key];
+  const va = raw(a);
+  const vb = raw(b);
+  const na = va instanceof Date ? va.getTime() : va;
+  const nb = vb instanceof Date ? vb.getTime() : vb;
+  if (na == null && nb == null) return 0;
+  if (na == null) return dir;
+  if (nb == null) return -dir;
+  if (typeof na === "number" && typeof nb === "number") return dir * (na - nb);
+  return dir * String(na).localeCompare(String(nb));
+}
 
 export async function getSupplierOrders(params: {
   supplierId?: string;
@@ -34,64 +57,85 @@ export async function getSupplierOrders(params: {
   const { organizationId } = await getOrgContext();
   const { supplierId, type, status, search, page = 1, pageSize = 25, sortBy = "createdAt", sortOrder = "desc" } = params;
 
-  const where: Record<string, unknown> = { organizationId };
-  if (supplierId) where.supplierId = supplierId;
-  if (type) where.type = type;
-  if (status) where.status = status;
+  // Orders moved off Prisma to Convex (Phase A). Filter/sort/paginate in JS;
+  // project + item-count + supplier attached from Convex. createdBy (User) stays
+  // Prisma but is not needed by the list.
+  let orders = await getSupplierOrdersByOrg(organizationId);
+  if (supplierId) orders = orders.filter((o) => o.supplierId === supplierId);
+  if (type) orders = orders.filter((o) => o.type === type);
+  if (status) orders = orders.filter((o) => o.status === status);
   if (search) {
-    // Supplier lives in Convex — resolve matching supplier ids and fold them
-    // into the search OR as a supplierId predicate (omit on no match so we
-    // never emit `in: []`). Sort/page is by createdAt/order columns, never the
-    // supplier name, so id-resolution is order-safe here.
-    const matchingSupplierIds = await getMatchingSupplierIds(organizationId, search);
-    where.OR = [
-      { orderNumber: { contains: search, mode: "insensitive" } },
-      { notes: { contains: search, mode: "insensitive" } },
-      ...(matchingSupplierIds.length > 0 ? [{ supplierId: { in: matchingSupplierIds } }] : []),
-    ];
+    // Supplier lives in Convex — resolve matching supplier ids and fold them into
+    // the search as a supplierId predicate. Sort/page is by order columns, never
+    // the supplier name, so id-resolution is order-safe here.
+    const matchingSupplierIds = new Set(await getMatchingSupplierIds(organizationId, search));
+    const q = search.toLowerCase();
+    orders = orders.filter(
+      (o) =>
+        o.orderNumber.toLowerCase().includes(q) ||
+        (o.notes ?? "").toLowerCase().includes(q) ||
+        matchingSupplierIds.has(o.supplierId),
+    );
   }
 
-  const [orders, total] = await Promise.all([
-    prisma.supplierOrder.findMany({
-      where,
-      include: {
-        project: { select: { id: true, name: true, projectNumber: true } },
-        _count: { select: { items: true } },
-      },
-      orderBy: { [sortBy]: sortOrder },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    prisma.supplierOrder.count({ where }),
+  const total = orders.length;
+  const dir: 1 | -1 = sortOrder === "asc" ? 1 : -1;
+  orders.sort((a, b) => compareOrders(a, b, sortBy, dir));
+  const pageOrders = orders.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
+
+  const [projects, counts] = await Promise.all([
+    getProjectsByOrg(organizationId),
+    getSupplierOrderItemCounts(pageOrders.map((o) => o.id)),
   ]);
+  const projMap = new Map(projects.map((p) => [p.id, p]));
+
+  const withProjectCount = pageOrders.map((o) => {
+    const proj = o.projectId ? projMap.get(o.projectId) : undefined;
+    return {
+      ...o,
+      project: proj ? { id: proj.id, name: proj.name, projectNumber: proj.projectNumber } : null,
+      _count: { items: counts.get(o.id) ?? 0 },
+    };
+  });
 
   // Attach the Convex supplier docs (replaces the old `include: { supplier }`).
-  const ordersWithSupplier = await attachSupplier(organizationId, orders);
+  const ordersWithSupplier = await attachSupplier(organizationId, withProjectCount);
   return serialize({ orders: ordersWithSupplier, total });
 }
 
 export async function getSupplierOrderById(id: string) {
   const { organizationId } = await getOrgContext();
-  const order = await prisma.supplierOrder.findUnique({
-    where: { id, organizationId },
-    include: {
-      project: { select: { id: true, name: true, projectNumber: true } },
-      createdBy: { select: { id: true, name: true } },
-      items: {
-        orderBy: { sortOrder: "asc" },
-        include: {
-          asset: { select: { id: true, assetTag: true } },
-        },
-      },
-    },
-  });
-  if (!order) throw new Error("Order not found");
+
+  // Order + items moved to Convex (Phase A). project/supplier/model attached from
+  // Convex; createdBy (User) stays Prisma (auth). asset attached from Convex.
+  const order = await fetchSupplierOrderById(id);
+  if (!order || order.organizationId !== organizationId) throw new Error("Order not found");
+
+  const [items, assets, projects] = await Promise.all([
+    getSupplierOrderItems(id),
+    getAssetsByOrg(organizationId),
+    getProjectsByOrg(organizationId),
+  ]);
+  const assetMap = new Map(assets.map((a) => [a.id, a]));
+  const itemsWithAsset = items.map((it) => ({
+    ...it,
+    asset: it.assetId && assetMap.has(it.assetId)
+      ? { id: assetMap.get(it.assetId)!.id, assetTag: assetMap.get(it.assetId)!.assetTag }
+      : null,
+  }));
+
+  const proj = order.projectId ? projects.find((p) => p.id === order.projectId) : undefined;
+  const project = proj ? { id: proj.id, name: proj.name, projectNumber: proj.projectNumber } : null;
+  const createdBy = order.createdById
+    ? await prisma.user.findUnique({ where: { id: order.createdById }, select: { id: true, name: true } })
+    : null;
+
   // Model + supplier live in Convex — attach instead of Prisma joins.
   const [supplier, enrichedItems] = await Promise.all([
     getSupplierById(order.supplierId),
-    attachModel(organizationId, order.items),
+    attachModel(organizationId, itemsWithAsset),
   ]);
-  return serialize({ ...order, items: enrichedItems, supplier });
+  return serialize({ ...order, project, createdBy, items: enrichedItems, supplier });
 }
 
 export async function createSupplierOrder(data: SupplierOrderFormValues) {

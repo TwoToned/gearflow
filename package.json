@@ -84,7 +84,6 @@
     "@pdfme/generator": "^6.1.5",
     "@pdfme/pdf-lib": "^6.1.5",
     "@pdfme/schemas": "^6.1.5",
-    "@pdfme/ui": "^6.1.5",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@sentry/nextjs": "^10.56.0",

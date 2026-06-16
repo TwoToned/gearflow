@@ -79,7 +79,11 @@ jobs:
             NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
             NEXT_PUBLIC_SITE_ADMIN_REG_ENABLED=${{ vars.NEXT_PUBLIC_SITE_ADMIN_REG_ENABLED }}
 
-      # Tell Coolify to pull the new image and redeploy. Get this URL from the
-      # Coolify app → Webhooks → "Deploy" (store it as a repo secret).
+      # Tell Coolify to pull the new image and redeploy. This is Coolify's
+      # "Deploy Webhook (auth required)" API endpoint (app → Webhooks):
+      #   COOLIFY_DEPLOY_WEBHOOK = https://coolify.rvlt.app/api/v1/deploy?uuid=...&force=false
+      #   COOLIFY_TOKEN          = a Coolify API token (Coolify → Keys & Tokens → API)
       - name: Trigger Coolify deploy
-        run: curl -fsSL --retry 3 -X POST "${{ secrets.COOLIFY_DEPLOY_WEBHOOK }}"
+        run: |
+          curl -fsSL --retry 3 -X GET "${{ secrets.COOLIFY_DEPLOY_WEBHOOK }}" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}"

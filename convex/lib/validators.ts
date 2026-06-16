@@ -371,16 +371,6 @@ export const WooOrderLogStatus = v.union(
   v.literal("FAILED"),
   v.literal("DUPLICATE"),
 );
-export const DiscordBotDesiredState = v.union(
-  v.literal("RUNNING"),
-  v.literal("STOPPED"),
-);
-export const DiscordOutboxStatus = v.union(
-  v.literal("PENDING"),
-  v.literal("PROCESSING"),
-  v.literal("PROCESSED"),
-  v.literal("FAILED"),
-);
 export const ScheduleFrequency = v.union(
   v.literal("DAILY"),
   v.literal("WEEKLY"),

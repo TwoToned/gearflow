@@ -2323,6 +2323,48 @@ emails), `wooCommerceOrderLog` (2 reads = webhook idempotency → double-process
 `maintenanceRecordAsset` (export-only read; writer `damage-core.ts` must stay
 Convex-free). These stay Prisma.
 
+### Phase A read-rewiring — per-surface PRs (in progress)
+
+Each read-only domain surface is converted from Prisma reads to Convex reads in
+its own gated PR (merge gate = human validation on a Coolify preview; live
+golden-diff deferred to thorough unit tests + preview). Pattern: a thin
+`src/lib/<x>-read.ts` (Convex fetchers + mappers `toDate`/`orNull`/`req`, absent
+→ null, epoch-ms → Date) + pure, unit-tested filter/sort/aggregate functions +
+JS attach for joins. Auth-User joins (`performedBy`, `createdBy`, …) stay Prisma
+forever (a batched `prisma.user.findMany` → name Map), which is **not** a
+decommission violation.
+
+| Surface (server file) | Read-lib | New Convex queries | Notes |
+|------|------|------|------|
+| `test-tag-reports.ts` | `test-tag-read.ts` | `subTestRecords.listByRecordIds` | leaf; `testedBy` User stays Prisma |
+| `crew-dashboard.ts` / `crew-time.ts` / `crew-assignments.ts` | `crew-scheduling-read.ts`, `users-read.ts` | `crewShifts.listByOrg`, `crewCertifications.listByOrg` | crew cluster (stacked) |
+| `supplier-orders.ts` | `supplier-order-read.ts` | `supplierOrderItems.listByOrderIds` | independent off main |
+| `check-records.ts` (`getCheckHistory`, `getModelFailureAnalytics`) | `check-record-read.ts` | `checkRecords.listByOrgAndAsset`, `modelCheckItems.listByModel`, `projectLineItems.listByIds` | **this PR** |
+
+**`check-records.ts` surface details (2026-06-16).** Two read-only functions
+converted; ALL writes (prep/deprep/pull/pack/flag/store, `saveAdHocCheck`,
+`saveKitLevelChecks`, `saveChildItemChecks`, `checkPredictiveMaintenance`,
+`lookupAssetForAdHocCheck`) KEPT as-is.
+- `getCheckHistory(assetId, context?)` → `getCheckHistoryRows`. checkItem
+  `label`/`type` come from the **snapshot fields on the checkRecord row**
+  (`checkItemLabelSnapshot`/`checkItemTypeSnapshot`) — mirror-miss-proof, no
+  checkItem join (the UI only reads `label`; `category` was never read, returned
+  `null`). `performedBy.name` via Prisma user Map. `lineItem.project` resolved
+  `lineItemId → projectId` (`projectLineItems.listByIds`) then `projectId →
+  {id,name,projectNumber}` (`getProjectsByOrg`). `performedAt` falls back to
+  `_creationTime` so it is never null (UI groups sessions by date). Indexed query
+  `by_organizationId_assetId`; optional `context` filter + `performedAt` desc sort
+  done in a pure unit-tested fn.
+- `getModelFailureAnalytics(modelId)` → `getModelFailureAnalyticsRows`.
+  `modelCheckItems.listByModel` (index `by_organizationId_modelId`); checkItem
+  label/type from `checkItems.list` (the modelCheckItem row carries neither);
+  assetIds from `getAssetsByOrg` filtered by `modelId`; counts JS-aggregated over
+  one `checkRecords.list(orgId)` fetch (total = result ∈ {PASS,FAIL}, fail =
+  FAIL), `failRate = fail/total`. Pure aggregate fn unit-tested; early-return `[]`
+  when no assets or no modelCheckItems.
+- **DEPLOY GATE:** `checkRecord` / `projectLineItem` / `modelCheckItem` must be
+  backfilled in prod Convex before this merges, else history/analytics read empty.
+
 ### ⚠️ DEPLOY-ORDERING GATE for the read rewiring
 
 The dual-write keeps Convex fresh for NEW changes only; EXISTING rows live in

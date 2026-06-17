@@ -350,6 +350,49 @@
       still-dual-written `modelMedia`/`modelBulkAccessory` reads + T&T propagation + the
       `archiveModel` asset/bulk `deleteMany`.
 
+- [x] **`categories` (equipment `Category`, `@@map "category"`) → Convex-only writes
+      (cascade tier).** DONE (branch `wip/phaseb-categories`, validated `tsc` clean +
+      2433 vitest pass + eslint clean on changed files + `build` exit 0). NOTE: equipment
+      `Category` only — `ProjectCategory`/`category_slot` untouched. **Migration**
+      `20260617131300_drop_category_fk_constraints` drops (all `IF EXISTS`):
+      `model_categoryId_fkey` [SetNull], `kit_categoryId_fkey` [SetNull],
+      `category_parentId_fkey` [self-ref, SetNull]. Schema: removed the `parent`/`children`
+      self-ref `@relation` pair on `Category` + the `models`/`kits` back-relation lists +
+      the `category` `@relation` field on `Model` and `Kit`; `parentId`/`categoryId` stay
+      plain `String?` cuids referencing the Convex `categories` doc. Not applied locally
+      (prod cutover only). **All three inbound FKs were SetNull → NO cascade re-impl
+      needed** (deleting a category just orphaned the referencing `categoryId`/`parentId`;
+      reads tolerate a missing category). **Writes inverted (Convex-only, no Prisma row,
+      no mirror):** `createCategory`/`updateCategory`/`deleteCategory` use `createId()` +
+      `Date.now()` via `api.categories.create/update/remove`; inline
+      `mirrorCategoryToConvex`/`patchCategoryInConvex` + `toConvexDoc`/`FunctionArgs`/
+      Prisma-write imports removed. Create/update build the returned row via the
+      `MappedCategory` shape (epoch-ms→Date) so callers + activity log are unchanged.
+      **Invariants re-implemented:** delete guard from Convex counts — "Cannot delete
+      category with subcategories" when children > 0 (categories whose `parentId` === id),
+      "Cannot delete category with models" when models > 0 (`buildModelKitCounts` over the
+      Convex model list); exact messages preserved. `where:{id,organizationId}` org-guard
+      via `getCategoryById` before update/remove. Self-ref parent tree already rebuilt
+      client-side in `categories-read`. No `@@unique` on `(organizationId,name)` — none to
+      re-implement. **Detail-composite rebuilt:** `getCategory`'s deep Prisma include
+      (`parent`/`children`+`_count`/`kits`+member `_count`/`_count`) broke on the dropped
+      relations — all rebuilt from the Convex domain lists (`getMappedCategoriesByOrg` +
+      `getModelsByOrg`/`getKitsByOrg`/`getKitSerializedItemsByOrg`/`getKitBulkItemsByOrg`,
+      reusing `buildModelKitCounts`/`buildChildCountMap`/`sortCategories`/`countKitMembers`);
+      `models` list already Convex (from the models inversion). **Cross-cutting `category`
+      relation readers rewired** (FK-drop blast radius, found via `tsc`+`build`):
+      - `src/server/kits.ts` `getKit`: dropped the broken `category: true` include; attach
+        `category` from the Convex category map (`getCategoryMap`) by the plain `categoryId`.
+      - `src/server/models.ts` `ModelWithRelations`: redefined off the base `Model` row +
+        a Convex `category: ConvexCategory | null` + JS `_count` (the `Prisma.ModelGetPayload`
+        `category` include is no longer expressible; `Prisma` namespace import dropped).
+      - `scripts/convex-roundtrip-line-item-attach.ts` +
+        `scripts/convex-roundtrip-warehouse-tree.ts`: the Prisma `model.category` join (and,
+        on the warehouse script, the `_count.modelCheckItems` include — Category was the
+        Model's last Prisma relation, so dropping it removed `_count` from `ModelInclude`
+        entirely) no longer exist; the Prisma cross-checks against them were removed (model
+        name + supplier still cross-check; grafted modelCheckItems count asserted present).
+
 - [x] **bucket-2: `warehouseDashboardToken` + `testTagAuditorToken` +
       `maintenanceRecordAsset` → Convex-only writes.** DONE (branch
       `wip/bucket2-tokens-mra`, validated `tsc` clean + 2420 vitest pass + eslint clean

@@ -1381,8 +1381,6 @@ export default defineSchema({
     defaultCurrency: v.optional(v.string()),
     defaultTaxRate: v.optional(v.number()),
     allowOrgCreation: v.optional(v.boolean()),
-    socialLoginGoogle: v.optional(v.boolean()),
-    socialLoginMicrosoft: v.optional(v.boolean()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })

@@ -19,23 +19,6 @@ import {
   useProjectSubHires,
   useProjectEquipmentLiveSync,
 } from "@/hooks/use-project-equipment";
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-  type DragOverEvent,
-  type DragStartEvent,
-  DragOverlay,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
 import { Plus, FolderPlus, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
@@ -104,7 +87,6 @@ import {
   CategoryRow,
   LineItemRow,
   SubHireGroupRow,
-  getDisallowedDropReason,
   type LineItemData,
   type GroupData,
   type CategoryData,
@@ -154,14 +136,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     [sectionLocks]
   );
 
-  // The sortable ID currently being hovered with a disallowed drop (Drop
-  // Matrix 8C). Cleared on drag end / leave. Row components read this to
-  // render the red left-edge rejection bar + not-allowed cursor.
-  const [rejectedDropTargetId, setRejectedDropTargetId] = useState<string | null>(null);
-
-  // Multi-select DnD state
+  // Multi-select state (row highlight via cmd/shift-click).
   const selection = useSelection();
-  const [activeMultiDrag, setActiveMultiDrag] = useState<string[] | null>(null);
 
   // Clear selection on Escape
   useEffect(() => {
@@ -291,11 +267,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
       return next;
     });
   }, []);
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  );
 
   const { data: categories = [], isLoading } = useProjectCategories(projectId);
 
@@ -453,324 +424,70 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     onError: (e: Error) => toast.error(e.message),
   });
 
-  // ─── DnD handlers ─────────────────────────────────────────────────────────
+  // ─── Reorder handlers (▲/▼ move buttons) ───────────────────────
+  //
+  // Each handler swaps a row with its neighbour in the same scope, builds the
+  // new ordered id array, and calls the same server reorder action the old
+  // drag-and-drop onDragEnd used. The buttons are disabled at the ends, so a
+  // handler is only ever invoked with a valid in-range swap.
 
-  /** Resolve the category id of whatever sortable row the drag landed on.
-   *  Returns the cat id, `null` for the uncategorised zone, or "unknown"
-   *  if the over id doesn't map to a known row (defensive). */
-  function findCategoryOfOverId(overId: string): string | null | "unknown" {
+  /** Move a top-level category up (dir -1) or down (dir +1). */
+  function moveCategory(index: number, dir: -1 | 1) {
     const cats = categories as CategoryData[];
-    if (overId.startsWith("cat-")) return overId.slice(4);
-    if (overId.startsWith("grp-")) {
-      const id = overId.slice(4);
-      const cat = cats.find((c) => c.groups.some((g) => g.id === id));
-      return cat ? cat.id : "unknown";
-    }
-    if (overId.startsWith("shg-")) {
-      const id = overId.slice(4);
-      const cat = cats.find((c) => (c.subHireGroupTargets ?? []).some((g) => g.id === id));
-      if (cat) return cat.id;
-      const orphans = uncategorizedSubHireGroups as SubHireGroupData[];
-      if (orphans.some((g) => g.id === id)) return null;
-      return "unknown";
-    }
-    if (overId.startsWith("li-")) {
-      const id = overId.slice(3);
-      for (const cat of cats) {
-        if ((cat.lineItems ?? []).some((i) => i.id === id)) return cat.id;
-        for (const group of cat.groups) {
-          if ((group.lineItems ?? []).some((i) => i.id === id)) return cat.id;
-        }
-      }
-      const uncat = uncategorizedItems as LineItemData[];
-      if (uncat.some((i) => i.id === id)) return null;
-      return "unknown";
-    }
-    return "unknown";
+    const target = index + dir;
+    if (target < 0 || target >= cats.length) return;
+    const reordered = [...cats];
+    const [moved] = reordered.splice(index, 1);
+    reordered.splice(target, 0, moved);
+    reorderProjectCategories(projectId, reordered.map((c) => c.id)).catch(() => {
+      toast.error("Failed to reorder categories");
+    });
+    invalidate();
   }
 
-  function handleDragStart(event: DragStartEvent) {
-    const activeId = String(event.active.id);
-    if (
-      activeId.startsWith("li-") &&
-      selection.isSelected(activeId) &&
-      selection.selectionSize > 1
-    ) {
-      setActiveMultiDrag(Array.from(selection.selectedIds));
+  /** Move a group slot (project OR sub-hire) within its category. Routes through
+   *  the lighter reorderProjectGroups when no sub-hire group is involved, else
+   *  the unified reorderMixedGroupsInCategory (which owns cross-type slot order). */
+  function moveGroupSlot(cat: CategoryData, slotIndex: number, dir: -1 | 1) {
+    const mixed: MixedGroupSlot[] = cat.mixedGroups ?? cat.groups.map((g) => ({
+      kind: "project" as const,
+      sortOrder: g.sortOrder,
+      projectGroupId: g.id,
+    }));
+    const target = slotIndex + dir;
+    if (target < 0 || target >= mixed.length) return;
+    const reordered = [...mixed];
+    const [moved] = reordered.splice(slotIndex, 1);
+    reordered.splice(target, 0, moved);
+
+    const hasAnySubHire = reordered.some((s) => s.kind === "subHire");
+    if (!hasAnySubHire) {
+      reorderProjectGroups(
+        cat.id,
+        reordered.map((s) => (s.kind === "project" ? s.projectGroupId : "")).filter(Boolean),
+      ).catch(() => toast.error("Failed to reorder groups"));
     } else {
-      setActiveMultiDrag(null);
+      const orderedIds = reordered.map((s) =>
+        s.kind === "project" ? `pg-${s.projectGroupId}` : `shg-${s.subHireGroupId}`,
+      );
+      reorderMixedGroupsInCategory({ categoryId: cat.id, orderedIds }).catch(() => {
+        toast.error("Failed to reorder groups");
+      });
     }
+    invalidate();
   }
 
-  function handleDragOver(event: DragOverEvent) {
-    const { active, over } = event;
-    if (!over) {
-      if (rejectedDropTargetId !== null) setRejectedDropTargetId(null);
-      return;
-    }
-    const overId = String(over.id);
-
-    if (activeMultiDrag && activeMultiDrag.length > 1) {
-      const anyRejected = activeMultiDrag.some((id) => getDisallowedDropReason(id, overId));
-      const next = anyRejected ? overId : null;
-      if (next !== rejectedDropTargetId) setRejectedDropTargetId(next);
-      return;
-    }
-
-    const reason = getDisallowedDropReason(String(active.id), overId);
-    const next = reason ? overId : null;
-    if (next !== rejectedDropTargetId) setRejectedDropTargetId(next);
-  }
-
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    setRejectedDropTargetId(null);
-    const prevMultiDrag = activeMultiDrag;
-    setActiveMultiDrag(null);
-    if (!over || active.id === over.id) return;
-
-    const activeId = String(active.id);
-    const overId = String(over.id);
-
-    // Drop Matrix 8C — reject disallowed combinations with an explanatory
-    // toast before any mutation runs.
-    const disallowedReason = getDisallowedDropReason(activeId, overId);
-    if (disallowedReason) {
-      toast.error(disallowedReason);
-      return;
-    }
-
-    // Multi-item drag — batch-move all selected line items
-    if (prevMultiDrag && prevMultiDrag.length > 1) {
-      const idsToMove = prevMultiDrag.filter((id) => id.startsWith("li-"));
-      if (idsToMove.length > 0) {
-        let targetGroupId: string | null = null;
-        let targetCategoryId: string | null = null;
-
-        if (overId.startsWith("grp-")) {
-          targetGroupId = overId.slice(4);
-        } else if (overId.startsWith("cat-")) {
-          targetCategoryId = overId.slice(4);
-        } else if (overId.startsWith("li-")) {
-          const overRealId = overId.slice(3);
-          const cats = categories as CategoryData[];
-          for (const cat of cats) {
-            for (const group of cat.groups) {
-              if ((group.lineItems ?? []).some((i) => i.id === overRealId)) {
-                targetGroupId = group.id;
-                break;
-              }
-            }
-            if (targetGroupId) break;
-            if ((cat.lineItems ?? []).some((i) => i.id === overRealId)) {
-              targetCategoryId = cat.id;
-              break;
-            }
-          }
-          if (!targetGroupId && !targetCategoryId) {
-            const uncatItems = uncategorizedItems as LineItemData[];
-            if (uncatItems.some((i) => i.id === overRealId)) {
-              targetCategoryId = null;
-            }
-          }
-        } else {
-          return;
-        }
-
-        let successCount = 0;
-        let failCount = 0;
-        let lastError = "";
-        const promises = idsToMove.map((id) =>
-          moveLineItemToGroup({
-            lineItemId: id.slice(3),
-            targetGroupId,
-            targetCategoryId,
-          })
-            .then(() => { successCount++; })
-            .catch((e: Error) => {
-              failCount++;
-              lastError = e.message;
-            }),
-        );
-        Promise.all(promises).then(() => {
-          if (failCount === 0) {
-            toast.success(`Moved ${successCount} items`);
-          } else {
-            toast.error(`Moved ${successCount} items. ${failCount} could not be moved: ${lastError}`);
-          }
-          invalidate();
-        });
-      }
-      return;
-    }
-
-    // Cross-category sub-hire group move (Phase 5d.b — Drop Matrix 8C row
-    // "SubHireGroup → ProjectCategory" allowed). Fires before the
-    // within-category reorder branch below so dragging a sub-hire group
-    // from cat A to cat B issues a placement write, not a reorder.
-    if (activeId.startsWith("shg-")) {
-      const activeRealId = activeId.slice(4);
-      const cats = categories as CategoryData[];
-      const sourceCat = cats.find((c) =>
-        (c.subHireGroupTargets ?? []).some((g) => g.id === activeRealId),
-      );
-      const sourceCatId: string | null = sourceCat?.id ?? null;
-      const targetCatId = findCategoryOfOverId(overId);
-      if (targetCatId !== "unknown" && sourceCatId !== targetCatId) {
-        moveSubHireGroupToCategory({ groupId: activeRealId, categoryId: targetCatId })
-          .then(() => {
-            toast.success(
-              targetCatId === null
-                ? "Moved sub-hire group to uncategorised"
-                : "Moved sub-hire group",
-            );
-          })
-          .catch((e: Error) => toast.error(e.message));
-        invalidate();
-        return;
-      }
-    }
-
-    // Category reorder
-    if (activeId.startsWith("cat-") && overId.startsWith("cat-")) {
-      const cats = categories as CategoryData[];
-      const activeRealId = activeId.slice(4);
-      const overRealId = overId.slice(4);
-      const oldIndex = cats.findIndex((c) => c.id === activeRealId);
-      const newIndex = cats.findIndex((c) => c.id === overRealId);
-      if (oldIndex === -1 || newIndex === -1) return;
-
-      const reordered = [...cats];
-      const [moved] = reordered.splice(oldIndex, 1);
-      reordered.splice(newIndex, 0, moved);
-
-      reorderProjectCategories(projectId, reordered.map((c) => c.id)).catch(() => {
-        toast.error("Failed to reorder categories");
-      });
-      invalidate();
-      return;
-    }
-
-    // Group-level reorder (project group OR sub-hire group, in any
-    // combination). Within the same category, both move types route
-    // through reorderMixedGroupsInCategory which owns the cross-type
-    // CategorySlot sortOrder. If the destination category has no
-    // sub-hire groups (and neither active nor over is a sub-hire group),
-    // we keep the lighter reorderProjectGroups path so categories that
-    // never touch the unified shape don't pay for CategorySlot writes.
-    const activeIsGroupSlot = activeId.startsWith("grp-") || activeId.startsWith("shg-");
-    const overIsGroupSlot = overId.startsWith("grp-") || overId.startsWith("shg-");
-    if (activeIsGroupSlot && overIsGroupSlot) {
-      const activeKind: "project" | "subHire" = activeId.startsWith("grp-") ? "project" : "subHire";
-      const overKind: "project" | "subHire" = overId.startsWith("grp-") ? "project" : "subHire";
-      const activeRealId = activeId.startsWith("grp-") ? activeId.slice(4) : activeId.slice(4);
-      const overRealId = overId.startsWith("grp-") ? overId.slice(4) : overId.slice(4);
-
-      const cats = categories as CategoryData[];
-      const findCatForGroup = (kind: "project" | "subHire", id: string) => {
-        if (kind === "project") {
-          return cats.find((c) => c.groups.some((g) => g.id === id));
-        }
-        return cats.find((c) => (c.subHireGroupTargets ?? []).some((g) => g.id === id));
-      };
-      const activeCat = findCatForGroup(activeKind, activeRealId);
-      const overCat = findCatForGroup(overKind, overRealId);
-      if (!activeCat || !overCat) return;
-      // Cross-category moves are handled in Phase 5d.b — for 5d.a we only
-      // wire within-category reorders. Bail out cleanly if cats differ.
-      if (activeCat.id !== overCat.id) return;
-
-      const cat = activeCat;
-      // Build current mixed-ordered slot list for this category.
-      const mixed: MixedGroupSlot[] = cat.mixedGroups ?? cat.groups.map((g) => ({
-        kind: "project" as const,
-        sortOrder: g.sortOrder,
-        projectGroupId: g.id,
-      }));
-      const oldIndex = mixed.findIndex((s) =>
-        s.kind === "project"
-          ? activeKind === "project" && s.projectGroupId === activeRealId
-          : activeKind === "subHire" && s.subHireGroupId === activeRealId,
-      );
-      const newIndex = mixed.findIndex((s) =>
-        s.kind === "project"
-          ? overKind === "project" && s.projectGroupId === overRealId
-          : overKind === "subHire" && s.subHireGroupId === overRealId,
-      );
-      if (oldIndex === -1 || newIndex === -1) return;
-
-      const reordered = [...mixed];
-      const [moved] = reordered.splice(oldIndex, 1);
-      reordered.splice(newIndex, 0, moved);
-
-      const hasAnySubHire = reordered.some((s) => s.kind === "subHire");
-      if (!hasAnySubHire) {
-        // Pure project-group reorder — keep the lighter path.
-        reorderProjectGroups(
-          cat.id,
-          reordered.map((s) => (s.kind === "project" ? s.projectGroupId : "")).filter(Boolean),
-        ).catch(() => toast.error("Failed to reorder groups"));
-      } else {
-        const orderedIds = reordered.map((s) =>
-          s.kind === "project" ? `pg-${s.projectGroupId}` : `shg-${s.subHireGroupId}`,
-        );
-        reorderMixedGroupsInCategory({ categoryId: cat.id, orderedIds }).catch(() => {
-          toast.error("Failed to reorder groups");
-        });
-      }
-      invalidate();
-      return;
-    }
-
-    // Line item reorder
-    if (activeId.startsWith("li-") && overId.startsWith("li-")) {
-      const activeRealId = activeId.slice(3);
-      const overRealId = overId.slice(3);
-
-      // Find the item list containing both items
-      const cats = categories as CategoryData[];
-      let items: LineItemData[] | undefined;
-
-      // Check groups
-      for (const cat of cats) {
-        for (const group of cat.groups) {
-          const groupItems = group.lineItems ?? [];
-          if (groupItems.some((i) => i.id === activeRealId)) {
-            items = groupItems;
-            break;
-          }
-        }
-        if (items) break;
-        // Check standalone items
-        const standalone = cat.lineItems ?? [];
-        if (standalone.some((i) => i.id === activeRealId)) {
-          items = standalone;
-          break;
-        }
-      }
-      // Check uncategorized
-      if (!items) {
-        const uncatItems = uncategorizedItems as LineItemData[];
-        if (uncatItems.some((i) => i.id === activeRealId)) {
-          items = uncatItems;
-        }
-      }
-
-      if (!items) return;
-
-      const oldIndex = items.findIndex((i) => i.id === activeRealId);
-      const newIndex = items.findIndex((i) => i.id === overRealId);
-      if (oldIndex === -1 || newIndex === -1) return;
-
-      const reordered = [...items];
-      const [moved] = reordered.splice(oldIndex, 1);
-      reordered.splice(newIndex, 0, moved);
-
-      reorderLineItems(projectId, reordered.map((i) => i.id)).catch(() => {
-        toast.error("Failed to reorder items");
-      });
-      invalidate();
-    }
+  /** Move a line item up/down within its sibling list. */
+  function moveLineItemInList(items: LineItemData[], index: number, dir: -1 | 1) {
+    const target = index + dir;
+    if (target < 0 || target >= items.length) return;
+    const reordered = [...items];
+    const [moved] = reordered.splice(index, 1);
+    reordered.splice(target, 0, moved);
+    reorderLineItems(projectId, reordered.map((i) => i.id)).catch(() => {
+      toast.error("Failed to reorder items");
+    });
+    invalidate();
   }
 
   // ─── Render ────────────────────────────────────────────────────────────────
@@ -798,11 +515,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
     if (sh.status === "DRAFT") draftSubHireIds.add(sh.id as string);
   }
 
-  // Build flat list of all sortable IDs for the single DndContext.
-  // Walks each category's mixed group list in canonical (CategorySlot)
-  // order so the DnD context sees sub-hire group rows interleaved with
-  // project group rows. Falls back to cat.groups when mixedGroups isn't
-  // present (e.g. an HMR-stale cached response).
+  // Build flat list of all line-item IDs in visual order. Used by
+  // shift-click range selection (handleRowClick). Walks each category's
+  // mixed group list in canonical (CategorySlot) order. Falls back to
+  // cat.groups when mixedGroups isn't present (e.g. an HMR-stale cache).
   const allSortableIds: string[] = [];
   for (const cat of typedCategories) {
     allSortableIds.push(`cat-${cat.id}`);
@@ -933,30 +649,24 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
               <TableHead />
             </TableRow>
           </TableHeader>
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragStart={handleDragStart}
-            onDragOver={handleDragOver}
-            onDragEnd={handleDragEnd}
-            onDragCancel={() => {
-              setRejectedDropTargetId(null);
-              setActiveMultiDrag(null);
-            }}
-          >
-            <SortableContext
-              items={allSortableIds}
-              strategy={verticalListSortingStrategy}
-            >
               <TableBody>
-                {typedCategories.map((cat) => {
+                {typedCategories.map((cat, catIndex) => {
                   const standaloneItems = (cat.lineItems ?? []).filter((i: LineItemData) => !isHiddenFromList(i));
+                  const mixedSlots: MixedGroupSlot[] = cat.mixedGroups ?? cat.groups.map<MixedGroupSlot>((g) => ({
+                    kind: "project" as const,
+                    sortOrder: g.sortOrder,
+                    projectGroupId: g.id,
+                  }));
 
                   return (
                     <React.Fragment key={cat.id}>
-                      {/* Category label row — sortable */}
+                      {/* Category label row */}
                       <CategoryRow
                         cat={cat}
+                        onMoveUp={() => moveCategory(catIndex, -1)}
+                        onMoveDown={() => moveCategory(catIndex, 1)}
+                        canMoveUp={catIndex > 0}
+                        canMoveDown={catIndex < typedCategories.length - 1}
                         lockedBy={lockByTarget.get(targetKey({ targetType: "category", targetId: cat.id })) ?? null}
                         onRename={() => {
                           setRenameCategoryId(cat.id);
@@ -982,11 +692,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
 
                       {/* Mixed groups within category (CategorySlot order; falls back
                           to cat.groups when mixedGroups hasn't been computed). */}
-                      {(cat.mixedGroups ?? cat.groups.map<MixedGroupSlot>((g) => ({
-                        kind: "project" as const,
-                        sortOrder: g.sortOrder,
-                        projectGroupId: g.id,
-                      }))).map((slot) => {
+                      {mixedSlots.map((slot, slotIndex) => {
+                        const canSlotUp = slotIndex > 0;
+                        const canSlotDown = slotIndex < mixedSlots.length - 1;
                         if (slot.kind === "subHire") {
                           const shGroup = (cat.subHireGroupTargets ?? []).find(
                             (g: SubHireGroupData) => g.id === slot.subHireGroupId,
@@ -1002,9 +710,12 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                               <SubHireGroupRow
                                 group={shGroup}
                                 isExpanded={isExpanded}
-                                isRejectedDropTarget={rejectedDropTargetId === `shg-${shGroup.id}`}
                                 showCostColumn={showCostColumn}
                                 indented
+                                onMoveUp={() => moveGroupSlot(cat, slotIndex, -1)}
+                                onMoveDown={() => moveGroupSlot(cat, slotIndex, 1)}
+                                canMoveUp={canSlotUp}
+                                canMoveDown={canSlotDown}
                                 onToggle={() => toggleGroup(shGroup.id)}
                                 onEdit={() => {
                                   setManagingSubHireId(shGroup.subHire.id);
@@ -1068,12 +779,15 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                               indented
                               orgId={orgId}
                               projectId={projectId}
+                              onMoveUp={() => moveGroupSlot(cat, slotIndex, -1)}
+                              onMoveDown={() => moveGroupSlot(cat, slotIndex, 1)}
+                              canMoveUp={canSlotUp}
+                              canMoveDown={canSlotDown}
                               lockedBy={lockByTarget.get(targetKey({ targetType: "group", targetId: group.id })) ?? null}
                               commentBadge={{
                                 open: commentCounts?.[group.id]?.open ?? 0,
                                 blocking: commentCounts?.[group.id]?.blockingOpen ?? 0,
                               }}
-                              isRejectedDropTarget={rejectedDropTargetId === `grp-${group.id}`}
                               showCostColumn={showCostColumn}
                               onToggle={() => toggleGroup(group.id)}
                               onDelete={() => {
@@ -1125,13 +839,17 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                                 </TableCell>
                               </TableRow>
                             )}
-                            {isExpanded && groupItems.map((item) => (
+                            {isExpanded && groupItems.map((item, itemIndex) => (
                               <LineItemRow
                                 key={item.id}
                                 item={item}
                                 indent="ml-12"
                                 orgId={orgId}
                                 projectId={projectId}
+                                onMoveUp={() => moveLineItemInList(groupItems, itemIndex, -1)}
+                                onMoveDown={() => moveLineItemInList(groupItems, itemIndex, 1)}
+                                canMoveUp={itemIndex > 0}
+                                canMoveDown={itemIndex < groupItems.length - 1}
                                 overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                                 isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
                                 showCostColumn={showCostColumn}
@@ -1156,13 +874,17 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                       })}
 
                       {/* Standalone line items in category */}
-                      {standaloneItems.map((item) => (
+                      {standaloneItems.map((item, itemIndex) => (
                         <LineItemRow
                           key={item.id}
                           item={item}
                           indent="ml-3"
                           orgId={orgId}
                           projectId={projectId}
+                          onMoveUp={() => moveLineItemInList(standaloneItems, itemIndex, -1)}
+                          onMoveDown={() => moveLineItemInList(standaloneItems, itemIndex, 1)}
+                          canMoveUp={itemIndex > 0}
+                          canMoveDown={itemIndex < standaloneItems.length - 1}
                           overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                           isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
                           showCostColumn={showCostColumn}
@@ -1196,13 +918,19 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                     </TableCell>
                   </TableRow>
                 )}
-                {(uncategorizedItems as LineItemData[]).filter((i) => !isHiddenFromList(i)).map((item) => (
+                {(() => {
+                  const uncatVisible = (uncategorizedItems as LineItemData[]).filter((i) => !isHiddenFromList(i));
+                  return uncatVisible.map((item, itemIndex) => (
                   <LineItemRow
                     key={item.id}
                     item={item}
                     indent=""
                     orgId={orgId}
                     projectId={projectId}
+                    onMoveUp={() => moveLineItemInList(uncatVisible, itemIndex, -1)}
+                    onMoveDown={() => moveLineItemInList(uncatVisible, itemIndex, 1)}
+                    canMoveUp={itemIndex > 0}
+                    canMoveDown={itemIndex < uncatVisible.length - 1}
                     overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                     isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
                     showCostColumn={showCostColumn}
@@ -1219,7 +947,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                     })}
                     onRemove={() => removeMut.mutate(item.id)}
                   />
-                ))}
+                  ));
+                })()}
                 {/* Orphan PROJECT groups — categoryId IS NULL (v0.9.4.0
                     allows groups to live uncategorised). Render with the
                     full GroupRow affordances (kebab, Move, Delete) so
@@ -1241,7 +970,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                           open: commentCounts?.[group.id]?.open ?? 0,
                           blocking: commentCounts?.[group.id]?.blockingOpen ?? 0,
                         }}
-                        isRejectedDropTarget={rejectedDropTargetId === `grp-${group.id}`}
                         showCostColumn={showCostColumn}
                         onToggle={() => toggleGroup(group.id)}
                         onDelete={() => {
@@ -1278,13 +1006,17 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                           </TableCell>
                         </TableRow>
                       )}
-                      {isExpanded && groupItems.map((item: LineItemData) => (
+                      {isExpanded && groupItems.map((item: LineItemData, itemIndex) => (
                         <LineItemRow
                           key={item.id}
                           item={item}
                           indent="ml-12"
                           orgId={orgId}
                           projectId={projectId}
+                          onMoveUp={() => moveLineItemInList(groupItems, itemIndex, -1)}
+                          onMoveDown={() => moveLineItemInList(groupItems, itemIndex, 1)}
+                          canMoveUp={itemIndex > 0}
+                          canMoveDown={itemIndex < groupItems.length - 1}
                           overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
                           isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
                           showCostColumn={showCostColumn}
@@ -1317,7 +1049,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                       <SubHireGroupRow
                         group={shGroup}
                         isExpanded={isExpanded}
-                        isRejectedDropTarget={rejectedDropTargetId === `shg-${shGroup.id}`}
                         showCostColumn={showCostColumn}
                         onToggle={() => toggleGroup(shGroup.id)}
                         onEdit={() => {
@@ -1370,15 +1101,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate }: Equi
                   );
                 })}
               </TableBody>
-            </SortableContext>
-            <DragOverlay>
-              {activeMultiDrag && activeMultiDrag.length > 1 && (
-                <div className="bg-primary text-primary-foreground rounded-full px-3 py-1 text-sm font-medium shadow-lg">
-                  {activeMultiDrag.length} items
-                </div>
-              )}
-            </DragOverlay>
-          </DndContext>
           </Table>
         </div>
       )}

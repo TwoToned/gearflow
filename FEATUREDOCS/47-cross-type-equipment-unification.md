@@ -87,25 +87,31 @@ in canonical order.
 
 ## UI primitives
 
-`src/components/projects/equipment-rows.tsx` exports four sortable row
-primitives:
+`src/components/projects/equipment-rows.tsx` exports four row primitives.
+Reordering is via **▲/▼ move buttons** (the former drag handle column) —
+drag-and-drop was removed (`chore/remove-pdf-builder-and-dnd`, `@dnd-kit`
+dropped). Each row takes `onMoveUp`/`onMoveDown`/`canMoveUp`/`canMoveDown`
+(`MoveControls`); the shared `MoveButtons` helper renders the stacked
+chevrons and disables the up button on the first row / down on the last.
+The legacy `cat-`/`grp-`/`shg-`/`li-` id prefixes are still referenced
+below only to describe scope, not drag identity.
 
-- **`CategoryRow`** — ProjectCategory header. Drag id `cat-<id>`. Kebab:
+- **`CategoryRow`** — ProjectCategory header. Kebab:
   Add Equipment / Add Kit / Add Custom Item / Rename / Delete. The three
   Add entries open the unified add dialog scoped to the category with no
   group pre-set, so the new item lands as a standalone item directly
   under the category. Sub-hire is intentionally omitted — sub-hire
   orders don't carry a categoryId at the order level (their groups
   do), so use the toolbar Add for sub-hires.
-- **`GroupRow`** — ProjectGroup. Drag id `grp-<id>`. Kebab: Edit price /
+- **`GroupRow`** — ProjectGroup (scope `grp-<id>`). Kebab: Edit price /
   Add Equipment / Add Kit / Move to category / Recalculate Prices /
   Save as Template / Delete. "Move to category" uses the same
   `ArrowRightLeft` icon as the line-item and sub-hire-group Moves.
-- **`SubHireGroupRow`** — SubHireGroup. Drag id `shg-<id>`. Handshake icon,
+- **`SubHireGroupRow`** — SubHireGroup (scope `shg-<id>`). Handshake icon,
   "via Supplier · $N margin" sub-line. Kebab: Edit price / Edit in
   sub-hire order / Move to category. "Save as Template" is hidden by design
   (8I — templates support own stock only).
-- **`LineItemRow`** — ProjectLineItem. Drag id `li-<id>`. Pencil + kebab
+- **`LineItemRow`** — ProjectLineItem (scope `li-<id>`). Pencil + kebab
   (Move to category / Move to group / Delete). The two move entries
   opened a single combined dialog from v0.9.1.0 through v0.9.2.1; that
   dialog was split into two focused dialogs in v0.9.3.0 because mixing
@@ -175,24 +181,33 @@ got a `(no group)` escape hatch in v0.9.2.1; field reports kept showing
 the mixed picker confused users about whether their pick would also
 re-home the item's category, so we split it.
 
-## DnD (drag-and-drop)
+## Reordering (▲/▼ move buttons)
 
-Single `DndContext` in
-[`src/components/projects/equipment-tab.tsx`](../src/components/projects/equipment-tab.tsx).
-`handleDragEnd` routes drops based on sortable id prefix:
+Drag-and-drop was removed (`chore/remove-pdf-builder-and-dnd`; `@dnd-kit`
+dropped). Each level now reorders via ▲/▼ buttons in the leading column.
+The handlers in
+[`src/components/projects/equipment-tab.tsx`](../src/components/projects/equipment-tab.tsx)
+(`moveCategory`, `moveGroupSlot`, `moveLineItemInList`) swap a row with its
+neighbour, build the new ordered id array, and call the **same server
+actions** the old `handleDragEnd` used:
 
-- `grp-`/`shg-` within same category → `reorderMixedGroupsInCategory` (or
-  the lighter `reorderProjectGroups` when no sub-hire groups are involved).
-- `shg-` to a different category → `moveSubHireGroupToCategory`.
-- `cat-` ↔ `cat-` → `reorderProjectCategories`.
-- `li-` ↔ `li-` → `reorderLineItems`.
+- Categories → `reorderProjectCategories`.
+- Group slots within a category → `reorderProjectGroups` (when no sub-hire
+  group is involved) or `reorderMixedGroupsInCategory` (mixed).
+- Line items (group / standalone / uncategorised) → `reorderLineItems`.
 
-`onDragOver` runs the **Drop Matrix 8C** predicate
-(`getDisallowedDropReason` in `equipment-rows.tsx`). Disallowed targets
-render `border-l-2 border-l-red-500` + `cursor-not-allowed`. Dropping on a
-disallowed target surfaces a toast with the reason and aborts.
+Move buttons reorder within a scope only — they do not move items *across*
+categories/groups. Cross-container moves (and uncategorise) remain available
+through the kebab "Move to category" / "Move to group" dialogs
+(`moveLineItemToGroup`, `moveSubHireGroupToCategory`, `moveProjectGroupToCategory`).
+Orphan (uncategorised) groups and sub-hire group children have no inline
+reorder buttons (matching prior behaviour — drag had no reorder path there).
 
-### Drop Matrix 8C summary
+`getDisallowedDropReason` (the Drop Matrix 8C predicate) is retained in
+`equipment-rows.tsx` and unit-tested, but is no longer wired into the UI
+(it gated drag targets, which no longer exist).
+
+### Drop Matrix 8C summary (historical — drag removed)
 
 | Source ↓ \ Dest → | ProjectCategory | ProjectGroup | SubHireGroup | Uncat | SubHire (top) |
 |---|---|---|---|---|---|

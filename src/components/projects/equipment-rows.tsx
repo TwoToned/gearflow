@@ -9,13 +9,12 @@
  */
 
 import { useState, useEffect, useRef, type CSSProperties } from "react";
-import { useSortable } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../../convex/_generated/api";
 import {
-  GripVertical,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   Plus,
   Package,
   MoreHorizontal,
@@ -194,6 +193,58 @@ export interface CategoryData {
   lineItems?: LineItemData[];
 }
 
+// ─── Reorder move buttons ────────────────────────────────────────────────────
+//
+// Replaces the former drag handle. Small stacked ▲/▼ buttons that move a row
+// up or down by one position within its scope. The ▲ is disabled on the first
+// row and the ▼ on the last; the parent computes the new ordered id array and
+// calls the matching server reorder action.
+
+export interface MoveControls {
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+}
+
+function MoveButtons({
+  onMoveUp,
+  onMoveDown,
+  canMoveUp,
+  canMoveDown,
+  className,
+}: MoveControls & { className?: string }) {
+  if (!onMoveUp && !onMoveDown) return null;
+  return (
+    <div className={cn("flex flex-col items-center", className)}>
+      <button
+        type="button"
+        aria-label="Move up"
+        disabled={!canMoveUp}
+        onClick={(e) => {
+          e.stopPropagation();
+          onMoveUp?.();
+        }}
+        className="text-fg-3 transition-colors hover:text-fg disabled:cursor-not-allowed disabled:opacity-25"
+      >
+        <ChevronUp className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        aria-label="Move down"
+        disabled={!canMoveDown}
+        onClick={(e) => {
+          e.stopPropagation();
+          onMoveDown?.();
+        }}
+        className="text-fg-3 transition-colors hover:text-fg disabled:cursor-not-allowed disabled:opacity-25"
+      >
+        <ChevronDown className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
 export const COL_COUNT = 6;
 
 // Kit children and sub-hire group children both have isKitChild=true —
@@ -367,7 +418,6 @@ export function GroupRow({
   group,
   isExpanded,
   indented,
-  isRejectedDropTarget,
   showCostColumn,
   onToggle,
   onDelete,
@@ -382,6 +432,10 @@ export function GroupRow({
   projectId,
   lockedBy,
   commentBadge,
+  onMoveUp,
+  onMoveDown,
+  canMoveUp,
+  canMoveDown,
 }: {
   group: GroupData;
   isExpanded: boolean;
@@ -393,9 +447,6 @@ export function GroupRow({
   lockedBy?: { name: string; color: string } | null;
   /** Open / blocking comment counts for this group's thread target. */
   commentBadge?: { open: number; blocking: number };
-  /** Drop Matrix 8C — render the disallowed-drop rejection bar when a
-   *  drag of an incompatible source is currently hovering this row. */
-  isRejectedDropTarget?: boolean;
   /** 8H — render the Cost column cell. Project groups don't have a
    *  separate cost concept, so the cell renders an em-dash. */
   showCostColumn?: boolean;
@@ -411,40 +462,20 @@ export function GroupRow({
   onMove?: () => void;
   onRecalculate?: () => void;
   onSaveAsTemplate?: () => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: `grp-${group.id}` });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
+} & MoveControls) {
   const priceVal = group.price != null ? Number(group.price) : null;
-  const rejectionClasses = isRejectedDropTarget
-    ? "border-l-2 border-l-red-500 cursor-not-allowed"
-    : "";
   const shortcuts = useRowShortcuts({ e: onEdit, m: onMove, d: onDelete }, "equipment");
 
   return (
-    <TableRow
-      ref={setNodeRef}
-      style={style}
-      data-rejected-drop={isRejectedDropTarget ? "true" : undefined}
-      className={`group/row ${isDragging ? "opacity-30" : ""} ${rejectionClasses}`}
-      {...shortcuts}
-    >
+    <TableRow className="group/row" {...shortcuts}>
       <TableCell className="px-0">
         <div className={`flex justify-end ${indented ? "ml-3" : "px-1"}`}>
-          <button
-            type="button"
-            className="flex cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
-            {...attributes}
-            {...listeners}
-          >
-            <GripVertical className="h-4 w-4" />
-          </button>
+          <MoveButtons
+            onMoveUp={onMoveUp}
+            onMoveDown={onMoveDown}
+            canMoveUp={canMoveUp}
+            canMoveDown={canMoveDown}
+          />
         </div>
       </TableCell>
       <TableCell>
@@ -589,20 +620,19 @@ export function SubHireGroupRow({
   group,
   isExpanded,
   indented,
-  isRejectedDropTarget,
   showCostColumn,
   onToggle,
   onEdit,
   onEditPrice,
   onMove,
+  onMoveUp,
+  onMoveDown,
+  canMoveUp,
+  canMoveDown,
 }: {
   group: SubHireGroupData;
   isExpanded: boolean;
   indented?: boolean;
-  /** Drop Matrix 8C — when true this row is the current hovered target
-   *  of a disallowed drag. Renders a 2px red left edge + not-allowed
-   *  cursor as the visual cue. */
-  isRejectedDropTarget?: boolean;
   /** 8H — render the Cost column cell showing the supplier cost. */
   showCostColumn?: boolean;
   onToggle: () => void;
@@ -614,43 +644,23 @@ export function SubHireGroupRow({
   /** Open the move dialog so the group can be reassigned to a different
    *  category (or uncategorised). */
   onMove?: () => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: `shg-${group.id}` });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
+} & MoveControls) {
   const charge = group.charge != null ? Number(group.charge) : null;
   const cost = group.cost != null ? Number(group.cost) : null;
   const margin = charge != null && cost != null ? charge - cost : null;
   const supplierName = group.subHire.supplier?.name ?? "Supplier";
-  const rejectionClasses = isRejectedDropTarget
-    ? "border-l-2 border-l-red-500 cursor-not-allowed"
-    : "";
   const shortcuts = useRowShortcuts({ e: onEdit, m: onMove }, "equipment");
 
   return (
-    <TableRow
-      ref={setNodeRef}
-      style={style}
-      data-rejected-drop={isRejectedDropTarget ? "true" : undefined}
-      className={`group/row ${isDragging ? "opacity-30" : ""} ${rejectionClasses}`}
-      {...shortcuts}
-    >
+    <TableRow className="group/row" {...shortcuts}>
       <TableCell className="px-0">
         <div className={`flex justify-end ${indented ? "ml-3" : "px-1"}`}>
-          <button
-            type="button"
-            className="flex cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
-            {...attributes}
-            {...listeners}
-          >
-            <GripVertical className="h-4 w-4" />
-          </button>
+          <MoveButtons
+            onMoveUp={onMoveUp}
+            onMoveDown={onMoveDown}
+            canMoveUp={canMoveUp}
+            canMoveDown={canMoveDown}
+          />
         </div>
       </TableCell>
       <TableCell>
@@ -743,6 +753,10 @@ export function CategoryRow({
   onAddEquipment,
   onAddKit,
   onAddCustom,
+  onMoveUp,
+  onMoveDown,
+  canMoveUp,
+  canMoveDown,
 }: {
   cat: CategoryData;
   /** Passive "X is editing" badge — fed from the parent's single
@@ -759,29 +773,20 @@ export function CategoryRow({
   onAddEquipment?: () => void;
   onAddKit?: () => void;
   onAddCustom?: () => void;
-}) {
+} & MoveControls) {
   const hasAddActions = !!(onAddEquipment || onAddKit || onAddCustom);
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: `cat-${cat.id}` });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
 
   return (
-    <TableRow ref={setNodeRef} style={style} className={`group/cat border-b-0 bg-bg-inset/50 ${isDragging ? "opacity-30" : ""}`}>
+    <TableRow className="group/cat border-b-0 bg-bg-inset/50">
       <TableCell colSpan={COL_COUNT} className="py-2 px-1">
         <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            className="flex cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
-            {...attributes}
-            {...listeners}
-          >
-            <GripVertical className="h-4 w-4" />
-          </button>
+          <MoveButtons
+            onMoveUp={onMoveUp}
+            onMoveDown={onMoveDown}
+            canMoveUp={canMoveUp}
+            canMoveDown={canMoveDown}
+            className="px-1"
+          />
           <h3 className="text-sm font-semibold text-fg-3">{cat.name}</h3>
           {lockedBy ? (
             <Badge variant="secondary" className="gap-1 text-[10px]">
@@ -859,6 +864,10 @@ export function LineItemRow({
   onMoveToGroup,
   onRemove,
   onClick,
+  onMoveUp,
+  onMoveDown,
+  canMoveUp,
+  canMoveDown,
 }: {
   item: LineItemData;
   indent: string;
@@ -884,11 +893,9 @@ export function LineItemRow({
   onRemove: () => void;
   /** Multi-select: row click handler (not firing for grip handle clicks) */
   onClick?: (e: React.MouseEvent) => void;
-}) {
+} & MoveControls) {
   const desc = describeRow(item);
   const hasChildren = desc.hasChildren;
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: `li-${item.id}` });
 
   // Collaboration: reactive lock and review marker for this row
   const liveLock = useAuthedQuery(
@@ -938,12 +945,9 @@ export function LineItemRow({
     }
   };
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    ...(hasActiveLock ? { ["--collab-color"]: liveLock.ownerColor } : {}),
-  } as CSSProperties;
+  const style = (
+    hasActiveLock ? { ["--collab-color"]: liveLock.ownerColor } : {}
+  ) as CSSProperties;
 
   // Map content indent to grip indent (margin-based to avoid affecting column width)
   const gripIndent = indent === "ml-12" ? "ml-8" : indent === "ml-3" ? "ml-1" : "";
@@ -960,10 +964,8 @@ export function LineItemRow({
   return (
     <>
     <TableRow
-      ref={setNodeRef}
       style={style}
       className={cn(
-        isDragging && "opacity-30",
         isSelected && "bg-accent/20",
         hasActiveLock && "collab-editing",
         justChanged && "collab-changed",
@@ -973,15 +975,12 @@ export function LineItemRow({
     >
       <TableCell className="px-0">
         <div className={`flex justify-end ${gripIndent || "px-1"}`}>
-          <button
-            type="button"
-            className="flex cursor-grab items-center px-1 text-fg-3 hover:text-fg active:cursor-grabbing"
-            {...attributes}
-            {...listeners}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <GripVertical className="h-4 w-4" />
-          </button>
+          <MoveButtons
+            onMoveUp={onMoveUp}
+            onMoveDown={onMoveDown}
+            canMoveUp={canMoveUp}
+            canMoveDown={canMoveDown}
+          />
         </div>
       </TableCell>
       <TableCell>
@@ -1212,11 +1211,7 @@ export function LineItemRow({
     {/* Expanded child items (kit children / sub-hire group children) */}
     {isExpanded && hasChildren && item.childLineItems!.map((child) => (
       <TableRow key={child.id} className="bg-muted/30">
-        <TableCell className="px-0">
-          <div className="flex justify-end ml-16 px-1 text-fg-3/40">
-            <GripVertical className="h-4 w-4" />
-          </div>
-        </TableCell>
+        <TableCell className="px-0" />
         <TableCell>
           <div className={`${childIndent}`}>
             <div className="flex items-center gap-2">

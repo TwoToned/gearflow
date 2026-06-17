@@ -4,6 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/org-context";
 import { attachClient } from "@/lib/clients-read";
 import { serialize } from "@/lib/serialize";
+import {
+  getLineItemsByOrg,
+  getLineItemsByProjectIds,
+  countCheckedOutInProjects,
+  countEquipmentLineItemsByProject,
+} from "@/lib/line-item-count-read";
 import { listOpenBlockingThreads } from "@/lib/blocking-comments-read";
 import { getModelMap } from "@/lib/models-read";
 import { getAssetsByOrg, getBulkAssetsByOrg } from "@/lib/assets-read";
@@ -17,29 +23,38 @@ export async function getDashboardStats() {
 
   const now = new Date();
 
-  const [allAssets, allBulkAssets, allProjects, maintenanceRecords, overdueReturns, crewMembers, crewAssignments] =
+  const [allAssets, allBulkAssets, allProjects, maintenanceRecords, allLineItems, crewMembers, crewAssignments] =
     await Promise.all([
       getAssetsByOrg(organizationId),
       getBulkAssetsByOrg(organizationId),
       getProjectsByOrg(organizationId),
       // Maintenance is dual-written — count due records (status + scheduledDate) from Convex.
       getMaintenanceRecordsByOrg(organizationId),
-      // overdueReturns aggregates projectLineItem joined to a project filter → KEYSTONE-BLOCKED, stays Prisma.
-      prisma.projectLineItem.count({
-        where: {
-          organizationId,
-          status: "CHECKED_OUT",
-          project: {
-            isTemplate: false,
-            rentalEndDate: { lt: now },
-            status: { notIn: ["RETURNED", "COMPLETED", "INVOICED", "CANCELLED"] },
-          },
-        },
-      }),
+      // overdueReturns aggregates projectLineItem joined to a project filter. The
+      // project rows are in Convex (allProjects), so resolve the overdue project
+      // set in JS and count CHECKED_OUT line items within it (Convex read).
+      getLineItemsByOrg(organizationId),
       // Crew roster + assignments are dual-written — count from Convex.
       getCrewMembersByOrg(organizationId),
       getCrewAssignmentsByOrg(organizationId),
     ]);
+
+  // overdueReturns: CHECKED_OUT line items whose project is non-template, past its
+  // rentalEndDate, and not in a terminal status (matches the old Prisma `project`
+  // relation filter). `rentalEndDate` is epoch-ms on the Convex project doc.
+  const RETURN_TERMINAL = new Set(["RETURNED", "COMPLETED", "INVOICED", "CANCELLED"]);
+  const overdueProjectIds = new Set(
+    allProjects
+      .filter(
+        (p) =>
+          !p.isTemplate &&
+          p.rentalEndDate != null &&
+          (p.rentalEndDate as number) < now.getTime() &&
+          !RETURN_TERMINAL.has(p.status ?? ""),
+      )
+      .map((p) => p.id),
+  );
+  const overdueReturns = countCheckedOutInProjects(allLineItems, overdueProjectIds);
 
   const maintenanceDue = countDueMaintenance(maintenanceRecords, now.getTime());
   const activeCrew = countActiveCrew(crewMembers);
@@ -94,15 +109,8 @@ export async function getMyHomeData() {
     .slice(0, 24);
 
   const projectIds = candidateProjects.map((p) => p.id);
-  const lineItemCounts =
-    projectIds.length > 0
-      ? await prisma.projectLineItem.groupBy({
-          by: ["projectId"],
-          where: { organizationId, projectId: { in: projectIds }, type: "EQUIPMENT" },
-          _count: { _all: true },
-        })
-      : [];
-  const liCountMap = new Map(lineItemCounts.map((g) => [g.projectId, g._count._all]));
+  const homeLineItems = await getLineItemsByProjectIds(organizationId, projectIds);
+  const liCountMap = countEquipmentLineItemsByProject(homeLineItems, projectIds);
   const myProjects = candidateProjects.map((p) => ({ ...p, _count: { lineItems: liCountMap.get(p.id) ?? 0 } }));
 
   // Clients live in Convex — attach instead of a Prisma join.
@@ -174,15 +182,8 @@ export async function getUpcomingProjects() {
     .slice(0, 8);
 
   const upcomingIds = candidateUpcoming.map((p) => p.id);
-  const upcomingLiCounts =
-    upcomingIds.length > 0
-      ? await prisma.projectLineItem.groupBy({
-          by: ["projectId"],
-          where: { organizationId, projectId: { in: upcomingIds }, type: "EQUIPMENT" },
-          _count: { _all: true },
-        })
-      : [];
-  const upcomingLiMap = new Map(upcomingLiCounts.map((g) => [g.projectId, g._count._all]));
+  const upcomingLineItems = await getLineItemsByProjectIds(organizationId, upcomingIds);
+  const upcomingLiMap = countEquipmentLineItemsByProject(upcomingLineItems, upcomingIds);
   const projects = candidateUpcoming.map((p) => ({ ...p, _count: { lineItems: upcomingLiMap.get(p.id) ?? 0 } }));
 
   // Clients live in Convex — attach instead of a Prisma join.

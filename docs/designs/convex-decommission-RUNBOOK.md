@@ -291,6 +291,65 @@
       before update/remove. `isActive`/tags pass through; `logActivity`+`buildChanges`
       kept. `getSupplierCounts`/list reads already Convex — left as-is. `prisma` import
       retained ONLY for the dual-written `supplierModelRate.deleteMany`.
+
+- [x] **`models` → Convex-only writes (cascade tier).** DONE (branch
+      `wip/phaseb-models`, validated `tsc` clean + 2413 vitest pass + eslint clean on
+      changed files + `build` exit 0). **Most-referenced domain — 10 inbound FKs dropped.**
+      **Migration** `20260617131200_drop_model_fk_constraints` drops (all `IF EXISTS`):
+      `asset_modelId_fkey` [required, Restrict], `bulk_asset_modelId_fkey` [required,
+      Restrict], `project_line_item_modelId_fkey` [SetNull], `supplier_order_item_modelId_fkey`
+      [SetNull], `sub_hire_item_modelId_fkey` [SetNull], `model_media_modelId_fkey`
+      [Cascade], `model_check_item_modelId_fkey` [Cascade], `model_bulk_accessory_modelId_fkey`
+      [Cascade], `group_template_item_modelId_fkey` [Cascade], `supplier_model_rate_modelId_fkey`
+      [Cascade]. Schema: removed all 7 back-relation lists on `Model`
+      (`assets/bulkAssets/lineItems/media/modelCheckItems/groupTemplateItems/bulkAccessories/
+      supplierOrderItems/subHireItems/supplierModelRates`) + the 10 inbound `@relation`
+      fields on their owning models; each `modelId` stays a plain `String`/`String?` cuid
+      referencing the Convex `models` doc. `@@unique([organizationId, sku])` is internal to
+      the frozen table (only constrains Prisma `model` inserts, which no longer happen) and
+      was left in place. `Model.defaultTestProfileId` is OUTBOUND (already a plain string
+      from the test-profiles inversion) — untouched. Not applied locally (prod cutover only).
+      **Writes inverted (Convex-only, no Prisma row, no mirror):** `createModel`,
+      `updateModel`, `archiveModel`, `bulkUpdateRates` use `createId()`+`Date.now()` via
+      `api.models.create/update`; inline `mirrorModelToConvex`/`patchModelInConvex` +
+      `toConvexDoc`/`FunctionArgs` imports removed. Added a `toConvexModelArgs(parsed)`
+      helper (typed off `z.output<typeof modelSchema>`) building the create/update payload;
+      the written doc is mapped back to the Prisma-row shape callers expect via
+      `mapConvexModelToRow` (model-form reads `result.id`; activity log reads
+      name/manufacturer). **Invariants re-implemented:** Decimal rate columns round-trip as
+      plain numbers, Json `specifications`/`customFields` pass through (`v.any()`);
+      `where:{id,organizationId}` org-guard via `getModelById` before update/archive.
+      **No hard delete** — models are only SOFT-archived (`isActive=false`), so the dropped
+      Cascade FKs never fired via a model delete → no cascade re-impl needed. `archiveModel`
+      keeps its existing asset/bulk-asset deletion side-effects (still dual-written; removals
+      mirrored to Convex). `bulkUpdateRates` reads the org's models from Convex
+      (`getModelsByOrg` filtered to the selected ids) and writes each rate change directly to
+      Convex (auto-syncs `defaultRentalPrice` when `dailyRate` changes, as before). The
+      T&T-asset propagation in `updateModel` (Prisma `testTagAsset.updateMany` + Convex
+      mirror) is unchanged (T&T assets stay dual-written). **Detail-composite rebuilt:**
+      `getModel`'s deep Prisma include broke on the dropped back-relations — model scalars +
+      `category` now read from Convex (`getModelById` + `mapConvexModelToRow` + category map);
+      `assets`/`bulkAssets` rebuilt from the Convex mirror (`getActiveAssetsByModel`/
+      `getActiveBulkAssetsByModel`, assetTag ASC, location attached via `attachLocation`,
+      Prisma-defaulted `status`/`availableQuantity`/`totalQuantity`/`isActive` coerced);
+      `media` + `bulkAccessories` stay Prisma reads (queried by the plain `modelId` column —
+      the FK drop removed only the constraint, not the column — with their own intact
+      `file`/`bulkAsset` relations; the media gallery is the documented detail-page terminus).
+      **Cross-cutting `model` relation readers rewired** (the FK drop's blast radius, found
+      via `tsc`+`build`):
+      - `src/server/categories.ts` `getCategory`: dropped the broken `models: { _count:{assets},
+        media }` include and rebuilt the per-model `{ _count.assets, media[primary] }` list
+        (name ASC, active only) from the Convex model map + org asset counts + primary-photo
+        map. `kits`/`parent`/`children`/`_count` includes stay Prisma (no Model relation).
+      - `src/app/api/calendar/[token]/[feed]/route.ts` maintenance feed: `asset.model.select.name`
+        → `asset.modelId` + `getModelMap` lookup.
+      - `scripts/collapse-split-siblings.ts`: `projectLineItem.model.select.name` → per-org
+        `getModelMap` lookup keyed on the selected `organizationId`+`modelId`.
+      `group-templates.ts` / `bulk-checkin.ts` / `warehouse.ts` already attach `model` from
+      Convex (Phase A), so the FK drop didn't touch them. `prisma` import retained for the
+      still-dual-written `modelMedia`/`modelBulkAccessory` reads + T&T propagation + the
+      `archiveModel` asset/bulk `deleteMany`.
+
 - **⚠️ The "low-risk single-table CRUD" tranche is essentially just custom-fields.**
   The other single-table domains I'd flagged as low-risk turned out NOT to be, because
   each still has a residual Prisma **relation reader** that depends on the inbound FK,

@@ -43,6 +43,9 @@ function buildAdapter(): PrismaPg {
     max: 1,
     idleTimeoutMillis: 0,
     allowExitOnIdle: false,
+    // Preserve the runtime statement_timeout hardening (the non-pinned path gets
+    // it via buildRuntimeDatabaseUrl); node-postgres applies this per connection.
+    statement_timeout: env.DB_STATEMENT_TIMEOUT_MS > 0 ? env.DB_STATEMENT_TIMEOUT_MS : undefined,
   });
   return new PrismaPg(globalForPrisma.prismaTestPool);
 }

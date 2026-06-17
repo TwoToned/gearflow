@@ -27,6 +27,7 @@ import { removeKitCheckItemFromConvex } from "@/lib/check-item-assignment-mirror
 import { syncMediaForParent } from "@/lib/media-mirror";
 import { getPrimaryPhotoMap } from "@/lib/media-read";
 import { getModelById, getModelMap } from "@/lib/models-read";
+import { getKitById, coerceKitDeletabilityRow, computeKitDeletability } from "@/lib/kits-read";
 
 /**
  * Per-kit member-item counts + primary photo (kitId -> meta).
@@ -297,33 +298,22 @@ export async function archiveKit(id: string) {
 export async function canDeleteKit(id: string) {
   const { organizationId } = await requirePermission("kit", "delete");
 
-  const kit = await prisma.kit.findUnique({
-    where: { id, organizationId },
-    select: { id: true, status: true, isActive: true },
-  });
-  if (!kit) throw new Error("Kit not found");
+  // The kit row comes off Convex (the dual-written reactive mirror); a miss
+  // reads null with no Prisma fallback (a fallback would mask mirror drift).
+  const convexKit = await getKitById(id);
+  if (!convexKit || convexKit.organizationId !== organizationId) {
+    throw new Error("Kit not found");
+  }
 
-  // Archive is allowed whenever the kit is AVAILABLE (matches archiveKit guard).
-  const canArchive = kit.status === "AVAILABLE" && kit.isActive;
-
-  // Hard delete adds two extra constraints: (a) no ProjectLineItem references,
-  // (b) AVAILABLE status. This prevents losing historical project data.
+  // ProjectLineItem references stay on Prisma until the keystone
+  // project-line-item tree migrates (see FEATUREDOCS/54).
   const referencingLineItems = await prisma.projectLineItem.count({
     where: { kitId: id, organizationId },
   });
 
-  const canHardDelete = kit.status === "AVAILABLE" && kit.isActive && referencingLineItems === 0;
-  let reason: string | undefined;
-
-  if (!canArchive) {
-    reason = kit.status !== "AVAILABLE"
-      ? `Kit status is ${kit.status} — only AVAILABLE kits can be archived or deleted.`
-      : "Kit is already archived.";
-  } else if (!canHardDelete) {
-    reason = `Kit is referenced by ${referencingLineItems} project line item${referencingLineItems === 1 ? "" : "s"}. Archive it instead, or remove it from those projects first.`;
-  }
-
-  return serialize({ canArchive, canHardDelete, referencingLineItems, reason });
+  return serialize(
+    computeKitDeletability(coerceKitDeletabilityRow(convexKit), referencingLineItems),
+  );
 }
 
 // ---------------------------------------------------------------------------

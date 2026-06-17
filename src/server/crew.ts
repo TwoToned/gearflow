@@ -17,16 +17,24 @@ import {
   snapshotCrewMemberCascade,
   removeCrewMemberCascadeFromConvex,
 } from "@/lib/crew-scheduling-mirror";
-import { buildFilterWhere, type FilterValue } from "@/lib/table-utils";
-import type { ColumnDef } from "@/components/ui/data-table";
-
-// ─── Column defs for server-side filter building ─────────────────────────────
-
-const filterColumnDefs: ColumnDef<unknown>[] = [
-  { id: "type", header: "Type", accessorKey: "type", filterable: true, filterType: "enum" },
-  { id: "status", header: "Status", accessorKey: "status", filterable: true, filterType: "enum" },
-  { id: "department", header: "Department", accessorKey: "department", filterable: true, filterType: "enum" },
-];
+import { type FilterValue } from "@/lib/table-utils";
+import {
+  getCrewMembersByOrg,
+  getCrewMemberById as getConvexCrewMemberById,
+  getCrewRolesByOrg,
+  getCrewSkillsByOrg,
+  mapCrewMember,
+  mapCrewRole,
+  mapCrewSkill,
+  applyCrewMemberFilters,
+  applyCrewMemberSearch,
+  sortCrewMembers,
+  paginate,
+  distinctDepartments,
+  activeRolesSorted,
+  skillsSorted,
+  countMembersByRole,
+} from "@/lib/crew-read";
 
 // ─── Crew Members ────────────────────────────────────────────────────────────
 
@@ -41,63 +49,94 @@ export async function getCrewMembers(params: {
   const { organizationId } = await requirePermission("crew", "read");
   const { search, filters, page = 1, pageSize = 25, sortBy = "lastName", sortOrder = "asc" } = params;
 
-  const filterWhere = filters ? buildFilterWhere(filters, filterColumnDefs) : {};
+  // Base member rows come from Convex (the reactive mirror). Filter/search/sort/
+  // paginate in JS, replicating the Prisma where/orderBy/skip/take.
+  const all = (await getCrewMembersByOrg(organizationId)).map(mapCrewMember);
+  const filtered = applyCrewMemberSearch(applyCrewMemberFilters(all, filters), search);
+  const sorted = sortCrewMembers(filtered, sortBy, sortOrder);
+  const total = sorted.length;
+  const pageRows = paginate(sorted, page, pageSize);
 
-  const where = {
-    organizationId,
-    ...filterWhere,
-    ...(search
-      ? {
-          OR: [
-            { firstName: { contains: search, mode: "insensitive" as const } },
-            { lastName: { contains: search, mode: "insensitive" as const } },
-            { email: { contains: search, mode: "insensitive" as const } },
-            { phone: { contains: search, mode: "insensitive" as const } },
-            { department: { contains: search, mode: "insensitive" as const } },
-            { tags: { hasSome: [search.toLowerCase()] } },
-          ],
-        }
-      : {}),
-  };
+  // crewRole (id/name/color) resolves from the Convex role map.
+  const roleMap = new Map(
+    (await getCrewRolesByOrg(organizationId)).map(mapCrewRole).map((r) => [r.id, r] as const),
+  );
 
-  const [crewMembers, total] = await Promise.all([
-    prisma.crewMember.findMany({
-      where,
-      include: {
-        crewRole: { select: { id: true, name: true, color: true } },
-        skills: { select: { id: true, name: true, category: true } },
-        user: { select: { id: true, name: true, image: true } },
-      },
-      orderBy: { [sortBy]: sortOrder },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    prisma.crewMember.count({ where }),
+  // skills (implicit m2m, Prisma-only) and the linked Better Auth user join stay
+  // Prisma — batched over just the page's members.
+  const pageIds = pageRows.map((m) => m.id);
+  const userIds = pageRows.map((m) => m.userId).filter((u): u is string => u != null);
+  const [withSkills, users] = await Promise.all([
+    pageIds.length
+      ? prisma.crewMember.findMany({
+          where: { id: { in: pageIds } },
+          select: { id: true, skills: { select: { id: true, name: true, category: true } } },
+        })
+      : Promise.resolve([]),
+    userIds.length
+      ? prisma.user.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, name: true, image: true },
+        })
+      : Promise.resolve([]),
   ]);
+  const skillsByMember = new Map(withSkills.map((m) => [m.id, m.skills]));
+  const userById = new Map(users.map((u) => [u.id, u]));
+
+  const crewMembers = pageRows.map((m) => {
+    const role = m.crewRoleId ? roleMap.get(m.crewRoleId) : null;
+    return {
+      ...m,
+      crewRole: role ? { id: role.id, name: role.name, color: role.color } : null,
+      skills: skillsByMember.get(m.id) ?? [],
+      user: m.userId ? userById.get(m.userId) ?? null : null,
+    };
+  });
 
   return serialize({ crewMembers, total });
 }
 
 export async function getCrewMemberById(id: string) {
   const { organizationId, userId } = await requirePermission("crew", "read");
-  const crewMember = await prisma.crewMember.findUnique({
-    where: { id, organizationId },
-    include: {
-      crewRole: true,
-      skills: true,
-      user: { select: { id: true, name: true, email: true, image: true } },
-      assignments: {
-        include: {
-          project: { select: { id: true, name: true, projectNumber: true, status: true } },
-          crewRole: { select: { id: true, name: true, color: true } },
+  const doc = await getConvexCrewMemberById(id);
+  // Convex getById is not org-scoped in the query args — enforce org isolation
+  // here (matches the Prisma `where: { id, organizationId }`).
+  if (!doc || doc.organizationId !== organizationId) throw new Error("Crew member not found");
+  const crewMember = mapCrewMember(doc);
+
+  // crewRole (full row) from the Convex role map; skills (m2m), the linked
+  // Better Auth user, and project assignments (scheduling sub-table) stay Prisma.
+  const [role, prismaExtras] = await Promise.all([
+    crewMember.crewRoleId
+      ? getCrewRolesByOrg(organizationId).then(
+          (roles) => roles.map(mapCrewRole).find((r) => r.id === crewMember.crewRoleId) ?? null,
+        )
+      : Promise.resolve(null),
+    prisma.crewMember.findUnique({
+      where: { id, organizationId },
+      select: {
+        skills: true,
+        user: { select: { id: true, name: true, email: true, image: true } },
+        assignments: {
+          include: {
+            project: { select: { id: true, name: true, projectNumber: true, status: true } },
+            crewRole: { select: { id: true, name: true, color: true } },
+          },
+          orderBy: { startDate: "desc" },
         },
-        orderBy: { startDate: "desc" },
       },
-    },
+    }),
+  ]);
+
+  return serialize({
+    ...crewMember,
+    crewRole: role,
+    skills: prismaExtras?.skills ?? [],
+    user: prismaExtras?.user ?? null,
+    assignments: prismaExtras?.assignments ?? [],
+    // Include whether this is the current user's own crew profile
+    isOwnProfile: crewMember.userId === userId,
   });
-  if (!crewMember) throw new Error("Crew member not found");
-  // Include whether this is the current user's own crew profile
-  return serialize({ ...crewMember, isOwnProfile: crewMember.userId === userId });
 }
 
 /**
@@ -107,7 +146,10 @@ export async function getCrewMemberById(id: string) {
  * Prisma-only) are NOT in Convex — they come from this (non-reactive) server query
  * and are merged into the reactive list client-side. crewRole name/color is
  * resolved client-side from the reactive `crewRoles` list instead (it IS in
- * Convex). See FEATUREDOCS/54.
+ * Convex). This action is INTENTIONALLY still Prisma-only: every field it returns
+ * is a cross-domain join (Better Auth User + the `_CrewMemberToCrewSkill` m2m)
+ * that has no Convex representation — there is nothing here to read from Convex.
+ * See FEATUREDOCS/54.
  */
 export async function getCrewMemberExtras(): Promise<
   Record<string, { userName: string | null; userImage: string | null; skills: { id: string; name: string }[] }>
@@ -135,11 +177,12 @@ export async function getCrewMemberExtras(): Promise<
 /** Get the current user's crew member ID (if they have a linked crew profile) */
 export async function getMyCrewMemberId() {
   const { organizationId, userId } = await getOrgContext();
-  const crewMember = await prisma.crewMember.findFirst({
-    where: { organizationId, userId },
-    select: { id: true },
-  });
-  return crewMember?.id ?? null;
+  if (!userId) return null;
+  const all = await getCrewMembersByOrg(organizationId);
+  // Replicates findFirst({ where: { organizationId, userId } }) — list is already
+  // org-scoped, so match on userId only.
+  const match = all.find((m) => m.userId === userId);
+  return match?.id ?? null;
 }
 
 export async function createCrewMember(data: CrewMemberFormValues) {
@@ -293,12 +336,17 @@ export async function deleteCrewMember(id: string) {
 
 export async function getCrewRoles() {
   const { organizationId } = await requirePermission("crew", "read");
+  const [roles, members] = await Promise.all([
+    getCrewRolesByOrg(organizationId).then((r) => r.map(mapCrewRole)),
+    getCrewMembersByOrg(organizationId).then((m) => m.map(mapCrewMember)),
+  ]);
+  // _count.crewMembers is derivable from Convex: members carry crewRoleId.
+  const counts = countMembersByRole(members);
   return serialize(
-    await prisma.crewRole.findMany({
-      where: { organizationId, isActive: true },
-      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-      include: { _count: { select: { crewMembers: true } } },
-    })
+    activeRolesSorted(roles).map((r) => ({
+      ...r,
+      _count: { crewMembers: counts[r.id] ?? 0 },
+    })),
   );
 }
 
@@ -306,12 +354,22 @@ export async function getCrewRoles() {
 
 export async function getCrewSkills() {
   const { organizationId } = await requirePermission("crew", "read");
-  return serialize(
-    await prisma.crewSkill.findMany({
+  // Skill rows come from Convex; but _count.crewMembers is the implicit
+  // `_CrewMemberToCrewSkill` m2m, which has NO Convex representation — it stays a
+  // batched Prisma read (a legit cross-domain terminus, like the User joins).
+  const [skills, counted] = await Promise.all([
+    getCrewSkillsByOrg(organizationId).then((s) => s.map(mapCrewSkill)),
+    prisma.crewSkill.findMany({
       where: { organizationId },
-      orderBy: { name: "asc" },
-      include: { _count: { select: { crewMembers: true } } },
-    })
+      select: { id: true, _count: { select: { crewMembers: true } } },
+    }),
+  ]);
+  const countById = new Map(counted.map((s) => [s.id, s._count.crewMembers]));
+  return serialize(
+    skillsSorted(skills).map((s) => ({
+      ...s,
+      _count: { crewMembers: countById.get(s.id) ?? 0 },
+    })),
   );
 }
 
@@ -320,24 +378,23 @@ export async function getCrewSkills() {
 /** Get all crew roles for dropdown options */
 export async function getCrewRoleOptions() {
   const { organizationId } = await requirePermission("crew", "read");
+  const roles = (await getCrewRolesByOrg(organizationId)).map(mapCrewRole);
   return serialize(
-    await prisma.crewRole.findMany({
-      where: { organizationId, isActive: true },
-      select: { id: true, name: true, department: true, color: true },
-      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-    })
+    activeRolesSorted(roles).map((r) => ({
+      id: r.id,
+      name: r.name,
+      department: r.department,
+      color: r.color,
+    })),
   );
 }
 
 /** Get all crew skills for multi-select */
 export async function getCrewSkillOptions() {
   const { organizationId } = await requirePermission("crew", "read");
+  const skills = (await getCrewSkillsByOrg(organizationId)).map(mapCrewSkill);
   return serialize(
-    await prisma.crewSkill.findMany({
-      where: { organizationId },
-      select: { id: true, name: true, category: true },
-      orderBy: { name: "asc" },
-    })
+    skillsSorted(skills).map((s) => ({ id: s.id, name: s.name, category: s.category })),
   );
 }
 
@@ -357,12 +414,14 @@ export async function getOrgUsersForCrewLink() {
     },
   });
 
-  // Get already-linked user IDs in this org
-  const linked = await prisma.crewMember.findMany({
-    where: { organizationId, userId: { not: null } },
-    select: { userId: true },
-  });
-  const linkedIds = new Set(linked.map((c) => c.userId));
+  // Get already-linked user IDs in this org. The `member` rows above are Better
+  // Auth (auth terminus, stays Prisma); only the crew-member→user linkage comes
+  // from the Convex roster mirror.
+  const linkedIds = new Set(
+    (await getCrewMembersByOrg(organizationId))
+      .map((c) => c.userId)
+      .filter((u): u is string => u != null),
+  );
 
   return serialize(
     members.map((m) => ({
@@ -440,11 +499,6 @@ export async function linkCrewMemberToUser(id: string, userId: string | null) {
 /** Get distinct departments for filter options */
 export async function getCrewDepartments() {
   const { organizationId } = await requirePermission("crew", "read");
-  const results = await prisma.crewMember.findMany({
-    where: { organizationId, department: { not: null } },
-    select: { department: true },
-    distinct: ["department"],
-    orderBy: { department: "asc" },
-  });
-  return results.map((r) => r.department).filter(Boolean) as string[];
+  const members = (await getCrewMembersByOrg(organizationId)).map(mapCrewMember);
+  return distinctDepartments(members);
 }

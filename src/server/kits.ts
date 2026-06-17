@@ -28,6 +28,7 @@ import { syncMediaForParent } from "@/lib/media-mirror";
 import { getPrimaryPhotoMap } from "@/lib/media-read";
 import { getModelById, getModelMap } from "@/lib/models-read";
 import { getLocationMap } from "@/lib/locations-read";
+import { getCategoryMap } from "@/lib/categories-read";
 import { getAssetsByOrg, getBulkAssetsByOrg, filterAvailableAssetsForKit, filterAvailableBulkAssetsForKit, sortByAssetTagAsc } from "@/lib/assets-read";
 import { getKitSerializedItemsByOrg, getKitBulkItemsByOrg, countKitMembers, getKitById, coerceKitDeletabilityRow, computeKitDeletability } from "@/lib/kits-read";
 
@@ -78,7 +79,6 @@ export async function getKit(id: string) {
       bulkItems: {
         include: { bulkAsset: true },
       },
-      category: true,
       lineItems: {
         take: 20,
         orderBy: { createdAt: "desc" },
@@ -101,13 +101,17 @@ export async function getKit(id: string) {
   });
   if (!kit) return serialize(null);
   const modelMap = await getModelMap(organizationId);
-  // Location FK was dropped (Phase B); attach `location` from the Convex mirror.
+  // Location + Category FKs were dropped (Phase B); attach both from the Convex mirror.
   const location = kit.locationId
     ? (await getLocationMap(organizationId)).get(kit.locationId) ?? null
+    : null;
+  const category = kit.categoryId
+    ? (await getCategoryMap(organizationId)).get(kit.categoryId) ?? null
     : null;
   return serialize({
     ...kit,
     location,
+    category,
     serializedItems: kit.serializedItems.map((si) => ({
       ...si,
       asset: {

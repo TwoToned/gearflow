@@ -14,7 +14,7 @@ import {
   sortModels,
   paginateModels,
 } from "@/lib/models-read";
-import { getCategoryMap } from "@/lib/categories-read";
+import { getCategoryMap, type ConvexCategory } from "@/lib/categories-read";
 import {
   getAssetsByOrg,
   getBulkAssetsByOrg,
@@ -27,7 +27,7 @@ import { serialize } from "@/lib/serialize";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { z } from "zod";
 import { modelSchema, type ModelFormValues } from "@/lib/validations/model";
-import type { Prisma } from "@/generated/prisma/client";
+import type { Model as PrismaModel } from "@/generated/prisma/client";
 
 type ParsedModel = z.output<typeof modelSchema>;
 import { backfillTestTagAssets } from "@/server/test-tag-assets";
@@ -106,12 +106,14 @@ function toConvexModelArgs(parsed: ParsedModel) {
   };
 }
 
-export type ModelWithRelations = Prisma.ModelGetPayload<{
-  include: {
-    category: true;
-    _count: { select: { assets: true; bulkAssets: true } };
-  };
-}>;
+// The Model→Category FK was dropped in Phase B (categories are Convex-only), so
+// the `category` relation can no longer be expressed via `Prisma.ModelGetPayload`.
+// The attached `category` now comes off the Convex category map (a ConvexCategory
+// doc or null). The base Model row + the JS-computed `_count` are spelled out.
+export type ModelWithRelations = PrismaModel & {
+  category: ConvexCategory | null;
+  _count: { assets: number; bulkAssets: number };
+};
 
 /**
  * Paginated model list — read from the reactive Convex `models` mirror.

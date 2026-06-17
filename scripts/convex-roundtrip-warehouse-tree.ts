@@ -76,19 +76,21 @@ async function main() {
 
   async function verify(node: { id: string; modelId?: string | null; supplierId?: string | null; model: { name?: string; category?: { name?: string } | null; _count?: { modelCheckItems: number } } | null; supplier: { name?: string } | null; childLineItems?: unknown }) {
     checked++;
-    // model + category vs Prisma join
+    // model vs Prisma join. Category AND modelCheckItems are now Convex-only
+    // (model.categoryId FK dropped Phase B; model_check_item FK dropped in the
+    // models inversion), so the Prisma `model` row has no `category` relation and
+    // no `_count.modelCheckItems` to cross-check against — only the model name
+    // still has a Prisma source. The grafted modelCheckItems count is asserted to
+    // be present (non-negative) rather than equal to a (now non-existent) Prisma _count.
     const prismaModel = node.modelId
-      ? await prisma.model.findUnique({ where: { id: node.modelId }, include: { category: true, _count: { select: { modelCheckItems: true } } } })
+      ? await prisma.model.findUnique({ where: { id: node.modelId } })
       : null;
     const okName = (prismaModel?.name ?? null) === (node.model?.name ?? null);
-    const okCat = (prismaModel?.category?.name ?? null) === (node.model?.category?.name ?? null);
-    if (!okName || !okCat) throw new Error(`model/category mismatch on ${node.id}: P="${prismaModel?.name}/${prismaModel?.category?.name}" C="${node.model?.name}/${node.model?.category?.name}"`);
+    if (!okName) throw new Error(`model name mismatch on ${node.id}: P="${prismaModel?.name}" C="${node.model?.name}"`);
 
-    // _count.modelCheckItems: grafted-from-Prisma vs the old Prisma _count include
     if (node.modelId) {
-      const expected = prismaModel?._count.modelCheckItems ?? 0;
       const got = node.model?._count?.modelCheckItems ?? -1;
-      if (expected !== got) throw new Error(`modelCheckItems count mismatch on ${node.id}: include=${expected} graft=${got}`);
+      if (got < 0) throw new Error(`modelCheckItems count missing on ${node.id}: graft=${got}`);
       countChecks++;
       console.log(`  ${node.id}: model="${node.model?.name}" cat="${node.model?.category?.name ?? "-"}" checks=${got} OK`);
     }
@@ -107,7 +109,7 @@ async function main() {
 
   for (const n of withCounts) await verify(n);
 
-  console.log(`\nRound-trip OK: ${checked} nodes verified, ${countChecks} modelCheckItems counts matched the dropped Prisma _count include.`);
+  console.log(`\nRound-trip OK: ${checked} nodes verified, ${countChecks} grafted modelCheckItems counts present (Prisma _count cross-check dropped — relation is Convex-only).`);
   await prisma.$disconnect();
 }
 

@@ -928,8 +928,7 @@ model Kit {
   category          Category?      @relation(fields: [categoryId], references: [id])
   status            KitStatus      @default(AVAILABLE)
   condition         AssetCondition @default(NEW)
-  locationId        String?
-  location          Location?      @relation(fields: [locationId], references: [id])
+  locationId        String? // references a Convex locations doc; FK dropped Phase B
   weight            Decimal?       @db.Decimal(8, 2)
   caseType          String?
   caseDimensions    String?
@@ -1032,8 +1031,7 @@ model Asset {
   supplierOrder       SupplierOrder? @relation(fields: [supplierOrderId], references: [id], onDelete: SetNull)
   warrantyExpiry      DateTime?
   notes               String?
-  locationId          String?
-  location            Location?      @relation(fields: [locationId], references: [id])
+  locationId          String? // references a Convex locations doc; FK dropped Phase B
   customFieldValues   Json?
   lastTestAndTagDate  DateTime?
   nextTestAndTagDate  DateTime?
@@ -1091,8 +1089,7 @@ model BulkAsset {
   totalQuantity        Int             @default(0)
   availableQuantity    Int             @default(0)
   purchasePricePerUnit Decimal?        @db.Decimal(10, 2)
-  locationId           String?
-  location             Location?       @relation(fields: [locationId], references: [id])
+  locationId           String? // references a Convex locations doc; FK dropped Phase B
   status               BulkAssetStatus @default(ACTIVE)
   notes                String?
   tags                 String[]        @default([])
@@ -1194,20 +1191,15 @@ model Location {
   longitude      Float?
   type           LocationType @default(WAREHOUSE)
   isDefault      Boolean      @default(false)
-  parentId       String?
-  parent         Location?    @relation("LocationHierarchy", fields: [parentId], references: [id])
-  children       Location[]   @relation("LocationHierarchy")
+  parentId       String? // self-reference to a Convex locations doc; FK dropped Phase B (tree rebuilt client-side in locations-read)
   notes          String?
   tags           String[]     @default([])
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  assets                   Asset[]
-  bulkAssets               BulkAsset[]
-  kits                     Kit[]
-  projects                 Project[]
-  media                    LocationMedia[]
-  warehouseDashboardTokens WarehouseDashboardToken[]
+  // Inbound FK back-relations (assets/bulkAssets/kits/projects/media/
+  // warehouseDashboardTokens/children) were removed Phase B — those tables now
+  // hold a plain locationId/parentId string referencing the Convex locations doc.
 
   @@index([organizationId])
   @@index([parentId])
@@ -1325,8 +1317,7 @@ model Project {
   status                ProjectStatus @default(ENQUIRY)
   type                  ProjectType   @default(OTHER)
   description           String?
-  locationId            String?
-  location              Location?     @relation(fields: [locationId], references: [id])
+  locationId            String? // references a Convex locations doc; FK dropped Phase B
   siteContactName       String?
   siteContactPhone      String?
   siteContactEmail      String?
@@ -1903,8 +1894,7 @@ model LocationMedia {
   id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  locationId     String
-  location       Location     @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  locationId     String // references a Convex locations doc; FK (Cascade) dropped Phase B — cascade re-implemented in deleteLocation
   fileId         String
   file           FileUpload   @relation(fields: [fileId], references: [id], onDelete: Cascade)
   type           MediaType    @default(DOCUMENT)
@@ -2715,8 +2705,7 @@ model WarehouseDashboardToken {
   name       String // "Main Warehouse TV", "Loading Dock Screen"
   token      String // Raw access token (for URL display in settings)
   tokenHash  String    @unique // SHA-256 of the access token (for lookup)
-  locationId String? // Scope to a specific warehouse location
-  location   Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  locationId String? // Scope to a specific warehouse location — references a Convex locations doc; FK (SetNull) dropped Phase B
   isActive   Boolean   @default(true)
   layout     String    @default("standard") // "standard", "compact", "dispatch-only"
 

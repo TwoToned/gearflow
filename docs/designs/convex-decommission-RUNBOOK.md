@@ -43,7 +43,20 @@
       `testTagAuditorToken`, `wooCommerceOrderLog`, `userNotificationPreference`,
       and mirror `maintenanceRecordAssets` (for `getRecentActivity`). Then convert
       their reads. (These straddle A/B — they add write-path code.)
-- [~] **Phase B — write inversion:** STARTED (low-risk tranche). Flip
+- [~] **Phase B — write inversion:** IN PROGRESS. **Clean tier DONE + validated
+      (tsc + 2413 vitest + build, integration tip pushed): `custom-fields`
+      (no FK), `test-profiles` (3 SetNull FKs dropped), `brand-templates` (1 SetNull
+      FK + PDF-pipeline reader converted).** That exhausts the SetNull-only,
+      child-free, cascade-free tier. **Every remaining domain has a `Cascade`
+      inbound FK and/or a non-Convex child, so each needs cascade-delete
+      re-implementation (higher risk):** `group-templates` (Cascade child
+      `groupTemplateItem` — not in Convex; move it first or re-impl cascade),
+      `locations` (Cascade from `location_media` + a SetNull set),
+      `categories` (Cascade to `category_slot` — itself a non-Convex terminus —
+      + 5 SetNull), `suppliers` (3 Cascade: supplierOrder/Item/ModelRate), `models`
+      (required Restrict from asset/bulkAsset), then the multi-table core
+      (line-items/warehouse/kits/sub-hires). Recommend per-surface preview
+      validation from here. Flip
       every domain mutation from Prisma-first+mirror to Convex-only; re-implement
       the invariants Prisma transactions + FK cascades enforce (warehouse
       checkout/checkin, line-item fulfillment, kit composition, sub-hire

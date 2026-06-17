@@ -2371,6 +2371,29 @@ status }` relation-filter on its `projectLineItem.findFirst` (line ~65) — a le
 cross-domain read from the model-only batch. Low priority (single point read, fresh
 Prisma mirror) but tracked for a future pass.
 
+## Phase A read-rewiring — leaf surfaces (in progress, preview-gated)
+
+The "domain data Convex-only" decommission's Phase A (read-rewiring) ships
+**per-surface, each as its own PR**, validated on a Coolify PR preview against prod
+Convex (Convex data-correctness can't be verified in a dev worktree). Each surface
+follows the proven pattern: a thin `src/lib/<x>-read.ts` (mappers epoch-ms→Date,
+Decimal→number, absent→null, JSON `v.any()` passed through, Prisma-defaulted
+columns coerced non-null) + pure unit-tested filter/sort predicates replicating the
+Prisma `where`/`orderBy` + JS attach for cross-domain joins. **No Prisma fallback on
+a Convex map miss** (a miss reads null, like a join against a deleted row — falling
+back would hide mirror drift). The merge gate for each PR is the deploy-ordering gate
+above: the table must be backfilled into prod Convex before the read deploys.
+
+- **group templates** (`src/server/group-templates.ts` → `src/lib/group-templates-read.ts`).
+  `getGroupTemplates` is now a HYBRID read: parent rows come from Convex
+  (`api.groupTemplates.list`, mapped epoch-ms→Date + absent description→null,
+  name-asc sorted in JS via `sortGroupTemplatesByName`) and the child `items` are
+  attached from Prisma (`groupTemplateItem.findMany` with the same `model`/`kit`
+  selects and `sortOrder: "asc"`). The `group_template_item` children stay Prisma —
+  the mirror strips `items` before writing, so they are the Prisma terminus for this
+  surface (correct + expected). No new convex query (existing `groupTemplates.list`
+  reused). All writes + read-then-write stay Prisma.
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort

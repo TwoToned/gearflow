@@ -2371,6 +2371,33 @@ status }` relation-filter on its `projectLineItem.findFirst` (line ~65) — a le
 cross-domain read from the model-only batch. Low priority (single point read, fresh
 Prisma mirror) but tracked for a future pass.
 
+## Phase A read-rewiring — leaf surfaces (in progress, preview-gated)
+
+The "domain data Convex-only" decommission's Phase A (read-rewiring) ships
+**per-surface, each as its own PR**, validated on a Coolify PR preview against prod
+Convex (Convex data-correctness can't be verified in a dev worktree). Each surface
+follows the proven pattern: a thin `src/lib/<x>-read.ts` (mappers epoch-ms→Date,
+Decimal→number, absent→null, JSON `v.any()` passed through, Prisma-defaulted
+columns coerced non-null) + pure unit-tested filter/sort predicates replicating the
+Prisma `where`/`orderBy` + JS attach for cross-domain joins. **No Prisma fallback on
+a Convex map miss** (a miss reads null, like a join against a deleted row — falling
+back would hide mirror drift). The merge gate for each PR is the deploy-ordering gate
+above: the table must be backfilled into prod Convex before the read deploys.
+
+- **custom field definitions** (`server/custom-fields.ts` →
+  `src/lib/custom-fields-read.ts`). `getCustomFieldDefinitions(entityType)` (settings
+  page, includes inactive) and `getActiveCustomFields(entityType)` (entity create/edit
+  forms, active only) now read the Convex `customFieldDefinitions` table (dual-written
+  + `convex-backfill-custom-fields.ts`). The Convex `list({ orgId })` returns all
+  entity types + active/inactive rows, so the `entityType` (plus `isActive` for the
+  active variant) filter and `[{ sortOrder asc }, { createdAt asc }]` ordering are
+  applied in JS (`mapCustomFieldDefinition` / `sortCustomFieldDefinitions`, pure +
+  unit-tested). Convex stores most columns as optional → coerced back to Prisma
+  defaults (entityType→ASSET, fieldType→TEXT, options→[], required→false, sortOrder→0,
+  isActive→true). The auth gate (`requirePermission` / `getOrgContext`) and all writes
+  stay on Prisma. Deploy gate: `customFieldDefinition` backfilled into prod Convex
+  before this lands.
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort

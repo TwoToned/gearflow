@@ -10,7 +10,7 @@ actions** (`src/server/`) — Convex functions are thin CRUD stubs.
 
 | Concern | Lives in |
 |---|---|
-| Permissions (`requirePermission`), validation (Zod), activity log, PDF, email, Discord | Next.js server actions (`src/server/`) |
+| Permissions (`requirePermission`), validation (Zod), activity log, PDF, email | Next.js server actions (`src/server/`) |
 | Database reads/writes + real-time propagation | Convex (this directory) |
 
 Server actions call Convex over HTTP via the shared `ConvexHttpClient`

@@ -80,8 +80,6 @@ export default function EditProjectPage({
     invoicedTotal: project.invoicedTotal
       ? Number(project.invoicedTotal)
       : undefined,
-    billingWeeks: (project as { billingWeeks?: number | null }).billingWeeks ?? undefined,
-    billingDays: (project as { billingDays?: number | null }).billingDays ?? undefined,
     tags: project.tags || [],
   };
 

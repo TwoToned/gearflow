@@ -31,8 +31,6 @@ export const bulkAssetSchema = z.object({
   purchasePricePerUnit: z.coerce.number().min(0).optional(),
   locationId: z.string().optional(),
   status: z.enum(["ACTIVE", "LOW_STOCK", "OUT_OF_STOCK", "RETIRED"]).default("ACTIVE"),
-  reorderThreshold: z.coerce.number().int().min(0).optional(),
-  preferredSupplierId: z.string().optional(),
   notes: z.string().max(2000).optional(),
   isActive: z.boolean().default(true),
   tags: z.array(z.string()).default([]),

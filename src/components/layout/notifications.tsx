@@ -7,7 +7,6 @@ import { useNotificationsFeed } from "@/hooks/use-notifications-feed";
 import { useRouter } from "next/navigation";
 import {
   Bell,
-  AlertTriangle,
   CalendarClock,
   PackageX,
   Wrench,
@@ -59,7 +58,6 @@ const typeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   overdue_maintenance: Wrench,
   overdue_return: PackageX,
   upcoming_project: CalendarClock,
-  low_stock: AlertTriangle,
   pending_invitation: Mail,
 };
 

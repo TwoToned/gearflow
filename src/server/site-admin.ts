@@ -62,8 +62,6 @@ export async function updateSiteSettings(data: {
   defaultCurrency?: string;
   defaultTaxRate?: number;
   allowOrgCreation?: boolean;
-  socialLoginGoogle?: boolean;
-  socialLoginMicrosoft?: boolean;
 }) {
   const session = await requireSiteAdmin();
 

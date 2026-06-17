@@ -43,7 +43,6 @@ export async function getCrewDashboardStats() {
     pendingOffers,
     submittedTime,
     hoursThisWeek,
-    expiringCerts,
   ] = await Promise.all([
     prisma.crewMember.count({
       where: { organizationId, isActive: true, status: "ACTIVE" },
@@ -72,12 +71,6 @@ export async function getCrewDashboardStats() {
       },
       _sum: { totalHours: true },
     }),
-    prisma.crewCertification.count({
-      where: {
-        status: { in: ["EXPIRED", "EXPIRING_SOON"] },
-        crewMember: { organizationId },
-      },
-    }),
   ]);
 
   return {
@@ -86,7 +79,6 @@ export async function getCrewDashboardStats() {
     pendingOffers,
     submittedTime,
     hoursThisWeek: Number(hoursThisWeek._sum.totalHours || 0),
-    expiringCerts,
   };
 }
 

@@ -2371,6 +2371,39 @@ status }` relation-filter on its `projectLineItem.findFirst` (line ~65) — a le
 cross-domain read from the model-only batch. Low priority (single point read, fresh
 Prisma mirror) but tracked for a future pass.
 
+## Phase A read-rewiring — leaf surfaces (in progress, preview-gated)
+
+The "domain data Convex-only" decommission's Phase A (read-rewiring) ships
+**per-surface, each as its own PR**, validated on a Coolify PR preview against prod
+Convex (Convex data-correctness can't be verified in a dev worktree). Each surface
+follows the proven pattern: a thin `src/lib/<x>-read.ts` (mappers epoch-ms→Date,
+Decimal→number, absent→null, JSON `v.any()` passed through, Prisma-defaulted
+columns coerced non-null) + pure unit-tested filter/sort predicates replicating the
+Prisma `where`/`orderBy` + JS attach for cross-domain joins. **No Prisma fallback on
+a Convex map miss** (a miss reads null, like a join against a deleted row — falling
+back would hide mirror drift). The merge gate for each PR is the deploy-ordering gate
+above: the table must be backfilled into prod Convex before the read deploys.
+
+- **crew roster** (`server/crew.ts` → extends `src/lib/crew-read.ts`). Moved to
+  Convex: `getCrewMembers` (list/count/filter/search/sort/paginate in JS; crewRole
+  resolved from the Convex role map; `skills` m2m + Better Auth user batched from
+  Prisma over the page), `getCrewMemberById` (member row + crewRole from Convex;
+  `skills`/`user`/`assignments` stay Prisma — assignments are a sibling-PR
+  scheduling table; org isolation enforced in the action since the Convex `getById`
+  arg isn't org-scoped), `getMyCrewMemberId`, `getCrewRoles` (`_count.crewMembers`
+  derived from members' `crewRoleId` in JS), `getCrewRoleOptions`,
+  `getCrewSkillOptions`, `getCrewDepartments` (distinct over the member list).
+  Hybrid: `getCrewSkills` reads skill rows from Convex but keeps the
+  `_count.crewMembers` (the `_CrewMemberToCrewSkill` m2m has NO Convex
+  representation) as a batched Prisma read.
+  `getOrgUsersForCrewLink` — the `member` rows stay Prisma (Better Auth auth
+  terminus); only the crew-member→user linkage set comes from the Convex roster.
+  Left on Prisma: `getCrewMemberExtras` (every field is a cross-domain User/skill
+  m2m join — nothing to read from Convex) and all writes/read-then-writes. No new
+  Convex query (served by the existing `crewMembers`/`crewRoles`/`crewSkills`
+  `list`/`getById`). Deploy-gated on the crew backfill (`convex:backfill:crew`)
+  having run in prod.
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort

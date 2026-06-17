@@ -2371,6 +2371,45 @@ status }` relation-filter on its `projectLineItem.findFirst` (line ~65) — a le
 cross-domain read from the model-only batch. Low priority (single point read, fresh
 Prisma mirror) but tracked for a future pass.
 
+## Phase A read-rewiring — leaf surfaces (in progress, preview-gated)
+
+The "domain data Convex-only" decommission's Phase A (read-rewiring) ships
+**per-surface, each as its own PR**, validated on a Coolify PR preview against prod
+Convex (Convex data-correctness can't be verified in a dev worktree). Each surface
+follows the proven pattern: a thin `src/lib/<x>-read.ts` (mappers epoch-ms→Date,
+Decimal→number, absent→null, JSON `v.any()` passed through, Prisma-defaulted
+columns coerced non-null) + pure unit-tested filter/sort predicates replicating the
+Prisma `where`/`orderBy` + JS attach for cross-domain joins. **No Prisma fallback on
+a Convex map miss** (a miss reads null, like a join against a deleted row — falling
+back would hide mirror drift). The merge gate for each PR is the deploy-ordering gate
+above: the table must be backfilled into prod Convex before the read deploys.
+
+- **dashboard / notifications / project-costs (non-blocked reads)** (`server/dashboard.ts`,
+  `server/notifications.ts`, `lib/project-costs.ts`). Converted the pure counts/aggregates
+  over dual-written tables to Convex via new pure helpers (all unit-tested in
+  `src/lib/dashboard-notifications-read.test.ts`):
+  - `getDashboardStats` — `maintenanceDue` (→ `maintenance-read.countDueMaintenance`),
+    `activeCrew` (→ `crew-read.countActiveCrew`), `pendingCrewOffers`
+    (→ `crew-scheduling-read.countAssignmentsByStatus`).
+  - `getNotifications` — `pendingOffers` (crewAssignment count) + `submittedTimesheets`
+    (crewTimeEntry count) via `crew-scheduling-read`.
+  - `computeProjectOperationalCosts` — `serviceRevenue` (→ `project-services-read.sumProjectServiceRevenue`)
+    + maintenance cost/count (→ `maintenance-read.aggregateMaintenanceForProject`).
+    `lib/project-costs.ts` no longer imports Prisma.
+  - New read libs: `maintenance-read.ts`, `crew-scheduling-read.ts`, `project-services-read.ts`;
+    `countActiveCrew` added to existing `crew-read.ts`. No new Convex queries needed (reused each
+    module's existing org-scoped `list`).
+  - **Left KEYSTONE-BLOCKED (stay Prisma):** `getDashboardStats.overdueReturns` and the
+    `getMyHomeData`/`getUpcomingProjects` line-item group-bys and `getNotifications` flagged-asset
+    `projectLineItem.findMany` (all touch `projectLineItem` + a project relation filter);
+    `getNotifications` overdue-maintenance/overdue-return line-item counts likewise.
+  - **Left DUAL-WRITE-BLOCKED (stay Prisma):** `notifications.getDismissedKeys`/`dismissNotification`/
+    `pruneStaleDismissals` (`notificationDismissal` has a Convex module but NO mirror write from `src/`,
+    so it is not dual-written); `getRecentActivity` (assetScanLog/testTagRecord/maintenanceRecord
+    list reads — the maintenance list needs the un-mirrored `maintenanceRecordAssets` join, and the
+    set is a join-heavy composite deferred as a unit); `getNotifications` pending-invitations + user
+    lookup (Better Auth `invitation`/`organization`/`user`).
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort

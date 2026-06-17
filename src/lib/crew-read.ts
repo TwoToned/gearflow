@@ -42,3 +42,11 @@ export async function getCrewRoleMap(orgId: string): Promise<Map<string, ConvexC
   const all = await getCrewRolesByOrg(orgId);
   return new Map(all.map((r) => [r.id, r]));
 }
+
+/**
+ * Count of ACTIVE crew members. Replicates Prisma
+ * `count({ status: "ACTIVE" })`. A row with no status never matches.
+ */
+export function countActiveCrew(members: ConvexCrewMember[]): number {
+  return members.filter((m) => m.status === "ACTIVE").length;
+}

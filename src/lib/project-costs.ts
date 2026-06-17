@@ -5,8 +5,9 @@
  * `organizationId` via the session and delegates here.
  */
 
-import { prisma } from "@/lib/prisma";
 import { getProjectById } from "@/lib/projects-read";
+import { getProjectServicesByOrg, sumProjectServiceRevenue } from "@/lib/project-services-read";
+import { getMaintenanceRecordsByOrg, aggregateMaintenanceForProject } from "@/lib/maintenance-read";
 
 export interface ProjectOperationalCosts {
   equipmentRevenue: number;
@@ -30,24 +31,21 @@ export async function computeProjectOperationalCosts(
   const project = await getProjectById(projectId);
   if (!project || project.organizationId !== organizationId) return emptyResult();
 
-  const serviceRevenueAgg = await prisma.projectService.aggregate({
-    where: { projectId, organizationId, status: { not: "CANCELLED" }, showOnDocuments: true },
-    _sum: { lineTotal: true },
-  });
-
-  const maintenanceAgg = await prisma.maintenanceRecord.aggregate({
-    where: { projectId, organizationId, status: { notIn: ["CANCELLED"] } },
-    _sum: { cost: true },
-    _count: true,
-  });
+  // projectService + maintenanceRecord are dual-written — aggregate from Convex.
+  const [orgServices, orgMaintenance] = await Promise.all([
+    getProjectServicesByOrg(organizationId),
+    getMaintenanceRecordsByOrg(organizationId),
+  ]);
+  const serviceRevenueTotal = sumProjectServiceRevenue(orgServices, projectId);
+  const maintenanceAgg = aggregateMaintenanceForProject(orgMaintenance, projectId);
 
   const equipmentRevenue = Number(project.equipmentRevenue ?? 0);
-  const serviceRevenue = Number(serviceRevenueAgg._sum.lineTotal ?? 0);
+  const serviceRevenue = serviceRevenueTotal;
   const total = Number(project.total ?? 0);
   const serviceCostTotal = Number(project.serviceCostTotal ?? 0);
   const labourCostTotal = Number(project.labourCostTotal ?? 0);
   const subHireCostTotal = Number(project.subHireCostTotal ?? 0);
-  const maintenanceCostTotal = Number(maintenanceAgg._sum.cost ?? 0);
+  const maintenanceCostTotal = maintenanceAgg.costTotal;
 
   const allCosts =
     serviceCostTotal + labourCostTotal + subHireCostTotal + maintenanceCostTotal;
@@ -66,7 +64,7 @@ export async function computeProjectOperationalCosts(
     netMargin,
     marginPercent,
     counts: {
-      maintenanceRecords: maintenanceAgg._count,
+      maintenanceRecords: maintenanceAgg.count,
     },
   };
 }

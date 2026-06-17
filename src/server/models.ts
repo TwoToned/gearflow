@@ -5,7 +5,15 @@ import { prisma } from "@/lib/prisma";
 import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { removeAssetFromConvex, removeBulkAssetFromConvex } from "@/lib/asset-mirror";
 import { getPrimaryPhotoMap } from "@/lib/media-read";
-import { getModelMap } from "@/lib/models-read";
+import {
+  getModelMap,
+  getModelsByOrg,
+  mapConvexModelToRow,
+  filterModels,
+  sortModels,
+  paginateModels,
+} from "@/lib/models-read";
+import { getCategoryMap } from "@/lib/categories-read";
 import { getAssetsByOrg, getBulkAssetsByOrg } from "@/lib/assets-read";
 import { api } from "../../convex/_generated/api";
 import { serialize } from "@/lib/serialize";
@@ -16,7 +24,7 @@ import { backfillTestTagAssets } from "@/server/test-tag-assets";
 import { patchTestTagAssetInConvex } from "@/lib/test-tag-mirror";
 import { getOrgTestTagSettings } from "@/server/settings";
 import { logActivity } from "@/lib/activity-log";
-import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
+import type { FilterValue } from "@/lib/table-utils";
 
 // Models are DUAL-WRITTEN: every create/update/archive writes the Prisma `model`
 // row (the durable FK anchor — asset/bulk_asset hold a required + Restrict FK;
@@ -44,11 +52,6 @@ async function patchModelInConvex(id: string, row: Record<string, unknown>) {
   });
 }
 
-const modelFilterColumns: FilterColumnDef[] = [
-  { id: "categoryId", filterType: "enum" },
-  { id: "assetType", filterType: "enum" },
-];
-
 export type ModelWithRelations = Prisma.ModelGetPayload<{
   include: {
     category: true;
@@ -56,6 +59,17 @@ export type ModelWithRelations = Prisma.ModelGetPayload<{
   };
 }>;
 
+/**
+ * Paginated model list — read from the reactive Convex `models` mirror.
+ *
+ * Convex `models.list({orgId})` returns ALL of the org's models, so the Prisma
+ * `where` (isActive / categoryId / assetType / search) and `orderBy` are
+ * re-applied in JS via the pure helpers in `src/lib/models-read.ts`. The nested
+ * `category` (dual-written) is attached from the Convex category map; per-model
+ * asset/bulk `_count` come off the Convex asset/bulkAsset mirror and the primary
+ * photo off the Convex modelMedia mirror (same sources as getModelCounts). No
+ * Prisma fallback on a Convex map miss. See FEATUREDOCS/54.
+ */
 export async function getModels(params?: {
   search?: string;
   categoryId?: string;
@@ -70,43 +84,50 @@ export async function getModels(params?: {
   const { organizationId } = await getOrgContext();
   const { search, categoryId, assetType, isActive = true, page = 1, pageSize = 25, sortBy = "name", sortOrder = "asc", filters } = params || {};
 
-  const filterWhere = buildFilterWhere(filters, modelFilterColumns);
+  // The DataTable `filters` for this surface only carries the categoryId /
+  // assetType enum columns (see the column defs); fold the first selected value
+  // of each into the explicit filter (mirrors buildFilterWhere's enum `in`,
+  // which with a single value behaves like equality for these single-value cols).
+  const filterCategoryIds = Array.isArray(filters?.categoryId) ? (filters!.categoryId as string[]) : [];
+  const filterAssetTypes = Array.isArray(filters?.assetType) ? (filters!.assetType as string[]) : [];
 
-  const where: Prisma.ModelWhereInput = {
-    organizationId,
-    isActive,
-    ...(categoryId && { categoryId }),
-    ...(assetType && { assetType }),
-    ...filterWhere,
-    ...(search && {
-      OR: [
-        { name: { contains: search, mode: "insensitive" } },
-        { manufacturer: { contains: search, mode: "insensitive" } },
-        { modelNumber: { contains: search, mode: "insensitive" } },
-        { sku: { contains: search, mode: "insensitive" } },
-      ],
-    }),
-  };
-
-  const [models, total] = await Promise.all([
-    prisma.model.findMany({
-      where,
-      include: {
-        category: true,
-        _count: { select: { assets: true, bulkAssets: true } },
-        media: {
-          where: { type: "PHOTO", isPrimary: true },
-          include: { file: true },
-          take: 1,
-        },
-      },
-      orderBy: sortBy === "category" ? { category: { name: sortOrder } }
-        : { [sortBy]: sortOrder },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    prisma.model.count({ where }),
+  const [convexModels, categoryMap, allAssets, allBulkAssets, photoMap] = await Promise.all([
+    getModelsByOrg(organizationId),
+    getCategoryMap(organizationId),
+    getAssetsByOrg(organizationId),
+    getBulkAssetsByOrg(organizationId),
+    getPrimaryPhotoMap("model", organizationId),
   ]);
+
+  const rows = convexModels.map(mapConvexModelToRow);
+  const categoryNameOf = (m: { categoryId?: string | null }) =>
+    m.categoryId ? categoryMap.get(m.categoryId)?.name ?? null : null;
+
+  let filtered = filterModels(rows, { isActive, categoryId, assetType, search });
+  if (filterCategoryIds.length > 0) filtered = filtered.filter((m) => filterCategoryIds.includes(m.categoryId ?? ""));
+  if (filterAssetTypes.length > 0) filtered = filtered.filter((m) => filterAssetTypes.includes(m.assetType));
+
+  const total = filtered.length;
+  const sorted = sortModels(filtered, sortBy, sortOrder, categoryNameOf);
+  const pageRows = paginateModels(sorted, page, pageSize);
+
+  // Per-model asset/bulk counts (active only) off the Convex mirror.
+  const assetCount = new Map<string, number>();
+  const bulkCount = new Map<string, number>();
+  for (const a of allAssets) if (a.isActive !== false) assetCount.set(a.modelId, (assetCount.get(a.modelId) ?? 0) + 1);
+  for (const b of allBulkAssets) if (b.isActive !== false) bulkCount.set(b.modelId, (bulkCount.get(b.modelId) ?? 0) + 1);
+
+  const models = pageRows.map((m) => {
+    const photo = photoMap[m.id];
+    return {
+      ...m,
+      category: m.categoryId ? categoryMap.get(m.categoryId) ?? null : null,
+      _count: { assets: assetCount.get(m.id) ?? 0, bulkAssets: bulkCount.get(m.id) ?? 0 },
+      // Primary photo as a single-element media array (mirrors the Prisma
+      // `media: { where: { isPrimary }, take: 1 }` include shape used here).
+      media: photo ? [{ url: photo.url, thumbnailUrl: photo.thumbnailUrl }] : [],
+    };
+  });
 
   return serialize({ models, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
 }

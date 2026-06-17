@@ -2371,6 +2371,39 @@ status }` relation-filter on its `projectLineItem.findFirst` (line ~65) — a le
 cross-domain read from the model-only batch. Low priority (single point read, fresh
 Prisma mirror) but tracked for a future pass.
 
+## Phase A read-rewiring — leaf surfaces (in progress, preview-gated)
+
+The "domain data Convex-only" decommission's Phase A (read-rewiring) ships
+**per-surface, each as its own PR**, validated on a Coolify PR preview against prod
+Convex (Convex data-correctness can't be verified in a dev worktree). Each surface
+follows the proven pattern: a thin `src/lib/<x>-read.ts` (mappers epoch-ms→Date,
+Decimal→number, absent→null, JSON `v.any()` passed through, Prisma-defaulted
+columns coerced non-null) + pure unit-tested filter/sort predicates replicating the
+Prisma `where`/`orderBy` + JS attach for cross-domain joins. **No Prisma fallback on
+a Convex map miss** (a miss reads null, like a join against a deleted row — falling
+back would hide mirror drift). The merge gate for each PR is the deploy-ordering gate
+above: the table must be backfilled into prod Convex before the read deploys.
+
+- **models (primary reads)** (`server/models.ts` → extends `src/lib/models-read.ts`).
+  `getModels` (the paginated list/filter/sort surface) moved off
+  `prisma.model.findMany`+`count` to the Convex `models.list` mirror: new pure,
+  unit-tested helpers `mapConvexModelToRow` (strips `_id`/`_creationTime`,
+  epoch-ms→Date, coerces defaulted `images`/`manuals`/`tags`/`assetType`/
+  `requiresTestAndTag`/`isActive`), `filterModels` (isActive/categoryId/assetType +
+  case-insensitive name/manufacturer/modelNumber/sku search), `sortModels`
+  (Postgres NULLS-LAST asc / NULLS-FIRST desc; `assetType` by DECLARED enum order
+  via rank map; `category` by resolved category name), `paginateModels`. Nested
+  `category` attached from the Convex category map; per-model `_count.assets/bulkAssets`
+  off the asset/bulkAsset mirror and primary photo off the modelMedia mirror (same
+  sources as `getModelCounts`). No new Convex query — reuses the existing
+  `api.models.list`. `getModelCounts` was already Convex-only (no change). **Left on
+  Prisma:** `getModel` (detail-page media composite — assets+location / bulkAssets+
+  location / media+file / bulkAccessories+bulkAsset cross-domain query: documented
+  terminus); and the read-then-write reads inside `createModel`/`updateModel`/
+  `archiveModel`/`bulkUpdateRates` (`asset.findMany`, `bulkAsset.findMany`,
+  `model.findMany`, `testTagAsset.findMany` whose results feed a same-action
+  mutation). Better Auth joins: none in this surface.
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort

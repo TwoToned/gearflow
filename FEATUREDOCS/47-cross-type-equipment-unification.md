@@ -103,8 +103,6 @@ below only to describe scope, not drag identity.
   under the category. Sub-hire is intentionally omitted — sub-hire
   orders don't carry a categoryId at the order level (their groups
   do), so use the toolbar Add for sub-hires.
-- **`GroupRow`** — ProjectGroup (scope `grp-<id>`). Kebab: Edit price /
-  Add Equipment / Add Kit / Move to category / Recalculate Prices /
   Save as Template / Delete. "Move to category" uses the same
   `ArrowRightLeft` icon as the line-item and sub-hire-group Moves.
 - **`SubHireGroupRow`** — SubHireGroup (scope `shg-<id>`). Handshake icon,

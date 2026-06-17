@@ -48,8 +48,6 @@ export interface OrgSettings {
   assetTagPrefix?: string;
   assetTagCounter?: number;
   assetTagDigits?: number;
-  /** Days a "month" bills as for pricing optimisation. Default 28; common alternatives are 30 or 31. */
-  daysPerMonth?: number;
   /** Auto project-number template (e.g. "%YY%MM%INC"). Empty/undefined = manual entry. */
   projectNumberFormat?: string;
   /** When the project-number increment resets. Default MONTHLY. */

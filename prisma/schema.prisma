@@ -728,11 +728,12 @@ model Supplier {
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
-  assets              Asset[]
-  lineItems           ProjectLineItem[]
-  orders              SupplierOrder[]
-  subHires            SubHire[]
-  supplierModelRates  SupplierModelRate[]
+  // Inbound FK back-relations dropped in Phase B (Convex domain-only decommission):
+  // suppliers are now CONVEX-ONLY (no Prisma `supplier` row is written), so the
+  // inbound FK constraints from asset / project_line_item / supplier_order /
+  // sub_hire / supplier_model_rate were dropped (see migration
+  // 20260617131100_drop_supplier_fk_constraints). The dependent rows keep a plain
+  // `supplierId String?` referencing the Convex `suppliers` doc.
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -745,8 +746,7 @@ model SupplierOrder {
   id             String              @id @default(cuid())
   organizationId String
   organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  supplierId     String
-  supplier       Supplier            @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  supplierId     String // references a Convex suppliers doc; FK dropped Phase B
   orderNumber    String
   type           SupplierOrderType
   status         SupplierOrderStatus @default(DRAFT)
@@ -798,8 +798,7 @@ model SubHire {
   id                      String               @id @default(cuid())
   organizationId          String
   organization            Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  supplierId              String
-  supplier                Supplier             @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  supplierId              String // references a Convex suppliers doc; FK dropped Phase B
   projectId               String?
   project                 Project?             @relation(fields: [projectId], references: [id], onDelete: SetNull)
   createdById             String
@@ -900,8 +899,7 @@ model SupplierModelRate {
   id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  supplierId     String
-  supplier       Supplier     @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  supplierId     String // references a Convex suppliers doc; FK dropped Phase B
   modelId        String
   model          Model        @relation(fields: [modelId], references: [id], onDelete: Cascade)
   lastUnitCost   Decimal      @db.Decimal(10, 2)
@@ -1024,8 +1022,7 @@ model Asset {
   purchaseDate        DateTime?
   purchasePrice       Decimal?       @db.Decimal(10, 2)
   purchaseSupplier    String?
-  supplierId          String?
-  supplier            Supplier?      @relation(fields: [supplierId], references: [id])
+  supplierId          String? // references a Convex suppliers doc; FK dropped Phase B
   purchaseOrderNumber String?
   supplierOrderId     String?
   supplierOrder       SupplierOrder? @relation(fields: [supplierOrderId], references: [id], onDelete: SetNull)
@@ -1456,8 +1453,7 @@ model ProjectLineItem {
   // verified to have 0 legacy-only rows before drop. See
   // 20260514XXXXXX_drop_line_item_isSubhire migration.
   showSubhireOnDocs   Boolean               @default(false)
-  supplierId          String?
-  supplier            Supplier?             @relation(fields: [supplierId], references: [id])
+  supplierId          String? // references a Convex suppliers doc; FK dropped Phase B
   subhireOrderNumber  String?
   supplierOrderId     String?
   supplierOrder       SupplierOrder?        @relation(fields: [supplierOrderId], references: [id], onDelete: SetNull)

@@ -10,7 +10,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ScanInput } from "@/components/ui/scan-input";
+import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   TabsContent,
@@ -116,7 +116,7 @@ export function DeployTab({
     <TabsContent value="check-out">
       <div className="space-y-4 pt-4">
         <div className="rounded-lg bg-bg-surface surface-ring py-4 px-4 space-y-3">
-            <ScanInput
+            <AssetTagInput
               ref={deployScanInputRef}
               placeholder="Scan asset tag to deploy..."
               value={deployScanValue}

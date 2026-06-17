@@ -2018,55 +2018,6 @@ export default defineSchema({
     .index("by_userId_notificationKey", ["userId", "notificationKey"])
     .index("by_organizationId_sentAt", ["organizationId", "sentAt"]),
 
-  // Stocktake
-  stocktakes: defineTable({
-    id: v.string(),
-    organizationId: v.string(),
-    name: v.string(),
-    locationId: v.string(),
-    scope: enums.StocktakeScope,
-    categoryId: v.optional(v.string()),
-    status: v.optional(enums.StocktakeStatus),
-    startedAt: v.optional(v.number()),
-    startedById: v.optional(v.string()),
-    completedAt: v.optional(v.number()),
-    reviewedById: v.optional(v.string()),
-    expectedCount: v.optional(v.number()),
-    foundCount: v.optional(v.number()),
-    missingCount: v.optional(v.number()),
-    unexpectedCount: v.optional(v.number()),
-    discrepancyCount: v.optional(v.number()),
-    notes: v.optional(v.string()),
-    createdAt: v.optional(v.number()),
-    updatedAt: v.optional(v.number()),
-  })
-    .index("by_cuid", ["id"])
-    .index("by_organizationId", ["organizationId"])
-    .index("by_locationId", ["locationId"])
-    .index("by_startedById", ["startedById"])
-    .index("by_reviewedById", ["reviewedById"]),
-
-  // StocktakeItem
-  stocktakeItems: defineTable({
-    id: v.string(),
-    stocktakeId: v.string(),
-    assetId: v.optional(v.string()),
-    bulkAssetId: v.optional(v.string()),
-    expectedAtLocation: v.optional(v.boolean()),
-    expectedQuantity: v.optional(v.number()),
-    found: v.optional(v.boolean()),
-    foundQuantity: v.optional(v.number()),
-    scannedAt: v.optional(v.number()),
-    scannedById: v.optional(v.string()),
-    result: v.optional(enums.StocktakeItemResult),
-    conditionNote: v.optional(v.string()),
-    actionTaken: v.optional(v.string()),
-  })
-    .index("by_cuid", ["id"])
-    .index("by_stocktakeId", ["stocktakeId"])
-    .index("by_assetId", ["assetId"])
-    .index("by_bulkAssetId", ["bulkAssetId"]),
-
   // CustomFieldDefinition
   customFieldDefinitions: defineTable({
     id: v.string(),

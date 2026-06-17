@@ -10,7 +10,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ScanInput } from "@/components/ui/scan-input";
+import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import {
@@ -113,15 +113,13 @@ export function PickPrepTab({
         <div className="rounded-lg bg-bg-surface surface-ring py-4 px-4 space-y-3">
             <div className="flex items-center gap-2">
               <div className="flex-1">
-                <ScanInput
+                <AssetTagInput
                   ref={scanInputRef}
                   placeholder="Scan or enter asset tag to prep..."
                   value={scanValue}
                   onChange={(e) => setScanValue(e.target.value)}
                   onKeyDown={handleScanKeyDown}
                   onScan={(value) => scanMutationMutate(value)}
-                  scannerTitle="Scan asset to prep"
-                  continuous
                   disabled={scanMutationIsPending}
                   autoFocus
                 />

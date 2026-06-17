@@ -5,19 +5,28 @@ import { requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { syncProjectManagersToConvex } from "@/lib/project-subtable-mirror";
+import { getProjectManagerRows } from "@/lib/project-managers-read";
 
 export async function getProjectManagers(projectId: string) {
   const { organizationId } = await requirePermission("project", "read");
 
-  const managers = await prisma.projectManager.findMany({
-    where: { projectId, organizationId },
-    include: {
-      user: {
+  // projectManager rows come from Convex (dual-written). The `user` half is
+  // Better Auth and stays a batched Prisma lookup.
+  const rows = await getProjectManagerRows(organizationId, projectId);
+
+  const userIds = [...new Set(rows.map((r) => r.userId))];
+  const users = userIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: userIds } },
         select: { id: true, name: true, email: true, image: true },
-      },
-    },
-    orderBy: { addedAt: "asc" },
-  });
+      })
+    : [];
+  const userMap = new Map(users.map((u) => [u.id, u]));
+
+  const managers = rows.map((r) => ({
+    ...r,
+    user: userMap.get(r.userId) ?? null,
+  }));
 
   return serialize(managers);
 }

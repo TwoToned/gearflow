@@ -51,6 +51,24 @@ export const getByTestTagId = query({
   },
 });
 
+/**
+ * Alias of {@link getByTestTagId} kept for the scan-lookup consumer (Phase A).
+ * Same `.first()`-not-`.unique()` safety on the non-unique dual-write index.
+ */
+export const getByOrgTestTagId = query({
+  args: { orgId: v.string(), testTagId: v.string() },
+  handler: async (ctx, { orgId, testTagId }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("testTagAssets")
+      .withIndex("by_organizationId_testTagId", (q) =>
+        q.eq("organizationId", orgId).eq("testTagId", testTagId),
+      )
+      .first();
+  },
+});
+
+
 export const create = mutation({
   args: {
     id: v.string(),

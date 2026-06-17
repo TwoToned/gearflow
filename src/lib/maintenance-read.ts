@@ -272,3 +272,17 @@ export function sortMaintenanceRecords(
   }
   return out;
 }
+
+/**
+ * Distinct-tag aggregation feed: an org's maintenance records normalised to the
+ * `{ tags }` shape `getOrgTags` consumes. `tags` is Prisma-defaulted to `[]`, so a
+ * Convex doc with the field absent coerces to an empty array. (Phase A — backs
+ * the maintenance-tags arm of `tags.ts:getOrgTags`.)
+ */
+export async function getMaintenanceTagsByOrg(
+  organizationId: string,
+): Promise<{ tags: string[] }[]> {
+  const client = await getConvexClient();
+  const docs = await client.query(api.maintenanceRecords.list, { orgId: organizationId });
+  return docs.map((d) => ({ tags: d.tags ?? [] }));
+}

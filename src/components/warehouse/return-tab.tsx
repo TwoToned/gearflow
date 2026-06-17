@@ -11,7 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
-import { ScanInput } from "@/components/ui/scan-input";
+import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -30,7 +30,6 @@ import {
 import type { LineItem, GroupEntry } from "./warehouse-types";
 import { modelDisplayName, isBulkItem, collectAllVerifiableIds, bulkUnitKey } from "./warehouse-types";
 import { KitChildRows } from "./kit-child-rows";
-import { AccessoryChildRows } from "./accessory-child-rows";
 
 export interface ReturnTabProps {
   // Scan state
@@ -118,7 +117,7 @@ export function ReturnTab({
               <ScanBarcode className="h-5 w-5 text-fg-3 shrink-0 hidden sm:block" />
               <div className="flex-1">
                 <Label htmlFor="scan-checkin" className="sr-only">Scan asset tag</Label>
-                <ScanInput
+                <AssetTagInput
                   ref={returnScanInputRef}
                   id="scan-checkin"
                   placeholder="Scan or enter asset tag to return..."
@@ -126,8 +125,6 @@ export function ReturnTab({
                   onChange={(e) => setReturnScanValue(e.target.value)}
                   onKeyDown={handleReturnScanKeyDown}
                   onScan={(value) => returnScanMutationMutate(value)}
-                  scannerTitle="Scan asset to return"
-                  continuous
                   disabled={returnScanMutationIsPending || checkInIsPending}
                 />
               </div>
@@ -247,7 +244,6 @@ export function ReturnTab({
                                 <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
                               </TableCell>
                             </TableRow>
-                            <AccessoryChildRows parent={item} mode="return" />
                           </Fragment>
                         ))}
                       </Fragment>
@@ -303,10 +299,6 @@ export function ReturnTab({
                             </TableRow>
                           );
                         })}
-                        {/* Accessories on a multi-qty serialised model line (classified
-                            bulk-group) still travel with the parent. Gated on
-                            isExpanded so they hide with the group's unit rows. */}
-                        {isExpanded && <AccessoryChildRows parent={entry.item} mode="return" />}
                       </Fragment>
                     );
                   }
@@ -434,7 +426,6 @@ export function ReturnTab({
                         <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
                       </TableCell>
                     </TableRow>
-                    <AccessoryChildRows parent={item} mode="return" />
                     </Fragment>
                   );
                 })}

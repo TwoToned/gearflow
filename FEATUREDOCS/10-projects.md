@@ -104,21 +104,18 @@ marginPercent = margin / total × 100
   use case`.
 
 ### Suggested Price Calculation (`calculateSuggestedPrice()`)
+Simple rate × period × qty model (the min-cost optimizer + billing-period
+config were removed — see git history for `38-pricing-optimization.md`).
 ```
-# Primary: billing weeks/days (when billingWeeks or billingDays is set)
-weeks = group.billingWeeks ?? project.billingWeeks ?? 0
-days  = group.billingDays  ?? project.billingDays  ?? 0
-For each line item in group (excluding kit children):
-  total += (model.weeklyRate × weeks + model.dailyRate × days) × item.quantity
-
-# Fallback: legacy rental period
 rentalPeriod = group.rentalPeriod ?? project.defaultRentalPeriod ?? "DAILY"
 rentalQuantity = group.rentalQuantity ?? project.defaultRentalQuantity ?? 1
 For each line item in group (excluding kit children):
   rate = (rentalPeriod === "WEEKLY") ? model.weeklyRate : model.dailyRate
   total += rate × item.quantity × rentalQuantity
 ```
-- Recalculated when: items added/removed, billing period changed, item moved between groups
+The same `rate × period × qty` model auto-fills `unitPrice` on a single line
+when it's added (`addLineItem`) — `unitPrice = rate`, `duration = rentalQuantity`.
+- Recalculated when: items added/removed, group rental period/quantity changed, item moved between groups
 
 ## Line Items (`ProjectLineItem`)
 - `categoryId` (nullable FK → ProjectCategory)

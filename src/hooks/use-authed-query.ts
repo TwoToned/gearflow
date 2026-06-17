@@ -26,7 +26,7 @@ import type { FunctionReference } from "convex/server";
  * The `list` / `getById` hooks dodge this by accident: their arg is `orgId`, which
  * is derived from `useActiveOrganization()` and therefore `undefined` (→ `"skip"`)
  * until the session loads. But the reactive DETAIL `version` hooks key off a ROUTE
- * PARAM (`projectId` / `id` / `stocktakeId`) that is defined on the very first
+ * PARAM (`projectId` / `id`) that is defined on the very first
  * render — so on a hard navigation / refresh of a detail page they subscribe over
  * the still-unauthenticated socket and the guard throws. Same class of failure
  * for any query keyed off something available before the session (route params,

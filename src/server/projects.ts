@@ -27,7 +27,6 @@ import {
   syncProjectTasksToConvex,
 } from "@/lib/project-subtable-mirror";
 import { snapshotProjectCrew, removeCrewAssignmentCascadeFromConvex } from "@/lib/crew-scheduling-mirror";
-import { emitIfDiscordEnabled } from "@/lib/services/outbox-service";
 import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
 import { translatePrismaError, UserFacingError } from "@/lib/errors";
 import { getDefaultLocation } from "@/lib/locations-read";
@@ -590,8 +589,6 @@ export async function createProject(data: ProjectFormValues & { isTemplate?: boo
         clientNotes: parsed.clientNotes || null,
         defaultRentalPeriod: parsed.defaultRentalPeriod || null,
         defaultRentalQuantity: parsed.defaultRentalQuantity || null,
-        billingWeeks: parsed.billingWeeks ?? null,
-        billingDays: parsed.billingDays ?? null,
         taxRate: parsed.taxRate ?? null,
         discountPercent: parsed.discountPercent ?? null,
         depositPercent: parsed.depositPercent ?? null,
@@ -600,22 +597,6 @@ export async function createProject(data: ProjectFormValues & { isTemplate?: boo
         tags: parsed.tags,
       },
       });
-
-      // Transactional outbox: a Discord channel-sync event that rolls back with
-      // the project if the txn fails. Templates never get a channel.
-      if (!isTemplate) {
-        await emitIfDiscordEnabled(tx, {
-          organizationId,
-          eventType: "project.created",
-          payload: {
-            projectId: project.id,
-            projectNumber: project.projectNumber,
-            name: project.name,
-            status: project.status,
-          },
-          dedupeKey: `project.created:${project.id}`,
-        });
-      }
 
       return project;
     });
@@ -645,8 +626,8 @@ export async function updateProject(id: string, data: ProjectFormValues) {
   const { organizationId, userId, userName } = await requirePermission("project", "update");
   const parsed = projectSchema.parse(data);
 
-  // Read the prior status so a project-form save that flips status emits the
-  // same outbox event as updateProjectStatus would.
+  // Read the prior status so a project-form save that flips status into a
+  // blocked-forward state can be gated on blocking comments.
   const before = await prisma.project.findUnique({
     where: { id, organizationId },
     select: { status: true, isTemplate: true },
@@ -689,8 +670,6 @@ export async function updateProject(id: string, data: ProjectFormValues) {
         rentalEndDate: parsed.rentalEndDate ?? null,
         defaultRentalPeriod: parsed.defaultRentalPeriod || null,
         defaultRentalQuantity: parsed.defaultRentalQuantity || null,
-        billingWeeks: parsed.billingWeeks ?? null,
-        billingDays: parsed.billingDays ?? null,
         taxRate: parsed.taxRate ?? null,
         crewNotes: parsed.crewNotes || null,
         internalNotes: parsed.internalNotes || null,
@@ -702,15 +681,6 @@ export async function updateProject(id: string, data: ProjectFormValues) {
         tags: parsed.tags,
       },
     });
-
-    if (before && !before.isTemplate && before.status !== parsed.status) {
-      await emitIfDiscordEnabled(tx, {
-        organizationId,
-        eventType: "project.status.changed",
-        payload: { projectId: id, fromStatus: before.status, toStatus: parsed.status },
-        dedupeKey: `project.status.changed:${id}:${before.status}->${parsed.status}:${Date.now()}`,
-      });
-    }
     return result;
   });
   await patchProjectInConvex(updated.id, updated);
@@ -767,16 +737,6 @@ export async function updateProjectStatus(
       where: { id, organizationId },
       data: { status },
     });
-    if (project.status !== status) {
-      await emitIfDiscordEnabled(tx, {
-        organizationId,
-        eventType: "project.status.changed",
-        payload: { projectId: id, fromStatus: project.status, toStatus: String(status) },
-        // Include status + a monotonic timestamp so a rapid CONFIRMED→PREPPING→CONFIRMED
-        // sequence doesn't collide on the unique dedupeKey.
-        dedupeKey: `project.status.changed:${id}:${project.status}->${String(status)}:${Date.now()}`,
-      });
-    }
     return result;
   });
   await patchProjectInConvex(updated.id, updated);
@@ -881,8 +841,6 @@ export async function duplicateProject(sourceId: string, newProjectNumber: strin
           depositPercent: source.depositPercent,
           defaultRentalPeriod: source.defaultRentalPeriod,
           defaultRentalQuantity: source.defaultRentalQuantity,
-          billingWeeks: source.billingWeeks,
-          billingDays: source.billingDays,
           taxRate: source.taxRate,
           tags: source.tags,
           isTemplate: false,

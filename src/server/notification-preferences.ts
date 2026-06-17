@@ -1,14 +1,27 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
+import { createId } from "@paralleldrive/cuid2";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../convex/_generated/api";
 import { getOrgContext } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import {
-  NOTIFICATION_PREFERENCE_DEFAULTS,
   notificationPreferenceSchema,
   type NotificationPreferenceValues,
 } from "@/lib/validations/notification-preferences";
+import {
+  getUserNotificationPreferenceRow,
+  getUserNotificationPreferences,
+} from "@/lib/user-notification-preferences-read";
+
+// userNotificationPreference is CONVEX-ONLY (bucket-2 Phase B write inversion):
+// one row per user (Prisma @unique on userId). Reads come from the Convex copy via
+// src/lib/user-notification-preferences-read.ts; writes go to
+// api.userNotificationPreferences.* with no Prisma row + no mirror. The @unique guard
+// is re-implemented in app code (find-by-userId then update, else create) since Convex
+// has no unique index. The Prisma `user_notification_preference` table is left
+// unwritten until Phase C drops it.
 
 /**
  * Return the current user's notification email preferences. Lazily creates
@@ -17,23 +30,10 @@ import {
 export async function getNotificationPreferences(): Promise<NotificationPreferenceValues> {
   const { userId } = await getOrgContext();
 
-  const existing = await prisma.userNotificationPreference.findUnique({
-    where: { userId },
-  });
-
-  if (existing) {
-    return serialize({
-      overdueMaintenance: existing.overdueMaintenance,
-      overdueReturn: existing.overdueReturn,
-      upcomingProject: existing.upcomingProject,
-      pendingInvitation: existing.pendingInvitation,
-      pendingOffers: existing.pendingOffers,
-      pendingTimesheets: existing.pendingTimesheets,
-      flaggedAsset: existing.flaggedAsset,
-    }) as NotificationPreferenceValues;
-  }
-
-  return serialize({ ...NOTIFICATION_PREFERENCE_DEFAULTS }) as NotificationPreferenceValues;
+  // Convex-only read; resolves to conservative defaults when no row exists.
+  return serialize(
+    await getUserNotificationPreferences(userId),
+  ) as NotificationPreferenceValues;
 }
 
 /**
@@ -45,11 +45,30 @@ export async function updateNotificationPreferences(
   const parsed = notificationPreferenceSchema.parse(input);
   const { organizationId, userId, userName } = await getOrgContext();
 
-  const saved = await prisma.userNotificationPreference.upsert({
-    where: { userId },
-    create: { userId, ...parsed },
-    update: { ...parsed },
-  });
+  // Convex-only upsert by the natural key (userId): find the existing row, patch it
+  // if present, else create. `overdueReturn` is part of `parsed`; `lowStock` /
+  // `expiringCert` are not in the form schema, so we leave any existing values as-is
+  // (create defaults them to absent → false on read, matching the old behaviour).
+  const convex = await getConvexClient();
+  const existing = await getUserNotificationPreferenceRow(userId);
+  const now = Date.now();
+  let savedId: string;
+
+  if (existing) {
+    savedId = existing.id;
+    await convex.mutation(api.userNotificationPreferences.update, {
+      id: existing.id,
+      patch: { ...parsed, updatedAt: now },
+    });
+  } else {
+    savedId = createId();
+    await convex.mutation(api.userNotificationPreferences.create, {
+      id: savedId,
+      userId,
+      ...parsed,
+      updatedAt: now,
+    });
+  }
 
   await logActivity({
     organizationId,
@@ -57,18 +76,11 @@ export async function updateNotificationPreferences(
     userName,
     action: "updated",
     entityType: "UserNotificationPreference",
-    entityId: saved.id,
+    entityId: savedId,
     entityName: "Notification preferences",
     summary: "Updated email notification preferences",
   });
 
-  return serialize({
-    overdueMaintenance: saved.overdueMaintenance,
-    overdueReturn: saved.overdueReturn,
-    upcomingProject: saved.upcomingProject,
-    pendingInvitation: saved.pendingInvitation,
-    pendingOffers: saved.pendingOffers,
-    pendingTimesheets: saved.pendingTimesheets,
-    flaggedAsset: saved.flaggedAsset,
-  }) as NotificationPreferenceValues;
+  // Return the saved form values (the resolved consumed shape).
+  return serialize({ ...parsed }) as NotificationPreferenceValues;
 }

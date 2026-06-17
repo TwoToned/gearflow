@@ -11,10 +11,10 @@ import { getModelMap } from "@/lib/models-read";
 import { getAssetsByOrg, getBulkAssetsByOrg } from "@/lib/assets-read";
 import { getKitsByOrg } from "@/lib/kits-read";
 import { locationSchema, type LocationFormValues } from "@/lib/validations/asset";
-import type { Prisma } from "@/generated/prisma/client";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
-import { buildFilterWhere, type FilterValue, type FilterColumnDef } from "@/lib/table-utils";
+import { type FilterValue } from "@/lib/table-utils";
+import { listLocations } from "@/lib/locations-read";
 
 // Locations are DUAL-WRITTEN: every create/update/delete writes the Prisma
 // `location` row (the durable FK anchor — asset/bulk_asset/kit/project/
@@ -60,10 +60,11 @@ async function unsetDefaultsInConvex(organizationId: string, exceptId?: string) 
   }
 }
 
-const locationFilterColumns: FilterColumnDef[] = [
-  { id: "type", filterType: "enum", filterKey: "type" },
-];
-
+// Locations list — READ FROM CONVEX (Phase A). Filter/sort/paginate + the parent
+// name self-join + per-location relation counts are all computed client-side from
+// the dual-written Convex location/asset/bulk-asset/kit/project lists. The enum
+// `filters.type` is pulled out as a plain string[] for the JS filter (no Prisma
+// `where` is built any more). See src/lib/locations-read.ts.
 export async function getLocations(params?: {
   search?: string;
   type?: string;
@@ -84,42 +85,20 @@ export async function getLocations(params?: {
     sortOrder = "asc",
   } = params || {};
 
-  const filterWhere = buildFilterWhere(filters, locationFilterColumns);
+  const rawTypeFilter = filters?.type;
+  const typeIn = Array.isArray(rawTypeFilter) ? (rawTypeFilter as string[]) : undefined;
 
-  const where: Prisma.LocationWhereInput = {
-    organizationId,
-    ...(type && { type: type as Prisma.EnumLocationTypeFilter }),
-    ...(search && {
-      OR: [
-        { name: { contains: search, mode: "insensitive" } },
-        { address: { contains: search, mode: "insensitive" } },
-      ],
+  return serialize(
+    await listLocations(organizationId, {
+      search,
+      type,
+      typeIn,
+      page,
+      pageSize,
+      sortBy,
+      sortOrder,
     }),
-    ...filterWhere,
-  };
-
-  const [locations, total] = await Promise.all([
-    prisma.location.findMany({
-      where,
-      include: {
-        parent: { select: { name: true } },
-        _count: { select: { assets: true, bulkAssets: true, kits: true, children: true, projects: true } },
-      },
-      orderBy: sortBy === "parent" ? { parent: { name: sortOrder } }
-        : [{ isDefault: "desc" }, { [sortBy]: sortOrder }],
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    prisma.location.count({ where }),
-  ]);
-
-  return serialize({
-    locations,
-    total,
-    page,
-    pageSize,
-    totalPages: Math.ceil(total / pageSize),
-  });
+  );
 }
 
 /**

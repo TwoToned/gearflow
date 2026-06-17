@@ -2371,6 +2371,50 @@ status }` relation-filter on its `projectLineItem.findFirst` (line ~65) — a le
 cross-domain read from the model-only batch. Low priority (single point read, fresh
 Prisma mirror) but tracked for a future pass.
 
+## Phase A read-rewiring — leaf surfaces (in progress, preview-gated)
+
+The "domain data Convex-only" decommission's Phase A (read-rewiring) ships
+**per-surface, each as its own PR**, validated on a Coolify PR preview against prod
+Convex (Convex data-correctness can't be verified in a dev worktree). Each surface
+follows the proven pattern: a thin `src/lib/<x>-read.ts` (mappers epoch-ms→Date,
+Decimal→number, absent→null, JSON `v.any()` passed through, Prisma-defaulted
+columns coerced non-null) + pure unit-tested filter/sort predicates replicating the
+Prisma `where`/`orderBy` + JS attach for cross-domain joins. **No Prisma fallback on
+a Convex map miss** (a miss reads null, like a join against a deleted row — falling
+back would hide mirror drift). The merge gate for each PR is the deploy-ordering gate
+above: the table must be backfilled into prod Convex before the read deploys.
+
+- **categories + locations (primary reads)** (`server/categories.ts`,
+  `server/locations.ts` → `src/lib/categories-read.ts` + `locations-read.ts`).
+  **categories.ts converted:** `getCategories` (list + parent self-join + `_count`
+  {models, kits, children}), `getCategoryCounts` (categoryId→{models, kits}),
+  `getCategoryTree` (roots-first forest + `_count.models`), and the category-tree
+  walk in `getCaseCategoryIds` (`getMappedCategoriesByOrg` + pure
+  `collectDescendantCategoryIds` BFS). The parent/children hierarchy is rebuilt
+  client-side from the flat Convex list via a Map; model + kit counts aggregate in
+  JS from the dual-written Convex model/kit lists (replacing the old `kit` Prisma
+  `groupBy`). **Left Prisma (documented):** `getCategory` (detail-page composite —
+  pulls kit serializedItems/bulkItems counts and per-model asset counts + primary
+  model media, cross-domain aggregations with no Convex read helper, analogous to
+  the intentional detail-page-media-gallery Prisma terminus); the `org.metadata`
+  read in `getCaseCategoryIds` (the `organization` table is Better-Auth-owned, not
+  in the domain dual-write set); `searchContainerAssets` (skipped — covered by
+  sibling PR #237). **locations.ts converted:** `getLocations` (filter/sort/
+  paginate + parent `{name}` self-join + `_count` {assets, bulkAssets, kits,
+  children, projects}) via pure `filterLocations`/`sortLocations`/
+  `buildLocationCounts` + `listLocations`; counts aggregate from the dual-written
+  Convex asset/bulk-asset/kit/project lists (the `_count.projects` stays faithful —
+  it counts ALL projects including templates, matching the original's lack of an
+  `isTemplate` filter); the parent-name sort replicates Postgres NULLS-LAST(asc)/
+  FIRST(desc) and the `isDefault desc` primary key. **Left Prisma (documented):**
+  `getLocation` (detail-page composite — active assets/bulk/kits with model joins,
+  projects with client, media + file gallery; cross-domain heavy + media-gallery
+  terminus); `getLocationCounts` (already Convex, no Prisma); all mutations and
+  `unsetDefaultsInConvex` (read-then-write — the single-default toggle reads
+  prior-defaults to unset them in the same action). **No new Convex queries** — all
+  reuse existing `*.list`/`getById` module queries. New pure helpers + unit tests
+  in the two read libs (23 tests).
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort

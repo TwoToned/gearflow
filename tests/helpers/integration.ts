@@ -72,21 +72,19 @@ function modelKey(delegateName: string): string {
 }
 
 /**
- * Mirror an already-materialised row to Convex.
+ * Mirror a row (by id) to Convex.
  *
- * We mirror the ROW the Prisma write RETURNED rather than re-reading via
- * findUnique. Interleaving an extra Prisma read between the write and the next
- * fixture write was a source of pooled-connection flake. The returned row
- * already carries every scalar column + DB defaults, which is all the mirror
- * needs.
+ * We re-read the FULL row from the raw `prisma` by id rather than mirroring the
+ * write's return value directly: the test may have written with `select: {...}`
+ * (a partial row missing required Convex fields like `organizationId`), and the
+ * fresh read also picks up every DB default. The re-read is safe now that the
+ * test pg connection is pinned to one serialised connection (the earlier
+ * findUnique flake was the multi-connection pool race, since fixed).
  *
  * `mode`:
- *   • "create" — a fresh insert. `createIfMissing` alone sets every field, so we
- *     skip the extra `patch` round-trip (halves the create-path latency — the
- *     hot path for fixtures, which mostly insert).
- *   • "update" — the row may already exist with stale fields. `createIfMissing`
- *     (idempotent — covers a row that was inserted via the un-wrapped `prisma`
- *     and never mirrored) THEN `patch` to push the new values.
+ *   • "create" — a fresh insert. `createIfMissing` alone sets every field.
+ *   • "update" — `createIfMissing` (idempotent — heals a row inserted via the
+ *     un-wrapped `prisma` and never mirrored) THEN `patch` to push new values.
  */
 async function mirrorRow(
   model: string,
@@ -95,8 +93,14 @@ async function mirrorRow(
 ): Promise<void> {
   const entry = MIRROR_REGISTRY[model];
   if (!entry || !row || !row.id) return;
-  await entry.create(row as Record<string, unknown>);
-  if (mode === "update") await entry.patch(row.id, row as Record<string, unknown>);
+  const id = row.id;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fresh = (await (prisma as any)[lowerFirst(model)].findUnique({ where: { id } })) as
+    | Record<string, unknown>
+    | null;
+  if (!fresh) return;
+  await entry.create(fresh);
+  if (mode === "update") await entry.patch(id, fresh);
 }
 
 /** Mirror a batch of already-materialised rows. */

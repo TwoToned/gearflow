@@ -32,6 +32,22 @@ export const getById = query({
   },
 });
 
+/**
+ * All test records for a single test tag asset, via the `by_testTagAssetId`
+ * index. Used by the asset-detail / scan reads to attach the recent test
+ * history. Service-only (not on the browser-readable allowlist).
+ */
+export const listByAssetId = query({
+  args: { testTagAssetId: v.string() },
+  handler: async (ctx, { testTagAssetId }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("testTagRecords")
+      .withIndex("by_testTagAssetId", (q) => q.eq("testTagAssetId", testTagAssetId))
+      .collect();
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

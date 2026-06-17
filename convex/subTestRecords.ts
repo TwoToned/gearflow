@@ -32,6 +32,28 @@ export const getById = query({
   },
 });
 
+/**
+ * Sub-test records across many parent test records in one round trip. Used by the
+ * T&T reports (session / failed-items / item-history) which need sub-tests for a
+ * whole result set — fetching per-record would be N round trips. HAND-ADDED for
+ * the Phase A read-rewiring (subTestRecord has no org column; it is parent-scoped).
+ */
+export const listByRecordIds = query({
+  args: { recordIds: v.array(v.string()) },
+  handler: async (ctx, { recordIds }) => {
+    await requireService(ctx);
+    const out = [];
+    for (const recordId of recordIds) {
+      const rows = await ctx.db
+        .query("subTestRecords")
+        .withIndex("by_testTagRecordId", (q) => q.eq("testTagRecordId", recordId))
+        .collect();
+      out.push(...rows);
+    }
+    return out;
+  },
+});
+
 export const create = mutation({
   args: {
     id: v.string(),

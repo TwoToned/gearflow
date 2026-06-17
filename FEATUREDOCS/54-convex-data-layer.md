@@ -2371,6 +2371,48 @@ status }` relation-filter on its `projectLineItem.findFirst` (line ~65) — a le
 cross-domain read from the model-only batch. Low priority (single point read, fresh
 Prisma mirror) but tracked for a future pass.
 
+## Phase A read-rewiring — leaf surfaces (in progress, preview-gated)
+
+The "domain data Convex-only" decommission's Phase A (read-rewiring) ships
+**per-surface, each as its own PR**, validated on a Coolify PR preview against prod
+Convex (Convex data-correctness can't be verified in a dev worktree). Each surface
+follows the proven pattern: a thin `src/lib/<x>-read.ts` (mappers epoch-ms→Date,
+Decimal→number, absent→null, JSON `v.any()` passed through, Prisma-defaulted
+columns coerced non-null) + pure unit-tested filter/sort predicates replicating the
+Prisma `where`/`orderBy` + JS attach for cross-domain joins. **No Prisma fallback on
+a Convex map miss** (a miss reads null, like a join against a deleted row — falling
+back would hide mirror drift). The merge gate for each PR is the deploy-ordering gate
+above: the table must be backfilled into prod Convex before the read deploys.
+
+- **domain read-trims (kits / suppliers / categories)** (`server/kits.ts`,
+  `server/suppliers.ts`, `server/categories.ts`). Leftover Prisma reads in
+  otherwise-converted domains, all pure (counts / dropdown availability lists /
+  search — none feed a same-action mutation). Moved:
+  - `getKitCounts` — the two `kitSerializedItem`/`kitBulkItem` `groupBy`s →
+    `kits-read.ts` `getKitSerializedItemsByOrg`/`getKitBulkItemsByOrg` +
+    pure `countKitMembers`. (Primary photo already came from Convex.)
+  - `getAvailableAssetsForKit` / `getAvailableBulkAssetsForKit` →
+    `assets-read.ts` `getAssetsByOrg`/`getBulkAssetsByOrg` + pure
+    `filterAvailableAssetsForKit`/`filterAvailableBulkAssetsForKit` +
+    `sortByAssetTagAsc`. Prisma defaults coerced (`status` AVAILABLE/ACTIVE,
+    `isActive` true, `availableQuantity` 0) since the Convex doc leaves them absent.
+  - `getSupplierCounts` — the `supplierOrder.groupBy` → `suppliers-read.ts`
+    `getSupplierOrdersByOrg` + pure `countSupplierAssetsAndOrders` (the asset
+    count already came off `getAssetsByOrg`).
+  - `searchContainerAssets` — the `asset` findMany with a `model.categoryId in`
+    relational filter + OR text filter → `assets-read.ts` `getAssetsByOrg` + pure
+    `filterContainerAssets` (resolves the joined model category/name from the
+    Convex model map) + `sortByAssetTagAsc` + `slice(0, 20)`.
+
+  No new Convex queries (reused `assets.list`, `bulkAssets.list`,
+  `kitSerializedItems.list`, `kitBulkItems.list`, `supplierOrders.list`).
+  `getCaseCategoryIds` stays Prisma (out of scope — reads Better Auth
+  `organization.metadata` for `prepKitCategoryId` plus the category tree; the org
+  table is Better Auth and never moves). Model joins already ran through Convex via
+  `getModelMap`. **Deploy gate:** `assets`/`bulkAssets`/`suppliers`/`supplierOrders`/
+  `kitSerializedItems`/`kitBulkItems` must be backfilled in prod Convex before this
+  deploys (per memory all are).
+
 ## Remaining work & session sizing (post-central-graph)
 
 The central graph is fully dual-written. What's left, with honest per-item effort
